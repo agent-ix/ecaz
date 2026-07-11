@@ -730,6 +730,7 @@ fn create_distann_physical_generation_fixture_with_payload_type(
 
     let logical_index_uuid = pgrx::datum::Uuid::from_bytes(metadata.logical_index_uuid);
     let descriptor = crate::am::ec_distann::DistannGenerationDescriptor {
+        coordinator_logical_index_uuid: metadata.logical_index_uuid,
         index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
         graph_record_version: crate::am::ec_distann::DISTANN_GRAPH_RECORD_VERSION,
         handoff_wire_version: crate::am::ec_distann::DISTANN_HANDOFF_WIRE_VERSION,
@@ -1453,16 +1454,19 @@ fn test_distann_node_registration_provenance_and_guards() {
 
     let build_catalog = distann_catalog_name("ec_distann_build_registration");
     let binding_catalog = distann_catalog_name("ec_distann_build_participant_binding");
+    let candidate_catalog = distann_catalog_name("ec_distann_build_candidate");
     Spi::connect_mut(|client| {
         client
             .update(
                 &format!(
                     "INSERT INTO {build_catalog} (
-                         index_oid, logical_index_uuid, build_id, epoch, state,
+                         index_oid, logical_index_uuid, source_relid, build_id, epoch, state,
                          registry_revision, roster_snapshot, roster_digest,
                          row_schema_fingerprint, registration_digest
                      ) VALUES (
-                         $1::oid, $2::uuid, $3::uuid, 7, 'Registered', 1,
+                         $1::oid, $2::uuid,
+                         (SELECT indrelid FROM pg_catalog.pg_index WHERE indexrelid = $1::oid),
+                         $3::uuid, 7, 'Registered', 1,
                          '\\x01'::bytea, decode(repeat('11', 32), 'hex'),
                          decode(repeat('22', 32), 'hex'),
                          decode(repeat('33', 32), 'hex')
@@ -1555,17 +1559,39 @@ fn test_distann_node_registration_provenance_and_guards() {
     assert_eq!(registered_count(), 0);
     let publish_catalog = distann_catalog_name("ec_distann_publish_decision");
     Spi::run(&format!(
-        "INSERT INTO {publish_catalog} (
-             index_oid, logical_index_uuid, build_id, epoch,
-             epoch_fingerprint, manifest_digest, epoch_manifest, decision_state
+        "INSERT INTO {candidate_catalog} (
+             index_oid, logical_index_uuid, build_id, epoch, registration_digest,
+             build_spec, build_spec_digest, generation_descriptor,
+             generation_descriptor_digest, source_snapshot, source_snapshot_digest,
+             ready_receipt_set, ready_receipt_set_digest, epoch_manifest,
+             manifest_digest, epoch_fingerprint, candidate_digest
          ) VALUES (
-             {}, '{}'::uuid, '{}'::uuid, 7,
+             {index_oid}, '{logical_uuid}'::uuid, '{build_id}'::uuid, 7,
+             decode(repeat('33', 32), 'hex'), '\\x01'::bytea,
+             decode(repeat('11', 32), 'hex'), '\\x02'::bytea,
+             decode(repeat('22', 32), 'hex'), '\\x03'::bytea,
+             decode(repeat('33', 32), 'hex'), '\\x04'::bytea,
+             decode(repeat('44', 32), 'hex'), '\\x01'::bytea,
+             decode(repeat('55', 32), 'hex'), decode(repeat('44', 34), 'hex'),
+             decode(repeat('66', 32), 'hex')
+         );
+         INSERT INTO {publish_catalog} (
+             index_oid, logical_index_uuid, build_id, epoch,
+             epoch_fingerprint, manifest_digest, epoch_manifest,
+             registration_digest, candidate_digest,
+             successor_activation, successor_activation_digest,
+             decision_state, activated_at, applied_at
+         ) VALUES (
+             {index_oid}, '{logical_uuid}'::uuid, '{build_id}'::uuid, 7,
              decode(repeat('44', 34), 'hex'), decode(repeat('55', 32), 'hex'),
-             '\\x01'::bytea, 'Applied'
+             '\\x01'::bytea, decode(repeat('33', 32), 'hex'),
+             decode(repeat('66', 32), 'hex'), '\\x01'::bytea,
+             decode(repeat('77', 32), 'hex'), 'Applied',
+             clock_timestamp(), clock_timestamp()
          )",
-        u32::from(coordinator.index_oid),
-        coordinator.logical_index_uuid,
-        coordinator.build_id,
+        index_oid = u32::from(coordinator.index_oid),
+        logical_uuid = coordinator.logical_index_uuid,
+        build_id = coordinator.build_id,
     ))
     .unwrap();
     let pinned_registration = expect_pg_error_rolled_back(|| {
@@ -1756,6 +1782,441 @@ fn test_distann_node_registration_provenance_and_guards() {
         Some(6),
         "only committed desired-roster mutations may advance the revision"
     );
+}
+
+#[pg_test]
+fn test_distann_begin_build_lock_lifecycle() {
+    const SECRET_NAME: &str = "DISTANN_BEGIN_BUILD";
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BEGIN_BUILD";
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+    let coordinator =
+        create_distann_physical_generation_fixture("ec_distann_begin_coordinator", 0x81);
+    let participant =
+        create_distann_physical_generation_fixture("ec_distann_begin_participant", 0x82);
+    configure_distann_participant_identity(&participant, "begin/node-17");
+    register_distann_node(
+        &coordinator,
+        0,
+        17,
+        "begin/node-17",
+        SECRET_NAME,
+        &participant.canonical_index_regclass,
+        true,
+    );
+    let registration = distann_catalog_name("ec_distann_build_registration");
+    let binding = distann_catalog_name("ec_distann_build_participant_binding");
+    let begin = |epoch: i64| {
+        Spi::get_one::<Vec<u8>>(&format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 '{}'::regclass, {epoch}, '{}'::uuid
+             )",
+            coordinator.index_name, coordinator.build_id,
+        ))
+        .unwrap()
+        .expect("begin-build should return its registration digest")
+    };
+    let rolled_back = expect_pg_error_rolled_back(|| {
+        let digest = begin(7);
+        assert_eq!(digest.len(), 32);
+        assert_eq!(
+            crate::am::ec_distann::build_session_lock_count_for_test(),
+            1
+        );
+        pgrx::error!("EC_TEST_ROLLBACK: abort begin-build subtransaction");
+    });
+    assert!(rolled_back.contains("EC_TEST_ROLLBACK"));
+    assert_eq!(
+        crate::am::ec_distann::build_session_lock_count_for_test(),
+        0,
+        "subtransaction abort must release nontransactional session locks"
+    );
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {registration}
+              WHERE index_oid = {} AND build_id = '{}'::uuid",
+            u32::from(coordinator.index_oid),
+            coordinator.build_id,
+        ))
+        .unwrap(),
+        Some(0)
+    );
+
+    let first = run_in_committed_subtransaction(|| begin(7));
+    assert_eq!(first.len(), 32);
+    assert_eq!(
+        crate::am::ec_distann::build_session_lock_count_for_test(),
+        1,
+        "subcommit promotes build-specific lock ownership to its parent"
+    );
+    assert_eq!(begin(7), first, "exact replay returns the frozen digest");
+
+    let epoch_conflict = expect_pg_error_rolled_back(|| {
+        let _ = begin(8);
+    });
+    assert!(epoch_conflict.contains("EC_BUILD_ID_CONFLICT"));
+    assert_eq!(
+        crate::am::ec_distann::build_session_lock_count_for_test(),
+        1,
+        "nested replay failure must not release parent ownership"
+    );
+
+    let corrupt_binding = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!(
+            "UPDATE {binding} SET conninfo_secret_name = 'DISTANN_CHANGED'
+              WHERE index_oid = {} AND build_id = '{}'::uuid",
+            u32::from(coordinator.index_oid),
+            coordinator.build_id,
+        ))
+        .unwrap();
+        let _ = begin(7);
+    });
+    assert!(
+        corrupt_binding.contains("durable registration digest is inconsistent"),
+        "unexpected binding corruption result: {corrupt_binding}"
+    );
+    assert_eq!(begin(7), first, "rolled-back corruption preserves replay");
+
+    let terminal_rollback = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!(
+            "UPDATE {registration} SET state = 'Published'
+              WHERE index_oid = {} AND build_id = '{}'::uuid",
+            u32::from(coordinator.index_oid),
+            coordinator.build_id,
+        ))
+        .unwrap();
+        assert_eq!(begin(7), first);
+        assert_eq!(
+            crate::am::ec_distann::build_session_lock_count_for_test(),
+            1,
+            "terminal replay must retain ownership until commit"
+        );
+        pgrx::error!("EC_TEST_ROLLBACK: abort terminal replay");
+    });
+    assert!(terminal_rollback.contains("EC_TEST_ROLLBACK"));
+    assert_eq!(
+        crate::am::ec_distann::build_session_lock_count_for_test(),
+        1,
+        "terminal replay abort must preserve committed session ownership"
+    );
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM {registration}
+              WHERE index_oid = {} AND build_id = '{}'::uuid",
+            u32::from(coordinator.index_oid),
+            coordinator.build_id,
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Registered")
+    );
+}
+
+#[pg_test]
+fn test_distann_begin_build_competing_backend_busy() {
+    let conninfo = current_pg_test_loopback_conninfo();
+    let mut setup = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("begin-build loopback setup connection should open");
+    let extension_schema = setup
+        .query_one(
+            "SELECT n.nspname
+               FROM pg_extension e
+               JOIN pg_namespace n ON n.oid = e.extnamespace
+              WHERE e.extname = 'ecaz'",
+            &[],
+        )
+        .expect("extension schema should resolve")
+        .get::<_, String>(0);
+    let source = "ec_distann_begin_contention_source";
+    let index = "ec_distann_begin_contention_idx";
+    setup
+        .batch_execute(&format!(
+            "DROP TABLE IF EXISTS {source} CASCADE;
+             CREATE TABLE {source} (
+                 source_id uuid NOT NULL,
+                 embedding ecvector(4) NOT NULL
+             );
+             INSERT INTO {source} VALUES (
+                 '00000000-0000-4000-8000-000000000179',
+                 encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)
+             );
+             CREATE INDEX {index} ON {source}
+               USING ec_distann (embedding ecvector_distann_ip_ops)
+               INCLUDE (source_id)
+               WITH (distributed_control = true, source_identity = 'include', graph_degree = 4);
+             SELECT {extension_schema}.ec_distann_configure_participant_identity(
+                 '{index}'::regclass, 'begin/contention-node-17'
+             );
+             INSERT INTO {extension_schema}.ec_distann_node_descriptor (
+                 index_oid, logical_index_uuid, roster_ordinal, node_id,
+                 endpoint_identity, conninfo_secret_name, remote_index_regclass,
+                 participant_logical_index_uuid, compatibility_digest, is_local
+             )
+             SELECT '{index}'::regclass::oid, logical_index_uuid, 0, 17,
+                    'begin/contention-node-17', 'DISTANN_BEGIN_CONTENTION',
+                    canonical_index_regclass, logical_index_uuid,
+                    compatibility_digest, true
+               FROM {extension_schema}.ec_distann_control_identity('{index}'::regclass)"
+        ))
+        .expect("committed begin-build contention fixture should be created");
+
+    let aborted_build_id = "76767676-7676-4676-b676-767676767676";
+    let mut aborting = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("aborting build connection should open");
+    aborting
+        .batch_execute(&format!(
+            "BEGIN;
+             SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                 '{index}'::regclass, 6, '{aborted_build_id}'::uuid
+             );
+             ROLLBACK"
+        ))
+        .expect("top-level begin-build rollback should release session ownership");
+    let post_abort_build_id = "78787878-7878-4878-b878-787878787878";
+    aborting
+        .batch_execute(&format!(
+            "BEGIN;
+             SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                 '{index}'::regclass, 6, '{post_abort_build_id}'::uuid
+             );
+             ROLLBACK"
+        ))
+        .expect("the aborting backend must clear its mirror and reacquire for another build");
+
+    let build_id = "79797979-7979-4979-b979-797979797979";
+    let mut owner = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("build owner connection should open");
+    let digest = owner
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 7, '{build_id}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect("first backend should own the build")
+        .get::<_, Vec<u8>>(0);
+    assert_eq!(digest.len(), 32);
+    drop(aborting);
+
+    let mut contender = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("competing build connection should open");
+    let error = contender
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 7, '{build_id}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect_err("competing backend must fail instead of waiting");
+    let message = error
+        .as_db_error()
+        .map(|error| error.message().to_owned())
+        .unwrap_or_else(|| error.to_string());
+    assert!(
+        message.contains("EC_BUILD_BUSY"),
+        "unexpected competing-backend error: {message}"
+    );
+
+    let registration = format!("{extension_schema}.ec_distann_build_registration");
+    owner
+        .batch_execute(&format!(
+            "BEGIN;
+             SAVEPOINT terminal_release;
+             UPDATE {registration} SET state = 'Published'
+              WHERE index_oid = '{index}'::regclass::oid
+                AND build_id = '{build_id}'::uuid;
+             SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                 '{index}'::regclass, 7, '{build_id}'::uuid
+             );
+             ROLLBACK TO SAVEPOINT terminal_release;
+             COMMIT"
+        ))
+        .expect("aborted terminal-replay savepoint should not schedule outer-commit release");
+    let savepoint_release_error = contender
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 7, '{build_id}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect_err("outer commit after terminal savepoint rollback must retain owner locks");
+    let savepoint_release_message = savepoint_release_error
+        .as_db_error()
+        .map(|error| error.message().to_owned())
+        .unwrap_or_else(|| savepoint_release_error.to_string());
+    assert!(
+        savepoint_release_message.contains("EC_BUILD_BUSY"),
+        "unexpected savepoint-release error: {savepoint_release_message}"
+    );
+
+    owner
+        .batch_execute(&format!(
+            "BEGIN;
+             SAVEPOINT destructive_release;
+             REINDEX INDEX {index};
+             ROLLBACK TO SAVEPOINT destructive_release;
+             COMMIT"
+        ))
+        .expect("aborted REINDEX savepoint should preserve build registration and ownership");
+    let destructive_release_error = contender
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 7, '{build_id}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect_err("outer commit after REINDEX savepoint rollback must retain owner locks");
+    let destructive_release_message = destructive_release_error
+        .as_db_error()
+        .map(|error| error.message().to_owned())
+        .unwrap_or_else(|| destructive_release_error.to_string());
+    assert!(
+        destructive_release_message.contains("EC_BUILD_BUSY"),
+        "unexpected destructive-release error: {destructive_release_message}"
+    );
+
+    owner
+        .batch_execute(&format!(
+            "BEGIN;
+             UPDATE {registration} SET state = 'Published'
+              WHERE index_oid = '{index}'::regclass::oid
+                AND build_id = '{build_id}'::uuid;
+             SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                 '{index}'::regclass, 7, '{build_id}'::uuid
+             );
+             ROLLBACK"
+        ))
+        .expect("terminal replay should be rollback-safe");
+    let rollback_recovery = contender
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 7, '{build_id}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect("top-level abort must leave the durable registration recoverable")
+        .get::<_, Vec<u8>>(0);
+    assert_eq!(rollback_recovery, digest);
+    drop(contender);
+    let owner_recovery = owner
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 7, '{build_id}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect("backend exit must let the prior owner reacquire exact registration")
+        .get::<_, Vec<u8>>(0);
+    assert_eq!(owner_recovery, digest);
+    let mut contender = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("replacement competing connection should open");
+
+    owner
+        .batch_execute(&format!(
+            "BEGIN;
+             UPDATE {registration} SET state = 'Published'
+              WHERE index_oid = '{index}'::regclass::oid
+                AND build_id = '{build_id}'::uuid;
+             SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                 '{index}'::regclass, 7, '{build_id}'::uuid
+             );
+             COMMIT"
+        ))
+        .expect("terminal replay commit should release owner locks");
+    let terminal_replay = contender
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 7, '{build_id}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect("another backend should acquire after terminal replay commits")
+        .get::<_, Vec<u8>>(0);
+    assert_eq!(terminal_replay, digest);
+
+    let configure_rebuilt_control = |client: &mut postgres::Client| {
+        client
+            .batch_execute(&format!(
+                "SELECT {extension_schema}.ec_distann_configure_participant_identity(
+                     '{index}'::regclass, 'begin/contention-node-17'
+                 );
+                 INSERT INTO {extension_schema}.ec_distann_node_descriptor (
+                     index_oid, logical_index_uuid, roster_ordinal, node_id,
+                     endpoint_identity, conninfo_secret_name, remote_index_regclass,
+                     participant_logical_index_uuid, compatibility_digest, is_local
+                 )
+                 SELECT '{index}'::regclass::oid, logical_index_uuid, 0, 17,
+                        'begin/contention-node-17', 'DISTANN_BEGIN_CONTENTION',
+                        canonical_index_regclass, logical_index_uuid,
+                        compatibility_digest, true
+                   FROM {extension_schema}.ec_distann_control_identity('{index}'::regclass)"
+            ))
+            .expect("rebuilt control identity and roster should configure");
+    };
+
+    owner
+        .batch_execute(&format!("REINDEX INDEX {index}"))
+        .expect("terminal control should rebuild before cleanup test");
+    configure_rebuilt_control(&mut owner);
+    let rebuild_one = "78787878-7878-4878-b878-787878787878";
+    owner
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 8, '{rebuild_one}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect("first rebuilt control should acquire session ownership");
+
+    owner
+        .batch_execute(&format!("REINDEX INDEX {index}"))
+        .expect("same backend should destructively rebuild its active control");
+    configure_rebuilt_control(&mut owner);
+    let rebuild_two = "77777777-7777-4777-b777-777777777777";
+    owner
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 9, '{rebuild_two}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect("REINDEX commit must remove stale UUID/build lock ownership");
+
+    drop(contender);
+    drop(owner); // backend exit releases the retained session locks
+    let exit_replay = setup
+        .query_one(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_begin_epoch_build(
+                     '{index}'::regclass, 9, '{rebuild_two}'::uuid
+                 )"
+            ),
+            &[],
+        )
+        .expect("exact replay should reacquire after owner backend exit")
+        .get::<_, Vec<u8>>(0);
+    assert_eq!(exit_replay.len(), 32);
+    setup
+        .batch_execute(&format!("DROP TABLE {source} CASCADE"))
+        .expect("same-backend DROP should reconcile active session locks");
 }
 
 #[pg_test]
@@ -2004,12 +2465,15 @@ fn test_distann_generation_relations_replay_abort_and_privileges() {
               'ec_distann_configure_participant_identity',
               'ec_distann_register_node_descriptor',
               'ec_distann_unregister_node_descriptor',
+              'ec_distann_begin_epoch_build',
               'ec_distann_begin_epoch_handoff',
               'ec_distann_stage_epoch_batch',
               'ec_distann_seal_epoch_handoff',
               'ec_distann_abort_epoch_handoff',
               'ec_distann_list_unpublished_generations',
-              'ec_distann_catalog_index_cleanup'
+              'ec_distann_catalog_index_cleanup',
+              'ec_distann_prepare_control_rebuild',
+              'ec_distann_initialize_control_registry'
           )
             AND acl.grantee = 0
             AND acl.privilege_type = 'EXECUTE'",
@@ -3127,13 +3591,124 @@ fn test_distann_generation_creation_rolls_back_whole_transaction() {
     assert_eq!(name_prefix_count, 0, "DDL must roll back with the batch");
 }
 
+fn insert_distann_publish_predecessor_chain(
+    fixture: &DistannPhysicalGenerationFixture,
+    length: u8,
+) {
+    assert!(length >= 3, "cleanup drill requires a nontrivial chain");
+    let registration = distann_catalog_name("ec_distann_build_registration");
+    let candidate = distann_catalog_name("ec_distann_build_candidate");
+    let decision = distann_catalog_name("ec_distann_publish_decision");
+    let source_oid = Spi::get_one::<pg_sys::Oid>(&format!(
+        "SELECT indrelid FROM pg_index WHERE indexrelid = {}",
+        u32::from(fixture.index_oid)
+    ))
+    .unwrap()
+    .unwrap();
+    let mut predecessor: Option<(pgrx::datum::Uuid, i64, u8, u8)> = None;
+
+    for ordinal in 0..length {
+        let marker = 0x90_u8.checked_add(ordinal).unwrap();
+        let mut build_bytes = [marker; 16];
+        build_bytes[6] = (build_bytes[6] & 0x0f) | 0x40;
+        build_bytes[8] = (build_bytes[8] & 0x3f) | 0x80;
+        let build_id = pgrx::datum::Uuid::from_bytes(build_bytes);
+        let epoch = 100_i64 + i64::from(ordinal);
+        let fingerprint_marker = marker.wrapping_add(0x10);
+        let manifest_marker = marker.wrapping_add(0x20);
+        let registration_marker = marker.wrapping_add(0x30);
+        let candidate_marker = marker.wrapping_add(0x40);
+        let activation_marker = marker.wrapping_add(0x50);
+        let (predecessor_columns, predecessor_values) = predecessor
+            .map(
+                |(prior_build, prior_epoch, prior_fingerprint, prior_manifest)| {
+                    (
+                        ", predecessor_build_id, predecessor_epoch, \
+                       predecessor_epoch_fingerprint, predecessor_manifest_digest",
+                        format!(
+                            ", '{prior_build}'::uuid, {prior_epoch}, \
+                           decode(repeat('{prior_fingerprint:02x}', 34), 'hex'), \
+                           decode(repeat('{prior_manifest:02x}', 32), 'hex')"
+                        ),
+                    )
+                },
+            )
+            .unwrap_or(("", String::new()));
+
+        Spi::run(&format!(
+            "INSERT INTO {registration} (
+                 index_oid, logical_index_uuid, source_relid, build_id, epoch,
+                 state, registry_revision, roster_snapshot, roster_digest,
+                 row_schema_fingerprint, registration_digest
+             ) VALUES (
+                 {index_oid}, '{logical_uuid}'::uuid, {source_oid},
+                 '{build_id}'::uuid, {epoch}, 'Published', {ordinal},
+                 '\\x01'::bytea, decode(repeat('11', 32), 'hex'),
+                 decode(repeat('22', 32), 'hex'),
+                 decode(repeat('{registration_marker:02x}', 32), 'hex')
+             );
+             INSERT INTO {candidate} (
+                 index_oid, logical_index_uuid, build_id, epoch,
+                 registration_digest, build_spec, build_spec_digest,
+                 generation_descriptor, generation_descriptor_digest,
+                 source_snapshot, source_snapshot_digest, ready_receipt_set,
+                 ready_receipt_set_digest, epoch_manifest, manifest_digest,
+                 epoch_fingerprint, candidate_digest
+             ) VALUES (
+                 {index_oid}, '{logical_uuid}'::uuid, '{build_id}'::uuid, {epoch},
+                 decode(repeat('{registration_marker:02x}', 32), 'hex'),
+                 '\\x01'::bytea, decode(repeat('31', 32), 'hex'),
+                 '\\x02'::bytea, decode(repeat('32', 32), 'hex'),
+                 '\\x03'::bytea, decode(repeat('33', 32), 'hex'),
+                 '\\x04'::bytea, decode(repeat('34', 32), 'hex'),
+                 '\\x05'::bytea,
+                 decode(repeat('{manifest_marker:02x}', 32), 'hex'),
+                 decode(repeat('{fingerprint_marker:02x}', 34), 'hex'),
+                 decode(repeat('{candidate_marker:02x}', 32), 'hex')
+             );
+             INSERT INTO {decision} (
+                 index_oid, logical_index_uuid, build_id, epoch,
+                 epoch_fingerprint, manifest_digest, epoch_manifest,
+                 registration_digest, candidate_digest,
+                 successor_activation, successor_activation_digest,
+                 decision_state, activated_at, applied_at
+                 {predecessor_columns}
+             ) VALUES (
+                 {index_oid}, '{logical_uuid}'::uuid, '{build_id}'::uuid, {epoch},
+                 decode(repeat('{fingerprint_marker:02x}', 34), 'hex'),
+                 decode(repeat('{manifest_marker:02x}', 32), 'hex'),
+                 '\\x06'::bytea,
+                 decode(repeat('{registration_marker:02x}', 32), 'hex'),
+                 decode(repeat('{candidate_marker:02x}', 32), 'hex'),
+                 '\\x07'::bytea,
+                 decode(repeat('{activation_marker:02x}', 32), 'hex'),
+                 'Applied', clock_timestamp(), clock_timestamp()
+                 {predecessor_values}
+             )",
+            index_oid = u32::from(fixture.index_oid),
+            logical_uuid = fixture.logical_index_uuid,
+        ))
+        .expect("predecessor-chain catalog fixture should insert");
+        predecessor = Some((build_id, epoch, fingerprint_marker, manifest_marker));
+    }
+}
+
 #[pg_test]
 fn test_distann_generation_drop_and_reindex_clean_dependencies() {
     let drop_fixture =
         create_distann_physical_generation_fixture("ec_distann_generation_drop", 0x51);
     begin_distann_physical_generation(&drop_fixture, &drop_fixture.expected_owner_digest);
+    insert_distann_publish_predecessor_chain(&drop_fixture, 3);
     let dropped_relations = distann_generation_relation_oids(&drop_fixture);
+    Spi::run(
+        "CREATE ROLE ec_distann_drop_owner;
+         ALTER TABLE ec_distann_generation_drop_source
+             OWNER TO ec_distann_drop_owner;
+         SET LOCAL ROLE ec_distann_drop_owner",
+    )
+    .expect("ordinary index owner should be prepared for the DROP drill");
     Spi::run(&format!("DROP INDEX {}", drop_fixture.index_name)).unwrap();
+    Spi::run("RESET ROLE").expect("DROP drill should restore extension-owner execution");
     let after_drop_relations = Spi::get_one::<i64>(&format!(
         "SELECT count(*) FROM pg_class WHERE oid IN ({}, {}, {})",
         u32::from(dropped_relations.0),
@@ -3155,9 +3730,18 @@ fn test_distann_generation_drop_and_reindex_clean_dependencies() {
     let reindex_fixture =
         create_distann_physical_generation_fixture("ec_distann_generation_reindex", 0x61);
     begin_distann_physical_generation(&reindex_fixture, &reindex_fixture.expected_owner_digest);
+    insert_distann_publish_predecessor_chain(&reindex_fixture, 3);
     let old_relations = distann_generation_relation_oids(&reindex_fixture);
     let old_uuid = reindex_fixture.logical_index_uuid;
+    Spi::run(
+        "CREATE ROLE ec_distann_reindex_owner;
+         ALTER TABLE ec_distann_generation_reindex_source
+             OWNER TO ec_distann_reindex_owner;
+         SET LOCAL ROLE ec_distann_reindex_owner",
+    )
+    .expect("ordinary index owner should be prepared for the REINDEX drill");
     Spi::run(&format!("REINDEX INDEX {}", reindex_fixture.index_name)).unwrap();
+    Spi::run("RESET ROLE").expect("REINDEX drill should restore extension-owner execution");
     let new_uuid = Spi::get_one::<pgrx::datum::Uuid>(&format!(
         "SELECT logical_index_uuid
            FROM ec_distann_control_identity('{}'::regclass)",
@@ -3174,7 +3758,21 @@ fn test_distann_generation_drop_and_reindex_clean_dependencies() {
     ))
     .unwrap()
     .unwrap();
-    assert_eq!(old_relation_count, 0);
+    let old_relation_inventory = Spi::get_one::<String>(&format!(
+        "SELECT coalesce(jsonb_agg(jsonb_build_object(
+                    'oid', oid, 'relname', relname, 'relkind', relkind
+                ) ORDER BY oid)::text, '[]')
+           FROM pg_class WHERE oid IN ({}, {}, {})",
+        u32::from(old_relations.0),
+        u32::from(old_relations.1),
+        u32::from(old_relations.2),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        old_relation_count, 0,
+        "old generation OIDs remain after REINDEX: {old_relation_inventory}"
+    );
     let old_catalog_count = Spi::get_one::<i64>(&format!(
         "SELECT count(*) FROM {} WHERE index_oid = {}",
         distann_generation_catalog_name(),
@@ -3183,6 +3781,39 @@ fn test_distann_generation_drop_and_reindex_clean_dependencies() {
     .unwrap()
     .unwrap();
     assert_eq!(old_catalog_count, 0);
+
+    let rollback_fixture =
+        create_distann_physical_generation_fixture("ec_distann_generation_reindex_rollback", 0x71);
+    begin_distann_physical_generation(&rollback_fixture, &rollback_fixture.expected_owner_digest);
+    insert_distann_publish_predecessor_chain(&rollback_fixture, 3);
+    let rollback_error = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!("REINDEX INDEX {}", rollback_fixture.index_name))
+            .expect("nested destructive REINDEX should execute before rollback");
+        pgrx::error!("EC_TEST_ROLLBACK: restore predecessor chain");
+    });
+    assert!(rollback_error.contains("EC_TEST_ROLLBACK"));
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {}
+              WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid",
+            distann_catalog_name("ec_distann_publish_decision"),
+            u32::from(rollback_fixture.index_oid),
+            rollback_fixture.logical_index_uuid,
+        ))
+        .unwrap(),
+        Some(3),
+        "aborted destructive cleanup must restore the full predecessor chain"
+    );
+    let restored_uuid = Spi::get_one::<pgrx::datum::Uuid>(&format!(
+        "SELECT logical_index_uuid
+           FROM ec_distann_control_identity('{}'::regclass)",
+        rollback_fixture.index_name
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(restored_uuid, rollback_fixture.logical_index_uuid);
+    Spi::run(&format!("DROP INDEX {}", rollback_fixture.index_name))
+        .expect("restored predecessor chain should remain destructively cleanable");
 }
 
 fn expect_pg_error(run: impl FnOnce() + std::panic::UnwindSafe) -> String {
@@ -3230,6 +3861,28 @@ fn expect_pg_error_rolled_back(run: impl FnOnce() + std::panic::UnwindSafe) -> S
         pg_sys::CurrentResourceOwner = old_owner;
     }
     error
+}
+
+fn run_in_committed_subtransaction<T>(run: impl FnOnce() -> T) -> T {
+    let (old_context, old_owner) = unsafe {
+        let old_context = pg_sys::CurrentMemoryContext;
+        let old_owner = pg_sys::CurrentResourceOwner;
+        pg_sys::CommandCounterIncrement();
+        pg_sys::BeginInternalSubTransaction(std::ptr::null());
+        pg_sys::MemoryContextSwitchTo(old_context);
+        (old_context, old_owner)
+    };
+    let snapshot =
+        crate::storage::snapshot_guard::ActiveSnapshotGuard::transaction_after_command_counter()
+            .expect("committed test subtransaction requires an active snapshot");
+    let result = run();
+    drop(snapshot);
+    unsafe {
+        pg_sys::ReleaseCurrentSubTransaction();
+        pg_sys::MemoryContextSwitchTo(old_context);
+        pg_sys::CurrentResourceOwner = old_owner;
+    }
+    result
 }
 
 #[pg_test]

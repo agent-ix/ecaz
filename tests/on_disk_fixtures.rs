@@ -1,5 +1,7 @@
 //! Golden on-disk fixture decode checks.
 
+use sha2::{Digest, Sha256};
+
 use ecaz::bench_api::{
     distann_restore_owner_stream_hash_state, spire_decode_delta_partition_object_fixture,
     spire_decode_leaf_partition_object_fixture, spire_decode_leaf_v2_meta_fixture,
@@ -405,7 +407,7 @@ fn distann_codec_artifact_v1_fixture_decodes_independently_and_rejects_swap() {
 }
 
 #[test]
-fn distann_generation_descriptor_v1_fixture_decodes_independently_and_rejects_swap() {
+fn distann_generation_descriptor_v1_fixture_is_rebuild_only_and_rejected() {
     let bytes = decode_hex_fixture(include_str!(
         "../fixtures/on-disk/distann_generation_descriptor_v1.hex"
     ));
@@ -430,14 +432,103 @@ fn distann_generation_descriptor_v1_fixture_decodes_independently_and_rejects_sw
     independent.take(32);
     independent.finish();
 
-    let descriptor = DistannGenerationDescriptor::decode(&bytes).unwrap();
-    assert_eq!(descriptor.roster.len(), 2);
-    assert_eq!(descriptor.roster[1].node_id, 20);
-    assert_eq!(descriptor.dimensions, 8);
+    assert!(DistannGenerationDescriptor::decode(&bytes).is_err());
 
     let mut swapped = bytes;
     swapped.swap(0, 1);
     assert!(DistannGenerationDescriptor::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_generation_descriptor_v2_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_generation_descriptor_v2.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 2);
+    let coordinator_uuid = independent.take(16);
+    assert_eq!(coordinator_uuid[6] >> 4, 4);
+    assert_eq!(coordinator_uuid[8] >> 6, 2);
+    assert_eq!(independent.u16(), 5);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 8);
+    assert_eq!(independent.u16(), 4);
+    assert_eq!(independent.u16(), 1);
+    let roster_count = independent.u32();
+    assert_eq!(roster_count, 2);
+    for expected_node in [10, 20] {
+        assert_eq!(independent.u32(), expected_node);
+        independent.take(16);
+        independent.len_bytes();
+    }
+    assert_eq!(independent.u8(), 2);
+    independent.len_bytes();
+    independent.len_bytes();
+    independent.take(32);
+    independent.finish();
+
+    let descriptor = DistannGenerationDescriptor::decode(&bytes).unwrap();
+    assert_eq!(descriptor.roster.len(), 2);
+    assert_eq!(descriptor.roster[1].node_id, 20);
+    assert_eq!(descriptor.dimensions, 8);
+    assert_eq!(descriptor.coordinator_logical_index_uuid, coordinator_uuid);
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannGenerationDescriptor::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_build_registration_v1_fixture_decodes_and_digests_independently() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_build_registration_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u32(), 1234);
+    let coordinator_uuid = independent.take(16);
+    assert_eq!(coordinator_uuid[6] >> 4, 4);
+    assert_eq!(coordinator_uuid[8] >> 6, 2);
+    assert_eq!(independent.u32(), 5678);
+    assert_eq!(independent.u64(), 7);
+    let build_id = independent.take(16);
+    assert_eq!(build_id[6] >> 4, 4);
+    assert_eq!(build_id[8] >> 6, 2);
+    assert_eq!(independent.u64(), 9);
+
+    let roster = independent.len_bytes();
+    let mut roster_reader = DistannFixtureReader::new(roster);
+    assert_eq!(roster_reader.u16(), 1);
+    assert_eq!(roster_reader.u32(), 1);
+    assert_eq!(roster_reader.u32(), 17);
+    roster_reader.take(16);
+    assert_eq!(roster_reader.len_bytes(), b"registration/node-17");
+    roster_reader.finish();
+
+    independent.take(32); // public roster digest
+    assert_eq!(independent.take(32), [0x11; 32]);
+    assert_eq!(independent.take(32), [0x22; 32]);
+    assert_eq!(independent.u32(), 1);
+    assert_eq!(independent.u32(), 0); // roster ordinal
+    assert_eq!(independent.u32(), 17);
+    assert_eq!(independent.len_bytes(), b"registration/node-17");
+    assert_eq!(independent.len_bytes(), b"REGISTRATION_SECRET");
+    assert_eq!(independent.len_bytes(), b"public.registration_idx");
+    let participant_uuid = independent.take(16);
+    assert_eq!(participant_uuid[6] >> 4, 4);
+    assert_eq!(participant_uuid[8] >> 6, 2);
+    assert_eq!(independent.take(32), [0x22; 32]);
+    assert_eq!(independent.u8(), 1);
+    independent.finish();
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"ec_distann_build_registration_v1\0");
+    hasher.update(&bytes);
+    assert_eq!(
+        hex::encode(hasher.finalize()),
+        "c5a90122402eb68d6f443d63fe3e5744c07ff902a27e02d02125494c290f25ab"
+    );
 }
 
 #[test]

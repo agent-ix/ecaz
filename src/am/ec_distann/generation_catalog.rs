@@ -54,9 +54,12 @@ struct CatalogRelations {
     generation_batch: String,
     build_registration: String,
     build_participant_binding: String,
+    build_candidate: String,
     publish_decision: String,
+    predecessor_disposition: String,
     retire_decision: String,
     active_epoch: String,
+    generation_reclaim: String,
 }
 
 impl CatalogRelations {
@@ -71,9 +74,12 @@ impl CatalogRelations {
             build_participant_binding: extension_relation_name(
                 "ec_distann_build_participant_binding",
             )?,
+            build_candidate: extension_relation_name("ec_distann_build_candidate")?,
             publish_decision: extension_relation_name("ec_distann_publish_decision")?,
+            predecessor_disposition: extension_relation_name("ec_distann_predecessor_disposition")?,
             retire_decision: extension_relation_name("ec_distann_retire_decision")?,
             active_epoch: extension_relation_name("ec_distann_active_epoch")?,
+            generation_reclaim: extension_relation_name("ec_distann_generation_reclaim")?,
         })
     }
 }
@@ -553,6 +559,31 @@ pub(crate) fn advance_generation_after_batch(
     Ok(())
 }
 
+/// SECURITY DEFINER bridge for AM initialization. The AM may run as an
+/// ordinary table/index owner, while the extension-owned registry remains
+/// PUBLIC-revoked. Validate the just-written v5 metadata and exact UUID before
+/// crossing that privilege boundary.
+#[pg_extern(volatile, strict, parallel_restricted)]
+fn ec_distann_initialize_control_registry(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+) -> bool {
+    let (_guard, _handle, _metadata, actual_uuid) = super::generation_store::open_control_index(
+        index_oid,
+        pg_sys::NoLock as pg_sys::LOCKMODE,
+        "ec_distann control registry initialization",
+    )
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    if actual_uuid != logical_index_uuid {
+        pgrx::error!(
+            "EC_BUILD_STATE: control registry UUID does not match the initialized metadata"
+        );
+    }
+    initialize_registry_state(index_oid, logical_index_uuid)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    true
+}
+
 pub(crate) fn generation_batch_summary(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
@@ -754,9 +785,16 @@ pub(crate) fn delete_generation_if_unpublished(
 }
 
 pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, String> {
+    // DROP/REINDEX may run in the same backend that owns a build's retained
+    // relation locks. Defer removal until commit so an aborted destructive
+    // operation restores both the catalog gate and its session ownership.
+    super::build_coordinator::schedule_session_lock_release_for_control(index_oid);
     let catalogs = CatalogRelations::resolve()?;
     let count_sql = format!(
         "SELECT
+            (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
+            (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
+            (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
@@ -775,14 +813,21 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
         catalogs.generation_batch,
         catalogs.build_registration,
         catalogs.build_participant_binding,
+        catalogs.build_candidate,
         catalogs.publish_decision,
+        catalogs.predecessor_disposition,
         catalogs.retire_decision,
         catalogs.active_epoch,
+        catalogs.generation_reclaim,
     );
-    let delete_statements = [
+    let delete_before_publish = [
         format!(
             "DELETE FROM {} WHERE index_oid = $1::oid",
             catalogs.active_epoch
+        ),
+        format!(
+            "DELETE FROM {} WHERE index_oid = $1::oid",
+            catalogs.generation_reclaim
         ),
         format!(
             "DELETE FROM {} WHERE index_oid = $1::oid",
@@ -790,8 +835,10 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
         ),
         format!(
             "DELETE FROM {} WHERE index_oid = $1::oid",
-            catalogs.publish_decision
+            catalogs.predecessor_disposition
         ),
+    ];
+    let delete_after_publish = [
         format!(
             "DELETE FROM {} WHERE index_oid = $1::oid",
             catalogs.build_registration
@@ -822,7 +869,55 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
             .transpose()?
             .unwrap_or(0);
 
-        for statement in &delete_statements {
+        for statement in &delete_before_publish {
+            client
+                .update(statement, None, &[index_oid.into()])
+                .map_err(|error| format!("ec_distann catalog cleanup failed: {error}"))?;
+        }
+        let delete_publish_leaves = format!(
+            "DELETE FROM {decision} AS candidate
+              WHERE candidate.index_oid = $1::oid
+                AND NOT EXISTS (
+                    SELECT 1 FROM {decision} AS successor
+                     WHERE successor.index_oid = candidate.index_oid
+                       AND successor.logical_index_uuid = candidate.logical_index_uuid
+                       AND successor.predecessor_build_id = candidate.build_id
+                       AND successor.predecessor_epoch = candidate.epoch
+                       AND successor.predecessor_epoch_fingerprint = candidate.epoch_fingerprint
+                       AND successor.predecessor_manifest_digest = candidate.manifest_digest
+                )",
+            decision = catalogs.publish_decision,
+        );
+        loop {
+            let deleted = client
+                .update(&delete_publish_leaves, None, &[index_oid.into()])
+                .map_err(|error| format!("ec_distann publish-chain cleanup failed: {error}"))?
+                .len();
+            if deleted == 0 {
+                break;
+            }
+        }
+        let remaining_decisions = client
+            .select(
+                &format!(
+                    "SELECT count(*) AS remaining FROM {} WHERE index_oid = $1::oid",
+                    catalogs.publish_decision
+                ),
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|error| format!("ec_distann publish-chain verification failed: {error}"))?
+            .map(|row| required_i64(&row, "remaining"))
+            .next()
+            .transpose()?
+            .unwrap_or(0);
+        if remaining_decisions != 0 {
+            return Err(
+                "EC_BUILD_STATE: publish-decision predecessor chain is cyclic or corrupt"
+                    .to_owned(),
+            );
+        }
+        for statement in &delete_after_publish {
             client
                 .update(statement, None, &[index_oid.into()])
                 .map_err(|error| format!("ec_distann catalog cleanup failed: {error}"))?;

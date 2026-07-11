@@ -15,7 +15,7 @@ use super::page::{
 use super::quantizer::{DISTANN_RABITQ_BITS, DISTANN_TURBOQUANT_BITS};
 use super::row_schema::DistannRowSchemaDescriptor;
 
-pub const DISTANN_GENERATION_DESCRIPTOR_VERSION: u16 = 1;
+pub const DISTANN_GENERATION_DESCRIPTOR_VERSION: u16 = 2;
 pub const DISTANN_CODEC_ARTIFACT_VERSION: u16 = 1;
 pub const DISTANN_BUILD_SPEC_VERSION: u16 = 1;
 pub const DISTANN_GRAPH_RECORD_VERSION: u16 = 1;
@@ -23,11 +23,19 @@ pub const DISTANN_HANDOFF_WIRE_VERSION: u16 = 1;
 pub const DISTANN_PHYSICAL_INDEX_FORMAT_VERSION: u16 = INDEX_FORMAT_V5_DISTANN_CONTROL;
 pub const DISTANN_PLACEMENT_HASH_VERSION: u16 = super::placement::DISTANN_PLACEMENT_HASH_V1;
 pub const DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET: usize = 0;
+pub const DISTANN_GENERATION_DESCRIPTOR_COORDINATOR_UUID_OFFSET: usize = 2;
+pub const DISTANN_GENERATION_DESCRIPTOR_INDEX_FORMAT_OFFSET: usize = 18;
+pub const DISTANN_GENERATION_DESCRIPTOR_GRAPH_RECORD_OFFSET: usize = 20;
+pub const DISTANN_GENERATION_DESCRIPTOR_HANDOFF_WIRE_OFFSET: usize = 22;
+pub const DISTANN_GENERATION_DESCRIPTOR_DIMENSIONS_OFFSET: usize = 24;
+pub const DISTANN_GENERATION_DESCRIPTOR_GRAPH_DEGREE_OFFSET: usize = 26;
+pub const DISTANN_GENERATION_DESCRIPTOR_PLACEMENT_HASH_OFFSET: usize = 28;
+pub const DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET: usize = 30;
 pub const DISTANN_CODEC_ARTIFACT_VERSION_OFFSET: usize = 0;
 pub const DISTANN_BUILD_SPEC_VERSION_OFFSET: usize = 0;
-pub const DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES: usize = 14;
+pub const DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES: usize = 30;
 
-const GENERATION_DESCRIPTOR_DOMAIN: &[u8] = b"ec_distann_generation_descriptor_v1\0";
+const GENERATION_DESCRIPTOR_DOMAIN: &[u8] = b"ec_distann_generation_descriptor_v2\0";
 const ROSTER_DOMAIN: &[u8] = b"ec_distann_roster_v1\0";
 const BUILD_SPEC_DOMAIN: &[u8] = b"ec_distann_build_spec_v1\0";
 const GROUPED_PQ_CENTROIDS: usize = 16;
@@ -423,6 +431,7 @@ impl DistannCodecArtifact {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct DistannGenerationDescriptor {
+    pub coordinator_logical_index_uuid: [u8; 16],
     pub index_format_version: u16,
     pub graph_record_version: u16,
     pub handoff_wire_version: u16,
@@ -437,7 +446,8 @@ pub struct DistannGenerationDescriptor {
 
 impl DistannGenerationDescriptor {
     pub fn validate(&self) -> Result<(), String> {
-        if self.index_format_version != DISTANN_PHYSICAL_INDEX_FORMAT_VERSION
+        if !is_rfc4122_v4_uuid(&self.coordinator_logical_index_uuid)
+            || self.index_format_version != DISTANN_PHYSICAL_INDEX_FORMAT_VERSION
             || self.graph_record_version != DISTANN_GRAPH_RECORD_VERSION
             || self.handoff_wire_version != DISTANN_HANDOFF_WIRE_VERSION
             || self.placement_hash_version != DISTANN_PLACEMENT_HASH_VERSION
@@ -469,6 +479,7 @@ impl DistannGenerationDescriptor {
             32 + codec_artifact.len() + row_schema.len() + self.roster.len() * 32,
         );
         encoder.put_u16(DISTANN_GENERATION_DESCRIPTOR_VERSION);
+        encoder.put_fixed(&self.coordinator_logical_index_uuid);
         encoder.put_u16(self.index_format_version);
         encoder.put_u16(self.graph_record_version);
         encoder.put_u16(self.handoff_wire_version);
@@ -491,6 +502,7 @@ impl DistannGenerationDescriptor {
                 "EC_GENERATION_DESCRIPTOR: unsupported descriptor version {version}"
             ));
         }
+        let coordinator_logical_index_uuid = decoder.get_fixed("coordinator logical index UUID")?;
         let index_format_version = decoder.get_u16("index format version")?;
         let graph_record_version = decoder.get_u16("graph record version")?;
         let handoff_wire_version = decoder.get_u16("handoff wire version")?;
@@ -509,6 +521,7 @@ impl DistannGenerationDescriptor {
             return Err("EC_GENERATION_DESCRIPTOR: row schema fingerprint mismatch".to_owned());
         }
         let descriptor = Self {
+            coordinator_logical_index_uuid,
             index_format_version,
             graph_record_version,
             handoff_wire_version,
@@ -749,6 +762,7 @@ pub(crate) fn sample_roster() -> Vec<DistannRosterEntry> {
 #[cfg(test)]
 pub(crate) fn sample_generation_descriptor() -> DistannGenerationDescriptor {
     DistannGenerationDescriptor {
+        coordinator_logical_index_uuid: super::canonical_wire::sample_rfc4122_v4_uuid(0xC0),
         index_format_version: DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
         graph_record_version: DISTANN_GRAPH_RECORD_VERSION,
         handoff_wire_version: DISTANN_HANDOFF_WIRE_VERSION,

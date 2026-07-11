@@ -625,7 +625,7 @@ fn ec_distann_unregister_node_descriptor(index_regclass: PgRelation, roster_ordi
                                 WHERE pd.index_oid = br.index_oid
                                   AND pd.logical_index_uuid = br.logical_index_uuid
                                   AND pd.build_id = br.build_id
-                                  AND pd.decision_state = 'Pending'
+                                  AND pd.decision_state IN ('Pending', 'Activated')
                            )
                        )
              ), deleted AS (

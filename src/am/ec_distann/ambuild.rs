@@ -17,7 +17,7 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 
-use pgrx::{pg_sys, PgBox};
+use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, Spi};
 
 use crate::am::common::callback::pg_am_callback;
 use crate::am::ec_diskann::{
@@ -421,6 +421,67 @@ unsafe fn require_typed_control_key(
     }
 }
 
+fn internal_function_oid(name: &str, argument_types: &str) -> Result<pg_sys::Oid, String> {
+    let qualified = super::generation_catalog::extension_relation_name(name)?;
+    let signature = format!("{qualified}({argument_types})");
+    let function_oid = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT $1::text::regprocedure::oid AS function_oid",
+                None,
+                &[signature.into()],
+            )
+            .map_err(|error| format!("ec_distann rebuild helper lookup failed: {error}"))?
+            .map(|row| {
+                row["function_oid"]
+                    .value::<pg_sys::Oid>()
+                    .map_err(|error| {
+                        format!("ec_distann rebuild helper OID decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "ec_distann rebuild helper OID is NULL".to_owned())
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| "ec_distann rebuild helper is missing".to_owned())
+    })?;
+    Ok(function_oid)
+}
+
+fn prepare_prior_control_rebuild(index_oid: pg_sys::Oid) -> Result<bool, String> {
+    let function_oid = internal_function_oid("ec_distann_prepare_control_rebuild", "oid")?;
+    let result = unsafe {
+        pg_sys::OidFunctionCall1Coll(
+            function_oid,
+            pg_sys::InvalidOid,
+            pg_sys::Datum::from(index_oid),
+        )
+    };
+    unsafe { bool::from_datum(result, false) }
+        .ok_or_else(|| "ec_distann rebuild helper returned NULL".to_owned())
+}
+
+fn initialize_control_registry(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: pgrx::datum::Uuid,
+) -> Result<(), String> {
+    let function_oid = internal_function_oid("ec_distann_initialize_control_registry", "oid,uuid")?;
+    let result = unsafe {
+        pg_sys::OidFunctionCall2Coll(
+            function_oid,
+            pg_sys::InvalidOid,
+            pg_sys::Datum::from(index_oid),
+            logical_index_uuid
+                .into_datum()
+                .ok_or_else(|| "ec_distann registry UUID encoded as NULL".to_owned())?,
+        )
+    };
+    match unsafe { bool::from_datum(result, false) } {
+        Some(true) => Ok(()),
+        Some(false) => Err("ec_distann registry helper reported no initialization".to_owned()),
+        None => Err("ec_distann registry helper returned NULL".to_owned()),
+    }
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
     heap_relation: pg_sys::Relation,
     index_relation: pg_sys::Relation,
@@ -437,20 +498,15 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
             );
         }
 
-        // `distributed_control` is a build-mode reloption: ALTER only changes
-        // the mode selected by an explicit REINDEX. Only a relation whose old
-        // block-0 metadata is a v5 control can own Task 179 catalog state. A new
-        // index or a legacy v4 rebuild must not touch the PUBLIC-revoked
-        // internal catalogs from this invoker-rights AM callback.
-        let index_handle = NonNull::new(index_relation).unwrap_or_else(|| {
-            pgrx::error!("ec_distann rebuild cleanup needs a valid index relation")
-        });
-        let replacing_control =
-            crate::storage::relation::main_fork_block_count_handle(index_handle) > 0
-                && read_metadata_from_index_handle(index_handle)
-                    .is_ok_and(|metadata| metadata.is_distributed_control());
-        if replacing_control {
-            super::generation_store::reset_control_index_for_rebuild(index_relation)
+        // PostgreSQL has already replaced/truncated the new index storage when
+        // ambuild runs for REINDEX, so old block-0 metadata cannot identify a
+        // prior v5 control. The SECURITY DEFINER helper instead checks the
+        // durable registry row by index OID and resets exactly that old control
+        // while PostgreSQL reports this index as actively reindexing. New and
+        // legacy indexes have no such row and remain untouched.
+        let index_oid = (*index_relation).rd_id;
+        if pg_sys::ReindexIsProcessingIndex(index_oid) {
+            let _replaced_control = prepare_prior_control_rebuild(index_oid)
                 .unwrap_or_else(|error| pgrx::error!("ec_distann rebuild cleanup failed: {error}"));
         }
 
@@ -468,7 +524,7 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
             let index_handle = NonNull::new(index_relation).unwrap_or_else(|| {
                 pgrx::error!("ec_distann control registry init needs a valid index relation")
             });
-            super::generation_catalog::initialize_registry_state(
+            initialize_control_registry(
                 crate::storage::relation::relation_oid_handle(index_handle),
                 pgrx::datum::Uuid::from_bytes(logical_index_uuid),
             )

@@ -95,7 +95,7 @@ fn upgrade_matrix_names_current_writable_formats() {
         ("distann-build-spec", 1),
         ("distann-codec-artifact", 1),
         ("distann-epoch-manifest", 2),
-        ("distann-generation-descriptor", 1),
+        ("distann-generation-descriptor", 2),
         ("distann-graph-record", 1),
         ("distann-handoff-batch", 1),
         ("distann-handoff-entry", 1),

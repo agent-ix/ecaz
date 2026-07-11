@@ -413,8 +413,17 @@ pub mod bench_api {
         DISTANN_CODEC_ARTIFACT_VERSION, DISTANN_CODEC_ARTIFACT_VERSION_OFFSET,
         DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES,
         DISTANN_EPOCH_MANIFEST_VERSION, DISTANN_EPOCH_MANIFEST_VERSION_OFFSET,
-        DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES, DISTANN_GENERATION_DESCRIPTOR_VERSION,
-        DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET, DISTANN_GRAPH_RECORD_VERSION,
+        DISTANN_GENERATION_DESCRIPTOR_COORDINATOR_UUID_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_DIMENSIONS_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES,
+        DISTANN_GENERATION_DESCRIPTOR_GRAPH_DEGREE_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_GRAPH_RECORD_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_HANDOFF_WIRE_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_INDEX_FORMAT_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_PLACEMENT_HASH_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_VERSION, DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET,
+        DISTANN_GRAPH_RECORD_VERSION,
         DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES,
         DISTANN_HANDOFF_MAX_BYTES, DISTANN_HANDOFF_VERSION_OFFSET, DISTANN_HANDOFF_WIRE_VERSION,
         DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
@@ -503,6 +512,13 @@ ALTER FUNCTION ec_distann_unregister_node_descriptor(regclass, integer)
 REVOKE ALL ON FUNCTION ec_distann_unregister_node_descriptor(regclass, integer)
     FROM PUBLIC;
 
+ALTER FUNCTION ec_distann_begin_epoch_build(regclass, bigint, uuid)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_begin_epoch_build(regclass, bigint, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_begin_epoch_build(regclass, bigint, uuid)
+    FROM PUBLIC;
+
 ALTER FUNCTION ec_distann_begin_epoch_handoff(
     regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
 ) SECURITY DEFINER;
@@ -541,6 +557,16 @@ ALTER FUNCTION ec_distann_catalog_index_cleanup(oid) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_catalog_index_cleanup(oid)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_catalog_index_cleanup(oid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_prepare_control_rebuild(oid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_prepare_control_rebuild(oid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_prepare_control_rebuild(oid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_initialize_control_registry(oid, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_initialize_control_registry(oid, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_initialize_control_registry(oid, uuid) FROM PUBLIC;
 "#,
     name = "distann_internal_privileges",
     finalize,

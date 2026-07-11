@@ -1075,7 +1075,7 @@ mod tests {
 
         let descriptor = sample_generation_descriptor();
         emit(
-            "distann_generation_descriptor_v1.hex",
+            "distann_generation_descriptor_v2.hex",
             &descriptor.encode().unwrap(),
         );
         let build_spec = DistannBuildSpec {

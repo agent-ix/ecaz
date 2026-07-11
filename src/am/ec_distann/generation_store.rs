@@ -527,7 +527,13 @@ fn drop_relation_internal(
         objectId: relation_oid,
         objectSubId: 0,
     };
-    unsafe { pg_sys::performDeletion(&object, pg_sys::DropBehavior::DROP_RESTRICT, 0) };
+    unsafe {
+        pg_sys::performDeletion(
+            &object,
+            pg_sys::DropBehavior::DROP_RESTRICT,
+            pg_sys::PERFORM_DELETION_INTERNAL as std::ffi::c_int,
+        )
+    };
     Ok(())
 }
 
@@ -962,6 +968,38 @@ pub(crate) fn reset_control_index_for_rebuild(
     }
     generation_catalog::delete_index_catalog_rows(index_oid)?;
     Ok(())
+}
+
+/// SECURITY DEFINER bridge used only by the AM while PostgreSQL is processing
+/// an exact control-index REINDEX. At ambuild time PostgreSQL has already
+/// replaced/truncated the main fork, so prior block-0 metadata is unavailable;
+/// the durable registry row is the authoritative old-control discriminator.
+#[pg_extern(volatile, strict, parallel_restricted)]
+fn ec_distann_prepare_control_rebuild(index_oid: pg_sys::Oid) -> bool {
+    if !unsafe { pg_sys::ReindexIsProcessingIndex(index_oid) } {
+        pgrx::error!(
+            "EC_BUILD_STATE: ec_distann control rebuild cleanup is available only during REINDEX"
+        );
+    }
+    let registry_state = generation_catalog::extension_relation_name("ec_distann_registry_state")
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let has_prior_control = Spi::get_one::<bool>(&format!(
+        "SELECT EXISTS (SELECT 1 FROM {registry_state} WHERE index_oid = {}::oid)",
+        u32::from(index_oid)
+    ))
+    .unwrap_or_else(|error| pgrx::error!("ec_distann rebuild lookup failed: {error}"))
+    .unwrap_or(false);
+    if !has_prior_control {
+        return false;
+    }
+    let index_relation = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::NoLock as pg_sys::LOCKMODE,
+        "ec_distann control rebuild cleanup",
+    );
+    reset_control_index_for_rebuild(index_relation.as_ptr())
+        .unwrap_or_else(|error| pgrx::error!("ec_distann rebuild cleanup failed: {error}"));
+    true
 }
 
 #[cfg(test)]

@@ -9,7 +9,8 @@ distann-metadata,5,true,true,fixtures/on-disk/distann_control_metadata_v5.hex,cu
 distann-graph-record,1,true,true,fixtures/on-disk/distann_graph_record_v1.hex,current physical-generation graph record; legacy local records retain the 0x0009 tag/reserved prefix
 distann-row-schema,1,true,true,fixtures/on-disk/distann_row_schema_v1.hex,current canonical frozen row-tier schema descriptor
 distann-codec-artifact,1,true,true,fixtures/on-disk/distann_codec_artifact_v1.hex,current complete generation codec artifact including trained GroupedPQ bytes
-distann-generation-descriptor,1,true,true,fixtures/on-disk/distann_generation_descriptor_v1.hex,current immutable physical-generation descriptor
+distann-generation-descriptor,1,false,false,fixtures/on-disk/distann_generation_descriptor_v1.hex,superseded pre-publication draft; rebuild-only and rejected
+distann-generation-descriptor,2,true,true,fixtures/on-disk/distann_generation_descriptor_v2.hex,current immutable descriptor binding authoritative coordinator UUID
 distann-build-spec,1,true,true,fixtures/on-disk/distann_build_spec_v1.hex,current immutable pre-handoff build specification
 distann-handoff-entry,1,true,true,fixtures/on-disk/distann_handoff_entry_v1.hex,current bounded canonical owner handoff entry
 distann-handoff-batch,1,true,true,fixtures/on-disk/distann_handoff_batch_v1.hex,current bounded canonical owner handoff batch with appended digest
