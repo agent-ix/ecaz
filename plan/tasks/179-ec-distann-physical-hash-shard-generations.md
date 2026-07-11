@@ -250,6 +250,9 @@ Add a small `handoff.rs` service behind the exact FR-078 SQL wrappers.
   then transition Building→Ready and emit the canonical receipt.
 - `abort`: idempotently drop only an unpublished generation and its batch rows.
   It must refuse a generation named by a durable publish decision.
+- All participant handoff calls use READ COMMITTED. Publish-decision insertion
+  takes the same control-index `ShareRowExclusiveLock` before catalog rows, so
+  it cannot race abort between the decision check and guarded generation drop.
 - An identical acknowledged replay returns the journaled receipt. A conflict,
   sequence error, malformed entry, wrong owner, duplicate, schema/codec error,
   or oversize input performs zero relation/catalog mutation.

@@ -165,6 +165,9 @@ fn increment_registry_revision(
             .map(|table| table.len())
     })?;
     if updated != 1 {
+        // Defensive only under the required control-relation SRE lock plus
+        // registry-row lock. If a future caller weakens that discipline, fail
+        // closed instead of silently reporting a stale successful mutation.
         return Err("EC_NODE_DESCRIPTOR: registry revision changed concurrently".to_owned());
     }
     Ok(())

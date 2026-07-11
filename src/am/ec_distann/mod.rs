@@ -25,6 +25,7 @@ mod expand_error;
 mod generation_catalog;
 mod generation_descriptor;
 mod generation_store;
+mod handoff;
 mod handoff_wire;
 mod head_cache;
 mod identity;
@@ -60,7 +61,16 @@ pub use self::handoff_wire::{
     owner_stream_digest, DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape,
     DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES,
     DISTANN_HANDOFF_MAX_BYTES, DISTANN_HANDOFF_VERSION_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, DISTANN_OWNER_STREAM_HASH_STATE_BYTES,
+    DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
 };
+pub(crate) use self::handoff_wire::restore_owner_stream_hash_state;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::identity::vec_id_from_source_identity;
 pub use self::manifest_v2::{
     DistannEpochFingerprint, DistannEpochManifestV2, DistannManifestBuildOptions,
     DistannManifestCodecParameters, DistannReadyReceipt, DistannSourceSnapshot,

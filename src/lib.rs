@@ -417,6 +417,12 @@ pub mod bench_api {
         DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET, DISTANN_GRAPH_RECORD_VERSION,
         DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES,
         DISTANN_HANDOFF_MAX_BYTES, DISTANN_HANDOFF_VERSION_OFFSET, DISTANN_HANDOFF_WIRE_VERSION,
+        DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, DISTANN_OWNER_STREAM_HASH_STATE_BYTES,
+        DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
         DISTANN_MANIFEST_BUILD_OPTIONS_BYTES, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION,
         DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET, DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES,
         DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION,
@@ -443,6 +449,13 @@ pub mod bench_api {
         DISTANN_SOURCE_SNAPSHOT_VERSION, DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET,
         INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
     };
+
+    pub fn distann_restore_owner_stream_hash_state(
+        input: &[u8],
+        expected_cumulative_digest: [u8; 32],
+    ) -> Result<[u8; 32], String> {
+        crate::am::restore_owner_stream_hash_state(input, expected_cumulative_digest)
+    }
     pub use crate::storage::page::{
         DataPage, DataPageChain, ItemPointer, HEAPTID_INLINE_CAPACITY,
         ITEM_POINTER_BLOCK_NUMBER_OFFSET, ITEM_POINTER_BYTES, ITEM_POINTER_OFFSET_NUMBER_OFFSET,
@@ -499,6 +512,20 @@ ALTER FUNCTION ec_distann_begin_epoch_handoff(
 REVOKE ALL ON FUNCTION ec_distann_begin_epoch_handoff(
     regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
 ) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_stage_epoch_batch(regclass, uuid, bigint, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_stage_epoch_batch(regclass, uuid, bigint, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_stage_epoch_batch(regclass, uuid, bigint, bytea, bytea)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_seal_epoch_handoff(regclass, uuid, bigint, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_seal_epoch_handoff(regclass, uuid, bigint, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_seal_epoch_handoff(regclass, uuid, bigint, bytea)
+    FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid)

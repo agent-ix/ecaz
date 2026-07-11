@@ -24,7 +24,7 @@ use super::ambuild::read_metadata_from_index_handle;
 use super::canonical_wire::{domain_digest, is_rfc4122_v4_uuid, CanonicalEncoder};
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
-use super::handoff_wire::{owner_stream_digest, DistannHandoffShape};
+use super::handoff_wire::{owner_stream_digest, DistannHandoffShape, DistannOwnerStreamHasher};
 use super::page::{DistannMetadataPage, INDEX_FORMAT_V5_DISTANN_CONTROL};
 use super::quantizer::DistannCodecBinding;
 use super::roster_digest as canonical_roster_digest;
@@ -217,8 +217,8 @@ pub(crate) fn control_compatibility_digest(
     })?;
     let key_attnum = u16::try_from(key_attnum)
         .map_err(|_| "EC_NODE_DESCRIPTOR: key attnum exceeds u16".to_owned())?;
-    let key_kind = u8::try_from(key_kind)
-        .map_err(|_| "EC_NODE_DESCRIPTOR: key kind exceeds u8".to_owned())?;
+    let key_kind =
+        u8::try_from(key_kind).map_err(|_| "EC_NODE_DESCRIPTOR: key kind exceeds u8".to_owned())?;
     let identity_attnum = u16::try_from(identity_attnum)
         .map_err(|_| "EC_NODE_DESCRIPTOR: identity attnum exceeds u16".to_owned())?;
     let identity_kind = match crate::storage::type_info::base_type_oid(identity_type_oid) {
@@ -328,9 +328,17 @@ fn generation_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String,
 }
 
 fn tablespace_clause(index_handle: RelationHandle) -> Result<String, String> {
-    let tablespace_oid = relation_tablespace_handle(index_handle);
+    let explicit_tablespace_oid = relation_tablespace_handle(index_handle);
+    // reltablespace=0 means the database default. Spell the effective
+    // tablespace explicitly so a SECURITY DEFINER caller's default_tablespace
+    // GUC cannot redirect hidden generation storage away from its control.
+    let tablespace_oid = if explicit_tablespace_oid == pg_sys::InvalidOid {
+        unsafe { pg_sys::MyDatabaseTableSpace }
+    } else {
+        explicit_tablespace_oid
+    };
     if tablespace_oid == pg_sys::InvalidOid {
-        return Ok(String::new());
+        return Err("EC_CONTROL_PERSISTENCE: database tablespace is invalid".to_owned());
     }
     let name = cstring_owned(
         unsafe { pg_sys::get_tablespace_name(tablespace_oid) },
@@ -619,10 +627,9 @@ fn ec_distann_control_identity(
     .unwrap_or_else(|error| pgrx::error!("{error}"));
     let compatibility_digest = control_compatibility_digest(handle, &metadata)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
-    let participant_identity = generation_catalog::extension_relation_name(
-        "ec_distann_participant_identity",
-    )
-    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let participant_identity =
+        generation_catalog::extension_relation_name("ec_distann_participant_identity")
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
     let (endpoint_identity, canonical_index_regclass) = Spi::connect(|client| {
         client
             .select(
@@ -642,9 +649,8 @@ fn ec_distann_control_identity(
             )
             .map_err(|_| "EC_NODE_DESCRIPTOR: control identity catalog lookup failed".to_owned())?
             .map(|row| {
-                let endpoint_identity = row["endpoint_identity"]
-                    .value::<String>()
-                    .map_err(|_| {
+                let endpoint_identity =
+                    row["endpoint_identity"].value::<String>().map_err(|_| {
                         "EC_NODE_DESCRIPTOR: configured endpoint identity decode failed".to_owned()
                     })?;
                 let canonical_index_regclass = row["canonical_index_regclass"]
@@ -655,9 +661,7 @@ fn ec_distann_control_identity(
                     .ok_or_else(|| {
                         "EC_NODE_DESCRIPTOR: canonical index locator is NULL".to_owned()
                     })?;
-                super::node_registry::validate_canonical_index_locator(
-                    &canonical_index_regclass,
-                )?;
+                super::node_registry::validate_canonical_index_locator(&canonical_index_regclass)?;
                 Ok::<(Option<String>, String), String>((
                     endpoint_identity,
                     canonical_index_regclass,
@@ -765,6 +769,14 @@ fn ec_distann_begin_epoch_handoff(
             graph_degree: usize::from(descriptor.graph_degree),
             non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
         };
+        let initial_owner_hasher = DistannOwnerStreamHasher::new();
+        let initial_owner_digest = owner_stream_digest(&[], shape)?;
+        if initial_owner_hasher.digest() != initial_owner_digest {
+            return Err(
+                "EC_HANDOFF_DIGEST: initial owner-stream state disagrees with canonical digest"
+                    .to_owned(),
+            );
+        }
         let relations = create_generation_relations(handle, build_id, &resolved_schema)?;
         let row = GenerationCatalogRow {
             epoch,
@@ -782,7 +794,10 @@ fn ec_distann_begin_epoch_handoff(
             directory_relid: relations.directory_relid,
             next_batch_seq: 0,
             cumulative_record_count: 0,
-            cumulative_owner_digest: owner_stream_digest(&[], shape)?,
+            cumulative_owner_digest: initial_owner_digest,
+            last_vec_id_le: None,
+            owner_stream_sha256_state: initial_owner_hasher.serialize(),
+            ready_receipt: None,
         };
         generation_catalog::insert_generation(index_oid, logical_index_uuid, build_id, &row)?;
         Ok(row)
@@ -803,11 +818,18 @@ fn ec_distann_abort_epoch_handoff(index_regclass: PgRelation, build_id: Uuid) {
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
             "ec_distann_abort_epoch_handoff",
         )?;
-        let Some(row) =
-            generation_catalog::lookup_generation(index_oid, logical_index_uuid, build_id)?
+        let Some(row) = generation_catalog::lookup_generation_for_update(
+            index_oid,
+            logical_index_uuid,
+            build_id,
+        )?
         else {
             return Ok(());
         };
+        // The future publish-decision path must take this same control-index
+        // ShareRowExclusiveLock before inserting its decision. Together with
+        // the generation-row lock above, that makes this check and the final
+        // guarded delete one serialized abort-vs-decision boundary.
         if matches!(row.state.as_str(), "Published" | "Retired")
             || generation_catalog::has_publish_decision(index_oid, logical_index_uuid, build_id)?
         {
@@ -824,7 +846,11 @@ fn ec_distann_abort_epoch_handoff(index_regclass: PgRelation, build_id: Uuid) {
                 directory_relid: row.directory_relid,
             },
         )?;
-        generation_catalog::delete_generation(index_oid, logical_index_uuid, build_id)
+        generation_catalog::delete_generation_if_unpublished(
+            index_oid,
+            logical_index_uuid,
+            build_id,
+        )
     })();
     result.unwrap_or_else(|error| pgrx::error!("{error}"));
 }

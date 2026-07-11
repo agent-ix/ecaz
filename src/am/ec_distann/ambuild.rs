@@ -164,13 +164,43 @@ fn control_metadata(state: &BuildState) -> DistannMetadataPage {
 
 fn require_permanent_control(index_relation: pg_sys::Relation) {
     let handle = NonNull::new(index_relation).unwrap_or_else(|| {
-        pgrx::error!("ec_distann distributed-control persistence check needs a valid index relation")
+        pgrx::error!(
+            "ec_distann distributed-control persistence check needs a valid index relation"
+        )
     });
     let (_, _, persistence) =
         crate::storage::relation::relation_namespace_owner_persistence_handle(handle);
     if persistence != pg_sys::RELPERSISTENCE_PERMANENT as std::ffi::c_char {
         pgrx::error!(
             "EC_CONTROL_PERSISTENCE: ec_distann distributed_control=true requires a permanent WAL-logged source table and index"
+        );
+    }
+}
+
+unsafe fn require_typed_control_key(
+    heap_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
+) {
+    let info =
+        crate::am::common::pg_ptr::index_info(NonNull::new(index_info).unwrap_or_else(|| {
+            pgrx::error!("ec_distann control key validation received a null IndexInfo")
+        }));
+    let key_attnum = i32::from(info.ii_IndexAttrNumbers[0]);
+    if key_attnum <= 0 {
+        pgrx::error!(
+            "EC_SCHEMA_UNSUPPORTED: distributed-control vector key must be a typed base column"
+        );
+    }
+    let tuple_desc = crate::storage::relation::relation_tuple_desc_copy_handle(
+        NonNull::new(heap_relation)
+            .unwrap_or_else(|| pgrx::error!("ec_distann control source relation is null")),
+    );
+    let key_attribute = tuple_desc
+        .get(key_attnum as usize - 1)
+        .unwrap_or_else(|| pgrx::error!("ec_distann vector key column not found in heap"));
+    if key_attribute.atttypmod < 0 {
+        pgrx::error!(
+            "EC_SCHEMA_UNSUPPORTED: distributed-control vector key must declare its dimensions in the column typmod"
         );
     }
 }
@@ -182,12 +212,9 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
 ) -> *mut pg_sys::IndexBuildResult {
     pg_am_callback!({
         let mut state = BuildState::new(index_relation);
-        state.identity =
-            resolve_identity_attribute(heap_relation, index_info, &state.options);
+        state.identity = resolve_identity_attribute(heap_relation, index_info, &state.options);
 
-        if state.options.distributed_control
-            && !index_info.is_null()
-            && (*index_info).ii_Concurrent
+        if state.options.distributed_control && !index_info.is_null() && (*index_info).ii_Concurrent
         {
             pgrx::error!(
                 "EC_GENERATION_MISSING: CREATE INDEX CONCURRENTLY is unsupported for an ec_distann distributed-control index; use non-concurrent creation before physical publication"
@@ -195,12 +222,21 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
         }
 
         // `distributed_control` is a build-mode reloption: ALTER only changes
-        // the mode selected by an explicit REINDEX. Every rebuild is therefore
-        // an identity/state boundary, including control -> legacy conversion.
-        super::generation_store::reset_control_index_for_rebuild(index_relation)
-            .unwrap_or_else(|error| {
-                pgrx::error!("ec_distann rebuild cleanup failed: {error}")
-            });
+        // the mode selected by an explicit REINDEX. Only a relation whose old
+        // block-0 metadata is a v5 control can own Task 179 catalog state. A new
+        // index or a legacy v4 rebuild must not touch the PUBLIC-revoked
+        // internal catalogs from this invoker-rights AM callback.
+        let index_handle = NonNull::new(index_relation).unwrap_or_else(|| {
+            pgrx::error!("ec_distann rebuild cleanup needs a valid index relation")
+        });
+        let replacing_control =
+            crate::storage::relation::main_fork_block_count_handle(index_handle) > 0
+                && read_metadata_from_index_handle(index_handle)
+                    .is_ok_and(|metadata| metadata.is_distributed_control());
+        if replacing_control {
+            super::generation_store::reset_control_index_for_rebuild(index_relation)
+                .unwrap_or_else(|error| pgrx::error!("ec_distann rebuild cleanup failed: {error}"));
+        }
 
         if state.options.distributed_control {
             require_permanent_control(index_relation);
@@ -209,6 +245,7 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
                     "ec_distann distributed_control=true requires source_identity='include' with exactly one UUID or bytea(16) INCLUDE column"
                 );
             }
+            require_typed_control_key(heap_relation, index_info);
             let metadata = control_metadata(&state);
             let logical_index_uuid = metadata.logical_index_uuid;
             initialize_metadata_page(index_relation, metadata);
@@ -343,15 +380,13 @@ unsafe fn extract_identity_payload(
                     pgrx::error!("ec_distann could not detoast the source_identity INCLUDE column")
                 })
                 .to_vec();
-            <[u8; DISTANN_SOURCE_IDENTITY_BYTES]>::try_from(bytes.as_slice()).unwrap_or_else(
-                |_| {
-                    pgrx::error!(
-                        "ec_distann source_identity bytea payload length {} must be {} bytes",
-                        bytes.len(),
-                        DISTANN_SOURCE_IDENTITY_BYTES
-                    )
-                },
-            )
+            <[u8; DISTANN_SOURCE_IDENTITY_BYTES]>::try_from(bytes.as_slice()).unwrap_or_else(|_| {
+                pgrx::error!(
+                    "ec_distann source_identity bytea payload length {} must be {} bytes",
+                    bytes.len(),
+                    DISTANN_SOURCE_IDENTITY_BYTES
+                )
+            })
         }
     }
 }
@@ -415,13 +450,12 @@ unsafe fn resolve_identity_attribute(
                     "EC_SOURCE_IDENTITY: distributed-control source identity column must be declared NOT NULL"
                 );
             }
-            let datum_kind = match crate::storage::type_info::base_type_oid(identity_att.atttypid)
-            {
+            let datum_kind = match crate::storage::type_info::base_type_oid(identity_att.atttypid) {
                 pg_sys::UUIDOID => DistannIdentityDatumKind::Uuid,
                 pg_sys::BYTEAOID => DistannIdentityDatumKind::Bytea16,
-                _ => pgrx::error!(
-                    "ec_distann source_identity INCLUDE column must be uuid or bytea"
-                ),
+                _ => {
+                    pgrx::error!("ec_distann source_identity INCLUDE column must be uuid or bytea")
+                }
             };
             Some(DistannIdentityAttribute {
                 index_attr_offset: 1,

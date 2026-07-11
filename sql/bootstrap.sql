@@ -342,8 +342,27 @@ CREATE TABLE ec_distann_generation (
     next_batch_seq bigint NOT NULL DEFAULT 0 CHECK (next_batch_seq >= 0),
     cumulative_record_count bigint NOT NULL DEFAULT 0 CHECK (cumulative_record_count >= 0),
     cumulative_owner_digest bytea NOT NULL CHECK (octet_length(cumulative_owner_digest) = 32),
+    last_vec_id_le bytea CHECK (
+        last_vec_id_le IS NULL OR octet_length(last_vec_id_le) = 8
+    ),
+    owner_stream_sha256_state bytea NOT NULL CHECK (
+        octet_length(owner_stream_sha256_state) = 107
+        AND get_byte(owner_stream_sha256_state, 0) = 1
+        AND get_byte(owner_stream_sha256_state, 1) = 0
+        AND get_byte(owner_stream_sha256_state, 2) = 1
+    ),
+    ready_receipt bytea CHECK (
+        ready_receipt IS NULL OR (
+            octet_length(ready_receipt) = 303
+            AND get_byte(ready_receipt, 0) = 1
+            AND get_byte(ready_receipt, 1) = 0
+        )
+    ),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CHECK ((cumulative_record_count = 0) = (last_vec_id_le IS NULL)),
+    CHECK (state = 'Building' OR next_batch_seq > 0),
+    CHECK ((state = 'Building') = (ready_receipt IS NULL)),
     PRIMARY KEY (index_oid, logical_index_uuid, build_id),
     UNIQUE (row_tier_relid),
     UNIQUE (graph_store_relid),
@@ -359,11 +378,18 @@ CREATE TABLE ec_distann_generation_batch (
     ),
     batch_seq bigint NOT NULL CHECK (batch_seq >= 0),
     batch_digest bytea NOT NULL CHECK (octet_length(batch_digest) = 32),
-    encoded_bytes bigint NOT NULL CHECK (encoded_bytes >= 0 AND encoded_bytes <= 8388608),
+    encoded_bytes bigint NOT NULL CHECK (encoded_bytes BETWEEN 141 AND 8388608),
     accepted_record_count bigint NOT NULL CHECK (accepted_record_count >= 0),
-    cumulative_record_count bigint NOT NULL CHECK (cumulative_record_count >= 0),
+    cumulative_record_count bigint NOT NULL CHECK (
+        cumulative_record_count >= accepted_record_count
+    ),
     cumulative_owner_digest bytea NOT NULL CHECK (octet_length(cumulative_owner_digest) = 32),
     acknowledged_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CHECK (batch_seq <> 0 OR cumulative_record_count = accepted_record_count),
+    CHECK (
+        accepted_record_count > 0
+        OR (batch_seq = 0 AND cumulative_record_count = 0)
+    ),
     PRIMARY KEY (index_oid, logical_index_uuid, build_id, batch_seq),
     FOREIGN KEY (index_oid, logical_index_uuid, build_id)
         REFERENCES ec_distann_generation (index_oid, logical_index_uuid, build_id)
@@ -444,7 +470,12 @@ CREATE TABLE ec_distann_publish_decision (
     UNIQUE (
         index_oid, logical_index_uuid, build_id, epoch,
         epoch_fingerprint, manifest_digest
-    )
+    ),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_build_registration (
+            index_oid, logical_index_uuid, build_id
+        )
+        ON DELETE RESTRICT
 );
 
 CREATE TABLE ec_distann_retire_decision (
@@ -883,7 +914,15 @@ BEGIN
           FROM pg_event_trigger_dropped_objects()
          WHERE object_type = 'index'
     LOOP
-        PERFORM ec_distann_catalog_index_cleanup(dropped_object.objid::oid);
+        -- Registry state exists for every v5 logical control and for no
+        -- ordinary or hidden directory index. Avoid the full multi-catalog
+        -- cleanup path for unrelated database-wide index drops.
+        IF EXISTS (
+            SELECT 1 FROM ec_distann_registry_state
+             WHERE index_oid = dropped_object.objid::oid
+        ) THEN
+            PERFORM ec_distann_catalog_index_cleanup(dropped_object.objid::oid);
+        END IF;
     END LOOP;
 END
 $$;

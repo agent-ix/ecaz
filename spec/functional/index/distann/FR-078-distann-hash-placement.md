@@ -125,7 +125,9 @@ created_at timestamptz)`
   The version-1 canonical locator SHALL contain exactly two unquoted lower-case
   PostgreSQL identifiers matching
   `[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}`. Registration SHALL persist
-  the returned canonical locator, never the caller's locator spelling.
+  the returned canonical locator, never the caller's locator spelling. Names
+  that PostgreSQL must quote because they are reserved words are outside this
+  v1 locator grammar even when their characters match the regular expression.
 - Registration SHALL store the conninfo secret reference only in the
   coordinator-local descriptor catalog governed by
   [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md).
@@ -152,6 +154,10 @@ created_at timestamptz)`
   compare this digest with the coordinator control before inserting a
   descriptor. The digest excludes the logical UUID and endpoint identity so
   compatible controls on distinct participants compare equal.
+- A `distributed_control=true` indexed vector base column SHALL have a concrete
+  dimensional typmod. Untyped `ecvector`/`tqvector` keys are rejected as
+  `EC_SCHEMA_UNSUPPORTED`; version 1 never defers dimensional compatibility to
+  a later handoff batch.
 - `ec_distann_node_descriptor` is the desired roster for the next build, not
   historical routing state. Registration inserts one immutable desired entry
   and rejects conflicting ordinal, node id, endpoint, participant UUID, or
@@ -200,6 +206,18 @@ created_at timestamptz)`
 - `ec_distann_build_epoch` SHALL require the matching durable registration and
   held session lock, capture one source MVCC snapshot in its new transaction,
   and consume the immutable registered roster, reloptions, and schema.
+- In the physical-generation lane, an index-build callback row with
+  `tuple_is_alive = false` is recently dead and SHALL be excluded before vector,
+  identity, or row-payload capture. Old snapshots continue to use the prior
+  Published epoch; the new frozen epoch contains only callback-live rows from
+  its single captured snapshot. The legacy non-control AM lane retains
+  PostgreSQL's normal recently-dead indexing behavior.
+- For every callback-live row, the coordinator SHALL fetch the exact callback
+  TID under that same snapshot before accepting any callback datum. If the
+  fetched vector or source-identity bytes differ from the callback datums, or
+  the tuple is absent under the snapshot, the build SHALL raise
+  `EC_SOURCE_SNAPSHOT` before graph construction, participant begin, or remote
+  mutation.
 - The gate SHALL cause source DML and schema-changing DDL to fail closed if the
   coordinating session exits and releases its session lock before publish or
   abort.
@@ -344,6 +362,10 @@ NOT reinterpret artifact-v1 bytes.
 - A coordinator outside the serving roster SHALL store no graph-node shard.
 - A coordinator inside the serving roster SHALL store only its own graph-node
   shard.
+- The coordinator logical control itself MAY be the local participant entry
+  when its participant identity is configured and authenticated like every
+  other owner. Its root remains metadata-only; its owned graph and frozen rows
+  live only in the build-scoped generation relations.
 - A replicated full index hidden behind serving-ownership filtering SHALL NOT
   satisfy this requirement.
 - A full index whose non-owned records are merely tombstoned SHALL NOT satisfy
@@ -419,6 +441,12 @@ Every participant SHALL expose the following internal SQL operations over the
 secured pooled libpq transport governed by
 [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md):
 
+The coordinator SHALL invoke begin/stage/seal/abort handoff operations in
+`READ COMMITTED` transactions. Their replay contract depends on each statement
+seeing a concurrently committed generation or batch journal; callers using a
+long-lived Repeatable Read or Serializable snapshot are outside the v1
+transport contract and SHALL retry in a new READ COMMITTED transaction.
+
 `ec_distann_begin_epoch_handoff(index_regclass regclass, epoch bigint,
 build_id uuid, build_spec_digest bytea, roster_digest bytea,
 generation_descriptor bytea, generation_descriptor_digest bytea,
@@ -476,15 +504,53 @@ RETURNS void`
   exact identity replay returns the journaled receipt. Version 1 relies on
   SHA-256 collision resistance and SHALL NOT retain complete encoded batches,
   which would duplicate the frozen row tier.
+- Each generation row SHALL persist three restart identities: nullable
+  `last_vec_id_le` (exactly eight little-endian bytes when at least one record
+  has been accepted), a non-NULL 107-byte owner-stream SHA-256 state, and a
+  nullable exact 303-byte Ready receipt. `last_vec_id_le` SHALL be NULL exactly
+  when cumulative record count is zero. The Ready receipt SHALL be NULL exactly
+  in Building state and present in Ready, Published, or Retired state. A
+  non-Building generation SHALL have acknowledged at least sequence zero.
+- Owner-stream hash-state version 1 SHALL have this exact 107-byte layout:
+
+  | Offset | Bytes | Field |
+  |---:|---:|---|
+  | 0 | 2 | `state_format_version u16_le = 1` |
+  | 2 | 1 | `implementation_id u8 = 1` |
+  | 3 | 32 | eight SHA-256 chaining words as `u32_le` |
+  | 35 | 8 | compressed-block count as `u64_le` |
+  | 43 | 1 | buffered-byte count in `0..=63` |
+  | 44 | 63 | eager buffer; first buffered-count bytes are input and the unused suffix is zero |
+
+  Implementation id 1 is the exact `Sha256` `SerializableState` representation
+  from the direct dependency `sha2 = "=0.11.0"`; the project SHALL pin that
+  version and SHALL reject any other implementation id. The specified offsets,
+  canonical zero suffix, and golden fixtures are normative even if a transitive
+  dependency changes. Compressed-block count times 64 plus buffered-byte count
+  is the total hashed input length and SHALL not exceed `u64::MAX / 8`.
+- A new owner hasher SHALL first consume the 27-byte domain
+  `"ec_distann_owner_stream_v1\0"`. Each accepted entry then consumes exactly
+  `u32_le(encoded_entry_length) || encoded_entry`. The state is snapshotted only
+  after a complete batch transaction. Restoring state SHALL validate the full
+  envelope and canonical buffer, finalize a clone, and require equality with
+  the separately stored cumulative owner digest before any physical write.
+  Exact replay SHALL return the journaled receipt without advancing state.
+  Empty sequence zero leaves the initialized hash state and NULL last vec-id
+  unchanged.
 - If a sequence skips the participant's next expected value, then the
   participant SHALL raise `EC_BATCH_SEQUENCE` without mutation.
 - The seal operation SHALL reject missing sequences, count disagreement,
   digest disagreement, duplicate vec_ids, non-owned vec_ids, and row/record
   count disagreement.
 - The seal operation SHALL make the generation Ready but query-invisible.
+- Every durable publish-decision insertion SHALL first take the same
+  `ShareRowExclusiveLock` on the logical control relation that begin, stage,
+  seal, and abort take. The relation-lock-then-generation-row order is the
+  serialization boundary that makes abort's final decision guard race-free.
 - The expected owner digest SHALL be
-  `SHA-256("ec_distann_owner_stream_v1\0" || length_prefixed_entries)` over the
-  owner's canonical handoff entries in vec_id order.
+  `SHA-256("ec_distann_owner_stream_v1\0" ||
+  repeated(u32_le(encoded_entry_length) || encoded_entry))` over the owner's
+  canonical handoff entries in vec_id order.
 - The expected owner digest SHALL exclude participant-local row-tier and graph
   `ItemPointer` values.
 - Seal SHALL independently reconstruct the locator-free canonical handoff entry
@@ -655,6 +721,7 @@ directory_bytes bigint, control_index_bytes bigint)`
 | FR-078-AC-12 | A coordinator outside the roster holds no graph records; a coordinator inside the roster holds only its hash-owned records | Test (TC-040) |
 | FR-078-AC-13 | A trained-codec generation descriptor round-trips byte-exactly and makes owner query preparation/scoring identical to the coordinator without owner-side retraining | Test (TC-040, TC-050) |
 | FR-078-AC-14 | Participant identity is durably configured; node registration resolves a secret reference, obtains UUID/endpoint/canonical locator only from the secured identity endpoint, rejects duplicate/raw/incompatible inputs before insertion, and desired-roster replacement cannot alter active/retained build bindings | Test (TC-040) |
+| FR-078-AC-15 | The 107-byte owner-stream hash state is golden-frozen, resumes to the one-shot digest across every entry/batch split, rejects malformed or mismatched state before mutation, and preserves empty sequence-zero semantics | Test (TC-040, TC-050) |
 
 ## Dependencies
 

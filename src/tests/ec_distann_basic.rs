@@ -275,6 +275,31 @@ fn test_distann_control_requires_not_null_identity() {
 }
 
 #[pg_test]
+fn test_distann_control_requires_typed_vector_key() {
+    Spi::run(
+        "CREATE TABLE ec_distann_control_untyped_key (
+             source_id uuid NOT NULL,
+             embedding ecvector NOT NULL
+         )",
+    )
+    .unwrap();
+    let error = expect_pg_error_rolled_back(|| {
+        Spi::run(
+            "CREATE INDEX ec_distann_control_untyped_key_idx
+             ON ec_distann_control_untyped_key
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             INCLUDE (source_id)
+             WITH (distributed_control = true, source_identity = 'include')",
+        )
+        .expect("untyped distributed-control vector key must fail");
+    });
+    assert!(
+        error.contains("EC_SCHEMA_UNSUPPORTED") && error.contains("typmod"),
+        "unexpected untyped-key error: {error}"
+    );
+}
+
+#[pg_test]
 fn test_distann_control_requires_permanent_wal_logged_relation() {
     Spi::run(
         "CREATE UNLOGGED TABLE ec_distann_control_unlogged (
@@ -526,10 +551,7 @@ fn configure_distann_participant_identity(
     configure_distann_participant_identity_at(fixture.index_oid, endpoint_identity);
 }
 
-fn configure_distann_participant_identity_at(
-    index_oid: pg_sys::Oid,
-    endpoint_identity: &str,
-) {
+fn configure_distann_participant_identity_at(index_oid: pg_sys::Oid, endpoint_identity: &str) {
     Spi::connect_mut(|client| {
         client
             .update(
@@ -537,10 +559,7 @@ fn configure_distann_participant_identity_at(
                      $1::oid::regclass, $2::text
                  )",
                 None,
-                &[
-                    index_oid.into(),
-                    endpoint_identity.to_owned().into(),
-                ],
+                &[index_oid.into(), endpoint_identity.to_owned().into()],
             )
             .expect("participant identity should configure");
     });
@@ -645,6 +664,14 @@ fn begin_distann_physical_generation(
     fixture: &DistannPhysicalGenerationFixture,
     expected_owner_digest: &[u8],
 ) -> (String, i64, i64, Vec<u8>) {
+    begin_distann_physical_generation_count(fixture, 2, expected_owner_digest)
+}
+
+fn begin_distann_physical_generation_count(
+    fixture: &DistannPhysicalGenerationFixture,
+    expected_owner_count: i64,
+    expected_owner_digest: &[u8],
+) -> (String, i64, i64, Vec<u8>) {
     Spi::connect(|client| {
         client
             .select(
@@ -652,7 +679,7 @@ fn begin_distann_physical_generation(
                         cumulative_owner_digest
                    FROM ec_distann_begin_epoch_handoff(
                        $1::regclass, 7, $2::uuid, $3::bytea, $4::bytea,
-                       $5::bytea, $6::bytea, 2, $7::bytea
+                       $5::bytea, $6::bytea, $7::bigint, $8::bytea
                    )",
                 None,
                 &[
@@ -662,6 +689,7 @@ fn begin_distann_physical_generation(
                     fixture.roster_digest.clone().into(),
                     fixture.descriptor.clone().into(),
                     fixture.descriptor_digest.clone().into(),
+                    expected_owner_count.into(),
                     expected_owner_digest.to_vec().into(),
                 ],
             )
@@ -682,6 +710,233 @@ fn begin_distann_physical_generation(
             })
             .next()
             .expect("begin handoff should return one row")
+    })
+}
+
+fn distann_stage_batch_fixture(
+    fixture: &DistannPhysicalGenerationFixture,
+    batch_seq: u64,
+    identity_marker: u8,
+) -> (Vec<u8>, Vec<u8>, u64) {
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor)
+            .expect("generation descriptor should decode");
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .expect("codec binding should restore");
+    let shape = crate::am::ec_distann::DistannHandoffShape {
+        code_stride: binding
+            .code_len(usize::from(descriptor.dimensions))
+            .expect("codec length should resolve"),
+        graph_degree: usize::from(descriptor.graph_degree),
+        non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
+    };
+    let mut identity = [identity_marker; 16];
+    identity[6] = (identity[6] & 0x0f) | 0x40;
+    identity[8] = (identity[8] & 0x3f) | 0x80;
+    let identity_uuid = pgrx::datum::Uuid::from_bytes(identity);
+    let (identity_bytes, payload_bytes, embedding_bytes, generated_bytes) =
+        Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT pg_catalog.uuid_send($1::uuid) AS identity_bytes,
+                            pg_catalog.textsend($2::text) AS payload_bytes,
+                            ecvector_send(
+                                encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)
+                            ) AS embedding_bytes,
+                            pg_catalog.textsend($3::text) AS generated_bytes",
+                    None,
+                    &[
+                        identity_uuid.into(),
+                        "captured payload".to_owned().into(),
+                        "captured payload:generated".to_owned().into(),
+                    ],
+                )
+                .expect("binary row payload should encode")
+                .map(|row| {
+                    (
+                        row["identity_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
+                        row["payload_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
+                        row["embedding_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
+                        row["generated_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
+                    )
+                })
+                .next()
+                .expect("binary row payload should return one row")
+        });
+    assert_eq!(identity_bytes, identity);
+    let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
+    let entry = crate::am::ec_distann::DistannHandoffEntry {
+        vec_id,
+        source_identity: identity.to_vec(),
+        graph_flags: 0,
+        search_code: vec![0x5a; shape.code_stride],
+        neighbor_vec_ids: Vec::new(),
+        neighbor_codes: Vec::new(),
+        row_null_bitmap: vec![0],
+        row_values: vec![
+            identity_bytes,
+            payload_bytes,
+            embedding_bytes,
+            generated_bytes,
+        ],
+    };
+    let batch = crate::am::ec_distann::DistannHandoffBatch {
+        epoch: 7,
+        build_id: *fixture.build_id.as_bytes(),
+        batch_seq,
+        build_spec_digest: fixture
+            .build_spec_digest
+            .clone()
+            .try_into()
+            .expect("build spec digest width"),
+        row_schema_fingerprint: descriptor
+            .row_schema
+            .fingerprint()
+            .expect("row schema fingerprint"),
+        index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+        neighbor_codec_kind: descriptor.neighbor_codec_kind,
+        entries: vec![entry],
+    };
+    let digest = batch.digest(shape).expect("batch digest").to_vec();
+    let encoded = batch.encode(shape).expect("batch encoding");
+    (digest, encoded, vec_id)
+}
+
+fn distann_empty_stage_batch_fixture(
+    fixture: &DistannPhysicalGenerationFixture,
+) -> (Vec<u8>, Vec<u8>) {
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor)
+            .expect("generation descriptor should decode");
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .expect("codec binding should restore");
+    let shape = crate::am::ec_distann::DistannHandoffShape {
+        code_stride: binding
+            .code_len(usize::from(descriptor.dimensions))
+            .expect("codec length should resolve"),
+        graph_degree: usize::from(descriptor.graph_degree),
+        non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
+    };
+    let batch = crate::am::ec_distann::DistannHandoffBatch {
+        epoch: 7,
+        build_id: *fixture.build_id.as_bytes(),
+        batch_seq: 0,
+        build_spec_digest: fixture
+            .build_spec_digest
+            .clone()
+            .try_into()
+            .expect("build spec digest width"),
+        row_schema_fingerprint: descriptor
+            .row_schema
+            .fingerprint()
+            .expect("row schema fingerprint"),
+        index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+        neighbor_codec_kind: descriptor.neighbor_codec_kind,
+        entries: Vec::new(),
+    };
+    (
+        batch.digest(shape).expect("empty batch digest").to_vec(),
+        batch.encode(shape).expect("empty batch encoding"),
+    )
+}
+
+fn stage_distann_physical_batch(
+    fixture: &DistannPhysicalGenerationFixture,
+    batch_seq: i64,
+    batch_digest: &[u8],
+    encoded_batch: &[u8],
+) -> (i64, i64, Vec<u8>) {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT accepted_record_count, cumulative_record_count,
+                        cumulative_owner_digest
+                   FROM ec_distann_stage_epoch_batch(
+                       $1::regclass, $2::uuid, $3::bigint, $4::bytea, $5::bytea
+                   )",
+                None,
+                &[
+                    fixture.index_oid.into(),
+                    fixture.build_id.into(),
+                    batch_seq.into(),
+                    batch_digest.to_vec().into(),
+                    encoded_batch.to_vec().into(),
+                ],
+            )
+            .expect("stage handoff should execute")
+            .map(|row| {
+                (
+                    row["accepted_record_count"]
+                        .value::<i64>()
+                        .unwrap()
+                        .unwrap(),
+                    row["cumulative_record_count"]
+                        .value::<i64>()
+                        .unwrap()
+                        .unwrap(),
+                    row["cumulative_owner_digest"]
+                        .value::<Vec<u8>>()
+                        .unwrap()
+                        .unwrap(),
+                )
+            })
+            .next()
+            .expect("stage handoff should return one row")
+    })
+}
+
+fn distann_owner_digest_for_batch(
+    fixture: &DistannPhysicalGenerationFixture,
+    encoded_batch: &[u8],
+) -> Vec<u8> {
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor)
+            .expect("generation descriptor should decode");
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .expect("codec binding should restore");
+    let shape = crate::am::ec_distann::DistannHandoffShape {
+        code_stride: binding
+            .code_len(usize::from(descriptor.dimensions))
+            .expect("codec length should resolve"),
+        graph_degree: usize::from(descriptor.graph_degree),
+        non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
+    };
+    let batch = crate::am::ec_distann::DistannHandoffBatch::decode(encoded_batch, shape)
+        .expect("batch should decode");
+    crate::am::ec_distann::owner_stream_digest(&batch.entries, shape)
+        .expect("owner stream should hash")
+        .to_vec()
+}
+
+fn seal_distann_physical_generation(
+    fixture: &DistannPhysicalGenerationFixture,
+    expected_owner_count: i64,
+    expected_owner_digest: &[u8],
+) -> Vec<u8> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT ec_distann_seal_epoch_handoff(
+                     $1::regclass, $2::uuid, $3::bigint, $4::bytea
+                 ) AS ready_receipt",
+                None,
+                &[
+                    fixture.index_oid.into(),
+                    fixture.build_id.into(),
+                    expected_owner_count.into(),
+                    expected_owner_digest.to_vec().into(),
+                ],
+            )
+            .expect("seal handoff should execute")
+            .map(|row| row["ready_receipt"].value::<Vec<u8>>().unwrap().unwrap())
+            .next()
+            .expect("seal handoff should return one row")
     })
 }
 
@@ -1028,7 +1283,11 @@ fn test_distann_node_registration_provenance_and_guards() {
         );
     });
     assert!(unqualified_locator_error.contains("schema-qualified canonical"));
-    assert_eq!(registered_count(), 1, "invalid references mutated the registry");
+    assert_eq!(
+        registered_count(),
+        1,
+        "invalid references mutated the registry"
+    );
 
     let incompatible =
         create_distann_physical_generation_fixture("ec_distann_registry_incompatible", 0x74);
@@ -1053,7 +1312,36 @@ fn test_distann_node_registration_provenance_and_guards() {
         incompatible_error.contains("schema/reloptions are incompatible"),
         "unexpected compatibility error: {incompatible_error}"
     );
-    assert_eq!(registered_count(), 1, "incompatible control mutated the registry");
+    assert_eq!(
+        registered_count(),
+        1,
+        "incompatible control mutated the registry"
+    );
+
+    let shape_drift =
+        create_distann_physical_generation_fixture("ec_distann_registry_shape_drift", 0x75);
+    Spi::run(
+        "ALTER TABLE ec_distann_registry_shape_drift_source
+             ADD COLUMN participant_only_payload text",
+    )
+    .unwrap();
+    configure_distann_participant_identity(&shape_drift, "registry/node-20");
+    let shape_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            20,
+            "registry/node-20",
+            SECRET_NAME,
+            &shape_drift.canonical_index_regclass,
+            true,
+        );
+    });
+    assert!(
+        shape_error.contains("schema/reloptions are incompatible"),
+        "row-schema fingerprint drift must fail registration: {shape_error}"
+    );
+    assert_eq!(registered_count(), 1, "shape drift mutated the registry");
 
     let build_catalog = distann_catalog_name("ec_distann_build_registration");
     let binding_catalog = distann_catalog_name("ec_distann_build_participant_binding");
@@ -1157,9 +1445,41 @@ fn test_distann_node_registration_provenance_and_guards() {
     ))
     .unwrap();
     assert_eq!(registered_count(), 0);
+    let publish_catalog = distann_catalog_name("ec_distann_publish_decision");
     Spi::run(&format!(
-        "DELETE FROM {build_catalog}
+        "INSERT INTO {publish_catalog} (
+             index_oid, logical_index_uuid, build_id, epoch,
+             epoch_fingerprint, manifest_digest, epoch_manifest, decision_state
+         ) VALUES (
+             {}, '{}'::uuid, '{}'::uuid, 7,
+             decode(repeat('44', 34), 'hex'), decode(repeat('55', 32), 'hex'),
+             '\\x01'::bytea, 'Applied'
+         )",
+        u32::from(coordinator.index_oid),
+        coordinator.logical_index_uuid,
+        coordinator.build_id,
+    ))
+    .unwrap();
+    let pinned_registration = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!(
+            "DELETE FROM {build_catalog}
+              WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid",
+            u32::from(coordinator.index_oid),
+            coordinator.logical_index_uuid,
+        ))
+        .expect("publish decision must pin its build registration");
+    });
+    assert!(
+        pinned_registration.contains("foreign key"),
+        "unexpected build-registration retention error: {pinned_registration}"
+    );
+    Spi::run(&format!(
+        "DELETE FROM {publish_catalog}
+          WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid;
+         DELETE FROM {build_catalog}
           WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid",
+        u32::from(coordinator.index_oid),
+        coordinator.logical_index_uuid,
         u32::from(coordinator.index_oid),
         coordinator.logical_index_uuid,
     ))
@@ -1227,8 +1547,7 @@ fn test_distann_node_registration_provenance_and_guards() {
         .expect("remote extension schema should resolve")
         .try_get::<_, String>(0)
         .expect("remote extension schema should decode");
-    let remote_table =
-        format!("{extension_schema}.ec_distann_registry_loopback_remote_source");
+    let remote_table = format!("{extension_schema}.ec_distann_registry_loopback_remote_source");
     let remote_index = format!("{extension_schema}.ec_distann_registry_loopback_remote_idx");
     let missing_remote_index = format!("{extension_schema}.ec_distann_registry_missing_idx");
     let query_error = expect_pg_error_rolled_back(|| {
@@ -1401,11 +1720,10 @@ fn test_distann_node_registration_binds_indexed_key_attnum() {
         error.contains("schema/reloptions are incompatible"),
         "key-attnum drift must fail registration: {error}"
     );
-    let shadow_oid = Spi::get_one::<pg_sys::Oid>(
-        "SELECT 'ec_distann_key_layout_shadow_idx'::regclass::oid",
-    )
-    .unwrap()
-    .unwrap();
+    let shadow_oid =
+        Spi::get_one::<pg_sys::Oid>("SELECT 'ec_distann_key_layout_shadow_idx'::regclass::oid")
+            .unwrap()
+            .unwrap();
     configure_distann_participant_identity_at(shadow_oid, "registry/shadow-opclass");
     let shadow_error = expect_pg_error_rolled_back(|| {
         Spi::run(
@@ -1579,6 +1897,8 @@ fn test_distann_generation_relations_replay_abort_and_privileges() {
               'ec_distann_register_node_descriptor',
               'ec_distann_unregister_node_descriptor',
               'ec_distann_begin_epoch_handoff',
+              'ec_distann_stage_epoch_batch',
+              'ec_distann_seal_epoch_handoff',
               'ec_distann_abort_epoch_handoff',
               'ec_distann_list_unpublished_generations',
               'ec_distann_catalog_index_cleanup'
@@ -1659,6 +1979,358 @@ fn test_distann_generation_relations_replay_abort_and_privileges() {
     .unwrap()
     .unwrap();
     assert_eq!(live_relation_count, 0);
+}
+
+#[pg_test]
+fn test_distann_stage_batch_atomic_replay_and_directory() {
+    let fixture = create_distann_physical_generation_fixture("ec_distann_stage_batch", 0x39);
+    begin_distann_physical_generation(&fixture, &fixture.expected_owner_digest);
+    let relations = distann_generation_relation_oids(&fixture);
+    let (digest, encoded, vec_id) = distann_stage_batch_fixture(&fixture, 0, 0x73);
+
+    let first = stage_distann_physical_batch(&fixture, 0, &digest, &encoded);
+    assert_eq!((first.0, first.1, first.2.len()), (1, 1, 32));
+    let replay = stage_distann_physical_batch(&fixture, 0, &digest, &encoded);
+    assert_eq!(
+        replay, first,
+        "exact replay must return the journaled receipt"
+    );
+
+    let generation_catalog = distann_generation_catalog_name();
+    let batch_catalog = distann_catalog_name("ec_distann_generation_batch");
+    let progress = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT next_batch_seq, cumulative_record_count,
+                            cumulative_owner_digest, last_vec_id_le,
+                            owner_stream_sha256_state, ready_receipt
+                       FROM {generation_catalog}
+                      WHERE index_oid = $1::oid
+                        AND logical_index_uuid = $2::uuid
+                        AND build_id = $3::uuid"
+                ),
+                None,
+                &[
+                    fixture.index_oid.into(),
+                    fixture.logical_index_uuid.into(),
+                    fixture.build_id.into(),
+                ],
+            )
+            .unwrap()
+            .map(|row| {
+                (
+                    row["next_batch_seq"].value::<i64>().unwrap().unwrap(),
+                    row["cumulative_record_count"]
+                        .value::<i64>()
+                        .unwrap()
+                        .unwrap(),
+                    row["cumulative_owner_digest"]
+                        .value::<Vec<u8>>()
+                        .unwrap()
+                        .unwrap(),
+                    row["last_vec_id_le"].value::<Vec<u8>>().unwrap().unwrap(),
+                    row["owner_stream_sha256_state"]
+                        .value::<Vec<u8>>()
+                        .unwrap()
+                        .unwrap(),
+                    row["ready_receipt"].value::<Vec<u8>>().unwrap(),
+                )
+            })
+            .next()
+            .expect("generation progress should exist")
+    });
+    assert_eq!((progress.0, progress.1), (1, 1));
+    assert_eq!(progress.2, first.2);
+    assert_eq!(progress.3, vec_id.to_le_bytes());
+    assert_eq!(progress.4.len(), 107);
+    assert!(progress.5.is_none());
+    let journal_count = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT count(*) AS batch_count FROM {batch_catalog}
+                      WHERE index_oid = $1::oid AND build_id = $2::uuid"
+                ),
+                None,
+                &[fixture.index_oid.into(), fixture.build_id.into()],
+            )
+            .unwrap()
+            .map(|row| row["batch_count"].value::<i64>().unwrap().unwrap())
+            .next()
+            .unwrap()
+    });
+    assert_eq!(
+        journal_count, 1,
+        "exact replay must not duplicate the journal"
+    );
+
+    let row_relation = canonical_index_locator(relations.0);
+    let graph_relation = canonical_index_locator(relations.1);
+    let captured = Spi::connect(|client| {
+        client
+            .select(
+                &format!("SELECT payload, payload_generated FROM {row_relation}"),
+                None,
+                &[],
+            )
+            .unwrap()
+            .map(|row| {
+                (
+                    row["payload"].value::<String>().unwrap().unwrap(),
+                    row["payload_generated"].value::<String>().unwrap().unwrap(),
+                )
+            })
+            .next()
+            .expect("captured row should exist")
+    });
+    assert_eq!(captured.0, "captured payload");
+    assert_eq!(captured.1, "captured payload:generated");
+    let graph = Spi::connect(|client| {
+        client
+            .select(
+                &format!("SELECT vec_id, graph_record, row_tid FROM {graph_relation}"),
+                None,
+                &[],
+            )
+            .unwrap()
+            .map(|row| {
+                (
+                    row["vec_id"].value::<i64>().unwrap().unwrap(),
+                    row["graph_record"].value::<Vec<u8>>().unwrap().unwrap(),
+                    row["row_tid"]
+                        .value::<pg_sys::ItemPointerData>()
+                        .unwrap()
+                        .unwrap(),
+                )
+            })
+            .next()
+            .expect("graph row should exist")
+    });
+    assert_eq!(u64::from_le_bytes(graph.0.to_le_bytes()), vec_id);
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor).unwrap();
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .unwrap();
+    let code_len = binding
+        .code_len(usize::from(descriptor.dimensions))
+        .unwrap();
+    let node = crate::am::ec_distann::tuple::DistannNodeTuple::decode_physical_v1(
+        &graph.1,
+        descriptor.graph_degree,
+        code_len,
+    )
+    .unwrap();
+    assert_eq!(node.vec_id, vec_id);
+    assert_eq!(
+        (node.heap_tid.block_number, node.heap_tid.offset_number),
+        pgrx::itemptr::item_pointer_get_both(graph.2)
+    );
+
+    let (conflict_digest, conflict_encoded, _) = distann_stage_batch_fixture(&fixture, 0, 0x74);
+    let conflict = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&fixture, 0, &conflict_digest, &conflict_encoded);
+    });
+    assert!(conflict.contains("EC_BATCH_CONFLICT"), "{conflict}");
+    let (skip_digest, skip_encoded, _) = distann_stage_batch_fixture(&fixture, 2, 0x75);
+    let sequence = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&fixture, 2, &skip_digest, &skip_encoded);
+    });
+    assert!(sequence.contains("EC_BATCH_SEQUENCE"), "{sequence}");
+
+    assert_eq!(
+        Spi::get_one::<i64>(&format!("SELECT count(*) FROM {row_relation}"))
+            .unwrap()
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        Spi::get_one::<i64>(&format!("SELECT count(*) FROM {graph_relation}"))
+            .unwrap()
+            .unwrap(),
+        1
+    );
+    abort_distann_physical_generation(&fixture);
+}
+
+#[pg_test]
+fn test_distann_seal_ready_replay_and_receipt() {
+    let fixture = create_distann_physical_generation_fixture("ec_distann_seal_ready", 0x3a);
+    let (batch_digest, encoded_batch, vec_id) = distann_stage_batch_fixture(&fixture, 0, 0x76);
+    let owner_digest = distann_owner_digest_for_batch(&fixture, &encoded_batch);
+    begin_distann_physical_generation_count(&fixture, 1, &owner_digest);
+    let staged = stage_distann_physical_batch(&fixture, 0, &batch_digest, &encoded_batch);
+    assert_eq!((staged.0, staged.1), (1, 1));
+    assert_eq!(staged.2, owner_digest);
+
+    let wrong_expectation = expect_pg_error_rolled_back(|| {
+        seal_distann_physical_generation(&fixture, 2, &owner_digest);
+    });
+    assert!(
+        wrong_expectation.contains("EC_BUILD_INCOMPLETE"),
+        "unexpected seal expectation error: {wrong_expectation}"
+    );
+    let generation_catalog = distann_generation_catalog_name();
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM {generation_catalog}
+              WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid
+                AND build_id = '{}'::uuid",
+            u32::from(fixture.index_oid),
+            fixture.logical_index_uuid,
+            fixture.build_id,
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Building"),
+        "failed seal must leave the generation Building"
+    );
+
+    let encoded_receipt = seal_distann_physical_generation(&fixture, 1, &owner_digest);
+    assert_eq!(
+        encoded_receipt.len(),
+        crate::am::ec_distann::DISTANN_READY_RECEIPT_BYTES
+    );
+    let receipt = crate::am::ec_distann::DistannReadyReceipt::decode(&encoded_receipt)
+        .expect("Ready receipt should decode");
+    assert_eq!(receipt.node_id, 17);
+    assert_eq!(receipt.epoch, 7);
+    assert_eq!(receipt.build_id, *fixture.build_id.as_bytes());
+    assert_eq!(
+        receipt.build_spec_digest.to_vec(),
+        fixture.build_spec_digest
+    );
+    assert_eq!(
+        receipt.generation_descriptor_digest.to_vec(),
+        fixture.descriptor_digest
+    );
+    assert_eq!(receipt.last_acknowledged_batch_sequence, 0);
+    assert_eq!((receipt.owned_record_count, receipt.row_count), (1, 1));
+    assert_eq!(receipt.owner_stream_digest.to_vec(), owner_digest);
+    assert_eq!(
+        receipt.state,
+        crate::am::ec_distann::DISTANN_READY_RECEIPT_STATE
+    );
+    assert!(receipt.graph_bytes > 0);
+    assert!(receipt.row_tier_bytes > 0);
+    assert!(receipt.directory_bytes > 0);
+    assert_ne!(receipt.persisted_graph_digest, [0; 32]);
+    assert_ne!(receipt.persisted_row_tier_digest, [0; 32]);
+    assert_ne!(receipt.local_directory_digest, [0; 32]);
+
+    let persisted = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT state, ready_receipt FROM {generation_catalog}
+                      WHERE index_oid = $1::oid
+                        AND logical_index_uuid = $2::uuid
+                        AND build_id = $3::uuid"
+                ),
+                None,
+                &[
+                    fixture.index_oid.into(),
+                    fixture.logical_index_uuid.into(),
+                    fixture.build_id.into(),
+                ],
+            )
+            .unwrap()
+            .map(|row| {
+                (
+                    row["state"].value::<String>().unwrap().unwrap(),
+                    row["ready_receipt"].value::<Vec<u8>>().unwrap().unwrap(),
+                )
+            })
+            .next()
+            .expect("Ready generation should exist")
+    });
+    assert_eq!(persisted.0, "Ready");
+    assert_eq!(persisted.1, encoded_receipt);
+
+    let seal_replay = seal_distann_physical_generation(&fixture, 1, &owner_digest);
+    assert_eq!(seal_replay, encoded_receipt, "seal replay must be exact");
+    let stage_replay = stage_distann_physical_batch(&fixture, 0, &batch_digest, &encoded_batch);
+    assert_eq!(
+        stage_replay, staged,
+        "acknowledged stage replay survives Ready"
+    );
+
+    let relations = distann_generation_relation_oids(&fixture);
+    let graph_relation = canonical_index_locator(relations.1);
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {graph_relation} WHERE vec_id = {}",
+            i64::from_le_bytes(vec_id.to_le_bytes())
+        ))
+        .unwrap(),
+        Some(1),
+        "Ready replays must not duplicate physical records"
+    );
+
+    let empty_fixture = create_distann_physical_generation_fixture("ec_distann_seal_empty", 0x3b);
+    let (empty_batch_digest, empty_batch) = distann_empty_stage_batch_fixture(&empty_fixture);
+    let empty_owner_digest = distann_owner_digest_for_batch(&empty_fixture, &empty_batch);
+    begin_distann_physical_generation_count(&empty_fixture, 0, &empty_owner_digest);
+    let empty_stage =
+        stage_distann_physical_batch(&empty_fixture, 0, &empty_batch_digest, &empty_batch);
+    assert_eq!((empty_stage.0, empty_stage.1), (0, 0));
+    assert_eq!(empty_stage.2, empty_owner_digest);
+    let empty_receipt = crate::am::ec_distann::DistannReadyReceipt::decode(
+        &seal_distann_physical_generation(&empty_fixture, 0, &empty_owner_digest),
+    )
+    .expect("empty Ready receipt should decode");
+    assert_eq!(
+        (empty_receipt.owned_record_count, empty_receipt.row_count),
+        (0, 0)
+    );
+    assert_eq!(
+        empty_receipt.owner_stream_digest.to_vec(),
+        empty_owner_digest
+    );
+}
+
+#[pg_test]
+fn test_distann_legacy_build_as_unprivileged_table_owner() {
+    const ROLE: &str = "ec_distann_legacy_owner";
+    const SCHEMA: &str = "ec_distann_legacy_owner_schema";
+    let extension_schema = Spi::get_one::<String>(
+        "SELECT pg_catalog.quote_ident(n.nspname)
+           FROM pg_catalog.pg_extension e
+           JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+          WHERE e.extname = 'ecaz'",
+    )
+    .unwrap()
+    .unwrap();
+    Spi::run(&format!(
+        "CREATE ROLE {ROLE} NOLOGIN;
+         CREATE SCHEMA {SCHEMA} AUTHORIZATION {ROLE};
+         GRANT USAGE ON SCHEMA {extension_schema} TO {ROLE};
+         SET LOCAL ROLE {ROLE};
+         CREATE TABLE {SCHEMA}.source (
+             id bigint, embedding {extension_schema}.ecvector(4)
+         );
+         CREATE INDEX source_idx ON {SCHEMA}.source
+             USING ec_distann (embedding {extension_schema}.ecvector_distann_ip_ops);
+         RESET ROLE"
+    ))
+    .expect("legacy index creation must not touch revoked generation catalogs");
+    let endpoint_denial = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!(
+            "SET LOCAL ROLE {ROLE};
+             SELECT {extension_schema}.ec_distann_list_unpublished_generations(
+                 '{SCHEMA}.source_idx'::regclass
+             )"
+        ))
+        .expect("unprivileged internal endpoint call must fail");
+    });
+    assert!(
+        endpoint_denial.contains("permission denied")
+            && endpoint_denial.contains("ec_distann_list_unpublished_generations"),
+        "unexpected internal endpoint ACL error: {endpoint_denial}"
+    );
+    Spi::run(&format!("DROP SCHEMA {SCHEMA} CASCADE; DROP ROLE {ROLE}")).unwrap();
 }
 
 #[pg_test]

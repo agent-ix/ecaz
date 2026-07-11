@@ -7,6 +7,16 @@
 use pgrx::datum::Uuid;
 use pgrx::{pg_extern, pg_sys, Spi};
 
+use super::handoff_wire::DISTANN_OWNER_STREAM_HASH_STATE_BYTES;
+use super::manifest_v2::DISTANN_READY_RECEIPT_BYTES;
+
+const GENERATION_SELECT_COLUMNS: &str = "epoch, owner_ordinal, node_id, state,
+    build_spec_digest, roster_digest, generation_descriptor,
+    generation_descriptor_digest, expected_owner_count, expected_owner_digest,
+    row_tier_relid, graph_store_relid, directory_relid, next_batch_seq,
+    cumulative_record_count, cumulative_owner_digest, last_vec_id_le,
+    owner_stream_sha256_state, ready_receipt";
+
 fn quote_ident(identifier: &str) -> String {
     format!("\"{}\"", identifier.replace('"', "\"\""))
 }
@@ -104,6 +114,27 @@ pub(crate) struct GenerationCatalogRow {
     pub(crate) next_batch_seq: u64,
     pub(crate) cumulative_record_count: u64,
     pub(crate) cumulative_owner_digest: [u8; 32],
+    pub(crate) last_vec_id_le: Option<[u8; 8]>,
+    pub(crate) owner_stream_sha256_state: [u8; DISTANN_OWNER_STREAM_HASH_STATE_BYTES],
+    pub(crate) ready_receipt: Option<[u8; DISTANN_READY_RECEIPT_BYTES]>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct GenerationBatchCatalogRow {
+    pub(crate) batch_seq: u64,
+    pub(crate) batch_digest: [u8; 32],
+    pub(crate) encoded_bytes: u64,
+    pub(crate) accepted_record_count: u64,
+    pub(crate) cumulative_record_count: u64,
+    pub(crate) cumulative_owner_digest: [u8; 32],
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct GenerationBatchSummary {
+    pub(crate) batch_count: u64,
+    pub(crate) minimum_sequence: u64,
+    pub(crate) maximum_sequence: u64,
+    pub(crate) accepted_record_count: u64,
 }
 
 fn required_i64(row: &pgrx::spi::SpiHeapTupleData<'_>, name: &str) -> Result<i64, String> {
@@ -141,13 +172,33 @@ fn required_bytes(row: &pgrx::spi::SpiHeapTupleData<'_>, name: &str) -> Result<V
         .ok_or_else(|| format!("ec_distann generation catalog {name} is NULL"))
 }
 
-fn fixed_digest(bytes: Vec<u8>, name: &str) -> Result<[u8; 32], String> {
+fn optional_bytes(
+    row: &pgrx::spi::SpiHeapTupleData<'_>,
+    name: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    row[name]
+        .value::<Vec<u8>>()
+        .map_err(|error| format!("ec_distann generation catalog {name} decode failed: {error}"))
+}
+
+fn fixed_bytes<const N: usize>(bytes: Vec<u8>, name: &str) -> Result<[u8; N], String> {
     bytes.try_into().map_err(|bytes: Vec<u8>| {
         format!(
-            "ec_distann generation catalog {name} is {} bytes, expected 32",
+            "ec_distann generation catalog {name} is {} bytes, expected {N}",
             bytes.len()
         )
     })
+}
+
+fn fixed_digest(bytes: Vec<u8>, name: &str) -> Result<[u8; 32], String> {
+    fixed_bytes(bytes, name)
+}
+
+fn optional_fixed_bytes<const N: usize>(
+    bytes: Option<Vec<u8>>,
+    name: &str,
+) -> Result<Option<[u8; N]>, String> {
+    bytes.map(|bytes| fixed_bytes(bytes, name)).transpose()
 }
 
 fn decode_generation_row(
@@ -188,31 +239,40 @@ fn decode_generation_row(
             required_bytes(&row, "cumulative_owner_digest")?,
             "cumulative_owner_digest",
         )?,
+        last_vec_id_le: optional_fixed_bytes(
+            optional_bytes(&row, "last_vec_id_le")?,
+            "last_vec_id_le",
+        )?,
+        owner_stream_sha256_state: fixed_bytes(
+            required_bytes(&row, "owner_stream_sha256_state")?,
+            "owner_stream_sha256_state",
+        )?,
+        ready_receipt: optional_fixed_bytes(
+            optional_bytes(&row, "ready_receipt")?,
+            "ready_receipt",
+        )?,
     })
 }
 
-pub(crate) fn lookup_generation(
+fn lookup_generation_with_lock(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
     build_id: Uuid,
+    for_update: bool,
 ) -> Result<Option<GenerationCatalogRow>, String> {
     let catalogs = CatalogRelations::resolve()?;
+    let lock_clause = if for_update { " FOR UPDATE" } else { "" };
     let sql = format!(
-        "SELECT epoch, owner_ordinal, node_id, state,
-                build_spec_digest, roster_digest, generation_descriptor,
-                generation_descriptor_digest, expected_owner_count,
-                expected_owner_digest, row_tier_relid, graph_store_relid,
-                directory_relid, next_batch_seq, cumulative_record_count,
-                cumulative_owner_digest
+        "SELECT {GENERATION_SELECT_COLUMNS}
            FROM {}
           WHERE index_oid = $1::oid
             AND logical_index_uuid = $2::uuid
-            AND build_id = $3::uuid",
+            AND build_id = $3::uuid{lock_clause}",
         catalogs.generation
     );
-    Spi::connect(|client| {
+    Spi::connect_mut(|client| {
         client
-            .select(
+            .update(
                 &sql,
                 None,
                 &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
@@ -222,6 +282,22 @@ pub(crate) fn lookup_generation(
             .next()
             .transpose()
     })
+}
+
+pub(crate) fn lookup_generation(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
+) -> Result<Option<GenerationCatalogRow>, String> {
+    lookup_generation_with_lock(index_oid, logical_index_uuid, build_id, false)
+}
+
+pub(crate) fn lookup_generation_for_update(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
+) -> Result<Option<GenerationCatalogRow>, String> {
+    lookup_generation_with_lock(index_oid, logical_index_uuid, build_id, true)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -252,13 +328,15 @@ pub(crate) fn insert_generation(
              generation_descriptor_digest, expected_owner_count,
              expected_owner_digest, row_tier_relid, graph_store_relid,
              directory_relid, next_batch_seq, cumulative_record_count,
-             cumulative_owner_digest
+             cumulative_owner_digest, last_vec_id_le,
+             owner_stream_sha256_state, ready_receipt
          ) VALUES (
              $1::oid, $2::uuid, $3::uuid, $4::bigint,
              $5::integer, $6::integer, $7::text, $8::bytea,
              $9::bytea, $10::bytea, $11::bytea, $12::bigint,
              $13::bytea, $14::oid, $15::oid, $16::oid,
-             $17::bigint, $18::bigint, $19::bytea
+             $17::bigint, $18::bigint, $19::bytea, $20::bytea,
+             $21::bytea, $22::bytea
          )",
         catalogs.generation
     );
@@ -287,11 +365,295 @@ pub(crate) fn insert_generation(
                     next_batch_seq.into(),
                     cumulative_record_count.into(),
                     row.cumulative_owner_digest.to_vec().into(),
+                    row.last_vec_id_le.map(|bytes| bytes.to_vec()).into(),
+                    row.owner_stream_sha256_state.to_vec().into(),
+                    row.ready_receipt.map(|bytes| bytes.to_vec()).into(),
                 ],
             )
             .map_err(|error| format!("ec_distann generation catalog insert failed: {error}"))?;
         Ok(())
     })
+}
+
+fn decode_generation_batch_row(
+    row: pgrx::spi::SpiHeapTupleData<'_>,
+) -> Result<GenerationBatchCatalogRow, String> {
+    Ok(GenerationBatchCatalogRow {
+        batch_seq: u64::try_from(required_i64(&row, "batch_seq")?)
+            .map_err(|_| "ec_distann batch sequence is negative".to_owned())?,
+        batch_digest: fixed_digest(required_bytes(&row, "batch_digest")?, "batch_digest")?,
+        encoded_bytes: u64::try_from(required_i64(&row, "encoded_bytes")?)
+            .map_err(|_| "ec_distann encoded batch length is negative".to_owned())?,
+        accepted_record_count: u64::try_from(required_i64(&row, "accepted_record_count")?)
+            .map_err(|_| "ec_distann accepted record count is negative".to_owned())?,
+        cumulative_record_count: u64::try_from(required_i64(&row, "cumulative_record_count")?)
+            .map_err(|_| "ec_distann cumulative record count is negative".to_owned())?,
+        cumulative_owner_digest: fixed_digest(
+            required_bytes(&row, "cumulative_owner_digest")?,
+            "cumulative_owner_digest",
+        )?,
+    })
+}
+
+pub(crate) fn lookup_generation_batch(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
+    batch_seq: u64,
+) -> Result<Option<GenerationBatchCatalogRow>, String> {
+    let batch_seq = i64::try_from(batch_seq)
+        .map_err(|_| "EC_BATCH_SEQUENCE: batch sequence exceeds bigint".to_owned())?;
+    let catalogs = CatalogRelations::resolve()?;
+    let sql = format!(
+        "SELECT batch_seq, batch_digest, encoded_bytes, accepted_record_count,
+                cumulative_record_count, cumulative_owner_digest
+           FROM {}
+          WHERE index_oid = $1::oid
+            AND logical_index_uuid = $2::uuid
+            AND build_id = $3::uuid
+            AND batch_seq = $4::bigint",
+        catalogs.generation_batch
+    );
+    Spi::connect(|client| {
+        client
+            .select(
+                &sql,
+                None,
+                &[
+                    index_oid.into(),
+                    logical_index_uuid.into(),
+                    build_id.into(),
+                    batch_seq.into(),
+                ],
+            )
+            .map_err(|error| format!("ec_distann generation batch lookup failed: {error}"))?
+            .map(decode_generation_batch_row)
+            .next()
+            .transpose()
+    })
+}
+
+pub(crate) fn insert_generation_batch(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
+    row: &GenerationBatchCatalogRow,
+) -> Result<(), String> {
+    let batch_seq = i64::try_from(row.batch_seq)
+        .map_err(|_| "EC_BATCH_SEQUENCE: batch sequence exceeds bigint".to_owned())?;
+    let encoded_bytes = i64::try_from(row.encoded_bytes)
+        .map_err(|_| "EC_HANDOFF_TOO_LARGE: encoded batch length exceeds bigint".to_owned())?;
+    let accepted_record_count = i64::try_from(row.accepted_record_count)
+        .map_err(|_| "EC_BUILD_INCOMPLETE: accepted record count exceeds bigint".to_owned())?;
+    let cumulative_record_count = i64::try_from(row.cumulative_record_count)
+        .map_err(|_| "EC_BUILD_INCOMPLETE: cumulative record count exceeds bigint".to_owned())?;
+    let catalogs = CatalogRelations::resolve()?;
+    let sql = format!(
+        "INSERT INTO {} (
+             index_oid, logical_index_uuid, build_id, batch_seq, batch_digest,
+             encoded_bytes, accepted_record_count, cumulative_record_count,
+             cumulative_owner_digest
+         ) VALUES (
+             $1::oid, $2::uuid, $3::uuid, $4::bigint, $5::bytea,
+             $6::bigint, $7::bigint, $8::bigint, $9::bytea
+         )",
+        catalogs.generation_batch
+    );
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &sql,
+                None,
+                &[
+                    index_oid.into(),
+                    logical_index_uuid.into(),
+                    build_id.into(),
+                    batch_seq.into(),
+                    row.batch_digest.to_vec().into(),
+                    encoded_bytes.into(),
+                    accepted_record_count.into(),
+                    cumulative_record_count.into(),
+                    row.cumulative_owner_digest.to_vec().into(),
+                ],
+            )
+            .map_err(|error| format!("ec_distann generation batch insert failed: {error}"))?;
+        Ok(())
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn advance_generation_after_batch(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
+    old_next_batch_seq: u64,
+    old_cumulative_record_count: u64,
+    old_cumulative_owner_digest: [u8; 32],
+    new_cumulative_record_count: u64,
+    new_cumulative_owner_digest: [u8; 32],
+    last_vec_id_le: Option<[u8; 8]>,
+    owner_stream_sha256_state: [u8; DISTANN_OWNER_STREAM_HASH_STATE_BYTES],
+) -> Result<(), String> {
+    let old_next_batch_seq = i64::try_from(old_next_batch_seq)
+        .map_err(|_| "EC_BATCH_SEQUENCE: batch sequence exceeds bigint".to_owned())?;
+    let new_next_batch_seq = old_next_batch_seq
+        .checked_add(1)
+        .ok_or_else(|| "EC_BATCH_SEQUENCE: batch sequence exhausted bigint".to_owned())?;
+    let old_cumulative_record_count = i64::try_from(old_cumulative_record_count)
+        .map_err(|_| "EC_BUILD_INCOMPLETE: cumulative record count exceeds bigint".to_owned())?;
+    let new_cumulative_record_count = i64::try_from(new_cumulative_record_count)
+        .map_err(|_| "EC_BUILD_INCOMPLETE: cumulative record count exceeds bigint".to_owned())?;
+    let catalogs = CatalogRelations::resolve()?;
+    let sql = format!(
+        "UPDATE {}
+            SET next_batch_seq = $7::bigint,
+                cumulative_record_count = $8::bigint,
+                cumulative_owner_digest = $9::bytea,
+                last_vec_id_le = $10::bytea,
+                owner_stream_sha256_state = $11::bytea,
+                updated_at = clock_timestamp()
+          WHERE index_oid = $1::oid
+            AND logical_index_uuid = $2::uuid
+            AND build_id = $3::uuid
+            AND state = 'Building'
+            AND next_batch_seq = $4::bigint
+            AND cumulative_record_count = $5::bigint
+            AND cumulative_owner_digest = $6::bytea
+          RETURNING 1",
+        catalogs.generation
+    );
+    let updated = Spi::connect_mut(|client| {
+        client
+            .update(
+                &sql,
+                None,
+                &[
+                    index_oid.into(),
+                    logical_index_uuid.into(),
+                    build_id.into(),
+                    old_next_batch_seq.into(),
+                    old_cumulative_record_count.into(),
+                    old_cumulative_owner_digest.to_vec().into(),
+                    new_next_batch_seq.into(),
+                    new_cumulative_record_count.into(),
+                    new_cumulative_owner_digest.to_vec().into(),
+                    last_vec_id_le.map(|bytes| bytes.to_vec()).into(),
+                    owner_stream_sha256_state.to_vec().into(),
+                ],
+            )
+            .map_err(|error| format!("ec_distann generation progress update failed: {error}"))
+            .map(|table| table.len())
+    })?;
+    if updated != 1 {
+        return Err(
+            "EC_BUILD_STATE: generation progress changed concurrently or is no longer Building"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
+pub(crate) fn generation_batch_summary(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
+) -> Result<Option<GenerationBatchSummary>, String> {
+    let catalogs = CatalogRelations::resolve()?;
+    let sql = format!(
+        "SELECT count(*)::bigint AS batch_count,
+                min(batch_seq) AS minimum_sequence,
+                max(batch_seq) AS maximum_sequence,
+                sum(accepted_record_count)::bigint AS accepted_record_count
+           FROM {}
+          WHERE index_oid = $1::oid
+            AND logical_index_uuid = $2::uuid
+            AND build_id = $3::uuid",
+        catalogs.generation_batch
+    );
+    Spi::connect(|client| {
+        client
+            .select(
+                &sql,
+                None,
+                &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+            )
+            .map_err(|error| format!("ec_distann batch summary lookup failed: {error}"))?
+            .map(|row| {
+                let batch_count = u64::try_from(required_i64(&row, "batch_count")?)
+                    .map_err(|_| "ec_distann batch count is negative".to_owned())?;
+                if batch_count == 0 {
+                    return Ok(None);
+                }
+                Ok(Some(GenerationBatchSummary {
+                    batch_count,
+                    minimum_sequence: u64::try_from(required_i64(&row, "minimum_sequence")?)
+                        .map_err(|_| "ec_distann minimum batch sequence is negative".to_owned())?,
+                    maximum_sequence: u64::try_from(required_i64(&row, "maximum_sequence")?)
+                        .map_err(|_| "ec_distann maximum batch sequence is negative".to_owned())?,
+                    accepted_record_count: u64::try_from(required_i64(
+                        &row,
+                        "accepted_record_count",
+                    )?)
+                    .map_err(|_| "ec_distann accepted record total is negative".to_owned())?,
+                }))
+            })
+            .next()
+            .transpose()
+            .map(Option::flatten)
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn mark_generation_ready(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
+    next_batch_seq: u64,
+    cumulative_record_count: u64,
+    cumulative_owner_digest: [u8; 32],
+    ready_receipt: [u8; DISTANN_READY_RECEIPT_BYTES],
+) -> Result<(), String> {
+    let next_batch_seq = i64::try_from(next_batch_seq)
+        .map_err(|_| "EC_BATCH_SEQUENCE: next batch sequence exceeds bigint".to_owned())?;
+    let cumulative_record_count = i64::try_from(cumulative_record_count)
+        .map_err(|_| "EC_BUILD_INCOMPLETE: cumulative record count exceeds bigint".to_owned())?;
+    let catalogs = CatalogRelations::resolve()?;
+    let sql = format!(
+        "UPDATE {}
+            SET state = 'Ready', ready_receipt = $7::bytea,
+                updated_at = clock_timestamp()
+          WHERE index_oid = $1::oid
+            AND logical_index_uuid = $2::uuid
+            AND build_id = $3::uuid
+            AND state = 'Building' AND ready_receipt IS NULL
+            AND next_batch_seq = $4::bigint
+            AND cumulative_record_count = $5::bigint
+            AND cumulative_owner_digest = $6::bytea
+          RETURNING 1",
+        catalogs.generation
+    );
+    let updated = Spi::connect_mut(|client| {
+        client
+            .update(
+                &sql,
+                None,
+                &[
+                    index_oid.into(),
+                    logical_index_uuid.into(),
+                    build_id.into(),
+                    next_batch_seq.into(),
+                    cumulative_record_count.into(),
+                    cumulative_owner_digest.to_vec().into(),
+                    ready_receipt.to_vec().into(),
+                ],
+            )
+            .map_err(|error| format!("ec_distann Ready transition failed: {error}"))
+            .map(|table| table.len())
+    })?;
+    if updated != 1 {
+        return Err("EC_BUILD_STATE: generation changed before its Ready transition".to_owned());
+    }
+    Ok(())
 }
 
 pub(crate) fn generation_relations_for_index(
@@ -354,7 +716,7 @@ pub(crate) fn has_publish_decision(
     })
 }
 
-pub(crate) fn delete_generation(
+pub(crate) fn delete_generation_if_unpublished(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
     build_id: Uuid,
@@ -364,19 +726,31 @@ pub(crate) fn delete_generation(
         "DELETE FROM {}
           WHERE index_oid = $1::oid
             AND logical_index_uuid = $2::uuid
-            AND build_id = $3::uuid",
-        catalogs.generation
+            AND build_id = $3::uuid
+            AND state IN ('Building', 'Ready')
+            AND NOT EXISTS (
+                SELECT 1 FROM {}
+                 WHERE index_oid = $1::oid
+                   AND logical_index_uuid = $2::uuid
+                   AND build_id = $3::uuid
+            )
+          RETURNING 1",
+        catalogs.generation, catalogs.publish_decision
     );
-    Spi::connect_mut(|client| {
+    let deleted = Spi::connect_mut(|client| {
         client
             .update(
                 &sql,
                 None,
                 &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
             )
-            .map_err(|error| format!("ec_distann generation delete failed: {error}"))?;
-        Ok(())
-    })
+            .map_err(|error| format!("ec_distann generation delete failed: {error}"))
+            .map(|table| table.len())
+    })?;
+    if deleted != 1 {
+        return Err("EC_BUILD_STATE: abort lost its unpublished-generation guard".to_owned());
+    }
+    Ok(())
 }
 
 pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, String> {

@@ -103,6 +103,7 @@ fn upgrade_matrix_names_current_writable_formats() {
         ("distann-manifest-codec-parameters", 1),
         ("distann-metadata", 4),
         ("distann-metadata", 5),
+        ("distann-owner-stream-hash-state", 1),
         ("distann-ready-receipt", 1),
         ("distann-row-schema", 1),
         ("distann-source-snapshot", 1),

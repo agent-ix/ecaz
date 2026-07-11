@@ -163,6 +163,8 @@ fn test_distann_registry_security_definer_path_and_acl() {
                 'ec_distann_register_node_descriptor',
                 'ec_distann_unregister_node_descriptor',
                 'ec_distann_begin_epoch_handoff',
+                'ec_distann_stage_epoch_batch',
+                'ec_distann_seal_epoch_handoff',
                 'ec_distann_abort_epoch_handoff',
                 'ec_distann_list_unpublished_generations',
                 'ec_distann_catalog_index_cleanup'
@@ -174,7 +176,7 @@ fn test_distann_registry_security_definer_path_and_acl() {
     .unwrap()
     .unwrap();
     assert_eq!(
-        safely_configured_endpoints, 8,
+        safely_configured_endpoints, 10,
         "every current DistANN definer endpoint must put explicit pg_temp last"
     );
 

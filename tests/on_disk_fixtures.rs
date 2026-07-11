@@ -1,30 +1,33 @@
 //! Golden on-disk fixture decode checks.
 
 use ecaz::bench_api::{
-    spire_decode_delta_partition_object_fixture, spire_decode_leaf_partition_object_fixture,
-    spire_decode_leaf_v2_meta_fixture, spire_decode_leaf_v2_segment_fixture,
-    spire_decode_partition_object_v2_chain_meta_fixture,
+    distann_restore_owner_stream_hash_state, spire_decode_delta_partition_object_fixture,
+    spire_decode_leaf_partition_object_fixture, spire_decode_leaf_v2_meta_fixture,
+    spire_decode_leaf_v2_segment_fixture, spire_decode_partition_object_v2_chain_meta_fixture,
     spire_decode_partition_object_v2_chain_segment_fixture,
     spire_decode_routing_partition_object_fixture, spire_decode_top_graph_partition_object_fixture,
     vamana_decode_overflow_tuple_fixture, DistannBuildSpec, DistannCodecArtifact,
     DistannEpochFingerprint, DistannEpochManifestV2, DistannGenerationDescriptor,
-    DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape,
-    DistannManifestBuildOptions, DistannManifestCodecParameters, DistannMetadataPage,
-    DistannNodeTuple, DistannReadyReceipt, DistannRowSchemaDescriptor,
-    DistannSourceSnapshot, ItemPointer, IvfBlockRef, IvfCentroidTuple,
+    DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannManifestBuildOptions,
+    DistannManifestCodecParameters, DistannMetadataPage, DistannNodeTuple, DistannReadyReceipt,
+    DistannRowSchemaDescriptor, DistannSourceSnapshot, ItemPointer, IvfBlockRef, IvfCentroidTuple,
     IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode,
     IvfRerankScoreMode, IvfStorageFormat, MetadataPage, SpireConsistencyMode, SpireEpochManifest,
     SpireEpochState, SpireLocalStoreConfig, SpireLocalStoreState, SpireManifestEntry,
     SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
     TqElementTuple, TqGroupedCodebookTuple, TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple,
     TqTurboHotTuple, VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple,
-    EC_IVF_CENTROID_DIMENSIONS_OFFSET, EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
-    HNSW_METADATA_FORMAT_VERSION_OFFSET, INDEX_FORMAT_V3_DISKANN,
-    DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES,
-    DISTANN_METADATA_BYTES, DISTANN_METADATA_FORMAT_VERSION_OFFSET,
-    DISTANN_NODE_FORMAT_VERSION_OFFSET, INDEX_FORMAT_V1_DISTANN,
-    INDEX_FORMAT_V5_DISTANN_CONTROL, SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET,
-    SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
+    DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_METADATA_BYTES,
+    DISTANN_METADATA_FORMAT_VERSION_OFFSET, DISTANN_NODE_FORMAT_VERSION_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, DISTANN_OWNER_STREAM_HASH_STATE_BYTES,
+    DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET, EC_IVF_CENTROID_DIMENSIONS_OFFSET,
+    EC_IVF_METADATA_FORMAT_VERSION_OFFSET, HNSW_METADATA_FORMAT_VERSION_OFFSET,
+    INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V3_DISKANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
+    SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
     SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET, SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET,
     SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
     SPIRE_PLACEMENT_ENTRY_FORMAT_VERSION_OFFSET, VAMANA_METADATA_FORMAT_VERSION_OFFSET,
@@ -54,7 +57,10 @@ impl<'a> DistannFixtureReader<'a> {
 
     fn take(&mut self, length: usize) -> &'a [u8] {
         let end = self.position.checked_add(length).expect("fixture offset");
-        assert!(end <= self.bytes.len(), "independent fixture decode truncated");
+        assert!(
+            end <= self.bytes.len(),
+            "independent fixture decode truncated"
+        );
         let value = &self.bytes[self.position..end];
         self.position = end;
         value
@@ -242,18 +248,13 @@ fn diskann_metadata_v3_byteswapped_version_is_rejected() {
 
 #[test]
 fn distann_metadata_v4_and_control_v5_fixtures_decode_independently() {
-    let legacy = decode_hex_fixture(include_str!(
-        "../fixtures/on-disk/distann_metadata_v4.hex"
-    ));
+    let legacy = decode_hex_fixture(include_str!("../fixtures/on-disk/distann_metadata_v4.hex"));
     assert_eq!(legacy.len(), DISTANN_METADATA_BYTES);
     assert_eq!(
         u16::from_le_bytes(legacy[0..2].try_into().unwrap()),
         INDEX_FORMAT_V1_DISTANN
     );
-    assert_eq!(
-        u64::from_le_bytes(legacy[36..44].try_into().unwrap()),
-        42
-    );
+    assert_eq!(u64::from_le_bytes(legacy[36..44].try_into().unwrap()), 42);
     let legacy_decoded = DistannMetadataPage::decode(&legacy).unwrap();
     assert!(!legacy_decoded.is_distributed_control());
     assert_eq!(legacy_decoded.dimensions, 128);
@@ -537,6 +538,58 @@ fn distann_handoff_entry_and_batch_v1_fixtures_decode_independently() {
 }
 
 #[test]
+fn distann_owner_stream_hash_state_v1_fixture_is_independent_and_fixed() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_owner_stream_hash_state_v1.hex"
+    ));
+    assert_eq!(bytes.len(), DISTANN_OWNER_STREAM_HASH_STATE_BYTES);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_BYTES, 107);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET, 0);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET, 2);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET, 3);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET, 35);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET, 43);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, 44);
+
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1, "state format version");
+    assert_eq!(independent.u8(), 1, "sha2 0.11 implementation tag");
+    assert_eq!(
+        independent.take(32),
+        hex::decode("67e6096a85ae67bb72f36e3c3af54fa57f520e518c68059babd9831f19cde05b").unwrap(),
+        "no full block has been compressed, so the SHA-256 chain is its IV"
+    );
+    assert_eq!(independent.u64(), 0, "compressed block count");
+    let buffered_bytes = independent.u8() as usize;
+    let eager_buffer = independent.take(63);
+    let domain = b"ec_distann_owner_stream_v1\0";
+    assert_eq!(buffered_bytes, domain.len());
+    assert_eq!(&eager_buffer[..buffered_bytes], domain);
+    assert!(
+        eager_buffer[buffered_bytes..].iter().all(|byte| *byte == 0),
+        "unused eager-buffer bytes must be canonical zeroes"
+    );
+    independent.finish();
+
+    let expected_digest: [u8; 32] =
+        hex::decode("5f25ef3436224c6f7777c23f9a673cdcfab00a719d11db3c3bec157f63bd8ad6")
+            .unwrap()
+            .try_into()
+            .unwrap();
+    assert_eq!(
+        distann_restore_owner_stream_hash_state(&bytes, expected_digest).unwrap(),
+        expected_digest
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(
+        DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET + 1,
+    );
+    assert!(distann_restore_owner_stream_hash_state(&swapped, expected_digest).is_err());
+}
+
+#[test]
 fn distann_source_snapshot_v1_fixture_decodes_independently_and_rejects_swap() {
     let bytes = decode_hex_fixture(include_str!(
         "../fixtures/on-disk/distann_source_snapshot_v1.hex"
@@ -551,7 +604,9 @@ fn distann_source_snapshot_v1_fixture_decodes_independently_and_rejects_swap() {
     let xip_count = independent.u32();
     assert_eq!(xip_count, 3);
     assert_eq!(
-        (0..xip_count).map(|_| independent.u64()).collect::<Vec<_>>(),
+        (0..xip_count)
+            .map(|_| independent.u64())
+            .collect::<Vec<_>>(),
         vec![101, 103, 107]
     );
     let subxip_count = independent.u32();
@@ -677,7 +732,10 @@ fn distann_epoch_manifest_v2_fixture_decodes_independently_and_rejects_swap() {
     assert_eq!(manifest.roster.len(), 2);
     assert_eq!(manifest.participant_receipts.len(), 2);
     let fingerprint = manifest.fingerprint().unwrap();
-    assert_eq!(fingerprint.as_bytes().len(), DISTANN_EPOCH_FINGERPRINT_BYTES);
+    assert_eq!(
+        fingerprint.as_bytes().len(),
+        DISTANN_EPOCH_FINGERPRINT_BYTES
+    );
     assert_eq!(
         DistannEpochFingerprint::decode(fingerprint.as_bytes()).unwrap(),
         fingerprint

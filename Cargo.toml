@@ -43,7 +43,7 @@ rabitq-bf16 = []
 [dependencies]
 pgrx = "0.17"
 hex = "0.4"
-sha2 = "0.10"
+sha2 = "=0.11.0"
 rand = "0.8"
 rand_chacha = "0.3"
 rayon = "1"

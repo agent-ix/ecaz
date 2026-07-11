@@ -88,10 +88,10 @@ pub fn validate_roster(roster: &[DistannRosterEntry]) -> Result<(), String> {
         if validate_endpoint_identity(&entry.endpoint_identity).is_err()
             || !endpoints.insert(entry.endpoint_identity.clone())
         {
-            return Err(format!(
-                "EC_NODE_DESCRIPTOR: malformed, duplicate, or secret-bearing endpoint identity {:?}",
-                entry.endpoint_identity
-            ));
+            return Err(
+                "EC_NODE_DESCRIPTOR: malformed, duplicate, or secret-bearing endpoint identity"
+                    .to_owned(),
+            );
         }
     }
     Ok(())
@@ -102,13 +102,13 @@ pub(crate) fn validate_endpoint_identity(value: &str) -> Result<(), String> {
     let first_is_alphanumeric = bytes
         .first()
         .is_some_and(|byte| byte.is_ascii_alphanumeric());
-    let tail_is_canonical = bytes.iter().skip(1).all(|byte| {
-        byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'/' | b'-')
-    });
+    let tail_is_canonical = bytes
+        .iter()
+        .skip(1)
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'/' | b'-'));
     if bytes.len() > 255 || !first_is_alphanumeric || !tail_is_canonical {
         return Err(
-            "EC_NODE_DESCRIPTOR: endpoint identity violates the canonical v1 grammar"
-                .to_owned(),
+            "EC_NODE_DESCRIPTOR: endpoint identity violates the canonical v1 grammar".to_owned(),
         );
     }
     Ok(())
