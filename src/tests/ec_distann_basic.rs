@@ -29,6 +29,70 @@ fn test_ec_distann_access_method_is_registered() {
 }
 
 #[pg_test]
+fn test_ec_distann_scan_registry_preload_contract_and_gucs() {
+    let settings = Spi::get_two::<String, String>(
+        "SELECT
+             (SELECT context FROM pg_settings WHERE name = 'ec_distann.max_scan_pins'),
+             (SELECT context FROM pg_settings WHERE name = 'ec_distann.max_retire_fences')",
+    )
+    .expect("scan-registry GUC inspection should succeed");
+    assert_eq!(settings.0.as_deref(), Some("postmaster"));
+    assert_eq!(settings.1.as_deref(), Some("postmaster"));
+
+    let logical = pgrx::datum::Uuid::from_bytes([
+        0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x41, 0x11, 0x81, 0x11, 0x11, 0x11, 0x11, 0x11,
+        0x11, 0x11,
+    ]);
+    let token = pgrx::datum::Uuid::from_bytes([
+        0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x42, 0x22, 0x82, 0x22, 0x22, 0x22, 0x22, 0x22,
+        0x22, 0x22,
+    ]);
+    let fingerprint = [0x33; 34];
+
+    match crate::am::ec_distann::register_scan_token_for_test(logical, fingerprint, token) {
+        Err(crate::am::ec_distann::ScanRegistryError::Unavailable) => {
+            // The ordinary pgrx pg_test cluster loads the extension after
+            // postmaster startup. This is the required fail-closed posture;
+            // preload-enabled validation exercises the branch below.
+        }
+        Ok(crate::am::ec_distann::ScanRegisterOutcome::Registered) => {
+            assert_eq!(
+                crate::am::ec_distann::register_scan_token_for_test(
+                    logical,
+                    fingerprint,
+                    token
+                ),
+                Ok(crate::am::ec_distann::ScanRegisterOutcome::AlreadyRegistered)
+            );
+            assert_eq!(
+                crate::am::ec_distann::register_scan_token_for_test(
+                    logical,
+                    [0x44; 34],
+                    token
+                ),
+                Err(crate::am::ec_distann::ScanRegistryError::TokenConflict)
+            );
+            let fence = crate::am::ec_distann::acquire_scan_fence_for_test(
+                unsafe { pg_sys::MyDatabaseId },
+                *logical.as_bytes(),
+            )
+            .expect("preloaded registry should allocate an operation reference");
+            assert!(fence.fence_id() > 0);
+            drop(fence);
+            assert_eq!(
+                crate::am::ec_distann::release_scan_token_for_test(
+                    logical,
+                    fingerprint,
+                    token
+                ),
+                Ok(true)
+            );
+        }
+        other => panic!("unexpected scan-registry posture: {other:?}"),
+    }
+}
+
+#[pg_test]
 fn test_ec_distann_create_drop_reindex_on_empty_table() {
     Spi::run("CREATE TABLE ec_distann_empty_lifecycle (id bigint, embedding ecvector)")
         .expect("table creation should succeed");

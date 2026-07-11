@@ -53,6 +53,14 @@ mod remote_transport;
 mod roster;
 mod routine;
 mod row_schema;
+mod scan_registry;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::scan_registry::{
+    acquire_fence_operation_reference as acquire_scan_fence_for_test,
+    register_scan_token as register_scan_token_for_test,
+    release_scan_token as release_scan_token_for_test, RegisterOutcome as ScanRegisterOutcome,
+    RegistryError as ScanRegistryError,
+};
 pub(crate) mod scan;
 mod shard_build;
 mod source_spool;
@@ -115,6 +123,15 @@ pub use self::row_schema::{
 pub(crate) fn register_gucs() {
     options::register_gucs();
     roster::register_gucs();
+    scan_registry::register_gucs();
+}
+
+/// Installs the FR-082 scan-token shared-memory request/startup hooks.  The
+/// hooks become active only while PostgreSQL is processing
+/// `shared_preload_libraries`; a later backend-local `LOAD` leaves the registry
+/// unavailable and distributed serving must fail closed.
+pub(crate) unsafe fn register_scan_registry_shared_memory() {
+    unsafe { scan_registry::register_shared_memory_hooks() };
 }
 
 /// Installs the multi-node CustomScan provider + planner hook (from `_PG_init`).
