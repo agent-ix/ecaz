@@ -11,7 +11,7 @@ seq: 01
 Please review the corrected Packet 006 contract and first implementation
 foundation:
 
-- contract amendment: `c152ef9751747fabf58b75f89207ab1eba4e6b0`
+- contract amendment: `c152ef9751747fabf58b75f89207ab1eba4e6`
 - immediate predecessor-cleanup traceability: `004e520c3`
 - implementation foundation: `54d09c177`
 

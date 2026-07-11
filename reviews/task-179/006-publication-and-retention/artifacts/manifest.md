@@ -1,7 +1,7 @@
 # Task 179 Packet 006 foundation artifacts
 
 - **Implementation head SHA:** `54d09c177`
-- **Normative contract SHA:** `c152ef9751747fabf58b75f89207ab1eba4e6b0`
+- **Normative contract SHA:** `c152ef9751747fabf58b75f89207ab1eba4e6`
 - **Task bucket / packet:**
   `reviews/task-179/006-publication-and-retention`
 - **Branch:** `task-179-ec-distann-physical-shards`
