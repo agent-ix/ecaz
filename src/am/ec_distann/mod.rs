@@ -46,6 +46,7 @@ mod manifest_v2;
 mod node_registry;
 mod options;
 pub mod page;
+mod participant_lifecycle;
 pub(crate) mod placement;
 pub(crate) mod quantizer;
 pub(crate) mod reader;

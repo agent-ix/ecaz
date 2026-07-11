@@ -592,6 +592,34 @@ ALTER FUNCTION ec_distann_initialize_control_registry(oid, uuid) SECURITY DEFINE
 ALTER FUNCTION ec_distann_initialize_control_registry(oid, uuid)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_initialize_control_registry(oid, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_publish_epoch(regclass, uuid, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_publish_epoch(regclass, uuid, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_publish_epoch(regclass, uuid, bytea, bytea)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_epoch_generation_status(regclass, uuid)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_epoch_generation_status(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_epoch_generation_status(regclass, uuid)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_mark_epoch_retired(regclass, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_mark_epoch_retired(regclass, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_mark_epoch_retired(regclass, bytea, bytea)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
+    FROM PUBLIC;
 "#,
     name = "distann_internal_privileges",
     finalize,

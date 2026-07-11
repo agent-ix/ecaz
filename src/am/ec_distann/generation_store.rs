@@ -64,10 +64,10 @@ fn canonical_control_compatibility_digest(
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct GenerationRelations {
-    row_tier_relid: pg_sys::Oid,
-    graph_store_relid: pg_sys::Oid,
-    directory_relid: pg_sys::Oid,
+pub(crate) struct GenerationRelations {
+    pub(crate) row_tier_relid: pg_sys::Oid,
+    pub(crate) graph_store_relid: pg_sys::Oid,
+    pub(crate) directory_relid: pg_sys::Oid,
 }
 
 fn fixed_digest(bytes: Vec<u8>, category: &str, field: &str) -> Result<[u8; 32], String> {
@@ -537,7 +537,7 @@ fn drop_relation_internal(
     Ok(())
 }
 
-fn drop_generation_relations(
+pub(crate) fn drop_generation_relations(
     control_oid: pg_sys::Oid,
     relations: GenerationRelations,
 ) -> Result<(), String> {
