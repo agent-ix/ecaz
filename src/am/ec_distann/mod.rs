@@ -12,6 +12,7 @@
 //! M1+ (Tasks 163+).
 
 mod ambuild;
+mod build_gate;
 mod build_coordinator;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::build_coordinator::build_session_lock_count_for_test;
@@ -120,6 +121,10 @@ pub(crate) fn register_gucs() {
 /// Installs the multi-node CustomScan provider + planner hook (from `_PG_init`).
 pub(crate) fn register_custom_scan() {
     custom_scan::register_custom_scan();
+}
+
+pub(crate) unsafe fn register_build_gate_hooks() {
+    unsafe { build_gate::register_build_gate_hooks() }
 }
 
 /// Legacy v4 graph/page surfaces must never interpret a v5 logical control root

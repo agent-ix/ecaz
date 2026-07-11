@@ -79,6 +79,7 @@ pub unsafe extern "C-unwind" fn _PG_init() {
     unsafe {
         am::register_custom_scan();
         am::register_dml_frontdoor_planner_hook();
+        am::ec_distann::register_build_gate_hooks();
     }
     #[cfg(feature = "pg18")]
     // SAFETY: PG18 hook/stat registrations are process-local initialization
@@ -518,6 +519,11 @@ ALTER FUNCTION ec_distann_begin_epoch_build(regclass, bigint, uuid)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_begin_epoch_build(regclass, bigint, uuid)
     FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_build_gate_relation_mask(oid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_build_gate_relation_mask(oid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_build_gate_relation_mask(oid) FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_begin_epoch_handoff(
     regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea

@@ -2059,6 +2059,9 @@ fn test_distann_begin_build_competing_backend_busy() {
         .batch_execute(&format!(
             "BEGIN;
              SAVEPOINT destructive_release;
+             UPDATE {registration} SET state = 'Published'
+              WHERE index_oid = '{index}'::regclass::oid
+                AND build_id = '{build_id}'::uuid;
              REINDEX INDEX {index};
              ROLLBACK TO SAVEPOINT destructive_release;
              COMMIT"
@@ -2169,7 +2172,12 @@ fn test_distann_begin_build_competing_backend_busy() {
     };
 
     owner
-        .batch_execute(&format!("REINDEX INDEX {index}"))
+        .batch_execute(&format!(
+            "UPDATE {registration} SET state = 'Published'
+               WHERE index_oid = '{index}'::regclass::oid
+                 AND build_id = '{build_id}'::uuid;
+             REINDEX INDEX {index}"
+        ))
         .expect("terminal control should rebuild before cleanup test");
     configure_rebuilt_control(&mut owner);
     let rebuild_one = "78787878-7878-4878-b878-787878787878";
@@ -2185,7 +2193,12 @@ fn test_distann_begin_build_competing_backend_busy() {
         .expect("first rebuilt control should acquire session ownership");
 
     owner
-        .batch_execute(&format!("REINDEX INDEX {index}"))
+        .batch_execute(&format!(
+            "UPDATE {registration} SET state = 'Published'
+               WHERE index_oid = '{index}'::regclass::oid
+                 AND build_id = '{rebuild_one}'::uuid;
+             REINDEX INDEX {index}"
+        ))
         .expect("same backend should destructively rebuild its active control");
     configure_rebuilt_control(&mut owner);
     let rebuild_two = "77777777-7777-4777-b777-777777777777";
@@ -2202,6 +2215,61 @@ fn test_distann_begin_build_competing_backend_busy() {
 
     drop(contender);
     drop(owner); // backend exit releases the retained session locks
+
+    let gate_error = |client: &mut postgres::Client, sql: &str| {
+        match client.batch_execute(sql) {
+            Err(error) => error
+                .as_db_error()
+                .map(|error| error.message().to_owned())
+                .unwrap_or_else(|| error.to_string()),
+            Ok(()) => panic!("durable build gate allowed rewrite: {sql}"),
+        }
+    };
+    assert_eq!(
+        setup
+            .query_one(&format!("SELECT count(*) FROM {source}"), &[])
+            .expect("prior-epoch/source reads remain available")
+            .get::<_, i64>(0),
+        1
+    );
+    for sql in [
+        format!(
+            "INSERT INTO {source} VALUES (
+                 '00000000-0000-4000-8000-000000000180',
+                 encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42))"
+        ),
+        format!("UPDATE {source} SET source_id = source_id"),
+        format!("DELETE FROM {source}"),
+        format!(
+            "WITH changed AS (DELETE FROM {source} RETURNING source_id)
+             SELECT count(*) FROM changed"
+        ),
+        format!(
+            "MERGE INTO {source} AS target
+             USING (VALUES ('00000000-0000-4000-8000-000000000179'::uuid)) AS incoming(source_id)
+                ON target.source_id = incoming.source_id
+             WHEN MATCHED THEN UPDATE SET source_id = target.source_id"
+        ),
+        format!("COPY {source} FROM '/ecaz/definitely/missing'"),
+        format!("TRUNCATE {source}"),
+        format!("ALTER TABLE {source} ADD COLUMN forbidden integer"),
+        format!("DROP TABLE {source}"),
+        format!("CLUSTER {source} USING {index}"),
+        format!("VACUUM (FULL) {source}"),
+        "VACUUM (FULL)".to_owned(),
+        "CLUSTER".to_owned(),
+        format!("ALTER INDEX {index} SET (graph_degree = 5)"),
+        format!("REINDEX INDEX {index}"),
+        format!("REINDEX TABLE {source}"),
+        format!("DROP INDEX {index}"),
+    ] {
+        let message = gate_error(&mut setup, &sql);
+        assert!(
+            message.contains("EC_BUILD_STATE"),
+            "unexpected durable gate error for {sql}: {message}"
+        );
+    }
+
     let exit_replay = setup
         .query_one(
             &format!(
@@ -2215,7 +2283,12 @@ fn test_distann_begin_build_competing_backend_busy() {
         .get::<_, Vec<u8>>(0);
     assert_eq!(exit_replay.len(), 32);
     setup
-        .batch_execute(&format!("DROP TABLE {source} CASCADE"))
+        .batch_execute(&format!(
+            "UPDATE {registration} SET state = 'Published'
+               WHERE index_oid = '{index}'::regclass::oid
+                 AND build_id = '{rebuild_two}'::uuid;
+             DROP TABLE {source} CASCADE"
+        ))
         .expect("same-backend DROP should reconcile active session locks");
 }
 
