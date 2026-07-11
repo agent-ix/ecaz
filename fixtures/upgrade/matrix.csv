@@ -11,6 +11,7 @@ distann-row-schema,1,true,true,fixtures/on-disk/distann_row_schema_v1.hex,curren
 distann-codec-artifact,1,true,true,fixtures/on-disk/distann_codec_artifact_v1.hex,current complete generation codec artifact including trained GroupedPQ bytes
 distann-generation-descriptor,1,false,false,fixtures/on-disk/distann_generation_descriptor_v1.hex,superseded pre-publication draft; rebuild-only and rejected
 distann-generation-descriptor,2,true,true,fixtures/on-disk/distann_generation_descriptor_v2.hex,current immutable descriptor binding authoritative coordinator UUID
+distann-build-candidate,1,true,true,fixtures/on-disk/distann_build_candidate_v1.hex,current immutable persisted T2 candidate binding registration/specification/descriptor/snapshot/receipt-set/manifest bytes and digests
 distann-successor-activation,1,true,true,fixtures/on-disk/distann_successor_activation_v1.hex,current durable predecessor-to-successor activation marker
 distann-abandon-binding-audit,1,true,true,fixtures/on-disk/distann_abandon_binding_audit_v1.hex,current immutable operator-authorized predecessor-binding abandonment audit
 distann-abandoned-binding-set,1,true,true,fixtures/on-disk/distann_abandoned_binding_set_v1.hex,current durable count-prefixed ordinal and abandon-audit-digest segment; v1 is domain-versioned without an in-band version word

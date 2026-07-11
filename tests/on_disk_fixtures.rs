@@ -564,7 +564,16 @@ fn distann_build_candidate_v1_fixture_decodes_independently_and_rejects_version_
     assert!(!receipts.len_bytes().is_empty());
     assert!(!receipts.len_bytes().is_empty());
     receipts.finish();
-    independent.take(32);
+    let receipt_set_digest = independent.take(32);
+    assert_distann_domain_digest(
+        receipt_set,
+        b"ec_distann_ready_receipt_set_v1\0",
+        "778aca82955691a96a3f94d14b27e66c8f6eec017a9d86ab478ede930785ec6a",
+    );
+    assert_eq!(
+        hex::encode(receipt_set_digest),
+        "778aca82955691a96a3f94d14b27e66c8f6eec017a9d86ab478ede930785ec6a"
+    );
     assert!(!independent.len_bytes().is_empty()); // epoch manifest
     let manifest_digest = independent.take(32);
     let fingerprint = independent.take(DISTANN_EPOCH_FINGERPRINT_BYTES);
@@ -616,6 +625,10 @@ fn distann_successor_activation_v1_fixture_decodes_independently_and_rejects_ver
         b"ec_distann_successor_activation_v1\0",
         "7e899375e04da53713908a66393f358079fbf157798bb82b7c3f4eb969e3289f",
     );
+    assert_eq!(
+        hex::encode(activation.digest().unwrap()),
+        "7e899375e04da53713908a66393f358079fbf157798bb82b7c3f4eb969e3289f"
+    );
 
     let mut swapped = bytes;
     swapped.swap(0, 1);
@@ -659,6 +672,10 @@ fn distann_abandon_binding_audit_v1_fixture_decodes_independently_and_rejects_ve
         b"ec_distann_abandon_predecessor_binding_v1\0",
         "6de563bc944a6bed733aa317fdd96c2955c707b0141a41adcee40a358e0f0bee",
     );
+    assert_eq!(
+        hex::encode(audit.digest().unwrap()),
+        "6de563bc944a6bed733aa317fdd96c2955c707b0141a41adcee40a358e0f0bee"
+    );
 
     let mut swapped = bytes;
     swapped.swap(0, 1);
@@ -684,6 +701,10 @@ fn distann_abandoned_binding_set_v1_fixture_decodes_independently_and_rejects_co
         &bytes,
         b"ec_distann_abandoned_binding_set_v1\0",
         "5d261a123049966c026d2b91cec2635d69e8ab1a5015516f33a5ebf0360f26e0",
+    );
+    assert_eq!(
+        hex::encode(set.digest().unwrap()),
+        "5d261a123049966c026d2b91cec2635d69e8ab1a5015516f33a5ebf0360f26e0"
     );
 
     // This domain-versioned segment intentionally begins with count, not an
@@ -730,6 +751,10 @@ fn distann_retire_decision_v1_fixture_decodes_independently_and_rejects_version_
         &bytes,
         b"ec_distann_retire_decision_v1\0",
         "393d5ee8f174606e2639e6bb05cbe72966e90bc3306db5001e57fcdf2bd070f8",
+    );
+    assert_eq!(
+        hex::encode(decision.digest().unwrap()),
+        "393d5ee8f174606e2639e6bb05cbe72966e90bc3306db5001e57fcdf2bd070f8"
     );
 
     let mut swapped = bytes;
