@@ -2566,6 +2566,7 @@
     include!("ec_ivf.rs");
 
     include!("ec_distann_basic.rs");
+    include!("ec_distann_d8.rs");
 
     include!("ec_hnsw_build.rs");
     include!("ec_hnsw_runtime_profiles.rs");

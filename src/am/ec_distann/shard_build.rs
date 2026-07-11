@@ -39,15 +39,20 @@
 //! head-index changes beyond consuming multi-shard entry samples).
 
 use std::cmp::Reverse;
-use std::collections::BinaryHeap;
+use std::collections::{BinaryHeap, VecDeque};
 use std::mem::size_of;
 #[cfg(not(test))]
 use std::ptr::NonNull;
+use std::sync::mpsc::{sync_channel, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use pgrx::pg_sys;
+#[cfg(test)]
 use rayon::prelude::*;
 
 use crate::am::common::training::train_spherical_kmeans;
+use crate::am::ec_diskann::maybe_check_for_interrupts;
 use crate::am::ec_diskann::source_inner_product_distance;
 use crate::am::{
     approximate_medoid, bfs_reachable, build_vamana_graph_with_stats, robust_prune, Candidate,
@@ -73,6 +78,24 @@ const DISTANN_SHARD_SEED_STRIDE: u64 = 0x9E37_79B9_7F4A_7C15;
 /// endian u32 neighbor ids. This is deliberately not a persisted index/wire
 /// format; the `BufFile` is resource-owner scoped to the build.
 const DISTANN_SHARD_SPILL_HEADER_BYTES: usize = 8;
+
+/// `BufFileSeek`'s `whence` argument is the C `SEEK_SET` value. Keep the
+/// constant local because PostgreSQL's generated bindings do not expose the C
+/// stdio constants.
+#[cfg(not(test))]
+const DISTANN_BUFFILE_SEEK_SET: i32 = 0;
+
+/// Keep the backend interrupt loop responsive while a pure-Rust shard build is
+/// running on scoped workers. PostgreSQL APIs remain confined to the backend
+/// thread; worker code never calls `CHECK_FOR_INTERRUPTS`.
+const DISTANN_SHARD_COMPLETION_POLL: Duration = Duration::from_millis(50);
+
+/// Conservative per-file allowance beyond PostgreSQL's `PGAlignedBlock`:
+/// the private `BufFile` fields, its initial `File` slot, and palloc chunk
+/// headers. PostgreSQL intentionally exposes `BufFile` as an opaque C type, so
+/// Rust cannot use `sizeof(BufFile)`; 256 bytes exceeds the PG17/PG18 fixed
+/// structures while keeping the manifest bound explicitly conservative.
+const DISTANN_BUFFILE_FIXED_OVERHEAD_BYTES: usize = 256;
 
 /// Build-time diagnostics surfaced to the epoch/packet manifest (FR-077-AC-3,
 /// ADR-085 D8). All counts are over the global node space.
@@ -136,10 +159,10 @@ impl ShardSpoolIo {
     }
 
     fn rewind(&mut self) -> Result<(), String> {
-        // PostgreSQL's BufFileSeek uses the C SEEK_SET value (0).
         // SAFETY: `file` is live; every shard owns one BufFile and starts at
         // logical file 0, offset 0.
-        let status = unsafe { pg_sys::BufFileSeek(self.file.as_ptr(), 0, 0, 0) };
+        let status =
+            unsafe { pg_sys::BufFileSeek(self.file.as_ptr(), 0, 0, DISTANN_BUFFILE_SEEK_SET) };
         if status == 0 {
             Ok(())
         } else {
@@ -181,11 +204,38 @@ impl ShardSpoolIo {
         }
         Ok(())
     }
+
+    fn ensure_eof(&mut self) -> Result<(), String> {
+        let mut byte = 0_u8;
+        // SAFETY: `byte` is a live one-byte output buffer and `file` remains
+        // owned by this cursor. A zero-length read result is the BufFile EOF
+        // contract; any byte proves the declared entry stream left a tail.
+        let count = unsafe {
+            pg_sys::BufFileRead(
+                self.file.as_ptr(),
+                (&mut byte as *mut u8).cast::<std::ffi::c_void>(),
+                1,
+            )
+        };
+        if count == 0 {
+            Ok(())
+        } else {
+            Err("ec_distann shard spool has unconsumed trailing bytes".to_owned())
+        }
+    }
 }
 
 #[cfg(not(test))]
 impl Drop for ShardSpoolIo {
     fn drop(&mut self) {
+        // A PostgreSQL ereport can unwind through Rust. Closing a BufFile may
+        // itself ereport (for example after temp-file failure), which would
+        // become a panic-in-Drop backend abort. During unwind the current
+        // resource owner will release the temporary file, so deliberately
+        // leave it to PostgreSQL instead of risking a nested error.
+        if std::thread::panicking() {
+            return;
+        }
         // SAFETY: this object uniquely owns the BufFile and closes it once.
         unsafe { pg_sys::BufFileClose(self.file.as_ptr()) };
     }
@@ -232,6 +282,19 @@ impl ShardSpoolIo {
         self.position = end;
         Ok(())
     }
+
+    fn ensure_eof(&mut self) -> Result<(), String> {
+        if self.position == self.bytes.len() {
+            Ok(())
+        } else {
+            Err("ec_distann test shard spool has unconsumed trailing bytes".to_owned())
+        }
+    }
+}
+
+struct EncodedShard {
+    bytes: Vec<u8>,
+    entry_count: usize,
 }
 
 struct ShardSpill {
@@ -258,59 +321,96 @@ impl ShardSpool {
         graph: ShardGraph,
         graph_degree: usize,
     ) -> Result<(), String> {
+        let encoded = encode_shard(shard_index, graph, graph_degree)?;
+        self.append_encoded_shard(shard_index, encoded)
+    }
+
+    /// Write a worker-produced shard encoding on the PostgreSQL backend
+    /// thread. `EncodedShard` contains no nested adjacency allocations, so a
+    /// completed `ShardGraph` has already been consumed and released before
+    /// this method is reached.
+    fn append_encoded_shard(
+        &mut self,
+        shard_index: usize,
+        encoded: EncodedShard,
+    ) -> Result<(), String> {
         if shard_index >= self.spills.len() || self.spills[shard_index].is_some() {
             return Err(format!(
                 "ec_distann duplicate or invalid shard spool index {shard_index}"
             ));
         }
-        if graph.nodes.len() != graph.neighbors.len() {
-            return Err(format!(
-                "ec_distann shard {shard_index} node/adjacency length mismatch: {} vs {}",
-                graph.nodes.len(),
-                graph.neighbors.len()
-            ));
-        }
-        if graph.nodes.windows(2).any(|pair| pair[0] >= pair[1]) {
-            return Err(format!(
-                "ec_distann shard {shard_index} output is not strictly node-sorted"
-            ));
-        }
-        for (node, neighbors) in graph.nodes.iter().zip(&graph.neighbors) {
-            if neighbors.len() > graph_degree {
-                return Err(format!(
-                    "ec_distann shard {shard_index} node {node} has {} neighbors, exceeding R={graph_degree}",
-                    neighbors.len()
-                ));
-            }
-        }
-
-        let entry_count = graph.nodes.len();
         let mut io = ShardSpoolIo::create()?;
-        let mut shard_bytes = 0_u64;
-        for (node, neighbors) in graph.nodes.into_iter().zip(graph.neighbors) {
-            let neighbor_count = u32::try_from(neighbors.len())
-                .map_err(|_| "ec_distann shard neighbor count exceeds u32".to_owned())?;
-            let mut header = [0_u8; DISTANN_SHARD_SPILL_HEADER_BYTES];
-            header[0..4].copy_from_slice(&node.to_le_bytes());
-            header[4..8].copy_from_slice(&neighbor_count.to_le_bytes());
-            io.write_all(&header);
-
-            let mut encoded_neighbors = Vec::with_capacity(neighbors.len() * size_of::<u32>());
-            for neighbor in neighbors {
-                encoded_neighbors.extend_from_slice(&neighbor.to_le_bytes());
-            }
-            io.write_all(&encoded_neighbors);
-            shard_bytes = shard_bytes
-                .checked_add((header.len() + encoded_neighbors.len()) as u64)
-                .ok_or_else(|| "ec_distann shard spill byte count overflow".to_owned())?;
-        }
+        io.write_all(&encoded.bytes);
+        let shard_bytes = u64::try_from(encoded.bytes.len())
+            .map_err(|_| "ec_distann shard spill byte count exceeds u64".to_owned())?;
         self.bytes_written = self
             .bytes_written
             .checked_add(shard_bytes)
             .ok_or_else(|| "ec_distann total shard spill byte count overflow".to_owned())?;
-        self.spills[shard_index] = Some(ShardSpill { io, entry_count });
+        self.spills[shard_index] = Some(ShardSpill {
+            io,
+            entry_count: encoded.entry_count,
+        });
         Ok(())
     }
+}
+
+/// Validate and consume a completed graph into one flat encoding while still
+/// on its scoped worker. Returning a flat buffer rather than `ShardGraph`
+/// prevents the backend completion queue from ever retaining a batch of
+/// nested, complete adjacency graphs.
+fn encode_shard(
+    shard_index: usize,
+    graph: ShardGraph,
+    graph_degree: usize,
+) -> Result<EncodedShard, String> {
+    if graph.nodes.len() != graph.neighbors.len() {
+        return Err(format!(
+            "ec_distann shard {shard_index} node/adjacency length mismatch: {} vs {}",
+            graph.nodes.len(),
+            graph.neighbors.len()
+        ));
+    }
+    if graph.nodes.windows(2).any(|pair| pair[0] >= pair[1]) {
+        return Err(format!(
+            "ec_distann shard {shard_index} output is not strictly node-sorted"
+        ));
+    }
+
+    let entry_count = graph.nodes.len();
+    let payload_words = graph.neighbors.iter().try_fold(0_usize, |total, neighbors| {
+        if neighbors.len() > graph_degree {
+            return Err(format!(
+                "ec_distann shard {shard_index} has an adjacency with {} neighbors, exceeding R={graph_degree}",
+                neighbors.len()
+            ));
+        }
+        total
+            .checked_add(neighbors.len())
+            .ok_or_else(|| "ec_distann shard neighbor count overflow".to_owned())
+    })?;
+    let header_bytes = entry_count
+        .checked_mul(DISTANN_SHARD_SPILL_HEADER_BYTES)
+        .ok_or_else(|| "ec_distann shard header byte count overflow".to_owned())?;
+    let payload_bytes = payload_words
+        .checked_mul(size_of::<u32>())
+        .ok_or_else(|| "ec_distann shard payload byte count overflow".to_owned())?;
+    let encoded_capacity = header_bytes
+        .checked_add(payload_bytes)
+        .ok_or_else(|| "ec_distann shard encoded byte count overflow".to_owned())?;
+    let mut bytes = Vec::with_capacity(encoded_capacity);
+
+    for (node, neighbors) in graph.nodes.into_iter().zip(graph.neighbors) {
+        let neighbor_count = u32::try_from(neighbors.len())
+            .map_err(|_| "ec_distann shard neighbor count exceeds u32".to_owned())?;
+        bytes.extend_from_slice(&node.to_le_bytes());
+        bytes.extend_from_slice(&neighbor_count.to_le_bytes());
+        for neighbor in neighbors {
+            bytes.extend_from_slice(&neighbor.to_le_bytes());
+        }
+    }
+    debug_assert_eq!(bytes.len(), encoded_capacity);
+    Ok(EncodedShard { bytes, entry_count })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -344,11 +444,12 @@ impl ShardCursor {
         })
     }
 
-    fn consume(
+    fn consume_into(
         &mut self,
         node_count: usize,
         graph_degree: usize,
-    ) -> Result<(u32, Vec<u32>), String> {
+        neighbors: &mut Vec<u32>,
+    ) -> Result<u32, String> {
         let header = self
             .current
             .take()
@@ -358,16 +459,17 @@ impl ShardCursor {
             .neighbor_count
             .checked_mul(size_of::<u32>())
             .ok_or_else(|| "ec_distann shard payload length overflow".to_owned())?;
-        let mut neighbors = vec![0_u32; header.neighbor_count];
+        neighbors.clear();
+        neighbors.resize(header.neighbor_count, 0);
         if payload_bytes > 0 {
-            // SAFETY: `neighbors` is initialized and owns exactly
+            // SAFETY: `neighbors` is initialized and owns at least
             // `payload_bytes` writable bytes. Reading into its byte view and
             // converting every word from little endian preserves validity.
             let bytes = unsafe {
                 std::slice::from_raw_parts_mut(neighbors.as_mut_ptr().cast::<u8>(), payload_bytes)
             };
             self.io.read_exact(bytes)?;
-            for neighbor in &mut neighbors {
+            for neighbor in neighbors.iter_mut() {
                 *neighbor = u32::from_le(*neighbor);
                 if *neighbor as usize >= node_count {
                     return Err(format!(
@@ -392,7 +494,7 @@ impl ShardCursor {
             }
             self.current = Some(next);
         }
-        Ok((header.node, neighbors))
+        Ok(header.node)
     }
 }
 
@@ -426,10 +528,23 @@ fn retained_cursor_bytes(
     shard_count: usize,
     cursor_capacity: usize,
     heap_capacity: usize,
-) -> usize {
-    shard_count * pg_sys::BLCKSZ as usize
-        + cursor_capacity * size_of::<ShardCursor>()
-        + heap_capacity * size_of::<Reverse<(u32, usize)>>()
+) -> Result<usize, String> {
+    let bytes_per_buffile = (pg_sys::BLCKSZ as usize)
+        .checked_add(DISTANN_BUFFILE_FIXED_OVERHEAD_BYTES)
+        .ok_or_else(|| "ec_distann per-BufFile accounting overflow".to_owned())?;
+    let block_buffers = shard_count
+        .checked_mul(bytes_per_buffile)
+        .ok_or_else(|| "ec_distann shard BufFile accounting overflow".to_owned())?;
+    let cursor_bytes = cursor_capacity
+        .checked_mul(size_of::<ShardCursor>())
+        .ok_or_else(|| "ec_distann shard cursor accounting overflow".to_owned())?;
+    let heap_bytes = heap_capacity
+        .checked_mul(size_of::<Reverse<(u32, usize)>>())
+        .ok_or_else(|| "ec_distann shard heap accounting overflow".to_owned())?;
+    block_buffers
+        .checked_add(cursor_bytes)
+        .and_then(|total| total.checked_add(heap_bytes))
+        .ok_or_else(|| "ec_distann retained cursor accounting overflow".to_owned())
 }
 
 /// Result of closure-overlap shard assignment.
@@ -482,23 +597,19 @@ pub(super) fn build_sharded_graph(
     // stitched graph shares an entry point with the fallback path.
     let medoid = approximate_medoid(node_count, DISTANN_MEDOID_SAMPLE_CAP, seed, dist);
 
-    let assignment = assign_shards(source_refs, dimensions, shard_count, closure_epsilon, seed)?;
-    let mut shard_spool = build_shard_spool(
-        &assignment.members,
-        graph_degree,
-        build_list_size,
-        alpha,
-        seed,
-        &dist,
-    )?;
-    let shard_output_spill_bytes = shard_spool.bytes_written;
+    let ShardAssignment {
+        members,
+        duplication_factor,
+        max_shard_size,
+    } = assign_shards(source_refs, dimensions, shard_count, closure_epsilon, seed)?;
+    let mut shard_spool =
+        build_shard_spool(members, graph_degree, build_list_size, alpha, seed, &dist)?;
 
     let (graph, mut stats) =
         stitch_shard_spool(node_count, &mut shard_spool, graph_degree, alpha, &dist)?;
     stats.shard_count = shard_count;
-    stats.duplication_factor = assignment.duplication_factor;
-    stats.max_shard_size = assignment.max_shard_size;
-    stats.shard_output_spill_bytes = shard_output_spill_bytes;
+    stats.duplication_factor = duplication_factor;
+    stats.max_shard_size = max_shard_size;
 
     let mut graph = graph;
     stats.reachability_repairs = repair_reachability(&mut graph, medoid, graph_degree, &dist)?;
@@ -529,20 +640,23 @@ fn assign_shards(
     let ratio = 1.0_f32 + closure_epsilon.max(0.0);
 
     let mut members: Vec<Vec<u32>> = vec![Vec::new(); shard_count];
+    let mut centroid_distances = Vec::with_capacity(shard_count);
     let mut total_memberships: u64 = 0;
     for (node, source) in source_refs.iter().enumerate() {
+        maybe_check_for_interrupts();
         // Distance to every centroid; primary = argmin.
+        centroid_distances.clear();
         let mut best = f32::INFINITY;
         for centroid in centroids.iter() {
             let d = source_inner_product_distance(source, centroid);
+            centroid_distances.push(d);
             if d < best {
                 best = d;
             }
         }
         let band = best * ratio;
         let mut assigned_any = false;
-        for (shard, centroid) in centroids.iter().enumerate() {
-            let d = source_inner_product_distance(source, centroid);
+        for (shard, &d) in centroid_distances.iter().enumerate() {
             // `<= band` includes the primary (d == best) and every centroid in
             // the closure band. `band` is finite and >= best, so at least the
             // primary always qualifies.
@@ -589,13 +703,17 @@ fn nearest_centroid_index(source: &[f32], centroids: &[Vec<f32>]) -> usize {
     best_index
 }
 
-/// Build independent Vamana shards in bounded parallel batches, immediately
-/// spilling each completed shard to a sequential PostgreSQL-managed BufFile.
-/// Parallel
-/// and sequential builds are identical because each shard is pure and seeded.
-/// No shard graph remains resident when the stitch starts.
+/// Build independent Vamana shards in parallel and immediately spill each
+/// completion to a sequential PostgreSQL-managed BufFile. Workers consume
+/// their completed `ShardGraph` into one flat encoding before sending it to a
+/// bounded completion queue; the backend drains and writes completions as they
+/// arrive. The queue therefore never retains the old batch-wide
+/// `Vec<ShardGraph>`, and PostgreSQL I/O remains confined to the backend
+/// thread. Parallel and sequential builds are identical because each shard is
+/// pure and seeded. Membership lists are consumed by the workers and no shard
+/// graph or assignment remains resident when the stitch starts.
 fn build_shard_spool<D>(
-    members: &[Vec<u32>],
+    members: Vec<Vec<u32>>,
     graph_degree: usize,
     build_list_size: usize,
     alpha: f32,
@@ -605,32 +723,103 @@ fn build_shard_spool<D>(
 where
     D: Fn(u32, u32) -> f32 + Sync,
 {
-    let mut spool = ShardSpool::create(members.len())?;
-    let batch_width = rayon::current_num_threads()
-        .max(1)
-        .min(members.len().max(1));
-    for (batch_index, batch) in members.chunks(batch_width).enumerate() {
-        let base_shard = batch_index * batch_width;
-        let completed: Vec<ShardGraph> = batch
-            .par_iter()
-            .enumerate()
-            .map(|(batch_offset, global_ids)| {
-                let shard_index = base_shard + batch_offset;
-                build_one_shard(
+    let shard_count = members.len();
+    let mut spool = ShardSpool::create(shard_count)?;
+    if shard_count == 0 {
+        return Ok(spool);
+    }
+
+    let worker_count = rayon::current_num_threads().min(shard_count).max(1);
+    if worker_count == 1 {
+        for (shard_index, global_ids) in members.into_iter().enumerate() {
+            maybe_check_for_interrupts();
+            let graph = build_one_shard(
+                shard_index,
+                &global_ids,
+                graph_degree,
+                build_list_size,
+                alpha,
+                seed,
+                dist,
+            );
+            let encoded = encode_shard(shard_index, graph, graph_degree)?;
+            spool.append_encoded_shard(shard_index, encoded)?;
+        }
+        return Ok(spool);
+    }
+
+    let jobs = Arc::new(Mutex::new(
+        members.into_iter().enumerate().collect::<VecDeque<_>>(),
+    ));
+    let (sender, receiver) = sync_channel::<(usize, Result<EncodedShard, String>)>(worker_count);
+    std::thread::scope(|scope| -> Result<(), String> {
+        for _ in 0..worker_count {
+            let sender = sender.clone();
+            let jobs = Arc::clone(&jobs);
+            scope.spawn(move || loop {
+                let job = {
+                    let mut jobs = match jobs.lock() {
+                        Ok(jobs) => jobs,
+                        Err(_) => return,
+                    };
+                    jobs.pop_front()
+                };
+                let Some((shard_index, global_ids)) = job else {
+                    return;
+                };
+                let graph = build_one_shard(
                     shard_index,
-                    global_ids,
+                    &global_ids,
                     graph_degree,
                     build_list_size,
                     alpha,
                     seed,
                     dist,
-                )
-            })
-            .collect();
-        for (batch_offset, graph) in completed.into_iter().enumerate() {
-            spool.append_shard(base_shard + batch_offset, graph, graph_degree)?;
+                );
+                let result = encode_shard(shard_index, graph, graph_degree);
+                // A send failure means the backend is already unwinding; no
+                // PostgreSQL API or panic belongs on this worker thread.
+                if sender.send((shard_index, result)).is_err() {
+                    return;
+                }
+            });
         }
-    }
+        drop(sender);
+
+        let mut received = 0_usize;
+        let mut first_error: Option<String> = None;
+        while received < shard_count {
+            match receiver.recv_timeout(DISTANN_SHARD_COMPLETION_POLL) {
+                Ok((shard_index, result)) => {
+                    received += 1;
+                    maybe_check_for_interrupts();
+                    match result {
+                        Ok(encoded) if first_error.is_none() => {
+                            if let Err(error) = spool.append_encoded_shard(shard_index, encoded) {
+                                first_error = Some(error);
+                            }
+                        }
+                        Ok(_encoded) => {
+                            // Keep draining after the first error so bounded
+                            // worker sends cannot deadlock the scoped workers.
+                        }
+                        Err(error) if first_error.is_none() => first_error = Some(error),
+                        Err(_) => {}
+                    }
+                }
+                Err(RecvTimeoutError::Timeout) => maybe_check_for_interrupts(),
+                Err(RecvTimeoutError::Disconnected) => {
+                    if first_error.is_none() {
+                        first_error = Some(format!(
+                            "ec_distann shard completion channel closed after {received} of {shard_count} shards"
+                        ));
+                    }
+                    break;
+                }
+            }
+        }
+        first_error.map_or(Ok(()), Err)
+    })?;
     Ok(spool)
 }
 
@@ -755,12 +944,14 @@ where
     let mut edges_after: u64 = 0;
     let mut peak_union_len = 0_usize;
     let mut peak_cursor_bytes =
-        retained_cursor_bytes(shard_count, cursors.capacity(), heap.capacity());
+        retained_cursor_bytes(shard_count, cursors.capacity(), heap.capacity())?;
     let mut peak_group_bytes = 0_usize;
     let mut peak_retained_bytes = peak_cursor_bytes;
     let mut expected_node = 0_u32;
+    let mut neighbor_scratch: Vec<u32> = Vec::new();
 
     while let Some(Reverse((node, first_shard))) = heap.pop() {
+        maybe_check_for_interrupts();
         if node != expected_node {
             return Err(format!(
                 "ec_distann stitched coverage gap: expected node {expected_node}, found {node}"
@@ -775,37 +966,79 @@ where
         let mut union: Vec<u32> = Vec::new();
         let mut shard = Some(first_shard);
         while let Some(shard_index) = shard {
-            let (entry_node, mut neighbors) =
-                cursors[shard_index].consume(node_count, graph_degree)?;
+            let entry_node = cursors[shard_index].consume_into(
+                node_count,
+                graph_degree,
+                &mut neighbor_scratch,
+            )?;
             if entry_node != node {
                 return Err(format!(
                     "ec_distann shard cursor changed node: expected {node}, got {entry_node}"
                 ));
             }
-            neighbors.retain(|&neighbor| neighbor != node);
+            neighbor_scratch.retain(|&neighbor| neighbor != node);
+            let incoming_neighbor_bytes = neighbor_scratch
+                .capacity()
+                .checked_mul(size_of::<u32>())
+                .ok_or_else(|| "ec_distann incoming neighbor accounting overflow".to_owned())?;
             membership += 1;
+            let mut prior_union_bytes = 0_usize;
             if membership == 1 {
-                passthrough = Some(neighbors);
+                passthrough = Some(std::mem::take(&mut neighbor_scratch));
             } else {
                 if membership == 2 {
                     union = passthrough.take().unwrap_or_default();
                 }
-                union.extend(neighbors);
+                prior_union_bytes =
+                    union
+                        .capacity()
+                        .checked_mul(size_of::<u32>())
+                        .ok_or_else(|| {
+                            "ec_distann prior stitch union accounting overflow".to_owned()
+                        })?;
+                union.extend_from_slice(&neighbor_scratch);
             }
 
             if let Some(next) = cursors[shard_index].current {
                 heap.push(Reverse((next.node, shard_index)));
             }
             let current_cursor_bytes =
-                retained_cursor_bytes(shard_count, cursors.capacity(), heap.capacity());
+                retained_cursor_bytes(shard_count, cursors.capacity(), heap.capacity())?;
             peak_cursor_bytes = peak_cursor_bytes.max(current_cursor_bytes);
-            let active_group_bytes = passthrough
-                .as_ref()
-                .map_or(0, |neighbors| neighbors.capacity() * size_of::<u32>())
-                + union.capacity() * size_of::<u32>();
+            let passthrough_bytes = passthrough.as_ref().map_or(Ok(0), |neighbors| {
+                neighbors
+                    .capacity()
+                    .checked_mul(size_of::<u32>())
+                    .ok_or_else(|| "ec_distann passthrough neighbor accounting overflow".to_owned())
+            })?;
+            let union_bytes = union
+                .capacity()
+                .checked_mul(size_of::<u32>())
+                .ok_or_else(|| "ec_distann stitch union accounting overflow".to_owned())?;
+            let retained_group_bytes = passthrough_bytes
+                .checked_add(union_bytes)
+                .ok_or_else(|| "ec_distann retained group accounting overflow".to_owned())?;
+            // For a multi-membership node, retain and account the reusable
+            // cursor-read scratch alongside the enlarged union. Conservatively
+            // include the prior union allocation as well because `Vec` growth
+            // may allocate the replacement before releasing the old buffer.
+            // Reusing the read scratch avoids a fresh payload allocation for
+            // every membership after the first.
+            let active_group_bytes = if membership > 1 {
+                retained_group_bytes
+                    .checked_add(incoming_neighbor_bytes)
+                    .and_then(|bytes| bytes.checked_add(prior_union_bytes))
+                    .ok_or_else(|| {
+                        "ec_distann active stitch group accounting overflow".to_owned()
+                    })?
+            } else {
+                retained_group_bytes
+            };
             peak_group_bytes = peak_group_bytes.max(active_group_bytes);
-            peak_retained_bytes =
-                peak_retained_bytes.max(current_cursor_bytes + active_group_bytes);
+            let current_retained_bytes = current_cursor_bytes
+                .checked_add(active_group_bytes)
+                .ok_or_else(|| "ec_distann retained stitch accounting overflow".to_owned())?;
+            peak_retained_bytes = peak_retained_bytes.max(current_retained_bytes);
 
             shard = match heap.peek() {
                 Some(Reverse((next_node, _))) if *next_node == node => {
@@ -825,20 +1058,38 @@ where
             union.dedup();
             peak_union_len = peak_union_len.max(union.len());
             edges_before += union.len() as u64;
-            let candidates: Vec<Candidate> = union
-                .iter()
-                .map(|&neighbor| Candidate {
-                    node: neighbor,
-                    distance: dist(node, neighbor),
-                })
-                .collect();
-            let prune_bytes = union.capacity() * size_of::<u32>()
-                + candidates.capacity() * size_of::<Candidate>()
-                + graph_degree * size_of::<u32>();
+            let mut candidates: Vec<Candidate> = Vec::with_capacity(union.len());
+            candidates.extend(union.iter().map(|&neighbor| Candidate {
+                node: neighbor,
+                distance: dist(node, neighbor),
+            }));
+            let union_bytes = union
+                .capacity()
+                .checked_mul(size_of::<u32>())
+                .ok_or_else(|| "ec_distann stitch union accounting overflow".to_owned())?;
+            let candidate_bytes = candidates
+                .capacity()
+                .checked_mul(size_of::<Candidate>())
+                .ok_or_else(|| "ec_distann stitch candidate accounting overflow".to_owned())?;
+            let result_bytes = graph_degree
+                .checked_mul(size_of::<u32>())
+                .ok_or_else(|| "ec_distann stitch prune-result accounting overflow".to_owned())?;
+            let scratch_bytes = neighbor_scratch
+                .capacity()
+                .checked_mul(size_of::<u32>())
+                .ok_or_else(|| "ec_distann stitch scratch accounting overflow".to_owned())?;
+            let prune_bytes = union_bytes
+                .checked_add(candidate_bytes)
+                .and_then(|bytes| bytes.checked_add(result_bytes))
+                .and_then(|bytes| bytes.checked_add(scratch_bytes))
+                .ok_or_else(|| "ec_distann stitch prune accounting overflow".to_owned())?;
             let current_cursor_bytes =
-                retained_cursor_bytes(shard_count, cursors.capacity(), heap.capacity());
+                retained_cursor_bytes(shard_count, cursors.capacity(), heap.capacity())?;
             peak_group_bytes = peak_group_bytes.max(prune_bytes);
-            peak_retained_bytes = peak_retained_bytes.max(current_cursor_bytes + prune_bytes);
+            let current_retained_bytes = current_cursor_bytes
+                .checked_add(prune_bytes)
+                .ok_or_else(|| "ec_distann retained prune accounting overflow".to_owned())?;
+            peak_retained_bytes = peak_retained_bytes.max(current_retained_bytes);
             robust_prune(node, candidates, alpha, graph_degree, dist)
         };
         edges_after += final_neighbors.len() as u64;
@@ -850,12 +1101,16 @@ where
             "ec_distann stitched coverage ended at {expected_node}, expected {node_count} nodes"
         ));
     }
-    for (shard_index, cursor) in cursors.iter().enumerate() {
+    for (shard_index, cursor) in cursors.iter_mut().enumerate() {
         if cursor.remaining_entries != 0 || cursor.current.is_some() {
             return Err(format!(
                 "ec_distann shard cursor {shard_index} retained unconsumed entries"
             ));
         }
+        cursor
+            .io
+            .ensure_eof()
+            .map_err(|error| format!("ec_distann shard cursor {shard_index}: {error}"))?;
     }
 
     let stats = ShardBuildStats {
@@ -939,6 +1194,7 @@ where
 
     let mut repairs = 0_usize;
     for node in 0..node_count as u32 {
+        maybe_check_for_interrupts();
         if reached[node as usize] {
             continue;
         }
@@ -1287,12 +1543,13 @@ mod tests {
         );
 
         // Vec capacity growth is at most the next power-of-two (<2x logical
-        // entries). The active group can contain at most S*R neighbor ids,
-        // one Candidate per unique id, and one R-sized prune result.
+        // entries). The conservative accounting includes current + prior
+        // union allocations during growth, an R-sized cursor scratch, one
+        // Candidate per unique id, and an R-sized prune result.
         let max_group_nodes = shard_count * graph_degree;
-        let conservative_group_bound = 2 * max_group_nodes * size_of::<u32>()
+        let conservative_group_bound = 4 * max_group_nodes * size_of::<u32>()
             + 2 * max_group_nodes * size_of::<Candidate>()
-            + graph_degree * size_of::<u32>();
+            + 3 * graph_degree * size_of::<u32>();
         assert!(
             stats.stitch_peak_group_bytes <= conservative_group_bound,
             "group bytes {} exceed conservative one-group bound {}",
@@ -1304,6 +1561,115 @@ mod tests {
             "stitch retained {} bytes but spool contains only {} bytes",
             stats.stitch_peak_retained_bytes,
             stats.shard_output_spill_bytes
+        );
+    }
+
+    fn raw_spool(shards: Vec<(usize, Vec<u8>)>) -> ShardSpool {
+        let bytes_written = shards.iter().map(|(_, bytes)| bytes.len() as u64).sum();
+        ShardSpool {
+            spills: shards
+                .into_iter()
+                .map(|(entry_count, bytes)| {
+                    Some(ShardSpill {
+                        io: ShardSpoolIo { bytes, position: 0 },
+                        entry_count,
+                    })
+                })
+                .collect(),
+            bytes_written,
+        }
+    }
+
+    fn raw_entry(node: u32, neighbors: &[u32]) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(
+            DISTANN_SHARD_SPILL_HEADER_BYTES + neighbors.len() * size_of::<u32>(),
+        );
+        bytes.extend_from_slice(&node.to_le_bytes());
+        bytes.extend_from_slice(&(neighbors.len() as u32).to_le_bytes());
+        for &neighbor in neighbors {
+            bytes.extend_from_slice(&neighbor.to_le_bytes());
+        }
+        bytes
+    }
+
+    fn corrupt_spool_error(
+        node_count: usize,
+        graph_degree: usize,
+        spool: &mut ShardSpool,
+    ) -> String {
+        stitch_shard_spool(node_count, spool, graph_degree, 1.2, &|left, right| {
+            left.abs_diff(right) as f32
+        })
+        .expect_err("corrupt shard spool must fail closed")
+    }
+
+    #[test]
+    fn tc038_corrupt_spool_rejects_coverage_gap() {
+        let mut bytes = raw_entry(0, &[2]);
+        bytes.extend_from_slice(&raw_entry(2, &[0]));
+        let error = corrupt_spool_error(3, 4, &mut raw_spool(vec![(2, bytes)]));
+        assert!(
+            error.contains("coverage gap: expected node 1, found 2"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn tc038_corrupt_spool_rejects_out_of_range_node_and_neighbor() {
+        let node_error = corrupt_spool_error(2, 4, &mut raw_spool(vec![(1, raw_entry(2, &[]))]));
+        assert!(
+            node_error.contains("node 2 outside node count 2"),
+            "unexpected node error: {node_error}"
+        );
+
+        let neighbor_error =
+            corrupt_spool_error(2, 4, &mut raw_spool(vec![(1, raw_entry(0, &[2]))]));
+        assert!(
+            neighbor_error.contains("neighbor 2 outside node count 2"),
+            "unexpected neighbor error: {neighbor_error}"
+        );
+    }
+
+    #[test]
+    fn tc038_corrupt_spool_rejects_over_degree_entry() {
+        let error = corrupt_spool_error(3, 1, &mut raw_spool(vec![(1, raw_entry(0, &[1, 2]))]));
+        assert!(
+            error.contains("node 0 has 2 neighbors, exceeding R=1"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn tc038_corrupt_spool_rejects_unsorted_stream() {
+        let mut bytes = raw_entry(0, &[1]);
+        bytes.extend_from_slice(&raw_entry(0, &[1]));
+        let error = corrupt_spool_error(2, 4, &mut raw_spool(vec![(2, bytes)]));
+        assert!(
+            error.contains("not strictly sorted: 0 after 0"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn tc038_corrupt_spool_rejects_unconsumed_tail() {
+        let mut bytes = raw_entry(0, &[]);
+        bytes.push(0xA5);
+        let error = corrupt_spool_error(1, 4, &mut raw_spool(vec![(1, bytes)]));
+        assert!(
+            error.contains("unconsumed trailing bytes"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn tc038_corrupt_spool_rejects_truncated_payload() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&0_u32.to_le_bytes());
+        bytes.extend_from_slice(&1_u32.to_le_bytes());
+        let error = corrupt_spool_error(2, 4, &mut raw_spool(vec![(1, bytes)]));
+        assert!(
+            error.contains("truncated test shard spool entry"),
+            "unexpected error: {error}"
         );
     }
 
