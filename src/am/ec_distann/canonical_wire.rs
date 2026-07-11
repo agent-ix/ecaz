@@ -59,6 +59,10 @@ impl CanonicalEncoder {
         self.bytes.extend_from_slice(&value.to_le_bytes());
     }
 
+    pub(crate) fn put_i64(&mut self, value: i64) {
+        self.bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
     pub(crate) fn put_f32(&mut self, value: f32) {
         self.bytes.extend_from_slice(&value.to_le_bytes());
     }
@@ -156,6 +160,12 @@ impl<'a> CanonicalDecoder<'a> {
         ))
     }
 
+    pub(crate) fn get_i64(&mut self, field: &str) -> Result<i64, String> {
+        Ok(i64::from_le_bytes(
+            self.take(8, field)?.try_into().expect("eight bytes"),
+        ))
+    }
+
     pub(crate) fn get_f32(&mut self, field: &str) -> Result<f32, String> {
         Ok(f32::from_le_bytes(
             self.take(4, field)?.try_into().expect("four bytes"),
@@ -213,6 +223,7 @@ mod tests {
         encoder.put_u32(0x5566_7788);
         encoder.put_i32(-42);
         encoder.put_u64(0x0102_0304_0506_0708);
+        encoder.put_i64(-0x0102_0304_0506_0708);
         encoder.put_f32(-1.25);
         encoder.put_string("schema.type").unwrap();
         let bytes = encoder.finish().unwrap();
@@ -223,6 +234,7 @@ mod tests {
         assert_eq!(decoder.get_u32("u32").unwrap(), 0x5566_7788);
         assert_eq!(decoder.get_i32("i32").unwrap(), -42);
         assert_eq!(decoder.get_u64("u64").unwrap(), 0x0102_0304_0506_0708);
+        assert_eq!(decoder.get_i64("i64").unwrap(), -0x0102_0304_0506_0708);
         assert_eq!(
             decoder.get_f32("f32").unwrap().to_bits(),
             (-1.25_f32).to_bits()
