@@ -69,7 +69,6 @@ impl ActiveSnapshotGuard {
         Some(Self { snapshot })
     }
 
-    #[cfg(any(test, feature = "pg_test"))]
     pub(crate) fn latest_after_command_counter() -> Option<Self> {
         // SAFETY: `CommandCounterIncrement` is valid before acquiring a fresh
         // backend snapshot in PostgreSQL helper entry points.

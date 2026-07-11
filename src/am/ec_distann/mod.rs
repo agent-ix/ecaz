@@ -14,6 +14,8 @@
 mod ambuild;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::read_metadata_from_index;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ambuild::capture_physical_source_rows;
 mod canonical_wire;
 mod cost;
 mod custom_scan;
@@ -44,6 +46,7 @@ mod routine;
 mod row_schema;
 pub(crate) mod scan;
 mod shard_build;
+mod source_spool;
 pub mod tuple;
 
 #[cfg(any(test, feature = "pg_test"))]

@@ -2292,6 +2292,106 @@ fn test_distann_seal_ready_replay_and_receipt() {
 }
 
 #[pg_test]
+fn test_distann_source_capture_spools_complete_frozen_rows() {
+    Spi::run(
+        "CREATE TABLE ec_distann_source_capture_source (
+             source_id uuid NOT NULL,
+             payload text,
+             legacy_payload integer,
+             embedding ecvector(4) NOT NULL,
+             payload_generated text GENERATED ALWAYS AS (payload || ':generated') STORED
+         );
+         ALTER TABLE ec_distann_source_capture_source DROP COLUMN legacy_payload;
+         INSERT INTO ec_distann_source_capture_source
+             (source_id, payload, embedding)
+         VALUES
+             ('11111111-1111-4111-8111-111111111111', repeat('x', 20000),
+              encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)),
+             ('22222222-2222-4222-8222-222222222222', NULL,
+              encode_to_ecvector(ARRAY[0.0,1.0,0.0,0.0], 4, 42));
+         CREATE INDEX ec_distann_source_capture_idx
+           ON ec_distann_source_capture_source
+           USING ec_distann (embedding ecvector_distann_ip_ops)
+           INCLUDE (source_id)
+           WITH (
+               distributed_control = true,
+               source_identity = 'include',
+               graph_degree = 4,
+               neighbor_code_format = 'rabitq'
+           )",
+    )
+    .unwrap();
+    let index_oid =
+        Spi::get_one::<pg_sys::Oid>("SELECT 'ec_distann_source_capture_idx'::regclass::oid")
+            .unwrap()
+            .unwrap();
+
+    let index = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        "source capture test",
+    );
+    let heap = crate::storage::relation_guard::HeapRelationGuard::try_access_share(
+        index.heap_relation_oid(),
+    )
+    .expect("source heap should open");
+    let index_info =
+        crate::am::common::index_info::IndexInfoGuard::build(index.as_ptr(), "source capture test");
+    let mut capture = unsafe {
+        crate::am::ec_distann::capture_physical_source_rows(
+            heap.as_ptr(),
+            index.as_ptr(),
+            index_info.as_ptr(),
+        )
+    }
+    .expect("physical source capture should succeed");
+    assert_eq!(capture.len(), 2);
+    assert_eq!(capture.dimensions(), 4);
+
+    capture
+        .preflight_handoff_entries(crate::am::ec_distann::DistannHandoffShape {
+            code_stride: 1,
+            graph_degree: 4,
+            non_dropped_attribute_count: 4,
+        })
+        .expect("every complete eventual entry should fit the handoff bound");
+
+    let mut seen_toasted = false;
+    let mut seen_nulls = false;
+    for node in 0..capture.len() {
+        let heap_tid = capture.rows()[node].heap_tid();
+        let vector = capture.rows()[node].source_vector().to_vec();
+        let identity = capture.rows()[node].identity_payload();
+        assert_ne!(heap_tid.offset_number, 0);
+        let payload = capture
+            .payload_for_node(node)
+            .expect("spooled source payload should read back");
+        assert_eq!(payload.source_identity, identity);
+        assert_eq!(
+            payload.vec_id,
+            crate::am::ec_distann::vec_id_from_source_identity(&identity)
+        );
+        if identity[0] == 0x11 {
+            assert_eq!(vector, vec![1.0, 0.0, 0.0, 0.0]);
+            assert_eq!(payload.row_null_bitmap, vec![0]);
+            assert_eq!(payload.row_values.len(), 4);
+            assert_eq!(payload.row_values[1].len(), 20_000);
+            assert!(payload.row_values[1].iter().all(|byte| *byte == b'x'));
+            assert_eq!(payload.row_values[3].len(), 20_010);
+            assert!(payload.row_values[3].ends_with(b":generated"));
+            seen_toasted = true;
+        } else {
+            assert_eq!(identity[0], 0x22);
+            assert_eq!(vector, vec![0.0, 1.0, 0.0, 0.0]);
+            assert_eq!(payload.row_null_bitmap, vec![0b0000_1010]);
+            assert_eq!(payload.row_values.len(), 2);
+            seen_nulls = true;
+        }
+    }
+    assert!(seen_toasted && seen_nulls);
+}
+
+#[pg_test]
 fn test_distann_legacy_build_as_unprivileged_table_owner() {
     const ROLE: &str = "ec_distann_legacy_owner";
     const SCHEMA: &str = "ec_distann_legacy_owner_schema";

@@ -26,6 +26,9 @@ use crate::am::ec_diskann::{
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
 use crate::storage::relation::RelationHandle;
+use crate::storage::scan_guard::HeapScanGuard;
+use crate::storage::slot_guard::TupleTableSlotGuard;
+use crate::storage::snapshot_guard::ActiveSnapshotGuard;
 use crate::storage::wal;
 use crate::DEFAULT_QUANT_SEED;
 
@@ -33,6 +36,7 @@ use super::identity::{vec_id_from_local_heap_tid, vec_id_from_source_identity};
 use super::options::{self, DistannSourceIdentityProvider, EcDistannOptions};
 use super::page::DistannMetadataPage;
 use super::quantizer::DistannCodecBinding;
+use super::source_spool::{FrozenSourcePayload, SourcePayloadLocator, SourcePayloadSpool};
 use super::tuple::{DistannDirectoryTuple, DistannHeadSampleTuple, DistannNodeTuple};
 
 const P_NEW: pg_sys::BlockNumber = u32::MAX;
@@ -61,7 +65,87 @@ enum DistannIdentityDatumKind {
 #[derive(Debug, Clone, Copy)]
 struct DistannIdentityAttribute {
     index_attr_offset: usize,
+    heap_attnum: i32,
     datum_kind: DistannIdentityDatumKind,
+}
+
+struct SourceAttributeSender {
+    send_flinfo: pg_sys::FmgrInfo,
+}
+
+#[derive(Debug)]
+pub(crate) struct PhysicalCapturedRow {
+    heap_tid: ItemPointer,
+    source_vector: Vec<f32>,
+    identity_payload: [u8; DISTANN_SOURCE_IDENTITY_BYTES],
+    payload_locator: SourcePayloadLocator,
+}
+
+pub(crate) struct PhysicalSourceCapture {
+    rows: Vec<PhysicalCapturedRow>,
+    spool: SourcePayloadSpool,
+    non_dropped_attribute_count: usize,
+    dimensions: u16,
+}
+
+impl PhysicalSourceCapture {
+    pub(crate) fn len(&self) -> usize {
+        self.rows.len()
+    }
+
+    pub(crate) fn dimensions(&self) -> u16 {
+        self.dimensions
+    }
+
+    pub(crate) fn rows(&self) -> &[PhysicalCapturedRow] {
+        &self.rows
+    }
+
+    pub(crate) fn payload_for_node(&mut self, node: usize) -> Result<FrozenSourcePayload, String> {
+        let locator = self
+            .rows
+            .get(node)
+            .ok_or_else(|| "EC_SOURCE_SNAPSHOT: source node is out of range".to_owned())?
+            .payload_locator;
+        self.spool.read(locator, self.non_dropped_attribute_count)
+    }
+
+    pub(crate) fn preflight_handoff_entries(
+        &mut self,
+        shape: super::handoff_wire::DistannHandoffShape,
+    ) -> Result<(), String> {
+        for node in 0..self.rows.len() {
+            self.payload_for_node(node)?.preflight_handoff_size(shape)?;
+        }
+        Ok(())
+    }
+}
+
+impl PhysicalCapturedRow {
+    pub(crate) fn heap_tid(&self) -> ItemPointer {
+        self.heap_tid
+    }
+
+    pub(crate) fn source_vector(&self) -> &[f32] {
+        &self.source_vector
+    }
+
+    pub(crate) fn identity_payload(&self) -> [u8; DISTANN_SOURCE_IDENTITY_BYTES] {
+        self.identity_payload
+    }
+}
+
+struct PhysicalCaptureState {
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: TupleTableSlotGuard<'static>,
+    identity: DistannIdentityAttribute,
+    key_attnum: i32,
+    senders: Vec<Option<SourceAttributeSender>>,
+    non_dropped_attribute_count: usize,
+    dimensions: u16,
+    rows: Vec<PhysicalCapturedRow>,
+    spool: SourcePayloadSpool,
 }
 
 struct CollectedRow {
@@ -342,6 +426,285 @@ unsafe extern "C-unwind" fn ec_distann_build_callback(
     })
 }
 
+/// Capture one immutable physical-build source snapshot without retaining a
+/// second epoch-sized copy of the PostgreSQL row payloads in backend memory.
+/// The caller must hold the source session lock and keep the active snapshot
+/// registered until every returned payload has been handed off or aborted.
+pub(crate) unsafe fn capture_physical_source_rows(
+    heap_relation: pg_sys::Relation,
+    index_relation: pg_sys::Relation,
+    index_info: *mut pg_sys::IndexInfo,
+) -> Result<PhysicalSourceCapture, String> {
+    if heap_relation.is_null() || index_relation.is_null() || index_info.is_null() {
+        return Err("EC_SOURCE_SNAPSHOT: capture received a null relation or IndexInfo".to_owned());
+    }
+    let options = options::relation_options(index_relation);
+    if !options.distributed_control {
+        return Err(
+            "EC_SOURCE_SNAPSHOT: physical source capture requires distributed_control=true"
+                .to_owned(),
+        );
+    }
+    let identity = unsafe { resolve_identity_attribute(heap_relation, index_info, &options) }
+        .ok_or_else(|| "EC_SOURCE_IDENTITY: physical source capture needs identity".to_owned())?;
+    let info = crate::am::common::pg_ptr::index_info(
+        NonNull::new(index_info)
+            .ok_or_else(|| "EC_SOURCE_SNAPSHOT: IndexInfo is NULL".to_owned())?,
+    );
+    let key_attnum = i32::from(info.ii_IndexAttrNumbers[0]);
+    if key_attnum <= 0 {
+        return Err("EC_SCHEMA_UNSUPPORTED: physical vector key must be a base column".to_owned());
+    }
+    let tuple_desc = unsafe { (*heap_relation).rd_att };
+    if tuple_desc.is_null() {
+        return Err("EC_SOURCE_SNAPSHOT: source tuple descriptor is NULL".to_owned());
+    }
+    let key_attribute = unsafe { pg_sys::TupleDescAttr(tuple_desc, key_attnum - 1) };
+    if key_attribute.is_null() || unsafe { (*key_attribute).attisdropped } {
+        return Err("EC_SCHEMA_UNSUPPORTED: physical vector key is missing or dropped".to_owned());
+    }
+    let dimensions = u16::try_from(unsafe { (*key_attribute).atttypmod })
+        .map_err(|_| "EC_SCHEMA_UNSUPPORTED: physical vector key is untyped".to_owned())?;
+    if dimensions == 0 {
+        return Err("EC_SCHEMA_UNSUPPORTED: physical vector dimension is zero".to_owned());
+    }
+    let snapshot = ActiveSnapshotGuard::latest_after_command_counter().ok_or_else(|| {
+        "EC_SOURCE_SNAPSHOT: could not register the frozen source snapshot".to_owned()
+    })?;
+    let scan = unsafe {
+        HeapScanGuard::begin(
+            heap_relation,
+            &snapshot,
+            pg_sys::ScanOptions::SO_TYPE_SEQSCAN
+                | pg_sys::ScanOptions::SO_ALLOW_PAGEMODE
+                | pg_sys::ScanOptions::SO_ALLOW_STRAT,
+        )
+    }
+    .ok_or_else(|| "EC_SOURCE_SNAPSHOT: could not begin the frozen source scan".to_owned())?;
+    let scan_slot = unsafe { TupleTableSlotGuard::single_for_heap(heap_relation) }
+        .ok_or_else(|| "EC_SOURCE_SNAPSHOT: could not allocate source scan slot".to_owned())?;
+    let exact_slot = unsafe { TupleTableSlotGuard::single_for_heap(heap_relation) }
+        .ok_or_else(|| "EC_SOURCE_SNAPSHOT: could not allocate exact source slot".to_owned())?;
+    let senders = unsafe { source_attribute_senders(tuple_desc)? };
+    let non_dropped_attribute_count = senders.iter().filter(|sender| sender.is_some()).count();
+    let mut state = PhysicalCaptureState {
+        heap_relation,
+        snapshot: snapshot.as_ptr(),
+        slot: exact_slot,
+        identity,
+        key_attnum,
+        senders,
+        non_dropped_attribute_count,
+        dimensions,
+        rows: Vec::new(),
+        spool: SourcePayloadSpool::create()?,
+    };
+    while unsafe {
+        pg_sys::heap_getnextslot(
+            scan.as_ptr(),
+            pg_sys::ScanDirection::ForwardScanDirection,
+            scan_slot.as_ptr(),
+        )
+    } {
+        let mut values = [pg_sys::Datum::null(); 2];
+        let mut isnull = [false; 2];
+        values[0] =
+            unsafe { pg_sys::slot_getattr(scan_slot.as_ptr(), state.key_attnum, &mut isnull[0]) };
+        values[state.identity.index_attr_offset] = unsafe {
+            pg_sys::slot_getattr(
+                scan_slot.as_ptr(),
+                state.identity.heap_attnum,
+                &mut isnull[state.identity.index_attr_offset],
+            )
+        };
+        let tid = unsafe { &mut (*scan_slot.as_ptr()).tts_tid };
+        unsafe {
+            capture_physical_source_tuple(
+                tid,
+                values.as_mut_ptr(),
+                isnull.as_mut_ptr(),
+                &mut state,
+            )?
+        };
+        unsafe { pg_sys::ExecClearTuple(scan_slot.as_ptr()) };
+    }
+    Ok(PhysicalSourceCapture {
+        rows: state.rows,
+        spool: state.spool,
+        non_dropped_attribute_count,
+        dimensions,
+    })
+}
+
+unsafe fn capture_physical_source_tuple(
+    tid: pg_sys::ItemPointer,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    state: &mut PhysicalCaptureState,
+) -> Result<(), String> {
+    if tid.is_null() || values.is_null() || isnull.is_null() {
+        return Err("EC_SOURCE_SNAPSHOT: source scan produced a null pointer".to_owned());
+    }
+    if unsafe { *isnull } {
+        return Err("EC_SOURCE_SNAPSHOT: source scan vector is NULL".to_owned());
+    }
+    let callback_vector = ecvector_datum_to_vec(unsafe { *values });
+    if callback_vector.len() != usize::from(state.dimensions) {
+        return Err(
+            "EC_SOURCE_SNAPSHOT: source-scan vector dimension differs from the typed key"
+                .to_owned(),
+        );
+    }
+    let callback_identity = unsafe { extract_identity_payload(state.identity, values, isnull) };
+    let heap_tid = unsafe { decode_heap_tid(tid) };
+    let mut exact_tid = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(
+        &mut exact_tid,
+        heap_tid.block_number,
+        heap_tid.offset_number,
+    );
+    unsafe { pg_sys::ExecClearTuple(state.slot.as_ptr()) };
+    if !unsafe {
+        pg_sys::table_tuple_fetch_row_version(
+            state.heap_relation,
+            &mut exact_tid,
+            state.snapshot,
+            state.slot.as_ptr(),
+        )
+    } {
+        return Err(
+            "EC_SOURCE_SNAPSHOT: source-scan TID is absent from the frozen snapshot".to_owned(),
+        );
+    }
+    let mut key_is_null = false;
+    let exact_vector_datum =
+        unsafe { pg_sys::slot_getattr(state.slot.as_ptr(), state.key_attnum, &mut key_is_null) };
+    if key_is_null {
+        return Err("EC_SOURCE_SNAPSHOT: exact source vector is NULL".to_owned());
+    }
+    let exact_vector = ecvector_datum_to_vec(exact_vector_datum);
+    if callback_vector.len() != exact_vector.len()
+        || callback_vector
+            .iter()
+            .zip(&exact_vector)
+            .any(|(callback, exact)| callback.to_bits() != exact.to_bits())
+    {
+        return Err(
+            "EC_SOURCE_SNAPSHOT: source-scan vector differs from the exact source TID".to_owned(),
+        );
+    }
+    let mut identity_is_null = false;
+    let exact_identity_datum = unsafe {
+        pg_sys::slot_getattr(
+            state.slot.as_ptr(),
+            state.identity.heap_attnum,
+            &mut identity_is_null,
+        )
+    };
+    if identity_is_null {
+        return Err("EC_SOURCE_SNAPSHOT: exact source identity is NULL".to_owned());
+    }
+    let exact_identity =
+        unsafe { identity_payload_from_datum(state.identity.datum_kind, exact_identity_datum) };
+    if callback_identity != exact_identity {
+        return Err(
+            "EC_SOURCE_SNAPSHOT: source-scan identity differs from the exact source TID".to_owned(),
+        );
+    }
+    let vec_id = vec_id_from_source_identity(&exact_identity);
+    let (row_null_bitmap, row_values) = unsafe {
+        freeze_source_slot(
+            state.slot.as_ptr(),
+            &mut state.senders,
+            state.non_dropped_attribute_count,
+        )?
+    };
+    let payload = FrozenSourcePayload {
+        vec_id,
+        source_identity: exact_identity,
+        row_null_bitmap,
+        row_values,
+    };
+    let payload_locator = state
+        .spool
+        .append(&payload, state.non_dropped_attribute_count)?;
+    state.rows.push(PhysicalCapturedRow {
+        heap_tid,
+        source_vector: callback_vector,
+        identity_payload: exact_identity,
+        payload_locator,
+    });
+    Ok(())
+}
+
+unsafe fn source_attribute_senders(
+    tuple_desc: pg_sys::TupleDesc,
+) -> Result<Vec<Option<SourceAttributeSender>>, String> {
+    let natts = usize::try_from(unsafe { (*tuple_desc).natts })
+        .map_err(|_| "EC_SCHEMA_UNSUPPORTED: source attribute count is negative".to_owned())?;
+    let mut senders = Vec::with_capacity(natts);
+    for attribute_index in 0..natts {
+        let attribute = unsafe { pg_sys::TupleDescAttr(tuple_desc, attribute_index as i32) };
+        if attribute.is_null() {
+            return Err("EC_SCHEMA_UNSUPPORTED: source attribute descriptor is NULL".to_owned());
+        }
+        if unsafe { (*attribute).attisdropped } {
+            senders.push(None);
+            continue;
+        }
+        let mut send_oid = pg_sys::InvalidOid;
+        let mut is_varlena = false;
+        unsafe {
+            pg_sys::getTypeBinaryOutputInfo((*attribute).atttypid, &mut send_oid, &mut is_varlena)
+        };
+        if send_oid == pg_sys::InvalidOid {
+            return Err(format!(
+                "EC_SCHEMA_UNSUPPORTED: source attribute {} lacks binary send",
+                attribute_index + 1
+            ));
+        }
+        let mut send_flinfo =
+            unsafe { std::mem::MaybeUninit::<pg_sys::FmgrInfo>::zeroed().assume_init() };
+        unsafe { pg_sys::fmgr_info(send_oid, &mut send_flinfo) };
+        senders.push(Some(SourceAttributeSender { send_flinfo }));
+    }
+    Ok(senders)
+}
+
+unsafe fn freeze_source_slot(
+    slot: *mut pg_sys::TupleTableSlot,
+    senders: &mut [Option<SourceAttributeSender>],
+    non_dropped_attribute_count: usize,
+) -> Result<(Vec<u8>, Vec<Vec<u8>>), String> {
+    unsafe { pg_sys::slot_getallattrs(slot) };
+    let mut row_null_bitmap = vec![0; non_dropped_attribute_count.div_ceil(8)];
+    let mut row_values = Vec::with_capacity(non_dropped_attribute_count);
+    let mut non_dropped_position = 0;
+    for (attribute_index, sender) in senders.iter_mut().enumerate() {
+        let Some(sender) = sender else {
+            continue;
+        };
+        let is_null = unsafe { *(*slot).tts_isnull.add(attribute_index) };
+        if is_null {
+            row_null_bitmap[non_dropped_position / 8] |= 1 << (non_dropped_position % 8);
+        } else {
+            let datum = unsafe { *(*slot).tts_values.add(attribute_index) };
+            let sent = unsafe { pg_sys::SendFunctionCall(&mut sender.send_flinfo, datum) };
+            if sent.is_null() {
+                return Err(format!(
+                    "EC_SCHEMA_UNSUPPORTED: source attribute {} binary send returned NULL",
+                    attribute_index + 1
+                ));
+            }
+            let bytes = unsafe { pgrx::varlena::varlena_to_byte_slice(sent.cast()) }.to_vec();
+            unsafe { pg_sys::pfree(sent.cast()) };
+            row_values.push(bytes);
+        }
+        non_dropped_position += 1;
+    }
+    Ok((row_null_bitmap, row_values))
+}
+
 /// Canonicalize the INCLUDE-column datum into the 16-byte ADR-063 payload.
 /// NULL and wrong-width values reject the row: mixed identity namespaces
 /// inside a global-writer index would break cross-node dedupe.
@@ -363,7 +726,14 @@ unsafe fn extract_identity_payload(
         "ec_distann",
         "source_identity INCLUDE column",
     );
-    match identity.datum_kind {
+    identity_payload_from_datum(identity.datum_kind, datum)
+}
+
+unsafe fn identity_payload_from_datum(
+    datum_kind: DistannIdentityDatumKind,
+    datum: pg_sys::Datum,
+) -> [u8; DISTANN_SOURCE_IDENTITY_BYTES] {
+    match datum_kind {
         DistannIdentityDatumKind::Uuid => {
             // PostgreSQL UUID datums are fixed 16-byte payloads.
             let bytes = std::slice::from_raw_parts(
@@ -459,6 +829,7 @@ unsafe fn resolve_identity_attribute(
             };
             Some(DistannIdentityAttribute {
                 index_attr_offset: 1,
+                heap_attnum: identity_attnum,
                 datum_kind,
             })
         }
