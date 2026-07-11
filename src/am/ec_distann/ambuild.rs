@@ -583,6 +583,11 @@ pub(crate) unsafe fn capture_physical_source_rows(
     if tuple_desc.is_null() {
         return Err("EC_SOURCE_SNAPSHOT: source tuple descriptor is NULL".to_owned());
     }
+    let heap_handle = NonNull::new(heap_relation)
+        .ok_or_else(|| "EC_SOURCE_SNAPSHOT: source relation is NULL".to_owned())?;
+    let source_schema = super::row_schema::resolve_relation_schema(
+        crate::storage::relation::relation_oid_handle(heap_handle),
+    )?;
     let key_attribute = unsafe { pg_sys::TupleDescAttr(tuple_desc, key_attnum - 1) };
     if key_attribute.is_null() || unsafe { (*key_attribute).attisdropped } {
         return Err("EC_SCHEMA_UNSUPPORTED: physical vector key is missing or dropped".to_owned());
@@ -611,6 +616,11 @@ pub(crate) unsafe fn capture_physical_source_rows(
         .ok_or_else(|| "EC_SOURCE_SNAPSHOT: could not allocate exact source slot".to_owned())?;
     let senders = unsafe { source_attribute_senders(tuple_desc)? };
     let non_dropped_attribute_count = senders.iter().filter(|sender| sender.is_some()).count();
+    if non_dropped_attribute_count != source_schema.descriptor.non_dropped_count() {
+        return Err(
+            "EC_SCHEMA_MISMATCH: source schema and binary sender layout disagree".to_owned(),
+        );
+    }
     let mut state = PhysicalCaptureState {
         heap_relation,
         snapshot: snapshot.as_ptr(),

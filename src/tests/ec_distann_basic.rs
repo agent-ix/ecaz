@@ -2308,7 +2308,11 @@ fn test_distann_source_capture_spools_complete_frozen_rows() {
              ('11111111-1111-4111-8111-111111111111', repeat('x', 20000),
               encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)),
              ('22222222-2222-4222-8222-222222222222', NULL,
-              encode_to_ecvector(ARRAY[0.0,1.0,0.0,0.0], 4, 42));
+              encode_to_ecvector(ARRAY[0.0,1.0,0.0,0.0], 4, 42)),
+             ('33333333-3333-4333-8333-333333333333', 'deleted before snapshot',
+              encode_to_ecvector(ARRAY[0.0,0.0,1.0,0.0], 4, 42));
+         DELETE FROM ec_distann_source_capture_source
+          WHERE source_id = '33333333-3333-4333-8333-333333333333';
          CREATE INDEX ec_distann_source_capture_idx
            ON ec_distann_source_capture_source
            USING ec_distann (embedding ecvector_distann_ip_ops)
