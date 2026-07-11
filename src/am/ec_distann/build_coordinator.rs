@@ -891,6 +891,8 @@ fn replay_registration(
 #[pg_extern(volatile, strict)]
 fn ec_distann_begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id: Uuid) -> Vec<u8> {
     (|| -> Result<Vec<u8>, String> {
+        super::build_gate::require_shared_preload()?;
+        super::build_gate::lock_global_gate_serialization(false)?;
         let epoch = u64::try_from(epoch)
             .ok()
             .filter(|epoch| *epoch > 0)
@@ -919,6 +921,21 @@ fn ec_distann_begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
             preflight_uuid,
             build_id,
         )?;
+        let has_inheritance_edge = Spi::get_one_with_args::<bool>(
+            "SELECT EXISTS (
+                 SELECT 1 FROM pg_catalog.pg_inherits
+                  WHERE inhrelid = $1::oid OR inhparent = $1::oid
+             )",
+            &[source_relation_oid.into()],
+        )
+        .map_err(|_| "EC_BUILD_STATE: source inheritance topology lookup failed".to_owned())?
+        .ok_or_else(|| "EC_BUILD_STATE: source inheritance topology lookup returned NULL".to_owned())?;
+        if has_inheritance_edge {
+            return Err(
+                "EC_BUILD_STATE: distributed build sources may not be partitioned or participate in table inheritance in format v1"
+                    .to_owned(),
+            );
+        }
         let (mut control, handle, metadata, logical_index_uuid) = open_control_index(
             index_oid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,

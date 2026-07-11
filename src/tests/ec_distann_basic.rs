@@ -1913,6 +1913,49 @@ fn test_distann_begin_build_lock_lifecycle() {
 }
 
 #[pg_test]
+fn test_distann_begin_build_rejects_inherited_source_topology() {
+    const SECRET_NAME: &str = "DISTANN_BEGIN_INHERITANCE";
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BEGIN_INHERITANCE";
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+    let coordinator =
+        create_distann_physical_generation_fixture("ec_distann_inherited_coordinator", 0x83);
+    let participant =
+        create_distann_physical_generation_fixture("ec_distann_inherited_participant", 0x84);
+    configure_distann_participant_identity(&participant, "inheritance/node-17");
+    register_distann_node(
+        &coordinator,
+        0,
+        17,
+        "inheritance/node-17",
+        SECRET_NAME,
+        &participant.canonical_index_regclass,
+        true,
+    );
+    Spi::run(
+        "CREATE TABLE ec_distann_inherited_parent
+             (LIKE ec_distann_inherited_coordinator_source INCLUDING ALL);
+         ALTER TABLE ec_distann_inherited_coordinator_source
+             INHERIT ec_distann_inherited_parent",
+    )
+    .expect("inheritance edge should be created");
+
+    let error = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 '{}'::regclass, 7, '{}'::uuid
+             )",
+            coordinator.index_name, coordinator.build_id,
+        ))
+        .expect("inherited source must not begin a distributed build");
+    });
+    assert!(
+        error.contains("may not be partitioned or participate in table inheritance"),
+        "unexpected inherited-source rejection: {error}"
+    );
+}
+
+#[pg_test]
 fn test_distann_begin_build_competing_backend_busy() {
     let conninfo = current_pg_test_loopback_conninfo();
     let mut setup = postgres::Client::connect(&conninfo, postgres::NoTls)
@@ -1927,6 +1970,16 @@ fn test_distann_begin_build_competing_backend_busy() {
         )
         .expect("extension schema should resolve")
         .get::<_, String>(0);
+    let preload_setting = setup
+        .query_one("SHOW shared_preload_libraries", &[])
+        .expect("preload setting should be readable")
+        .get::<_, String>(0);
+    assert!(
+        preload_setting
+            .split(',')
+            .any(|entry| entry.trim().trim_matches('\'') == "ecaz"),
+        "durable gate test requires ecaz preload, got {preload_setting}"
+    );
     let source = "ec_distann_begin_contention_source";
     let index = "ec_distann_begin_contention_idx";
     setup
@@ -1959,6 +2012,14 @@ fn test_distann_begin_build_competing_backend_busy() {
                FROM {extension_schema}.ec_distann_control_identity('{index}'::regclass)"
         ))
         .expect("committed begin-build contention fixture should be created");
+    setup
+        .batch_execute(
+            "DROP SCHEMA IF EXISTS ec_distann_gate_scratch CASCADE;
+             DROP ROLE IF EXISTS ec_distann_gate_empty_owner;
+             CREATE SCHEMA ec_distann_gate_scratch;
+             CREATE ROLE ec_distann_gate_empty_owner",
+        )
+        .expect("global utility scratch objects should create");
 
     let aborted_build_id = "76767676-7676-4676-b676-767676767676";
     let mut aborting = postgres::Client::connect(&conninfo, postgres::NoTls)
@@ -2216,6 +2277,12 @@ fn test_distann_begin_build_competing_backend_busy() {
     drop(contender);
     drop(owner); // backend exit releases the retained session locks
 
+    // This backend has not invoked any ecaz function. Its first statement is
+    // deliberately plain source DML, proving that preload-installed hooks (not
+    // function-triggered library loading) enforce the durable gate.
+    let mut fresh_gate_client = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("fresh durable-gate connection should open");
+
     let gate_error = |client: &mut postgres::Client, sql: &str| {
         match client.batch_execute(sql) {
             Err(error) => error
@@ -2232,13 +2299,20 @@ fn test_distann_begin_build_competing_backend_busy() {
             .get::<_, i64>(0),
         1
     );
+    let first_statement_message = gate_error(
+        &mut fresh_gate_client,
+        &format!("UPDATE {source} SET source_id = source_id"),
+    );
+    assert!(
+        first_statement_message.contains("EC_BUILD_STATE"),
+        "fresh backend first statement bypassed preload gate: {first_statement_message}"
+    );
     for sql in [
         format!(
             "INSERT INTO {source} VALUES (
                  '00000000-0000-4000-8000-000000000180',
                  encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42))"
         ),
-        format!("UPDATE {source} SET source_id = source_id"),
         format!("DELETE FROM {source}"),
         format!(
             "WITH changed AS (DELETE FROM {source} RETURNING source_id)
@@ -2253,17 +2327,23 @@ fn test_distann_begin_build_competing_backend_busy() {
         format!("COPY {source} FROM '/ecaz/definitely/missing'"),
         format!("TRUNCATE {source}"),
         format!("ALTER TABLE {source} ADD COLUMN forbidden integer"),
+        format!("ALTER TABLE {source} RENAME TO forbidden_source_name"),
+        format!("ALTER TABLE {source} SET SCHEMA pg_catalog"),
         format!("DROP TABLE {source}"),
         format!("CLUSTER {source} USING {index}"),
         format!("VACUUM (FULL) {source}"),
         "VACUUM (FULL)".to_owned(),
         "CLUSTER".to_owned(),
+        "REINDEX SCHEMA ec_distann_gate_scratch".to_owned(),
+        "DROP SCHEMA ec_distann_gate_scratch CASCADE".to_owned(),
+        "DROP OWNED BY ec_distann_gate_empty_owner".to_owned(),
         format!("ALTER INDEX {index} SET (graph_degree = 5)"),
+        format!("ALTER INDEX {index} RENAME TO forbidden_index_name"),
         format!("REINDEX INDEX {index}"),
         format!("REINDEX TABLE {source}"),
         format!("DROP INDEX {index}"),
     ] {
-        let message = gate_error(&mut setup, &sql);
+        let message = gate_error(&mut fresh_gate_client, &sql);
         assert!(
             message.contains("EC_BUILD_STATE"),
             "unexpected durable gate error for {sql}: {message}"
@@ -2290,6 +2370,66 @@ fn test_distann_begin_build_competing_backend_busy() {
              DROP TABLE {source} CASCADE"
         ))
         .expect("same-backend DROP should reconcile active session locks");
+    setup
+        .batch_execute(
+            "DROP SCHEMA ec_distann_gate_scratch CASCADE;
+             DROP ROLE ec_distann_gate_empty_owner",
+        )
+        .expect("global utility scratch objects should clean up");
+}
+
+#[pg_test]
+fn test_distann_preloaded_hook_passes_through_without_extension() {
+    // This test never issues DROP DATABASE. The test-function backend blocks
+    // synchronously in libpq while `administrator` runs each statement, so it
+    // never reaches a CHECK_FOR_INTERRUPTS point during the call. DROP DATABASE
+    // — even without FORCE — emits a global PROCSIGNAL_BARRIER_SMGRRELEASE and
+    // waits for every backend (including this blocked one) to absorb it, which
+    // deadlocks. CREATE DATABASE under the default WAL_LOG strategy emits no
+    // such barrier, so the fixture creates the uninstalled database once and
+    // leaves it in the ephemeral pgrx test instance; the probe below is
+    // idempotent so reruns against a leftover database still pass.
+    let conninfo = current_pg_test_loopback_conninfo();
+    let mut administrator = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("uninstalled-database administrator connection should open");
+    let database_exists = administrator
+        .query_one(
+            "SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'ecaz_gate_uninstalled')",
+            &[],
+        )
+        .expect("uninstalled-database existence probe should run")
+        .get::<_, bool>(0);
+    if !database_exists {
+        administrator
+            .batch_execute("CREATE DATABASE ecaz_gate_uninstalled")
+            .expect("uninstalled hook database should create");
+    }
+    let mut config = conninfo
+        .parse::<postgres::Config>()
+        .expect("loopback conninfo should parse");
+    config.dbname("ecaz_gate_uninstalled");
+    let mut uninstalled = config
+        .connect(postgres::NoTls)
+        .expect("uninstalled database connection should open");
+    // The ecaz library is shared-preloaded here (its gate hooks are installed),
+    // but CREATE EXTENSION was never run, so `extension_is_installed()` is false
+    // and the gate must pass ordinary DML straight through.
+    uninstalled
+        .batch_execute(
+            "CREATE TABLE IF NOT EXISTS ordinary_gate_probe(id integer PRIMARY KEY, value integer);
+             INSERT INTO ordinary_gate_probe VALUES (1, 10)
+                 ON CONFLICT (id) DO UPDATE SET value = 10;
+             UPDATE ordinary_gate_probe SET value = value + 1 WHERE id = 1",
+        )
+        .expect("preloaded hook must pass ordinary DML when ecaz is not installed");
+    assert_eq!(
+        uninstalled
+            .query_one("SELECT value FROM ordinary_gate_probe WHERE id = 1", &[])
+            .expect("ordinary row should remain readable")
+            .get::<_, i32>(0),
+        11
+    );
+    drop(uninstalled);
 }
 
 #[pg_test]

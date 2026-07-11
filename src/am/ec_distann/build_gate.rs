@@ -8,6 +8,7 @@
 
 use std::cell::Cell;
 use std::ffi::CStr;
+use std::panic::AssertUnwindSafe;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -18,6 +19,7 @@ const SOURCE_GATE: i32 = 1;
 const CONTROL_GATE: i32 = 2;
 
 static HOOKS_INSTALLED: AtomicBool = AtomicBool::new(false);
+static LOADED_DURING_SHARED_PRELOAD: AtomicBool = AtomicBool::new(false);
 static mut PREVIOUS_PLANNER_HOOK: pg_sys::planner_hook_type = None;
 static mut PREVIOUS_PROCESS_UTILITY_HOOK: pg_sys::ProcessUtility_hook_type = None;
 
@@ -25,7 +27,11 @@ thread_local! {
     /// The catalog helper plans SQL of its own. Suppress recursive gate checks
     /// while resolving/calling it, but never suppress the next installed hook.
     static INSIDE_GATE_LOOKUP: Cell<bool> = const { Cell::new(false) };
+    static GATE_FUNCTION_OID: Cell<pg_sys::Oid> = const { Cell::new(pg_sys::InvalidOid) };
+    static GLOBAL_UTILITY_LOCK_DEPTH: Cell<u32> = const { Cell::new(0) };
 }
+
+const GLOBAL_GATE_ADVISORY_KEY: i64 = 0x4543_445A_4741_5445;
 
 struct LookupGuard;
 
@@ -130,10 +136,14 @@ fn ec_distann_build_gate_relation_mask(relation_oid: pg_sys::Oid) -> i32 {
 }
 
 fn internal_gate_function_oid() -> Result<pg_sys::Oid, String> {
+    let cached = GATE_FUNCTION_OID.with(Cell::get);
+    if cached != pg_sys::InvalidOid {
+        return Ok(cached);
+    }
     let qualified =
         super::generation_catalog::extension_relation_name("ec_distann_build_gate_relation_mask")?;
     let signature = format!("{qualified}(oid)");
-    Spi::connect(|client| {
+    let resolved = Spi::connect(|client| {
         client
             .select(
                 "SELECT $1::text::regprocedure::oid AS function_oid",
@@ -152,10 +162,89 @@ fn internal_gate_function_oid() -> Result<pg_sys::Oid, String> {
             .next()
             .transpose()?
             .ok_or_else(|| "EC_BUILD_STATE: durable build gate helper is missing".to_owned())
-    })
+    })?;
+    GATE_FUNCTION_OID.with(|cached| cached.set(resolved));
+    Ok(resolved)
+}
+
+#[pg_guard]
+unsafe extern "C-unwind" fn invalidate_gate_function_oid(
+    _arg: pg_sys::Datum,
+    _cache_id: core::ffi::c_int,
+    _hash_value: u32,
+) {
+    GATE_FUNCTION_OID.with(|cached| cached.set(pg_sys::InvalidOid));
+}
+
+fn extension_is_installed() -> bool {
+    unsafe { pg_sys::get_extension_oid(c"ecaz".as_ptr(), true) != pg_sys::InvalidOid }
+}
+
+pub(crate) fn require_shared_preload() -> Result<(), String> {
+    if LOADED_DURING_SHARED_PRELOAD.load(Ordering::Acquire) {
+        Ok(())
+    } else {
+        Err("EC_EPOCH_REGISTRY_UNAVAILABLE: distributed builds require ecaz in shared_preload_libraries and a PostgreSQL restart".to_owned())
+    }
+}
+
+/// Serialize commands whose affected relation set is discovered only inside
+/// standard_ProcessUtility with creation of a new durable registration.
+/// Begin-build takes the shared side before its source lock; global rewrite
+/// utilities take the exclusive side before inspecting active registrations.
+pub(crate) fn lock_global_gate_serialization(exclusive: bool) -> Result<(), String> {
+    let function_oid = if exclusive {
+        pg_sys::Oid::from(pg_sys::F_PG_ADVISORY_LOCK_INT8)
+    } else {
+        pg_sys::Oid::from(pg_sys::F_PG_ADVISORY_XACT_LOCK_SHARED_INT8)
+    };
+    unsafe {
+        pg_sys::OidFunctionCall1Coll(
+            function_oid,
+            pg_sys::InvalidOid,
+            pg_sys::Datum::from(GLOBAL_GATE_ADVISORY_KEY),
+        );
+    }
+    if exclusive {
+        GLOBAL_UTILITY_LOCK_DEPTH.with(|depth| depth.set(depth.get().saturating_add(1)));
+    }
+    Ok(())
+}
+
+fn release_global_utility_lock_if_acquired(previous_depth: u32) {
+    let held = GLOBAL_UTILITY_LOCK_DEPTH.with(|depth| {
+        let current = depth.get();
+        if current > previous_depth {
+            depth.set(current - 1);
+            true
+        } else {
+            false
+        }
+    });
+    if !held {
+        return;
+    }
+    unsafe {
+        pg_sys::OidFunctionCall1Coll(
+            pg_sys::Oid::from(pg_sys::F_PG_ADVISORY_UNLOCK_INT8),
+            pg_sys::InvalidOid,
+            pg_sys::Datum::from(GLOBAL_GATE_ADVISORY_KEY),
+        );
+    }
 }
 
 fn invoke_gate_mask(relation_oid: pg_sys::Oid) -> i32 {
+    // A shared-preloaded library is present in every database, including
+    // databases where CREATE EXTENSION has not run (or has been dropped).
+    // There cannot be a durable gate without the extension catalogs, and
+    // ordinary DML in those databases must remain usable.
+    if !extension_is_installed() {
+        return 0;
+    }
+    // The helper OID is backend-cached and syscache-invalidated. The remaining
+    // call performs one bounded probe of the partial source/control gate
+    // indexes. A backend-local negative cache would be incorrect because a
+    // different backend can commit the first durable registration at any time.
     let Some(_guard) = LookupGuard::enter() else {
         return 0;
     };
@@ -268,14 +357,14 @@ unsafe extern "C-unwind" fn ec_distann_build_gate_planner_hook(
     call_next_planner(query, query_string, cursor_options, bound_params)
 }
 
-unsafe fn rangevar_oid(rangevar: *mut pg_sys::RangeVar) -> pg_sys::Oid {
+unsafe fn rangevar_oid(rangevar: *mut pg_sys::RangeVar, lockmode: pg_sys::LOCKMODE) -> pg_sys::Oid {
     if rangevar.is_null() {
         return pg_sys::InvalidOid;
     }
     unsafe {
         pg_sys::RangeVarGetRelidExtended(
             rangevar,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            lockmode,
             pg_sys::RVROption::RVR_MISSING_OK,
             None,
             ptr::null_mut(),
@@ -287,6 +376,13 @@ unsafe fn gate_drop(stmt: *mut pg_sys::DropStmt) {
     let Some(stmt) = (unsafe { stmt.as_ref() }) else {
         return;
     };
+    if stmt.behavior == pg_sys::DropBehavior::DROP_CASCADE
+        && stmt.removeType == pg_sys::ObjectType::OBJECT_SCHEMA
+    {
+        lock_global_gate_serialization(true).unwrap_or_else(|error| pgrx::error!("{error}"));
+        reject_if_any_source_gate("DROP SCHEMA CASCADE");
+        return;
+    }
     let required_mask = match stmt.removeType {
         pg_sys::ObjectType::OBJECT_TABLE => SOURCE_GATE,
         pg_sys::ObjectType::OBJECT_INDEX => CONTROL_GATE,
@@ -299,7 +395,8 @@ unsafe fn gate_drop(stmt: *mut pg_sys::DropStmt) {
             continue;
         }
         let rangevar = unsafe { pg_sys::makeRangeVarFromNameList(names) };
-        let oid = unsafe { rangevar_oid(rangevar) };
+        let oid =
+            unsafe { rangevar_oid(rangevar, pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE) };
         reject_if_gated(oid, required_mask, "DROP");
     }
 }
@@ -329,13 +426,54 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
     match node_ref.type_ {
         pg_sys::NodeTag::T_AlterTableStmt => {
             let stmt = unsafe { &*node.cast::<pg_sys::AlterTableStmt>() };
-            let oid = unsafe { rangevar_oid(stmt.relation) };
+            let oid = unsafe {
+                rangevar_oid(
+                    stmt.relation,
+                    pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
+                )
+            };
             reject_if_gated(oid, SOURCE_GATE | CONTROL_GATE, "ALTER");
+        }
+        pg_sys::NodeTag::T_RenameStmt => {
+            let stmt = unsafe { &*node.cast::<pg_sys::RenameStmt>() };
+            if matches!(
+                stmt.renameType,
+                pg_sys::ObjectType::OBJECT_TABLE | pg_sys::ObjectType::OBJECT_INDEX
+            ) {
+                let oid = unsafe {
+                    rangevar_oid(
+                        stmt.relation,
+                        pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
+                    )
+                };
+                reject_if_gated(oid, SOURCE_GATE | CONTROL_GATE, "RENAME");
+            }
+        }
+        pg_sys::NodeTag::T_AlterObjectSchemaStmt => {
+            let stmt = unsafe { &*node.cast::<pg_sys::AlterObjectSchemaStmt>() };
+            if matches!(
+                stmt.objectType,
+                pg_sys::ObjectType::OBJECT_TABLE | pg_sys::ObjectType::OBJECT_INDEX
+            ) {
+                let oid = unsafe {
+                    rangevar_oid(
+                        stmt.relation,
+                        pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
+                    )
+                };
+                reject_if_gated(oid, SOURCE_GATE | CONTROL_GATE, "SET SCHEMA");
+            }
+        }
+        pg_sys::NodeTag::T_AlterTableMoveAllStmt => {
+            lock_global_gate_serialization(true).unwrap_or_else(|error| pgrx::error!("{error}"));
+            reject_if_any_source_gate("ALTER ALL IN TABLESPACE");
         }
         pg_sys::NodeTag::T_CopyStmt => {
             let stmt = unsafe { &*node.cast::<pg_sys::CopyStmt>() };
             if stmt.is_from {
-                let oid = unsafe { rangevar_oid(stmt.relation) };
+                let oid = unsafe {
+                    rangevar_oid(stmt.relation, pg_sys::RowExclusiveLock as pg_sys::LOCKMODE)
+                };
                 reject_if_gated(oid, SOURCE_GATE, "COPY FROM");
             }
         }
@@ -346,16 +484,25 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
             for offset in 0..count {
                 let relation =
                     unsafe { pg_sys::list_nth(stmt.relations, offset).cast::<pg_sys::RangeVar>() };
-                let oid = unsafe { rangevar_oid(relation) };
+                let oid = unsafe {
+                    rangevar_oid(relation, pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE)
+                };
                 reject_if_gated(oid, SOURCE_GATE, "TRUNCATE");
             }
         }
         pg_sys::NodeTag::T_ClusterStmt => {
             let stmt = unsafe { &*node.cast::<pg_sys::ClusterStmt>() };
             if stmt.relation.is_null() {
+                lock_global_gate_serialization(true)
+                    .unwrap_or_else(|error| pgrx::error!("{error}"));
                 reject_if_any_source_gate("CLUSTER");
             } else {
-                let oid = unsafe { rangevar_oid(stmt.relation) };
+                let oid = unsafe {
+                    rangevar_oid(
+                        stmt.relation,
+                        pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
+                    )
+                };
                 reject_if_gated(oid, SOURCE_GATE, "CLUSTER");
             }
         }
@@ -374,7 +521,12 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
                     let oid = if relation.oid != pg_sys::InvalidOid {
                         relation.oid
                     } else {
-                        unsafe { rangevar_oid(relation.relation) }
+                        unsafe {
+                            rangevar_oid(
+                                relation.relation,
+                                pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
+                            )
+                        }
                     };
                     if oid == pg_sys::InvalidOid {
                         // PostgreSQL represents unqualified VACUUM with a
@@ -386,6 +538,8 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
                     }
                 }
                 if all_relations {
+                    lock_global_gate_serialization(true)
+                        .unwrap_or_else(|error| pgrx::error!("{error}"));
                     reject_if_any_source_gate("VACUUM FULL");
                 }
             }
@@ -397,7 +551,12 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
                 pg_sys::ReindexObjectType::REINDEX_OBJECT_INDEX
                     | pg_sys::ReindexObjectType::REINDEX_OBJECT_TABLE
             ) {
-                let oid = unsafe { rangevar_oid(stmt.relation) };
+                let oid = unsafe {
+                    rangevar_oid(
+                        stmt.relation,
+                        pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
+                    )
+                };
                 let required_mask = if stmt.kind == pg_sys::ReindexObjectType::REINDEX_OBJECT_TABLE
                 {
                     SOURCE_GATE | CONTROL_GATE
@@ -405,7 +564,15 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
                     CONTROL_GATE
                 };
                 reject_if_gated(oid, required_mask, "REINDEX");
+            } else {
+                lock_global_gate_serialization(true)
+                    .unwrap_or_else(|error| pgrx::error!("{error}"));
+                reject_if_any_source_gate("REINDEX");
             }
+        }
+        pg_sys::NodeTag::T_DropOwnedStmt => {
+            lock_global_gate_serialization(true).unwrap_or_else(|error| pgrx::error!("{error}"));
+            reject_if_any_source_gate("DROP OWNED");
         }
         _ => {}
     }
@@ -462,9 +629,26 @@ unsafe extern "C-unwind" fn ec_distann_build_gate_process_utility_hook(
     qc: *mut pg_sys::QueryCompletion,
 ) {
     if !unsafe { pg_sys::creating_extension } && !INSIDE_GATE_LOOKUP.with(Cell::get) {
-        if let Some(pstmt) = unsafe { pstmt.as_ref() } {
-            unsafe { gate_utility_node(pstmt.utilityStmt) };
-        }
+        let previous_lock_depth = GLOBAL_UTILITY_LOCK_DEPTH.with(Cell::get);
+        return pg_sys::PgTryBuilder::new(AssertUnwindSafe(|| {
+            if let Some(pstmt) = unsafe { pstmt.as_ref() } {
+                unsafe { gate_utility_node(pstmt.utilityStmt) };
+            }
+            unsafe {
+                call_next_process_utility(
+                    pstmt,
+                    query_string,
+                    read_only_tree,
+                    context,
+                    params,
+                    query_env,
+                    dest,
+                    qc,
+                )
+            }
+        }))
+        .finally(|| release_global_utility_lock_if_acquired(previous_lock_depth))
+        .execute();
     }
     unsafe {
         call_next_process_utility(
@@ -483,8 +667,16 @@ unsafe extern "C-unwind" fn ec_distann_build_gate_process_utility_hook(
 /// Install both hooks after the SPIRE hook so DistANN can reject unsafe writes
 /// before delegating while still preserving every previously installed hook.
 pub(crate) unsafe fn register_build_gate_hooks() {
+    if unsafe { pg_sys::process_shared_preload_libraries_in_progress } {
+        LOADED_DURING_SHARED_PRELOAD.store(true, Ordering::Release);
+    }
     if !HOOKS_INSTALLED.swap(true, Ordering::Relaxed) {
         unsafe {
+            pg_sys::CacheRegisterSyscacheCallback(
+                pg_sys::SysCacheIdentifier::PROCOID as core::ffi::c_int,
+                Some(invalidate_gate_function_oid),
+                pg_sys::Datum::from(0_usize),
+            );
             PREVIOUS_PLANNER_HOOK = pg_sys::planner_hook;
             pg_sys::planner_hook = Some(ec_distann_build_gate_planner_hook);
             PREVIOUS_PROCESS_UTILITY_HOOK = pg_sys::ProcessUtility_hook;

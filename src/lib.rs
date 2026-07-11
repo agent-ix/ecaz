@@ -20483,7 +20483,10 @@ mod unit_tests {
 pub mod pg_test {
     pub fn setup(_options: Vec<&str>) {}
     pub fn postgresql_conf_options() -> Vec<&'static str> {
-        vec!["max_prepared_transactions = 10"]
+        vec![
+            "max_prepared_transactions = 10",
+            "shared_preload_libraries = 'ecaz'",
+        ]
     }
 }
 
