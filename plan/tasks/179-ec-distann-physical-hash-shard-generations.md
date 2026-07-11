@@ -189,7 +189,12 @@ rows persist descriptor-v2 coordinator identity, Published manifest/fingerprint,
 and successor-retirement marker; publish decisions carry predecessor identity
 and Pending/Activated/Applied progress; retire decisions carry canonical bytes,
 target build/epoch/private roster, and Pending/Applied progress; reclaim
-tombstones retain exact status/replay fields after relation deletion.
+tombstones retain exact status/replay fields after relation deletion. One
+predecessor-disposition row per immutable binding records Pending, exact
+Retired acknowledgement, or explicit audited Abandoned terminal state; the
+publish decision reaches Applied only when every row is terminal. Abandonment
+is operator-only, never implies remote reclaim, and remains immutable through
+ordinary cleanup.
 Because authoritative coordinator identity was missing from the already-drafted
 descriptor v1, Packet 006 also owns the deliberate descriptor-v2 encoder,
 decoder, digest domain, offsets/layout assertions, independent golden fixture,
@@ -269,7 +274,10 @@ Add a small `handoff.rs` service behind the exact FR-078 SQL wrappers.
   then transition Building→Ready and emit the canonical receipt.
 - `abort`: idempotently drop only an unpublished generation and its batch rows.
   It must refuse a generation named by a durable publish decision.
-- All participant handoff calls use READ COMMITTED. Publish-decision insertion
+- All participant handoff calls use READ COMMITTED. Before Packet 006 adds
+  remote publication dispatch, add a runtime isolation check that rejects a
+  participant lifecycle call outside READ COMMITTED before RPC or mutation.
+  Publish-decision insertion
   takes the same control-index `ShareRowExclusiveLock` before catalog rows, so
   it cannot race abort between the decision check and guarded generation drop.
 - An identical acknowledged replay returns the journaled receipt. A conflict,
@@ -302,8 +310,12 @@ when predecessor retirement marking is required:
    (or Applied when no predecessor exists), clears the build gate, and releases
    both session locks only after commit.
 5. In T4b, a later recovery invocation uses immutable predecessor bindings to
-   mark every old-roster participant Retired—including removed owners—and marks
-   the decision Applied. It performs no source recapture and needs no live-build
+   mark every reachable old-roster participant Retired—including removed owners. A
+   permanently unavailable binding can become terminal only through the
+   immutable operator-authorized abandon-binding audit, inserted atomically
+   with the Pending→Abandoned CAS and replayed from stored bytes/time. Recovery marks the
+   decision Applied only when every binding is exact Retired or audited
+   Abandoned. It performs no source recapture and needs no live-build
    source/control lock.
 
 The shared order for begin, abort, and pre-activation publish recovery is source
@@ -313,10 +325,19 @@ subtransaction is released by callbacks; committed ownership is build-specific.
 The registration digest covers the complete private binding list, not only the
 public roster.
 
+PostgreSQL also drops previously committed default-lock-manager session
+relation locks when that backend later aborts a top-level transaction. Treat
+that event as loss of ephemeral ownership, not loss of the durable gate: clear
+the backend-local mirror, keep the registration, and require exact source then
+control reacquisition before recovery resumes. The durable DML/utility gate is
+what closes this interval, so begin-build must not be promoted independently of
+that enforcement.
+
 T2 persists an immutable `ec_distann_build_candidate` containing canonical
 build spec, generation descriptor, source snapshot, complete receipt set, and
 manifest bytes/digests before returning Ready. T3 never reconstructs its input
-from client memory.
+from client memory. T3 and every T4 recovery transaction recompute the complete
+candidate digest chain over the stored canonical bytes before consuming it.
 
 The successor publish decision stores its all-or-none predecessor build/epoch/
 fingerprint/manifest tuple, canonical activation marker, and
@@ -331,7 +352,7 @@ schema-changing DDL fail closed until explicit pre-decision abort or
 post-decision recovery. Reads of the prior Published epoch continue.
 
 Replace the current one-page `epoch_manifest.rs` state machine with catalog
-  generation state; keep the legacy local implementation behind
+generation state; keep the legacy local implementation behind
 `distributed_control=false`. Exercise crashes before decision, after decision,
 after each successor acknowledgement, before pointer swap, after pointer swap,
 and after each predecessor retirement mark including a removed owner.
@@ -356,14 +377,27 @@ and after each predecessor retirement mark including a removed owner.
   after a subset applies. On an active-count rejection, release the fence and
   create no decision; a concurrently arriving scan waits for the local critical
   section rather than failing on fence contention.
+- Require a covering successor decision to be Applied before normal or forced
+  retirement of its predecessor fingerprint; Activated cannot enter reclaim.
+- Carry the exact abandoned ordinal/audit-digest set into the canonical retire
+  decision. Retire recovery skips those forfeited bindings, applies reclaim to
+  every non-abandoned binding, and preserves the abandonment audits rather than
+  claiming the unreachable participant reclaimed.
 - Participants never reclaim autonomously, so their restart cannot race a live
   scan. Force-retire remains a non-active-epoch operator override with the full
   FR-082 audit record.
 - The scan-token registry and sole per-index fence use PostgreSQL add-in shared
   memory and require `ecaz` in `shared_preload_libraries` for distributed-control
   serving. Participant reclaim leaves an immutable tombstone. Successor publish
-  recovery marks every predecessor-roster participant Retired after the active
-  pointer swap, including owners removed from the successor roster.
+  recovery marks each reachable predecessor-roster participant Retired after
+  the active pointer swap, including owners removed from the successor roster;
+  an explicitly abandoned unreachable binding remains an unroutable Published
+  orphan pending out-of-band cleanup. Define
+  liveness by exact ProcNumber/PID plus an extension-maintained per-ProcNumber
+  generation. Fence-map entries carry operation references covering waiters and
+  holders; dependency cleanup may recycle a dropped UUID's fence id only after
+  its tokens and operation references reach zero, so DROP/CREATE churn does not
+  exhaust capacity or alias a live locktag.
 
 Suggested module: `generation_retention.rs`; keep this separate from beam
 counters.
@@ -451,7 +485,8 @@ Use narrow code commits followed by separate request commits:
 8. `reviews/task-179/008-physical-three-instance-fixture/` — suite-driven
    physical setup, topology results, TC-040/TC-042 implementation-ready verdict.
 9. `reviews/task-179/009-closeout/` — reviewer response plus immutable Task 172
-   10k/50k/100k A/B evidence citation; only this packet may mark Task 179 done.
+   10k/50k/100k A/B evidence citation and the deferred `DROP EXTENSION` cleanup
+   drill; only this packet may mark Task 179 done.
 
 Each measurement packet needs its suite config, manifest, results JSONL, and
 only cited logs. Do not commit corpus TSVs, PostgreSQL operational logs, tunnel

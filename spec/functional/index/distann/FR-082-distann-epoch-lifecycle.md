@@ -66,6 +66,7 @@ materialization, publication, or reclaim endpoints for that logical index.
 | Ready | participant applies the durable cluster publish decision | Published | addressable by explicit fingerprint |
 | Published and active | coordinator activates a successor | Published, non-active, retirement mark pending | retained scans may continue by fingerprint |
 | Published and non-active | authenticated successor-activation marker exactly matches the local predecessor | Retired | retained scans may continue by fingerprint |
+| Published and non-active | coordinator binding is explicitly Abandoned after successor activation while the participant is unreachable | Published orphan locally; coordinator binding Abandoned | unavailable through authoritative coordinator routing; out-of-band operator cleanup only |
 | Retired | coordinator fence observes zero in-flight scans and durable retire decision is applied | Reclaimed tombstone | unavailable |
 
 Any transition absent from this table SHALL fail with `EC_EPOCH_STATE` and
@@ -222,12 +223,30 @@ epoch_fingerprint bytea) RETURNS void`
 `ec_distann_force_retire_epoch(index_regclass regclass,
 epoch_fingerprint bytea, reason text) RETURNS void`
 
+`ec_distann_abandon_predecessor_binding(index_regclass regclass,
+successor_build_id uuid, predecessor_roster_ordinal integer, reason text)
+RETURNS void`
+
 Every lifecycle operation above, together with FR-078 begin/build/abort/status,
 SHALL be `SECURITY DEFINER` with a fixed trusted search path and no `PUBLIC`
 EXECUTE privilege. Before catalog, secret, lock, or RPC side effects it SHALL
 authorize the extension owner or explicitly granted internal operator/cluster
 role. Temporary-schema name resolution or an ordinary reader SHALL confer no
 lifecycle side effect.
+
+PostgreSQL releases every default-lock-manager session relation lock on a
+top-level transaction abort, including a source/control lock acquired and
+committed by an earlier transaction in the same backend. The coordinator SHALL
+therefore clear its backend-local ownership mirror on top-level abort while
+leaving the durable build registration/gate unchanged. Before that backend or
+another backend resumes build, decision, or pre-activation recovery work it
+SHALL reacquire source `ShareLock` then control `ShareRowExclusiveLock` and
+revalidate the exact registration. Durable DML/utility gate enforcement SHALL
+remain active during this recovery window; code SHALL NOT infer that the
+durable gate vanished because PostgreSQL released the session locks. A
+subtransaction abort releases only session locks newly acquired by that
+subtransaction and does not discard an ownership record committed by its
+parent.
 
 - The coordinator SHALL verify that every roster participant supplied one Ready
   receipt for the same epoch, build id, build-specification digest, and
@@ -244,6 +263,11 @@ lifecycle side effect.
   complete receipt set, and the FR-078 private build-participant binding
   identity. Fingerprint-to-build lookup SHALL be unique and retained until
   final reclaim.
+- T3 and every T4 recovery transaction SHALL recompute and verify the canonical
+  candidate digest chain over the stored registration, build-specification,
+  generation-descriptor, source-snapshot, Ready-receipt-set, and epoch-manifest
+  bytes before consuming them. A stored-byte or digest mismatch SHALL raise
+  `EC_PUBLISH_DIGEST` before participant, decision, or active-pointer mutation.
 - The decision SHALL also persist an all-or-none predecessor tuple `(build id,
   epoch, fingerprint, manifest digest)`, the canonical successor-activation
   bytes/digest defined below, `activated_at`, and application progress. T3 SHALL
@@ -318,12 +342,66 @@ lifecycle side effect.
   means the durable decision exists while the predecessor pointer remains
   active. `Activated` means the successor pointer swap committed while one or
   more predecessor retirement marks remain. A successor decision reaches
-  `Applied` only after the active-pointer swap has
-  committed and every predecessor private binding reports the exact Retired
-  activation digest. Before that, it remains recoverable with `activated_at`
-  distinguishing pre-swap from post-swap progress. An unavailable predecessor
-  reports `EC_PREDECESSOR_RETIRE_PENDING`; the successor remains active and the
-  pointer never rolls back.
+  `Applied` only after the active-pointer swap has committed and every
+  predecessor private binding has one immutable terminal disposition: either
+  `Retired`, carrying the exact acknowledged activation digest, or `Abandoned`,
+  carrying the exact operator audit described below. Before that, it remains
+  recoverable with `activated_at` distinguishing pre-swap from post-swap
+  progress. An unavailable predecessor reports
+  `EC_PREDECESSOR_RETIRE_PENDING`; the successor remains active and the pointer
+  never rolls back.
+- T4a SHALL create one pending predecessor-disposition row for every ordinal in
+  the immutable predecessor private-binding roster. T4b changes a row from
+  `Pending` to `Retired` only after exact remote acknowledgement. Exact replay
+  is idempotent; a different activation or participant identity is
+  `EC_EPOCH_STATE` with zero mutation. The decision row SHALL NOT become
+  `Applied` based on a count detached from these binding identities.
+- `ec_distann_abandon_predecessor_binding` is the only availability override
+  for a predecessor that cannot ever acknowledge retirement. It SHALL require
+  an `Activated` successor decision, name one still-`Pending` predecessor
+  ordinal, require a nonempty UTF-8 reason of at most 1,024 bytes, and authorize
+  the extension owner or explicitly granted operator role. Under a row lock,
+  one transaction SHALL construct and insert the immutable audit and compare-
+  and-swap the disposition `Pending → Abandoned`; neither may commit without
+  the other. A crash before commit leaves Pending with no audit, and a crash
+  after commit leaves Abandoned with the complete audit. It SHALL never run
+  automatically and SHALL NOT contact or reclaim the missing participant.
+- Canonical abandon-binding audit version 1 SHALL contain, in order: `version
+  u16 = 1`, coordinator logical-index UUID `byte[16]`, successor build id
+  `byte[16]`, successor epoch `u64`, length-prefixed successor fingerprint,
+  predecessor build id `byte[16]`, predecessor epoch `u64`, length-prefixed
+  predecessor fingerprint, predecessor manifest digest `byte[32]`, predecessor
+  roster ordinal `u32`, node id `u32`, participant logical-index UUID
+  `byte[16]`, length-prefixed endpoint identity and canonical remote locator,
+  successor-activation digest `byte[32]`, decision timestamp as signed Unix
+  microseconds `i64`, length-prefixed caller name, and length-prefixed reason.
+  Its digest SHALL be
+  `SHA-256("ec_distann_abandon_predecessor_binding_v1\0" || canonical_bytes)`.
+  TC-050 SHALL freeze the bytes, digest, independent decode, endian handling,
+  and unknown-version rejection.
+- Exact abandon replay for the same decision, ordinal, authenticated caller,
+  and reason SHALL return success from the stored audit bytes and timestamp;
+  it SHALL not regenerate time-dependent bytes. A different caller, reason,
+  binding, activation, or participant identity is `EC_PREDECESSOR_ABANDON` with
+  zero mutation. Concurrent exact retirement acknowledgement and abandonment
+  serialize on the same disposition row: exactly one terminal state commits,
+  and the loser replays only if it exactly matches that committed state.
+- An abandoned binding remains durably forfeited for the lifetime of the
+  coordinator control identity. If the participant later returns, authoritative
+  coordinator routing SHALL never select the forfeited predecessor binding or
+  count a late acknowledgement as `Retired`; a direct data request carrying the
+  successor fingerprint fails that participant's ordinary fingerprint and
+  coordinator-activation validation. The participant is not claimed to know a
+  coordinator-local abandonment it never received. Only dependency cleanup for
+  DROP or destructive REINDEX of the exact UUID-bearing control may remove the
+  audit. Abandonment permits publication progress but does not assert remote
+  reclamation; operator cleanup of the abandoned node is out of band and
+  auditable.
+- Publish-decision `Applied` denotes complete authoritative-coordinator
+  disposition of the immutable predecessor binding set. It is not evidence
+  that an unreachable abandoned participant transitioned its local generation
+  to Retired or Reclaimed; that generation may remain a deliberately unroutable
+  Published orphan until out-of-band cleanup.
 - Before that swap, new scans SHALL continue to register the prior active epoch
   in the coordinator-local in-flight registry. After that swap, new scans SHALL
   register the new epoch.
@@ -352,14 +430,26 @@ lifecycle side effect.
 - Canonical retire-decision version 1 SHALL contain, in order: `version u16 =
   1`, coordinator logical-index UUID `byte[16]`, target build id `byte[16]`,
   epoch `u64`, length-prefixed target fingerprint, target manifest digest
-  `byte[32]`, length-prefixed target roster snapshot, roster digest
-  `byte[32]`, forced flag `u8`, overridden in-flight count `u64`,
+  `byte[32]`, length-prefixed target canonical `ec_distann_roster_v1` snapshot,
+  roster digest `byte[32]`, abandoned-binding count `u32`, then each abandoned
+  binding in ascending roster ordinal as ordinal `u32` and abandon-audit digest
+  `byte[32]`; followed by forced flag `u8`, overridden in-flight count `u64`,
   decision timestamp as signed Unix microseconds `i64`, length-prefixed caller
   name, and length-prefixed nonempty reason (at most 1,024 UTF-8 bytes). Its digest SHALL be
   `SHA-256("ec_distann_retire_decision_v1\0" || canonical_bytes)`. The
-  participant validates canonical decoding, digest, exact local target
-  identity, and its membership in the immutable target roster before inserting
-  the tombstone and reclaiming. Conflict is `EC_EPOCH_STATE` with zero mutation.
+  abandoned-binding segment has its own frozen identity:
+  `SHA-256("ec_distann_abandoned_binding_set_v1\0" || u32_le(count) ||
+  ordinal_and_audit_digest_entries)`. The separately stored set bytes SHALL be
+  byte-identical to the retire-decision segment, and the coordinator SHALL
+  recompute both digests whenever the decision is created or consumed.
+  Participant validation covers canonical decoding, both digests, exact local
+  target identity, immutable-roster membership, and proof that its own ordinal
+  is not in the abandoned set before inserting the tombstone and reclaiming.
+  A participant is not required or permitted to query coordinator disposition
+  rows to validate other ordinals. Under the retirement fence, the coordinator
+  locks the Applied covering decision and its exact dispositions and proves the
+  set equals all and only terminal Abandoned rows before decision commit.
+  Conflict is `EC_EPOCH_STATE` with zero mutation.
 
 ### Coordinator Scan Retention and Retire Fence
 
@@ -394,8 +484,16 @@ lifecycle side effect.
   Zero is an explicit disable/test value that makes the corresponding first
   allocation fail as `EC_EPOCH_PIN_CAPACITY`.
   Exhaustion raises `EC_EPOCH_PIN_CAPACITY` before participant access and does
-  not evict or coalesce a live token. Each token records fingerprint, UUID
-  token, PostgreSQL `ProcNumber`, and backend-start generation. Normal guard
+  not evict or coalesce a live token. Dead-token reaping and reclaim of a
+  provably dropped fence entry are permitted before the capacity decision; no
+  live token or live logical-index fence may be evicted. Each token records
+  fingerprint, UUID token, PostgreSQL `ProcNumber`, backend PID, and an
+  extension-maintained per-`ProcNumber` backend generation. On a backend's
+  first registry use it increments that slot's generation under the registry
+  LWLock and caches the result. A token is live exactly when the current
+  `PGPROC` at that `ProcNumber` has the stored nonzero PID and the shared slot
+  still has the stored generation; PID mismatch, empty `PGPROC`, or generation
+  mismatch proves it dead. Normal guard
   release and `before_shmem_exit` remove that backend's entries. Registration
   and retirement also reap entries whose `(ProcNumber, backend generation)` is
   provably no longer live while holding the per-index fence; callback execution
@@ -411,9 +509,17 @@ lifecycle side effect.
   count, and holds exclusion automatically through decision commit or abort.
   A waiting registration then re-reads active/decision state. Fence ids are not
   hashes; UUID aliasing is forbidden, and the locktag carries the same database
-  OID. Fence ids are not recycled during one postmaster lifetime; capacity
-  counts every distinct database/UUID pair allocated since startup. Startup
-  reconstructs mappings lazily from exact UUIDs and durable catalog state.
+  OID. Each map entry has an operation reference count acquired under the
+  registry LWLock before any backend waits for or holds its heavyweight fence,
+  and released under that LWLock only after the heavyweight lock is released.
+  DROP or destructive REINDEX marks the exact `(database_oid, logical-index
+  UUID)` entry dropped and rejects new references. Its fence id may be recycled
+  only after durable dependency cleanup proves that UUID absent, its exact
+  token set and operation reference count are both zero, and the entry is
+  removed under the LWLock. Thus no holder or waiter can retain a recycled
+  locktag. Ordinary churn through dropped UUIDs SHALL NOT consume monotonic
+  postmaster-lifetime capacity. Startup reconstructs mappings lazily from exact
+  UUIDs and durable catalog state.
 - Replaying the same local `(fingerprint, scan_token)` registration SHALL be
   idempotent. Reusing one scan token for another fingerprint SHALL raise
   `EC_EPOCH_PIN_CONFLICT` without changing either local count.
@@ -421,6 +527,11 @@ lifecycle side effect.
   cancellation, rescan, `EndCustomScan`, and epoch-mismatch restart. Backend or
   coordinator process death releases its registrations because no scan in that
   process can remain live.
+- Normal and forced retirement of a predecessor fingerprint covered by a
+  successor publish decision SHALL require that decision to be `Applied`.
+  `Activated` is not sufficient: recovery must first retire or explicitly
+  abandon every predecessor binding. Rejection creates no retire decision and
+  changes no registry or generation state.
 - Normal retirement SHALL accept only a non-active Retired fingerprint. It
   SHALL acquire that logical index's sole retirement fence exclusively, re-read
   the active pointer, prevent new local registrations, and reject with
@@ -428,12 +539,17 @@ lifecycle side effect.
   zero.
 - After observing zero under the fence, the coordinator SHALL commit one
   immutable retire decision containing the fingerprint, manifest digest,
-  roster, caller, and timestamp before instructing the first participant to
-  reclaim. It SHALL hold the exclusive fence through that commit, release it
+  roster, exact abandoned-binding ordinal/audit-digest set, caller, and
+  timestamp before instructing the first non-abandoned participant to reclaim.
+  It SHALL hold the exclusive fence through that commit, release it
   before participant RPCs, and rely on the committed-decision registration
   check to prevent later use of the target. Participants SHALL validate that
-  decision and apply it idempotently. A crash after a subset applies is completed by
-  `ec_distann_recover_epoch_retire` from the durable decision.
+  decision and apply it idempotently. Recovery SHALL issue no reclaim RPC to an
+  abandoned binding and SHALL reach retire-decision `Applied` only after every
+  non-abandoned binding reports exact Reclaimed state; the abandoned disposition
+  and audit remain the truthful terminal record for that ordinal. A crash after
+  a subset applies is completed by `ec_distann_recover_epoch_retire` from the
+  durable decision.
 - A retirement rejected as `EC_RETENTION_ACTIVE` SHALL create no retire decision
   and release the exclusive fence before returning the error. A scan arriving
   while the fence is held SHALL wait for that short local critical section,
@@ -470,7 +586,9 @@ lifecycle side effect.
 - If a predecessor-only participant is unavailable after activation, the new
   active pointer remains authoritative, decision state remains `Activated`, and
   recovery raises `EC_PREDECESSOR_RETIRE_PENDING`. Only predecessor retirement
-  and later reclaim are delayed; rollback is forbidden.
+  and later reclaim are delayed; rollback is forbidden. An authorized operator
+  may terminate that wait only through the audited binding-specific abandonment
+  operation; recovery never infers abandonment from timeout or transport error.
 - If the coordinator crashes after all participant acknowledgements but before
   the active-pointer swap, then restart recovery SHALL perform the missing swap
   exactly once.
@@ -490,8 +608,10 @@ lifecycle side effect.
   gate, and schedules both session-lock releases on commit. It performs no
   predecessor-retirement RPC after that commit in the same invocation. T4b is a
   later invocation/transaction that observes the committed successor pointer,
-  marks every predecessor binding Retired, verifies exact activation digests,
-  then records `Applied`. With no predecessor, T4a may record `Applied`.
+  marks each reachable Pending predecessor binding Retired, verifies exact
+  activation digests,
+  then records `Applied` once every binding is terminal `Retired` or
+  `Abandoned`. With no predecessor, T4a may record `Applied`.
 - Publish recovery SHALL be single-flight under a transaction-scoped advisory
   lock keyed by logical-index UUID. The pointer swap SHALL use the same lock and
   a conditional catalog update so concurrent explicit or scan-triggered
@@ -570,12 +690,13 @@ lifecycle side effect.
 | `EC_EPOCH_STATE` | Requested lifecycle transition is invalid, or publish recovery has no durable decision | Leave generation and active pointer unchanged |
 | `EC_EPOCH_FINGERPRINT_VERSION` | Fingerprint is not exactly one supported version plus a 32-byte digest | Reject before generation lookup |
 | `EC_EPOCH_PIN_CONFLICT` | One coordinator-local scan token is reused for another fingerprint | Leave both local registrations/counts unchanged; issue no participant call |
-| `EC_EPOCH_PIN_CAPACITY` | Exact token or fence capacity is exhausted | Fail before participant access; evict and mutate nothing |
+| `EC_EPOCH_PIN_CAPACITY` | Exact token or fence capacity remains exhausted after dead-token and provably dropped-fence reclamation | Fail before participant access; evict no live token or live logical-index fence and issue no participant call |
 | `EC_EPOCH_REGISTRY_UNAVAILABLE` | Shared registry is absent, uninitialized, or version-incompatible | Fail distributed scan/retirement before participant access |
 | `EC_PUBLISH_INCOMPLETE` | Receipt, schema, count, digest, coverage, co-placement, or topology proof is missing/mismatched before decision | Keep generation Ready and query-invisible; do not persist decision |
 | `EC_PUBLISH_DIGEST` | Manifest/receipt bytes do not match their canonical digest | Reject before participant state or pointer mutation |
 | `EC_PUBLISH_PENDING` | A successor participant is unavailable while decision state is `Pending` | Keep the predecessor pointer active; retain commit-only decision for retry |
 | `EC_PREDECESSOR_RETIRE_PENDING` | A predecessor owner is unavailable after successor activation | Keep the successor pointer active and decision `Activated`; retry only missing predecessor marks |
+| `EC_PREDECESSOR_ABANDON` | Abandonment is unauthorized, malformed, targets a non-Activated decision or non-Pending binding, or conflicts with an existing audit | Change no binding/decision state; issue no participant call |
 | `EC_RETENTION_ACTIVE` | Normal retirement sees one or more coordinator-local in-flight references under the fence | Keep generation retained; require drain or explicit audited force-retire |
 | `EC_GENERATION_MISSING` | Fingerprint/build id names an unknown, aborted, or reclaimed generation | Data/topology/scan endpoints return no generation and do not fall back; generation-status alone may return the Reclaimed tombstone |
 
@@ -596,9 +717,9 @@ lifecycle side effect.
 | FR-082-AC-11 | Source-row DML and schema changes are blocked from snapshot capture through publish/abort, while reads of the prior epoch continue | Test (TC-042) |
 | FR-082-AC-12 | Roster reorder, addition, or removal creates a new fingerprint and never changes owner resolution for the retained old epoch | Test (TC-042) |
 | FR-082-AC-13 | Shared-memory exact-token scan registration is idempotent, fails closed without preload/at capacity, reaps normal and abrupt backend exits, cleans up every error/cancel/restart path, adds zero participant RPC/WAL work per query, and collision-free retirement fencing prevents reclaim while a registered scan is live | Test (TC-042) |
-| FR-082-AC-14 | Ready commit durably stores the exact canonical build candidate, and both decision and later recovery after client/backend loss consume those bytes without recapturing the source snapshot | Test (TC-042) |
-| FR-082-AC-15 | After successor activation, every predecessor-roster owner—including an owner removed from the successor roster—is idempotently marked Retired; exact replay is stable and conflicting successor identity changes no state or physical bytes | Test (TC-042) |
-| FR-082-AC-16 | Retire apply atomically removes physical storage and leaves an immutable Reclaimed tombstone; exact replay/status succeeds from it and conflicting identity fails closed | Test (TC-042) |
+| FR-082-AC-14 | Ready commit durably stores the exact canonical build candidate, and both decision and later recovery after client/backend loss recompute its digest chain and consume those bytes without recapturing the source snapshot | Test (TC-042, TC-050) |
+| FR-082-AC-15 | After successor activation, every predecessor-roster binding—including an owner removed from the successor roster—reaches exactly one immutable Retired acknowledgement or explicit audited Abandoned disposition; exact replay is stable, a returning abandoned binding fails closed, and conflicting successor identity changes no state or physical bytes | Test (TC-042, TC-050) |
+| FR-082-AC-16 | Retire apply atomically removes physical storage and leaves an immutable Reclaimed tombstone; exact replay/status succeeds from it and conflicting identity fails closed | Test (TC-042, TC-050) |
 
 ## Constraints
 

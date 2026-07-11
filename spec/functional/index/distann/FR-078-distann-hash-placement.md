@@ -211,7 +211,9 @@ created_at timestamptz)`
   coordinator-control session `ShareRowExclusiveLock`, then lock the
   registry-state row before any registration/replay row. It MAY resolve the source OID under a
   short-lived control-index `AccessShareLock`, but it SHALL reopen and revalidate
-  the v5 control metadata and logical UUID after the source lock is held. This
+  the v5 control metadata and logical UUID after the source lock is held. The
+  short-lived `AccessShareLock` SHALL be released before acquisition of the
+  retained source lock begins. This
   source → control → registry → registration order is shared by abort and
   publish recovery and prevents inversion with source DDL.
 - Successful begin-build retains both session locks through build, decision,
@@ -228,6 +230,16 @@ created_at timestamptz)`
   Committed lock ownership SHALL cover both relations and be keyed by source
   relation, coordinator control identity, and build id; another build in the
   same session SHALL not borrow it.
+- PostgreSQL releases all default-lock-manager session relation locks when a
+  backend aborts a top-level transaction, including source/control locks that
+  backend committed in an earlier transaction. Such an abort loses only
+  ephemeral ownership: the backend SHALL clear its local ownership mirror, the
+  durable build gate SHALL remain authoritative, and any backend resuming the
+  build SHALL reacquire source then control locks and revalidate the exact
+  registration before a side effect. Durable DML and utility-hook enforcement
+  SHALL cover the interval between abort and reacquisition. A subtransaction
+  abort releases only session locks acquired by that subtransaction; a
+  subcommit promotes its ownership record to the parent.
 - The returned registration digest SHALL bind the complete immutable private
   binding list in ordinal order, including secret reference, canonical remote
   locator, participant UUID, compatibility digest, endpoint identity, node id,
@@ -253,7 +265,10 @@ created_at timestamptz)`
 - Version 1 also rejects begin-build while any publish decision for the logical
   index is `Pending` or `Activated`. Recovery is therefore unambiguous for the
   build-id-free `ec_distann_recover_epoch_publish(index)` operation; a later
-  build may begin only after the prior decision is `Applied`.
+  build may begin only after the prior decision is `Applied`. An audited
+  predecessor-binding abandonment described by FR-082 is one terminal binding
+  outcome that permits the covering decision to become `Applied`; it does not
+  bypass or delete the publish decision.
 - The transaction containing `ec_distann_begin_epoch_build` SHALL commit before
   the first remote `ec_distann_begin_epoch_handoff` call. A caller SHALL NOT
   invoke `ec_distann_build_epoch` until that commit succeeds.
@@ -557,9 +572,12 @@ secured pooled libpq transport governed by
 
 The coordinator SHALL invoke begin/stage/seal/abort handoff operations in
 `READ COMMITTED` transactions. Their replay contract depends on each statement
-seeing a concurrently committed generation or batch journal; callers using a
-long-lived Repeatable Read or Serializable snapshot are outside the v1
-transport contract and SHALL retry in a new READ COMMITTED transaction.
+seeing a concurrently committed generation or batch journal. Every handoff and
+FR-082 lifecycle endpoint SHALL inspect the current transaction isolation level
+before lock, catalog, or RPC side effects and reject Repeatable Read or
+Serializable with `EC_TRANSACTION_ISOLATION`; the caller SHALL retry in a new
+READ COMMITTED transaction. Merely documenting stronger isolation as outside
+the transport contract is insufficient.
 
 `ec_distann_begin_epoch_handoff(index_regclass regclass, epoch bigint,
 build_id uuid, build_spec_digest bytea, roster_digest bytea,
