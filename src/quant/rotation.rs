@@ -6,6 +6,9 @@ use rand_chacha::ChaCha8Rng;
 
 use crate::quant::hadamard::{orthonormal_fwht_in_place, orthonormal_fwht_tiled_in_place};
 
+/// These derivation constants and the ChaCha8 sign stream are transitively part
+/// of EC-DistANN seeded codec-artifact v1. A semantic change requires a new
+/// artifact version and regenerated code/score golden vectors.
 pub const TILED_FWHT_COMPAT_DIM: usize = 1536;
 pub const TILED_FWHT_COMPAT_TILE_DIM: usize = 512;
 

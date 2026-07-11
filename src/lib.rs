@@ -28,7 +28,7 @@
     clippy::wrong_self_convention
 )]
 
-use pgrx::extension_sql_file;
+use pgrx::{extension_sql, extension_sql_file};
 use pgrx::ffi::CString;
 use pgrx::prelude::*;
 use pgrx::{pg_sys, Internal};
@@ -462,6 +462,42 @@ pub mod bench_api {
 }
 
 extension_sql_file!("../sql/bootstrap.sql", name = "bootstrap", bootstrap);
+
+extension_sql!(
+    r#"
+ALTER FUNCTION ec_distann_control_identity(regclass) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_control_identity(regclass)
+    SET search_path TO pg_catalog, @extschema@;
+REVOKE ALL ON FUNCTION ec_distann_control_identity(regclass) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_begin_epoch_handoff(
+    regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_begin_epoch_handoff(
+    regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
+) SET search_path TO pg_catalog, @extschema@;
+REVOKE ALL ON FUNCTION ec_distann_begin_epoch_handoff(
+    regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@;
+REVOKE ALL ON FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_list_unpublished_generations(regclass) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_list_unpublished_generations(regclass)
+    SET search_path TO pg_catalog, @extschema@;
+REVOKE ALL ON FUNCTION ec_distann_list_unpublished_generations(regclass) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_catalog_index_cleanup(oid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_catalog_index_cleanup(oid)
+    SET search_path TO pg_catalog, @extschema@;
+REVOKE ALL ON FUNCTION ec_distann_catalog_index_cleanup(oid) FROM PUBLIC;
+"#,
+    name = "distann_internal_privileges",
+    finalize,
+);
 
 #[pg_extern(volatile)]
 fn ecaz_fault_reset_palloc_counter() {

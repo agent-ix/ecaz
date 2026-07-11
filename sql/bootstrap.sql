@@ -265,6 +265,165 @@ ON ec_spire_placement (index_oid, source_identity);
 CREATE INDEX ec_spire_placement_by_index_oid
 ON ec_spire_placement (index_oid);
 
+-- Task 179 physical-generation control catalogs. Every row carries both the
+-- local relation OID and the never-reused logical UUID from v5 control
+-- metadata; production lookups must match both so OID reuse cannot select
+-- stale state.
+CREATE TABLE ec_distann_node_descriptor (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    roster_ordinal integer NOT NULL CHECK (roster_ordinal >= 0),
+    node_id integer NOT NULL CHECK (node_id > 0),
+    endpoint_identity text NOT NULL CHECK (
+        length(endpoint_identity) > 0
+        AND octet_length(endpoint_identity) <= 65535
+        AND endpoint_identity = btrim(endpoint_identity)
+    ),
+    conninfo_secret_name text NOT NULL CHECK (
+        length(conninfo_secret_name) > 0
+    ),
+    remote_index_regclass text NOT NULL CHECK (
+        length(remote_index_regclass) > 0
+    ),
+    participant_logical_index_uuid uuid NOT NULL,
+    is_local boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, roster_ordinal),
+    UNIQUE (index_oid, logical_index_uuid, node_id),
+    UNIQUE (index_oid, logical_index_uuid, endpoint_identity),
+    UNIQUE (index_oid, logical_index_uuid, participant_logical_index_uuid)
+);
+
+CREATE UNIQUE INDEX ec_distann_node_descriptor_one_local
+    ON ec_distann_node_descriptor (index_oid, logical_index_uuid)
+    WHERE is_local;
+
+CREATE TABLE ec_distann_generation (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    owner_ordinal integer NOT NULL CHECK (owner_ordinal >= 0),
+    node_id integer NOT NULL CHECK (node_id > 0),
+    state text NOT NULL CHECK (
+        state IN ('Building', 'Ready', 'Published', 'Retired')
+    ),
+    build_spec_digest bytea NOT NULL CHECK (octet_length(build_spec_digest) = 32),
+    roster_digest bytea NOT NULL CHECK (octet_length(roster_digest) = 32),
+    generation_descriptor bytea NOT NULL CHECK (octet_length(generation_descriptor) > 0),
+    generation_descriptor_digest bytea NOT NULL CHECK (
+        octet_length(generation_descriptor_digest) = 32
+    ),
+    expected_owner_count bigint NOT NULL CHECK (expected_owner_count >= 0),
+    expected_owner_digest bytea NOT NULL CHECK (octet_length(expected_owner_digest) = 32),
+    row_tier_relid oid NOT NULL CHECK (row_tier_relid <> '0'::oid),
+    graph_store_relid oid NOT NULL CHECK (graph_store_relid <> '0'::oid),
+    directory_relid oid NOT NULL CHECK (directory_relid <> '0'::oid),
+    next_batch_seq bigint NOT NULL DEFAULT 0 CHECK (next_batch_seq >= 0),
+    cumulative_record_count bigint NOT NULL DEFAULT 0 CHECK (cumulative_record_count >= 0),
+    cumulative_owner_digest bytea NOT NULL CHECK (octet_length(cumulative_owner_digest) = 32),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (row_tier_relid),
+    UNIQUE (graph_store_relid),
+    UNIQUE (directory_relid)
+);
+
+CREATE TABLE ec_distann_generation_batch (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    batch_seq bigint NOT NULL CHECK (batch_seq >= 0),
+    batch_digest bytea NOT NULL CHECK (octet_length(batch_digest) = 32),
+    encoded_bytes bigint NOT NULL CHECK (encoded_bytes >= 0 AND encoded_bytes <= 8388608),
+    accepted_record_count bigint NOT NULL CHECK (accepted_record_count >= 0),
+    cumulative_record_count bigint NOT NULL CHECK (cumulative_record_count >= 0),
+    cumulative_owner_digest bytea NOT NULL CHECK (octet_length(cumulative_owner_digest) = 32),
+    acknowledged_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id, batch_seq),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_generation (index_oid, logical_index_uuid, build_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE ec_distann_build_registration (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    state text NOT NULL CHECK (
+        state IN ('Registered', 'Building', 'Ready', 'Aborted', 'Decided', 'Published')
+    ),
+    roster_snapshot bytea NOT NULL CHECK (octet_length(roster_snapshot) > 0),
+    roster_digest bytea NOT NULL CHECK (octet_length(roster_digest) = 32),
+    row_schema_fingerprint bytea NOT NULL CHECK (octet_length(row_schema_fingerprint) = 32),
+    registration_digest bytea NOT NULL CHECK (octet_length(registration_digest) = 32),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id)
+);
+
+CREATE TABLE ec_distann_publish_decision (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    epoch_manifest bytea NOT NULL CHECK (octet_length(epoch_manifest) > 0),
+    decision_state text NOT NULL CHECK (decision_state IN ('Pending', 'Applied')),
+    committed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    applied_at timestamptz,
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id)
+);
+
+CREATE TABLE ec_distann_retire_decision (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    roster_snapshot bytea NOT NULL CHECK (octet_length(roster_snapshot) > 0),
+    retire_decision_digest bytea NOT NULL CHECK (octet_length(retire_decision_digest) = 32),
+    forced boolean NOT NULL DEFAULT false,
+    overridden_in_flight_count bigint NOT NULL DEFAULT 0 CHECK (overridden_in_flight_count >= 0),
+    caller_name text NOT NULL CHECK (length(caller_name) > 0),
+    reason text NOT NULL DEFAULT 'normal' CHECK (length(reason) > 0),
+    committed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    applied_at timestamptz,
+    PRIMARY KEY (index_oid, logical_index_uuid, epoch_fingerprint)
+);
+
+CREATE TABLE ec_distann_active_epoch (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid),
+    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint)
+);
+
+REVOKE ALL ON TABLE ec_distann_node_descriptor FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_generation FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_generation_batch FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_build_registration FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_publish_decision FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_retire_decision FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_active_epoch FROM PUBLIC;
+
 CREATE TYPE ec_spire_placement_entry AS (
     pk_value bytea,
     node_id integer,
@@ -637,6 +796,31 @@ $$;
 CREATE EVENT TRIGGER ec_spire_remote_catalog_drop_index_cleanup
 ON sql_drop
 EXECUTE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event();
+
+CREATE FUNCTION ec_distann_catalog_drop_index_cleanup_event()
+RETURNS event_trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, @extschema@
+AS $$
+DECLARE
+    dropped_object record;
+BEGIN
+    FOR dropped_object IN
+        SELECT *
+          FROM pg_event_trigger_dropped_objects()
+         WHERE object_type = 'index'
+    LOOP
+        PERFORM ec_distann_catalog_index_cleanup(dropped_object.objid::oid);
+    END LOOP;
+END
+$$;
+
+REVOKE ALL ON FUNCTION ec_distann_catalog_drop_index_cleanup_event() FROM PUBLIC;
+
+CREATE EVENT TRIGGER ec_distann_catalog_drop_index_cleanup
+ON sql_drop
+EXECUTE FUNCTION ec_distann_catalog_drop_index_cleanup_event();
 
 CREATE FUNCTION tqvector_inner_product(tqvector, tqvector)
 RETURNS float4

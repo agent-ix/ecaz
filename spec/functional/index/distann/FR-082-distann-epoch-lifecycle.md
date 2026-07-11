@@ -27,6 +27,14 @@ row tier.
 Every distributed read SHALL carry one coordinator-registered epoch
 fingerprint so one scan attempt never mixes generations.
 
+For each logical-index UUID, the **authoritative coordinator** SHALL be the one
+PostgreSQL coordinator instance that owns that logical index's durable active
+pointer, publish/retire decisions, and coordinator-local in-flight registry.
+Every scan capable of addressing a generation for that logical index SHALL
+originate on that instance and register there before invoking a participant
+endpoint. A second coordinator instance SHALL NOT invoke expansion,
+materialization, publication, or reclaim endpoints for that logical index.
+
 ## Inputs
 
 - The stitched global-graph identity and head sample from
@@ -78,6 +86,9 @@ The coordinator SHALL expand every 32-bit `TransactionId` in PostgreSQL's
 `SnapshotData` to its wrap-aware `FullTransactionId` relative to the captured
 next full XID before sorting or serialization; bare 32-bit xmin/xmax/xip values
 SHALL NOT enter the descriptor.
+`xmin_full` SHALL be less than or equal to `xmax_full`; every `xip` and
+`subxip` value SHALL lie in `[xmin_full, xmax_full)`. Values in each array
+remain strictly ascending.
 
 The version-2 canonical epoch manifest SHALL contain these fields in this order:
 
@@ -85,7 +96,7 @@ The version-2 canonical epoch manifest SHALL contain these fields in this order:
 |-------|-----------|------|
 | manifest_version | u16 | exactly 2 |
 | epoch | u64 | non-zero; when a parent exists, greater than the epoch obtained by resolving `parent_fingerprint` to its retained manifest |
-| build_id | byte[16] | UUID bytes from FR-078 |
+| build_id | byte[16] | RFC 4122 version-4 UUID bytes from FR-078 |
 | parent_fingerprint | length-prefixed bytes | empty for the first epoch; otherwise one valid retained fingerprint |
 | source_snapshot_digest | byte[32] | SHA-256 of the canonical PostgreSQL snapshot identity recorded by the build |
 | build_spec_digest | byte[32] | immutable pre-handoff specification from FR-078 |
@@ -132,8 +143,13 @@ generation-descriptor digest, `last_acknowledged_batch_sequence u64`, owned
 record count `u64`, row count `u64`, owner-stream digest, persisted graph
 digest, persisted row-tier digest, local-directory digest, graph bytes `u64`,
 row-tier bytes `u64`, directory bytes `u64`, and `state u8 = 1` (`Ready`). Receipt
-fixed-width integers use little-endian encoding; UUID uses RFC 4122 byte order;
+fixed-width integers use little-endian encoding; build UUID is version 4 and uses RFC 4122 byte order;
 digests are 32 bytes.
+
+Receipt v1 deliberately carries both `owned_record_count` and `row_count` for
+independent graph-coverage and row-tier topology accounting, but requires them
+to be equal because v1 has exactly one frozen row per owned graph record. Any
+future representation that permits divergence requires a new receipt version.
 
 The receipt's canonical body is 271 bytes and it SHALL append
 `SHA-256("ec_distann_ready_receipt_v1\0" || canonical_receipt_without_digest)`.
@@ -224,6 +240,10 @@ epoch_fingerprint bytea) RETURNS void`
   `ec_distann_publish_epoch` operation.
 - The participant SHALL validate the canonical manifest digest before changing
   state.
+- The participant SHALL cross-check the manifest codec-parameter plaintext
+  against the generation descriptor's complete codec artifact: kind,
+  dimensions, seed, code stride, and any GroupedPQ transform/group shape SHALL
+  agree before changing state. Digest binding alone is insufficient.
 - The participant SHALL verify that the manifest contains its exact Ready
   receipt and build-specification digest before changing state.
 - A participant SHALL acknowledge publication only after its Published state,
@@ -247,10 +267,19 @@ epoch_fingerprint bytea) RETURNS void`
 
 ### Coordinator Scan Retention and Retire Fence
 
+- Each logical-index UUID SHALL have exactly one coordinator-local retirement
+  fence, keyed only by that logical-index UUID. There is no separate
+  per-fingerprint fence. Both active-pointer selection/registration and every
+  retirement attempt SHALL use this same fence, so pointer selection,
+  registration, zero-count observation, and retire-decision creation have one
+  linear order.
 - Before issuing the first expansion for one attempt, the coordinator SHALL
   generate a never-reused UUID scan token and atomically read/register the
   selected fingerprint in a coordinator-local in-flight registry under that
   logical index's retirement fence.
+- Registration SHALL re-check under the fence that the selected fingerprint has
+  no committed retire decision. If one exists, registration SHALL reject with
+  `EC_EPOCH_STATE`, add no registry entry, and issue no participant request.
 - The registry SHALL be visible to every backend on the authoritative
   coordinator, but it SHALL require no participant RPC, participant catalog
   write, WAL flush, or synchronous commit on the query path.
@@ -262,15 +291,23 @@ epoch_fingerprint bytea) RETURNS void`
   coordinator process death releases its registrations because no scan in that
   process can remain live.
 - Normal retirement SHALL accept only a non-active Retired fingerprint. It
-  SHALL acquire the fingerprint's exclusive retirement fence, prevent new
-  local registrations, and reject with `EC_RETENTION_ACTIVE` unless the local
-  in-flight count is zero.
+  SHALL acquire that logical index's sole retirement fence exclusively, re-read
+  the active pointer, prevent new local registrations, and reject with
+  `EC_RETENTION_ACTIVE` unless the target fingerprint's local in-flight count is
+  zero.
 - After observing zero under the fence, the coordinator SHALL commit one
   immutable retire decision containing the fingerprint, manifest digest,
   roster, caller, and timestamp before instructing the first participant to
-  reclaim. Participants SHALL validate that decision and apply it
-  idempotently. A crash after a subset applies is completed by
+  reclaim. It SHALL hold the exclusive fence through that commit, release it
+  before participant RPCs, and rely on the committed-decision registration
+  check to prevent later use of the target. Participants SHALL validate that
+  decision and apply it idempotently. A crash after a subset applies is completed by
   `ec_distann_recover_epoch_retire` from the durable decision.
+- A retirement rejected as `EC_RETENTION_ACTIVE` SHALL create no retire decision
+  and release the exclusive fence before returning the error. A scan arriving
+  while the fence is held SHALL wait for that short local critical section,
+  then re-read the active pointer and retire-decision state; fence contention
+  alone SHALL NOT produce a query error.
 - Participant restart is safe without a durable per-scan token: a participant
   never reclaims because of restart, age, or local state alone. It reclaims
   only after the authoritative coordinator has fenced new scans, observed zero
@@ -414,7 +451,7 @@ epoch_fingerprint bytea) RETURNS void`
 
 | ID | Constraint | Type | Validation |
 |----|------------|------|------------|
-| FR-082-CON-1 | A coordinator SHALL expose exactly one active-epoch pointer per logical ec_distann index | Integrity | State-machine test (TC-042) |
+| FR-082-CON-1 | Each logical ec_distann index SHALL have exactly one authoritative coordinator instance, one active-epoch pointer, one shared in-flight registry, and one per-index retirement fence | Integrity | State-machine and two-coordinator rejection test (TC-042) |
 | FR-082-CON-2 | A scan SHALL execute at most two complete attempts | Resource | Fault drill (TC-042) |
 | FR-082-CON-3 | A participant SHALL expose records only from Published or retained Retired generations selected by fingerprint | Integrity | Endpoint integration test (TC-040, TC-042) |
 | FR-082-CON-4 | A durable publish decision SHALL be commit-only | Recovery | Crash-boundary drill (TC-042) |

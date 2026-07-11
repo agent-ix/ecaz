@@ -1,5 +1,7 @@
 //! FR-078 canonical epoch-row-tier schema descriptor and fingerprint.
 
+use pgrx::{pg_sys, Spi};
+
 use super::canonical_wire::{domain_digest, CanonicalDecoder, CanonicalEncoder};
 
 pub const DISTANN_ROW_SCHEMA_VERSION: u16 = 1;
@@ -30,6 +32,149 @@ pub struct DistannRowSchemaAttribute {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistannRowSchemaDescriptor {
     pub attributes: Vec<DistannRowSchemaAttribute>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedRowSchemaColumn {
+    pub(crate) attnum: u16,
+    pub(crate) name: String,
+    pub(crate) sql_type: String,
+    pub(crate) collation_sql: Option<String>,
+    pub(crate) dropped: bool,
+    pub(crate) not_null: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ResolvedRowSchema {
+    pub(crate) descriptor: DistannRowSchemaDescriptor,
+    pub(crate) columns: Vec<ResolvedRowSchemaColumn>,
+}
+
+pub(crate) fn resolve_relation_schema(relation_oid: pg_sys::Oid) -> Result<ResolvedRowSchema, String> {
+    let rows = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT a.attnum::int4 AS attnum,
+                        CASE WHEN a.attisdropped THEN '' ELSE a.attname::text END AS attribute_name,
+                        CASE WHEN a.attisdropped THEN '' ELSE tn.nspname::text END AS type_namespace,
+                        CASE WHEN a.attisdropped THEN '' ELSE t.typname::text END AS type_name,
+                        CASE WHEN a.attisdropped THEN -1 ELSE a.atttypmod END AS typmod,
+                        CASE WHEN a.attisdropped OR a.attcollation = 0 THEN '' ELSE cn.nspname::text END AS collation_namespace,
+                        CASE WHEN a.attisdropped OR a.attcollation = 0 THEN '' ELSE c.collname::text END AS collation_name,
+                        a.attisdropped AS dropped,
+                        CASE WHEN a.attisdropped THEN '' ELSE a.attgenerated::text END AS generated_kind,
+                        CASE WHEN a.attisdropped OR send_proc.oid IS NULL THEN ''
+                             ELSE format('%I.%I', send_ns.nspname, send_proc.proname) END AS send_function,
+                        CASE WHEN a.attisdropped OR recv_proc.oid IS NULL THEN ''
+                             ELSE format('%I.%I', recv_ns.nspname, recv_proc.proname) END AS receive_function,
+                        CASE WHEN a.attisdropped THEN '' ELSE format_type(a.atttypid, a.atttypmod) END AS sql_type,
+                        CASE WHEN a.attisdropped OR a.attcollation = 0 THEN NULL
+                             ELSE format('%I.%I', cn.nspname, c.collname) END AS collation_sql,
+                        a.attnotnull AS not_null
+                   FROM pg_catalog.pg_attribute a
+                   LEFT JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+                   LEFT JOIN pg_catalog.pg_namespace tn ON tn.oid = t.typnamespace
+                   LEFT JOIN pg_catalog.pg_collation c ON c.oid = a.attcollation
+                   LEFT JOIN pg_catalog.pg_namespace cn ON cn.oid = c.collnamespace
+                   LEFT JOIN pg_catalog.pg_proc send_proc ON send_proc.oid = t.typsend
+                   LEFT JOIN pg_catalog.pg_namespace send_ns ON send_ns.oid = send_proc.pronamespace
+                   LEFT JOIN pg_catalog.pg_proc recv_proc ON recv_proc.oid = t.typreceive
+                   LEFT JOIN pg_catalog.pg_namespace recv_ns ON recv_ns.oid = recv_proc.pronamespace
+                  WHERE a.attrelid = $1::oid
+                    AND a.attnum > 0
+                  ORDER BY a.attnum",
+                None,
+                &[relation_oid.into()],
+            )
+            .map_err(|error| format!("EC_SCHEMA_MISMATCH: local schema lookup failed: {error}"))?
+            .map(|row| {
+                let required_string = |name: &str| -> Result<String, String> {
+                    row[name]
+                        .value::<String>()
+                        .map_err(|error| {
+                            format!("EC_SCHEMA_MISMATCH: {name} decode failed: {error}")
+                        })?
+                        .ok_or_else(|| format!("EC_SCHEMA_MISMATCH: {name} is NULL"))
+                };
+                let attnum_i32 = row["attnum"]
+                    .value::<i32>()
+                    .map_err(|error| {
+                        format!("EC_SCHEMA_MISMATCH: attnum decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_SCHEMA_MISMATCH: attnum is NULL".to_owned())?;
+                let attnum = u16::try_from(attnum_i32).map_err(|_| {
+                    format!("EC_SCHEMA_MISMATCH: attnum {attnum_i32} is outside u16")
+                })?;
+                let dropped = row["dropped"]
+                    .value::<bool>()
+                    .map_err(|error| {
+                        format!("EC_SCHEMA_MISMATCH: dropped decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_SCHEMA_MISMATCH: dropped is NULL".to_owned())?;
+                let generated = required_string("generated_kind")?;
+                let generated_kind = match generated.as_bytes() {
+                    [] => 0,
+                    [kind] if matches!(*kind, b's' | b'v') => *kind,
+                    _ => {
+                        return Err(format!(
+                            "EC_SCHEMA_UNSUPPORTED: attribute {attnum} has generated kind {generated:?}"
+                        ))
+                    }
+                };
+                let typmod = row["typmod"]
+                    .value::<i32>()
+                    .map_err(|error| {
+                        format!("EC_SCHEMA_MISMATCH: typmod decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_SCHEMA_MISMATCH: typmod is NULL".to_owned())?;
+                let collation_sql = row["collation_sql"]
+                    .value::<String>()
+                    .map_err(|error| {
+                        format!("EC_SCHEMA_MISMATCH: collation SQL decode failed: {error}")
+                    })?;
+                let not_null = row["not_null"]
+                    .value::<bool>()
+                    .map_err(|error| {
+                        format!("EC_SCHEMA_MISMATCH: not-null decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_SCHEMA_MISMATCH: not-null is NULL".to_owned())?;
+                Ok::<(DistannRowSchemaAttribute, ResolvedRowSchemaColumn), String>((
+                    DistannRowSchemaAttribute {
+                        attnum,
+                        name: required_string("attribute_name")?,
+                        type_namespace: required_string("type_namespace")?,
+                        type_name: required_string("type_name")?,
+                        typmod,
+                        collation_namespace: required_string("collation_namespace")?,
+                        collation_name: required_string("collation_name")?,
+                        dropped,
+                        generated_kind,
+                        send_function: required_string("send_function")?,
+                        receive_function: required_string("receive_function")?,
+                    },
+                    ResolvedRowSchemaColumn {
+                        attnum,
+                        name: required_string("attribute_name")?,
+                        sql_type: required_string("sql_type")?,
+                        collation_sql,
+                        dropped,
+                        not_null,
+                    },
+                ))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })?;
+
+    if rows.is_empty() {
+        return Err("EC_SCHEMA_MISMATCH: source relation has no physical attributes".to_owned());
+    }
+    let (attributes, columns): (Vec<_>, Vec<_>) = rows.into_iter().unzip();
+    let descriptor = DistannRowSchemaDescriptor { attributes };
+    descriptor.validate()?;
+    Ok(ResolvedRowSchema {
+        descriptor,
+        columns,
+    })
 }
 
 impl DistannRowSchemaDescriptor {
@@ -76,6 +221,22 @@ impl DistannRowSchemaDescriptor {
             if attribute.collation_namespace.is_empty() != attribute.collation_name.is_empty() {
                 return Err(format!(
                     "EC_GENERATION_DESCRIPTOR: attribute {} has incomplete collation identity",
+                    attribute.attnum
+                ));
+            }
+            if attribute.dropped
+                && (!attribute.name.is_empty()
+                    || !attribute.type_namespace.is_empty()
+                    || !attribute.type_name.is_empty()
+                    || attribute.typmod != -1
+                    || !attribute.collation_namespace.is_empty()
+                    || !attribute.collation_name.is_empty()
+                    || attribute.generated_kind != 0
+                    || !attribute.send_function.is_empty()
+                    || !attribute.receive_function.is_empty())
+            {
+                return Err(format!(
+                    "EC_GENERATION_DESCRIPTOR: dropped attribute {} is not in its canonical empty form",
                     attribute.attnum
                 ));
             }
@@ -256,5 +417,12 @@ mod tests {
             .encode()
             .unwrap_err()
             .contains("EC_SCHEMA_UNSUPPORTED"));
+
+        let mut descriptor = sample_row_schema();
+        descriptor.attributes[1].name = "stale_dropped_name".to_owned();
+        assert!(descriptor
+            .encode()
+            .unwrap_err()
+            .contains("canonical empty form"));
     }
 }

@@ -541,4 +541,52 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn seeded_codec_v1_golden_score_vectors() {
+        use sha2::{Digest, Sha256};
+
+        let source_pattern = [0.5, -0.25, 0.75, -1.0, 0.125, 0.625, -0.875, 0.375];
+        let query_pattern = [-0.75, 0.5, 0.25, 0.875, -0.125, 1.0, -0.5, 0.625];
+        let source = (0..ARTIFACT_TEST_DIMENSIONS)
+            .map(|index| source_pattern[index % source_pattern.len()])
+            .collect::<Vec<_>>();
+        let query = (0..ARTIFACT_TEST_DIMENSIONS)
+            .map(|index| query_pattern[index % query_pattern.len()])
+            .collect::<Vec<_>>();
+        for (format, expected_len, expected_digest, expected_score_bits) in [
+            (
+                NeighborCodeFormat::RaBitQ,
+                204,
+                "808e6d09cf3495d0366956f20f4b7c50b54049c93f26fad0324c2437c42b4fce",
+                0xc17c_0de7,
+            ),
+            (
+                NeighborCodeFormat::TurboQuant,
+                768,
+                "2ea3509f51fe2414ad68dc28d97a7eca20f302a793c652c4f17e3f085100cf0b",
+                0xbfba_042d,
+            ),
+        ] {
+            let binding = DistannCodecBinding::prepare(format, &[], source.len(), 42).unwrap();
+            let artifact = binding.to_artifact(source.len() as u16, 42).unwrap();
+            let code = binding.encode(&source);
+            let score = DistannPreparedQuery::prepare_artifact(&artifact, &query)
+                .unwrap()
+                .score_dist(&code);
+            assert_eq!(code.len(), expected_len, "{} code length", format.as_str());
+            assert_eq!(
+                hex::encode(Sha256::digest(&code)),
+                expected_digest,
+                "{} canonical code bytes changed; bump codec artifact version before updating this vector",
+                format.as_str()
+            );
+            assert_eq!(
+                score.to_bits(),
+                expected_score_bits,
+                "{} canonical score changed; bump codec artifact version before updating this vector",
+                format.as_str()
+            );
+        }
+    }
 }

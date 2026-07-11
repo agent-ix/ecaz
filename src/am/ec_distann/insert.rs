@@ -481,6 +481,7 @@ fn fold_delta_into_graph_impl(index_oid: pg_sys::Oid) -> Result<i64, String> {
     let handle = NonNull::new(guard.as_ptr())
         .ok_or_else(|| "ec_distann fold got a null index relation".to_owned())?;
     let metadata = read_metadata_from_index_handle(handle)?;
+    super::require_legacy_local_storage(&metadata, "ec_distann_fold_delta_into_graph")?;
     if metadata.delta_buffer_head == ItemPointer::INVALID {
         return Ok(0);
     }

@@ -22,6 +22,9 @@ pub(crate) enum DistannExpandError {
     /// FR-079 case (d): co-placed vector missing/unreadable — structural fault,
     /// distinct from (c).
     VectorMissing(String),
+    /// The logical control root, an aborted build, or a reclaimed fingerprint
+    /// does not name readable physical generation storage.
+    GenerationMissing(String),
     /// Ordinary bad input (dimension mismatch, malformed fingerprint, …).
     BadInput(String),
     /// Internal invariant violation (should not happen behind validation).
@@ -37,6 +40,7 @@ impl DistannExpandError {
             Self::Placement(_) => PgSqlErrorCode::ERRCODE_OBJECT_NOT_IN_PREREQUISITE_STATE,
             Self::OwnedRecordMissing(_) => PgSqlErrorCode::ERRCODE_DATA_CORRUPTED,
             Self::VectorMissing(_) => PgSqlErrorCode::ERRCODE_INDEX_CORRUPTED,
+            Self::GenerationMissing(_) => PgSqlErrorCode::ERRCODE_UNDEFINED_OBJECT,
             Self::BadInput(_) => PgSqlErrorCode::ERRCODE_INVALID_PARAMETER_VALUE,
             Self::Internal(_) => PgSqlErrorCode::ERRCODE_INTERNAL_ERROR,
         }
@@ -50,6 +54,7 @@ impl DistannExpandError {
             Self::Placement(_) => "55000",
             Self::OwnedRecordMissing(_) => "XX001",
             Self::VectorMissing(_) => "XX002",
+            Self::GenerationMissing(_) => "42704",
             Self::BadInput(_) => "22023",
             Self::Internal(_) => "XX000",
         }
@@ -68,6 +73,7 @@ impl DistannExpandError {
             Self::Placement(_) => "EC_PLACEMENT",
             Self::OwnedRecordMissing(_) => "EC_RECORD_MISSING",
             Self::VectorMissing(_) => "EC_VECTOR_MISSING",
+            Self::GenerationMissing(_) => "EC_GENERATION_MISSING",
             Self::BadInput(_) => "EC_BAD_INPUT",
             Self::Internal(_) => "EC_INTERNAL",
         }
@@ -79,6 +85,7 @@ impl DistannExpandError {
             | Self::Placement(m)
             | Self::OwnedRecordMissing(m)
             | Self::VectorMissing(m)
+            | Self::GenerationMissing(m)
             | Self::BadInput(m)
             | Self::Internal(m) => m,
         }
@@ -103,6 +110,7 @@ impl DistannExpandError {
             Some("55000") => Self::Placement(message),
             Some("XX001") => Self::OwnedRecordMissing(message),
             Some("XX002") => Self::VectorMissing(message),
+            Some("42704") => Self::GenerationMissing(message),
             Some("22023") => Self::BadInput(message),
             _ => Self::Internal(message),
         }
@@ -137,6 +145,7 @@ mod tests {
             DistannExpandError::Placement("e".into()),
             DistannExpandError::OwnedRecordMissing("e".into()),
             DistannExpandError::VectorMissing("e".into()),
+            DistannExpandError::GenerationMissing("e".into()),
             DistannExpandError::BadInput("e".into()),
             DistannExpandError::Internal("e".into()),
         ];
@@ -161,6 +170,7 @@ mod tests {
             DistannExpandError::Placement("x".into()),
             DistannExpandError::OwnedRecordMissing("x".into()),
             DistannExpandError::VectorMissing("x".into()),
+            DistannExpandError::GenerationMissing("x".into()),
             DistannExpandError::BadInput("x".into()),
         ] {
             let reparsed =

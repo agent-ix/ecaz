@@ -51,6 +51,7 @@ fn with_metadata_mut<T>(
     let handle = NonNull::new(guard.as_ptr())
         .ok_or_else(|| format!("{caller} got a null index relation"))?;
     let mut metadata = read_metadata_from_index_handle(handle)?;
+    reject_distributed_control(&metadata, caller)?;
     let result = mutate(&mut metadata)?;
     overwrite_metadata_page_handle(handle, &metadata);
     Ok(result)
@@ -64,7 +65,25 @@ fn read_metadata(index_oid: pg_sys::Oid, caller: &'static str) -> Result<Distann
     );
     let handle = NonNull::new(guard.as_ptr())
         .ok_or_else(|| format!("{caller} got a null index relation"))?;
-    read_metadata_from_index_handle(handle)
+    let metadata = read_metadata_from_index_handle(handle)?;
+    reject_distributed_control(&metadata, caller)?;
+    Ok(metadata)
+}
+
+/// The metadata-page lifecycle is the legacy v4 prototype.  A v5 distributed
+/// control must go through the catalog-backed build-id/manifest protocol; letting
+/// these older overloads mutate it would bypass Ready receipts, the durable
+/// publish decision, participant acknowledgement, and active-pointer recovery.
+fn reject_distributed_control(
+    metadata: &DistannMetadataPage,
+    caller: &'static str,
+) -> Result<(), String> {
+    if metadata.is_distributed_control() {
+        return Err(format!(
+            "EC_EPOCH_STATE: {caller} is a legacy metadata-page lifecycle endpoint and cannot operate on a distributed-control index"
+        ));
+    }
+    Ok(())
 }
 
 /// FR-082-AC-1: publish `epoch` as the active Published graph. Atomic per node

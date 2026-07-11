@@ -88,6 +88,10 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
     pg_am_callback!({
+        // The persisted format, not the mutable reloption, is authoritative
+        // across ALTER/REINDEX boundaries. This cached block-0 read is the
+        // correctness gate; any future relcache optimization must include
+        // invalidation and be justified by benchmark evidence.
         let metadata = ambuild::read_metadata_from_index(index_relation)
             .unwrap_or_else(|e| pgrx::error!("ec_distann aminsert metadata read failed: {e}"));
         if metadata.is_distributed_control() {
@@ -112,12 +116,16 @@ unsafe extern "C-unwind" fn ec_distann_ambulkdelete(
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     pg_am_callback!({
+        // See aminsert: persisted metadata is authoritative. Keep this read
+        // until a measured relcache cache can prove correct invalidation.
         let metadata = ambuild::read_metadata_from_index((*info).index)
             .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete metadata read failed: {e}"));
         if metadata.is_distributed_control() {
-            pgrx::error!(
-                "EC_GENERATION_MISSING: ec_distann distributed-control deletes require a Published physical generation"
-            );
+            // The logical control root indexes zero heap tuples. DELETE/HOT-miss
+            // UPDATE may still make source tuples dead, so VACUUM must be able to
+            // maintain the heap instead of failing forever on this empty index.
+            return ec_distann_noop_vacuum_stats((*info).index, stats)
+                .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
         }
         // FR-083 D10 tombstone delete: flag records whose heap row is dead;
         // nothing is physically reclaimed within a Published epoch (next epoch

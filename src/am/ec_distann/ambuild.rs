@@ -185,6 +185,23 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
         state.identity =
             resolve_identity_attribute(heap_relation, index_info, &state.options);
 
+        if state.options.distributed_control
+            && !index_info.is_null()
+            && (*index_info).ii_Concurrent
+        {
+            pgrx::error!(
+                "EC_GENERATION_MISSING: CREATE INDEX CONCURRENTLY is unsupported for an ec_distann distributed-control index; use non-concurrent creation before physical publication"
+            );
+        }
+
+        // `distributed_control` is a build-mode reloption: ALTER only changes
+        // the mode selected by an explicit REINDEX. Every rebuild is therefore
+        // an identity/state boundary, including control -> legacy conversion.
+        super::generation_store::reset_control_index_for_rebuild(index_relation)
+            .unwrap_or_else(|error| {
+                pgrx::error!("ec_distann rebuild cleanup failed: {error}")
+            });
+
         if state.options.distributed_control {
             require_permanent_control(index_relation);
             if state.identity.is_none() {
@@ -237,16 +254,15 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuildempty(index_relation: p
     pg_am_callback!({
         let state = BuildState::new(index_relation);
         if state.options.distributed_control {
-            require_permanent_control(index_relation);
-            if state.options.source_identity != DistannSourceIdentityProvider::Include {
-                pgrx::error!(
-                    "ec_distann distributed_control=true requires source_identity='include'"
-                );
-            }
-            initialize_metadata_page(index_relation, control_metadata(&state));
-        } else {
-            initialize_metadata_page(index_relation, empty_metadata(&state));
+            // PostgreSQL calls ambuildempty only to initialize an unlogged
+            // index's init fork. A distributed control is required to be
+            // permanent, so creating a second UUID here is both unreachable and
+            // unsafe if that persistence rule ever regresses.
+            pgrx::error!(
+                "EC_CONTROL_PERSISTENCE: ec_distann distributed-control indexes have no unlogged init-fork representation"
+            );
         }
+        initialize_metadata_page(index_relation, empty_metadata(&state));
     })
 }
 

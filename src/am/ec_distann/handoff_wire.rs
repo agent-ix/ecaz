@@ -4,7 +4,9 @@ use std::mem::size_of;
 
 use sha2::{Digest, Sha256};
 
-use super::canonical_wire::{domain_digest, CanonicalDecoder, CanonicalEncoder};
+use super::canonical_wire::{
+    domain_digest, is_rfc4122_v4_uuid, CanonicalDecoder, CanonicalEncoder,
+};
 use super::generation_descriptor::{
     DISTANN_HANDOFF_WIRE_VERSION, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
 };
@@ -236,8 +238,11 @@ pub struct DistannHandoffBatch {
 impl DistannHandoffBatch {
     fn validate(&self, shape: DistannHandoffShape) -> Result<(), String> {
         shape.validate()?;
-        if self.epoch == 0 || self.build_id == [0; 16] {
-            return Err("EC_HANDOFF_FORMAT: epoch/build id must be non-zero".to_owned());
+        if self.epoch == 0 || !is_rfc4122_v4_uuid(&self.build_id) {
+            return Err(
+                "EC_HANDOFF_FORMAT: epoch must be non-zero and build id must be RFC 4122 v4"
+                    .to_owned(),
+            );
         }
         if self.index_format_version != DISTANN_PHYSICAL_INDEX_FORMAT_VERSION
             || !matches!(
@@ -450,7 +455,7 @@ mod tests {
     fn handoff_batch_round_trip_verifies_digest_and_order() {
         let batch = DistannHandoffBatch {
             epoch: 9,
-            build_id: [0xB1; 16],
+            build_id: super::super::canonical_wire::sample_rfc4122_v4_uuid(0xB1),
             batch_seq: 3,
             build_spec_digest: [1; 32],
             row_schema_fingerprint: [2; 32],
@@ -467,6 +472,10 @@ mod tests {
             batch.digest(shape()).unwrap(),
             batch.digest(shape()).unwrap()
         );
+
+        let mut invalid_uuid = batch.clone();
+        invalid_uuid.build_id = [0xB1; 16];
+        assert!(invalid_uuid.encode(shape()).is_err());
 
         let mut corrupted = encoded;
         corrupted[20] ^= 1;
@@ -487,7 +496,7 @@ mod tests {
 
         let batch = DistannHandoffBatch {
             epoch: 9,
-            build_id: [0xB1; 16],
+            build_id: super::super::canonical_wire::sample_rfc4122_v4_uuid(0xB1),
             batch_seq: 0,
             build_spec_digest: [1; 32],
             row_schema_fingerprint: [2; 32],

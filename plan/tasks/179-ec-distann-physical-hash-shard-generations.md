@@ -273,13 +273,20 @@ swap.
   `(logical_index_uuid, fingerprint, scan_token UUID)` and an RAII guard reached
   by normal completion, `EndCustomScan`, rescan, epoch-mismatch restart, remote
   error, statement timeout, and cancellation.
-- Atomically select/register the active fingerprint under a per-index retire
-  fence before expansion. Do not add participant pin RPCs, participant catalog
-  writes, WAL flushes, or synchronous commits to the query path.
+- Use exactly one retirement fence per logical-index UUID; no per-fingerprint
+  fence exists. Atomically select/register the active fingerprint under that
+  per-index fence before expansion, and reject registration when the selected
+  fingerprint already has a committed retire decision. Do not add participant
+  pin RPCs, participant catalog writes, WAL flushes, or synchronous commits to
+  the query path.
 - Implement normal retire by exclusively fencing new registrations, requiring
-  the local count to reach zero, committing a durable retire decision, and only
-  then applying idempotent reclaim to participants. Add recovery for a crash
-  after a subset applies.
+  the target fingerprint's local count to reach zero, re-checking that the
+  target is non-active, and holding the fence through the durable retire-decision
+  commit. Release the fence before applying idempotent reclaim to participants;
+  later registrations are rejected by the decision. Add recovery for a crash
+  after a subset applies. On an active-count rejection, release the fence and
+  create no decision; a concurrently arriving scan waits for the local critical
+  section rather than failing on fence contention.
 - Participants never reclaim autonomously, so their restart cannot race a live
   scan. Force-retire remains a non-active-epoch operator override with the full
   FR-082 audit record.

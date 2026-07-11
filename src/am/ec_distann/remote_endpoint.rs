@@ -109,6 +109,8 @@ fn list_directory_impl(index_oid: pg_sys::Oid) -> Result<Vec<(i64, i64, i32, boo
     let handle = NonNull::new(index_guard.as_ptr())
         .ok_or_else(|| "ec_distann_list_directory got a null index relation".to_owned())?;
     let metadata = read_metadata_from_index_handle(handle)?;
+    super::require_legacy_local_storage(&metadata, "ec_distann_list_directory")
+        .map_err(DistannExpandError::GenerationMissing)?;
     if metadata.node_count == 0 || metadata.directory_head == ItemPointer::INVALID {
         return Ok(Vec::new());
     }
@@ -199,6 +201,7 @@ fn epoch_fingerprint_impl(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
     let handle = NonNull::new(index_guard.as_ptr())
         .ok_or_else(|| "ec_distann_epoch_fingerprint got a null index relation".to_owned())?;
     let metadata = read_metadata_from_index_handle(handle)?;
+    super::require_legacy_local_storage(&metadata, "ec_distann_epoch_fingerprint")?;
     // FR-082: the fingerprint attests to the PUBLISHED epoch (manifest), so the
     // coordinator and owners agree on the published epoch, not the session GUC.
     let directory = placement_directory_for_epoch(scan_epoch(&metadata))?;
@@ -240,6 +243,8 @@ fn apply_record_writes_impl(
     let handle = NonNull::new(index_guard.as_ptr())
         .ok_or_else(|| "ec_distann_apply_record_writes got a null index relation".to_owned())?;
     let metadata = read_metadata_from_index_handle(handle)?;
+    super::require_legacy_local_storage(&metadata, "ec_distann_apply_record_writes")
+        .map_err(DistannExpandError::GenerationMissing)?;
 
     // FR-082 epoch validation (retriable on mismatch), before any write. Uses the
     // PUBLISHED epoch from this node's manifest, not the session GUC.
@@ -337,6 +342,8 @@ fn resolve_owned_rows(
     let handle = NonNull::new(index_guard.as_ptr())
         .ok_or_else(|| "ec_distann materialize got a null index relation".to_owned())?;
     let metadata = read_metadata_from_index_handle(handle)?;
+    super::require_legacy_local_storage(&metadata, "ec_distann materialize")
+        .map_err(DistannExpandError::GenerationMissing)?;
     if metadata.node_count == 0 || metadata.directory_head == ItemPointer::INVALID {
         if vec_ids.is_empty() {
             return Ok(Vec::new());
@@ -672,6 +679,8 @@ fn expand_nodes_impl(
     let handle = NonNull::new(index_guard.as_ptr())
         .ok_or_else(|| "ec_distann_expand_nodes got a null index relation".to_owned())?;
     let metadata = read_metadata_from_index_handle(handle)?;
+    super::require_legacy_local_storage(&metadata, "ec_distann_expand_nodes")
+        .map_err(DistannExpandError::GenerationMissing)?;
 
     if metadata.dimensions == 0 || metadata.node_count == 0 {
         // Empty index owns nothing; any requested id is a structural fault

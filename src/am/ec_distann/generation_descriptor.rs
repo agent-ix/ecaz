@@ -10,7 +10,7 @@ use super::canonical_wire::{
 };
 use super::page::{
     DISTANN_NEIGHBOR_CODEC_GROUPED_PQ, DISTANN_NEIGHBOR_CODEC_RABITQ,
-    DISTANN_NEIGHBOR_CODEC_TURBOQUANT,
+    DISTANN_NEIGHBOR_CODEC_TURBOQUANT, INDEX_FORMAT_V5_DISTANN_CONTROL,
 };
 use super::quantizer::{DISTANN_RABITQ_BITS, DISTANN_TURBOQUANT_BITS};
 use super::row_schema::DistannRowSchemaDescriptor;
@@ -20,7 +20,7 @@ pub const DISTANN_CODEC_ARTIFACT_VERSION: u16 = 1;
 pub const DISTANN_BUILD_SPEC_VERSION: u16 = 1;
 pub const DISTANN_GRAPH_RECORD_VERSION: u16 = 1;
 pub const DISTANN_HANDOFF_WIRE_VERSION: u16 = 1;
-pub const DISTANN_PHYSICAL_INDEX_FORMAT_VERSION: u16 = 5;
+pub const DISTANN_PHYSICAL_INDEX_FORMAT_VERSION: u16 = INDEX_FORMAT_V5_DISTANN_CONTROL;
 pub const DISTANN_PLACEMENT_HASH_VERSION: u16 = super::placement::DISTANN_PLACEMENT_HASH_V1;
 pub const DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET: usize = 0;
 pub const DISTANN_CODEC_ARTIFACT_VERSION_OFFSET: usize = 0;
@@ -28,10 +28,26 @@ pub const DISTANN_BUILD_SPEC_VERSION_OFFSET: usize = 0;
 pub const DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES: usize = 14;
 
 const GENERATION_DESCRIPTOR_DOMAIN: &[u8] = b"ec_distann_generation_descriptor_v1\0";
+const ROSTER_DOMAIN: &[u8] = b"ec_distann_roster_v1\0";
 const BUILD_SPEC_DOMAIN: &[u8] = b"ec_distann_build_spec_v1\0";
 const GROUPED_PQ_CENTROIDS: usize = 16;
 const MAX_ROSTER_COUNT: usize = 4096;
 const MAX_CODEC_VALUES: usize = 16 * 1024 * 1024 / size_of::<f32>();
+
+// Frozen validity domain for generation/build format v1. Reloption tuning may
+// change independently, but decoding already-persisted v1 bytes must not. Any
+// change to these bounds requires a format-version bump and new fixtures.
+pub(super) const DISTANN_FORMAT_V1_MIN_GRAPH_DEGREE: u16 = 4;
+pub(super) const DISTANN_FORMAT_V1_MAX_GRAPH_DEGREE: u16 = 256;
+const DISTANN_FORMAT_V1_MIN_BUILD_LIST_SIZE: u16 = 10;
+const DISTANN_FORMAT_V1_MAX_BUILD_LIST_SIZE: u16 = 1000;
+const DISTANN_FORMAT_V1_MIN_ALPHA: f32 = 1.0;
+const DISTANN_FORMAT_V1_MAX_ALPHA: f32 = 2.0;
+const DISTANN_FORMAT_V1_MIN_CLOSURE_EPSILON: f32 = 0.0;
+const DISTANN_FORMAT_V1_MAX_CLOSURE_EPSILON: f32 = 1.0;
+const DISTANN_FORMAT_V1_MIN_HEAD_INDEX_CAP: u32 = 16;
+const DISTANN_FORMAT_V1_MAX_HEAD_INDEX_CAP: u32 = 1_048_576;
+const DISTANN_FORMAT_V1_MAX_BUILD_SHARDS: u32 = 4096;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistannRosterEntry {
@@ -51,6 +67,13 @@ pub fn validate_roster(roster: &[DistannRosterEntry]) -> Result<(), String> {
     let mut logical_indexes = HashSet::with_capacity(roster.len());
     let mut endpoints = HashSet::with_capacity(roster.len());
     for entry in roster {
+        if entry.node_id == 0 || entry.node_id > i32::MAX as u32 {
+            return Err(format!(
+                "EC_NODE_DESCRIPTOR: node id {} is outside 1..={}",
+                entry.node_id,
+                i32::MAX
+            ));
+        }
         if !node_ids.insert(entry.node_id) {
             return Err(format!(
                 "EC_NODE_DESCRIPTOR: duplicate roster node id {}",
@@ -79,6 +102,10 @@ pub fn validate_roster(roster: &[DistannRosterEntry]) -> Result<(), String> {
     Ok(())
 }
 
+/// Defense-in-depth only. The security boundary is registration resolving a
+/// secret reference and persisting a separately authenticated endpoint
+/// identity; no finite string blocklist can prove arbitrary text is not a
+/// disguised conninfo value.
 fn looks_like_raw_conninfo(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     if lower.starts_with("postgres://") || lower.starts_with("postgresql://") {
@@ -93,6 +120,7 @@ fn looks_like_raw_conninfo(value: &str) -> bool {
             "user=",
             "password=",
             "sslmode=",
+            "requiressl=",
             "service=",
         ]
         .iter()
@@ -134,6 +162,12 @@ pub(crate) fn decode_roster(
     }
     validate_roster(&roster)?;
     Ok(roster)
+}
+
+pub fn roster_digest(roster: &[DistannRosterEntry]) -> Result<[u8; 32], String> {
+    let mut encoder = CanonicalEncoder::with_capacity(4 + roster.len() * 32);
+    encode_roster(&mut encoder, roster)?;
+    Ok(domain_digest(ROSTER_DOMAIN, &encoder.finish()?))
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -422,8 +456,8 @@ impl DistannGenerationDescriptor {
             || self.handoff_wire_version != DISTANN_HANDOFF_WIRE_VERSION
             || self.placement_hash_version != DISTANN_PLACEMENT_HASH_VERSION
             || self.dimensions == 0
-            || i32::from(self.graph_degree) < super::ECDISTANN_MIN_GRAPH_DEGREE
-            || i32::from(self.graph_degree) > super::ECDISTANN_MAX_GRAPH_DEGREE
+            || self.graph_degree < DISTANN_FORMAT_V1_MIN_GRAPH_DEGREE
+            || self.graph_degree > DISTANN_FORMAT_V1_MAX_GRAPH_DEGREE
         {
             return Err(
                 "EC_GENERATION_DESCRIPTOR: unsupported physical format or shape".to_owned(),
@@ -521,17 +555,18 @@ pub struct DistannBuildOptions {
 
 impl DistannBuildOptions {
     pub fn encode(self) -> Result<Vec<u8>, String> {
-        if i32::from(self.build_list_size) < super::ECDISTANN_MIN_BUILD_LIST_SIZE
-            || i32::from(self.build_list_size) > super::ECDISTANN_MAX_BUILD_LIST_SIZE
+        if self.build_list_size < DISTANN_FORMAT_V1_MIN_BUILD_LIST_SIZE
+            || self.build_list_size > DISTANN_FORMAT_V1_MAX_BUILD_LIST_SIZE
             || !self.alpha.is_finite()
-            || self.alpha < super::ECDISTANN_MIN_ALPHA
-            || self.alpha > super::ECDISTANN_MAX_ALPHA
+            || self.alpha < DISTANN_FORMAT_V1_MIN_ALPHA
+            || self.alpha > DISTANN_FORMAT_V1_MAX_ALPHA
             || !self.closure_epsilon.is_finite()
-            || self.closure_epsilon < super::ECDISTANN_MIN_CLOSURE_EPSILON
-            || self.closure_epsilon > super::ECDISTANN_MAX_CLOSURE_EPSILON
-            || self.head_index_cap < super::ECDISTANN_MIN_HEAD_INDEX_CAP as u32
-            || self.head_index_cap > super::ECDISTANN_MAX_HEAD_INDEX_CAP as u32
-            || self.build_shards > super::ECDISTANN_MAX_BUILD_SHARDS as u32
+            || self.closure_epsilon.to_bits() == (-0.0_f32).to_bits()
+            || self.closure_epsilon < DISTANN_FORMAT_V1_MIN_CLOSURE_EPSILON
+            || self.closure_epsilon > DISTANN_FORMAT_V1_MAX_CLOSURE_EPSILON
+            || self.head_index_cap < DISTANN_FORMAT_V1_MIN_HEAD_INDEX_CAP
+            || self.head_index_cap > DISTANN_FORMAT_V1_MAX_HEAD_INDEX_CAP
+            || self.build_shards > DISTANN_FORMAT_V1_MAX_BUILD_SHARDS
         {
             return Err("EC_GENERATION_DESCRIPTOR: invalid canonical build options".to_owned());
         }
@@ -585,18 +620,14 @@ pub struct DistannBuildSpec {
 
 impl DistannBuildSpec {
     pub fn validate(&self) -> Result<(), String> {
-        if self.epoch == 0 || self.build_id == [0; 16] {
-            return Err("EC_GENERATION_DESCRIPTOR: build epoch/id must be non-zero".to_owned());
+        if self.epoch == 0 || !is_rfc4122_v4_uuid(&self.build_id) {
+            return Err(
+                "EC_GENERATION_DESCRIPTOR: build epoch must be non-zero and build id must be RFC 4122 v4"
+                    .to_owned(),
+            );
         }
-        if !self.parent_fingerprint.is_empty()
-            && (self.parent_fingerprint.len() != 34
-                || u16::from_le_bytes(
-                    self.parent_fingerprint[0..2]
-                        .try_into()
-                        .expect("fingerprint version"),
-                ) != 2)
-        {
-            return Err("EC_EPOCH_FINGERPRINT_VERSION: invalid parent fingerprint".to_owned());
+        if !self.parent_fingerprint.is_empty() {
+            super::manifest_v2::DistannEpochFingerprint::decode(&self.parent_fingerprint)?;
         }
         self.build_options.encode()?;
         if self.owner_expectations.is_empty() || self.owner_expectations.len() > MAX_ROSTER_COUNT {
@@ -605,8 +636,14 @@ impl DistannBuildSpec {
         let mut owners = HashSet::with_capacity(self.owner_expectations.len());
         let mut count_sum = 0_u64;
         for owner in &self.owner_expectations {
-            if !owners.insert(owner.node_id) {
-                return Err("EC_GENERATION_DESCRIPTOR: duplicate owner expectation".to_owned());
+            if owner.node_id == 0
+                || owner.node_id > i32::MAX as u32
+                || !owners.insert(owner.node_id)
+            {
+                return Err(
+                    "EC_GENERATION_DESCRIPTOR: invalid or duplicate owner expectation"
+                        .to_owned(),
+                );
             }
             count_sum = count_sum
                 .checked_add(owner.expected_count)
@@ -825,11 +862,26 @@ mod tests {
     }
 
     #[test]
+    fn roster_digest_is_canonical_and_order_sensitive() {
+        let roster = sample_roster();
+        assert_eq!(
+            roster_digest(&roster).unwrap(),
+            roster_digest(&roster).unwrap()
+        );
+        let mut reordered = roster;
+        reordered.reverse();
+        assert_ne!(
+            roster_digest(&reordered).unwrap(),
+            roster_digest(&sample_roster()).unwrap()
+        );
+    }
+
+    #[test]
     fn build_spec_round_trip_and_owner_sum_validation() {
         let descriptor = sample_generation_descriptor();
         let spec = DistannBuildSpec {
             epoch: 7,
-            build_id: [0xAB; 16],
+            build_id: super::super::canonical_wire::sample_rfc4122_v4_uuid(0xAB),
             parent_fingerprint: Vec::new(),
             source_snapshot_digest: [1; 32],
             generation_descriptor_digest: descriptor.digest().unwrap(),
@@ -862,6 +914,17 @@ mod tests {
         assert_eq!(DistannBuildSpec::decode(&encoded).unwrap(), spec);
         assert_eq!(spec.digest().unwrap(), spec.digest().unwrap());
 
+        let mut invalid_uuid = spec.clone();
+        invalid_uuid.build_id = [0xAB; 16];
+        assert!(invalid_uuid.encode().is_err());
+
+        let mut invalid_parent = spec.clone();
+        invalid_parent.parent_fingerprint = vec![0; 34];
+        assert!(invalid_parent
+            .encode()
+            .unwrap_err()
+            .contains("EC_EPOCH_FINGERPRINT_VERSION"));
+
         let mut bad = spec;
         bad.owner_expectations[0].expected_count = 5;
         assert!(bad.encode().is_err());
@@ -870,5 +933,10 @@ mod tests {
         bad_options.owner_expectations[0].expected_count = 6;
         bad_options.build_options.build_list_size = 9;
         assert!(bad_options.encode().is_err());
+
+        let mut negative_zero = bad_options;
+        negative_zero.build_options.build_list_size = 10;
+        negative_zero.build_options.closure_epsilon = -0.0;
+        assert!(negative_zero.encode().is_err());
     }
 }

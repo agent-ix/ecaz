@@ -364,7 +364,7 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
         pg_sys::add_local_bool_reloption(
             &mut relopts,
             b"distributed_control\0".as_ptr().cast(),
-            b"Create a Task 179 logical distributed-control index with no local graph records; physical generations are built and published separately.\0"
+            b"Build-mode option: create a Task 179 logical distributed-control index with no local graph records. ALTER takes effect only on an explicit identity/state-destroying REINDEX.\0"
                 .as_ptr()
                 .cast(),
             false,

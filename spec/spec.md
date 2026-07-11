@@ -45,7 +45,7 @@ This specification is the top-level requirements artifact for the current main-b
   tuple transport, and coordinator-routed writes
 - `ec_distann`, the global-Vamana access method whose stitched graph records and
   frozen source rows are physically hash-placed across PostgreSQL nodes and
-  searched through fingerprint-pinned remote expansion/materialization
+  searched through fingerprint-selected remote expansion/materialization
 - `ecaz`, the operator CLI for corpus, benchmark, comparison, stress, quantizer, and local development workflows
 - configured `ecaz bench suite` runs for repeatable long benchmark sequences and packet-local run manifests
 - Shared quantizer, scoring, planner, observability, WAL, and benchmark evidence requirements
@@ -162,7 +162,7 @@ atomicity; broader shard SQL remains outside v1.
 `ec_distann` is the successor distributed-search architecture. It keeps one
 logical global Vamana graph and places each graph record plus its frozen logical
 source row on exactly one deterministic hash owner. The coordinator stores the
-head sample and epoch manifest, advances fingerprint-pinned graph hops across
+head sample and epoch manifest, advances fingerprint-selected graph hops across
 owners, and reconstructs final tuples from typed owner payloads. A replicated
 full graph with serving-owner filtering is a development control, not a
 conforming distributed storage topology.

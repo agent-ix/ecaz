@@ -39,6 +39,9 @@ roster participant plus its canonical manifest.
   version, row-schema fingerprint, format/codec identity, expected global
   record count, expected canonical content digest, and immutable pre-handoff
   build-specification digest.
+- Every build identifier SHALL be a non-zero RFC 4122 version-4 UUID; the same
+  predicate applies in the build specification, handoff batches, Ready
+  receipts, and epoch manifest.
 - A single PostgreSQL MVCC build snapshot of the indexed source relation.
 - A coordinator-local node-descriptor registry whose ordered entries identify
   each participant, its remote logical index, and a conninfo secret reference
@@ -94,6 +97,9 @@ created_at timestamptz)`
   endpoint identities, more than one local participant, raw conninfo in any
   argument, or a remote index that is not a schema/reloption-compatible
   `distributed_control` ec_distann index.
+- Version 1 node ids SHALL be in `1..=2,147,483,647`. They remain encoded as
+  `u32` on canonical wires, but the restricted domain is shared by descriptors
+  and PostgreSQL `integer` catalogs.
 - An endpoint identity SHALL be non-empty canonical UTF-8 with no NUL or
   leading/trailing whitespace, at most 65,535 bytes, and SHALL NOT be a
   PostgreSQL URI or keyword/value conninfo string. The exact canonical value
@@ -191,6 +197,11 @@ with an unsigned little-endian `u32` element count; the roster then encodes
 each entry as `node_id u32`, `logical_index_uuid byte[16]`, and one
 length-prefixed UTF-8 endpoint identity. The descriptor digest SHALL be
 `SHA-256("ec_distann_generation_descriptor_v1\0" || canonical_descriptor)`.
+The handoff endpoint's `roster_digest` SHALL be
+`SHA-256("ec_distann_roster_v1\0" || canonical_roster_array)`, where the
+canonical roster array is the descriptor's exact `u32` count plus ordered entry
+encoding above. It is a redundant early-check identity; the descriptor digest
+remains the transitive owner of the roster bytes.
 The immutable build-specification digest SHALL include that descriptor digest.
 
 The `codec_artifact` SHALL begin with `artifact_version u16 = 1`,
@@ -208,6 +219,14 @@ generation-descriptor byte length before allocation. A GroupedPQ4 artifact
 SHALL have `sign_count = transform_dim`, `group_count × group_size =
 transform_dim`, and `centroid_value_count = group_size × 16` for every group.
 
+The seeded RaBitQ/TurboQuant derivation (transform-dimension rounding, ChaCha8
+sign stream, SRHT/tiled-FWHT selection, RaBitQ `quant_clip` bit pattern,
+TurboQuant MSE-bit selection and Lloyd-Max codebook construction) is part of
+codec-artifact version 1 even though those derived values are not repeated in
+the bytes. Changing any derivation requires a codec-artifact version bump and
+new fixed-input code-byte/score golden vectors; a live constant change SHALL
+NOT reinterpret artifact-v1 bytes.
+
 - The codec artifact SHALL be sufficient for an owner with no source corpus to
   construct the same `DistannPreparedQuery` and score the same codes as the
   coordinator. A trained codec SHALL NOT be independently retrained on an
@@ -222,6 +241,11 @@ transform_dim`, and `centroid_value_count = group_size × 16` for every group.
 - The descriptor, including its codec artifact and schema descriptor, SHALL be
   immutable for the generation lifetime and SHALL contain no PostgreSQL OID,
   raw conninfo, source heap TID, or destination-local relation locator.
+- Endpoint-identity text screening is defense-in-depth only. The security
+  boundary is authenticated node registration: it resolves a secret reference,
+  verifies the remote control identity, and persists the separately validated
+  endpoint identity. A string blocklist SHALL NOT be treated as proof that
+  arbitrary text contains no disguised conninfo.
 
 ## Physical Placement
 
@@ -282,6 +306,10 @@ transform_dim`, and `centroid_value_count = group_size × 16` for every group.
   length-prefixed UTF-8 collation name, `dropped u8`, `generated_kind u8`,
   length-prefixed UTF-8 send-function namespace/name, and length-prefixed UTF-8
   receive-function namespace/name.
+- A dropped attribute SHALL use one canonical empty form: empty name, type,
+  collation, send-function, and receive-function strings; `typmod = -1`; and
+  `generated_kind = 0`. Historical catalog residue SHALL NOT enter its schema
+  fingerprint.
 - A field with no collation, send function, or receive function SHALL encode an
   empty length-prefixed string in that position; absence SHALL NOT remove a
   field from the descriptor.
@@ -383,16 +411,23 @@ order:
 |-------|-----------|------|
 | build_spec_version | u16 | exactly 1 |
 | epoch | u64 | target epoch |
-| build_id | byte[16] | UUID RFC 4122 bytes |
+| build_id | byte[16] | UUID RFC 4122 version-4 bytes |
 | parent_fingerprint | length-prefixed bytes | empty or one retained FR-082 fingerprint |
 | source_snapshot_digest | byte[32] | FR-082 canonical snapshot identity |
 | generation_descriptor_digest | byte[32] | descriptor above, binding roster/formats/codec/schema |
-| build_options | length-prefixed bytes | `build_list_size u16`, IEEE-754 `alpha f32_le`, `seed u64`, IEEE-754 `closure_epsilon f32_le`, `head_index_cap u32`, and `build_shards u32`; zero build_shards means FR-077 auto selection |
+| build_options | length-prefixed bytes | `build_list_size u16`, IEEE-754 `alpha f32_le`, `seed u64`, IEEE-754 `closure_epsilon f32_le`, `head_index_cap u32`, and `build_shards u32`; zero build_shards means FR-077 auto selection; negative-zero closure epsilon is non-canonical and rejected |
 | expected_global_count | u64 | exact source vec_id count |
 | expected_global_graph_digest | byte[32] | canonical stitched graph content |
 | expected_global_row_tier_digest | byte[32] | canonical source row payload content |
 | head_sample_digest | byte[32] | canonical coordinator head sample |
 | owner_expectations | length-prefixed array | one roster-ordered `(node_id u32, expected_count u64, expected_owner_digest byte[32])` entry per owner |
+
+The frozen version-1 validity domain is: graph degree `4..=256`, build-list size
+`10..=1000`, alpha `1.0..=2.0`, closure epsilon `+0.0..=1.0`, head-index cap
+`16..=1,048,576`, and build-shard count `0..=4096`. These are format-decoder
+bounds, not references to mutable reloption constants. Later reloption tuning
+SHALL NOT make existing version-1 bytes invalid or broaden what an older
+version-1 decoder accepts.
 
 The build-specification digest SHALL be
 `SHA-256("ec_distann_build_spec_v1\0" || canonical_build_specification)`.

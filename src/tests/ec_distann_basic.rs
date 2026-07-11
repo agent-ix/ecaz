@@ -37,8 +37,7 @@ fn test_ec_distann_create_drop_reindex_on_empty_table() {
          USING ec_distann (embedding ecvector_distann_ip_ops)",
     )
     .expect("empty index creation should succeed");
-    Spi::run("REINDEX INDEX ec_distann_empty_lifecycle_idx")
-        .expect("reindex should succeed");
+    Spi::run("REINDEX INDEX ec_distann_empty_lifecycle_idx").expect("reindex should succeed");
     Spi::run("DROP INDEX ec_distann_empty_lifecycle_idx").expect("index drop should succeed");
 }
 
@@ -62,11 +61,9 @@ fn test_ec_distann_create_on_populated_table_records_metadata() {
     .expect("populated index creation should succeed");
 
     // Block 0 metadata page exists and decodes with the reloption values.
-    let index_oid = Spi::get_one::<pg_sys::Oid>(
-        "SELECT 'ec_distann_populated_idx'::regclass::oid",
-    )
-    .expect("SPI query should succeed")
-    .expect("index oid should exist");
+    let index_oid = Spi::get_one::<pg_sys::Oid>("SELECT 'ec_distann_populated_idx'::regclass::oid")
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
     let index_relation = IndexRelationGuard::open(
         index_oid,
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
@@ -138,10 +135,9 @@ fn test_distann_control_metadata_and_fail_closed() {
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
         "ec_distann control metadata test",
     );
-    let metadata = unsafe {
-        crate::am::ec_distann::read_metadata_from_index(index_relation.as_ptr())
-    }
-    .expect("v5 control metadata should decode");
+    let metadata =
+        unsafe { crate::am::ec_distann::read_metadata_from_index(index_relation.as_ptr()) }
+            .expect("v5 control metadata should decode");
     assert_eq!(
         metadata.format_version,
         crate::am::ec_distann::page::INDEX_FORMAT_V5_DISTANN_CONTROL
@@ -159,6 +155,52 @@ fn test_distann_control_metadata_and_fail_closed() {
         1,
         "control relation contains only block-0 metadata"
     );
+    drop(index_relation);
+
+    // The Task 165 v4 lifecycle helpers must not provide a side door around
+    // Task 179's catalog-backed Ready/decision/participant-publish protocol.
+    for statement in [
+        "SELECT ec_distann_publish_epoch('ec_distann_control_idx'::regclass::oid, 9)",
+        "SELECT ec_distann_retire_epoch('ec_distann_control_idx'::regclass::oid)",
+        "SELECT ec_distann_force_retire_epoch('ec_distann_control_idx'::regclass::oid)",
+        "SELECT ec_distann_debug_set_in_flight('ec_distann_control_idx'::regclass::oid, 1)",
+        "SELECT * FROM ec_distann_epoch_status('ec_distann_control_idx'::regclass::oid)",
+    ] {
+        let error = expect_pg_error(|| {
+            Spi::run(statement).expect("legacy lifecycle call must reject v5 control indexes");
+        });
+        assert!(
+            error.contains("EC_EPOCH_STATE")
+                && error.contains("legacy metadata-page lifecycle endpoint"),
+            "unexpected lifecycle-gate error for {statement}: {error}"
+        );
+    }
+
+    for statement in [
+        "SELECT * FROM ec_distann_list_directory('ec_distann_control_idx'::regclass::oid)",
+        "SELECT ec_distann_epoch_fingerprint('ec_distann_control_idx'::regclass::oid)",
+        "SELECT ec_distann_fold_delta_into_graph('ec_distann_control_idx'::regclass::oid)",
+        "SELECT ec_distann_debug_tombstone('ec_distann_control_idx'::regclass::oid, ARRAY[]::bigint[])",
+    ] {
+        let error = expect_pg_error(|| {
+            Spi::run(statement).expect("legacy local-storage endpoint must reject v5 control");
+        });
+        assert!(
+            error.contains("EC_GENERATION_MISSING"),
+            "unexpected local-storage gate error for {statement}: {error}"
+        );
+    }
+
+    let index_relation = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        "ec_distann lifecycle gate metadata check",
+    );
+    let metadata =
+        unsafe { crate::am::ec_distann::read_metadata_from_index(index_relation.as_ptr()) }
+            .expect("rejected lifecycle calls must leave control metadata readable");
+    assert_eq!(metadata.active_epoch, 0);
+    assert_eq!(metadata.in_flight_count, 0);
     drop(index_relation);
 
     Spi::run("SET enable_seqscan = off").unwrap();
@@ -232,6 +274,719 @@ fn test_distann_control_requires_permanent_wal_logged_relation() {
     );
 }
 
+#[pg_test]
+fn test_distann_control_rejects_temporary_relation() {
+    Spi::run(
+        "CREATE TEMP TABLE ec_distann_control_temp (
+             source_id uuid NOT NULL,
+             embedding ecvector NOT NULL
+         )",
+    )
+    .expect("temporary source table should create");
+    let error = expect_pg_error(|| {
+        Spi::run(
+            "CREATE INDEX ec_distann_control_temp_idx
+             ON ec_distann_control_temp
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             INCLUDE (source_id)
+             WITH (distributed_control = true, source_identity = 'include')",
+        )
+        .expect("temporary distributed control must fail");
+    });
+    assert!(
+        error.contains("EC_CONTROL_PERSISTENCE"),
+        "unexpected temporary-control error: {error}"
+    );
+}
+
+#[pg_test]
+fn test_distann_control_mode_change_reindex() {
+    Spi::run(
+        "CREATE TABLE ec_distann_control_mode (
+             source_id uuid NOT NULL,
+             embedding ecvector NOT NULL
+         );
+         INSERT INTO ec_distann_control_mode VALUES
+           ('00000000-0000-4000-8000-000000000021', encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)),
+           ('00000000-0000-4000-8000-000000000022', encode_to_ecvector(ARRAY[0.0,1.0,0.0,0.0], 4, 42));
+         CREATE INDEX ec_distann_control_mode_idx
+           ON ec_distann_control_mode USING ec_distann (embedding ecvector_distann_ip_ops)
+           INCLUDE (source_id) WITH (source_identity = 'include', graph_degree = 4)",
+    )
+    .expect("legacy fixture should create");
+    let index_oid =
+        Spi::get_one::<pg_sys::Oid>("SELECT 'ec_distann_control_mode_idx'::regclass::oid")
+            .unwrap()
+            .unwrap();
+    let read = || {
+        let relation = IndexRelationGuard::open(
+            index_oid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            "ec_distann mode-change metadata test",
+        );
+        unsafe { crate::am::ec_distann::read_metadata_from_index(relation.as_ptr()) }
+            .expect("metadata should decode")
+    };
+    let legacy = read();
+    assert_eq!(
+        legacy.format_version,
+        crate::am::ec_distann::page::INDEX_FORMAT_V1_DISTANN
+    );
+    assert_eq!(legacy.node_count, 2);
+
+    Spi::run("ALTER INDEX ec_distann_control_mode_idx SET (distributed_control = true)")
+        .expect("mode reloption ALTER is deferred to REINDEX");
+    assert_eq!(
+        read().format_version,
+        crate::am::ec_distann::page::INDEX_FORMAT_V1_DISTANN
+    );
+    Spi::run("REINDEX INDEX ec_distann_control_mode_idx")
+        .expect("explicit REINDEX should convert to control mode");
+    let control = read();
+    assert!(control.is_distributed_control());
+    assert_ne!(control.logical_index_uuid, [0; 16]);
+    assert_eq!(control.node_count, 0);
+
+    Spi::run("ALTER INDEX ec_distann_control_mode_idx SET (distributed_control = false)")
+        .expect("reverse mode reloption ALTER is deferred to REINDEX");
+    assert!(read().is_distributed_control());
+    Spi::run("REINDEX INDEX ec_distann_control_mode_idx")
+        .expect("explicit REINDEX should destructively convert to legacy mode");
+    let rebuilt_legacy = read();
+    assert_eq!(
+        rebuilt_legacy.format_version,
+        crate::am::ec_distann::page::INDEX_FORMAT_V1_DISTANN
+    );
+    assert_eq!(rebuilt_legacy.logical_index_uuid, [0; 16]);
+    assert_eq!(rebuilt_legacy.node_count, 2);
+}
+
+#[pg_test]
+fn test_distann_control_vacuum_and_concurrent_create() {
+    let mut client =
+        postgres::Client::connect(&current_pg_test_loopback_conninfo(), postgres::NoTls)
+            .expect("loopback connection should open");
+    client
+        .batch_execute(
+            "DROP TABLE IF EXISTS ec_distann_control_loopback CASCADE;
+             CREATE TABLE ec_distann_control_loopback (
+               source_id uuid NOT NULL,
+               embedding ecvector NOT NULL
+             );
+             INSERT INTO ec_distann_control_loopback VALUES
+               ('00000000-0000-4000-8000-000000000031', encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42))",
+        )
+        .expect("loopback fixture should create");
+
+    let concurrent_error = client
+        .batch_execute(
+            "CREATE INDEX CONCURRENTLY ec_distann_control_loopback_idx
+               ON ec_distann_control_loopback USING ec_distann (embedding ecvector_distann_ip_ops)
+               INCLUDE (source_id)
+               WITH (distributed_control = true, source_identity = 'include')",
+        )
+        .expect_err("concurrent control creation must fail during validation");
+    let concurrent_message = concurrent_error
+        .as_db_error()
+        .map(|error| error.message().to_owned())
+        .unwrap_or_else(|| concurrent_error.to_string());
+    assert!(
+        concurrent_message.contains("EC_GENERATION_MISSING"),
+        "unexpected concurrent-create error: {concurrent_message}"
+    );
+    let invalid: bool = client
+        .query_one(
+            "SELECT NOT i.indisvalid
+               FROM pg_index i
+               JOIN pg_class c ON c.oid = i.indexrelid
+              WHERE c.relname = 'ec_distann_control_loopback_idx'",
+            &[],
+        )
+        .expect("invalid concurrent index should remain inspectable")
+        .get(0);
+    assert!(invalid);
+    client
+        .batch_execute(
+            "DROP INDEX ec_distann_control_loopback_idx;
+             TRUNCATE ec_distann_control_loopback",
+        )
+        .expect("populated concurrent-build artifact should clean up");
+
+    let empty_concurrent_error = client
+        .batch_execute(
+            "CREATE INDEX CONCURRENTLY ec_distann_control_loopback_idx
+               ON ec_distann_control_loopback USING ec_distann (embedding ecvector_distann_ip_ops)
+               INCLUDE (source_id)
+               WITH (distributed_control = true, source_identity = 'include')",
+        )
+        .expect_err("concurrent control creation must also fail for an empty source");
+    let empty_concurrent_message = empty_concurrent_error
+        .as_db_error()
+        .map(|error| error.message().to_owned())
+        .unwrap_or_else(|| empty_concurrent_error.to_string());
+    assert!(
+        empty_concurrent_message.contains("EC_GENERATION_MISSING"),
+        "unexpected empty concurrent-create error: {empty_concurrent_message}"
+    );
+    let empty_invalid: bool = client
+        .query_one(
+            "SELECT NOT i.indisvalid
+               FROM pg_index i
+               JOIN pg_class c ON c.oid = i.indexrelid
+              WHERE c.relname = 'ec_distann_control_loopback_idx'",
+            &[],
+        )
+        .expect("empty invalid concurrent index should remain inspectable")
+        .get(0);
+    assert!(empty_invalid);
+
+    client
+        .batch_execute(
+            "DROP INDEX ec_distann_control_loopback_idx;
+             INSERT INTO ec_distann_control_loopback VALUES
+               ('00000000-0000-4000-8000-000000000031', encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42));
+             CREATE INDEX ec_distann_control_loopback_idx
+               ON ec_distann_control_loopback USING ec_distann (embedding ecvector_distann_ip_ops)
+               INCLUDE (source_id)
+               WITH (distributed_control = true, source_identity = 'include');
+             DELETE FROM ec_distann_control_loopback",
+        )
+        .expect("regular control index and dead source tuple should be prepared");
+    client
+        .batch_execute("VACUUM ec_distann_control_loopback")
+        .expect("VACUUM must treat the empty logical control root as a no-op index");
+    client
+        .batch_execute("DROP TABLE ec_distann_control_loopback CASCADE")
+        .expect("loopback control fixture should clean up");
+}
+
+struct DistannPhysicalGenerationFixture {
+    index_name: String,
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: pgrx::datum::Uuid,
+    build_id: pgrx::datum::Uuid,
+    descriptor: Vec<u8>,
+    descriptor_digest: Vec<u8>,
+    roster_digest: Vec<u8>,
+    build_spec_digest: Vec<u8>,
+    expected_owner_digest: Vec<u8>,
+}
+
+fn distann_generation_catalog_name() -> String {
+    crate::am::ec_distann::catalog_relation_name("ec_distann_generation")
+        .expect("extension generation catalog should resolve")
+}
+
+fn create_distann_physical_generation_fixture(
+    stem: &str,
+    build_marker: u8,
+) -> DistannPhysicalGenerationFixture {
+    assert!(
+        stem.bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte == b'_'),
+        "test relation stem must be a trusted identifier"
+    );
+    let table_name = format!("{stem}_source");
+    let index_name = format!("{stem}_idx");
+    Spi::run(&format!(
+        "CREATE TABLE {table_name} (
+             source_id uuid NOT NULL,
+             payload text,
+             legacy_payload integer,
+             embedding ecvector(4) NOT NULL,
+             payload_generated text GENERATED ALWAYS AS (payload || ':generated') STORED
+         )"
+    ))
+    .expect("physical source shell should create");
+    Spi::run(&format!(
+        "ALTER TABLE {table_name} DROP COLUMN legacy_payload"
+    ))
+    .expect("source shell dropped-column slot should create");
+    Spi::run(&format!(
+        "CREATE INDEX {index_name} ON {table_name}
+         USING ec_distann (embedding ecvector_distann_ip_ops)
+         INCLUDE (source_id)
+         WITH (
+             distributed_control = true,
+             source_identity = 'include',
+             graph_degree = 4,
+             neighbor_code_format = 'rabitq'
+         )"
+    ))
+    .expect("distributed control fixture should create");
+
+    let index_oid = Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+        .unwrap()
+        .unwrap();
+    let index_relation = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        "physical generation fixture",
+    );
+    let metadata =
+        unsafe { crate::am::ec_distann::read_metadata_from_index(index_relation.as_ptr()) }
+            .expect("control metadata should decode");
+    let heap_oid = unsafe { pg_sys::IndexGetRelation(index_oid, false) };
+    let row_schema = crate::am::ec_distann::resolve_relation_schema(heap_oid)
+        .expect("source shell schema should resolve")
+        .descriptor;
+    drop(index_relation);
+
+    let logical_index_uuid = pgrx::datum::Uuid::from_bytes(metadata.logical_index_uuid);
+    let descriptor = crate::am::ec_distann::DistannGenerationDescriptor {
+        index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+        graph_record_version: crate::am::ec_distann::DISTANN_GRAPH_RECORD_VERSION,
+        handoff_wire_version: crate::am::ec_distann::DISTANN_HANDOFF_WIRE_VERSION,
+        dimensions: 4,
+        graph_degree: metadata.graph_degree_r,
+        placement_hash_version: crate::am::ec_distann::DISTANN_PLACEMENT_HASH_VERSION,
+        roster: vec![crate::am::ec_distann::DistannRosterEntry {
+            node_id: 17,
+            logical_index_uuid: metadata.logical_index_uuid,
+            endpoint_identity: format!("{stem}/node-17"),
+        }],
+        neighbor_codec_kind: metadata.neighbor_codec_kind,
+        codec_artifact: crate::am::ec_distann::DistannCodecArtifact::RaBitQ {
+            dimensions: 4,
+            seed: metadata.seed,
+            bits: 1,
+        },
+        row_schema,
+    };
+    let mut build_id = [build_marker; 16];
+    build_id[6] = (build_id[6] & 0x0f) | 0x40;
+    build_id[8] = (build_id[8] & 0x3f) | 0x80;
+    DistannPhysicalGenerationFixture {
+        index_name,
+        index_oid,
+        logical_index_uuid,
+        build_id: pgrx::datum::Uuid::from_bytes(build_id),
+        descriptor: descriptor.encode().expect("descriptor should encode"),
+        descriptor_digest: descriptor.digest().expect("descriptor digest").to_vec(),
+        roster_digest: crate::am::ec_distann::roster_digest(&descriptor.roster)
+            .expect("roster digest")
+            .to_vec(),
+        build_spec_digest: vec![0x22; 32],
+        expected_owner_digest: vec![0x44; 32],
+    }
+}
+
+fn begin_distann_physical_generation(
+    fixture: &DistannPhysicalGenerationFixture,
+    expected_owner_digest: &[u8],
+) -> (String, i64, i64, Vec<u8>) {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT state, next_batch_seq, cumulative_record_count,
+                        cumulative_owner_digest
+                   FROM ec_distann_begin_epoch_handoff(
+                       $1::regclass, 7, $2::uuid, $3::bytea, $4::bytea,
+                       $5::bytea, $6::bytea, 2, $7::bytea
+                   )",
+                None,
+                &[
+                    fixture.index_oid.into(),
+                    fixture.build_id.into(),
+                    fixture.build_spec_digest.clone().into(),
+                    fixture.roster_digest.clone().into(),
+                    fixture.descriptor.clone().into(),
+                    fixture.descriptor_digest.clone().into(),
+                    expected_owner_digest.to_vec().into(),
+                ],
+            )
+            .expect("begin handoff should execute")
+            .map(|row| {
+                (
+                    row["state"].value::<String>().unwrap().unwrap(),
+                    row["next_batch_seq"].value::<i64>().unwrap().unwrap(),
+                    row["cumulative_record_count"]
+                        .value::<i64>()
+                        .unwrap()
+                        .unwrap(),
+                    row["cumulative_owner_digest"]
+                        .value::<Vec<u8>>()
+                        .unwrap()
+                        .unwrap(),
+                )
+            })
+            .next()
+            .expect("begin handoff should return one row")
+    })
+}
+
+fn distann_generation_relation_oids(
+    fixture: &DistannPhysicalGenerationFixture,
+) -> (pg_sys::Oid, pg_sys::Oid, pg_sys::Oid) {
+    let catalog = distann_generation_catalog_name();
+    Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT row_tier_relid, graph_store_relid, directory_relid
+                       FROM {catalog}
+                      WHERE index_oid = $1::oid
+                        AND logical_index_uuid = $2::uuid
+                        AND build_id = $3::uuid"
+                ),
+                None,
+                &[
+                    fixture.index_oid.into(),
+                    fixture.logical_index_uuid.into(),
+                    fixture.build_id.into(),
+                ],
+            )
+            .unwrap()
+            .map(|row| {
+                (
+                    row["row_tier_relid"]
+                        .value::<pg_sys::Oid>()
+                        .unwrap()
+                        .unwrap(),
+                    row["graph_store_relid"]
+                        .value::<pg_sys::Oid>()
+                        .unwrap()
+                        .unwrap(),
+                    row["directory_relid"]
+                        .value::<pg_sys::Oid>()
+                        .unwrap()
+                        .unwrap(),
+                )
+            })
+            .next()
+            .expect("generation catalog row should exist")
+    })
+}
+
+fn abort_distann_physical_generation(fixture: &DistannPhysicalGenerationFixture) {
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                "SELECT ec_distann_abort_epoch_handoff($1::regclass, $2::uuid)",
+                None,
+                &[fixture.index_oid.into(), fixture.build_id.into()],
+            )
+            .expect("abort handoff should execute");
+    });
+}
+
+#[pg_test]
+fn test_distann_generation_relations_replay_abort_and_privileges() {
+    let fixture =
+        create_distann_physical_generation_fixture("ec_distann_generation_lifecycle", 0x31);
+    let identity = Spi::connect(|client| {
+        let table = client
+            .select(
+                &format!(
+                    "SELECT logical_index_uuid, index_format_version
+                       FROM ec_distann_control_identity('{}'::regclass)",
+                    fixture.index_name
+                ),
+                None,
+                &[],
+            )
+            .unwrap()
+            .first();
+        let (uuid, format_version) = table
+            .get_two::<pgrx::datum::Uuid, i32>()
+            .expect("control identity columns should decode");
+        (
+            uuid.expect("control identity UUID should exist"),
+            format_version.expect("control format version should exist"),
+        )
+    });
+    assert_eq!(identity.0, fixture.logical_index_uuid);
+    assert_eq!(identity.1, 5);
+
+    let first = begin_distann_physical_generation(&fixture, &fixture.expected_owner_digest);
+    assert_eq!(first.0, "Building");
+    assert_eq!((first.1, first.2), (0, 0));
+    assert_eq!(first.3.len(), 32);
+    let relations = distann_generation_relation_oids(&fixture);
+
+    let dependency_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_depend
+          WHERE classid = 'pg_class'::regclass
+            AND objid IN ({}, {}, {})
+            AND refclassid = 'pg_class'::regclass
+            AND refobjid = {}
+            AND deptype = 'i'",
+        u32::from(relations.0),
+        u32::from(relations.1),
+        u32::from(relations.2),
+        u32::from(fixture.index_oid),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(dependency_count, 3);
+    let ownership_and_persistence = Spi::get_one::<bool>(&format!(
+        "SELECT bool_and(child.relowner = control.relowner
+                         AND child.relpersistence = 'p'
+                         AND child.relnamespace = control.relnamespace)
+           FROM pg_class child
+           CROSS JOIN pg_class control
+          WHERE control.oid = {}
+            AND child.oid IN ({}, {}, {})",
+        u32::from(fixture.index_oid),
+        u32::from(relations.0),
+        u32::from(relations.1),
+        u32::from(relations.2),
+    ))
+    .unwrap()
+    .unwrap();
+    assert!(
+        ownership_and_persistence,
+        "physical relations must share the control owner/schema and remain WAL-logged"
+    );
+    let toast_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_class
+          WHERE oid IN ({}, {}) AND reltoastrelid <> 0",
+        u32::from(relations.0),
+        u32::from(relations.1),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(toast_count, 2, "row and graph heaps need TOAST support");
+    let generated_is_plain = Spi::get_one::<bool>(&format!(
+        "SELECT attgenerated = ''
+           FROM pg_attribute
+          WHERE attrelid = {} AND attname = 'payload_generated'",
+        u32::from(relations.0),
+    ))
+    .unwrap()
+    .unwrap();
+    assert!(
+        generated_is_plain,
+        "captured generated values must not recompute"
+    );
+    let dropped_slot = Spi::get_one::<bool>(&format!(
+        "SELECT attisdropped
+           FROM pg_attribute
+          WHERE attrelid = {} AND attnum = 3",
+        u32::from(relations.0),
+    ))
+    .unwrap()
+    .unwrap();
+    assert!(dropped_slot, "row tier preserves physical attnum gaps");
+    assert!(Spi::get_one::<bool>(&format!(
+        "SELECT indisunique FROM pg_index WHERE indexrelid = {}",
+        u32::from(relations.2)
+    ))
+    .unwrap()
+    .unwrap());
+
+    let replay = begin_distann_physical_generation(&fixture, &fixture.expected_owner_digest);
+    assert_eq!(replay, first, "exact begin replay returns prior progress");
+    assert_eq!(distann_generation_relation_oids(&fixture), relations);
+    let conflict = expect_pg_error(|| {
+        begin_distann_physical_generation(&fixture, &[0x99; 32]);
+    });
+    assert!(
+        conflict.contains("EC_BUILD_ID_CONFLICT"),
+        "unexpected begin conflict: {conflict}"
+    );
+
+    let unpublished_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM ec_distann_list_unpublished_generations('{}'::regclass)",
+        fixture.index_name
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(unpublished_count, 1);
+
+    let public_catalog_acl_count = Spi::get_one::<i64>(
+        "SELECT count(*)
+           FROM pg_class c
+           CROSS JOIN LATERAL aclexplode(COALESCE(c.relacl, acldefault('r', c.relowner))) acl
+          WHERE c.relname LIKE 'ec_distann_%'
+            AND c.relkind = 'r'
+            AND acl.grantee = 0",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(public_catalog_acl_count, 0);
+    let public_endpoint_acl_count = Spi::get_one::<i64>(
+        "SELECT count(*)
+           FROM pg_proc p
+           CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
+          WHERE p.proname IN (
+              'ec_distann_control_identity',
+              'ec_distann_begin_epoch_handoff',
+              'ec_distann_abort_epoch_handoff',
+              'ec_distann_list_unpublished_generations',
+              'ec_distann_catalog_index_cleanup'
+          )
+            AND acl.grantee = 0
+            AND acl.privilege_type = 'EXECUTE'",
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(public_endpoint_acl_count, 0);
+
+    // Simulate a stale catalog row surviving under a reused local OID: the
+    // current control UUID must make it unreachable even when build_id/OID and
+    // physical relation locators otherwise match.
+    let mut stale_uuid_bytes = [0x71; 16];
+    stale_uuid_bytes[6] = 0x41;
+    stale_uuid_bytes[8] = 0x91;
+    let stale_uuid = pgrx::datum::Uuid::from_bytes(stale_uuid_bytes);
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "UPDATE {} SET logical_index_uuid = $1::uuid
+                      WHERE index_oid = $2::oid
+                        AND logical_index_uuid = $3::uuid
+                        AND build_id = $4::uuid",
+                    distann_generation_catalog_name()
+                ),
+                None,
+                &[
+                    stale_uuid.into(),
+                    fixture.index_oid.into(),
+                    fixture.logical_index_uuid.into(),
+                    fixture.build_id.into(),
+                ],
+            )
+            .unwrap();
+    });
+    abort_distann_physical_generation(&fixture);
+    let stale_relations_still_live = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_class WHERE oid IN ({}, {}, {})",
+        u32::from(relations.0),
+        u32::from(relations.1),
+        u32::from(relations.2),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(stale_relations_still_live, 3);
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "UPDATE {} SET logical_index_uuid = $1::uuid
+                      WHERE index_oid = $2::oid
+                        AND logical_index_uuid = $3::uuid
+                        AND build_id = $4::uuid",
+                    distann_generation_catalog_name()
+                ),
+                None,
+                &[
+                    fixture.logical_index_uuid.into(),
+                    fixture.index_oid.into(),
+                    stale_uuid.into(),
+                    fixture.build_id.into(),
+                ],
+            )
+            .unwrap();
+    });
+
+    abort_distann_physical_generation(&fixture);
+    abort_distann_physical_generation(&fixture);
+    let live_relation_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_class WHERE oid IN ({}, {}, {})",
+        u32::from(relations.0),
+        u32::from(relations.1),
+        u32::from(relations.2),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(live_relation_count, 0);
+}
+
+#[pg_test]
+fn test_distann_generation_creation_rolls_back_whole_transaction() {
+    let fixture =
+        create_distann_physical_generation_fixture("ec_distann_generation_rollback", 0x41);
+    let error = expect_pg_error_rolled_back(|| {
+        begin_distann_physical_generation(&fixture, &fixture.expected_owner_digest);
+        let relations = distann_generation_relation_oids(&fixture);
+        assert!(relations.0 != pg_sys::InvalidOid);
+        assert!(relations.1 != pg_sys::InvalidOid);
+        assert!(relations.2 != pg_sys::InvalidOid);
+        pgrx::error!("EC_TEST_ROLLBACK: deliberate generation transaction abort");
+    });
+    assert!(
+        error.contains("EC_TEST_ROLLBACK"),
+        "unexpected rollback trigger error: {error}"
+    );
+    let catalog_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM {} WHERE index_oid = {}",
+        distann_generation_catalog_name(),
+        u32::from(fixture.index_oid)
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(catalog_count, 0);
+    let name_prefix_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_class
+          WHERE relname LIKE '_ecdz_%_{}_{}'",
+        u32::from(fixture.index_oid),
+        hex::encode(fixture.build_id.as_bytes()),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(name_prefix_count, 0, "DDL must roll back with the batch");
+}
+
+#[pg_test]
+fn test_distann_generation_drop_and_reindex_clean_dependencies() {
+    let drop_fixture =
+        create_distann_physical_generation_fixture("ec_distann_generation_drop", 0x51);
+    begin_distann_physical_generation(&drop_fixture, &drop_fixture.expected_owner_digest);
+    let dropped_relations = distann_generation_relation_oids(&drop_fixture);
+    Spi::run(&format!("DROP INDEX {}", drop_fixture.index_name)).unwrap();
+    let after_drop_relations = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_class WHERE oid IN ({}, {}, {})",
+        u32::from(dropped_relations.0),
+        u32::from(dropped_relations.1),
+        u32::from(dropped_relations.2),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(after_drop_relations, 0);
+    let after_drop_catalog = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM {} WHERE index_oid = {}",
+        distann_generation_catalog_name(),
+        u32::from(drop_fixture.index_oid)
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(after_drop_catalog, 0);
+
+    let reindex_fixture =
+        create_distann_physical_generation_fixture("ec_distann_generation_reindex", 0x61);
+    begin_distann_physical_generation(&reindex_fixture, &reindex_fixture.expected_owner_digest);
+    let old_relations = distann_generation_relation_oids(&reindex_fixture);
+    let old_uuid = reindex_fixture.logical_index_uuid;
+    Spi::run(&format!("REINDEX INDEX {}", reindex_fixture.index_name)).unwrap();
+    let new_uuid = Spi::get_one::<pgrx::datum::Uuid>(&format!(
+        "SELECT logical_index_uuid
+           FROM ec_distann_control_identity('{}'::regclass)",
+        reindex_fixture.index_name
+    ))
+    .unwrap()
+    .unwrap();
+    assert_ne!(new_uuid, old_uuid, "control REINDEX must mint a fresh UUID");
+    let old_relation_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM pg_class WHERE oid IN ({}, {}, {})",
+        u32::from(old_relations.0),
+        u32::from(old_relations.1),
+        u32::from(old_relations.2),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(old_relation_count, 0);
+    let old_catalog_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*) FROM {} WHERE index_oid = {}",
+        distann_generation_catalog_name(),
+        u32::from(reindex_fixture.index_oid)
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(old_catalog_count, 0);
+}
+
 fn expect_pg_error(run: impl FnOnce() + std::panic::UnwindSafe) -> String {
     pg_sys::PgTryBuilder::new(|| {
         run();
@@ -243,6 +998,40 @@ fn expect_pg_error(run: impl FnOnce() + std::panic::UnwindSafe) -> String {
         pg_sys::panic::CaughtError::RustPanic { ereport, .. } => ereport.message().to_owned(),
     })
     .execute()
+}
+
+fn expect_pg_error_rolled_back(run: impl FnOnce() + std::panic::UnwindSafe) -> String {
+    // PgTryBuilder catches ereport(ERROR), but it does not itself establish a
+    // savepoint. Use a real internal subtransaction so this helper can assert
+    // PostgreSQL's transactional DDL/catalog rollback instead of merely
+    // continuing after an error with the earlier statements still applied.
+    let (old_context, old_owner) = unsafe {
+        let old_context = pg_sys::CurrentMemoryContext;
+        let old_owner = pg_sys::CurrentResourceOwner;
+        // Make the fixture DDL issued by the outer test command visible before
+        // the subtransaction starts. PostgreSQL's internal-subtransaction
+        // convention then restores the caller's memory context while retaining
+        // the child resource owner until release/rollback.
+        pg_sys::CommandCounterIncrement();
+        pg_sys::BeginInternalSubTransaction(std::ptr::null());
+        pg_sys::MemoryContextSwitchTo(old_context);
+        (old_context, old_owner)
+    };
+    // The SQL function invocation already owns an active statement snapshot.
+    // Push a fresh post-CCI snapshot so nested SPI catalog reads can see the
+    // fixture DDL from the outer transaction while their writes remain owned
+    // by this subtransaction.
+    let snapshot =
+        crate::storage::snapshot_guard::ActiveSnapshotGuard::latest_after_command_counter()
+            .expect("rollback test subtransaction requires an active snapshot");
+    let error = expect_pg_error(run);
+    drop(snapshot);
+    unsafe {
+        pg_sys::RollbackAndReleaseCurrentSubTransaction();
+        pg_sys::MemoryContextSwitchTo(old_context);
+        pg_sys::CurrentResourceOwner = old_owner;
+    }
+    error
 }
 
 #[pg_test]
@@ -287,17 +1076,16 @@ fn distann_materialized_index(
     crate::am::ec_distann::page::DistannMetadataPage,
     crate::storage::page::DataPageChain,
 ) {
-    let index_oid =
-        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
-            .expect("SPI query should succeed")
-            .expect("index oid should exist");
+    let index_oid = Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{index_name}'::regclass::oid"))
+        .expect("SPI query should succeed")
+        .expect("index oid should exist");
     let index_relation = IndexRelationGuard::open(
         index_oid,
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
         "ec_distann basic test",
     );
-    let handle = std::ptr::NonNull::new(index_relation.as_ptr())
-        .expect("index relation should be non-null");
+    let handle =
+        std::ptr::NonNull::new(index_relation.as_ptr()).expect("index relation should be non-null");
     crate::am::ec_distann::reader::materialize_chain_from_index_handle(handle)
         .expect("chain should materialize")
 }
@@ -352,12 +1140,9 @@ fn test_ec_distann_build_persists_graph_structures() {
 
     // Directory: eight strictly-ascending entries, each resolving to a
     // node record carrying that vec_id.
-    let directory = crate::am::ec_distann::reader::read_directory_chain(
-        &chain,
-        metadata.directory_head,
-        8,
-    )
-    .expect("directory should read");
+    let directory =
+        crate::am::ec_distann::reader::read_directory_chain(&chain, metadata.directory_head, 8)
+            .expect("directory should read");
     for (vec_id, tid) in &directory {
         let node = crate::am::ec_distann::reader::read_node(
             &chain,
@@ -473,9 +1258,7 @@ fn test_ec_distann_search_codes_match_direct_codec_encoding() {
     let mut checked = 0;
     for page in chain.pages() {
         for raw in page.tuples() {
-            if raw.first().copied()
-                != Some(crate::am::ec_distann::tuple::DISTANN_NODE_TAG)
-            {
+            if raw.first().copied() != Some(crate::am::ec_distann::tuple::DISTANN_NODE_TAG) {
                 continue;
             }
             let node = crate::am::ec_distann::tuple::DistannNodeTuple::decode(
@@ -504,8 +1287,7 @@ fn test_ec_distann_search_codes_match_direct_codec_encoding() {
 fn test_ec_distann_rebuild_assigns_identical_vec_ids() {
     // FR-076-AC-2: two builds of the same corpus assign identical vec_ids.
     create_distann_fixture("ec_distann_rebuild_ids", "WITH (graph_degree = 4)");
-    let (metadata_before, chain_before) =
-        distann_materialized_index("ec_distann_rebuild_ids_idx");
+    let (metadata_before, chain_before) = distann_materialized_index("ec_distann_rebuild_ids_idx");
     let directory_before = crate::am::ec_distann::reader::read_directory_chain(
         &chain_before,
         metadata_before.directory_head,
@@ -515,8 +1297,7 @@ fn test_ec_distann_rebuild_assigns_identical_vec_ids() {
 
     Spi::run("REINDEX INDEX ec_distann_rebuild_ids_idx").expect("reindex should succeed");
 
-    let (metadata_after, chain_after) =
-        distann_materialized_index("ec_distann_rebuild_ids_idx");
+    let (metadata_after, chain_after) = distann_materialized_index("ec_distann_rebuild_ids_idx");
     let directory_after = crate::am::ec_distann::reader::read_directory_chain(
         &chain_after,
         metadata_after.directory_head,
@@ -628,8 +1409,7 @@ fn test_ec_distann_sharded_build_is_deterministic_across_reindex() {
     )
     .expect("directory should read");
 
-    Spi::run("REINDEX INDEX ec_distann_sharded_determinism_idx")
-        .expect("reindex should succeed");
+    Spi::run("REINDEX INDEX ec_distann_sharded_determinism_idx").expect("reindex should succeed");
 
     let (metadata_after, chain_after) =
         distann_materialized_index("ec_distann_sharded_determinism_idx");
@@ -672,8 +1452,7 @@ fn test_ec_distann_sql_ordered_scan_through_planner() {
         plan_uses_index.contains("Limit"),
         "plan head should be a Limit node: {plan_uses_index}"
     );
-    Spi::run("SET ec_distann.scan_profile_notice = on")
-        .expect("profile notice GUC should set");
+    Spi::run("SET ec_distann.scan_profile_notice = on").expect("profile notice GUC should set");
     let probed = Spi::get_one::<i64>(
         "SELECT id FROM ec_distann_sql_scan \
          ORDER BY embedding <#> ARRAY[0.0, 1.0, 0.0, 0.0]::real[] LIMIT 1",
@@ -747,7 +1526,10 @@ fn test_ec_distann_head_sample_is_deterministic_across_reindex() {
     let before = read_sample();
     Spi::run("REINDEX INDEX ec_distann_head_determinism_idx").expect("reindex should succeed");
     let after = read_sample();
-    assert_eq!(before, after, "BFS head sample must be rebuild-deterministic");
+    assert_eq!(
+        before, after,
+        "BFS head sample must be rebuild-deterministic"
+    );
 }
 
 #[pg_test]
@@ -772,7 +1554,11 @@ fn test_ec_distann_limit_beyond_top_k_deepens_correctly() {
     };
     let shallow = ordered_ids(2);
     let deep = ordered_ids(200);
-    assert_eq!(shallow.len(), 6, "LIMIT 6 must yield 6 rows even at top_k=2");
+    assert_eq!(
+        shallow.len(),
+        6,
+        "LIMIT 6 must yield 6 rows even at top_k=2"
+    );
     assert_eq!(
         shallow, deep,
         "deepened scan must match a scan whose exit bar covers the LIMIT"
@@ -914,10 +1700,8 @@ fn test_ec_distann_include_mode_rejects_null_identity() {
 
 #[pg_test]
 fn test_ec_distann_include_mode_rejects_short_bytea_identity() {
-    Spi::run(
-        "CREATE TABLE ec_distann_ident_width (id bigint, ident bytea, embedding ecvector)",
-    )
-    .expect("table creation should succeed");
+    Spi::run("CREATE TABLE ec_distann_ident_width (id bigint, ident bytea, embedding ecvector)")
+        .expect("table creation should succeed");
     Spi::run(
         "INSERT INTO ec_distann_ident_width VALUES \
          (1, '\\x0102030405'::bytea, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
@@ -939,10 +1723,8 @@ fn test_ec_distann_include_mode_rejects_short_bytea_identity() {
 
 #[pg_test]
 fn test_ec_distann_rejects_stray_include_column() {
-    Spi::run(
-        "CREATE TABLE ec_distann_ident_stray (id bigint, ident uuid, embedding ecvector)",
-    )
-    .expect("table creation should succeed");
+    Spi::run("CREATE TABLE ec_distann_ident_stray (id bigint, ident uuid, embedding ecvector)")
+        .expect("table creation should succeed");
     let error = expect_pg_error(|| {
         Spi::run(
             "CREATE INDEX ec_distann_ident_stray_idx ON ec_distann_ident_stray \
@@ -1026,7 +1808,10 @@ fn test_ec_distann_content_digest_binds_build_content() {
     )
     .expect("SPI query should succeed")
     .expect("fingerprint exists");
-    assert_ne!(fp_a, fp_b, "differing content must change the epoch fingerprint");
+    assert_ne!(
+        fp_a, fp_b,
+        "differing content must change the epoch fingerprint"
+    );
 }
 
 #[pg_test]
@@ -1224,7 +2009,10 @@ fn test_ec_distann_fold_multi_row_clustered_delta() {
     )
     .expect("SPI query should succeed")
     .expect("count should exist");
-    assert_eq!(folded, 3, "all three clustered delta entries fold in one call");
+    assert_eq!(
+        folded, 3,
+        "all three clustered delta entries fold in one call"
+    );
 
     let (after, _) = distann_materialized_index("ec_distann_multifold_idx");
     assert_eq!(
@@ -1325,7 +2113,10 @@ fn test_ec_distann_fault_drills_distinct_classes() {
         ))
         .expect("must error");
     });
-    assert!(epoch.contains("[EC_EPOCH_MISMATCH]"), "epoch drill class: {epoch}");
+    assert!(
+        epoch.contains("[EC_EPOCH_MISMATCH]"),
+        "epoch drill class: {epoch}"
+    );
 
     // Drill: missing_node_record (owned-but-absent structural fault) — a vec_id
     // that hashes to this node (single-node owns all) but is not in the
@@ -1338,7 +2129,10 @@ fn test_ec_distann_fault_drills_distinct_classes() {
         ))
         .expect("must error on a vec_id absent from the directory");
     });
-    assert!(absent.contains("[EC_RECORD_MISSING]"), "absent-record drill class: {absent}");
+    assert!(
+        absent.contains("[EC_RECORD_MISSING]"),
+        "absent-record drill class: {absent}"
+    );
 
     // Drill: bad input (malformed fingerprint width).
     let bad = expect_pg_error(|| {
@@ -1349,11 +2143,13 @@ fn test_ec_distann_fault_drills_distinct_classes() {
         ))
         .expect("must error on a malformed fingerprint");
     });
-    assert!(bad.contains("[EC_BAD_INPUT]"), "bad-input drill class: {bad}");
+    assert!(
+        bad.contains("[EC_BAD_INPUT]"),
+        "bad-input drill class: {bad}"
+    );
 
     // Drill: placement_drift (non-owned id under a 2-node roster).
-    Spi::run("SET ec_distann.roster = '0@local;1@host=/x port=1 dbname=y'")
-        .expect("roster set");
+    Spi::run("SET ec_distann.roster = '0@local;1@host=/x port=1 dbname=y'").expect("roster set");
     Spi::run("SET ec_distann.local_node_id = 0").expect("id set");
     let node1 = vec_ids.iter().copied().find(|&id| {
         crate::am::ec_distann::placement::owning_node(
@@ -1371,7 +2167,10 @@ fn test_ec_distann_fault_drills_distinct_classes() {
             ))
             .expect("must error on a non-owned id");
         });
-        assert!(placement.contains("[EC_PLACEMENT]"), "placement drill class: {placement}");
+        assert!(
+            placement.contains("[EC_PLACEMENT]"),
+            "placement drill class: {placement}"
+        );
     }
     Spi::run("RESET ec_distann.roster").expect("roster reset");
     Spi::run("RESET ec_distann.local_node_id").expect("id reset");
@@ -1454,7 +2253,10 @@ fn test_ec_distann_materialize_row_payloads_ships_binary_columns() {
     ))
     .expect("SPI query should succeed")
     .expect("count should exist");
-    assert_eq!(bad, 0, "shipped columns are live, present, and 8-byte int8send");
+    assert_eq!(
+        bad, 0,
+        "shipped columns are live, present, and 8-byte int8send"
+    );
 
     // The shipped binary decodes back to the row's id: int8send is big-endian, and
     // the fixture ids are 1..=8 so only the low byte is set. This proves the owner
@@ -1650,7 +2452,10 @@ fn test_ec_distann_epoch_lifecycle_publish_retire_override() {
     let error = expect_pg_error(|| {
         Spi::run(&format!("SELECT ec_distann_retire_epoch({idx})")).expect("must gate");
     });
-    assert!(error.contains("retention gate"), "unexpected error: {error}");
+    assert!(
+        error.contains("retention gate"),
+        "unexpected error: {error}"
+    );
     // Still published, count intact.
     let (state, in_flight) = Spi::get_two::<String, i64>(&format!(
         "SELECT epoch_state, in_flight_count FROM ec_distann_epoch_status({idx})"
@@ -1665,7 +2470,11 @@ fn test_ec_distann_epoch_lifecycle_publish_retire_override() {
         "SELECT epoch_state, in_flight_count FROM ec_distann_epoch_status({idx})"
     ))
     .expect("SPI");
-    assert_eq!(state.as_deref(), Some("retired"), "override retired the epoch");
+    assert_eq!(
+        state.as_deref(),
+        Some("retired"),
+        "override retired the epoch"
+    );
     assert_eq!(in_flight, Some(0), "override cleared the wedged count");
 
     // Gate opens once in-flight is zero: a clean retire is idempotent.
@@ -1754,9 +2563,14 @@ fn test_ec_distann_delete_tombstones_record() {
     let tombstoned = directory
         .iter()
         .filter(|(_, tid)| {
-            crate::am::ec_distann::reader::read_node(&chain, *tid, metadata.graph_degree_r, code_len)
-                .map(|node| node.tombstoned)
-                .unwrap_or(false)
+            crate::am::ec_distann::reader::read_node(
+                &chain,
+                *tid,
+                metadata.graph_degree_r,
+                code_len,
+            )
+            .map(|node| node.tombstoned)
+            .unwrap_or(false)
         })
         .count();
     assert_eq!(tombstoned, 2, "exactly two records tombstoned on disk");
@@ -1771,7 +2585,10 @@ fn test_ec_distann_delete_tombstones_record() {
     )
     .expect("SPI query should succeed")
     .expect("count should exist");
-    assert_eq!(returned, 6, "two tombstoned rows are excluded from the scan (8 - 2)");
+    assert_eq!(
+        returned, 6,
+        "two tombstoned rows are excluded from the scan (8 - 2)"
+    );
     Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
 }
 
@@ -1804,7 +2621,10 @@ fn test_ec_distann_delta_insert_visible_same_statement() {
     )
     .expect("SPI query should succeed")
     .expect("row should exist");
-    assert_eq!(top, 99, "inserted row is visible same-statement and ranked nearest");
+    assert_eq!(
+        top, 99,
+        "inserted row is visible same-statement and ranked nearest"
+    );
 
     // It also appears within a larger LIMIT alongside the graph rows.
     let inserted_in_topk = Spi::get_one::<i64>(
@@ -1813,7 +2633,10 @@ fn test_ec_distann_delta_insert_visible_same_statement() {
     )
     .expect("SPI query should succeed")
     .expect("count should exist");
-    assert_eq!(inserted_in_topk, 1, "inserted row merged into the ranked result");
+    assert_eq!(
+        inserted_in_topk, 1,
+        "inserted row merged into the ranked result"
+    );
     Spi::run("RESET enable_seqscan").expect("seqscan reset should succeed");
 }
 

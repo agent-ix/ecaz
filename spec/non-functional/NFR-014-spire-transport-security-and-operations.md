@@ -48,10 +48,12 @@ provide explicit operator-visible recovery.
    categories and operator hints, not raw remote error payloads.
 4. JSON tuple transport SHALL NOT be selected by the production distributed read
    path once typed transport is required.
-5. EC_DISTANN node registration, build, handoff, topology inspection,
-   expansion, materialization, publication, recovery, retirement, and abort
-   endpoints SHALL be executable only by the extension owner and an explicitly
-   granted internal cluster role; `PUBLIC` SHALL have no EXECUTE privilege.
+5. EC_DISTANN node registration, control identity
+   (`ec_distann_control_identity`), unpublished-generation listing
+   (`ec_distann_list_unpublished_generations`), build, handoff, topology
+   inspection, expansion, materialization, publication, recovery, retirement,
+   and abort endpoints SHALL be executable only by the extension owner and an
+   explicitly granted internal cluster role; `PUBLIC` SHALL have no EXECUTE privilege.
    In particular, an ordinary reader SHALL NOT acquire publish/reclaim side
    effects merely by observing pending recovery during a scan.
 6. EC_DISTANN write-side endpoints SHALL validate participant identity, build

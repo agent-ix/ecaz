@@ -65,6 +65,8 @@ Consequently the complete record remains exactly
 `20 + code_stride + (R × 8) + (R × code_stride)` bytes. The legacy local-v4
 tuple's `(tag=0x09, reserved=0)` prefix is not a physical-generation version
 and SHALL NOT be accepted by the physical-v1 decoder.
+Physical graph-record version `9` SHALL never be assigned: its little-endian
+prefix `(0x09, 0x00)` byte-collides with that legacy local tuple prefix.
 
 ## Handoff Entry Layout
 
@@ -97,7 +99,7 @@ version: 1
 fields:
   - { name: wire_version, type: u16, rule: exactly 1 }
   - { name: epoch, type: u64, rule: non-zero target epoch }
-  - { name: build_id, type: uuid_bytes, rule: 16 RFC 4122 network-order bytes }
+  - { name: build_id, type: uuid_bytes, rule: 16 RFC 4122 version-4 network-order bytes }
   - { name: batch_seq, type: u64, rule: starts at zero and increments by one per owner stream }
   - { name: build_spec_digest, type: byte[32], rule: SHA-256 of the immutable pre-handoff build specification }
   - { name: row_schema_fingerprint, type: byte[32], rule: FR-078 source/destination schema identity }

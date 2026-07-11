@@ -8,9 +8,12 @@ use std::mem::size_of;
 
 use crate::quant::{prod::mse_code_len, rabitq::code_len_for};
 
-use super::canonical_wire::{domain_digest, CanonicalDecoder, CanonicalEncoder};
+use super::canonical_wire::{
+    domain_digest, is_rfc4122_v4_uuid, CanonicalDecoder, CanonicalEncoder,
+};
 use super::generation_descriptor::{
-    decode_roster, encode_roster, validate_roster, DistannBuildOptions, DistannRosterEntry,
+    decode_roster, encode_roster, validate_roster, DistannBuildOptions, DistannCodecArtifact,
+    DistannRosterEntry, DISTANN_FORMAT_V1_MAX_GRAPH_DEGREE, DISTANN_FORMAT_V1_MIN_GRAPH_DEGREE,
     DISTANN_GRAPH_RECORD_VERSION, DISTANN_HANDOFF_WIRE_VERSION,
     DISTANN_PHYSICAL_INDEX_FORMAT_VERSION, DISTANN_PLACEMENT_HASH_VERSION,
 };
@@ -82,6 +85,20 @@ impl DistannSourceSnapshot {
         }
         if self.xip.len() > MAX_SNAPSHOT_XIDS || self.subxip.len() > MAX_SNAPSHOT_XIDS {
             return Err("EC_SOURCE_SNAPSHOT: snapshot xid array exceeds its bound".to_owned());
+        }
+        if self.xmin_full > self.xmax_full {
+            return Err("EC_SOURCE_SNAPSHOT: xmin_full exceeds xmax_full".to_owned());
+        }
+        if self
+            .xip
+            .iter()
+            .chain(&self.subxip)
+            .any(|xid| *xid < self.xmin_full || *xid >= self.xmax_full)
+        {
+            return Err(
+                "EC_SOURCE_SNAPSHOT: in-progress full XID is outside [xmin_full, xmax_full)"
+                    .to_owned(),
+            );
         }
         validate_strictly_ascending(&self.xip, "xip")?;
         validate_strictly_ascending(&self.subxip, "subxip")?;
@@ -266,6 +283,51 @@ impl DistannManifestCodecParameters {
         encoder.finish()
     }
 
+    /// The manifest repeats a compact codec summary while the generation
+    /// descriptor owns the complete artifact. Publication must compare the
+    /// plaintext fields, not merely trust that two unrelated digests exist.
+    pub fn validate_artifact(self, artifact: &DistannCodecArtifact) -> Result<(), String> {
+        artifact.validate()?;
+        if self.codec_kind != artifact.codec_kind()
+            || self.dimensions != artifact.dimensions()
+            || self.seed != artifact.seed()
+        {
+            return Err(
+                "EC_EPOCH_MANIFEST: codec parameters disagree with generation artifact identity"
+                    .to_owned(),
+            );
+        }
+        let artifact_stride = match artifact {
+            DistannCodecArtifact::RaBitQ { bits, .. } => {
+                code_len_for(usize::from(self.dimensions), *bits).map_err(|error| {
+                    format!("EC_EPOCH_MANIFEST: invalid RaBitQ artifact stride: {error}")
+                })?
+            }
+            DistannCodecArtifact::TurboQuant { bits, .. } => {
+                mse_code_len(usize::from(self.dimensions), *bits)
+            }
+            DistannCodecArtifact::GroupedPq4 { model, .. } => model.group_count.div_ceil(2),
+        };
+        if usize::try_from(self.code_stride).ok() != Some(artifact_stride) {
+            return Err(
+                "EC_EPOCH_MANIFEST: codec stride disagrees with generation artifact".to_owned(),
+            );
+        }
+        if let DistannCodecArtifact::GroupedPq4 { model, .. } = artifact {
+            if usize::try_from(self.transform_dim).ok() != Some(model.transform_dim)
+                || usize::try_from(self.group_count).ok() != Some(model.group_count)
+                || usize::try_from(self.group_size).ok() != Some(model.group_size)
+                || self.centroids_per_group != 16
+            {
+                return Err(
+                    "EC_EPOCH_MANIFEST: GroupedPQ parameters disagree with generation artifact"
+                        .to_owned(),
+                );
+            }
+        }
+        self.validate()
+    }
+
     pub fn decode(input: &[u8]) -> Result<Self, String> {
         let mut decoder = CanonicalDecoder::new(input, "manifest codec parameters")?;
         let version = decoder.get_u16("manifest codec parameter version")?;
@@ -298,11 +360,12 @@ pub struct DistannManifestBuildOptions {
 
 impl DistannManifestBuildOptions {
     pub fn encode(self) -> Result<Vec<u8>, String> {
-        if i32::from(self.graph_degree) < super::ECDISTANN_MIN_GRAPH_DEGREE
-            || i32::from(self.graph_degree) > super::ECDISTANN_MAX_GRAPH_DEGREE
+        if self.graph_degree < DISTANN_FORMAT_V1_MIN_GRAPH_DEGREE
+            || self.graph_degree > DISTANN_FORMAT_V1_MAX_GRAPH_DEGREE
         {
             return Err(
-                "EC_EPOCH_MANIFEST: graph/build options are outside reloption bounds".to_owned(),
+                "EC_EPOCH_MANIFEST: graph/build options are outside the frozen format-v1 bounds"
+                    .to_owned(),
             );
         }
         let options = self.options.encode()?;
@@ -358,8 +421,18 @@ pub struct DistannReadyReceipt {
 
 impl DistannReadyReceipt {
     pub fn validate(&self) -> Result<(), String> {
-        if self.epoch == 0 || self.build_id == [0; 16] {
-            return Err("EC_READY_RECEIPT: epoch/build id must be non-zero".to_owned());
+        if self.node_id == 0 || self.node_id > i32::MAX as u32 {
+            return Err(format!(
+                "EC_READY_RECEIPT: node id {} is outside 1..={}",
+                self.node_id,
+                i32::MAX
+            ));
+        }
+        if self.epoch == 0 || !is_rfc4122_v4_uuid(&self.build_id) {
+            return Err(
+                "EC_READY_RECEIPT: epoch must be non-zero and build id must be RFC 4122 v4"
+                    .to_owned(),
+            );
         }
         if self.owned_record_count != self.row_count {
             return Err(format!(
@@ -521,8 +594,11 @@ pub struct DistannEpochManifestV2 {
 
 impl DistannEpochManifestV2 {
     pub fn validate(&self) -> Result<(), String> {
-        if self.epoch == 0 || self.build_id == [0; 16] {
-            return Err("EC_EPOCH_MANIFEST: epoch/build id must be non-zero".to_owned());
+        if self.epoch == 0 || !is_rfc4122_v4_uuid(&self.build_id) {
+            return Err(
+                "EC_EPOCH_MANIFEST: epoch must be non-zero and build id must be RFC 4122 v4"
+                    .to_owned(),
+            );
         }
         validate_parent_fingerprint(&self.parent_fingerprint)?;
         if self.placement_hash_version != DISTANN_PLACEMENT_HASH_VERSION
@@ -701,7 +777,7 @@ fn sample_receipt(node_id: u32, count: u64) -> DistannReadyReceipt {
     DistannReadyReceipt {
         node_id,
         epoch: 7,
-        build_id: [0xAB; 16],
+        build_id: super::canonical_wire::sample_rfc4122_v4_uuid(0xAB),
         build_spec_digest: [0x11; DIGEST_BYTES],
         generation_descriptor_digest: [0x22; DIGEST_BYTES],
         last_acknowledged_batch_sequence: node_id as u64,
@@ -722,7 +798,7 @@ fn sample_receipt(node_id: u32, count: u64) -> DistannReadyReceipt {
 pub(crate) fn sample_manifest_v2() -> DistannEpochManifestV2 {
     DistannEpochManifestV2 {
         epoch: 7,
-        build_id: [0xAB; 16],
+        build_id: super::canonical_wire::sample_rfc4122_v4_uuid(0xAB),
         parent_fingerprint: Vec::new(),
         source_snapshot_digest: [0x01; DIGEST_BYTES],
         build_spec_digest: [0x11; DIGEST_BYTES],
@@ -790,6 +866,14 @@ mod tests {
         let mut unsorted = snapshot;
         unsorted.xip.swap(0, 1);
         assert!(unsorted.encode().is_err());
+
+        let mut inverted = sample_snapshot();
+        inverted.xmin_full = 201;
+        assert!(inverted.encode().is_err());
+
+        let mut out_of_range = sample_snapshot();
+        out_of_range.subxip[0] = out_of_range.xmax_full;
+        assert!(out_of_range.encode().is_err());
     }
 
     #[test]
@@ -825,6 +909,14 @@ mod tests {
         let mut bad = receipt;
         bad.row_count += 1;
         assert!(bad.encode().is_err());
+
+        let mut invalid_uuid = sample_receipt(10, 6);
+        invalid_uuid.build_id = [0xAB; 16];
+        assert!(invalid_uuid.encode().is_err());
+
+        let mut invalid_node = sample_receipt(10, 6);
+        invalid_node.node_id = 0;
+        assert!(invalid_node.encode().is_err());
     }
 
     #[test]
@@ -842,6 +934,10 @@ mod tests {
             DistannEpochFingerprint::decode(fingerprint.as_bytes()).unwrap(),
             fingerprint
         );
+
+        let mut invalid_uuid = manifest;
+        invalid_uuid.build_id = [0xAB; 16];
+        assert!(invalid_uuid.encode().is_err());
     }
 
     #[test]
@@ -877,6 +973,17 @@ mod tests {
         let mut bad_build = manifest.build_options;
         bad_build.graph_degree = 3;
         assert!(bad_build.encode().is_err());
+
+        let descriptor = super::super::generation_descriptor::sample_generation_descriptor();
+        manifest
+            .codec_parameters
+            .validate_artifact(&descriptor.codec_artifact)
+            .unwrap();
+        let mut wrong_seed = manifest.codec_parameters;
+        wrong_seed.seed += 1;
+        assert!(wrong_seed
+            .validate_artifact(&descriptor.codec_artifact)
+            .is_err());
     }
 
     /// Regeneration helper for the NFR-016 golden fixtures. Run explicitly:
@@ -973,7 +1080,7 @@ mod tests {
         );
         let build_spec = DistannBuildSpec {
             epoch: 7,
-            build_id: [0xAB; 16],
+            build_id: crate::am::ec_distann::canonical_wire::sample_rfc4122_v4_uuid(0xAB),
             parent_fingerprint: Vec::new(),
             source_snapshot_digest: sample_snapshot().digest().unwrap(),
             generation_descriptor_digest: descriptor.digest().unwrap(),
@@ -1016,7 +1123,7 @@ mod tests {
         );
         let batch = DistannHandoffBatch {
             epoch: 7,
-            build_id: [0xAB; 16],
+            build_id: crate::am::ec_distann::canonical_wire::sample_rfc4122_v4_uuid(0xAB),
             batch_seq: 0,
             build_spec_digest: build_spec.digest().unwrap(),
             row_schema_fingerprint: row_schema.fingerprint().unwrap(),

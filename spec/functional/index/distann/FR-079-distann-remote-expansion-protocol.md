@@ -93,7 +93,7 @@ entry.
   epoch-mismatch of the first bullet).
 - `heap_tid` SHALL be interpreted as the epoch-scoped handle to the vec_id's
   frozen co-placed source row ([FR-082](./FR-082-distann-epoch-lifecycle.md)).
-- In a multi-node generation, `heap_tid` SHALL NOT be interpreted as a live
+- In a multi-owner epoch, `heap_tid` SHALL NOT be interpreted as a live
   source-table `ItemPointer`.
 - In a one-owner `distributed_control=true` roster, `heap_tid` SHALL still
   reference the AM-owned frozen epoch row tier. Only the legacy

@@ -25,8 +25,14 @@ spec_files=(
 spec_errors="$(mktemp)"
 matrix_errors="$(mktemp)"
 summary_ids="$(mktemp)"
+spec_trace_ids="$(mktemp)"
+matrix_trace_ids="$(mktemp)"
+missing_trace_ids="$(mktemp)"
+unexpected_trace_ids="$(mktemp)"
 cleanup() {
-  rm -f "${spec_errors}" "${matrix_errors}" "${summary_ids}"
+  rm -f "${spec_errors}" "${matrix_errors}" "${summary_ids}" \
+    "${spec_trace_ids}" "${matrix_trace_ids}" "${missing_trace_ids}" \
+    "${unexpected_trace_ids}"
 }
 trap cleanup EXIT
 
@@ -44,6 +50,35 @@ awk '
   }
 ' spec/tests.md >"${summary_ids}"
 duplicate_count="$(sort "${summary_ids}" | uniq -d | wc -l | tr -d ' ')"
+
+# Every explicitly numbered DistANN acceptance criterion and constraint must
+# have a criterion-level TC mapping.  Parse only the two detail tables rather
+# than accepting the coarser summary ranges as evidence of completeness.
+rg -o --no-filename '(FR|NFR)-[0-9]{3}-(AC|CON)-[0-9]+' "${spec_files[@]}" \
+  | sort -u >"${spec_trace_ids}"
+awk '
+  /^### EC_DISTANN Acceptance-Criterion Trace Detail$/ { in_trace = 1; next }
+  /^### EC_DISTANN Constraint Trace Detail$/ { in_trace = 1; next }
+  in_trace && /^### / { in_trace = 0 }
+  in_trace && /^\| (FR|NFR)-[0-9][0-9][0-9] \|/ {
+    split($0, columns, "|")
+    requirement = columns[2]
+    mapping = columns[3]
+    gsub(/[[:space:]]/, "", requirement)
+    count = split(mapping, entries, ";")
+    for (i = 1; i <= count; i++) {
+      gsub(/^[[:space:]]+|[[:space:]]+$/, "", entries[i])
+      split(entries[i], sides, "→")
+      if (sides[1] ~ /^(AC|CON)-[0-9]+$/ && sides[2] ~ /^TC-[0-9][0-9][0-9](\/TC-[0-9][0-9][0-9])*$/) {
+        print requirement "-" sides[1]
+      }
+    }
+  }
+' spec/tests.md | sort -u >"${matrix_trace_ids}"
+comm -23 "${spec_trace_ids}" "${matrix_trace_ids}" >"${missing_trace_ids}"
+comm -13 "${spec_trace_ids}" "${matrix_trace_ids}" >"${unexpected_trace_ids}"
+missing_trace_count="$(wc -l <"${missing_trace_ids}" | tr -d ' ')"
+unexpected_trace_count="$(wc -l <"${unexpected_trace_ids}" | tr -d ' ')"
 
 require_pattern() {
   local pattern="$1"
@@ -65,6 +100,14 @@ if [[ "${missing_count}" != "0" ]]; then
   printf 'missing_error_categories=%s\n' "$(comm -23 "${spec_errors}" "${matrix_errors}" | paste -sd, -)"
 fi
 printf 'duplicate_test_summary_ids=%s\n' "${duplicate_count}"
+printf 'distann_criterion_mappings_missing=%s\n' "${missing_trace_count}"
+if [[ "${missing_trace_count}" != "0" ]]; then
+  printf 'missing_distann_criterion_mappings=%s\n' "$(paste -sd, "${missing_trace_ids}")"
+fi
+printf 'distann_criterion_mappings_unexpected=%s\n' "${unexpected_trace_count}"
+if [[ "${unexpected_trace_count}" != "0" ]]; then
+  printf 'unexpected_distann_criterion_mappings=%s\n' "$(paste -sd, "${unexpected_trace_ids}")"
+fi
 require_pattern '^\| TC-020 SPIRE \|' spec/tests.md tc_020_owner SPIRE
 require_pattern '^\| TC-049 \|.*bench suite' spec/tests.md tc_049_owner benchmark_suite
 require_pattern 'TC-045\.\.TC-048.*reserved|TC-045\.\.TC-048.*Reserved' spec/tests.md tc_045_through_tc_048_owner Task_173_reserved
@@ -86,8 +129,9 @@ else
 fi
 
 printf 'spec_matrix_status=PARTIAL\n'
-printf 'reason=physical_hash_shard_implementation_and_runtime_evidence_do_not_exist_yet\n'
+printf 'reason=physical_hash_shard_implementation_and_runtime_evidence_are_incomplete\n'
 
-if [[ "${missing_count}" != "0" || "${duplicate_count}" != "0" ]]; then
+if [[ "${missing_count}" != "0" || "${duplicate_count}" != "0" \
+  || "${missing_trace_count}" != "0" || "${unexpected_trace_count}" != "0" ]]; then
   exit 1
 fi

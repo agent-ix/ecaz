@@ -19,6 +19,14 @@ pub(crate) fn is_rfc4122_v4_uuid(value: &[u8; 16]) -> bool {
     value != &[0; 16] && value[6] & 0xf0 == 0x40 && value[8] & 0xc0 == 0x80
 }
 
+#[cfg(test)]
+pub(crate) fn sample_rfc4122_v4_uuid(fill: u8) -> [u8; 16] {
+    let mut value = [fill; 16];
+    value[6] = (value[6] & 0x0f) | 0x40;
+    value[8] = (value[8] & 0x3f) | 0x80;
+    value
+}
+
 #[derive(Default)]
 pub(crate) struct CanonicalEncoder {
     bytes: Vec<u8>,

@@ -22,7 +22,9 @@ mod epoch;
 mod epoch_manifest;
 mod expand;
 mod expand_error;
+mod generation_catalog;
 mod generation_descriptor;
+mod generation_store;
 mod handoff_wire;
 mod head_cache;
 mod identity;
@@ -43,7 +45,7 @@ mod shard_build;
 pub mod tuple;
 
 pub use self::generation_descriptor::{
-    DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
+    roster_digest, DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
     DistannGenerationDescriptor, DistannOwnerExpectation, DistannRosterEntry,
     DISTANN_BUILD_SPEC_VERSION, DISTANN_BUILD_SPEC_VERSION_OFFSET,
     DISTANN_CODEC_ARTIFACT_VERSION, DISTANN_CODEC_ARTIFACT_VERSION_OFFSET,
@@ -74,6 +76,10 @@ pub use self::row_schema::{
     DistannRowSchemaAttribute, DistannRowSchemaDescriptor, DISTANN_ROW_SCHEMA_VERSION,
     DISTANN_ROW_SCHEMA_VERSION_OFFSET,
 };
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::generation_catalog::extension_relation_name as catalog_relation_name;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::row_schema::resolve_relation_schema;
 
 pub(crate) fn register_gucs() {
     options::register_gucs();
@@ -83,6 +89,21 @@ pub(crate) fn register_gucs() {
 /// Installs the multi-node CustomScan provider + planner hook (from `_PG_init`).
 pub(crate) fn register_custom_scan() {
     custom_scan::register_custom_scan();
+}
+
+/// Legacy v4 graph/page surfaces must never interpret a v5 logical control root
+/// as an empty local graph.  Physical-generation callers resolve storage by
+/// fingerprint through the generation catalog instead.
+pub(super) fn require_legacy_local_storage(
+    metadata: &page::DistannMetadataPage,
+    caller: &str,
+) -> Result<(), String> {
+    if metadata.is_distributed_control() {
+        return Err(format!(
+            "EC_GENERATION_MISSING: {caller} requires a Published physical generation; the logical control index contains no graph storage"
+        ));
+    }
+    Ok(())
 }
 
 pub(super) const ECDISTANN_DEFAULT_GRAPH_DEGREE: i32 = 32;

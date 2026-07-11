@@ -172,14 +172,16 @@ pub(super) unsafe fn tombstone_by_vec_ids(
     // (EC_RECORD_MISSING) from broader structural/storage faults (Internal), so
     // the write endpoint's error class matches the TC-042/NFR-020 contract
     // instead of labeling every failure OwnedRecordMissing.
-    if vec_ids.is_empty() {
-        return Ok(0);
-    }
     let handle = NonNull::new(index_relation).ok_or_else(|| {
         DistannExpandError::Internal("ec_distann tombstone needs a valid index relation".to_owned())
     })?;
     let metadata =
         read_metadata_from_index_handle(handle).map_err(DistannExpandError::Internal)?;
+    super::require_legacy_local_storage(&metadata, "ec_distann tombstone")
+        .map_err(DistannExpandError::GenerationMissing)?;
+    if vec_ids.is_empty() {
+        return Ok(0);
+    }
     if metadata.directory_head == ItemPointer::INVALID {
         return Err(DistannExpandError::Internal(
             "ec_distann tombstone: index has no directory".to_owned(),
