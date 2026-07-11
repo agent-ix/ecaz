@@ -2389,6 +2389,76 @@ fn test_distann_source_capture_spools_complete_frozen_rows() {
         }
     }
     assert!(seen_toasted && seen_nulls);
+
+    let mut workspace =
+        crate::am::ec_distann::build_physical_graph_workspace(index.as_ptr(), capture)
+            .expect("physical graph workspace should build from the frozen capture");
+    assert_eq!(workspace.record_count(), 2);
+    assert_eq!(workspace.shape().non_dropped_attribute_count, 4);
+    assert_eq!(workspace.codec_artifact().dimensions(), 4);
+    let metadata = unsafe { crate::am::ec_distann::read_metadata_from_index(index.as_ptr()) }
+        .expect("control metadata should decode");
+    let roster = vec![crate::am::ec_distann::DistannRosterEntry {
+        node_id: 17,
+        logical_index_uuid: metadata.logical_index_uuid,
+        endpoint_identity: "capture/node-17".to_owned(),
+    }];
+    let expectations = workspace
+        .owner_expectations(
+            &roster,
+            crate::am::ec_distann::DISTANN_PLACEMENT_HASH_VERSION,
+        )
+        .expect("owner expectations should stream from the workspace");
+    assert_eq!(expectations[0].expected_count, 2);
+    let mut build_id = [0x3c; 16];
+    build_id[6] = 0x4c;
+    build_id[8] = 0xbc;
+    let schema_fingerprint =
+        crate::am::ec_distann::resolve_relation_schema(index.heap_relation_oid())
+            .unwrap()
+            .descriptor
+            .fingerprint()
+            .unwrap();
+    let route_identity = crate::am::ec_distann::DistannHandoffRouteIdentity {
+        epoch: 7,
+        build_id,
+        build_spec_digest: [0x22; 32],
+        row_schema_fingerprint: schema_fingerprint,
+        index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+        neighbor_codec_kind: metadata.neighbor_codec_kind,
+        placement_hash_version: crate::am::ec_distann::DISTANN_PLACEMENT_HASH_VERSION,
+    };
+    let mut routed_entries = Vec::new();
+    let route_shape = workspace.shape();
+    let summaries = workspace
+        .route(
+            route_identity,
+            1,
+            &mut |owner, sequence, digest, encoded| {
+                assert_eq!(owner, 0);
+                assert_eq!(sequence, 0);
+                let batch =
+                    crate::am::ec_distann::DistannHandoffBatch::decode(encoded, route_shape)
+                        .unwrap();
+                assert_eq!(batch.digest(route_shape).unwrap(), *digest);
+                routed_entries.extend(batch.entries.clone());
+                Ok(crate::am::ec_distann::DistannStageAck {
+                    accepted_record_count: batch.entries.len() as u64,
+                    cumulative_record_count: routed_entries.len() as u64,
+                    cumulative_owner_digest: crate::am::ec_distann::owner_stream_digest(
+                        &routed_entries,
+                        route_shape,
+                    )
+                    .unwrap(),
+                })
+            },
+        )
+        .expect("workspace entries should route through one bounded owner batch");
+    assert_eq!(summaries[0].record_count, 2);
+    assert_eq!(
+        summaries[0].owner_stream_digest,
+        expectations[0].expected_owner_digest
+    );
 }
 
 #[pg_test]

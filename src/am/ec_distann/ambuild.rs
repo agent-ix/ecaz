@@ -32,6 +32,13 @@ use crate::storage::snapshot_guard::ActiveSnapshotGuard;
 use crate::storage::wal;
 use crate::DEFAULT_QUANT_SEED;
 
+use super::generation_descriptor::{
+    DistannCodecArtifact, DistannOwnerExpectation, DistannRosterEntry,
+};
+use super::handoff_router::{
+    DistannHandoffRouteIdentity, DistannOwnerBatchRouter, DistannOwnerRouteSummary, DistannStageAck,
+};
+use super::handoff_wire::{DistannHandoffEntry, DistannHandoffShape, DistannOwnerStreamHasher};
 use super::identity::{vec_id_from_local_heap_tid, vec_id_from_source_identity};
 use super::options::{self, DistannSourceIdentityProvider, EcDistannOptions};
 use super::page::DistannMetadataPage;
@@ -86,6 +93,123 @@ pub(crate) struct PhysicalSourceCapture {
     spool: SourcePayloadSpool,
     non_dropped_attribute_count: usize,
     dimensions: u16,
+}
+
+pub(crate) struct PhysicalGraphWorkspace {
+    capture: PhysicalSourceCapture,
+    vec_ids: Vec<u64>,
+    canonical_nodes: Vec<usize>,
+    codes: Vec<Vec<u8>>,
+    graph: crate::am::VamanaGraph,
+    codec_artifact: DistannCodecArtifact,
+    shape: DistannHandoffShape,
+}
+
+impl PhysicalGraphWorkspace {
+    pub(crate) fn codec_artifact(&self) -> &DistannCodecArtifact {
+        &self.codec_artifact
+    }
+
+    pub(crate) fn shape(&self) -> DistannHandoffShape {
+        self.shape
+    }
+
+    pub(crate) fn record_count(&self) -> u64 {
+        self.vec_ids.len() as u64
+    }
+
+    fn entry_for_node(&mut self, node: usize) -> Result<DistannHandoffEntry, String> {
+        let payload = self.capture.payload_for_node(node)?;
+        if payload.vec_id != self.vec_ids[node] {
+            return Err(
+                "EC_SOURCE_SNAPSHOT: spooled source vec_id differs from graph workspace".to_owned(),
+            );
+        }
+        let neighbors = self
+            .graph
+            .neighbors
+            .get(node)
+            .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph node is absent".to_owned())?;
+        if neighbors.len() > self.shape.graph_degree {
+            return Err("EC_BUILD_INCOMPLETE: graph node exceeds configured degree".to_owned());
+        }
+        let mut neighbor_vec_ids = Vec::with_capacity(neighbors.len());
+        let mut neighbor_codes = Vec::with_capacity(neighbors.len() * self.shape.code_stride);
+        for &neighbor in neighbors {
+            let neighbor = usize::try_from(neighbor)
+                .map_err(|_| "EC_BUILD_INCOMPLETE: neighbor index exceeds usize".to_owned())?;
+            let vec_id = *self
+                .vec_ids
+                .get(neighbor)
+                .ok_or_else(|| "EC_BUILD_INCOMPLETE: neighbor index is out of range".to_owned())?;
+            let code = self
+                .codes
+                .get(neighbor)
+                .ok_or_else(|| "EC_BUILD_INCOMPLETE: neighbor code is absent".to_owned())?;
+            neighbor_vec_ids.push(vec_id);
+            neighbor_codes.extend_from_slice(code);
+        }
+        Ok(DistannHandoffEntry {
+            vec_id: payload.vec_id,
+            source_identity: payload.source_identity.to_vec(),
+            graph_flags: 0,
+            search_code: self.codes[node].clone(),
+            neighbor_vec_ids,
+            neighbor_codes,
+            row_null_bitmap: payload.row_null_bitmap,
+            row_values: payload.row_values,
+        })
+    }
+
+    pub(crate) fn owner_expectations(
+        &mut self,
+        roster: &[DistannRosterEntry],
+        placement_hash_version: u16,
+    ) -> Result<Vec<DistannOwnerExpectation>, String> {
+        if roster.is_empty() {
+            return Err("EC_NODE_DESCRIPTOR: owner roster is empty".to_owned());
+        }
+        let mut hashers = (0..roster.len())
+            .map(|_| DistannOwnerStreamHasher::new())
+            .collect::<Vec<_>>();
+        let mut counts = vec![0_u64; roster.len()];
+        for order_index in 0..self.canonical_nodes.len() {
+            let node = self.canonical_nodes[order_index];
+            let entry = self.entry_for_node(node)?;
+            let owner =
+                super::placement::owning_node(entry.vec_id, roster.len(), placement_hash_version);
+            hashers[owner].update_entry(&entry, self.shape)?;
+            counts[owner] = counts[owner]
+                .checked_add(1)
+                .ok_or_else(|| "EC_BUILD_INCOMPLETE: owner count overflow".to_owned())?;
+        }
+        Ok(roster
+            .iter()
+            .enumerate()
+            .map(|(owner, roster_entry)| DistannOwnerExpectation {
+                node_id: roster_entry.node_id,
+                expected_count: counts[owner],
+                expected_owner_digest: hashers[owner].digest(),
+            })
+            .collect())
+    }
+
+    pub(crate) fn route<F>(
+        &mut self,
+        identity: DistannHandoffRouteIdentity,
+        owner_count: usize,
+        stage: &mut F,
+    ) -> Result<Vec<DistannOwnerRouteSummary>, String>
+    where
+        F: FnMut(usize, u64, &[u8; 32], &[u8]) -> Result<DistannStageAck, String>,
+    {
+        let mut router = DistannOwnerBatchRouter::new(identity, self.shape, owner_count)?;
+        for order_index in 0..self.canonical_nodes.len() {
+            let node = self.canonical_nodes[order_index];
+            router.push(self.entry_for_node(node)?, stage)?;
+        }
+        router.finish(stage)
+    }
 }
 
 impl PhysicalSourceCapture {
@@ -533,6 +657,145 @@ pub(crate) unsafe fn capture_physical_source_rows(
         spool: state.spool,
         non_dropped_attribute_count,
         dimensions,
+    })
+}
+
+pub(crate) fn build_physical_graph_workspace(
+    index_relation: pg_sys::Relation,
+    mut capture: PhysicalSourceCapture,
+) -> Result<PhysicalGraphWorkspace, String> {
+    if index_relation.is_null() {
+        return Err("EC_BUILD_INCOMPLETE: graph workspace index is NULL".to_owned());
+    }
+    let options = options::relation_options(index_relation);
+    if !options.distributed_control {
+        return Err(
+            "EC_BUILD_INCOMPLETE: physical graph workspace requires a control index".to_owned(),
+        );
+    }
+    let dimensions = capture.dimensions();
+    let node_count = capture.len();
+    u32::try_from(node_count)
+        .map_err(|_| "EC_BUILD_INCOMPLETE: source row count exceeds u32".to_owned())?;
+    let graph_degree = usize::try_from(options.graph_degree)
+        .map_err(|_| "EC_BUILD_INCOMPLETE: graph degree is negative".to_owned())?;
+    let build_list_size = usize::try_from(options.build_list_size)
+        .map_err(|_| "EC_BUILD_INCOMPLETE: build list size is negative".to_owned())?;
+    let seed = DEFAULT_QUANT_SEED;
+
+    let vec_ids = capture
+        .rows
+        .iter()
+        .map(|row| vec_id_from_source_identity(&row.identity_payload))
+        .collect::<Vec<_>>();
+    let mut seen = HashMap::with_capacity(node_count);
+    for (node, vec_id) in vec_ids.iter().copied().enumerate() {
+        if let Some(previous) = seen.insert(vec_id, node) {
+            return Err(format!(
+                "EC_DUPLICATE_VEC_ID: source identities at nodes {previous} and {node} collide as {vec_id:#018x}"
+            ));
+        }
+    }
+
+    let binding = {
+        let source_refs = capture
+            .rows
+            .iter()
+            .map(|row| row.source_vector.as_slice())
+            .collect::<Vec<_>>();
+        warn_on_non_unit_source_sample(&source_refs);
+        DistannCodecBinding::prepare(
+            options.neighbor_code_format,
+            &source_refs,
+            usize::from(dimensions),
+            seed,
+        )?
+    };
+    let code_len = binding.code_len(usize::from(dimensions))?;
+    let shape = DistannHandoffShape {
+        code_stride: code_len,
+        graph_degree,
+        non_dropped_attribute_count: capture.non_dropped_attribute_count,
+    };
+    // This is intentionally before Vamana construction and before any remote
+    // begin. Only one spooled payload is materialized at a time.
+    capture.preflight_handoff_entries(shape)?;
+    let source_refs = capture
+        .rows
+        .iter()
+        .map(|row| row.source_vector.as_slice())
+        .collect::<Vec<_>>();
+    let codes = source_refs
+        .iter()
+        .map(|source| {
+            let code = binding.encode(source);
+            if code.len() != code_len {
+                return Err(format!(
+                    "EC_BUILD_INCOMPLETE: codec produced {} bytes, expected {code_len}",
+                    code.len()
+                ));
+            }
+            Ok(code)
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+
+    let graph = if node_count == 0 {
+        crate::am::VamanaGraph::empty(0, graph_degree)
+    } else {
+        let dist = |left: u32, right: u32| -> f32 {
+            source_inner_product_distance(source_refs[left as usize], source_refs[right as usize])
+        };
+        let shard_count = super::shard_build::resolve_shard_count(
+            node_count,
+            usize::try_from(options.build_shards.max(0)).unwrap_or(0),
+        );
+        if shard_count >= 2 {
+            let (graph, _medoid, stats) = super::shard_build::build_sharded_graph(
+                &source_refs,
+                usize::from(dimensions),
+                graph_degree,
+                build_list_size,
+                options.alpha,
+                shard_count,
+                options.closure_epsilon,
+                seed,
+            )?;
+            pgrx::notice!(
+                "ec_distann physical sharded build: shards={} duplication_factor={:.4} \
+                 shard_output_spill_bytes={} stitch_peak_retained_bytes={}",
+                stats.shard_count,
+                stats.duplication_factor,
+                stats.shard_output_spill_bytes,
+                stats.stitch_peak_retained_bytes,
+            );
+            graph
+        } else {
+            let medoid =
+                crate::am::approximate_medoid(node_count, DISTANN_MEDOID_SAMPLE_CAP, seed, dist);
+            crate::am::build_vamana_graph_with_stats(
+                node_count,
+                medoid,
+                graph_degree,
+                build_list_size,
+                options.alpha,
+                seed,
+                dist,
+            )
+            .0
+        }
+    };
+    let codec_artifact = binding.to_artifact(dimensions, seed)?;
+    drop(source_refs);
+    let mut canonical_nodes = (0..node_count).collect::<Vec<_>>();
+    canonical_nodes.sort_unstable_by_key(|node| vec_ids[*node]);
+    Ok(PhysicalGraphWorkspace {
+        capture,
+        vec_ids,
+        canonical_nodes,
+        codes,
+        graph,
+        codec_artifact,
+        shape,
     })
 }
 

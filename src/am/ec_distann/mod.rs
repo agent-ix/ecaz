@@ -15,7 +15,9 @@ mod ambuild;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::read_metadata_from_index;
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::ambuild::capture_physical_source_rows;
+pub(crate) use self::ambuild::{
+    build_physical_graph_workspace, capture_physical_source_rows,
+};
 mod canonical_wire;
 mod cost;
 mod custom_scan;
@@ -28,6 +30,7 @@ mod generation_catalog;
 mod generation_descriptor;
 mod generation_store;
 mod handoff;
+mod handoff_router;
 mod handoff_wire;
 mod head_cache;
 mod identity;
@@ -71,6 +74,8 @@ pub use self::handoff_wire::{
     DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET,
     DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
 };
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::handoff_router::{DistannHandoffRouteIdentity, DistannStageAck};
 pub(crate) use self::handoff_wire::restore_owner_stream_hash_state;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::identity::vec_id_from_source_identity;
