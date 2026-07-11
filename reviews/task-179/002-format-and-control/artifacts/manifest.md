@@ -56,8 +56,18 @@ Packet 001 separately owns the refreshed specification artifacts:
 - The implementation and finding-correction checkpoints were committed before
   these artifacts were captured; every log therefore exercises head
   `57a45cca1afba081563b33f253dc9d89a4826f08`.
+- The canonical fixture bytes at `57a45cca1afba081563b33f253dc9d89a4826f08`
+  are this packet's freeze point. The earlier `04c1ce70b` snapshot/build-spec/
+  handoff-batch bytes were superseded by the reviewed u32→u64 FullTransactionId
+  correction and are not an accepted format baseline. A later finding-response
+  checkpoint further hardens UUID validity and owns its refreshed fixture logs.
 - The ignored unit test is an opt-in golden-fixture emitter, not skipped
   correctness coverage.
+- `distann-unit-tests.log` includes an inner `pg18 pg_test` build because the
+  pgrx test harness self-invokes while discovering SQL entities; it is not a
+  second command or an undocumented feature matrix. For the three logs whose
+  recorder did not echo argv, the exact commands are the authoritative command
+  block above and each `COMMAND_EXIT_CODE` is captured in the log.
 - This is a correctness/format review packet, not a benchmark packet. It has no
   suite config or `results.jsonl`, and it claims no latency, recall, load, or
   storage measurement.
