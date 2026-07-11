@@ -57,6 +57,7 @@ struct PreparedEntry {
 const PERSISTED_GRAPH_DOMAIN: &[u8] = b"ec_distann_persisted_graph_v1\0";
 const PERSISTED_ROW_TIER_DOMAIN: &[u8] = b"ec_distann_persisted_row_tier_v1\0";
 const LOCAL_DIRECTORY_DOMAIN: &[u8] = b"ec_distann_local_directory_v1\0";
+const OWNED_VEC_IDS_DOMAIN: &[u8] = b"ec_distann_owned_vec_ids_v1\0";
 
 /// Execute caller-controlled type I/O with the privileges of the control
 /// owner, never the SECURITY DEFINER endpoint owner.  PostgreSQL uses the
@@ -875,6 +876,334 @@ fn relation_row_count(relation_name: &str) -> Result<u64, String> {
             .transpose()?
             .ok_or_else(|| "EC_BUILD_INCOMPLETE: row count returned no row".to_owned())
     })
+}
+
+fn control_index_total_bytes(index_oid: pg_sys::Oid) -> Result<u64, String> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT pg_catalog.pg_total_relation_size($1::oid::regclass)::bigint AS bytes",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|error| format!("EC_BUILD_INCOMPLETE: control size lookup failed: {error}"))?
+            .map(|row| {
+                let bytes = row["bytes"]
+                    .value::<i64>()
+                    .map_err(|error| {
+                        format!("EC_BUILD_INCOMPLETE: control size decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: control size is NULL".to_owned())?;
+                u64::try_from(bytes)
+                    .map_err(|_| "EC_BUILD_INCOMPLETE: control size is negative".to_owned())
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| "EC_BUILD_INCOMPLETE: control size returned no row".to_owned())
+    })
+}
+
+#[derive(Debug)]
+struct PhysicalTopologySummary {
+    record_count: u64,
+    owned_vec_id_digest: [u8; 32],
+    graph_digest: [u8; 32],
+    row_tier_digest: [u8; 32],
+    non_owned_live_count: u64,
+    non_owned_tombstone_count: u64,
+    orphan_record_count: u64,
+    orphan_row_count: u64,
+}
+
+/// Read-only diagnostic scan of a physical generation. Unlike the strict seal
+/// validator (`scan_physical_generation`), this never errors on a non-owned,
+/// tombstoned, or orphaned record — it classifies and counts them so the
+/// coordinator and operators can audit a Building/Ready generation. Every
+/// digest is recomputed from the physical relations and equals the Ready
+/// receipt exactly when the generation is clean (all records owned, live, and
+/// co-located with a single row-tier tuple).
+fn diagnose_physical_generation(
+    generation: &GenerationCatalogRow,
+    descriptor: &DistannGenerationDescriptor,
+    shape: DistannHandoffShape,
+    identity_attnum: u16,
+    row_relation: &HeapRelationGuard,
+    graph_relation: &str,
+    row_count: u64,
+) -> Result<PhysicalTopologySummary, String> {
+    let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation).ok_or_else(|| {
+        "EC_GENERATION_MISSING: could not allocate topology row slot".to_owned()
+    })?;
+    let mut row_io = unsafe { row_attribute_io(row_relation.as_ptr())? };
+    let mut owned_vec_id_hasher = Sha256::new();
+    owned_vec_id_hasher.update(OWNED_VEC_IDS_DOMAIN);
+    let mut graph_hasher = Sha256::new();
+    graph_hasher.update(PERSISTED_GRAPH_DOMAIN);
+    let mut row_hasher = Sha256::new();
+    row_hasher.update(PERSISTED_ROW_TIER_DOMAIN);
+    let mut record_count = 0_u64;
+    let mut non_owned_live_count = 0_u64;
+    let mut non_owned_tombstone_count = 0_u64;
+    let mut orphan_record_count = 0_u64;
+    let mut colocated_row_count = 0_u64;
+    let roster_len = descriptor.roster.len();
+    let owner_ordinal = generation.owner_ordinal as usize;
+    let sql = format!(
+        "SELECT vec_id, graph_record, row_tid, ctid AS graph_tid
+           FROM {graph_relation}
+          ORDER BY (vec_id < 0), vec_id"
+    );
+    Spi::connect(|client| -> Result<(), String> {
+        let mut cursor = client
+            .try_open_cursor(&sql, &[])
+            .map_err(|error| format!("EC_GENERATION_MISSING: topology cursor failed: {error}"))?;
+        loop {
+            let rows = cursor.fetch(256).map_err(|error| {
+                format!("EC_GENERATION_MISSING: topology fetch failed: {error}")
+            })?;
+            if rows.is_empty() {
+                break;
+            }
+            for row in rows {
+                let signed_vec_id = row["vec_id"]
+                    .value::<i64>()
+                    .map_err(|error| format!("EC_BUILD_INCOMPLETE: vec_id decode failed: {error}"))?
+                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph vec_id is NULL".to_owned())?;
+                let vec_id = u64::from_le_bytes(signed_vec_id.to_le_bytes());
+                let graph_record = row["graph_record"]
+                    .value::<Vec<u8>>()
+                    .map_err(|error| {
+                        format!("EC_BUILD_INCOMPLETE: graph record decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: graph record is NULL".to_owned())?;
+                let node = DistannNodeTuple::decode_physical_v1(
+                    &graph_record,
+                    descriptor.graph_degree,
+                    shape.code_stride,
+                )?;
+
+                // Every physical graph record contributes to the graph digest in
+                // vec_id order, matching the seal computation exactly.
+                graph_hasher.update(vec_id.to_le_bytes());
+                update_length_prefixed(&mut graph_hasher, &graph_record)?;
+                record_count = record_count.checked_add(1).ok_or_else(|| {
+                    "EC_BUILD_INCOMPLETE: topology record count overflow".to_owned()
+                })?;
+
+                let owned = owning_node(vec_id, roster_len, descriptor.placement_hash_version)
+                    == owner_ordinal;
+                if !owned {
+                    if node.tombstoned {
+                        non_owned_tombstone_count += 1;
+                    } else {
+                        non_owned_live_count += 1;
+                    }
+                    continue;
+                }
+                if node.tombstoned {
+                    // Owned tombstones (post-FR-083 DML) carry no live row tier;
+                    // they are neither orphans nor part of the owned-live digest.
+                    continue;
+                }
+                // Owned and live: the frozen row must be co-located and share the
+                // record's vec_id identity. Any failure is a co-location defect
+                // (orphaned record), not a hard error in the diagnostic path.
+                match fetch_frozen_row(
+                    row_relation,
+                    &slot,
+                    node.heap_tid,
+                    identity_attnum,
+                    &mut row_io,
+                ) {
+                    Ok((source_identity, row_null_bitmap, row_values)) => {
+                        if vec_id_from_source_identity(&source_identity) != vec_id {
+                            orphan_record_count += 1;
+                            continue;
+                        }
+                        owned_vec_id_hasher.update(vec_id.to_le_bytes());
+                        row_hasher.update(vec_id.to_le_bytes());
+                        update_length_prefixed(&mut row_hasher, &row_null_bitmap)?;
+                        let value_count = u32::try_from(row_values.len()).map_err(|_| {
+                            "EC_BUILD_INCOMPLETE: row value count exceeds u32".to_owned()
+                        })?;
+                        row_hasher.update(value_count.to_le_bytes());
+                        for value in &row_values {
+                            update_length_prefixed(&mut row_hasher, value)?;
+                        }
+                        colocated_row_count += 1;
+                    }
+                    Err(_) => {
+                        orphan_record_count += 1;
+                    }
+                }
+            }
+        }
+        Ok(())
+    })?;
+    // Row-tier tuples with no co-located owned-live record are orphaned rows.
+    let orphan_row_count = row_count.saturating_sub(colocated_row_count);
+    Ok(PhysicalTopologySummary {
+        record_count,
+        owned_vec_id_digest: owned_vec_id_hasher.finalize().into(),
+        graph_digest: graph_hasher.finalize().into(),
+        row_tier_digest: row_hasher.finalize().into(),
+        non_owned_live_count,
+        non_owned_tombstone_count,
+        orphan_record_count,
+        orphan_row_count,
+    })
+}
+
+/// Report the physical topology of a build-id-selected generation. Only
+/// in-progress `Building`/`Ready` generations are reported by build id;
+/// Published and retained Retired generations are inspected by fingerprint
+/// through `ec_distann_epoch_topology`, and Reclaimed/Aborted/absent build ids
+/// carry no physical generation and yield no rows. All counts and digests are
+/// recomputed from the physical relations, never from expected manifest fields.
+#[pg_extern(stable, strict, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_generation_topology(
+    index_regclass: PgRelation,
+    build_id: Uuid,
+) -> TableIterator<
+    'static,
+    (
+        name!(node_id, i32),
+        name!(state, String),
+        name!(record_count, i64),
+        name!(row_count, i64),
+        name!(owned_vec_id_digest, Vec<u8>),
+        name!(graph_digest, Vec<u8>),
+        name!(row_tier_digest, Vec<u8>),
+        name!(non_owned_live_count, i64),
+        name!(non_owned_tombstone_count, i64),
+        name!(orphan_record_count, i64),
+        name!(orphan_row_count, i64),
+        name!(graph_bytes, i64),
+        name!(row_tier_bytes, i64),
+        name!(directory_bytes, i64),
+        name!(control_index_bytes, i64),
+    ),
+> {
+    type TopologyRow = (
+        i32,
+        String,
+        i64,
+        i64,
+        Vec<u8>,
+        Vec<u8>,
+        Vec<u8>,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+        i64,
+    );
+    let rows = (|| -> Result<Vec<TopologyRow>, String> {
+        if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
+            return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
+        }
+        let index_oid = index_regclass.oid();
+        let (_control_guard, control_handle, _metadata, logical_index_uuid) = open_control_index(
+            index_oid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            "ec_distann_generation_topology",
+        )?;
+        let (_, control_owner, _) = relation_namespace_owner_persistence_handle(control_handle);
+        if control_owner == pg_sys::InvalidOid {
+            return Err("EC_SCHEMA_MISMATCH: control relation owner is invalid".to_owned());
+        }
+        let Some(generation) =
+            generation_catalog::lookup_generation(index_oid, logical_index_uuid, build_id)?
+        else {
+            return Ok(Vec::new());
+        };
+        if !matches!(generation.state.as_str(), "Building" | "Ready") {
+            return Ok(Vec::new());
+        }
+        let descriptor = DistannGenerationDescriptor::decode(&generation.generation_descriptor)?;
+        if descriptor.digest()? != generation.generation_descriptor_digest
+            || roster_digest(&descriptor.roster)? != generation.roster_digest
+        {
+            return Err(
+                "EC_GENERATION_DESCRIPTOR: cataloged generation descriptor identity is corrupt"
+                    .to_owned(),
+            );
+        }
+        let binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
+        let shape = DistannHandoffShape {
+            code_stride: binding.code_len(usize::from(descriptor.dimensions))?,
+            graph_degree: usize::from(descriptor.graph_degree),
+            non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
+        };
+        // Hold AccessShareLock on each physical relation so a concurrent
+        // retirement reclaim (which drops them under AccessExclusiveLock) cannot
+        // delete storage mid-inspection.
+        let row_relation = HeapRelationGuard::try_open(
+            generation.row_tier_relid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )
+        .ok_or_else(|| "EC_GENERATION_MISSING: row-tier relation is absent".to_owned())?;
+        let _graph_relation_guard = HeapRelationGuard::try_open(
+            generation.graph_store_relid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )
+        .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
+        // The local directory is a unique index on the graph relation, not a
+        // heap, so it is lock-held by OID rather than opened as a table. The
+        // AccessShareLock (released at transaction end) blocks a concurrent
+        // reclaim from dropping it mid-inspection.
+        unsafe {
+            pg_sys::LockRelationOid(
+                generation.directory_relid,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            )
+        };
+        validate_generation_relations(&generation, &descriptor, control_owner)?;
+        let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
+        let row_relation_name = qualified_relation_name(generation.row_tier_relid)?;
+        let identity_attnum = identity_attnum(index_oid)?;
+        let row_count = relation_row_count(&row_relation_name)?;
+        let summary = with_restricted_type_io_owner(control_owner, || {
+            diagnose_physical_generation(
+                &generation,
+                &descriptor,
+                shape,
+                identity_attnum,
+                &row_relation,
+                &graph_relation,
+                row_count,
+            )
+        })?;
+        let (graph_bytes, row_tier_bytes, directory_bytes) = generation_sizes(&generation)?;
+        let control_index_bytes = control_index_total_bytes(index_oid)?;
+        let to_i64 = |value: u64, field: &str| -> Result<i64, String> {
+            i64::try_from(value).map_err(|_| format!("EC_BUILD_INCOMPLETE: {field} exceeds bigint"))
+        };
+        Ok(vec![(
+            i32::try_from(generation.node_id)
+                .map_err(|_| "EC_BUILD_INCOMPLETE: node id exceeds integer".to_owned())?,
+            generation.state.clone(),
+            to_i64(summary.record_count, "record_count")?,
+            to_i64(row_count, "row_count")?,
+            summary.owned_vec_id_digest.to_vec(),
+            summary.graph_digest.to_vec(),
+            summary.row_tier_digest.to_vec(),
+            to_i64(summary.non_owned_live_count, "non_owned_live_count")?,
+            to_i64(summary.non_owned_tombstone_count, "non_owned_tombstone_count")?,
+            to_i64(summary.orphan_record_count, "orphan_record_count")?,
+            to_i64(summary.orphan_row_count, "orphan_row_count")?,
+            to_i64(graph_bytes, "graph_bytes")?,
+            to_i64(row_tier_bytes, "row_tier_bytes")?,
+            to_i64(directory_bytes, "directory_bytes")?,
+            to_i64(control_index_bytes, "control_index_bytes")?,
+        )])
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    TableIterator::new(rows.into_iter())
 }
 
 #[pg_extern(volatile, strict, parallel_restricted)]

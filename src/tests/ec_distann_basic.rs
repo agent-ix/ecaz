@@ -3533,6 +3533,167 @@ fn test_distann_seal_ready_replay_and_receipt() {
 }
 
 #[pg_test]
+fn test_distann_generation_topology_reports_ready_and_building() {
+    use sha2::Digest;
+
+    struct TopologyRow {
+        node_id: i32,
+        state: String,
+        record_count: i64,
+        row_count: i64,
+        owned_vec_id_digest: Vec<u8>,
+        graph_digest: Vec<u8>,
+        row_tier_digest: Vec<u8>,
+        non_owned_live_count: i64,
+        non_owned_tombstone_count: i64,
+        orphan_record_count: i64,
+        orphan_row_count: i64,
+        graph_bytes: i64,
+        row_tier_bytes: i64,
+        directory_bytes: i64,
+        control_index_bytes: i64,
+    }
+
+    let fixture = create_distann_physical_generation_fixture("ec_distann_topology", 0x3c);
+    let index_oid = fixture.index_oid;
+    let topology = move |build_id: &str| -> Option<TopologyRow> {
+        Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT node_id, state, record_count, row_count,
+                                owned_vec_id_digest, graph_digest, row_tier_digest,
+                                non_owned_live_count, non_owned_tombstone_count,
+                                orphan_record_count, orphan_row_count,
+                                graph_bytes, row_tier_bytes, directory_bytes,
+                                control_index_bytes
+                           FROM ec_distann_generation_topology(
+                               $1::oid::regclass, '{build_id}'::uuid
+                           )"
+                    ),
+                    None,
+                    &[index_oid.into()],
+                )
+                .expect("topology should execute")
+                .map(|row| TopologyRow {
+                    node_id: row["node_id"].value::<i32>().unwrap().unwrap(),
+                    state: row["state"].value::<String>().unwrap().unwrap(),
+                    record_count: row["record_count"].value::<i64>().unwrap().unwrap(),
+                    row_count: row["row_count"].value::<i64>().unwrap().unwrap(),
+                    owned_vec_id_digest: row["owned_vec_id_digest"]
+                        .value::<Vec<u8>>()
+                        .unwrap()
+                        .unwrap(),
+                    graph_digest: row["graph_digest"].value::<Vec<u8>>().unwrap().unwrap(),
+                    row_tier_digest: row["row_tier_digest"].value::<Vec<u8>>().unwrap().unwrap(),
+                    non_owned_live_count: row["non_owned_live_count"]
+                        .value::<i64>()
+                        .unwrap()
+                        .unwrap(),
+                    non_owned_tombstone_count: row["non_owned_tombstone_count"]
+                        .value::<i64>()
+                        .unwrap()
+                        .unwrap(),
+                    orphan_record_count: row["orphan_record_count"].value::<i64>().unwrap().unwrap(),
+                    orphan_row_count: row["orphan_row_count"].value::<i64>().unwrap().unwrap(),
+                    graph_bytes: row["graph_bytes"].value::<i64>().unwrap().unwrap(),
+                    row_tier_bytes: row["row_tier_bytes"].value::<i64>().unwrap().unwrap(),
+                    directory_bytes: row["directory_bytes"].value::<i64>().unwrap().unwrap(),
+                    control_index_bytes: row["control_index_bytes"].value::<i64>().unwrap().unwrap(),
+                })
+                .next()
+        })
+    };
+    let build_id = fixture.build_id.to_string();
+
+    let (batch_digest, encoded_batch, vec_id) = distann_stage_batch_fixture(&fixture, 0, 0x77);
+    let owner_digest = distann_owner_digest_for_batch(&fixture, &encoded_batch);
+    begin_distann_physical_generation_count(&fixture, 1, &owner_digest);
+
+    // Building, before any batch is staged: an empty physical generation.
+    let building = topology(&build_id).expect("Building generation must report topology");
+    assert_eq!(building.state, "Building");
+    assert_eq!((building.record_count, building.row_count), (0, 0));
+    assert_eq!(building.node_id, 17);
+    assert_eq!(
+        (
+            building.non_owned_live_count,
+            building.non_owned_tombstone_count,
+            building.orphan_record_count,
+            building.orphan_row_count
+        ),
+        (0, 0, 0, 0)
+    );
+    assert!(building.control_index_bytes > 0);
+
+    // Building, after one owned record is staged.
+    let staged = stage_distann_physical_batch(&fixture, 0, &batch_digest, &encoded_batch);
+    assert_eq!((staged.0, staged.1), (1, 1));
+    let staged_topology = topology(&build_id).expect("staged Building generation must report");
+    assert_eq!(staged_topology.state, "Building");
+    assert_eq!(
+        (staged_topology.record_count, staged_topology.row_count),
+        (1, 1)
+    );
+    assert_eq!(
+        (
+            staged_topology.non_owned_live_count,
+            staged_topology.non_owned_tombstone_count,
+            staged_topology.orphan_record_count,
+            staged_topology.orphan_row_count
+        ),
+        (0, 0, 0, 0)
+    );
+
+    // Ready: topology digests must equal the sealed Ready receipt exactly.
+    let receipt = crate::am::ec_distann::DistannReadyReceipt::decode(
+        &seal_distann_physical_generation(&fixture, 1, &owner_digest),
+    )
+    .expect("Ready receipt should decode");
+    let ready = topology(&build_id).expect("Ready generation must report topology");
+    assert_eq!(ready.state, "Ready");
+    assert_eq!((ready.record_count, ready.row_count), (1, 1));
+    assert_eq!(
+        (
+            ready.non_owned_live_count,
+            ready.non_owned_tombstone_count,
+            ready.orphan_record_count,
+            ready.orphan_row_count
+        ),
+        (0, 0, 0, 0)
+    );
+    assert_eq!(
+        ready.graph_digest,
+        receipt.persisted_graph_digest.to_vec(),
+        "graph digest must equal the Ready receipt"
+    );
+    assert_eq!(
+        ready.row_tier_digest,
+        receipt.persisted_row_tier_digest.to_vec(),
+        "row-tier digest must equal the Ready receipt"
+    );
+    assert_eq!(ready.graph_bytes, receipt.graph_bytes as i64);
+    assert_eq!(ready.row_tier_bytes, receipt.row_tier_bytes as i64);
+    assert_eq!(ready.directory_bytes, receipt.directory_bytes as i64);
+    assert!(ready.control_index_bytes > 0);
+
+    let mut owned_hasher = sha2::Sha256::new();
+    owned_hasher.update(b"ec_distann_owned_vec_ids_v1\0");
+    owned_hasher.update(vec_id.to_le_bytes());
+    assert_eq!(
+        ready.owned_vec_id_digest,
+        owned_hasher.finalize().to_vec(),
+        "owned vec-id digest must hash the single owned vec_id"
+    );
+
+    // An unknown build id resolves to no generation and reports no rows.
+    assert!(
+        topology("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").is_none(),
+        "unknown build id must yield no topology rows"
+    );
+}
+
+#[pg_test]
 fn test_distann_source_capture_spools_complete_frozen_rows() {
     unsafe { crate::am::ec_distann::test_physical_capture_dead_callback_does_not_access_datums() };
     Spi::run(
