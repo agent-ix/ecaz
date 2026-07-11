@@ -1,7 +1,7 @@
 //! Bounded coordinator-side routing of canonical graph entries to owners.
 
 use super::handoff_wire::{
-    DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannOwnerStreamHasher,
+    DistannEncodedHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannOwnerStreamHasher,
     DISTANN_HANDOFF_MAX_BYTES,
 };
 use super::placement::owning_node;
@@ -35,30 +35,32 @@ pub(crate) struct DistannHandoffRouteIdentity {
 }
 
 struct OwnerBuffer {
-    entries: Vec<DistannHandoffEntry>,
-    encoded_entry_section_bytes: usize,
+    wire: DistannEncodedHandoffBatch,
     next_batch_seq: u64,
     cumulative_record_count: u64,
     cumulative_hasher: DistannOwnerStreamHasher,
+    pending_hasher: DistannOwnerStreamHasher,
 }
 
 impl OwnerBuffer {
-    fn new() -> Self {
-        Self {
-            entries: Vec::new(),
-            encoded_entry_section_bytes: 0,
+    fn new(identity: &DistannHandoffRouteIdentity, max_batch_bytes: usize) -> Result<Self, String> {
+        let cumulative_hasher = DistannOwnerStreamHasher::new();
+        Ok(Self {
+            wire: DistannEncodedHandoffBatch::new(
+                identity.epoch,
+                identity.build_id,
+                0,
+                identity.build_spec_digest,
+                identity.row_schema_fingerprint,
+                identity.index_format_version,
+                identity.neighbor_codec_kind,
+                max_batch_bytes,
+            )?,
             next_batch_seq: 0,
             cumulative_record_count: 0,
-            cumulative_hasher: DistannOwnerStreamHasher::new(),
-        }
-    }
-
-    fn encoded_batch_bytes_with(&self, encoded_entry_bytes: usize) -> Result<usize, String> {
-        EMPTY_BATCH_ENCODED_BYTES
-            .checked_add(self.encoded_entry_section_bytes)
-            .and_then(|bytes| bytes.checked_add(4))
-            .and_then(|bytes| bytes.checked_add(encoded_entry_bytes))
-            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: owner batch length overflow".to_owned())
+            pending_hasher: cumulative_hasher.clone(),
+            cumulative_hasher,
+        })
     }
 }
 
@@ -93,18 +95,23 @@ impl DistannOwnerBatchRouter {
         {
             return Err("EC_HANDOFF_TOO_LARGE: invalid owner batch bound".to_owned());
         }
-        Ok(Self {
+        let owners = (0..owner_count)
+            .map(|_| OwnerBuffer::new(&identity, max_batch_bytes))
+            .collect::<Result<Vec<_>, _>>()?;
+        let router = Self {
             identity,
             shape,
             max_batch_bytes,
-            owners: (0..owner_count).map(|_| OwnerBuffer::new()).collect(),
+            owners,
             previous_vec_id: None,
-        })
+        };
+        router.check_retained_capacity()?;
+        Ok(router)
     }
 
     pub(crate) fn push<F>(
         &mut self,
-        entry: DistannHandoffEntry,
+        entry: &DistannHandoffEntry,
         stage: &mut F,
     ) -> Result<(), String>
     where
@@ -124,10 +131,12 @@ impl DistannOwnerBatchRouter {
             self.owners.len(),
             self.identity.placement_hash_version,
         );
-        let encoded_entry_bytes = entry.encode(self.shape)?.len();
-        if self.owners[owner].encoded_batch_bytes_with(encoded_entry_bytes)? > self.max_batch_bytes
-        {
-            if self.owners[owner].entries.is_empty() {
+        let encoded_entry_bytes = entry.encoded_len(self.shape)?;
+        if self.owners[owner].wire.is_finalized() {
+            self.flush_owner(owner, stage)?;
+        }
+        if !self.owners[owner].wire.can_append(encoded_entry_bytes)? {
+            if self.owners[owner].wire.entry_count() == 0 {
                 return Err(
                     "EC_HANDOFF_TOO_LARGE: one complete owner entry exceeds the batch bound"
                         .to_owned(),
@@ -136,56 +145,47 @@ impl DistannOwnerBatchRouter {
             self.flush_owner(owner, stage)?;
         }
         let owner_buffer = &mut self.owners[owner];
-        owner_buffer.encoded_entry_section_bytes = owner_buffer
-            .encoded_entry_section_bytes
-            .checked_add(4 + encoded_entry_bytes)
-            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: owner entry section overflow".to_owned())?;
-        owner_buffer.entries.push(entry);
-        self.previous_vec_id = Some(owner_buffer.entries.last().unwrap().vec_id);
-        Ok(())
-    }
-
-    fn batch(&self, owner: usize) -> DistannHandoffBatch {
-        let buffer = &self.owners[owner];
-        DistannHandoffBatch {
-            epoch: self.identity.epoch,
-            build_id: self.identity.build_id,
-            batch_seq: buffer.next_batch_seq,
-            build_spec_digest: self.identity.build_spec_digest,
-            row_schema_fingerprint: self.identity.row_schema_fingerprint,
-            index_format_version: self.identity.index_format_version,
-            neighbor_codec_kind: self.identity.neighbor_codec_kind,
-            entries: buffer.entries.clone(),
+        let previous_wire_len = owner_buffer.wire.wire().len();
+        let previous_entry_count = owner_buffer.wire.entry_count();
+        let encoded_range = owner_buffer.wire.append_entry(entry, self.shape)?;
+        let mut pending_hasher = owner_buffer.pending_hasher.clone();
+        if let Err(error) =
+            pending_hasher.update_encoded_entry(&owner_buffer.wire.wire()[encoded_range])
+        {
+            owner_buffer
+                .wire
+                .rollback_unfinalized_append(previous_wire_len, previous_entry_count);
+            return Err(error);
         }
+        owner_buffer.pending_hasher = pending_hasher;
+        self.previous_vec_id = Some(entry.vec_id);
+        self.check_retained_capacity()?;
+        Ok(())
     }
 
     fn flush_owner<F>(&mut self, owner: usize, stage: &mut F) -> Result<(), String>
     where
         F: FnMut(usize, u64, &[u8; 32], &[u8]) -> Result<DistannStageAck, String>,
     {
-        let batch = self.batch(owner);
-        let encoded = batch.encode(self.shape)?;
-        if encoded.len() > self.max_batch_bytes {
-            return Err("EC_HANDOFF_TOO_LARGE: encoded owner batch exceeds its bound".to_owned());
-        }
-        let batch_digest = batch.digest(self.shape)?;
+        let batch_digest = self.owners[owner].wire.finalize()?;
+        self.check_retained_capacity()?;
         let buffer = &self.owners[owner];
-        let mut expected_hasher = buffer.cumulative_hasher.clone();
-        for entry in &buffer.entries {
-            expected_hasher.update_entry(entry, self.shape)?;
-        }
-        let accepted_record_count = u64::try_from(buffer.entries.len())
-            .map_err(|_| "EC_HANDOFF_TOO_LARGE: owner batch entry count exceeds u64".to_owned())?;
+        let accepted_record_count = u64::from(buffer.wire.entry_count());
         let expected_cumulative_count = buffer
             .cumulative_record_count
             .checked_add(accepted_record_count)
             .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: owner record count overflow".to_owned())?;
-        let expected_cumulative_digest = expected_hasher.digest();
+        let expected_cumulative_digest = buffer.pending_hasher.digest();
 
         // Nothing in the owner state mutates until the exact acknowledgement
         // is validated. A transport failure therefore leaves this one batch
         // intact for an identical retry.
-        let ack = stage(owner, buffer.next_batch_seq, &batch_digest, &encoded)?;
+        let ack = stage(
+            owner,
+            buffer.next_batch_seq,
+            &batch_digest,
+            buffer.wire.wire(),
+        )?;
         if ack.accepted_record_count != accepted_record_count
             || ack.cumulative_record_count != expected_cumulative_count
             || ack.cumulative_owner_digest != expected_cumulative_digest
@@ -199,9 +199,10 @@ impl DistannOwnerBatchRouter {
             .checked_add(1)
             .ok_or_else(|| "EC_BATCH_SEQUENCE: owner batch sequence overflow".to_owned())?;
         buffer.cumulative_record_count = expected_cumulative_count;
-        buffer.cumulative_hasher = expected_hasher;
-        buffer.entries.clear();
-        buffer.encoded_entry_section_bytes = 0;
+        buffer.cumulative_hasher = buffer.pending_hasher.clone();
+        buffer.pending_hasher = buffer.cumulative_hasher.clone();
+        buffer.wire.reset(buffer.next_batch_seq);
+        self.check_retained_capacity()?;
         Ok(())
     }
 
@@ -213,7 +214,10 @@ impl DistannOwnerBatchRouter {
         F: FnMut(usize, u64, &[u8; 32], &[u8]) -> Result<DistannStageAck, String>,
     {
         for owner in 0..self.owners.len() {
-            if !self.owners[owner].entries.is_empty() || self.owners[owner].next_batch_seq == 0 {
+            if self.owners[owner].wire.entry_count() != 0
+                || self.owners[owner].next_batch_seq == 0
+                || self.owners[owner].wire.is_finalized()
+            {
                 self.flush_owner(owner, stage)?;
             }
         }
@@ -229,6 +233,31 @@ impl DistannOwnerBatchRouter {
             })
             .collect())
     }
+
+    fn check_retained_capacity(&self) -> Result<(), String> {
+        let maximum = self
+            .max_batch_bytes
+            .checked_mul(self.owners.len())
+            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: roster memory bound overflow".to_owned())?;
+        if self.retained_wire_capacity() > maximum
+            || self
+                .owners
+                .iter()
+                .any(|owner| owner.wire.retained_capacity() > self.max_batch_bytes)
+        {
+            return Err(
+                "EC_HANDOFF_TOO_LARGE: retained owner buffers exceed roster bound".to_owned(),
+            );
+        }
+        Ok(())
+    }
+
+    pub(crate) fn retained_wire_capacity(&self) -> usize {
+        self.owners
+            .iter()
+            .map(|owner| owner.wire.retained_capacity())
+            .sum()
+    }
 }
 
 #[cfg(test)]
@@ -239,7 +268,9 @@ mod tests {
     use crate::am::ec_distann::generation_descriptor::{
         DISTANN_PHYSICAL_INDEX_FORMAT_VERSION, DISTANN_PLACEMENT_HASH_VERSION,
     };
-    use crate::am::ec_distann::handoff_wire::{owner_stream_digest, sample_handoff_entry};
+    use crate::am::ec_distann::handoff_wire::{
+        owner_stream_digest, sample_handoff_entry, DistannHandoffBatch,
+    };
 
     fn identity() -> DistannHandoffRouteIdentity {
         DistannHandoffRouteIdentity {
@@ -304,7 +335,7 @@ mod tests {
             })
         };
         for entry in entries.clone() {
-            router.push(entry, &mut stage).unwrap();
+            router.push(&entry, &mut stage).unwrap();
         }
         let summaries = router.finish(&mut stage).unwrap();
         assert_eq!(summaries.len(), 4);
@@ -322,7 +353,7 @@ mod tests {
     fn router_retains_exact_unacknowledged_batch_after_failure() {
         let mut router = DistannOwnerBatchRouter::new(identity(), shape(), 1).unwrap();
         router
-            .push(sample_handoff_entry(7), &mut |_, _, _, _| unreachable!())
+            .push(&sample_handoff_entry(7), &mut |_, _, _, _| unreachable!())
             .unwrap();
         let mut first_encoded = None;
         let failure = router.finish(&mut |_, _, _, encoded| {
@@ -344,5 +375,101 @@ mod tests {
             .unwrap();
         assert_eq!(retried, first_encoded);
         assert_eq!(summaries[0].record_count, 1);
+    }
+
+    fn entry_for_batch_len(vec_id: u64, target_batch_len: usize) -> DistannHandoffEntry {
+        let mut entry = sample_handoff_entry(vec_id);
+        let current_batch_len = EMPTY_BATCH_ENCODED_BYTES + 4 + entry.encoded_len(shape()).unwrap();
+        let growth = target_batch_len
+            .checked_sub(current_batch_len)
+            .expect("target accommodates the sample entry");
+        let value = &mut entry.row_values[0];
+        value.resize(value.len() + growth, 0x5a);
+        assert_eq!(
+            EMPTY_BATCH_ENCODED_BYTES + 4 + entry.encoded_len(shape()).unwrap(),
+            target_batch_len
+        );
+        entry
+    }
+
+    #[test]
+    fn router_enforces_real_multi_owner_capacity_minus_exact_and_plus_one() {
+        let owner_count = 3;
+        let mut vec_ids = vec![None; owner_count];
+        for vec_id in 1..10_000 {
+            let owner = owning_node(vec_id, owner_count, DISTANN_PLACEMENT_HASH_VERSION);
+            vec_ids[owner].get_or_insert(vec_id);
+            if vec_ids.iter().all(Option::is_some) {
+                break;
+            }
+        }
+        let mut ordered = vec_ids
+            .into_iter()
+            .enumerate()
+            .map(|(owner, vec_id)| (vec_id.unwrap(), owner))
+            .collect::<Vec<_>>();
+        ordered.sort_unstable();
+
+        let mut router = DistannOwnerBatchRouter::new(identity(), shape(), owner_count).unwrap();
+        let mut expected_digests = vec![DistannOwnerStreamHasher::new().digest(); owner_count];
+        let targets = [
+            DISTANN_HANDOFF_MAX_BYTES - 1,
+            DISTANN_HANDOFF_MAX_BYTES,
+            DISTANN_HANDOFF_MAX_BYTES + 1,
+        ];
+        for ((vec_id, owner), target) in ordered.iter().copied().zip(targets) {
+            let entry = entry_for_batch_len(vec_id, target);
+            if target <= DISTANN_HANDOFF_MAX_BYTES {
+                expected_digests[owner] =
+                    owner_stream_digest(std::slice::from_ref(&entry), shape()).unwrap();
+                router
+                    .push(&entry, &mut |_, _, _, _| unreachable!())
+                    .unwrap();
+            } else {
+                let before_capacity = router.retained_wire_capacity();
+                let error = router
+                    .push(&entry, &mut |_, _, _, _| unreachable!())
+                    .unwrap_err();
+                assert!(error.contains("one complete owner entry exceeds"));
+                assert_eq!(router.owners[owner].wire.entry_count(), 0);
+                assert_eq!(router.owners[owner].wire.wire().len(), 109);
+                assert_eq!(router.retained_wire_capacity(), before_capacity);
+            }
+            assert!(router.retained_wire_capacity() <= owner_count * DISTANN_HANDOFF_MAX_BYTES);
+            assert!(router
+                .owners
+                .iter()
+                .all(|buffer| buffer.wire.retained_capacity() <= DISTANN_HANDOFF_MAX_BYTES));
+        }
+
+        let mut lengths = BTreeMap::new();
+        router
+            .finish(&mut |owner, seq, digest, encoded| {
+                assert_eq!(seq, 0);
+                assert_eq!(
+                    *digest,
+                    DistannHandoffBatch::verified_digest(encoded).unwrap()
+                );
+                lengths.insert(owner, encoded.len());
+                let accepted = u64::from(encoded.len() != EMPTY_BATCH_ENCODED_BYTES);
+                Ok(DistannStageAck {
+                    accepted_record_count: accepted,
+                    cumulative_record_count: accepted,
+                    cumulative_owner_digest: expected_digests[owner],
+                })
+            })
+            .unwrap();
+        let observed = ordered
+            .iter()
+            .map(|(_, owner)| lengths[owner])
+            .collect::<Vec<_>>();
+        assert_eq!(
+            observed,
+            vec![
+                DISTANN_HANDOFF_MAX_BYTES - 1,
+                DISTANN_HANDOFF_MAX_BYTES,
+                EMPTY_BATCH_ENCODED_BYTES,
+            ]
+        );
     }
 }

@@ -1,6 +1,7 @@
 //! FR-076 canonical epoch handoff entry and batch wire formats.
 
 use std::mem::size_of;
+use std::ops::Range;
 
 use sha2::{
     digest::{
@@ -10,9 +11,7 @@ use sha2::{
     Digest, Sha256,
 };
 
-use super::canonical_wire::{
-    domain_digest, is_rfc4122_v4_uuid, CanonicalDecoder, CanonicalEncoder,
-};
+use super::canonical_wire::{domain_digest, is_rfc4122_v4_uuid, CanonicalDecoder};
 use super::generation_descriptor::{
     DISTANN_HANDOFF_WIRE_VERSION, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
 };
@@ -25,6 +24,9 @@ pub const DISTANN_HANDOFF_MAX_BYTES: usize = 8 * 1024 * 1024;
 pub const DISTANN_HANDOFF_VERSION_OFFSET: usize = 0;
 pub const DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES: usize = 10;
 pub const DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES: usize = 109;
+const DISTANN_HANDOFF_BATCH_SEQUENCE_OFFSET: usize = 26;
+const DISTANN_HANDOFF_BATCH_ENTRY_COUNT_OFFSET: usize = 101;
+const DISTANN_HANDOFF_BATCH_ENTRY_BYTES_OFFSET: usize = 105;
 const HANDOFF_ENTRY_DOMAIN: &[u8] = b"ec_distann_handoff_entry_v1\0";
 const HANDOFF_BATCH_DOMAIN: &[u8] = b"ec_distann_handoff_batch_v1\0";
 const OWNER_STREAM_DOMAIN: &[u8] = b"ec_distann_owner_stream_v1\0";
@@ -43,6 +45,14 @@ pub const DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET: usize = 44;
 
 const _: [(); 104] = [(); SHA256_SERIALIZED_STATE_BYTES];
 const _: [(); 107] = [(); DISTANN_OWNER_STREAM_HASH_STATE_BYTES];
+
+fn append_len_prefixed(output: &mut Vec<u8>, value: &[u8]) -> Result<(), String> {
+    let length = u32::try_from(value.len())
+        .map_err(|_| "EC_HANDOFF_TOO_LARGE: canonical field exceeds u32".to_owned())?;
+    output.extend_from_slice(&length.to_le_bytes());
+    output.extend_from_slice(value);
+    Ok(())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DistannHandoffShape {
@@ -150,38 +160,90 @@ impl DistannHandoffEntry {
         Ok(())
     }
 
-    pub fn encode(&self, shape: DistannHandoffShape) -> Result<Vec<u8>, String> {
+    pub(crate) fn encoded_len(&self, shape: DistannHandoffShape) -> Result<usize, String> {
         self.validate(shape)?;
-        let mut encoder = CanonicalEncoder::with_capacity(
-            64 + self.search_code.len() + self.neighbor_codes.len(),
-        );
-        encoder.put_u16(DISTANN_HANDOFF_WIRE_VERSION);
-        encoder.put_u64(self.vec_id);
-        encoder.put_len_prefixed(&self.source_identity)?;
-        encoder.put_u16(self.graph_flags);
-        encoder.put_len_prefixed(&self.search_code)?;
-        encoder.put_u32(
-            u32::try_from(self.neighbor_vec_ids.len())
-                .map_err(|_| "EC_HANDOFF_FORMAT: neighbor count exceeds u32".to_owned())?,
-        );
-        for neighbor in &self.neighbor_vec_ids {
-            encoder.put_u64(*neighbor);
+        u32::try_from(self.neighbor_vec_ids.len())
+            .map_err(|_| "EC_HANDOFF_FORMAT: neighbor count exceeds u32".to_owned())?;
+        u32::try_from(self.row_values.len())
+            .map_err(|_| "EC_HANDOFF_FORMAT: row value count exceeds u32".to_owned())?;
+        let mut length = 2_usize + 8 + 4 + self.source_identity.len() + 2;
+        for bytes in [
+            self.search_code.len(),
+            self.neighbor_codes.len(),
+            self.row_null_bitmap.len(),
+        ] {
+            u32::try_from(bytes)
+                .map_err(|_| "EC_HANDOFF_TOO_LARGE: handoff entry field exceeds u32".to_owned())?;
+            length = length
+                .checked_add(4 + bytes)
+                .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: handoff entry length overflow".to_owned())?;
         }
-        encoder.put_len_prefixed(&self.neighbor_codes)?;
-        encoder.put_len_prefixed(&self.row_null_bitmap)?;
-        encoder.put_u32(
-            u32::try_from(self.row_values.len())
-                .map_err(|_| "EC_HANDOFF_FORMAT: row value count exceeds u32".to_owned())?,
-        );
+        length = length
+            .checked_add(4 + self.neighbor_vec_ids.len() * size_of::<u64>())
+            .and_then(|value| value.checked_add(4))
+            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: handoff entry length overflow".to_owned())?;
         for value in &self.row_values {
-            encoder.put_len_prefixed(value)?;
+            u32::try_from(value.len())
+                .map_err(|_| "EC_HANDOFF_TOO_LARGE: row value exceeds u32".to_owned())?;
+            length = length
+                .checked_add(4 + value.len())
+                .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: handoff entry length overflow".to_owned())?;
         }
-        let encoded = encoder
-            .finish()
-            .map_err(|_| "EC_HANDOFF_TOO_LARGE: one handoff entry exceeds 8 MiB".to_owned())?;
-        if encoded.len() > DISTANN_HANDOFF_MAX_BYTES {
+        if length > DISTANN_HANDOFF_MAX_BYTES {
             return Err("EC_HANDOFF_TOO_LARGE: one handoff entry exceeds 8 MiB".to_owned());
         }
+        Ok(length)
+    }
+
+    pub(crate) fn encode_into(
+        &self,
+        shape: DistannHandoffShape,
+        output: &mut Vec<u8>,
+    ) -> Result<Range<usize>, String> {
+        let encoded_len = self.encoded_len(shape)?;
+        let start = output.len();
+        output
+            .try_reserve_exact(encoded_len)
+            .map_err(|_| "EC_HANDOFF_TOO_LARGE: could not reserve handoff entry".to_owned())?;
+        let result = (|| {
+            output.extend_from_slice(&DISTANN_HANDOFF_WIRE_VERSION.to_le_bytes());
+            output.extend_from_slice(&self.vec_id.to_le_bytes());
+            append_len_prefixed(output, &self.source_identity)?;
+            output.extend_from_slice(&self.graph_flags.to_le_bytes());
+            append_len_prefixed(output, &self.search_code)?;
+            output.extend_from_slice(
+                &u32::try_from(self.neighbor_vec_ids.len())
+                    .map_err(|_| "EC_HANDOFF_FORMAT: neighbor count exceeds u32".to_owned())?
+                    .to_le_bytes(),
+            );
+            for neighbor in &self.neighbor_vec_ids {
+                output.extend_from_slice(&neighbor.to_le_bytes());
+            }
+            append_len_prefixed(output, &self.neighbor_codes)?;
+            append_len_prefixed(output, &self.row_null_bitmap)?;
+            output.extend_from_slice(
+                &u32::try_from(self.row_values.len())
+                    .map_err(|_| "EC_HANDOFF_FORMAT: row value count exceeds u32".to_owned())?
+                    .to_le_bytes(),
+            );
+            for value in &self.row_values {
+                append_len_prefixed(output, value)?;
+            }
+            Ok::<(), String>(())
+        })();
+        if let Err(error) = result {
+            output.truncate(start);
+            return Err(error);
+        }
+        debug_assert_eq!(output.len() - start, encoded_len);
+        Ok(start..output.len())
+    }
+
+    pub fn encode(&self, shape: DistannHandoffShape) -> Result<Vec<u8>, String> {
+        let encoded_len = self.encoded_len(shape)?;
+        let mut encoded = Vec::with_capacity(encoded_len);
+        self.encode_into(shape, &mut encoded)?;
+        debug_assert_eq!(encoded.len(), encoded_len);
         Ok(encoded)
     }
 
@@ -318,39 +380,48 @@ impl DistannHandoffBatch {
 
     fn canonical_without_digest(&self, shape: DistannHandoffShape) -> Result<Vec<u8>, String> {
         self.validate(shape)?;
-        let encoded_entries = self
-            .entries
-            .iter()
-            .map(|entry| entry.encode(shape))
-            .collect::<Result<Vec<_>, _>>()?;
-        let encoded_entries_bytes = encoded_entries.iter().try_fold(0_usize, |total, entry| {
+        let encoded_entries_bytes = self.entries.iter().try_fold(0_usize, |total, entry| {
             total
-                .checked_add(4 + entry.len())
+                .checked_add(4 + entry.encoded_len(shape)?)
                 .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: batch length overflow".to_owned())
         })?;
-        let mut encoder = CanonicalEncoder::with_capacity(128 + encoded_entries_bytes);
-        encoder.put_u16(DISTANN_HANDOFF_WIRE_VERSION);
-        encoder.put_u64(self.epoch);
-        encoder.put_fixed(&self.build_id);
-        encoder.put_u64(self.batch_seq);
-        encoder.put_fixed(&self.build_spec_digest);
-        encoder.put_fixed(&self.row_schema_fingerprint);
-        encoder.put_u16(self.index_format_version);
-        encoder.put_u8(self.neighbor_codec_kind);
-        encoder.put_u32(
-            u32::try_from(self.entries.len())
-                .map_err(|_| "EC_HANDOFF_TOO_LARGE: entry count exceeds u32".to_owned())?,
-        );
-        encoder.put_u32(
-            u32::try_from(encoded_entries_bytes)
-                .map_err(|_| "EC_HANDOFF_TOO_LARGE: encoded entries exceed u32".to_owned())?,
-        );
-        for entry in encoded_entries {
-            encoder.put_len_prefixed(&entry)?;
+        let canonical_len = DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES
+            .checked_add(encoded_entries_bytes)
+            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: batch length overflow".to_owned())?;
+        let total_len = canonical_len
+            .checked_add(HANDOFF_DIGEST_BYTES)
+            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: batch length overflow".to_owned())?;
+        if total_len > DISTANN_HANDOFF_MAX_BYTES {
+            return Err(format!(
+                "EC_HANDOFF_TOO_LARGE: batch is {total_len} bytes, maximum is {DISTANN_HANDOFF_MAX_BYTES}"
+            ));
         }
-        encoder
-            .finish()
-            .map_err(|_| "EC_HANDOFF_TOO_LARGE: batch exceeds 8 MiB".to_owned())
+        let mut output = Vec::with_capacity(total_len);
+        output.extend_from_slice(&DISTANN_HANDOFF_WIRE_VERSION.to_le_bytes());
+        output.extend_from_slice(&self.epoch.to_le_bytes());
+        output.extend_from_slice(&self.build_id);
+        output.extend_from_slice(&self.batch_seq.to_le_bytes());
+        output.extend_from_slice(&self.build_spec_digest);
+        output.extend_from_slice(&self.row_schema_fingerprint);
+        output.extend_from_slice(&self.index_format_version.to_le_bytes());
+        output.push(self.neighbor_codec_kind);
+        output.extend_from_slice(
+            &u32::try_from(self.entries.len())
+                .map_err(|_| "EC_HANDOFF_TOO_LARGE: entry count exceeds u32".to_owned())?
+                .to_le_bytes(),
+        );
+        output.extend_from_slice(
+            &u32::try_from(encoded_entries_bytes)
+                .map_err(|_| "EC_HANDOFF_TOO_LARGE: encoded entries exceed u32".to_owned())?
+                .to_le_bytes(),
+        );
+        for entry in &self.entries {
+            let encoded_len = entry.encoded_len(shape)?;
+            output.extend_from_slice(&(encoded_len as u32).to_le_bytes());
+            entry.encode_into(shape, &mut output)?;
+        }
+        debug_assert_eq!(output.len(), canonical_len);
+        Ok(output)
     }
 
     pub fn encode(&self, shape: DistannHandoffShape) -> Result<Vec<u8>, String> {
@@ -425,6 +496,188 @@ impl DistannHandoffBatch {
             HANDOFF_BATCH_DOMAIN,
             &self.canonical_without_digest(shape)?,
         ))
+    }
+}
+
+/// The coordinator's single retained representation of one owner batch.
+/// Entries are appended directly in canonical form, then count/length fields
+/// are patched and the digest trailer is appended in the same allocation.
+pub(crate) struct DistannEncodedHandoffBatch {
+    wire: Vec<u8>,
+    entry_count: u32,
+    entry_section_bytes: u32,
+    finalized_digest: Option<[u8; HANDOFF_DIGEST_BYTES]>,
+    max_bytes: usize,
+}
+
+impl DistannEncodedHandoffBatch {
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn new(
+        epoch: u64,
+        build_id: [u8; 16],
+        batch_seq: u64,
+        build_spec_digest: [u8; 32],
+        row_schema_fingerprint: [u8; 32],
+        index_format_version: u16,
+        neighbor_codec_kind: u8,
+        max_bytes: usize,
+    ) -> Result<Self, String> {
+        if max_bytes < DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES + HANDOFF_DIGEST_BYTES
+            || max_bytes > DISTANN_HANDOFF_MAX_BYTES
+        {
+            return Err("EC_HANDOFF_TOO_LARGE: invalid owner batch bound".to_owned());
+        }
+        let mut wire = Vec::new();
+        wire.try_reserve_exact(DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES)
+            .map_err(|_| "EC_HANDOFF_TOO_LARGE: could not reserve batch prefix".to_owned())?;
+        wire.extend_from_slice(&DISTANN_HANDOFF_WIRE_VERSION.to_le_bytes());
+        wire.extend_from_slice(&epoch.to_le_bytes());
+        wire.extend_from_slice(&build_id);
+        wire.extend_from_slice(&batch_seq.to_le_bytes());
+        wire.extend_from_slice(&build_spec_digest);
+        wire.extend_from_slice(&row_schema_fingerprint);
+        wire.extend_from_slice(&index_format_version.to_le_bytes());
+        wire.push(neighbor_codec_kind);
+        wire.extend_from_slice(&0_u32.to_le_bytes());
+        wire.extend_from_slice(&0_u32.to_le_bytes());
+        debug_assert_eq!(wire.len(), DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES);
+        let batch = Self {
+            wire,
+            entry_count: 0,
+            entry_section_bytes: 0,
+            finalized_digest: None,
+            max_bytes,
+        };
+        batch.check_capacity()?;
+        Ok(batch)
+    }
+
+    fn check_capacity(&self) -> Result<(), String> {
+        if self.wire.capacity() > self.max_bytes {
+            return Err(format!(
+                "EC_HANDOFF_TOO_LARGE: retained owner capacity {} exceeds {}",
+                self.wire.capacity(),
+                self.max_bytes
+            ));
+        }
+        Ok(())
+    }
+
+    pub(crate) fn can_append(&self, encoded_entry_bytes: usize) -> Result<bool, String> {
+        if self.finalized_digest.is_some() {
+            return Ok(false);
+        }
+        self.wire
+            .len()
+            .checked_add(4)
+            .and_then(|bytes| bytes.checked_add(encoded_entry_bytes))
+            .and_then(|bytes| bytes.checked_add(HANDOFF_DIGEST_BYTES))
+            .map(|bytes| bytes <= self.max_bytes)
+            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: owner batch length overflow".to_owned())
+    }
+
+    pub(crate) fn append_entry(
+        &mut self,
+        entry: &DistannHandoffEntry,
+        shape: DistannHandoffShape,
+    ) -> Result<Range<usize>, String> {
+        let encoded_entry_bytes = entry.encoded_len(shape)?;
+        if !self.can_append(encoded_entry_bytes)? {
+            return Err("EC_HANDOFF_TOO_LARGE: entry does not fit owner batch".to_owned());
+        }
+        let framed_bytes = 4_usize
+            .checked_add(encoded_entry_bytes)
+            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: owner entry length overflow".to_owned())?;
+        self.wire
+            .try_reserve_exact(framed_bytes)
+            .map_err(|_| "EC_HANDOFF_TOO_LARGE: could not reserve owner entry".to_owned())?;
+        self.check_capacity()?;
+        let previous_len = self.wire.len();
+        self.wire
+            .extend_from_slice(&(encoded_entry_bytes as u32).to_le_bytes());
+        let range = match entry.encode_into(shape, &mut self.wire) {
+            Ok(range) => range,
+            Err(error) => {
+                self.wire.truncate(previous_len);
+                return Err(error);
+            }
+        };
+        self.entry_count = self
+            .entry_count
+            .checked_add(1)
+            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: owner entry count exceeds u32".to_owned())?;
+        self.entry_section_bytes = self
+            .entry_section_bytes
+            .checked_add(framed_bytes as u32)
+            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: owner entry section exceeds u32".to_owned())?;
+        self.check_capacity()?;
+        Ok(range)
+    }
+
+    pub(crate) fn finalize(&mut self) -> Result<[u8; HANDOFF_DIGEST_BYTES], String> {
+        if let Some(digest) = self.finalized_digest {
+            return Ok(digest);
+        }
+        let expected_len = DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES
+            .checked_add(self.entry_section_bytes as usize)
+            .and_then(|bytes| bytes.checked_add(HANDOFF_DIGEST_BYTES))
+            .ok_or_else(|| "EC_HANDOFF_TOO_LARGE: owner batch length overflow".to_owned())?;
+        if expected_len > self.max_bytes {
+            return Err("EC_HANDOFF_TOO_LARGE: encoded owner batch exceeds its bound".to_owned());
+        }
+        self.wire[DISTANN_HANDOFF_BATCH_ENTRY_COUNT_OFFSET
+            ..DISTANN_HANDOFF_BATCH_ENTRY_COUNT_OFFSET + 4]
+            .copy_from_slice(&self.entry_count.to_le_bytes());
+        self.wire[DISTANN_HANDOFF_BATCH_ENTRY_BYTES_OFFSET
+            ..DISTANN_HANDOFF_BATCH_ENTRY_BYTES_OFFSET + 4]
+            .copy_from_slice(&self.entry_section_bytes.to_le_bytes());
+        let digest = domain_digest(HANDOFF_BATCH_DOMAIN, &self.wire);
+        self.wire
+            .try_reserve_exact(HANDOFF_DIGEST_BYTES)
+            .map_err(|_| "EC_HANDOFF_TOO_LARGE: could not reserve batch digest".to_owned())?;
+        self.check_capacity()?;
+        self.wire.extend_from_slice(&digest);
+        debug_assert_eq!(self.wire.len(), expected_len);
+        self.finalized_digest = Some(digest);
+        Ok(digest)
+    }
+
+    pub(crate) fn reset(&mut self, next_batch_seq: u64) {
+        self.wire.truncate(DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES);
+        self.wire[DISTANN_HANDOFF_BATCH_SEQUENCE_OFFSET..DISTANN_HANDOFF_BATCH_SEQUENCE_OFFSET + 8]
+            .copy_from_slice(&next_batch_seq.to_le_bytes());
+        self.wire[DISTANN_HANDOFF_BATCH_ENTRY_COUNT_OFFSET
+            ..DISTANN_HANDOFF_BATCH_ENTRY_COUNT_OFFSET + 8]
+            .fill(0);
+        self.entry_count = 0;
+        self.entry_section_bytes = 0;
+        self.finalized_digest = None;
+    }
+
+    pub(crate) fn entry_count(&self) -> u32 {
+        self.entry_count
+    }
+
+    pub(crate) fn is_finalized(&self) -> bool {
+        self.finalized_digest.is_some()
+    }
+
+    pub(crate) fn wire(&self) -> &[u8] {
+        &self.wire
+    }
+
+    pub(crate) fn rollback_unfinalized_append(&mut self, previous_len: usize, previous_count: u32) {
+        debug_assert!(self.finalized_digest.is_none());
+        debug_assert!(previous_len >= DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES);
+        self.wire.truncate(previous_len);
+        self.entry_count = previous_count;
+        self.entry_section_bytes =
+            u32::try_from(previous_len - DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES)
+                .expect("bounded owner entry section fits u32");
+    }
+
+    pub(crate) fn retained_capacity(&self) -> usize {
+        self.wire.capacity()
     }
 }
 

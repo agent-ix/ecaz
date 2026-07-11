@@ -5,6 +5,7 @@
 //! leave relation-file growth even though no tuple becomes visible.
 
 use std::ffi::CStr;
+use std::panic::AssertUnwindSafe;
 
 use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
@@ -13,6 +14,7 @@ use sha2::{Digest, Sha256};
 
 use crate::am::common::heap_slot::TupleSlotWriter;
 use crate::storage::page::ItemPointer;
+use crate::storage::relation::relation_namespace_owner_persistence_handle;
 use crate::storage::relation_guard::HeapRelationGuard;
 use crate::storage::slot_guard::TupleTableSlotGuard;
 
@@ -55,6 +57,38 @@ struct PreparedEntry {
 const PERSISTED_GRAPH_DOMAIN: &[u8] = b"ec_distann_persisted_graph_v1\0";
 const PERSISTED_ROW_TIER_DOMAIN: &[u8] = b"ec_distann_persisted_row_tier_v1\0";
 const LOCAL_DIRECTORY_DOMAIN: &[u8] = b"ec_distann_local_directory_v1\0";
+
+/// Execute caller-controlled type I/O with the privileges of the control
+/// owner, never the SECURITY DEFINER endpoint owner.  PostgreSQL uses the
+/// same restricted-operation/GUC pattern while evaluating index expressions.
+/// `PgTryBuilder::finally` is required here because a domain CHECK or a type
+/// I/O function can raise a PostgreSQL ERROR rather than return normally.
+pub(crate) fn with_restricted_type_io_owner<R>(
+    owner: pg_sys::Oid,
+    operation: impl FnOnce() -> R,
+) -> R {
+    let mut saved_user = pg_sys::InvalidOid;
+    let mut saved_security_context = 0;
+    unsafe {
+        pg_sys::GetUserIdAndSecContext(&mut saved_user, &mut saved_security_context);
+    }
+    let guc_nest_level = unsafe { pg_sys::NewGUCNestLevel() };
+    pg_sys::PgTryBuilder::new(AssertUnwindSafe(|| {
+        unsafe {
+            pg_sys::SetUserIdAndSecContext(
+                owner,
+                saved_security_context | pg_sys::SECURITY_RESTRICTED_OPERATION as i32,
+            );
+            pg_sys::RestrictSearchPath();
+        }
+        operation()
+    }))
+    .finally(|| unsafe {
+        pg_sys::AtEOXact_GUC(false, guc_nest_level);
+        pg_sys::SetUserIdAndSecContext(saved_user, saved_security_context);
+    })
+    .execute()
+}
 
 fn fixed_digest(bytes: Vec<u8>, field: &str) -> Result<[u8; 32], String> {
     bytes.try_into().map_err(|bytes: Vec<u8>| {
@@ -141,6 +175,7 @@ fn identity_attnum(index_oid: pg_sys::Oid) -> Result<u16, String> {
 fn validate_generation_relations(
     row: &GenerationCatalogRow,
     descriptor: &DistannGenerationDescriptor,
+    control_owner: pg_sys::Oid,
 ) -> Result<(), String> {
     let mut expected_row_schema = descriptor.row_schema.clone();
     for attribute in &mut expected_row_schema.attributes {
@@ -162,7 +197,7 @@ fn validate_generation_relations(
                 "SELECT
                     EXISTS (
                         SELECT 1 FROM pg_catalog.pg_class
-                         WHERE oid = $1::oid AND relkind = 'r'
+                         WHERE oid = $1::oid AND relkind = 'r' AND relowner = $4::oid
                            AND relpersistence = 'p' AND NOT relrowsecurity
                            AND NOT relforcerowsecurity
                     )
@@ -186,7 +221,7 @@ fn validate_generation_relations(
                     )
                     AND EXISTS (
                         SELECT 1 FROM pg_catalog.pg_class
-                         WHERE oid = $2::oid AND relkind = 'r'
+                         WHERE oid = $2::oid AND relkind = 'r' AND relowner = $4::oid
                            AND relpersistence = 'p' AND NOT relrowsecurity
                            AND NOT relforcerowsecurity
                     )
@@ -227,13 +262,15 @@ fn validate_generation_relations(
                     AND EXISTS (
                         SELECT 1 FROM pg_catalog.pg_class c
                         JOIN pg_catalog.pg_am am ON am.oid = c.relam
-                         WHERE c.oid = $3::oid AND c.relkind = 'i' AND am.amname = 'btree'
+                         WHERE c.oid = $3::oid AND c.relkind = 'i'
+                           AND c.relowner = $4::oid AND am.amname = 'btree'
                     ) AS valid",
                 None,
                 &[
                     row.row_tier_relid.into(),
                     row.graph_store_relid.into(),
                     row.directory_relid.into(),
+                    control_owner.into(),
                 ],
             )
             .map_err(|error| {
@@ -870,11 +907,15 @@ fn ec_distann_stage_epoch_batch(
         }
 
         let index_oid = index_regclass.oid();
-        let (_control_guard, _handle, _metadata, logical_index_uuid) = open_control_index(
+        let (_control_guard, control_handle, _metadata, logical_index_uuid) = open_control_index(
             index_oid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
             "ec_distann_stage_epoch_batch",
         )?;
+        let (_, control_owner, _) = relation_namespace_owner_persistence_handle(control_handle);
+        if control_owner == pg_sys::InvalidOid {
+            return Err("EC_SCHEMA_MISMATCH: control relation owner is invalid".to_owned());
+        }
         let generation = generation_catalog::lookup_generation_for_update(
             index_oid,
             logical_index_uuid,
@@ -1001,12 +1042,19 @@ fn ec_distann_stage_epoch_batch(
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
         )
         .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
-        validate_generation_relations(&generation, &descriptor)?;
+        validate_generation_relations(&generation, &descriptor, control_owner)?;
         let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
         reject_existing_vec_ids(&graph_relation, &batch.entries)?;
         let identity_attnum = identity_attnum(index_oid)?;
         let mut row_io = unsafe { row_attribute_io(row_relation.as_ptr())? };
-        let mut prepared = prepare_entries(&batch.entries, shape, identity_attnum, &mut row_io)?;
+        let mut prepared = with_restricted_type_io_owner(control_owner, || {
+            prepare_entries(&batch.entries, shape, identity_attnum, &mut row_io)
+        })?;
+        if super::options::debug_fail_handoff_after_prepare() {
+            return Err(
+                "EC_FAULT_INJECTED: handoff failed after preparation before insertion".to_owned(),
+            );
+        }
 
         insert_prepared_entries(&row_relation, &graph_relation, &mut prepared, shape)?;
         let journal = GenerationBatchCatalogRow {
@@ -1056,11 +1104,15 @@ fn ec_distann_seal_epoch_handoff(
             .map_err(|_| "EC_BUILD_INCOMPLETE: expected owner count is negative".to_owned())?;
         let expected_owner_digest = fixed_digest(expected_owner_digest, "expected owner digest")?;
         let index_oid = index_regclass.oid();
-        let (_control_guard, _handle, _metadata, logical_index_uuid) = open_control_index(
+        let (_control_guard, control_handle, _metadata, logical_index_uuid) = open_control_index(
             index_oid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
             "ec_distann_seal_epoch_handoff",
         )?;
+        let (_, control_owner, _) = relation_namespace_owner_persistence_handle(control_handle);
+        if control_owner == pg_sys::InvalidOid {
+            return Err("EC_SCHEMA_MISMATCH: control relation owner is invalid".to_owned());
+        }
         let generation = generation_catalog::lookup_generation_for_update(
             index_oid,
             logical_index_uuid,
@@ -1135,18 +1187,20 @@ fn ec_distann_seal_epoch_handoff(
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
         )
         .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
-        validate_generation_relations(&generation, &descriptor)?;
+        validate_generation_relations(&generation, &descriptor, control_owner)?;
         let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
         let row_relation_name = qualified_relation_name(generation.row_tier_relid)?;
         let identity_attnum = identity_attnum(index_oid)?;
-        let physical = scan_physical_generation(
-            &generation,
-            &descriptor,
-            shape,
-            identity_attnum,
-            &row_relation,
-            &graph_relation,
-        )?;
+        let physical = with_restricted_type_io_owner(control_owner, || {
+            scan_physical_generation(
+                &generation,
+                &descriptor,
+                shape,
+                identity_attnum,
+                &row_relation,
+                &graph_relation,
+            )
+        })?;
         let row_count = relation_row_count(&row_relation_name)?;
         if physical.record_count != expected_owner_count
             || row_count != expected_owner_count

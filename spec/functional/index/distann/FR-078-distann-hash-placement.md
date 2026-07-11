@@ -206,16 +206,23 @@ created_at timestamptz)`
 - `ec_distann_build_epoch` SHALL require the matching durable registration and
   held session lock, capture one source MVCC snapshot in its new transaction,
   and consume the immutable registered roster, reloptions, and schema.
-- In the physical-generation lane, an index-build callback row with
-  `tuple_is_alive = false` is recently dead and SHALL be excluded before vector,
-  identity, or row-payload capture. Old snapshots continue to use the prior
-  Published epoch; the new frozen epoch contains only callback-live rows from
-  its single captured snapshot. The legacy non-control AM lane retains
-  PostgreSQL's normal recently-dead indexing behavior.
-- For every callback-live row, the coordinator SHALL fetch the exact callback
-  TID under that same snapshot before accepting any callback datum. If the
-  fetched vector or source-identity bytes differ from the callback datums, or
-  the tuple is absent under the snapshot, the build SHALL raise
+- In the physical-generation lane, the coordinator SHALL supply its one
+  registered MVCC snapshot to `table_index_build_scan` using concurrent-build
+  visibility semantics. PostgreSQL therefore filters recently-dead/invisible
+  rows before the callback and reports `tuple_is_alive = true` for rows it does
+  deliver. The callback SHALL nevertheless exclude a defensive
+  `tuple_is_alive = false` invocation before vector, identity, or row-payload
+  access. Old snapshots continue to use the prior Published epoch; the new
+  frozen epoch contains only rows visible in its single captured snapshot. The
+  legacy non-control AM lane retains PostgreSQL's normal SnapshotAny
+  recently-dead indexing behavior.
+- For every callback-live row, the coordinator SHALL resolve the callback's
+  index-entry TID under that same snapshot with the table AM index-fetch API
+  before accepting any callback datum. The callback TID MAY be a HOT root while
+  its datums describe the visible HOT member; exact physical-row fetch that
+  does not follow HOT chains is forbidden. If the resolved vector or
+  source-identity bytes differ from the callback datums, or no tuple is visible
+  through that index TID under the snapshot, the build SHALL raise
   `EC_SOURCE_SNAPSHOT` before graph construction, participant begin, or remote
   mutation.
 - The gate SHALL cause source DML and schema-changing DDL to fail closed if the

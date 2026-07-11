@@ -25,8 +25,7 @@ use crate::am::ec_diskann::{
 };
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::{DataPageChain, ItemPointer, METADATA_BLOCK_NUMBER};
-use crate::storage::relation::RelationHandle;
-use crate::storage::scan_guard::HeapScanGuard;
+use crate::storage::relation::{relation_namespace_owner_persistence_handle, RelationHandle};
 use crate::storage::slot_guard::TupleTableSlotGuard;
 use crate::storage::snapshot_guard::ActiveSnapshotGuard;
 use crate::storage::wal;
@@ -206,7 +205,8 @@ impl PhysicalGraphWorkspace {
         let mut router = DistannOwnerBatchRouter::new(identity, self.shape, owner_count)?;
         for order_index in 0..self.canonical_nodes.len() {
             let node = self.canonical_nodes[order_index];
-            router.push(self.entry_for_node(node)?, stage)?;
+            let entry = self.entry_for_node(node)?;
+            router.push(&entry, stage)?;
         }
         router.finish(stage)
     }
@@ -260,8 +260,8 @@ impl PhysicalCapturedRow {
 }
 
 struct PhysicalCaptureState {
-    heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
+    index_fetch: *mut pg_sys::IndexFetchTableData,
     slot: TupleTableSlotGuard<'static>,
     identity: DistannIdentityAttribute,
     key_attnum: i32,
@@ -270,6 +270,14 @@ struct PhysicalCaptureState {
     dimensions: u16,
     rows: Vec<PhysicalCapturedRow>,
     spool: SourcePayloadSpool,
+}
+
+struct TableIndexFetchGuard(NonNull<pg_sys::IndexFetchTableData>);
+
+impl Drop for TableIndexFetchGuard {
+    fn drop(&mut self) {
+        unsafe { pg_sys::table_index_fetch_end(self.0.as_ptr()) }
+    }
 }
 
 struct CollectedRow {
@@ -550,6 +558,50 @@ unsafe extern "C-unwind" fn ec_distann_build_callback(
     })
 }
 
+unsafe extern "C-unwind" fn ec_distann_physical_capture_callback(
+    _index: pg_sys::Relation,
+    tid: pg_sys::ItemPointer,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    tuple_is_alive: bool,
+    state: *mut c_void,
+) {
+    pg_am_callback!({
+        // A supplied MVCC/concurrent build scan filters invisible tuples and
+        // normally reports true here. Keep the defensive branch before any
+        // callback datum access so a future table AM cannot leak dead data.
+        if !tuple_is_alive {
+            return;
+        }
+        if state.is_null() {
+            pgrx::error!("EC_SOURCE_SNAPSHOT: physical capture state is NULL");
+        }
+        unsafe {
+            capture_physical_source_tuple(
+                tid,
+                values,
+                isnull,
+                &mut *state.cast::<PhysicalCaptureState>(),
+            )
+        }
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    })
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) unsafe fn test_physical_capture_dead_callback_does_not_access_datums() {
+    unsafe {
+        ec_distann_physical_capture_callback(
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            ptr::null_mut(),
+            false,
+            ptr::null_mut(),
+        )
+    }
+}
+
 /// Capture one immutable physical-build source snapshot without retaining a
 /// second epoch-sized copy of the PostgreSQL row payloads in backend memory.
 /// The caller must hold the source session lock and keep the active snapshot
@@ -588,6 +640,10 @@ pub(crate) unsafe fn capture_physical_source_rows(
     let source_schema = super::row_schema::resolve_relation_schema(
         crate::storage::relation::relation_oid_handle(heap_handle),
     )?;
+    let (_, source_owner, _) = relation_namespace_owner_persistence_handle(heap_handle);
+    if source_owner == pg_sys::InvalidOid {
+        return Err("EC_SCHEMA_UNSUPPORTED: source relation owner is invalid".to_owned());
+    }
     let key_attribute = unsafe { pg_sys::TupleDescAttr(tuple_desc, key_attnum - 1) };
     if key_attribute.is_null() || unsafe { (*key_attribute).attisdropped } {
         return Err("EC_SCHEMA_UNSUPPORTED: physical vector key is missing or dropped".to_owned());
@@ -597,21 +653,9 @@ pub(crate) unsafe fn capture_physical_source_rows(
     if dimensions == 0 {
         return Err("EC_SCHEMA_UNSUPPORTED: physical vector dimension is zero".to_owned());
     }
-    let snapshot = ActiveSnapshotGuard::latest_after_command_counter().ok_or_else(|| {
+    let snapshot = ActiveSnapshotGuard::transaction_after_command_counter().ok_or_else(|| {
         "EC_SOURCE_SNAPSHOT: could not register the frozen source snapshot".to_owned()
     })?;
-    let scan = unsafe {
-        HeapScanGuard::begin(
-            heap_relation,
-            &snapshot,
-            pg_sys::ScanOptions::SO_TYPE_SEQSCAN
-                | pg_sys::ScanOptions::SO_ALLOW_PAGEMODE
-                | pg_sys::ScanOptions::SO_ALLOW_STRAT,
-        )
-    }
-    .ok_or_else(|| "EC_SOURCE_SNAPSHOT: could not begin the frozen source scan".to_owned())?;
-    let scan_slot = unsafe { TupleTableSlotGuard::single_for_heap(heap_relation) }
-        .ok_or_else(|| "EC_SOURCE_SNAPSHOT: could not allocate source scan slot".to_owned())?;
     let exact_slot = unsafe { TupleTableSlotGuard::single_for_heap(heap_relation) }
         .ok_or_else(|| "EC_SOURCE_SNAPSHOT: could not allocate exact source slot".to_owned())?;
     let senders = unsafe { source_attribute_senders(tuple_desc)? };
@@ -621,9 +665,13 @@ pub(crate) unsafe fn capture_physical_source_rows(
             "EC_SCHEMA_MISMATCH: source schema and binary sender layout disagree".to_owned(),
         );
     }
+    let index_fetch = TableIndexFetchGuard(
+        NonNull::new(unsafe { pg_sys::table_index_fetch_begin(heap_relation) })
+            .ok_or_else(|| "EC_SOURCE_SNAPSHOT: could not begin exact index fetch".to_owned())?,
+    );
     let mut state = PhysicalCaptureState {
-        heap_relation,
         snapshot: snapshot.as_ptr(),
+        index_fetch: index_fetch.0.as_ptr(),
         slot: exact_slot,
         identity,
         key_attnum,
@@ -633,34 +681,46 @@ pub(crate) unsafe fn capture_physical_source_rows(
         rows: Vec::new(),
         spool: SourcePayloadSpool::create()?,
     };
-    while unsafe {
-        pg_sys::heap_getnextslot(
-            scan.as_ptr(),
-            pg_sys::ScanDirection::ForwardScanDirection,
-            scan_slot.as_ptr(),
+    let scan = unsafe {
+        pg_sys::table_beginscan_strat(
+            heap_relation,
+            snapshot.as_ptr(),
+            0,
+            ptr::null_mut(),
+            true,
+            true,
         )
-    } {
-        let mut values = [pg_sys::Datum::null(); 2];
-        let mut isnull = [false; 2];
-        values[0] =
-            unsafe { pg_sys::slot_getattr(scan_slot.as_ptr(), state.key_attnum, &mut isnull[0]) };
-        values[state.identity.index_attr_offset] = unsafe {
-            pg_sys::slot_getattr(
-                scan_slot.as_ptr(),
-                state.identity.heap_attnum,
-                &mut isnull[state.identity.index_attr_offset],
+    };
+    if scan.is_null() {
+        return Err("EC_SOURCE_SNAPSHOT: could not begin the frozen source scan".to_owned());
+    }
+    // PostgreSQL requires a supplied MVCC build scan to use concurrent-build
+    // visibility semantics. It also consumes and closes `scan` itself.
+    let previous_concurrent = unsafe { (*index_info).ii_Concurrent };
+    unsafe { (*index_info).ii_Concurrent = true };
+    let scanned = super::handoff::with_restricted_type_io_owner(source_owner, || {
+        pg_sys::PgTryBuilder::new(std::panic::AssertUnwindSafe(|| unsafe {
+            pg_sys::table_index_build_scan(
+                heap_relation,
+                index_relation,
+                index_info,
+                true,
+                false,
+                Some(ec_distann_physical_capture_callback),
+                (&mut state as *mut PhysicalCaptureState).cast(),
+                scan,
             )
-        };
-        let tid = unsafe { &mut (*scan_slot.as_ptr()).tts_tid };
-        unsafe {
-            capture_physical_source_tuple(
-                tid,
-                values.as_mut_ptr(),
-                isnull.as_mut_ptr(),
-                &mut state,
-            )?
-        };
-        unsafe { pg_sys::ExecClearTuple(scan_slot.as_ptr()) };
+        }))
+        .finally(|| unsafe {
+            (*index_info).ii_Concurrent = previous_concurrent;
+        })
+        .execute()
+    });
+    if scanned < state.rows.len() as f64 {
+        return Err(
+            "EC_SOURCE_SNAPSHOT: build scan reported fewer live rows than the callback captured"
+                .to_owned(),
+        );
     }
     Ok(PhysicalSourceCapture {
         rows: state.rows,
@@ -821,14 +881,14 @@ unsafe fn capture_physical_source_tuple(
     if unsafe { *isnull } {
         return Err("EC_SOURCE_SNAPSHOT: source scan vector is NULL".to_owned());
     }
-    let callback_vector = ecvector_datum_to_vec(unsafe { *values });
+    let mut callback_vector = ecvector_datum_to_vec(unsafe { *values });
     if callback_vector.len() != usize::from(state.dimensions) {
         return Err(
             "EC_SOURCE_SNAPSHOT: source-scan vector dimension differs from the typed key"
                 .to_owned(),
         );
     }
-    let callback_identity = unsafe { extract_identity_payload(state.identity, values, isnull) };
+    let mut callback_identity = unsafe { extract_identity_payload(state.identity, values, isnull) };
     let heap_tid = unsafe { decode_heap_tid(tid) };
     let mut exact_tid = pg_sys::ItemPointerData::default();
     pgrx::itemptr::item_pointer_set_all(
@@ -836,17 +896,40 @@ unsafe fn capture_physical_source_tuple(
         heap_tid.block_number,
         heap_tid.offset_number,
     );
+    match super::options::debug_source_capture_fault() {
+        1 => {
+            return Err(
+                "EC_SOURCE_SNAPSHOT: callback index TID has no visible row in the frozen snapshot"
+                    .to_owned(),
+            )
+        }
+        2 if !callback_vector.is_empty() => {
+            callback_vector[0] = f32::from_bits(callback_vector[0].to_bits() ^ 1)
+        }
+        3 => callback_identity[0] ^= 1,
+        _ => {}
+    }
     unsafe { pg_sys::ExecClearTuple(state.slot.as_ptr()) };
+    let mut call_again = false;
+    let mut all_dead = false;
     if !unsafe {
-        pg_sys::table_tuple_fetch_row_version(
-            state.heap_relation,
+        pg_sys::table_index_fetch_tuple(
+            state.index_fetch,
             &mut exact_tid,
             state.snapshot,
             state.slot.as_ptr(),
+            &mut call_again,
+            &mut all_dead,
         )
     } {
         return Err(
-            "EC_SOURCE_SNAPSHOT: source-scan TID is absent from the frozen snapshot".to_owned(),
+            "EC_SOURCE_SNAPSHOT: callback index TID has no visible row in the frozen snapshot"
+                .to_owned(),
+        );
+    }
+    if call_again {
+        return Err(
+            "EC_SOURCE_SNAPSHOT: callback index TID resolved to multiple visible rows".to_owned(),
         );
     }
     let mut key_is_null = false;

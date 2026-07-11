@@ -13,9 +13,9 @@ use super::{
     ECDISTANN_DEFAULT_ALPHA, ECDISTANN_DEFAULT_BEAM_WIDTH, ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
     ECDISTANN_DEFAULT_BUILD_SHARDS, ECDISTANN_DEFAULT_CLOSURE_EPSILON,
     ECDISTANN_DEFAULT_GRAPH_DEGREE, ECDISTANN_DEFAULT_HEAD_INDEX_CAP, ECDISTANN_DEFAULT_HOP_ROUNDS,
-    ECDISTANN_MAX_ALPHA, ECDISTANN_MAX_BEAM_WIDTH, ECDISTANN_MAX_BUILD_LIST_SIZE,
-    ECDISTANN_MAX_BUILD_SHARDS, ECDISTANN_MAX_CLOSURE_EPSILON, ECDISTANN_MAX_GRAPH_DEGREE,
-    ECDISTANN_MAX_HEAD_INDEX_CAP, ECDISTANN_MAX_HOP_ROUNDS, ECDISTANN_DEFAULT_TOP_K,
+    ECDISTANN_DEFAULT_TOP_K, ECDISTANN_MAX_ALPHA, ECDISTANN_MAX_BEAM_WIDTH,
+    ECDISTANN_MAX_BUILD_LIST_SIZE, ECDISTANN_MAX_BUILD_SHARDS, ECDISTANN_MAX_CLOSURE_EPSILON,
+    ECDISTANN_MAX_GRAPH_DEGREE, ECDISTANN_MAX_HEAD_INDEX_CAP, ECDISTANN_MAX_HOP_ROUNDS,
     ECDISTANN_MAX_TOP_K, ECDISTANN_MIN_ALPHA, ECDISTANN_MIN_BUILD_LIST_SIZE,
     ECDISTANN_MIN_BUILD_SHARDS, ECDISTANN_MIN_CLOSURE_EPSILON, ECDISTANN_MIN_GRAPH_DEGREE,
     ECDISTANN_MIN_HEAD_INDEX_CAP,
@@ -55,6 +55,16 @@ static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<
 /// aborting transaction must roll the staged pages back so no partial record is
 /// ever visible to a scan.
 static ECDISTANN_DEBUG_FAIL_INSERT_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+
+/// Packet 005 transaction-boundary fault: fail after a complete handoff batch
+/// has been decoded and all row datums prepared, but before the first physical
+/// row/graph/directory insertion.
+static ECDISTANN_DEBUG_FAIL_HANDOFF_AFTER_PREPARE_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+
+/// 0=off, 1=absent index TID, 2=callback vector mismatch, 3=callback identity
+/// mismatch. Used to exercise otherwise race-impossible single-snapshot checks.
+static ECDISTANN_DEBUG_SOURCE_CAPTURE_FAULT_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
 
 /// NFR-020 fault injection (debug only): when true, `apply_record_writes` errors
 /// after flipping the tombstone flags but before returning, simulating a lost
@@ -259,6 +269,24 @@ pub(super) fn register_gucs() {
         GucFlags::default(),
     );
     GucRegistry::define_bool_guc(
+        c"ec_distann.debug_fail_handoff_after_prepare",
+        c"Task 179 fault injection: fail a handoff batch after preparation and before insertion.",
+        c"When on, participant stage errors after complete canonical decode and type I/O preparation but before the first row-tier, graph, directory, journal, or progress mutation. Off by default.",
+        &ECDISTANN_DEBUG_FAIL_HANDOFF_AFTER_PREPARE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_distann.debug_source_capture_fault",
+        c"Task 179 source-callback mismatch fault selector.",
+        c"Debug-only deterministic source capture fault: 0 off, 1 absent index TID, 2 vector mismatch, 3 identity mismatch.",
+        &ECDISTANN_DEBUG_SOURCE_CAPTURE_FAULT_GUC,
+        0,
+        3,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
         c"ec_distann.debug_fail_tombstone_write",
         c"NFR-020 fault injection (debug): fail a tombstone write after the flag flip.",
         c"When on, apply_record_writes errors after flipping tombstone flags but before returning, simulating a lost remote tombstone write (mid-delete). The fault-drill matrix (TC-042) asserts the aborting transaction rolls the flags back so the record stays live. Off by default.",
@@ -269,7 +297,9 @@ pub(super) fn register_gucs() {
 }
 
 pub(super) fn current_top_k() -> usize {
-    usize::try_from(ECDISTANN_TOP_K_GUC.get()).unwrap_or(1).max(1)
+    usize::try_from(ECDISTANN_TOP_K_GUC.get())
+        .unwrap_or(1)
+        .max(1)
 }
 
 pub(super) fn scan_profile_notice_enabled() -> bool {
@@ -302,6 +332,14 @@ pub(super) fn debug_missing_node_record() -> bool {
 /// NFR-020 fault injection: fail a graph insert after staging, before publish.
 pub(super) fn debug_fail_insert() -> bool {
     ECDISTANN_DEBUG_FAIL_INSERT_GUC.get()
+}
+
+pub(super) fn debug_fail_handoff_after_prepare() -> bool {
+    ECDISTANN_DEBUG_FAIL_HANDOFF_AFTER_PREPARE_GUC.get()
+}
+
+pub(super) fn debug_source_capture_fault() -> i32 {
+    ECDISTANN_DEBUG_SOURCE_CAPTURE_FAULT_GUC.get()
 }
 
 /// NFR-020 fault injection: fail a tombstone write after the flag flip.
@@ -447,8 +485,9 @@ impl EcDistannReloptionsView {
             reloptions.neighbor_code_format_offset,
             "neighbor_code_format",
         ) {
-            Some(value) => NeighborCodeFormat::parse_reloption(&value)
-                .unwrap_or_else(|e| pgrx::error!("{e}")),
+            Some(value) => {
+                NeighborCodeFormat::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+            }
             None => NeighborCodeFormat::DEFAULT,
         };
         let source_identity = match self

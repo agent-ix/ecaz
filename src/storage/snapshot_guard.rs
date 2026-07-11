@@ -69,11 +69,23 @@ impl ActiveSnapshotGuard {
         Some(Self { snapshot })
     }
 
+    #[cfg(any(test, feature = "pg_test"))]
     pub(crate) fn latest_after_command_counter() -> Option<Self> {
-        // SAFETY: `CommandCounterIncrement` is valid before acquiring a fresh
-        // backend snapshot in PostgreSQL helper entry points.
         unsafe { pg_sys::CommandCounterIncrement() };
         Self::latest()
+    }
+
+    pub(crate) fn transaction_after_command_counter() -> Option<Self> {
+        // SAFETY: capture owns one transaction snapshot after making any
+        // preceding command-local writes visible, then keeps that exact
+        // registered pointer active for callback evaluation and refetch.
+        unsafe { pg_sys::CommandCounterIncrement() };
+        let snapshot = unsafe { pg_sys::RegisterSnapshot(pg_sys::GetTransactionSnapshot()) };
+        if snapshot.is_null() {
+            return None;
+        }
+        unsafe { pg_sys::PushActiveSnapshot(snapshot) };
+        Some(Self { snapshot })
     }
 
     pub(crate) fn as_ptr(&self) -> pg_sys::Snapshot {

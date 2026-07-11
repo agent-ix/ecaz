@@ -17,6 +17,7 @@ pub(crate) use self::ambuild::read_metadata_from_index;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::{
     build_physical_graph_workspace, capture_physical_source_rows,
+    test_physical_capture_dead_callback_does_not_access_datums,
 };
 mod canonical_wire;
 mod cost;
@@ -30,6 +31,8 @@ mod generation_catalog;
 mod generation_descriptor;
 mod generation_store;
 mod handoff;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::handoff::with_restricted_type_io_owner;
 mod handoff_router;
 mod handoff_wire;
 mod head_cache;

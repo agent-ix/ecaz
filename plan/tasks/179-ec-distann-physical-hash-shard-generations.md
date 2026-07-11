@@ -220,11 +220,14 @@ DataPageChain" to "build and yield canonical graph entries":
 - Retain only vectors/identity needed by Vamana and codec training. Spool full
   source-row payloads to PostgreSQL-managed temporary storage rather than
   retaining a second epoch-sized payload in memory.
-- Under the source session lock, fetch the exact callback TID into a tuple slot,
-  compare its indexed vector/source identity with the callback datums, and
-  serialize every non-dropped attribute through locally resolved `typsend`.
-  Add focused coverage for NULL, generated, toasted, dropped, unsupported, and
-  recently-dead tuple cases.
+- Under the source session lock, drive `table_index_build_scan` with one
+  registered MVCC snapshot and concurrent-build visibility. Resolve each
+  callback index-entry TID through the table AM index-fetch API (including HOT
+  root→visible-member traversal), compare its indexed vector/source identity
+  with the callback datums, and serialize every non-dropped attribute through
+  locally resolved `typsend`. Reject a defensive callback-dead invocation
+  before datum access. Add focused coverage for NULL, generated, toasted,
+  dropped, unsupported, HOT-updated, and recently-dead-excluded tuple cases.
 - During that capture pass, reject any row whose complete eventual handoff
   entry (row payload plus fixed graph/code payload) can exceed 8 MiB, before
   Vamana construction or any participant `begin`.

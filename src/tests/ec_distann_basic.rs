@@ -523,8 +523,102 @@ struct DistannPhysicalGenerationFixture {
     expected_owner_digest: Vec<u8>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct DistannPhysicalMutationState {
+    generation_json: String,
+    batch_json: String,
+    row_count: i64,
+    graph_count: i64,
+    row_bytes: i64,
+    graph_bytes: i64,
+    directory_bytes: i64,
+}
+
+fn distann_physical_mutation_state(
+    fixture: &DistannPhysicalGenerationFixture,
+) -> DistannPhysicalMutationState {
+    let (row_oid, graph_oid, directory_oid) = distann_generation_relation_oids(fixture);
+    let row_name = canonical_index_locator(row_oid);
+    let graph_name = canonical_index_locator(graph_oid);
+    Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT
+                         (SELECT row_to_json(g)::text FROM {} g
+                           WHERE g.index_oid = $1::oid AND g.build_id = $2::uuid)
+                             AS generation_json,
+                         COALESCE((SELECT jsonb_agg(to_jsonb(b) ORDER BY b.batch_seq)::text
+                                     FROM {} b
+                                    WHERE b.index_oid = $1::oid AND b.build_id = $2::uuid), '[]')
+                             AS batch_json,
+                         (SELECT count(*) FROM {row_name})::bigint AS row_count,
+                         (SELECT count(*) FROM {graph_name})::bigint AS graph_count,
+                         COALESCE(pg_relation_size($3::oid), -1)::bigint AS row_bytes,
+                         COALESCE(pg_relation_size($4::oid), -1)::bigint AS graph_bytes,
+                         COALESCE(pg_relation_size($5::oid), -1)::bigint AS directory_bytes",
+                    distann_generation_catalog_name(),
+                    distann_catalog_name("ec_distann_generation_batch"),
+                ),
+                None,
+                &[
+                    fixture.index_oid.into(),
+                    fixture.build_id.into(),
+                    row_oid.into(),
+                    graph_oid.into(),
+                    directory_oid.into(),
+                ],
+            )
+            .unwrap()
+            .map(|row| DistannPhysicalMutationState {
+                generation_json: row["generation_json"].value::<String>().unwrap().unwrap(),
+                batch_json: row["batch_json"].value::<String>().unwrap().unwrap(),
+                row_count: row["row_count"].value::<i64>().unwrap().unwrap(),
+                graph_count: row["graph_count"].value::<i64>().unwrap().unwrap(),
+                row_bytes: row["row_bytes"].value::<i64>().unwrap().unwrap(),
+                graph_bytes: row["graph_bytes"].value::<i64>().unwrap().unwrap(),
+                directory_bytes: row["directory_bytes"].value::<i64>().unwrap().unwrap(),
+            })
+            .next()
+            .unwrap()
+    })
+}
+
 fn distann_generation_catalog_name() -> String {
     distann_catalog_name("ec_distann_generation")
+}
+
+fn rehash_distann_handoff_batch(mut encoded: Vec<u8>) -> (Vec<u8>, Vec<u8>) {
+    use sha2::Digest;
+
+    assert!(encoded.len() >= 32);
+    encoded.truncate(encoded.len() - 32);
+    let mut hasher = sha2::Sha256::new();
+    hasher.update(b"ec_distann_handoff_batch_v1\0");
+    hasher.update(&encoded);
+    let digest = hasher.finalize().to_vec();
+    encoded.extend_from_slice(&digest);
+    (digest, encoded)
+}
+
+fn add_second_distann_owner(fixture: &mut DistannPhysicalGenerationFixture) {
+    let mut descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor).unwrap();
+    let mut second_uuid = [0x7a; 16];
+    second_uuid[6] = 0x4a;
+    second_uuid[8] = 0xba;
+    descriptor
+        .roster
+        .push(crate::am::ec_distann::DistannRosterEntry {
+            node_id: 18,
+            logical_index_uuid: second_uuid,
+            endpoint_identity: "negative-matrix/node-18".to_owned(),
+        });
+    fixture.descriptor = descriptor.encode().unwrap();
+    fixture.descriptor_digest = descriptor.digest().unwrap().to_vec();
+    fixture.roster_digest = crate::am::ec_distann::roster_digest(&descriptor.roster)
+        .unwrap()
+        .to_vec();
 }
 
 fn distann_catalog_name(name: &str) -> String {
@@ -569,17 +663,31 @@ fn create_distann_physical_generation_fixture(
     stem: &str,
     build_marker: u8,
 ) -> DistannPhysicalGenerationFixture {
+    create_distann_physical_generation_fixture_with_payload_type(stem, build_marker, "text")
+}
+
+fn create_distann_physical_generation_fixture_with_payload_type(
+    stem: &str,
+    build_marker: u8,
+    payload_type: &str,
+) -> DistannPhysicalGenerationFixture {
     assert!(
         stem.bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte == b'_'),
         "test relation stem must be a trusted identifier"
+    );
+    assert!(
+        payload_type.bytes().all(|byte| {
+            byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'_' | b'.')
+        }),
+        "test payload type must be a trusted qualified identifier"
     );
     let table_name = format!("{stem}_source");
     let index_name = format!("{stem}_idx");
     Spi::run(&format!(
         "CREATE TABLE {table_name} (
              source_id uuid NOT NULL,
-             payload text,
+             payload {payload_type},
              legacy_payload integer,
              embedding ecvector(4) NOT NULL,
              payload_generated text GENERATED ALWAYS AS (payload || ':generated') STORED
@@ -2156,6 +2264,407 @@ fn test_distann_stage_batch_atomic_replay_and_directory() {
 }
 
 #[pg_test]
+fn test_distann_stage_seal_zero_mutation_matrix() {
+    let fixture = create_distann_physical_generation_fixture("ec_distann_negative_matrix", 0x68);
+    begin_distann_physical_generation_count(&fixture, 2, &fixture.expected_owner_digest);
+    let (valid_digest, valid_encoded, _) = distann_stage_batch_fixture(&fixture, 0, 0x69);
+    let descriptor =
+        crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor).unwrap();
+    let binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .unwrap();
+    let shape = crate::am::ec_distann::DistannHandoffShape {
+        code_stride: binding
+            .code_len(usize::from(descriptor.dimensions))
+            .unwrap(),
+        graph_degree: usize::from(descriptor.graph_degree),
+        non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
+    };
+    let baseline = distann_physical_mutation_state(&fixture);
+
+    let mut malformed = valid_encoded.clone();
+    malformed[113] ^= 0xff;
+    let (malformed_digest, malformed) = rehash_distann_handoff_batch(malformed);
+    let malformed_error = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&fixture, 0, &malformed_digest, &malformed);
+    });
+    assert!(
+        malformed_error.contains("EC_HANDOFF_FORMAT"),
+        "{malformed_error}"
+    );
+    assert_eq!(distann_physical_mutation_state(&fixture), baseline);
+
+    let mut schema_batch =
+        crate::am::ec_distann::DistannHandoffBatch::decode(&valid_encoded, shape).unwrap();
+    schema_batch.row_schema_fingerprint = [0x91; 32];
+    let schema_encoded = schema_batch.encode(shape).unwrap();
+    let schema_digest = schema_batch.digest(shape).unwrap().to_vec();
+    let schema_error = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&fixture, 0, &schema_digest, &schema_encoded);
+    });
+    assert!(schema_error.contains("EC_HANDOFF_FORMAT"), "{schema_error}");
+    assert_eq!(distann_physical_mutation_state(&fixture), baseline);
+
+    let mut codec_batch =
+        crate::am::ec_distann::DistannHandoffBatch::decode(&valid_encoded, shape).unwrap();
+    codec_batch.neighbor_codec_kind = if descriptor.neighbor_codec_kind == 1 {
+        2
+    } else {
+        1
+    };
+    let codec_encoded = codec_batch.encode(shape).unwrap();
+    let codec_digest = codec_batch.digest(shape).unwrap().to_vec();
+    let codec_error = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&fixture, 0, &codec_digest, &codec_encoded);
+    });
+    assert!(codec_error.contains("EC_HANDOFF_FORMAT"), "{codec_error}");
+    assert_eq!(distann_physical_mutation_state(&fixture), baseline);
+
+    let mut noncanonical_batch =
+        crate::am::ec_distann::DistannHandoffBatch::decode(&valid_encoded, shape).unwrap();
+    noncanonical_batch.entries[0].row_values[2].push(0);
+    let noncanonical_encoded = noncanonical_batch.encode(shape).unwrap();
+    let noncanonical_digest = noncanonical_batch.digest(shape).unwrap().to_vec();
+    let noncanonical_error = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&fixture, 0, &noncanonical_digest, &noncanonical_encoded);
+    });
+    assert!(
+        noncanonical_error.contains("EC_HANDOFF_FORMAT")
+            || noncanonical_error.contains("invalid")
+            || noncanonical_error.contains("incorrect"),
+        "{noncanonical_error}"
+    );
+    assert_eq!(distann_physical_mutation_state(&fixture), baseline);
+
+    let oversized = vec![0_u8; crate::am::ec_distann::DISTANN_HANDOFF_MAX_BYTES + 1];
+    let oversize_error = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&fixture, 0, &[0; 32], &oversized);
+    });
+    assert!(
+        oversize_error.contains("EC_HANDOFF_TOO_LARGE"),
+        "{oversize_error}"
+    );
+    assert_eq!(distann_physical_mutation_state(&fixture), baseline);
+
+    let prepared_error = expect_pg_error_rolled_back(|| {
+        Spi::run("SET LOCAL ec_distann.debug_fail_handoff_after_prepare = on").unwrap();
+        stage_distann_physical_batch(&fixture, 0, &valid_digest, &valid_encoded);
+    });
+    assert!(
+        prepared_error.contains("EC_FAULT_INJECTED"),
+        "{prepared_error}"
+    );
+    assert_eq!(distann_physical_mutation_state(&fixture), baseline);
+
+    let mut wrong_owner_fixture =
+        create_distann_physical_generation_fixture("ec_distann_wrong_owner", 0x70);
+    add_second_distann_owner(&mut wrong_owner_fixture);
+    let (wrong_digest, wrong_encoded, wrong_vec_id) = (1_u8..=u8::MAX)
+        .map(|marker| distann_stage_batch_fixture(&wrong_owner_fixture, 0, marker))
+        .find(|(_, _, vec_id)| {
+            crate::am::ec_distann::placement::owning_node(
+                *vec_id,
+                2,
+                crate::am::ec_distann::DISTANN_PLACEMENT_HASH_VERSION,
+            ) == 1
+        })
+        .unwrap();
+    assert_ne!(wrong_vec_id, 0);
+    begin_distann_physical_generation_count(
+        &wrong_owner_fixture,
+        1,
+        &wrong_owner_fixture.expected_owner_digest,
+    );
+    let wrong_baseline = distann_physical_mutation_state(&wrong_owner_fixture);
+    let wrong_error = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&wrong_owner_fixture, 0, &wrong_digest, &wrong_encoded);
+    });
+    assert!(wrong_error.contains("EC_WRONG_OWNER"), "{wrong_error}");
+    assert_eq!(
+        distann_physical_mutation_state(&wrong_owner_fixture),
+        wrong_baseline
+    );
+
+    let duplicate_fixture =
+        create_distann_physical_generation_fixture("ec_distann_duplicate_existing", 0x71);
+    begin_distann_physical_generation_count(
+        &duplicate_fixture,
+        2,
+        &duplicate_fixture.expected_owner_digest,
+    );
+    let (duplicate_digest, duplicate_encoded, duplicate_vec_id) =
+        distann_stage_batch_fixture(&duplicate_fixture, 0, 0x72);
+    let duplicate_relations = distann_generation_relation_oids(&duplicate_fixture);
+    Spi::run(&format!(
+        "INSERT INTO {} (vec_id, graph_record, row_tid)
+         VALUES ({}, decode('00', 'hex'), '(0,1)'::tid)",
+        canonical_index_locator(duplicate_relations.1),
+        i64::from_le_bytes(duplicate_vec_id.to_le_bytes()),
+    ))
+    .unwrap();
+    let duplicate_baseline = distann_physical_mutation_state(&duplicate_fixture);
+    let duplicate_error = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&duplicate_fixture, 0, &duplicate_digest, &duplicate_encoded);
+    });
+    assert!(
+        duplicate_error.contains("EC_DUPLICATE_VEC_ID"),
+        "{duplicate_error}"
+    );
+    assert_eq!(
+        distann_physical_mutation_state(&duplicate_fixture),
+        duplicate_baseline
+    );
+
+    let corrupt_fixture =
+        create_distann_physical_generation_fixture("ec_distann_corrupt_hash", 0x73);
+    begin_distann_physical_generation_count(
+        &corrupt_fixture,
+        1,
+        &corrupt_fixture.expected_owner_digest,
+    );
+    Spi::run(&format!(
+        "UPDATE {} SET owner_stream_sha256_state =
+             set_byte(
+                 owner_stream_sha256_state,
+                 3,
+                 (get_byte(owner_stream_sha256_state, 3) + 1) % 256
+             )
+          WHERE index_oid = {} AND build_id = '{}'::uuid",
+        distann_generation_catalog_name(),
+        u32::from(corrupt_fixture.index_oid),
+        corrupt_fixture.build_id,
+    ))
+    .unwrap();
+    let corrupt_baseline = distann_physical_mutation_state(&corrupt_fixture);
+    let (corrupt_digest, corrupt_encoded, _) =
+        distann_stage_batch_fixture(&corrupt_fixture, 0, 0x74);
+    let corrupt_error = expect_pg_error_rolled_back(|| {
+        stage_distann_physical_batch(&corrupt_fixture, 0, &corrupt_digest, &corrupt_encoded);
+    });
+    assert!(
+        corrupt_error.contains("state disagrees with cumulative digest"),
+        "{corrupt_error}"
+    );
+    assert_eq!(
+        distann_physical_mutation_state(&corrupt_fixture),
+        corrupt_baseline
+    );
+
+    for (stem, remove_directory) in [
+        ("ec_distann_missing_row", false),
+        ("ec_distann_missing_directory", true),
+    ] {
+        let seal_fixture = create_distann_physical_generation_fixture(stem, 0x75);
+        let (stage_digest, stage_encoded, _) = distann_stage_batch_fixture(&seal_fixture, 0, 0x76);
+        let owner_digest = distann_owner_digest_for_batch(&seal_fixture, &stage_encoded);
+        begin_distann_physical_generation_count(&seal_fixture, 1, &owner_digest);
+        stage_distann_physical_batch(&seal_fixture, 0, &stage_digest, &stage_encoded);
+        let relations = distann_generation_relation_oids(&seal_fixture);
+        if remove_directory {
+            let dummy_table = format!("{stem}_dummy_directory_source");
+            let dummy_index = format!("{stem}_dummy_directory_idx");
+            Spi::run(&format!(
+                "CREATE TABLE {dummy_table}(vec_id bigint NOT NULL);
+                 CREATE UNIQUE INDEX {dummy_index} ON {dummy_table}(vec_id);
+                 UPDATE {} SET directory_relid = '{dummy_index}'::regclass::oid
+                  WHERE index_oid = {} AND build_id = '{}'::uuid",
+                distann_generation_catalog_name(),
+                u32::from(seal_fixture.index_oid),
+                seal_fixture.build_id,
+            ))
+            .unwrap();
+        } else {
+            Spi::run(&format!(
+                "DELETE FROM {}",
+                canonical_index_locator(relations.0)
+            ))
+            .unwrap();
+        }
+        let seal_baseline = distann_physical_mutation_state(&seal_fixture);
+        let seal_error = expect_pg_error_rolled_back(|| {
+            seal_distann_physical_generation(&seal_fixture, 1, &owner_digest);
+        });
+        assert!(
+            seal_error.contains("EC_GENERATION_MISSING")
+                || seal_error.contains("EC_BUILD_INCOMPLETE"),
+            "{seal_error}"
+        );
+        assert_eq!(
+            distann_physical_mutation_state(&seal_fixture),
+            seal_baseline
+        );
+    }
+}
+
+#[pg_test]
+fn test_distann_stage_type_io_runs_as_restricted_control_owner() {
+    const CONTROL_OWNER: &str = "ec_distann_typeio_control_owner";
+    const TRANSPORT_ROLE: &str = "ec_distann_typeio_transport";
+    let test_schema = Spi::get_one::<String>("SELECT current_schema()::text")
+        .unwrap()
+        .unwrap();
+    let quoted_test_schema = format!("\"{}\"", test_schema.replace('"', "\"\""));
+    Spi::run(&format!(
+        "CREATE ROLE {CONTROL_OWNER} NOLOGIN;
+         CREATE ROLE {TRANSPORT_ROLE} NOLOGIN;
+         CREATE TABLE ec_distann_typeio_canary(marker integer);
+         REVOKE ALL ON ec_distann_typeio_canary FROM PUBLIC, {CONTROL_OWNER}, {TRANSPORT_ROLE};
+         CREATE FUNCTION ec_distann_typeio_check(value text) RETURNS boolean
+         LANGUAGE plpgsql SECURITY INVOKER AS $$
+         BEGIN
+             INSERT INTO {quoted_test_schema}.ec_distann_typeio_canary VALUES (1);
+             RETURN true;
+         EXCEPTION WHEN insufficient_privilege THEN
+             RAISE EXCEPTION 'TYPE_IO_USER=%', current_user USING ERRCODE = '42501';
+         END
+         $$;
+         ALTER FUNCTION ec_distann_typeio_check(text) OWNER TO {CONTROL_OWNER};
+         CREATE DOMAIN ec_distann_typeio_payload AS text
+             CHECK (ec_distann_typeio_check(VALUE));
+         ALTER DOMAIN ec_distann_typeio_payload OWNER TO {CONTROL_OWNER};"
+    ))
+    .expect("hostile domain roles and canary should create");
+
+    let fixture = create_distann_physical_generation_fixture_with_payload_type(
+        "ec_distann_typeio",
+        0x6d,
+        "ec_distann_typeio_payload",
+    );
+    Spi::run(&format!(
+        "ALTER TABLE ec_distann_typeio_source OWNER TO {CONTROL_OWNER};
+         GRANT EXECUTE ON FUNCTION
+             ec_distann_stage_epoch_batch(regclass, uuid, bigint, bytea, bytea)
+             TO {TRANSPORT_ROLE};"
+    ))
+    .expect("control and transport privileges should configure");
+
+    let control_owner_oid =
+        Spi::get_one::<pg_sys::Oid>(&format!("SELECT '{CONTROL_OWNER}'::regrole::oid"))
+            .unwrap()
+            .unwrap();
+    let endpoint_owner = Spi::get_one::<pg_sys::Oid>(
+        "SELECT proowner FROM pg_proc
+          WHERE oid = 'ec_distann_stage_epoch_batch(regclass,uuid,bigint,bytea,bytea)'::regprocedure",
+    )
+    .unwrap()
+    .unwrap();
+    assert_ne!(control_owner_oid, endpoint_owner);
+    assert_eq!(
+        Spi::get_one::<pg_sys::Oid>(&format!(
+            "SELECT relowner FROM pg_class WHERE oid = {}",
+            u32::from(fixture.index_oid)
+        ))
+        .unwrap(),
+        Some(control_owner_oid)
+    );
+    assert_eq!(
+        Spi::get_one::<bool>(&format!(
+            "SELECT has_table_privilege('{CONTROL_OWNER}', 'ec_distann_typeio_canary', 'INSERT')
+                 OR has_table_privilege('{TRANSPORT_ROLE}', 'ec_distann_typeio_canary', 'INSERT')"
+        ))
+        .unwrap(),
+        Some(false)
+    );
+
+    let mut saved_user = pg_sys::InvalidOid;
+    let mut saved_context = 0;
+    unsafe { pg_sys::GetUserIdAndSecContext(&mut saved_user, &mut saved_context) };
+    let saved_path = Spi::get_one::<String>("SELECT current_setting('search_path')")
+        .unwrap()
+        .unwrap();
+    crate::am::ec_distann::with_restricted_type_io_owner(control_owner_oid, || {
+        let mut user = pg_sys::InvalidOid;
+        let mut context = 0;
+        unsafe { pg_sys::GetUserIdAndSecContext(&mut user, &mut context) };
+        assert_eq!(user, control_owner_oid);
+        assert_ne!(context & pg_sys::SECURITY_RESTRICTED_OPERATION as i32, 0);
+    });
+    let ordinary_error: Result<(), &'static str> =
+        crate::am::ec_distann::with_restricted_type_io_owner(control_owner_oid, || Err("stop"));
+    assert_eq!(ordinary_error, Err("stop"));
+    let panic = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        crate::am::ec_distann::with_restricted_type_io_owner(control_owner_oid, || {
+            panic!("type I/O panic restoration")
+        })
+    }));
+    assert!(panic.is_err());
+    let nested_error = expect_pg_error(|| {
+        crate::am::ec_distann::with_restricted_type_io_owner(control_owner_oid, || {
+            pgrx::error!("type I/O PostgreSQL error restoration")
+        })
+    });
+    assert!(nested_error.contains("type I/O PostgreSQL error restoration"));
+    let mut restored_user = pg_sys::InvalidOid;
+    let mut restored_context = 0;
+    unsafe { pg_sys::GetUserIdAndSecContext(&mut restored_user, &mut restored_context) };
+    assert_eq!(
+        (restored_user, restored_context),
+        (saved_user, saved_context)
+    );
+    assert_eq!(
+        Spi::get_one::<String>("SELECT current_setting('search_path')")
+            .unwrap()
+            .unwrap(),
+        saved_path
+    );
+
+    let (batch_digest, encoded_batch, _) = distann_stage_batch_fixture(&fixture, 0, 0x6e);
+    let owner_digest = distann_owner_digest_for_batch(&fixture, &encoded_batch);
+    begin_distann_physical_generation_count(&fixture, 1, &owner_digest);
+    Spi::run(&format!("SET LOCAL ROLE {TRANSPORT_ROLE}")).expect("transport role should activate");
+    let error = expect_pg_error_rolled_back(|| {
+        Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT * FROM ec_distann_stage_epoch_batch(
+                         $1::regclass, $2::uuid, 0, $3::bytea, $4::bytea
+                     )",
+                    None,
+                    &[
+                        fixture.index_oid.into(),
+                        fixture.build_id.into(),
+                        batch_digest.clone().into(),
+                        encoded_batch.clone().into(),
+                    ],
+                )
+                .expect("hostile domain receive must error");
+        });
+    });
+    Spi::run("RESET ROLE").expect("transport role should reset");
+    assert!(
+        error.contains(&format!("TYPE_IO_USER={CONTROL_OWNER}")),
+        "type I/O ran under the wrong identity: {error}"
+    );
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {quoted_test_schema}.ec_distann_typeio_canary"
+        ))
+        .unwrap(),
+        Some(0)
+    );
+    assert_eq!(
+        Spi::get_one::<bool>(&format!(
+            "SELECT next_batch_seq = 0 AND cumulative_record_count = 0
+               AND NOT EXISTS (
+                   SELECT 1 FROM {} b
+                    WHERE b.index_oid = g.index_oid
+                      AND b.logical_index_uuid = g.logical_index_uuid
+                      AND b.build_id = g.build_id
+               )
+              FROM {} g
+             WHERE g.index_oid = {} AND g.build_id = '{}'::uuid",
+            distann_catalog_name("ec_distann_generation_batch"),
+            distann_generation_catalog_name(),
+            u32::from(fixture.index_oid),
+            fixture.build_id,
+        ))
+        .unwrap(),
+        Some(true)
+    );
+}
+
+#[pg_test]
 fn test_distann_seal_ready_replay_and_receipt() {
     let fixture = create_distann_physical_generation_fixture("ec_distann_seal_ready", 0x3a);
     let (batch_digest, encoded_batch, vec_id) = distann_stage_batch_fixture(&fixture, 0, 0x76);
@@ -2293,6 +2802,7 @@ fn test_distann_seal_ready_replay_and_receipt() {
 
 #[pg_test]
 fn test_distann_source_capture_spools_complete_frozen_rows() {
+    unsafe { crate::am::ec_distann::test_physical_capture_dead_callback_does_not_access_datums() };
     Spi::run(
         "CREATE TABLE ec_distann_source_capture_source (
              source_id uuid NOT NULL,
@@ -2310,7 +2820,12 @@ fn test_distann_source_capture_spools_complete_frozen_rows() {
              ('22222222-2222-4222-8222-222222222222', NULL,
               encode_to_ecvector(ARRAY[0.0,1.0,0.0,0.0], 4, 42)),
              ('33333333-3333-4333-8333-333333333333', 'deleted before snapshot',
-              encode_to_ecvector(ARRAY[0.0,0.0,1.0,0.0], 4, 42));
+              encode_to_ecvector(ARRAY[0.0,0.0,1.0,0.0], 4, 42)),
+             ('44444444-4444-4444-8444-444444444444', 'hot-before',
+              encode_to_ecvector(ARRAY[0.0,0.0,0.0,1.0], 4, 42));
+         UPDATE ec_distann_source_capture_source
+            SET payload = 'hot-after'
+          WHERE source_id = '44444444-4444-4444-8444-444444444444';
          DELETE FROM ec_distann_source_capture_source
           WHERE source_id = '33333333-3333-4333-8333-333333333333';
          CREATE INDEX ec_distann_source_capture_idx
@@ -2349,7 +2864,7 @@ fn test_distann_source_capture_spools_complete_frozen_rows() {
         )
     }
     .expect("physical source capture should succeed");
-    assert_eq!(capture.len(), 2);
+    assert_eq!(capture.len(), 3);
     assert_eq!(capture.dimensions(), 4);
 
     capture
@@ -2362,6 +2877,7 @@ fn test_distann_source_capture_spools_complete_frozen_rows() {
 
     let mut seen_toasted = false;
     let mut seen_nulls = false;
+    let mut seen_hot = false;
     for node in 0..capture.len() {
         let heap_tid = capture.rows()[node].heap_tid();
         let vector = capture.rows()[node].source_vector().to_vec();
@@ -2384,20 +2900,27 @@ fn test_distann_source_capture_spools_complete_frozen_rows() {
             assert_eq!(payload.row_values[3].len(), 20_010);
             assert!(payload.row_values[3].ends_with(b":generated"));
             seen_toasted = true;
-        } else {
+        } else if identity[0] == 0x22 {
             assert_eq!(identity[0], 0x22);
             assert_eq!(vector, vec![0.0, 1.0, 0.0, 0.0]);
             assert_eq!(payload.row_null_bitmap, vec![0b0000_1010]);
             assert_eq!(payload.row_values.len(), 2);
             seen_nulls = true;
+        } else {
+            assert_eq!(identity[0], 0x44);
+            assert_eq!(vector, vec![0.0, 0.0, 0.0, 1.0]);
+            assert_eq!(payload.row_null_bitmap, vec![0]);
+            assert_eq!(payload.row_values[1], b"hot-after");
+            assert_eq!(payload.row_values[3], b"hot-after:generated");
+            seen_hot = true;
         }
     }
-    assert!(seen_toasted && seen_nulls);
+    assert!(seen_toasted && seen_nulls && seen_hot);
 
     let mut workspace =
         crate::am::ec_distann::build_physical_graph_workspace(index.as_ptr(), capture)
             .expect("physical graph workspace should build from the frozen capture");
-    assert_eq!(workspace.record_count(), 2);
+    assert_eq!(workspace.record_count(), 3);
     assert_eq!(workspace.shape().non_dropped_attribute_count, 4);
     assert_eq!(workspace.codec_artifact().dimensions(), 4);
     let metadata = unsafe { crate::am::ec_distann::read_metadata_from_index(index.as_ptr()) }
@@ -2413,7 +2936,7 @@ fn test_distann_source_capture_spools_complete_frozen_rows() {
             crate::am::ec_distann::DISTANN_PLACEMENT_HASH_VERSION,
         )
         .expect("owner expectations should stream from the workspace");
-    assert_eq!(expectations[0].expected_count, 2);
+    assert_eq!(expectations[0].expected_count, 3);
     let mut build_id = [0x3c; 16];
     build_id[6] = 0x4c;
     build_id[8] = 0xbc;
@@ -2458,11 +2981,73 @@ fn test_distann_source_capture_spools_complete_frozen_rows() {
             },
         )
         .expect("workspace entries should route through one bounded owner batch");
-    assert_eq!(summaries[0].record_count, 2);
+    assert_eq!(summaries[0].record_count, 3);
     assert_eq!(
         summaries[0].owner_stream_digest,
         expectations[0].expected_owner_digest
     );
+}
+
+#[pg_test]
+fn test_distann_source_capture_mismatch_faults() {
+    Spi::run(
+        "CREATE TABLE ec_distann_capture_fault_source (
+             source_id uuid NOT NULL,
+             embedding ecvector(4) NOT NULL
+         );
+         INSERT INTO ec_distann_capture_fault_source VALUES (
+             '55555555-5555-4555-8555-555555555555',
+             encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)
+         );
+         CREATE INDEX ec_distann_capture_fault_idx
+           ON ec_distann_capture_fault_source
+           USING ec_distann (embedding ecvector_distann_ip_ops)
+           INCLUDE (source_id)
+           WITH (distributed_control = true, source_identity = 'include')",
+    )
+    .unwrap();
+    let index_oid =
+        Spi::get_one::<pg_sys::Oid>("SELECT 'ec_distann_capture_fault_idx'::regclass::oid")
+            .unwrap()
+            .unwrap();
+    for (fault, expected) in [
+        (1, "no visible row"),
+        (2, "vector differs"),
+        (3, "identity differs"),
+    ] {
+        let error = expect_pg_error_rolled_back(|| {
+            Spi::run(&format!(
+                "SET LOCAL ec_distann.debug_source_capture_fault = {fault}"
+            ))
+            .unwrap();
+            let index = IndexRelationGuard::open(
+                index_oid,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                "source capture fault test",
+            );
+            let heap = crate::storage::relation_guard::HeapRelationGuard::try_access_share(
+                index.heap_relation_oid(),
+            )
+            .unwrap();
+            let index_info = crate::am::common::index_info::IndexInfoGuard::build(
+                index.as_ptr(),
+                "source capture fault test",
+            );
+            unsafe {
+                crate::am::ec_distann::capture_physical_source_rows(
+                    heap.as_ptr(),
+                    index.as_ptr(),
+                    index_info.as_ptr(),
+                )
+            }
+            .expect("faulted capture must error");
+        });
+        assert!(error.contains(expected), "fault {fault}: {error}");
+        assert_eq!(
+            Spi::get_one::<i64>("SELECT count(*) FROM ec_distann_capture_fault_source").unwrap(),
+            Some(1)
+        );
+    }
 }
 
 #[pg_test]
@@ -2635,7 +3220,7 @@ fn expect_pg_error_rolled_back(run: impl FnOnce() + std::panic::UnwindSafe) -> S
     // fixture DDL from the outer transaction while their writes remain owned
     // by this subtransaction.
     let snapshot =
-        crate::storage::snapshot_guard::ActiveSnapshotGuard::latest_after_command_counter()
+        crate::storage::snapshot_guard::ActiveSnapshotGuard::transaction_after_command_counter()
             .expect("rollback test subtransaction requires an active snapshot");
     let error = expect_pg_error(run);
     drop(snapshot);
