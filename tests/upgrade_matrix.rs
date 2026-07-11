@@ -92,6 +92,7 @@ fn upgrade_matrix_names_current_writable_formats() {
 
     let expected = BTreeSet::from([
         ("diskann", 3),
+        ("distann-build-candidate", 1),
         ("distann-build-spec", 1),
         ("distann-abandon-binding-audit", 1),
         ("distann-abandoned-binding-set", 1),

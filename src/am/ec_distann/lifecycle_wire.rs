@@ -57,6 +57,13 @@ const RETIRE_DECISION_DOMAIN: &[u8] = b"ec_distann_retire_decision_v1\0";
 const DIGEST_BYTES: usize = 32;
 const MAX_REASON_BYTES: usize = 1024;
 
+fn predecessor_abandon_error(error: String) -> String {
+    let detail = error
+        .split_once(": ")
+        .map_or(error.as_str(), |(_, detail)| detail);
+    format!("EC_PREDECESSOR_ABANDON: {detail}")
+}
+
 fn validate_uuid(value: &[u8; 16], field: &str) -> Result<(), String> {
     if !is_rfc4122_v4_uuid(value) {
         return Err(format!("EC_EPOCH_STATE: {field} must be RFC 4122 v4"));
@@ -452,6 +459,10 @@ pub struct DistannAbandonBindingAuditV1 {
 
 impl DistannAbandonBindingAuditV1 {
     pub fn validate(&self) -> Result<(), String> {
+        self.validate_inner().map_err(predecessor_abandon_error)
+    }
+
+    fn validate_inner(&self) -> Result<(), String> {
         validate_uuid(
             &self.coordinator_logical_index_uuid,
             "coordinator logical-index UUID",
@@ -482,7 +493,11 @@ impl DistannAbandonBindingAuditV1 {
     }
 
     pub fn encode(&self) -> Result<Vec<u8>, String> {
-        self.validate()?;
+        self.encode_inner().map_err(predecessor_abandon_error)
+    }
+
+    fn encode_inner(&self) -> Result<Vec<u8>, String> {
+        self.validate_inner()?;
         let mut encoder = CanonicalEncoder::with_capacity(
             256 + self.endpoint_identity.len()
                 + self.remote_index_regclass.len()
@@ -511,6 +526,10 @@ impl DistannAbandonBindingAuditV1 {
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
+        Self::decode_inner(input).map_err(predecessor_abandon_error)
+    }
+
+    fn decode_inner(input: &[u8]) -> Result<Self, String> {
         let mut decoder = CanonicalDecoder::new(input, "abandon-binding audit v1")?;
         let version = decoder.get_u16("abandon-binding audit version")?;
         if version != DISTANN_ABANDON_BINDING_AUDIT_VERSION {
@@ -548,7 +567,7 @@ impl DistannAbandonBindingAuditV1 {
             reason: decoder.get_string("abandon reason")?,
         };
         decoder.finish("abandon-binding audit v1")?;
-        audit.validate()?;
+        audit.validate_inner()?;
         Ok(audit)
     }
 
@@ -684,9 +703,7 @@ impl DistannRetireDecisionV1 {
             "caller name",
         )?;
         validate_nonempty_text(&self.reason, MAX_REASON_BYTES, "retire reason")?;
-        if (!self.forced && (self.overridden_in_flight_count != 0 || self.reason != "normal"))
-            || (self.forced && self.reason == "normal")
-        {
+        if !self.forced && (self.overridden_in_flight_count != 0 || self.reason != "normal") {
             return Err(
                 "EC_EPOCH_STATE: retire force/count/reason combination is invalid".to_owned(),
             );
@@ -796,6 +813,8 @@ impl DistannRetireDecisionV1 {
 
 #[cfg(test)]
 mod tests {
+    use std::fmt::Debug;
+
     use super::super::canonical_wire::sample_rfc4122_v4_uuid;
     use super::super::generation_descriptor::{
         encode_roster, sample_generation_descriptor, DistannBuildOptions, DistannOwnerExpectation,
@@ -947,6 +966,20 @@ mod tests {
         }
     }
 
+    fn assert_error_category<T: Debug>(result: Result<T, String>, category: &str) -> String {
+        let error = result.expect_err("malformed lifecycle value must fail");
+        assert!(
+            error.starts_with(&format!("{category}:")),
+            "expected {category}, got {error}"
+        );
+        error
+    }
+
+    fn append_trailing_byte(mut bytes: Vec<u8>) -> Vec<u8> {
+        bytes.push(0xFF);
+        bytes
+    }
+
     #[test]
     fn lifecycle_formats_round_trip_and_bind_digests() {
         let candidate = sample_candidate();
@@ -1009,6 +1042,257 @@ mod tests {
         let mut candidate = sample_candidate().encode().unwrap();
         candidate[DISTANN_BUILD_CANDIDATE_FIXED_PREFIX_BYTES] ^= 1;
         assert!(DistannBuildCandidateV1::decode(&candidate).is_err());
+    }
+
+    #[test]
+    fn lifecycle_decoders_reject_flags_counts_order_duplicates_and_trailing_bytes() {
+        let mut activation_flag = sample_activation().encode().unwrap();
+        activation_flag[DISTANN_SUCCESSOR_ACTIVATION_PREDECESSOR_PRESENT_OFFSET] = 2;
+        assert_error_category(
+            DistannSuccessorActivationV1::decode(&activation_flag),
+            "EC_EPOCH_STATE",
+        );
+
+        let decision = sample_retire_decision();
+        let abandoned_bytes = decision.abandoned_binding_set_bytes().unwrap();
+        let mut retire_flag = decision.encode().unwrap();
+        let abandoned_offset = retire_flag
+            .windows(abandoned_bytes.len())
+            .position(|window| window == abandoned_bytes)
+            .unwrap();
+        retire_flag[abandoned_offset + abandoned_bytes.len()] = 2;
+        assert_error_category(
+            DistannRetireDecisionV1::decode(&retire_flag),
+            "EC_EPOCH_STATE",
+        );
+        let mut retire_count = decision.encode().unwrap();
+        retire_count[abandoned_offset..abandoned_offset + 4].copy_from_slice(&3_u32.to_le_bytes());
+        assert!(DistannRetireDecisionV1::decode(&retire_count).is_err());
+
+        let mut bad_count = sample_abandoned_set().encode().unwrap();
+        bad_count[0..4].copy_from_slice(&3_u32.to_le_bytes());
+        assert_error_category(
+            DistannAbandonedBindingSetV1::decode(&bad_count),
+            "EC_EPOCH_STATE",
+        );
+
+        let mut descending = sample_abandoned_set();
+        descending.entries.swap(0, 1);
+        assert_error_category(descending.validate(), "EC_EPOCH_STATE");
+        let mut duplicate = sample_abandoned_set();
+        duplicate.entries[1].roster_ordinal = duplicate.entries[0].roster_ordinal;
+        assert_error_category(duplicate.validate(), "EC_EPOCH_STATE");
+
+        let mut outside_roster = sample_retire_decision();
+        outside_roster.abandoned_bindings.entries[1].roster_ordinal = u32::MAX;
+        assert_error_category(outside_roster.validate(), "EC_EPOCH_STATE");
+
+        assert!(DistannBuildCandidateV1::decode(&append_trailing_byte(
+            sample_candidate().encode().unwrap(),
+        ))
+        .is_err());
+        assert!(DistannSuccessorActivationV1::decode(&append_trailing_byte(
+            sample_activation().encode().unwrap(),
+        ))
+        .is_err());
+        assert_error_category(
+            DistannAbandonBindingAuditV1::decode(&append_trailing_byte(
+                sample_audit().encode().unwrap(),
+            )),
+            "EC_PREDECESSOR_ABANDON",
+        );
+        assert!(DistannAbandonedBindingSetV1::decode(&append_trailing_byte(
+            sample_abandoned_set().encode().unwrap(),
+        ))
+        .is_err());
+        assert!(DistannRetireDecisionV1::decode(&append_trailing_byte(
+            sample_retire_decision().encode().unwrap(),
+        ))
+        .is_err());
+    }
+
+    #[test]
+    fn retire_force_count_and_reason_combinations_follow_fr_082() {
+        let mut normal = sample_retire_decision();
+        normal.forced = false;
+        normal.overridden_in_flight_count = 0;
+        normal.reason = "normal".to_owned();
+        assert_eq!(
+            DistannRetireDecisionV1::decode(&normal.encode().unwrap()).unwrap(),
+            normal
+        );
+
+        let mut normal_with_count = normal.clone();
+        normal_with_count.overridden_in_flight_count = 1;
+        assert_error_category(normal_with_count.validate(), "EC_EPOCH_STATE");
+
+        let mut normal_with_custom_reason = normal.clone();
+        normal_with_custom_reason.reason = "operator supplied".to_owned();
+        assert_error_category(normal_with_custom_reason.validate(), "EC_EPOCH_STATE");
+
+        let mut forced_named_normal = normal;
+        forced_named_normal.forced = true;
+        forced_named_normal.overridden_in_flight_count = 3;
+        assert_eq!(
+            DistannRetireDecisionV1::decode(&forced_named_normal.encode().unwrap()).unwrap(),
+            forced_named_normal,
+            "FR-082 does not reserve the caller-supplied forced reason text"
+        );
+
+        let mut forced_with_zero_count = sample_retire_decision();
+        forced_with_zero_count.overridden_in_flight_count = 0;
+        assert!(forced_with_zero_count.validate().is_ok());
+
+        let mut empty_reason = sample_retire_decision();
+        empty_reason.reason.clear();
+        assert_error_category(empty_reason.validate(), "EC_EPOCH_STATE");
+    }
+
+    #[test]
+    fn lifecycle_identity_and_fingerprint_validation_fails_closed() {
+        let mut activation_uuid = sample_activation();
+        activation_uuid.coordinator_logical_index_uuid = [0; 16];
+        assert_error_category(activation_uuid.validate(), "EC_EPOCH_STATE");
+
+        let mut activation_fingerprint = sample_activation();
+        activation_fingerprint.successor.manifest_digest[0] ^= 1;
+        assert_error_category(activation_fingerprint.validate(), "EC_EPOCH_STATE");
+
+        let mut retire_uuid = sample_retire_decision();
+        retire_uuid.target_build_id = [0; 16];
+        assert_error_category(retire_uuid.validate(), "EC_EPOCH_STATE");
+
+        let mut retire_fingerprint = sample_retire_decision();
+        retire_fingerprint.target_manifest_digest[0] ^= 1;
+        assert_error_category(retire_fingerprint.validate(), "EC_EPOCH_STATE");
+    }
+
+    #[test]
+    fn abandon_audit_normalizes_every_malformed_codec_outcome() {
+        for malformed in [
+            {
+                let mut audit = sample_audit();
+                audit.coordinator_logical_index_uuid = [0; 16];
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.participant_logical_index_uuid = [0; 16];
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.successor_build_id = [0; 16];
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.predecessor_build_id = [0; 16];
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.successor_fingerprint[0] ^= 1;
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.predecessor_manifest_digest[0] ^= 1;
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.endpoint_identity = "secret endpoint".to_owned();
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.remote_index_regclass = "Distann.Index".to_owned();
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.node_id = 0;
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.caller_name.clear();
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.reason.clear();
+                audit
+            },
+            {
+                let mut audit = sample_audit();
+                audit.reason = "x".repeat(MAX_REASON_BYTES + 1);
+                audit
+            },
+        ] {
+            assert_error_category(malformed.validate(), "EC_PREDECESSOR_ABANDON");
+            assert_error_category(malformed.encode(), "EC_PREDECESSOR_ABANDON");
+        }
+
+        let encoded = sample_audit().encode().unwrap();
+        assert_error_category(
+            DistannAbandonBindingAuditV1::decode(&encoded[..encoded.len() - 1]),
+            "EC_PREDECESSOR_ABANDON",
+        );
+
+        let mut unknown_version = encoded.clone();
+        unknown_version[0..2].copy_from_slice(&99_u16.to_le_bytes());
+        assert_error_category(
+            DistannAbandonBindingAuditV1::decode(&unknown_version),
+            "EC_PREDECESSOR_ABANDON",
+        );
+
+        let mut invalid_uuid = encoded.clone();
+        invalid_uuid[DISTANN_ABANDON_BINDING_AUDIT_COORDINATOR_UUID_OFFSET
+            ..DISTANN_ABANDON_BINDING_AUDIT_COORDINATOR_UUID_OFFSET + 16]
+            .fill(0);
+        assert_error_category(
+            DistannAbandonBindingAuditV1::decode(&invalid_uuid),
+            "EC_PREDECESSOR_ABANDON",
+        );
+
+        let mut invalid_fingerprint = encoded.clone();
+        invalid_fingerprint[DISTANN_ABANDON_BINDING_AUDIT_FIXED_PREFIX_BYTES] ^= 1;
+        assert_error_category(
+            DistannAbandonBindingAuditV1::decode(&invalid_fingerprint),
+            "EC_PREDECESSOR_ABANDON",
+        );
+
+        let mut invalid_fingerprint_length = encoded.clone();
+        invalid_fingerprint_length
+            [DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_FINGERPRINT_LENGTH_OFFSET
+                ..DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_FINGERPRINT_LENGTH_OFFSET + 4]
+            .copy_from_slice(&33_u32.to_le_bytes());
+        assert_error_category(
+            DistannAbandonBindingAuditV1::decode(&invalid_fingerprint_length),
+            "EC_PREDECESSOR_ABANDON",
+        );
+
+        for text in [b"cluster-a/node-20".as_slice(), b"public.distann_idx"] {
+            let offset = encoded
+                .windows(text.len())
+                .position(|window| window == text)
+                .unwrap();
+            let mut invalid_grammar = encoded.clone();
+            invalid_grammar[offset] = b' ';
+            assert_error_category(
+                DistannAbandonBindingAuditV1::decode(&invalid_grammar),
+                "EC_PREDECESSOR_ABANDON",
+            );
+
+            let mut invalid_utf8 = encoded.clone();
+            invalid_utf8[offset] = 0xFF;
+            assert_error_category(
+                DistannAbandonBindingAuditV1::decode(&invalid_utf8),
+                "EC_PREDECESSOR_ABANDON",
+            );
+        }
     }
 
     /// Regeneration helper for TC-050 lifecycle golden fixtures.
