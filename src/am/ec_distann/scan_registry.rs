@@ -6,9 +6,10 @@
 //! fence allocation.  Later slices acquire the exported fence operation
 //! reference before waiting for or holding the matching heavyweight fence.
 
-use std::cell::Cell;
+use std::cell::{Cell, RefCell};
 use std::ffi::c_int;
 use std::mem::{align_of, size_of};
+use std::panic::AssertUnwindSafe;
 use std::ptr;
 
 use pgrx::datum::Uuid;
@@ -34,6 +35,8 @@ static mut REGISTRY_LWLOCK: *mut pg_sys::LWLock = ptr::null_mut();
 thread_local! {
     static BACKEND_OWNER: Cell<Option<BackendOwner>> = const { Cell::new(None) };
     static EXIT_CALLBACK_REGISTERED: Cell<bool> = const { Cell::new(false) };
+    static XACT_FENCE_REFERENCES: RefCell<Vec<XactFenceReference>> = const { RefCell::new(Vec::new()) };
+    static NEXT_XACT_FENCE_ID: Cell<u64> = const { Cell::new(1) };
 }
 
 #[repr(C)]
@@ -756,6 +759,47 @@ fn hash_insert(table: &mut [HashEntry], hash: u64, slot: usize) -> Result<(), Re
     }
 }
 
+fn hash_backshift_delete(
+    table: &mut [HashEntry],
+    mut hole: usize,
+    mut slot_hash: impl FnMut(usize) -> Result<u64, RegistryError>,
+) -> Result<(), RegistryError> {
+    if table.is_empty() || hole >= table.len() || table[hole].slot_plus_one <= 0 {
+        return Err(RegistryError::CorruptSharedState);
+    }
+    let mask = table.len() - 1;
+    let mut scan = (hole + 1) & mask;
+    let mut moves = Vec::new();
+    let mut found_empty = false;
+    for _ in 0..table.len() {
+        let value = table[scan].slot_plus_one;
+        if value == HASH_EMPTY {
+            found_empty = true;
+            break;
+        }
+        if value == HASH_TOMBSTONE {
+            return Err(RegistryError::CorruptSharedState);
+        }
+        let slot = usize::try_from(value - 1).map_err(|_| RegistryError::CorruptSharedState)?;
+        let ideal = slot_hash(slot)? as usize & mask;
+        let scan_distance = scan.wrapping_sub(ideal) & mask;
+        let hole_distance = hole.wrapping_sub(ideal) & mask;
+        if hole_distance < scan_distance {
+            moves.push((scan, hole));
+            hole = scan;
+        }
+        scan = (scan + 1) & mask;
+    }
+    if !found_empty {
+        return Err(RegistryError::CorruptSharedState);
+    }
+    for (from, to) in moves {
+        table[to] = table[from];
+    }
+    table[hole].slot_plus_one = HASH_EMPTY;
+    Ok(())
+}
+
 fn owner_matches(
     proc_number: pg_sys::ProcNumber,
     pid: c_int,
@@ -766,6 +810,54 @@ fn owner_matches(
 }
 
 impl RegistryView<'_> {
+    fn delete_operation_hash(&mut self, bucket: usize) -> Result<(), RegistryError> {
+        let operations = &self.operations;
+        hash_backshift_delete(self.operation_hash, bucket, |index| {
+            let slot = *operations
+                .get(index)
+                .filter(|slot| slot.in_use != 0)
+                .ok_or(RegistryError::CorruptSharedState)?;
+            Ok(Self::operation_hash_value(
+                BackendOwner {
+                    proc_number: slot.proc_number,
+                    pid: slot.backend_pid,
+                    generation: slot.backend_generation,
+                },
+                slot.fence_id,
+            ))
+        })
+    }
+
+    fn delete_token_hash(&mut self, bucket: usize) -> Result<(), RegistryError> {
+        let tokens = &self.tokens;
+        hash_backshift_delete(self.token_hash, bucket, |index| {
+            let slot = *tokens
+                .get(index)
+                .filter(|slot| slot.in_use != 0)
+                .ok_or(RegistryError::CorruptSharedState)?;
+            Ok(Self::token_hash_value(&ScanTokenIdentity {
+                database_oid: slot.database_oid,
+                logical_index_uuid: slot.logical_index_uuid,
+                epoch_fingerprint: slot.epoch_fingerprint,
+                scan_token: slot.scan_token,
+            }))
+        })
+    }
+
+    fn delete_fence_hash(&mut self, bucket: usize) -> Result<(), RegistryError> {
+        let fences = &self.fences;
+        hash_backshift_delete(self.fence_hash, bucket, |index| {
+            let slot = *fences
+                .get(index)
+                .filter(|slot| slot.in_use != 0)
+                .ok_or(RegistryError::CorruptSharedState)?;
+            Ok(Self::fence_hash_value(
+                slot.database_oid,
+                &slot.logical_index_uuid,
+            ))
+        })
+    }
+
     fn fence_hash_value(database_oid: pg_sys::Oid, logical: &[u8; 16]) -> u64 {
         hash_bytes(&[&database_oid.to_u32().to_le_bytes(), logical])
     }
@@ -957,7 +1049,7 @@ impl RegistryView<'_> {
         {
             self.fence_hash_bucket(fence_index)?;
         }
-        self.operation_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+        self.delete_operation_hash(bucket)?;
         self.fences[fence_index].operation_references = remaining;
         self.push_operation(index);
         Ok(fence_index)
@@ -978,7 +1070,7 @@ impl RegistryView<'_> {
         {
             self.fence_hash_bucket(fence_index)?;
         }
-        self.token_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+        self.delete_token_hash(bucket)?;
         self.fences[fence_index].token_count = remaining;
         self.push_token(index);
         Ok(fence_index)
@@ -1145,7 +1237,7 @@ impl RegistryView<'_> {
         self.operations[index].nesting -= 1;
         self.fences[fence_index].operation_references = next_references;
         if self.operations[index].nesting == 0 {
-            self.operation_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+            self.delete_operation_hash(bucket)?;
             self.push_operation(index);
         }
         self.recycle_fence_if_eligible(fence_index)?;
@@ -1165,7 +1257,7 @@ impl RegistryView<'_> {
             return Ok(false);
         }
         let bucket = self.fence_hash_bucket(index)?;
-        self.fence_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+        self.delete_fence_hash(bucket)?;
         self.push_fence(index);
         Ok(true)
     }
@@ -1195,7 +1287,7 @@ impl RegistryView<'_> {
             return Err(RegistryError::CorruptSharedState);
         }
         let bucket = self.fence_hash_bucket(index)?;
-        self.fence_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+        self.delete_fence_hash(bucket)?;
         self.push_fence(index);
         Ok(())
     }
@@ -1246,10 +1338,15 @@ impl RegistryView<'_> {
         let (fence_index, created_fence) = if let Some(index) = existing_fence {
             (index, false)
         } else {
-            (
-                self.ensure_fence(identity.database_oid, identity.logical_index_uuid)?,
-                true,
-            )
+            let index = match self.ensure_fence(identity.database_oid, identity.logical_index_uuid)
+            {
+                Err(RegistryError::FenceCapacity) => {
+                    self.reap_dead_with(&mut live)?;
+                    self.ensure_fence(identity.database_oid, identity.logical_index_uuid)?
+                }
+                result => result?,
+            };
+            (index, true)
         };
         let next_token_count = self.fences[fence_index]
             .token_count
@@ -1383,16 +1480,10 @@ pub(crate) fn mark_logical_index_dropped(
 /// heavyweight fence.  The exact owner incarnation is shared-state-visible so
 /// abrupt backend death can reap the operation reference before recycling a
 /// dropped UUID's fence id.
-pub(crate) struct FenceOperationReference {
+struct FenceOperationReference {
     owner: BackendOwner,
     fence_id: u32,
     active: bool,
-}
-
-impl FenceOperationReference {
-    pub(crate) fn fence_id(&self) -> u32 {
-        self.fence_id
-    }
 }
 
 impl Drop for FenceOperationReference {
@@ -1410,16 +1501,21 @@ impl Drop for FenceOperationReference {
     }
 }
 
-pub(crate) fn acquire_fence_operation_reference(
+fn acquire_fence_operation_reference(
     database_oid: pg_sys::Oid,
     logical_index_uuid: [u8; 16],
 ) -> Result<FenceOperationReference, RegistryError> {
     let owner = current_backend_owner()?;
     let _guard = unsafe { lock_registry()? };
     let mut view = unsafe { shared_view()? };
-    view.reap_dead()?;
     let existing_fence = view.find_fence_index(database_oid, &logical_index_uuid);
-    let fence_index = view.ensure_fence(database_oid, logical_index_uuid)?;
+    let fence_index = match view.ensure_fence(database_oid, logical_index_uuid) {
+        Err(RegistryError::FenceCapacity) => {
+            view.reap_dead()?;
+            view.ensure_fence(database_oid, logical_index_uuid)?
+        }
+        result => result?,
+    };
     let fence_id = match view.acquire_fence_operation(fence_index, owner) {
         Ok(fence_id) => fence_id,
         Err(error) => {
@@ -1436,9 +1532,181 @@ pub(crate) fn acquire_fence_operation_reference(
     })
 }
 
+struct XactFenceReference {
+    id: u64,
+    pending_subid: pg_sys::SubTransactionId,
+    tag: pg_sys::LOCKTAG,
+    reference: FenceOperationReference,
+}
+
+fn fence_lock_tag(database_oid: pg_sys::Oid, fence_id: u32) -> pg_sys::LOCKTAG {
+    pg_sys::LOCKTAG {
+        locktag_field1: database_oid.to_u32(),
+        locktag_field2: 0x4543_4453, // "ECDS" lock namespace
+        locktag_field3: fence_id,
+        locktag_field4: 1,
+        locktag_type: pg_sys::LockTagType::LOCKTAG_ADVISORY as u8,
+        locktag_lockmethodid: pg_sys::USER_LOCKMETHOD as u8,
+    }
+}
+
+fn acquire_heavyweight_lock(
+    tag: &pg_sys::LOCKTAG,
+    mode: pg_sys::LOCKMODE,
+    session: bool,
+) -> Result<(), RegistryError> {
+    let result = unsafe { pg_sys::LockAcquire(tag, mode, session, false) };
+    if result == pg_sys::LockAcquireResult::LOCKACQUIRE_OK
+        || result == pg_sys::LockAcquireResult::LOCKACQUIRE_ALREADY_HELD
+    {
+        Ok(())
+    } else {
+        Err(RegistryError::CorruptSharedState)
+    }
+}
+
+fn drop_after_confirmed_lock_release<T>(value: T, released: bool) {
+    if released {
+        drop(value);
+    } else {
+        std::mem::forget(value);
+    }
+}
+
+/// Runs one registration critical section under the logical index's session
+/// shared heavyweight lock. The operation reference is acquired before the
+/// wait and released only after `LockRelease`, including PostgreSQL ERROR.
+pub(crate) fn with_scan_registration_fence<R>(
+    database_oid: pg_sys::Oid,
+    logical_index_uuid: [u8; 16],
+    operation: impl FnOnce() -> R,
+) -> Result<R, RegistryError> {
+    let reference = acquire_fence_operation_reference(database_oid, logical_index_uuid)?;
+    let tag = fence_lock_tag(database_oid, reference.fence_id);
+    let acquired = Cell::new(false);
+    let reference = RefCell::new(Some(reference));
+    pg_sys::PgTryBuilder::new(AssertUnwindSafe(|| {
+        acquire_heavyweight_lock(&tag, pg_sys::ShareLock as pg_sys::LOCKMODE, true)?;
+        acquired.set(true);
+        Ok(operation())
+    }))
+    .finally(|| {
+        let mut released = !acquired.get();
+        if acquired.get() {
+            released =
+                unsafe { pg_sys::LockRelease(&tag, pg_sys::ShareLock as pg_sys::LOCKMODE, true) };
+        }
+        if let Some(reference) = reference.borrow_mut().take() {
+            drop_after_confirmed_lock_release(reference, released);
+        }
+    })
+    .execute()
+}
+
+fn remove_xact_fence_reference(id: u64) {
+    XACT_FENCE_REFERENCES.with(|references| {
+        let mut references = references.borrow_mut();
+        if let Some(position) = references.iter().position(|entry| entry.id == id) {
+            let entry = references.remove(position);
+            let released = unsafe {
+                pg_sys::LockRelease(&entry.tag, pg_sys::ExclusiveLock as pg_sys::LOCKMODE, true)
+            };
+            drop_after_confirmed_lock_release(entry.reference, released);
+        }
+    });
+}
+
+/// Takes the logical index's transaction-exclusive retirement fence. The
+/// opaque operation reference is retained until PostgreSQL's xact/subxact
+/// cleanup has released the corresponding heavyweight lock.
+pub(crate) fn acquire_retirement_fence_xact(
+    database_oid: pg_sys::Oid,
+    logical_index_uuid: [u8; 16],
+) -> Result<(), RegistryError> {
+    let reference = acquire_fence_operation_reference(database_oid, logical_index_uuid)?;
+    let tag = fence_lock_tag(database_oid, reference.fence_id);
+    let acquired = Cell::new(false);
+    let completed = Cell::new(false);
+    let reference = RefCell::new(Some(reference));
+    pg_sys::PgTryBuilder::new(AssertUnwindSafe(|| {
+        acquire_heavyweight_lock(&tag, pg_sys::ExclusiveLock as pg_sys::LOCKMODE, true)?;
+        acquired.set(true);
+        completed.set(true);
+        Ok(())
+    }))
+    .finally(|| {
+        if !completed.get() {
+            let mut released = !acquired.get();
+            if acquired.get() {
+                released = unsafe {
+                    pg_sys::LockRelease(&tag, pg_sys::ExclusiveLock as pg_sys::LOCKMODE, true)
+                };
+            }
+            if let Some(reference) = reference.borrow_mut().take() {
+                drop_after_confirmed_lock_release(reference, released);
+            }
+        }
+    })
+    .execute()?;
+    let reference = reference
+        .borrow_mut()
+        .take()
+        .ok_or(RegistryError::CorruptSharedState)?;
+    let id = NEXT_XACT_FENCE_ID.with(|next| {
+        let id = next.get();
+        next.set(id.checked_add(1).expect("fence callback id exhausted"));
+        id
+    });
+    let pending_subid = unsafe { pg_sys::GetCurrentSubTransactionId() };
+    XACT_FENCE_REFERENCES.with(|references| {
+        references.borrow_mut().push(XactFenceReference {
+            id,
+            pending_subid,
+            tag,
+            reference,
+        });
+    });
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
+        remove_xact_fence_reference(id);
+    });
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
+        remove_xact_fence_reference(id);
+    });
+    pgrx::register_subxact_callback(
+        pgrx::PgSubXactCallbackEvent::CommitSub,
+        move |my_subid, parent_subid| {
+            XACT_FENCE_REFERENCES.with(|references| {
+                if let Some(entry) = references
+                    .borrow_mut()
+                    .iter_mut()
+                    .find(|entry| entry.id == id && entry.pending_subid == my_subid)
+                {
+                    entry.pending_subid = parent_subid;
+                }
+            });
+        },
+    );
+    pgrx::register_subxact_callback(
+        pgrx::PgSubXactCallbackEvent::AbortSub,
+        move |my_subid, _parent_subid| {
+            let remove = XACT_FENCE_REFERENCES.with(|references| {
+                references
+                    .borrow()
+                    .iter()
+                    .any(|entry| entry.id == id && entry.pending_subid == my_subid)
+            });
+            if remove {
+                remove_xact_fence_reference(id);
+            }
+        },
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::rc::Rc;
 
     struct TestRegistry {
         header: RegistryHeader,
@@ -1520,6 +1788,22 @@ mod tests {
             pid,
             generation,
         }
+    }
+
+    #[test]
+    fn operation_owner_drops_only_after_confirmed_lock_release() {
+        struct DropProbe(Rc<Cell<u32>>);
+        impl Drop for DropProbe {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() + 1);
+            }
+        }
+        let released = Rc::new(Cell::new(0));
+        drop_after_confirmed_lock_release(DropProbe(released.clone()), true);
+        assert_eq!(released.get(), 1);
+        let retained = Rc::new(Cell::new(0));
+        drop_after_confirmed_lock_release(DropProbe(retained.clone()), false);
+        assert_eq!(retained.get(), 0);
     }
 
     fn identity(database_oid: u32, logical: u8, fingerprint: u8, token: u8) -> ScanTokenIdentity {
@@ -1654,6 +1938,10 @@ mod tests {
                 .count(),
             1
         );
+        assert!(registry
+            .fence_hash
+            .iter()
+            .all(|entry| entry.slot_plus_one != HASH_TOMBSTONE));
         assert_eq!(registry.tokens[0].epoch_fingerprint, [7; 34]);
     }
 
@@ -1937,6 +2225,10 @@ mod tests {
                 .count(),
             1
         );
+        assert!(registry
+            .fence_hash
+            .iter()
+            .all(|entry| entry.slot_plus_one != HASH_TOMBSTONE));
     }
 
     #[test]
@@ -2026,19 +2318,19 @@ mod tests {
     }
 
     #[test]
-    fn hash_collisions_survive_head_middle_deletion_and_tombstone_reuse() {
+    fn hash_collisions_survive_head_and_middle_backshift_deletion() {
         let mut table = vec![HashEntry::default(); 8];
         for slot in 0..3 {
             hash_insert(&mut table, 3, slot).unwrap();
         }
         let (head, _) = hash_lookup(&table, 3, |slot| slot == 0).unwrap();
-        table[head].slot_plus_one = HASH_TOMBSTONE;
+        hash_backshift_delete(&mut table, head, |_| Ok(3)).unwrap();
         assert_eq!(
             hash_lookup(&table, 3, |slot| slot == 2).map(|pair| pair.1),
             Some(2)
         );
         let (middle, _) = hash_lookup(&table, 3, |slot| slot == 1).unwrap();
-        table[middle].slot_plus_one = HASH_TOMBSTONE;
+        hash_backshift_delete(&mut table, middle, |_| Ok(3)).unwrap();
         hash_insert(&mut table, 3, 3).unwrap();
         assert_eq!(
             hash_lookup(&table, 3, |slot| slot == 3).map(|pair| pair.1),
@@ -2046,6 +2338,50 @@ mod tests {
         );
         assert_eq!(
             hash_lookup(&table, 3, |slot| slot == 2).map(|pair| pair.1),
+            Some(2)
+        );
+        assert!(table
+            .iter()
+            .all(|entry| entry.slot_plus_one != HASH_TOMBSTONE));
+    }
+
+    #[test]
+    fn backshift_prevalidates_late_corruption_and_wraparound_mixed_hashes() {
+        let mut corrupt = vec![HashEntry::default(); 8];
+        for slot in 0..3 {
+            hash_insert(&mut corrupt, 6, slot).unwrap();
+        }
+        corrupt[0].slot_plus_one = 99;
+        let before = corrupt.clone();
+        assert_eq!(
+            hash_backshift_delete(&mut corrupt, 6, |slot| {
+                if slot < 3 {
+                    Ok(6)
+                } else {
+                    Err(RegistryError::CorruptSharedState)
+                }
+            }),
+            Err(RegistryError::CorruptSharedState)
+        );
+        assert_eq!(corrupt, before);
+
+        let mut wrapped = vec![HashEntry::default(); 8];
+        hash_insert(&mut wrapped, 7, 0).unwrap();
+        hash_insert(&mut wrapped, 7, 1).unwrap();
+        hash_insert(&mut wrapped, 0, 2).unwrap();
+        let (head, _) = hash_lookup(&wrapped, 7, |slot| slot == 0).unwrap();
+        hash_backshift_delete(&mut wrapped, head, |slot| match slot {
+            1 => Ok(7),
+            2 => Ok(0),
+            _ => Err(RegistryError::CorruptSharedState),
+        })
+        .unwrap();
+        assert_eq!(
+            hash_lookup(&wrapped, 7, |slot| slot == 1).map(|p| p.1),
+            Some(1)
+        );
+        assert_eq!(
+            hash_lookup(&wrapped, 0, |slot| slot == 2).map(|p| p.1),
             Some(2)
         );
     }
@@ -2156,6 +2492,10 @@ mod tests {
         }
         assert!(registry.header.token_free_head >= 0);
         assert_eq!(registry.fences[0].token_count, 0);
+        assert!(registry
+            .token_hash
+            .iter()
+            .all(|entry| entry.slot_plus_one != HASH_TOMBSTONE));
 
         let mut operations = TestRegistry::new(1, 4, 0);
         for _ in 0..16 {
@@ -2181,6 +2521,10 @@ mod tests {
             }
             assert!(operations.header.operation_free_head >= 0);
             assert!(operations.operations.iter().all(|slot| slot.in_use == 0));
+            assert!(operations
+                .operation_hash
+                .iter()
+                .all(|entry| entry.slot_plus_one != HASH_TOMBSTONE));
         }
     }
 }

@@ -76,13 +76,12 @@ fn test_ec_distann_scan_registry_preloaded_shared_path() {
         crate::am::ec_distann::register_scan_token_for_test(logical, [0x44; 34], token),
         Err(crate::am::ec_distann::ScanRegistryError::TokenConflict)
     );
-    let fence = crate::am::ec_distann::acquire_scan_fence_for_test(
+    crate::am::ec_distann::with_scan_fence_for_test(
         unsafe { pg_sys::MyDatabaseId },
         *logical.as_bytes(),
+        || (),
     )
-    .expect("preloaded registry should allocate an operation reference");
-    assert!(fence.fence_id() > 0);
-    drop(fence);
+    .expect("preloaded registry should hold and release the shared fence");
     assert_eq!(
         crate::am::ec_distann::release_scan_token_for_test(logical, fingerprint, token),
         Ok(true)
