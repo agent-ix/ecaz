@@ -1,0 +1,59 @@
+Script started on 2026-07-10 19:00:13-07:00 [<not executed on terminal>]
+    Updating crates.io index
+     Locking 451 packages to latest compatible versions
+      Adding arrow-array v55.2.0 (available: v59.1.0)
+      Adding arrow-schema v55.2.0 (available: v59.1.0)
+      Adding criterion v0.5.1 (available: v0.8.2)
+      Adding directories v5.0.1 (available: v6.0.0)
+      Adding generic-array v0.14.7 (available: v0.14.9)
+      Adding hashbrown v0.15.5 (available: v0.17.1)
+      Adding iai-callgrind v0.14.2 (available: v0.16.1)
+      Adding indicatif v0.17.11 (available: v0.18.6)
+      Adding ndarray v0.16.1 (available: v0.17.2)
+      Adding parquet v55.2.0 (available: v59.1.0)
+      Adding pgrx v0.17.0 (available: v0.18.1)
+      Adding pgrx-pg-config v0.17.0 (available: v0.18.1)
+      Adding pgrx-tests v0.17.0 (available: v0.18.1)
+      Adding rand v0.8.6 (available: v0.10.2)
+      Adding rand_chacha v0.3.1 (available: v0.10.0)
+      Adding rand_distr v0.4.3 (available: v0.6.0)
+      Adding reqwest v0.12.28 (available: v0.13.4)
+      Adding sha2 v0.10.9 (available: v0.11.0)
+   Compiling tinyvec v1.12.0
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-163-d8-validation)
+   Compiling unicode-normalization v0.1.25
+   Compiling stringprep v0.1.5
+   Compiling postgres-protocol v0.6.12
+   Compiling postgres-types v0.2.14
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-postgres v0.7.18
+   Compiling rustls v0.23.41
+   Compiling postgres v0.19.14
+   Compiling tokio-rustls v0.26.4
+   Compiling pgrx-tests v0.17.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 03s
+     Running unittests src/lib.rs (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/target/debug/deps/ecaz-a5f24a65aae19894)
+
+running 16 tests
+test am::ec_distann::shard_build::tests::repair_reachability_bounds_degree_on_disconnected_graph ... ok
+test am::ec_distann::shard_build::tests::resolve_shard_count_behaviour ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_coverage_gap ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_out_of_range_node_and_neighbor ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_over_degree_entry ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_truncated_payload ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_unconsumed_tail ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_unsorted_stream ... ok
+test am::ec_distann::shard_build::tests::tc038_stitch_idempotence ... ok
+test am::ec_distann::shard_build::tests::tc038_closure_duplication_scales_with_epsilon ... ok
+test am::ec_distann::shard_build::tests::tc038_d8_spill_and_cursor_bound ... ok
+test am::ec_distann::shard_build::tests::tc038_alpha_prune_invariant ... ok
+test am::ec_distann::shard_build::tests::tc038_uniqueness_and_valid_edges ... ok
+test am::ec_distann::shard_build::tests::tc038_degree_bounded ... ok
+test am::ec_distann::shard_build::tests::tc038_medoid_reachability ... ok
+test am::ec_distann::shard_build::tests::tc038_determinism ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 2406 filtered out; finished in 1.31s
+
+
+Script done on 2026-07-10 19:02:17-07:00 [COMMAND_EXIT_CODE="0"]
