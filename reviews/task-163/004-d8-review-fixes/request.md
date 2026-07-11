@@ -3,7 +3,9 @@
 **Status:** review requested; code follow-up only, not Task 163 closeout.
 
 **Branch:** `task-179-ec-distann-physical-shards`  
-**Code checkpoint:** `de9d6fca3e0bd05f44ad6b0d376a2480e4023798`
+**Code checkpoints:** implementation `de9d6fca3e0bd05f44ad6b0d376a2480e4023798`;
+test-only all-target clippy follow-up
+`c9b74c4f258c699def7ffc951e6abf47762565a4`.
 
 ## Outcome
 
@@ -37,6 +39,8 @@ unchanged dependencies.
 
 - Focused shard suite: 16 passed, 0 failed.
 - Strict PG18 library clippy with `-D warnings`: clean.
+- Strict PG18 all-target clippy with `-D warnings`: clean at the follow-up SHA;
+  the only delta is the idiomatic `size_of_val` spelling in a test helper.
 - Focused live PG18 multi-block test: 1 passed, 0 failed.
 
 ## Deliberately open
