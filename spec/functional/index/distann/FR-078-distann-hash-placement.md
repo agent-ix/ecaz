@@ -84,9 +84,13 @@ record_count bigint, receipt_digest bytea, last_error_category text)`
 
 Each participant SHALL expose these identity/recovery inspection operations:
 
+`ec_distann_configure_participant_identity(index_regclass regclass,
+endpoint_identity text) RETURNS void`
+
 `ec_distann_control_identity(index_regclass regclass)
 RETURNS TABLE (logical_index_uuid uuid, index_format_version integer,
-distributed_control boolean)`
+distributed_control boolean, compatibility_digest bytea,
+endpoint_identity text, canonical_index_regclass text)`
 
 `ec_distann_list_unpublished_generations(index_regclass regclass)
 RETURNS TABLE (build_id uuid, epoch bigint, state text,
@@ -100,24 +104,87 @@ created_at timestamptz)`
 - Version 1 node ids SHALL be in `1..=2,147,483,647`. They remain encoded as
   `u32` on canonical wires, but the restricted domain is shared by descriptors
   and PostgreSQL `integer` catalogs.
-- An endpoint identity SHALL be non-empty canonical UTF-8 with no NUL or
-  leading/trailing whitespace, at most 65,535 bytes, and SHALL NOT be a
-  PostgreSQL URI or keyword/value conninfo string. The exact canonical value
-  is the identity persisted in the generation descriptor and matched by an
-  owner; it is not transport secret material.
+- A version-1 endpoint identity SHALL match the exact ASCII grammar
+  `[A-Za-z0-9][A-Za-z0-9._/-]{0,254}`. A conninfo secret reference SHALL match
+  `[A-Z][A-Z0-9_]{0,127}`. The latter is an injective input to the environment
+  provider key `EC_SPIRE_REMOTE_CONNINFO_<reference>`; case-folding or
+  punctuation aliases are not accepted. Both grammars exclude whitespace,
+  `=`, URI schemes, quoting, and every libpq keyword/value form by construction
+  rather than by a keyword blocklist. The endpoint identity is not transport
+  secret material.
+- Before a control can be registered as a participant, its owner SHALL call
+  `ec_distann_configure_participant_identity`. The operation is insert-only for
+  one logical-index UUID: an exact replay is idempotent and a different value
+  raises `EC_NODE_DESCRIPTOR`. The identity is stored in a participant-local
+  durable catalog, survives restart, and is removed by DROP or destructive
+  REINDEX together with the old logical UUID. A session GUC or relation name
+  SHALL NOT supply this identity.
+- `ec_distann_control_identity` SHALL return that configured identity and the
+  server-canonical schema-qualified index locator. An unconfigured control MAY
+  return NULL identity for inspection but SHALL be rejected by registration.
+  The version-1 canonical locator SHALL contain exactly two unquoted lower-case
+  PostgreSQL identifiers matching
+  `[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}`. Registration SHALL persist
+  the returned canonical locator, never the caller's locator spelling.
 - Registration SHALL store the conninfo secret reference only in the
   coordinator-local descriptor catalog governed by
   [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md).
 - Registration SHALL resolve the secret, call the participant's secured
   `ec_distann_control_identity`, and persist the returned logical-index UUID
-  only after verifying v5 `distributed_control` metadata and the configured
-  endpoint identity. A caller-supplied or OID-derived UUID SHALL NOT be
+  and returned canonical index locator only after verifying v5
+  `distributed_control` metadata and exact equality between the requested and
+  returned configured endpoint identity. A caller-supplied or OID-derived UUID,
+  an unqualified/quoted locator, or a caller-only endpoint label SHALL NOT be
   accepted as provenance.
-- Registration is insert-only for one ordinal. Updating an entry requires
-  `ec_distann_unregister_node_descriptor` followed by registration, and
-  unregister SHALL reject while a build gate, publish decision, or active
-  manifest references the registry. A build always consumes an immutable
-  copied roster snapshot, so later registry edits cannot mutate an epoch.
+- `compatibility_digest` SHALL be
+  `SHA-256("ec_distann_control_compatibility_v1\0" || canonical_body)`. The
+  canonical body SHALL contain, in order, `compatibility_version u16 = 1`,
+  graph degree `u16`, build-list size `u16`, alpha IEEE-754 `f32_le`, codec seed
+  `u64`, neighbor-codec kind `u8`, head-index cap `u32`, closure epsilon
+  IEEE-754 `f32_le`, source-identity provider `u8 = 1` (`include`), indexed
+  vector attribute number `u16`, indexed-key kind `u8`
+  (`1 = extension-owned ecvector inner-product opclass`, `2 =
+  extension-owned tqvector inner-product opclass`), identity attribute number
+  `u16`, identity base kind `u8` (`1 = uuid`, `2 = bytea16`), identity
+  `attnotnull u8 = 1`, and the 32-byte row-schema fingerprint. The key shall be
+  one base-table attribute using the named extension-owned opclass; expression,
+  custom, or shadow-schema opclasses are incompatible. Registration SHALL
+  compare this digest with the coordinator control before inserting a
+  descriptor. The digest excludes the logical UUID and endpoint identity so
+  compatible controls on distinct participants compare equal.
+- `ec_distann_node_descriptor` is the desired roster for the next build, not
+  historical routing state. Registration inserts one immutable desired entry
+  and rejects conflicting ordinal, node id, endpoint, participant UUID, or
+  local-participant values. Unregister removes the desired entry. Replacing an
+  ordinal is one operator transaction containing unregister then register, so
+  another build observes either complete roster and never the intermediate
+  gap.
+- Every control SHALL have one durable registry-state row with a monotonically
+  increasing revision. Configure, register, unregister, and begin-build SHALL
+  serialize on the same coordinator-control relation lock and lock this row
+  `FOR UPDATE`; register/unregister increment its revision in their transaction.
+  The coordinator-control relation lock SHALL remain held until transaction
+  end, including across an operator transaction that calls unregister and then
+  register to replace one ordinal. Releasing it when either SQL function
+  returns is forbidden because a waiter could otherwise acquire the relation
+  lock, wait on the registry row, and deadlock the replacement call through
+  inverted lock ownership.
+  Under READ COMMITTED a waiter sees the committed roster. Under Repeatable
+  Read or Serializable, a registry-state change after the caller's snapshot
+  SHALL cause PostgreSQL serialization failure rather than a stale edit.
+- `ec_distann_begin_epoch_build` SHALL copy every desired descriptor, including
+  its secret reference, canonical remote index locator, compatibility digest,
+  and local flag, into a private build-participant binding keyed by build id
+  and ordinal. It SHALL also bind the registry revision. Manifests continue to
+  contain only the public roster `(node_id, UUID, endpoint_identity)`.
+  Publication, reads, recovery, and retirement SHALL use the build-specific
+  private bindings, never the mutable desired roster.
+- Unregister SHALL reject a desired entry already captured by a Registered,
+  Building, Ready, or decided-but-unapplied build. It MAY remove an entry used
+  only by Published/retained epochs because those epochs have immutable private
+  bindings. Build-participant bindings remain until their last epoch is
+  reclaimed; active/retained fingerprint lookup SHALL resolve unambiguously to
+  its build id before transport.
 - A distributed-control build SHALL require the ADR-063 global
   `source_identity = 'include'` provider with exactly one non-NULL UUID or
   16-byte bytea identity attribute. Heap-TID-derived local identity SHALL be
@@ -290,6 +357,15 @@ NOT reinterpret artifact-v1 bytes.
   for final tuple materialization and coordinator-side qual evaluation.
 - The epoch row tier SHALL preserve NULLs and PostgreSQL binary values in
   ascending source-attnum order.
+- The row tier is captured storage, not a writable copy of the source table.
+  Every non-dropped row-tier column SHALL therefore be physically nullable and
+  SHALL carry no source column default, table/column CHECK, NOT-NULL, identity,
+  or generated expression. Domain identity and validation remain part of the
+  bound type semantics. Type, typmod, collation, attnum layout, dropped slots,
+  and captured values remain exact. Source `attnotnull` outside the
+  required identity attribute is deliberately not part of row-schema version
+  1; differing source constraints cannot make stage fail after schema
+  compatibility has passed.
 - The indexed full-precision vector in the row tier SHALL be byte-identical to
   the vector observed by the build snapshot.
 - The row-tier schema fingerprint SHALL cover attribute order, names, qualified
@@ -374,6 +450,10 @@ RETURNS void`
 - The coordinator SHALL retain at most one unacknowledged batch per owner.
 - The coordinator SHALL preserve strictly increasing vec_id order within each
   owner stream.
+- Every owner SHALL receive and acknowledge sequence zero even when its owner
+  stream is empty. An empty owner uses one canonical zero-entry batch and a
+  Ready receipt with `last_acknowledged_batch_sequence = 0`; there is no
+  unsigned sentinel for "no batch" in receipt version 1.
 - During initial snapshot capture, before Vamana construction, stitching, or
   the first participant handoff, the coordinator SHALL serialize and preflight
   every frozen source row against the complete handoff-entry size formula
@@ -390,8 +470,12 @@ RETURNS void`
   entire batch.
 - The participant SHALL return the prior receipt when an acknowledged batch is
   replayed with the same sequence and digest.
-- If an acknowledged sequence is replayed with different bytes or digest, then
-  the participant SHALL raise `EC_BATCH_CONFLICT` without mutation.
+- The version-1 journaled content identity is the verified SHA-256 batch digest
+  plus exact encoded byte length. An acknowledged replay with a different
+  digest or byte length SHALL raise `EC_BATCH_CONFLICT` without mutation; an
+  exact identity replay returns the journaled receipt. Version 1 relies on
+  SHA-256 collision resistance and SHALL NOT retain complete encoded batches,
+  which would duplicate the frozen row tier.
 - If a sequence skips the participant's next expected value, then the
   participant SHALL raise `EC_BATCH_SEQUENCE` without mutation.
 - The seal operation SHALL reject missing sequences, count disagreement,
@@ -403,6 +487,26 @@ RETURNS void`
   owner's canonical handoff entries in vec_id order.
 - The expected owner digest SHALL exclude participant-local row-tier and graph
   `ItemPointer` values.
+- Seal SHALL independently reconstruct the locator-free canonical handoff entry
+  for every physical graph/row pair in unsigned vec_id order and require its
+  owner-stream digest to equal the begin-time expectation. It SHALL also derive
+  these Ready-receipt digests from physical storage:
+  - `persisted_graph_digest = SHA-256("ec_distann_persisted_graph_v1\0" ||
+    repeated(u64_le(vec_id) || u32_le(record_len) || physical_graph_record))`;
+  - `persisted_row_tier_digest =
+    SHA-256("ec_distann_persisted_row_tier_v1\0" ||
+    repeated(u64_le(vec_id) || u32_le(null_bitmap_len) || null_bitmap ||
+    u32_le(value_count) || repeated(u32_le(value_len) || typsend_value)))`;
+  - `local_directory_digest =
+    SHA-256("ec_distann_local_directory_v1\0" ||
+    repeated(u64_le(vec_id) || graph_heap_ctid_6_bytes))`.
+  Repetitions are in unsigned vec_id order. The physical graph digest includes
+  its destination-local row locator; the owner-stream digest does not.
+- Ready-receipt byte totals SHALL use `pg_table_size(graph_store_relid)`,
+  `pg_table_size(row_tier_relid)`, and
+  `pg_total_relation_size(directory_relid)` respectively. The two table-size
+  calls include their attributed TOAST storage and exclude the directory index;
+  the directory total includes its own relation storage.
 
 The canonical immutable build specification SHALL contain these fields in
 order:
@@ -436,6 +540,17 @@ as the generation descriptor. `owner_expectations` SHALL begin with its `u32`
 element count and then encode the three fixed-width fields for each roster
 entry without per-entry byte lengths. The build specification SHALL contain no raw
 conninfo, secret reference, PostgreSQL OID, or local physical locator.
+- `expected_global_graph_digest` SHALL be
+  `SHA-256("ec_distann_global_graph_v1\0" || repeated(locator_free_graph))`,
+  where `locator_free_graph` is `u64_le(vec_id)`, `graph_flags u16_le`, the
+  length-prefixed search code, neighbor count `u32_le`, neighbor vec ids in
+  stored order, and the length-prefixed concatenated neighbor-code bytes.
+- `expected_global_row_tier_digest` SHALL be
+  `SHA-256("ec_distann_global_row_tier_v1\0" || repeated(canonical_row))`,
+  where `canonical_row` is `u64_le(vec_id)`, the length-prefixed 16-byte source
+  identity, length-prefixed NULL bitmap, row-value count `u32_le`, and each
+  length-prefixed `typsend` value. Both global repetitions use unsigned vec_id
+  order and no participant-local locator.
 - Because `owner_expectations` bind final per-owner counts and stream digests,
   v1 SHALL finish the bounded source/stitched spools and make a counting/digest
   pass before the first participant `begin`. This deliberate second pass keeps
@@ -473,8 +588,11 @@ directory_bytes bigint, control_index_bytes bigint)`
   generation, not from expected manifest fields.
 - `owned_vec_id_digest` SHALL hash the strictly sorted local vec_id sequence as
   `SHA-256("ec_distann_owned_vec_ids_v1\0" || u64_le(vec_id)...)`.
-- `graph_bytes`, `row_tier_bytes`, and `directory_bytes` SHALL include their
-  attributed TOAST storage and exclude the logical control index.
+- `graph_digest` and `row_tier_digest` SHALL be the independently recomputed
+  persisted graph/row-tier digests defined for seal, and SHALL equal the Ready
+  receipt. `graph_bytes`, `row_tier_bytes`, and `directory_bytes` SHALL use the
+  exact Ready-receipt size functions defined above and exclude the logical
+  control index.
   `control_index_bytes` SHALL separately report the local logical control
   relation so NFR-018 can sum it into the graph-side numerator without
   conflating it with generation storage.
@@ -496,7 +614,7 @@ directory_bytes bigint, control_index_bytes bigint)`
 | `EC_NODE_DESCRIPTOR` | Roster ordinal/id/endpoint is duplicate, malformed, secret-bearing, or incompatible with the remote control index | Reject before catalog or remote mutation |
 | `EC_SOURCE_IDENTITY` | Physical build lacks one valid global UUID/bytea16 source identity per row | Reject before snapshot capture or handoff |
 | `EC_BATCH_SEQUENCE` | Gap, regression, or out-of-order batch sequence | Reject before mutation |
-| `EC_BATCH_CONFLICT` | Replayed sequence has different digest or bytes | Reject before mutation |
+| `EC_BATCH_CONFLICT` | Replayed sequence has different verified digest or encoded length | Reject before mutation |
 | `EC_HANDOFF_DIGEST` | Supplied batch bytes do not match the batch digest | Roll back the current batch; generation remains resumable |
 | `EC_WRONG_OWNER` | Entry hashes to another roster participant | Roll back the entire batch |
 | `EC_DUPLICATE_VEC_ID` | Duplicate vec_id within or across acknowledged batches | Roll back the entire batch |
@@ -536,6 +654,7 @@ directory_bytes bigint, control_index_bytes bigint)`
 | FR-078-AC-11 | The handoff never buffers a complete epoch and never exceeds the batch or peak-memory constraints | Test (TC-040) |
 | FR-078-AC-12 | A coordinator outside the roster holds no graph records; a coordinator inside the roster holds only its hash-owned records | Test (TC-040) |
 | FR-078-AC-13 | A trained-codec generation descriptor round-trips byte-exactly and makes owner query preparation/scoring identical to the coordinator without owner-side retraining | Test (TC-040, TC-050) |
+| FR-078-AC-14 | Participant identity is durably configured; node registration resolves a secret reference, obtains UUID/endpoint/canonical locator only from the secured identity endpoint, rejects duplicate/raw/incompatible inputs before insertion, and desired-roster replacement cannot alter active/retained build bindings | Test (TC-040) |
 
 ## Dependencies
 

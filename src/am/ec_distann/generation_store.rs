@@ -21,7 +21,7 @@ use crate::storage::relation::{
 use crate::storage::relation_guard::IndexRelationGuard;
 
 use super::ambuild::read_metadata_from_index_handle;
-use super::canonical_wire::is_rfc4122_v4_uuid;
+use super::canonical_wire::{domain_digest, is_rfc4122_v4_uuid, CanonicalEncoder};
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
 use super::handoff_wire::{owner_stream_digest, DistannHandoffShape};
@@ -29,6 +29,39 @@ use super::page::{DistannMetadataPage, INDEX_FORMAT_V5_DISTANN_CONTROL};
 use super::quantizer::DistannCodecBinding;
 use super::roster_digest as canonical_roster_digest;
 use super::row_schema::{resolve_relation_schema, ResolvedRowSchema};
+
+const CONTROL_COMPATIBILITY_VERSION: u16 = 1;
+const CONTROL_COMPATIBILITY_DOMAIN: &[u8] = b"ec_distann_control_compatibility_v1\0";
+
+fn canonical_control_compatibility_digest(
+    metadata: &DistannMetadataPage,
+    key_attnum: u16,
+    key_kind: u8,
+    identity_attnum: u16,
+    identity_kind: u8,
+    row_schema_fingerprint: &[u8; 32],
+) -> Result<[u8; 32], String> {
+    let mut encoder = CanonicalEncoder::with_capacity(64);
+    encoder.put_u16(CONTROL_COMPATIBILITY_VERSION);
+    encoder.put_u16(metadata.graph_degree_r);
+    encoder.put_u16(metadata.build_list_size_l);
+    encoder.put_f32(metadata.alpha);
+    encoder.put_u64(metadata.seed);
+    encoder.put_u8(metadata.neighbor_codec_kind);
+    encoder.put_u32(metadata.head_index_cap);
+    encoder.put_f32(metadata.closure_epsilon);
+    encoder.put_u8(1); // source_identity = include
+    encoder.put_u16(key_attnum);
+    encoder.put_u8(key_kind);
+    encoder.put_u16(identity_attnum);
+    encoder.put_u8(identity_kind);
+    encoder.put_u8(1); // identity attnotnull = true
+    encoder.put_fixed(row_schema_fingerprint);
+    Ok(domain_digest(
+        CONTROL_COMPATIBILITY_DOMAIN,
+        &encoder.finish()?,
+    ))
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct GenerationRelations {
@@ -47,7 +80,7 @@ fn relation_exists(relation_oid: pg_sys::Oid) -> bool {
     relation_oid != pg_sys::InvalidOid && unsafe { pg_sys::get_rel_relkind(relation_oid) } != 0
 }
 
-fn open_control_index(
+pub(crate) fn open_control_index(
     index_oid: pg_sys::Oid,
     lockmode: pg_sys::LOCKMODE,
     caller: &'static str,
@@ -78,6 +111,137 @@ fn open_control_index(
     }
     let logical_index_uuid = Uuid::from_bytes(metadata.logical_index_uuid);
     Ok((guard, handle, metadata, logical_index_uuid))
+}
+
+/// Canonical registration-time identity for every control property that must
+/// agree before a coordinator can place rows on a participant. The logical
+/// UUID is deliberately excluded: distinct participant controls have distinct
+/// UUIDs while sharing this compatibility identity.
+pub(crate) fn control_compatibility_digest(
+    index_handle: RelationHandle,
+    metadata: &DistannMetadataPage,
+) -> Result<[u8; 32], String> {
+    let index_oid = relation_oid_handle(index_handle);
+    let heap_oid = index_heap_relation_oid_handle(index_handle);
+    if heap_oid == pg_sys::InvalidOid {
+        return Err("EC_SCHEMA_MISMATCH: control index has no source relation".to_owned());
+    }
+    let options = super::options::relation_options(index_handle.as_ptr());
+    if !options.distributed_control
+        || options.source_identity != super::options::DistannSourceIdentityProvider::Include
+    {
+        return Err(
+            "EC_NODE_DESCRIPTOR: control reloptions require distributed_control=true and source_identity='include'"
+                .to_owned(),
+        );
+    }
+
+    let (key_attnum, key_kind, identity_attnum, identity_type_oid) = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT i.indnkeyatts::int4 AS key_count,
+                        i.indnatts::int4 AS total_count,
+                        i.indkey[0]::int4 AS key_attnum,
+                        i.indkey[1]::int4 AS identity_attnum,
+                        a.atttypid AS identity_type_oid,
+                        a.attnotnull AS identity_not_null,
+                        i.indisvalid AS index_valid,
+                        i.indisready AS index_ready,
+                        i.indislive AS index_live,
+                        CASE
+                          WHEN opc.opcnamespace = ext.extnamespace
+                           AND opc.opcname = 'ecvector_distann_ip_ops' THEN 1
+                          WHEN opc.opcnamespace = ext.extnamespace
+                           AND opc.opcname = 'tqvector_distann_ip_ops' THEN 2
+                          ELSE 0
+                        END::int4 AS key_kind
+                   FROM pg_catalog.pg_index i
+                   JOIN pg_catalog.pg_attribute a
+                     ON a.attrelid = i.indrelid
+                    AND a.attnum = i.indkey[1]
+                   JOIN pg_catalog.pg_opclass opc ON opc.oid = i.indclass[0]
+                   JOIN pg_catalog.pg_extension ext ON ext.extname = 'ecaz'
+                  WHERE i.indexrelid = $1::oid",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|error| format!("EC_NODE_DESCRIPTOR: index identity lookup failed: {error}"))?
+            .map(|row| {
+                let required_i32 = |name: &str| -> Result<i32, String> {
+                    row[name]
+                        .value::<i32>()
+                        .map_err(|error| {
+                            format!("EC_NODE_DESCRIPTOR: {name} decode failed: {error}")
+                        })?
+                        .ok_or_else(|| format!("EC_NODE_DESCRIPTOR: {name} is NULL"))
+                };
+                let key_count = required_i32("key_count")?;
+                let total_count = required_i32("total_count")?;
+                let key_attnum = required_i32("key_attnum")?;
+                let identity_attnum = required_i32("identity_attnum")?;
+                let key_kind = required_i32("key_kind")?;
+                let identity_type_oid = row["identity_type_oid"]
+                    .value::<pg_sys::Oid>()
+                    .map_err(|error| {
+                        format!("EC_NODE_DESCRIPTOR: identity type decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_NODE_DESCRIPTOR: identity type is NULL".to_owned())?;
+                let required_bool = |name: &str| -> Result<bool, String> {
+                    row[name]
+                        .value::<bool>()
+                        .map_err(|error| {
+                            format!("EC_NODE_DESCRIPTOR: {name} decode failed: {error}")
+                        })?
+                        .ok_or_else(|| format!("EC_NODE_DESCRIPTOR: {name} is NULL"))
+                };
+                if key_count != 1
+                    || total_count != 2
+                    || key_attnum <= 0
+                    || identity_attnum <= 0
+                    || !matches!(key_kind, 1 | 2)
+                    || !required_bool("identity_not_null")?
+                    || !required_bool("index_valid")?
+                    || !required_bool("index_ready")?
+                    || !required_bool("index_live")?
+                {
+                    return Err(
+                        "EC_NODE_DESCRIPTOR: control index key/opclass/identity/readiness contract is incompatible"
+                            .to_owned(),
+                    );
+                }
+                Ok((key_attnum, key_kind, identity_attnum, identity_type_oid))
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| "EC_NODE_DESCRIPTOR: control index identity row is absent".to_owned())
+    })?;
+    let key_attnum = u16::try_from(key_attnum)
+        .map_err(|_| "EC_NODE_DESCRIPTOR: key attnum exceeds u16".to_owned())?;
+    let key_kind = u8::try_from(key_kind)
+        .map_err(|_| "EC_NODE_DESCRIPTOR: key kind exceeds u8".to_owned())?;
+    let identity_attnum = u16::try_from(identity_attnum)
+        .map_err(|_| "EC_NODE_DESCRIPTOR: identity attnum exceeds u16".to_owned())?;
+    let identity_kind = match crate::storage::type_info::base_type_oid(identity_type_oid) {
+        pg_sys::UUIDOID => 1,
+        pg_sys::BYTEAOID => 2,
+        _ => {
+            return Err(
+                "EC_NODE_DESCRIPTOR: source identity base type must be uuid or bytea16".to_owned(),
+            )
+        }
+    };
+    let row_schema_fingerprint = resolve_relation_schema(heap_oid)?
+        .descriptor
+        .fingerprint()?;
+
+    canonical_control_compatibility_digest(
+        metadata,
+        key_attnum,
+        key_kind,
+        identity_attnum,
+        identity_kind,
+        &row_schema_fingerprint,
+    )
 }
 
 fn validate_descriptor_for_control(
@@ -209,9 +373,6 @@ fn row_tier_column_sql(
         if let Some(collation) = &column.collation_sql {
             definition.push_str(" COLLATE ");
             definition.push_str(collation);
-        }
-        if column.not_null {
-            definition.push_str(" NOT NULL");
         }
         definitions.push(definition);
     }
@@ -444,19 +605,76 @@ fn ec_distann_control_identity(
         name!(logical_index_uuid, Uuid),
         name!(index_format_version, i32),
         name!(distributed_control, bool),
+        name!(compatibility_digest, Vec<u8>),
+        name!(endpoint_identity, Option<String>),
+        name!(canonical_index_regclass, String),
     ),
 > {
     let index_oid = index_regclass.oid();
-    let (_guard, _handle, metadata, logical_index_uuid) = open_control_index(
+    let (_guard, handle, metadata, logical_index_uuid) = open_control_index(
         index_oid,
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
         "ec_distann_control_identity",
     )
     .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let compatibility_digest = control_compatibility_digest(handle, &metadata)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let participant_identity = generation_catalog::extension_relation_name(
+        "ec_distann_participant_identity",
+    )
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let (endpoint_identity, canonical_index_regclass) = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT pi.endpoint_identity,
+                            pg_catalog.format('%I.%I', n.nspname, c.relname)
+                               AS canonical_index_regclass
+                       FROM pg_catalog.pg_class c
+                       JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                       LEFT JOIN {participant_identity} pi
+                         ON pi.index_oid = c.oid
+                        AND pi.logical_index_uuid = $2::uuid
+                      WHERE c.oid = $1::oid"
+                ),
+                None,
+                &[index_oid.into(), logical_index_uuid.into()],
+            )
+            .map_err(|_| "EC_NODE_DESCRIPTOR: control identity catalog lookup failed".to_owned())?
+            .map(|row| {
+                let endpoint_identity = row["endpoint_identity"]
+                    .value::<String>()
+                    .map_err(|_| {
+                        "EC_NODE_DESCRIPTOR: configured endpoint identity decode failed".to_owned()
+                    })?;
+                let canonical_index_regclass = row["canonical_index_regclass"]
+                    .value::<String>()
+                    .map_err(|_| {
+                        "EC_NODE_DESCRIPTOR: canonical index locator decode failed".to_owned()
+                    })?
+                    .ok_or_else(|| {
+                        "EC_NODE_DESCRIPTOR: canonical index locator is NULL".to_owned()
+                    })?;
+                super::node_registry::validate_canonical_index_locator(
+                    &canonical_index_regclass,
+                )?;
+                Ok::<(Option<String>, String), String>((
+                    endpoint_identity,
+                    canonical_index_regclass,
+                ))
+            })
+            .next()
+            .transpose()?
+            .ok_or_else(|| "EC_NODE_DESCRIPTOR: control identity relation is absent".to_owned())
+    })
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
     TableIterator::once((
         logical_index_uuid,
         i32::from(metadata.format_version),
         metadata.is_distributed_control(),
+        compatibility_digest.to_vec(),
+        endpoint_identity,
+        canonical_index_regclass,
     ))
 }
 
@@ -718,4 +936,33 @@ pub(crate) fn reset_control_index_for_rebuild(
     }
     generation_catalog::delete_index_catalog_rows(index_oid)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_control_compatibility_digest;
+    use crate::am::ec_distann::page::{DistannMetadataPage, DISTANN_NEIGHBOR_CODEC_GROUPED_PQ};
+
+    #[test]
+    fn control_compatibility_v1_golden_is_frozen() {
+        let mut logical_uuid = [0x55; 16];
+        logical_uuid[6] = 0x45;
+        logical_uuid[8] = 0x85;
+        let metadata = DistannMetadataPage::distributed_control(
+            4,
+            100,
+            1.2,
+            42,
+            DISTANN_NEIGHBOR_CODEC_GROUPED_PQ,
+            4096,
+            0.3,
+            logical_uuid,
+        );
+        let digest = canonical_control_compatibility_digest(&metadata, 4, 1, 1, 1, &[0x11; 32])
+            .expect("compatibility identity should encode");
+        assert_eq!(
+            hex::encode(digest),
+            "3c9e8a0ac974ff8e39587276b0594ebc73d7b352ac867bd5356c09903da475c8"
+        );
+    }
 }

@@ -37,10 +37,13 @@ pub(crate) fn extension_relation_name(relation_name: &str) -> Result<String, Str
 }
 
 struct CatalogRelations {
+    participant_identity: String,
+    registry_state: String,
     node_descriptor: String,
     generation: String,
     generation_batch: String,
     build_registration: String,
+    build_participant_binding: String,
     publish_decision: String,
     retire_decision: String,
     active_epoch: String,
@@ -49,15 +52,38 @@ struct CatalogRelations {
 impl CatalogRelations {
     fn resolve() -> Result<Self, String> {
         Ok(Self {
+            participant_identity: extension_relation_name("ec_distann_participant_identity")?,
+            registry_state: extension_relation_name("ec_distann_registry_state")?,
             node_descriptor: extension_relation_name("ec_distann_node_descriptor")?,
             generation: extension_relation_name("ec_distann_generation")?,
             generation_batch: extension_relation_name("ec_distann_generation_batch")?,
             build_registration: extension_relation_name("ec_distann_build_registration")?,
+            build_participant_binding: extension_relation_name(
+                "ec_distann_build_participant_binding",
+            )?,
             publish_decision: extension_relation_name("ec_distann_publish_decision")?,
             retire_decision: extension_relation_name("ec_distann_retire_decision")?,
             active_epoch: extension_relation_name("ec_distann_active_epoch")?,
         })
     }
+}
+
+pub(crate) fn initialize_registry_state(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+) -> Result<(), String> {
+    let registry_state = extension_relation_name("ec_distann_registry_state")?;
+    let sql = format!(
+        "INSERT INTO {registry_state} (
+             index_oid, logical_index_uuid, revision
+         ) VALUES ($1::oid, $2::uuid, 0)"
+    );
+    Spi::connect_mut(|client| {
+        client
+            .update(&sql, None, &[index_oid.into(), logical_index_uuid.into()])
+            .map_err(|error| format!("EC_NODE_DESCRIPTOR: registry state init failed: {error}"))?;
+        Ok(())
+    })
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -363,12 +389,18 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
+            (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
+            (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
+            (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid)
             AS removed_count",
+        catalogs.participant_identity,
+        catalogs.registry_state,
         catalogs.node_descriptor,
         catalogs.generation,
         catalogs.generation_batch,
         catalogs.build_registration,
+        catalogs.build_participant_binding,
         catalogs.publish_decision,
         catalogs.retire_decision,
         catalogs.active_epoch,
@@ -393,6 +425,14 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
         format!(
             "DELETE FROM {} WHERE index_oid = $1::oid",
             catalogs.node_descriptor
+        ),
+        format!(
+            "DELETE FROM {} WHERE index_oid = $1::oid",
+            catalogs.participant_identity
+        ),
+        format!(
+            "DELETE FROM {} WHERE index_oid = $1::oid",
+            catalogs.registry_state
         ),
         format!(
             "DELETE FROM {} WHERE index_oid = $1::oid",

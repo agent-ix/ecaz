@@ -36,7 +36,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-rg -o --no-filename 'EC_[A-Z0-9_]+' "${spec_files[@]}" | sort -u >"${spec_errors}"
+# Provider environment-variable prefixes share the `EC_` spelling but are not
+# stable SQL error categories and therefore do not belong in the error matrix.
+rg -o --no-filename 'EC_[A-Z0-9_]+' "${spec_files[@]}" \
+  | sed '/^EC_SPIRE_REMOTE_CONNINFO_$/d' \
+  | sort -u >"${spec_errors}"
 rg -o --no-filename 'EC_[A-Z0-9_]+' spec/tests.md | sort -u >"${matrix_errors}"
 missing_count="$(comm -23 "${spec_errors}" "${matrix_errors}" | wc -l | tr -d ' ')"
 

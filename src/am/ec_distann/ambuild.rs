@@ -209,7 +209,17 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
                     "ec_distann distributed_control=true requires source_identity='include' with exactly one UUID or bytea(16) INCLUDE column"
                 );
             }
-            initialize_metadata_page(index_relation, control_metadata(&state));
+            let metadata = control_metadata(&state);
+            let logical_index_uuid = metadata.logical_index_uuid;
+            initialize_metadata_page(index_relation, metadata);
+            let index_handle = NonNull::new(index_relation).unwrap_or_else(|| {
+                pgrx::error!("ec_distann control registry init needs a valid index relation")
+            });
+            super::generation_catalog::initialize_registry_state(
+                crate::storage::relation::relation_oid_handle(index_handle),
+                pgrx::datum::Uuid::from_bytes(logical_index_uuid),
+            )
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             // The logical control relation intentionally indexes no heap rows.
             // Physical generation construction later owns snapshot accounting.
@@ -398,6 +408,11 @@ unsafe fn resolve_identity_attribute(
             if identity_att.attisdropped {
                 pgrx::error!(
                     "ec_distann source_identity INCLUDE column references a dropped column"
+                );
+            }
+            if options.distributed_control && !identity_att.attnotnull {
+                pgrx::error!(
+                    "EC_SOURCE_IDENTITY: distributed-control source identity column must be declared NOT NULL"
                 );
             }
             let datum_kind = match crate::storage::type_info::base_type_oid(identity_att.atttypid)

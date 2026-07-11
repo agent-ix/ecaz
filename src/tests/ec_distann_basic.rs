@@ -166,7 +166,7 @@ fn test_distann_control_metadata_and_fail_closed() {
         "SELECT ec_distann_debug_set_in_flight('ec_distann_control_idx'::regclass::oid, 1)",
         "SELECT * FROM ec_distann_epoch_status('ec_distann_control_idx'::regclass::oid)",
     ] {
-        let error = expect_pg_error(|| {
+        let error = expect_pg_error_rolled_back(|| {
             Spi::run(statement).expect("legacy lifecycle call must reject v5 control indexes");
         });
         assert!(
@@ -246,6 +246,31 @@ fn test_distann_control_requires_include_identity() {
     assert!(
         error.contains("distributed_control=true requires source_identity='include'"),
         "unexpected missing-identity error: {error}"
+    );
+}
+
+#[pg_test]
+fn test_distann_control_requires_not_null_identity() {
+    Spi::run(
+        "CREATE TABLE ec_distann_control_nullable_identity (
+             source_id uuid,
+             embedding ecvector NOT NULL
+         )",
+    )
+    .expect("nullable-identity source table should create");
+    let error = expect_pg_error_rolled_back(|| {
+        Spi::run(
+            "CREATE INDEX ec_distann_control_nullable_identity_idx
+             ON ec_distann_control_nullable_identity
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             INCLUDE (source_id)
+             WITH (distributed_control = true, source_identity = 'include')",
+        )
+        .expect("nullable physical identity must fail");
+    });
+    assert!(
+        error.contains("EC_SOURCE_IDENTITY") && error.contains("NOT NULL"),
+        "unexpected nullable-identity error: {error}"
     );
 }
 
@@ -462,6 +487,7 @@ fn test_distann_control_vacuum_and_concurrent_create() {
 
 struct DistannPhysicalGenerationFixture {
     index_name: String,
+    canonical_index_regclass: String,
     index_oid: pg_sys::Oid,
     logical_index_uuid: pgrx::datum::Uuid,
     build_id: pgrx::datum::Uuid,
@@ -473,8 +499,51 @@ struct DistannPhysicalGenerationFixture {
 }
 
 fn distann_generation_catalog_name() -> String {
-    crate::am::ec_distann::catalog_relation_name("ec_distann_generation")
+    distann_catalog_name("ec_distann_generation")
+}
+
+fn distann_catalog_name(name: &str) -> String {
+    crate::am::ec_distann::catalog_relation_name(name)
         .expect("extension generation catalog should resolve")
+}
+
+fn canonical_index_locator(index_oid: pg_sys::Oid) -> String {
+    Spi::get_one::<String>(&format!(
+        "SELECT pg_catalog.format('%I.%I', n.nspname, c.relname)
+           FROM pg_catalog.pg_class c
+           JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+          WHERE c.oid = {}",
+        u32::from(index_oid)
+    ))
+    .unwrap()
+    .expect("index should have a canonical schema-qualified locator")
+}
+
+fn configure_distann_participant_identity(
+    fixture: &DistannPhysicalGenerationFixture,
+    endpoint_identity: &str,
+) {
+    configure_distann_participant_identity_at(fixture.index_oid, endpoint_identity);
+}
+
+fn configure_distann_participant_identity_at(
+    index_oid: pg_sys::Oid,
+    endpoint_identity: &str,
+) {
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                "SELECT ec_distann_configure_participant_identity(
+                     $1::oid::regclass, $2::text
+                 )",
+                None,
+                &[
+                    index_oid.into(),
+                    endpoint_identity.to_owned().into(),
+                ],
+            )
+            .expect("participant identity should configure");
+    });
 }
 
 fn create_distann_physical_generation_fixture(
@@ -558,6 +627,7 @@ fn create_distann_physical_generation_fixture(
     build_id[8] = (build_id[8] & 0x3f) | 0x80;
     DistannPhysicalGenerationFixture {
         index_name,
+        canonical_index_regclass: canonical_index_locator(index_oid),
         index_oid,
         logical_index_uuid,
         build_id: pgrx::datum::Uuid::from_bytes(build_id),
@@ -670,6 +740,688 @@ fn abort_distann_physical_generation(fixture: &DistannPhysicalGenerationFixture)
     });
 }
 
+fn register_distann_node(
+    coordinator: &DistannPhysicalGenerationFixture,
+    roster_ordinal: i32,
+    node_id: i32,
+    endpoint_identity: &str,
+    conninfo_secret_name: &str,
+    remote_index_regclass: &str,
+    is_local: bool,
+) {
+    register_distann_node_at(
+        coordinator.index_oid,
+        roster_ordinal,
+        node_id,
+        endpoint_identity,
+        conninfo_secret_name,
+        remote_index_regclass,
+        is_local,
+    );
+}
+
+fn register_distann_node_at(
+    coordinator_index_oid: pg_sys::Oid,
+    roster_ordinal: i32,
+    node_id: i32,
+    endpoint_identity: &str,
+    conninfo_secret_name: &str,
+    remote_index_regclass: &str,
+    is_local: bool,
+) {
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                "SELECT ec_distann_register_node_descriptor(
+                     $1::oid::regclass, $2::integer, $3::integer,
+                     $4::text, $5::text, $6::text, $7::boolean
+                 )",
+                None,
+                &[
+                    coordinator_index_oid.into(),
+                    roster_ordinal.into(),
+                    node_id.into(),
+                    endpoint_identity.to_owned().into(),
+                    conninfo_secret_name.to_owned().into(),
+                    remote_index_regclass.to_owned().into(),
+                    is_local.into(),
+                ],
+            )
+            .expect("node registration should execute");
+    });
+}
+
+#[pg_test]
+fn test_distann_node_registration_provenance_and_guards() {
+    const SECRET_NAME: &str = "DISTANN_LOCAL_REGISTRY";
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_LOCAL_REGISTRY";
+    let _env_lock = env_var_test_lock();
+    assert_eq!(
+        crate::am::spire_remote_conninfo_secret_provider_lookup_key(SECRET_NAME).unwrap(),
+        SECRET_KEY
+    );
+    let _conninfo_secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+
+    let coordinator =
+        create_distann_physical_generation_fixture("ec_distann_registry_coordinator", 0x71);
+    let participant =
+        create_distann_physical_generation_fixture("ec_distann_registry_participant", 0x72);
+    let participant_two =
+        create_distann_physical_generation_fixture("ec_distann_registry_participant_two", 0x73);
+    let participant_three =
+        create_distann_physical_generation_fixture("ec_distann_registry_participant_three", 0x75);
+    configure_distann_participant_identity(&participant, "registry/node-17");
+    configure_distann_participant_identity(&participant_two, "registry/node-18");
+    configure_distann_participant_identity(&participant_three, "registry/node-17");
+    configure_distann_participant_identity(&participant, "registry/node-17");
+    let identity_reconfigure_error = expect_pg_error_rolled_back(|| {
+        configure_distann_participant_identity(&participant, "registry/changed-node");
+    });
+    assert!(identity_reconfigure_error.contains("already configured differently"));
+
+    let coordinator_compatibility = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT compatibility_digest
+           FROM ec_distann_control_identity('{}'::regclass)",
+        coordinator.index_name
+    ))
+    .unwrap()
+    .unwrap();
+    let participant_compatibility = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT compatibility_digest
+           FROM ec_distann_control_identity('{}'::regclass)",
+        participant.index_name
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(coordinator_compatibility.len(), 32);
+    assert_eq!(coordinator_compatibility, participant_compatibility);
+
+    register_distann_node(
+        &coordinator,
+        0,
+        17,
+        "registry/node-17",
+        SECRET_NAME,
+        &participant.canonical_index_regclass,
+        true,
+    );
+    let node_catalog = distann_catalog_name("ec_distann_node_descriptor");
+    let (stored_uuid, stored_secret) = Spi::get_two::<pgrx::datum::Uuid, String>(&format!(
+        "SELECT participant_logical_index_uuid, conninfo_secret_name
+           FROM {node_catalog}
+          WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid
+            AND roster_ordinal = 0",
+        u32::from(coordinator.index_oid),
+        coordinator.logical_index_uuid,
+    ))
+    .unwrap();
+    assert_eq!(stored_uuid, Some(participant.logical_index_uuid));
+    assert_eq!(stored_secret.as_deref(), Some(SECRET_NAME));
+    let persisted_raw_conninfo = Spi::get_one::<bool>(&format!(
+        "SELECT endpoint_identity LIKE '%host=%'
+             OR conninfo_secret_name LIKE '%host=%'
+             OR remote_index_regclass LIKE '%host=%'
+           FROM {node_catalog}
+          WHERE index_oid = {} AND roster_ordinal = 0",
+        u32::from(coordinator.index_oid)
+    ))
+    .unwrap()
+    .unwrap();
+    assert!(!persisted_raw_conninfo);
+
+    let registered_count = || {
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {node_catalog}
+              WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid",
+            u32::from(coordinator.index_oid),
+            coordinator.logical_index_uuid,
+        ))
+        .unwrap()
+        .unwrap()
+    };
+    for (label, expected, ordinal, node_id, endpoint, target, is_local) in [
+        (
+            "duplicate ordinal",
+            "roster ordinal already exists",
+            0,
+            18,
+            "registry/node-18",
+            participant_two.canonical_index_regclass.as_str(),
+            true,
+        ),
+        (
+            "duplicate node",
+            "node id already exists",
+            1,
+            17,
+            "registry/node-18",
+            participant_two.canonical_index_regclass.as_str(),
+            true,
+        ),
+        (
+            "duplicate endpoint",
+            "endpoint identity already exists",
+            1,
+            18,
+            "registry/node-17",
+            participant_three.canonical_index_regclass.as_str(),
+            true,
+        ),
+        (
+            "duplicate participant UUID",
+            "participant logical UUID already exists",
+            1,
+            18,
+            "registry/node-17",
+            participant.canonical_index_regclass.as_str(),
+            true,
+        ),
+        (
+            "second local participant",
+            "local participant already exists",
+            1,
+            18,
+            "registry/node-18",
+            participant_two.canonical_index_regclass.as_str(),
+            true,
+        ),
+    ] {
+        let error = expect_pg_error_rolled_back(|| {
+            register_distann_node(
+                &coordinator,
+                ordinal,
+                node_id,
+                endpoint,
+                SECRET_NAME,
+                target,
+                is_local,
+            );
+        });
+        assert!(
+            error.contains("EC_NODE_DESCRIPTOR") && error.contains(expected),
+            "{label} returned an unexpected error: {error}"
+        );
+        assert_eq!(registered_count(), 1, "{label} mutated the registry");
+    }
+
+    let raw_endpoint_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "host=secret.example dbname=leak",
+            SECRET_NAME,
+            &participant_two.canonical_index_regclass,
+            true,
+        );
+    });
+    assert!(raw_endpoint_error.contains("EC_NODE_DESCRIPTOR"));
+    let raw_secret_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "registry/node-18",
+            "host=secret.example",
+            &participant_two.canonical_index_regclass,
+            true,
+        );
+    });
+    assert!(raw_secret_error.contains("EC_NODE_DESCRIPTOR"));
+    let blocklist_counterexample_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "application_name=secret",
+            SECRET_NAME,
+            &participant_two.canonical_index_regclass,
+            true,
+        );
+    });
+    assert!(blocklist_counterexample_error.contains("canonical v1 grammar"));
+    let provider_alias_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "registry/node-18",
+            "DISTANN-LOCAL-REGISTRY",
+            &participant_two.canonical_index_regclass,
+            true,
+        );
+    });
+    assert!(provider_alias_error.contains("canonical v1 grammar"));
+    let missing_secret_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "registry/node-18",
+            "DISTANN_MISSING_REGISTRY_SECRET",
+            &participant_two.canonical_index_regclass,
+            true,
+        );
+    });
+    assert!(missing_secret_error.contains("conninfo secret is unavailable"));
+    let endpoint_mismatch_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "registry/wrong-node",
+            SECRET_NAME,
+            &participant_two.canonical_index_regclass,
+            true,
+        );
+    });
+    assert!(endpoint_mismatch_error.contains("endpoint identity does not match"));
+    let unqualified_locator_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "registry/node-18",
+            SECRET_NAME,
+            &participant_two.index_name,
+            true,
+        );
+    });
+    assert!(unqualified_locator_error.contains("schema-qualified canonical"));
+    assert_eq!(registered_count(), 1, "invalid references mutated the registry");
+
+    let incompatible =
+        create_distann_physical_generation_fixture("ec_distann_registry_incompatible", 0x74);
+    Spi::run(&format!(
+        "ALTER INDEX {} SET (graph_degree = 8); REINDEX INDEX {}",
+        incompatible.index_name, incompatible.index_name
+    ))
+    .unwrap();
+    configure_distann_participant_identity(&incompatible, "registry/node-18");
+    let incompatible_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "registry/node-18",
+            SECRET_NAME,
+            &incompatible.canonical_index_regclass,
+            true,
+        );
+    });
+    assert!(
+        incompatible_error.contains("schema/reloptions are incompatible"),
+        "unexpected compatibility error: {incompatible_error}"
+    );
+    assert_eq!(registered_count(), 1, "incompatible control mutated the registry");
+
+    let build_catalog = distann_catalog_name("ec_distann_build_registration");
+    let binding_catalog = distann_catalog_name("ec_distann_build_participant_binding");
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "INSERT INTO {build_catalog} (
+                         index_oid, logical_index_uuid, build_id, epoch, state,
+                         registry_revision, roster_snapshot, roster_digest,
+                         row_schema_fingerprint, registration_digest
+                     ) VALUES (
+                         $1::oid, $2::uuid, $3::uuid, 7, 'Registered', 1,
+                         '\\x01'::bytea, decode(repeat('11', 32), 'hex'),
+                         decode(repeat('22', 32), 'hex'),
+                         decode(repeat('33', 32), 'hex')
+                     )"
+                ),
+                None,
+                &[
+                    coordinator.index_oid.into(),
+                    coordinator.logical_index_uuid.into(),
+                    coordinator.build_id.into(),
+                ],
+            )
+            .unwrap();
+        client
+            .update(
+                &format!(
+                    "INSERT INTO {binding_catalog} (
+                         index_oid, logical_index_uuid, build_id, roster_ordinal,
+                         node_id, endpoint_identity, conninfo_secret_name,
+                         remote_index_regclass, participant_logical_index_uuid,
+                         compatibility_digest, is_local
+                     ) VALUES (
+                         $1::oid, $2::uuid, $3::uuid, 0, 17,
+                         'registry/node-17', $4::text, $5::text, $6::uuid,
+                         $7::bytea, true
+                     )"
+                ),
+                None,
+                &[
+                    coordinator.index_oid.into(),
+                    coordinator.logical_index_uuid.into(),
+                    coordinator.build_id.into(),
+                    SECRET_NAME.to_owned().into(),
+                    participant.canonical_index_regclass.clone().into(),
+                    participant.logical_index_uuid.into(),
+                    coordinator_compatibility.clone().into(),
+                ],
+            )
+            .unwrap();
+    });
+    let guarded_error = expect_pg_error_rolled_back(|| {
+        Spi::run(&format!(
+            "SELECT ec_distann_unregister_node_descriptor('{}'::regclass, 0)",
+            coordinator.index_name
+        ))
+        .expect("referenced unregister must fail");
+    });
+    assert!(guarded_error.contains("EC_BUILD_STATE"));
+    Spi::run(&format!(
+        "UPDATE {build_catalog} SET state = 'Published'
+          WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid
+            AND build_id = '{}'::uuid",
+        u32::from(coordinator.index_oid),
+        coordinator.logical_index_uuid,
+        coordinator.build_id,
+    ))
+    .unwrap();
+    Spi::run(&format!(
+        "SELECT ec_distann_unregister_node_descriptor('{}'::regclass, 0)",
+        coordinator.index_name
+    ))
+    .unwrap();
+    assert_eq!(registered_count(), 0);
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {binding_catalog}
+              WHERE index_oid = {} AND build_id = '{}'::uuid",
+            u32::from(coordinator.index_oid),
+            coordinator.build_id,
+        ))
+        .unwrap(),
+        Some(1),
+        "Published build binding must outlive desired-roster removal"
+    );
+    register_distann_node(
+        &coordinator,
+        0,
+        18,
+        "registry/node-18",
+        SECRET_NAME,
+        &participant_two.canonical_index_regclass,
+        true,
+    );
+    assert_eq!(registered_count(), 1);
+    Spi::run(&format!(
+        "SELECT ec_distann_unregister_node_descriptor('{}'::regclass, 0)",
+        coordinator.index_name
+    ))
+    .unwrap();
+    assert_eq!(registered_count(), 0);
+    Spi::run(&format!(
+        "DELETE FROM {build_catalog}
+          WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid",
+        u32::from(coordinator.index_oid),
+        coordinator.logical_index_uuid,
+    ))
+    .unwrap();
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {node_catalog} WHERE index_oid = {}",
+            u32::from(coordinator.index_oid)
+        ))
+        .unwrap(),
+        Some(0)
+    );
+
+    // Exercise the production libpq provenance path against a separately
+    // committed loopback participant. The participant relation is deliberately
+    // invisible to the coordinator's local catalog lookup, so this cannot
+    // accidentally fall back to the local identity path.
+    const REMOTE_SECRET_NAME: &str = "DISTANN_LOOPBACK_REGISTRY";
+    const REMOTE_SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_LOOPBACK_REGISTRY";
+    assert_eq!(
+        crate::am::spire_remote_conninfo_secret_provider_lookup_key(REMOTE_SECRET_NAME).unwrap(),
+        REMOTE_SECRET_KEY
+    );
+    const BROKEN_SECRET_NAME: &str = "DISTANN_BROKEN_REGISTRY";
+    const BROKEN_SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BROKEN_REGISTRY";
+    let _broken_conninfo_secret = ScopedEnvVar::set(
+        BROKEN_SECRET_KEY,
+        "host=/tmp/ecaz_distann_missing_socket dbname=secret password=do_not_expose connect_timeout=1",
+    );
+    let connection_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "registry/broken-node",
+            BROKEN_SECRET_NAME,
+            "public.ec_distann_missing_remote_idx",
+            false,
+        );
+    });
+    assert!(connection_error.contains("remote control connection failed"));
+    for forbidden in [
+        BROKEN_SECRET_NAME,
+        "ecaz_distann_missing_socket",
+        "do_not_expose",
+        "dbname=secret",
+    ] {
+        assert!(
+            !connection_error.contains(forbidden),
+            "sanitized connection error exposed {forbidden}: {connection_error}"
+        );
+    }
+    let loopback_conninfo = current_pg_test_loopback_conninfo();
+    let _remote_conninfo_secret = ScopedEnvVar::set(REMOTE_SECRET_KEY, &loopback_conninfo);
+    let mut loopback_client = postgres::Client::connect(&loopback_conninfo, postgres::NoTls)
+        .expect("registration loopback connection should succeed");
+    let extension_schema = loopback_client
+        .query_one(
+            "SELECT pg_catalog.quote_ident(n.nspname)
+               FROM pg_catalog.pg_extension e
+               JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+              WHERE e.extname = 'ecaz'",
+            &[],
+        )
+        .expect("remote extension schema should resolve")
+        .try_get::<_, String>(0)
+        .expect("remote extension schema should decode");
+    let remote_table =
+        format!("{extension_schema}.ec_distann_registry_loopback_remote_source");
+    let remote_index = format!("{extension_schema}.ec_distann_registry_loopback_remote_idx");
+    let missing_remote_index = format!("{extension_schema}.ec_distann_registry_missing_idx");
+    let query_error = expect_pg_error_rolled_back(|| {
+        register_distann_node(
+            &coordinator,
+            1,
+            18,
+            "registry/missing-node",
+            REMOTE_SECRET_NAME,
+            &missing_remote_index,
+            false,
+        );
+    });
+    assert!(query_error.contains("remote control identity query failed"));
+    assert!(!query_error.contains(REMOTE_SECRET_NAME));
+    assert!(!query_error.contains("ec_distann_registry_missing_idx"));
+    loopback_client
+        .batch_execute(&format!(
+            "SET search_path TO {extension_schema}, pg_catalog;
+             DROP TABLE IF EXISTS {remote_table} CASCADE;
+             CREATE TABLE {remote_table} (
+                 source_id uuid NOT NULL,
+                 payload text,
+                 legacy_payload integer,
+                 embedding ecvector(4) NOT NULL,
+                 payload_generated text GENERATED ALWAYS AS (payload || ':generated') STORED
+             );
+             ALTER TABLE {remote_table} DROP COLUMN legacy_payload;
+             CREATE INDEX ec_distann_registry_loopback_remote_idx ON {remote_table}
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             INCLUDE (source_id)
+             WITH (
+                 distributed_control = true,
+                 source_identity = 'include',
+                 graph_degree = 4,
+                 neighbor_code_format = 'rabitq'
+             )"
+        ))
+        .expect("remote registration fixture should create");
+    loopback_client
+        .execute(
+            &format!(
+                "SELECT {extension_schema}.ec_distann_configure_participant_identity(
+                     $1::text::regclass, $2::text
+                 )"
+            ),
+            &[&remote_index, &"registry/loopback-node-18"],
+        )
+        .expect("remote participant identity should configure");
+    let remote_uuid = loopback_client
+        .query_one(
+            &format!(
+                "SELECT logical_index_uuid::text
+                   FROM {extension_schema}.ec_distann_control_identity($1::text::regclass)"
+            ),
+            &[&remote_index],
+        )
+        .expect("remote control identity should execute")
+        .try_get::<_, String>(0)
+        .expect("remote logical UUID should decode");
+    register_distann_node(
+        &coordinator,
+        1,
+        18,
+        "registry/loopback-node-18",
+        REMOTE_SECRET_NAME,
+        &remote_index,
+        false,
+    );
+    let stored_remote_uuid = Spi::get_one::<String>(&format!(
+        "SELECT participant_logical_index_uuid::text
+           FROM {node_catalog}
+          WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid
+            AND roster_ordinal = 1",
+        u32::from(coordinator.index_oid),
+        coordinator.logical_index_uuid,
+    ))
+    .unwrap()
+    .expect("remote participant UUID should be stored");
+    assert_eq!(stored_remote_uuid, remote_uuid);
+    Spi::run(&format!(
+        "SELECT ec_distann_unregister_node_descriptor('{}'::regclass, 1)",
+        coordinator.index_name
+    ))
+    .unwrap();
+    loopback_client
+        .batch_execute(&format!("DROP TABLE {remote_table} CASCADE"))
+        .expect("remote registration fixture should clean up");
+    let registry_state = distann_catalog_name("ec_distann_registry_state");
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT revision FROM {registry_state}
+              WHERE index_oid = {} AND logical_index_uuid = '{}'::uuid",
+            u32::from(coordinator.index_oid),
+            coordinator.logical_index_uuid,
+        ))
+        .unwrap(),
+        Some(6),
+        "only committed desired-roster mutations may advance the revision"
+    );
+}
+
+#[pg_test]
+fn test_distann_node_registration_binds_indexed_key_attnum() {
+    const SECRET_NAME: &str = "DISTANN_KEY_LAYOUT";
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_KEY_LAYOUT";
+    let _env_lock = env_var_test_lock();
+    let _conninfo_secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+    Spi::run(
+        "CREATE TABLE ec_distann_key_layout_coordinator_source (
+             source_id uuid NOT NULL,
+             embedding_a ecvector(4) NOT NULL,
+             embedding_b ecvector(4) NOT NULL
+         );
+         CREATE INDEX ec_distann_key_layout_coordinator_idx
+           ON ec_distann_key_layout_coordinator_source
+           USING ec_distann (embedding_a ecvector_distann_ip_ops)
+           INCLUDE (source_id)
+           WITH (distributed_control = true, source_identity = 'include', graph_degree = 4);
+         CREATE TABLE ec_distann_key_layout_participant_source (
+             source_id uuid NOT NULL,
+             embedding_a ecvector(4) NOT NULL,
+             embedding_b ecvector(4) NOT NULL
+         );
+         CREATE INDEX ec_distann_key_layout_participant_idx
+           ON ec_distann_key_layout_participant_source
+           USING ec_distann (embedding_b ecvector_distann_ip_ops)
+           INCLUDE (source_id)
+           WITH (distributed_control = true, source_identity = 'include', graph_degree = 4);
+         CREATE OPERATOR CLASS ec_distann_shadow_ip_ops
+           FOR TYPE ecvector USING ec_distann AS
+             OPERATOR 1 <#>(ecvector, real[]) FOR ORDER BY float_ops,
+             FUNCTION 1 ecvector_query_inner_product(ecvector, real[]);
+         CREATE TABLE ec_distann_key_layout_shadow_source (
+             source_id uuid NOT NULL,
+             embedding_a ecvector(4) NOT NULL,
+             embedding_b ecvector(4) NOT NULL
+         );
+         CREATE INDEX ec_distann_key_layout_shadow_idx
+           ON ec_distann_key_layout_shadow_source
+           USING ec_distann (embedding_a ec_distann_shadow_ip_ops)
+           INCLUDE (source_id)
+           WITH (distributed_control = true, source_identity = 'include', graph_degree = 4)",
+    )
+    .unwrap();
+    let coordinator_oid = Spi::get_one::<pg_sys::Oid>(
+        "SELECT 'ec_distann_key_layout_coordinator_idx'::regclass::oid",
+    )
+    .unwrap()
+    .unwrap();
+    let participant_oid = Spi::get_one::<pg_sys::Oid>(
+        "SELECT 'ec_distann_key_layout_participant_idx'::regclass::oid",
+    )
+    .unwrap()
+    .unwrap();
+    configure_distann_participant_identity_at(participant_oid, "registry/key-layout");
+    let participant_locator = canonical_index_locator(participant_oid);
+    let error = expect_pg_error_rolled_back(|| {
+        register_distann_node_at(
+            coordinator_oid,
+            0,
+            19,
+            "registry/key-layout",
+            SECRET_NAME,
+            &participant_locator,
+            true,
+        );
+    });
+    assert!(
+        error.contains("schema/reloptions are incompatible"),
+        "key-attnum drift must fail registration: {error}"
+    );
+    let shadow_oid = Spi::get_one::<pg_sys::Oid>(
+        "SELECT 'ec_distann_key_layout_shadow_idx'::regclass::oid",
+    )
+    .unwrap()
+    .unwrap();
+    configure_distann_participant_identity_at(shadow_oid, "registry/shadow-opclass");
+    let shadow_error = expect_pg_error_rolled_back(|| {
+        Spi::run(
+            "SELECT compatibility_digest
+               FROM ec_distann_control_identity(
+                   'ec_distann_key_layout_shadow_idx'::regclass
+               )",
+        )
+        .expect("shadow opclass identity must fail");
+    });
+    assert!(
+        shadow_error.contains("key/opclass/identity/readiness contract"),
+        "custom opclass must not enter compatibility identity: {shadow_error}"
+    );
+}
+
 #[pg_test]
 fn test_distann_generation_relations_replay_abort_and_privileges() {
     let fixture =
@@ -759,6 +1511,18 @@ fn test_distann_generation_relations_replay_abort_and_privileges() {
         generated_is_plain,
         "captured generated values must not recompute"
     );
+    let row_tier_not_null_count = Spi::get_one::<i64>(&format!(
+        "SELECT count(*)
+           FROM pg_attribute
+          WHERE attrelid = {} AND attnum > 0 AND NOT attisdropped AND attnotnull",
+        u32::from(relations.0),
+    ))
+    .unwrap()
+    .unwrap();
+    assert_eq!(
+        row_tier_not_null_count, 0,
+        "captured row-tier storage must not copy source NOT-NULL constraints"
+    );
     let dropped_slot = Spi::get_one::<bool>(&format!(
         "SELECT attisdropped
            FROM pg_attribute
@@ -811,6 +1575,9 @@ fn test_distann_generation_relations_replay_abort_and_privileges() {
            CROSS JOIN LATERAL aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) acl
           WHERE p.proname IN (
               'ec_distann_control_identity',
+              'ec_distann_configure_participant_identity',
+              'ec_distann_register_node_descriptor',
+              'ec_distann_unregister_node_descriptor',
               'ec_distann_begin_epoch_handoff',
               'ec_distann_abort_epoch_handoff',
               'ec_distann_list_unpublished_generations',

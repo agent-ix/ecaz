@@ -85,13 +85,8 @@ pub fn validate_roster(roster: &[DistannRosterEntry]) -> Result<(), String> {
         {
             return Err("EC_NODE_DESCRIPTOR: zero or duplicate logical index UUID".to_owned());
         }
-        let endpoint = entry.endpoint_identity.trim();
-        if endpoint.is_empty()
-            || endpoint != entry.endpoint_identity
-            || endpoint.len() > u16::MAX as usize
-            || endpoint.as_bytes().contains(&0)
-            || looks_like_raw_conninfo(endpoint)
-            || !endpoints.insert(endpoint.to_owned())
+        if validate_endpoint_identity(&entry.endpoint_identity).is_err()
+            || !endpoints.insert(entry.endpoint_identity.clone())
         {
             return Err(format!(
                 "EC_NODE_DESCRIPTOR: malformed, duplicate, or secret-bearing endpoint identity {:?}",
@@ -102,30 +97,21 @@ pub fn validate_roster(roster: &[DistannRosterEntry]) -> Result<(), String> {
     Ok(())
 }
 
-/// Defense-in-depth only. The security boundary is registration resolving a
-/// secret reference and persisting a separately authenticated endpoint
-/// identity; no finite string blocklist can prove arbitrary text is not a
-/// disguised conninfo value.
-fn looks_like_raw_conninfo(value: &str) -> bool {
-    let lower = value.to_ascii_lowercase();
-    if lower.starts_with("postgres://") || lower.starts_with("postgresql://") {
-        return true;
+pub(crate) fn validate_endpoint_identity(value: &str) -> Result<(), String> {
+    let bytes = value.as_bytes();
+    let first_is_alphanumeric = bytes
+        .first()
+        .is_some_and(|byte| byte.is_ascii_alphanumeric());
+    let tail_is_canonical = bytes.iter().skip(1).all(|byte| {
+        byte.is_ascii_alphanumeric() || matches!(*byte, b'.' | b'_' | b'/' | b'-')
+    });
+    if bytes.len() > 255 || !first_is_alphanumeric || !tail_is_canonical {
+        return Err(
+            "EC_NODE_DESCRIPTOR: endpoint identity violates the canonical v1 grammar"
+                .to_owned(),
+        );
     }
-    lower.split_whitespace().any(|part| {
-        [
-            "host=",
-            "hostaddr=",
-            "port=",
-            "dbname=",
-            "user=",
-            "password=",
-            "sslmode=",
-            "requiressl=",
-            "service=",
-        ]
-        .iter()
-        .any(|prefix| part.starts_with(prefix))
-    })
+    Ok(())
 }
 
 pub(crate) fn encode_roster(
@@ -641,8 +627,7 @@ impl DistannBuildSpec {
                 || !owners.insert(owner.node_id)
             {
                 return Err(
-                    "EC_GENERATION_DESCRIPTOR: invalid or duplicate owner expectation"
-                        .to_owned(),
+                    "EC_GENERATION_DESCRIPTOR: invalid or duplicate owner expectation".to_owned(),
                 );
             }
             count_sum = count_sum

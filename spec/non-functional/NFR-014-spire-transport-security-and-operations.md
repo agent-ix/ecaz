@@ -48,7 +48,7 @@ provide explicit operator-visible recovery.
    categories and operator hints, not raw remote error payloads.
 4. JSON tuple transport SHALL NOT be selected by the production distributed read
    path once typed transport is required.
-5. EC_DISTANN node registration, control identity
+5. EC_DISTANN participant-identity configuration, node registration, control identity
    (`ec_distann_control_identity`), unpublished-generation listing
    (`ec_distann_list_unpublished_generations`), build, handoff, topology
    inspection, expansion, materialization, publication, recovery, retirement,
@@ -75,6 +75,19 @@ provide explicit operator-visible recovery.
     relations, and local directories SHALL be extension-owned internal
     relations with no direct `PUBLIC` access. User-visible row access SHALL pass
     through the validated coordinator/materialization path.
+12. EC_DISTANN endpoint identities and conninfo secret references SHALL use the
+    exact distinct FR-078 grammars that exclude `=`, whitespace, quoting, URI
+    schemes, and provider-key aliases. Registration SHALL persist only the
+    endpoint identity and canonical index locator returned by the authenticated
+    participant endpoint, never caller-only spellings.
+13. Desired-roster catalogs SHALL NOT be used to route a Published or retained
+    epoch. Every such operation SHALL resolve the immutable private
+    build-participant binding selected by the epoch's build id; that private
+    catalog remains non-public and never enters manifest or diagnostic bytes.
+14. Every EC_DISTANN `SECURITY DEFINER` endpoint SHALL pin `search_path` to
+    `pg_catalog`, the extension schema, and explicit `pg_temp` last. Omitting
+    `pg_temp` is not equivalent because PostgreSQL otherwise searches the
+    session temporary schema first for relation and type names.
 
 ## Operational Constraints
 

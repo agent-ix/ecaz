@@ -1,7 +1,9 @@
 # Task 179: ec_distann Physical Hash-Shard Generations, Handoff, and Publish
 
-Status: proposed (2026-07-10). Depends on: Task 163's open ADR-085 D8 /
-FR-077-CON-4 streamed-stitch closeout and the revised FR-075..FR-083 /
+Status: in progress (2026-07-10; format/control, transactional-generation
+storage, and authenticated-registry checkpoints landed; streamed handoff is
+next). Depends
+on: Task 163's ADR-085 D8 / FR-077-CON-4 streamed-stitch closeout and the revised FR-075..FR-083 /
 NFR-014/NFR-016..020 contracts. Build from the current
 `task-165-ec-distann-m3` implementation line after preserving its replicated
 control evidence.
@@ -134,10 +136,12 @@ correct implementation.
 
 For each local `(logical_index_uuid, build_id)` generation:
 
-- Create one hidden row-tier heap relation by copying the participant's
-  schema-compatible source-shell tuple descriptor. Insert decoded source
-  datums directly so generated values are stored, not recomputed, and normal
-  PostgreSQL TOAST handles wide values. The relation is immutable after Ready.
+- Create one hidden row-tier heap relation from the participant's
+  schema-compatible source-shell physical attnum/type/typmod/collation layout.
+  Make captured columns nullable and copy no defaults, CHECK/NOT-NULL/identity
+  constraints, or generated expressions. Insert decoded source datums directly
+  so generated values are stored, not recomputed, and normal PostgreSQL TOAST
+  handles wide values. The relation is immutable after Ready.
 - Create one hidden graph-store heap with fixed columns equivalent to
   `(vec_id bigint, graph_record bytea, row_tid tid)`. Insert the row-tier tuple
   first, encode its local CTID into `DistannNodeTuple`, then insert the graph
@@ -160,10 +164,13 @@ model matches. Do not share SPIRE epoch state or partition-object semantics.
 Add extension-owned catalogs (exact SQL names may be adjusted together in one
 reviewed schema checkpoint):
 
-- `ec_distann_node_descriptor`
+- `ec_distann_participant_identity`
+- `ec_distann_registry_state`
+- `ec_distann_node_descriptor` (desired roster only)
 - `ec_distann_generation`
 - `ec_distann_generation_batch`
 - `ec_distann_build_registration`
+- `ec_distann_build_participant_binding` (private immutable transport snapshot)
 - `ec_distann_publish_decision`
 - `ec_distann_retire_decision`
 - `ec_distann_active_epoch`
@@ -173,11 +180,25 @@ Catalog and endpoint privileges are revoked from `PUBLIC`. DROP/REINDEX tests
 must prove hidden relations are dependency-cleaned and stale catalog rows are
 never addressable after OID reuse.
 
-Implement node registration as insert-only: resolve the secret, query the
-remote v5 control identity, verify the endpoint/index metadata, and store the
-returned UUID. Add guarded unregister and a participant-local unpublished
-generation listing for orphan reconciliation; do not infer either identity or
-recovery state from relation names/OIDs.
+Persist stage/seal restart state in `ec_distann_generation`: the last unsigned
+vec-id as eight canonical bytes, one explicitly versioned serializable SHA-256
+owner-stream state, and the exact 303-byte Ready receipt after seal. Pin the
+direct SHA implementation/version used for serialized state and prove resumed
+hashing equals one-shot owner-stream hashing at every chunk boundary. The batch
+journal stores digest, encoded length, counts, and receipts, not complete batch
+payloads. Seal independently reconstructs all public/physical digests from the
+relations rather than trusting cumulative catalog values.
+
+Implement participant identity configuration as an insert-only durable local
+binding. Node registration resolves the secret, queries the remote v5 control
+identity plus canonical compatibility digest/configured endpoint/canonical
+index locator, compares it to the coordinator control, and stores only returned
+identity plus the secret reference in the desired registry. Register,
+unregister, and begin-build serialize through one registry-state row; begin
+copies private transport bindings by build id so later desired-roster edits do
+not break active or retained epochs. Add the participant-local unpublished
+generation listing for orphan reconciliation; do not infer identity or recovery
+state from relation names/OIDs.
 
 Suggested modules: `generation_catalog.rs`, `generation_store.rs`, and
 `topology.rs`.
@@ -365,15 +386,18 @@ Use narrow code commits followed by separate request commits:
    wire/descriptor/manifest/fingerprint codecs, TC-050 fixtures.
 3. `reviews/task-179/003-generation-storage/` — catalogs, hidden relation
    lifecycle, transactional batch model, DROP/OID-reuse tests.
-4. `reviews/task-179/004-streamed-handoff/` — source-row capture, owner streams,
+4. `reviews/task-179/004-node-registry/` — configured participant identity,
+   authenticated compatibility/canonical-locator registration, revision
+   serialization, unregister/replacement, and private build-binding schema.
+5. `reviews/task-179/005-streamed-handoff/` — source-row capture, owner streams,
    begin/stage/seal/abort, replay/boundary/error tests.
-5. `reviews/task-179/005-publication-and-retention/` — build gate, decision
+6. `reviews/task-179/006-publication-and-retention/` — build gate, decision
    boundary, recovery, active pointer, scan registry/retire fault matrix.
-6. `reviews/task-179/006-generation-read-path/` — expansion, frozen-row
+7. `reviews/task-179/007-generation-read-path/` — expansion, frozen-row
    materialization, quals, retained old/new reads, legacy parity.
-7. `reviews/task-179/007-physical-three-instance-fixture/` — suite-driven
+8. `reviews/task-179/008-physical-three-instance-fixture/` — suite-driven
    physical setup, topology results, TC-040/TC-042 implementation-ready verdict.
-8. `reviews/task-179/008-closeout/` — reviewer response plus immutable Task 172
+9. `reviews/task-179/009-closeout/` — reviewer response plus immutable Task 172
    10k/50k/100k A/B evidence citation; only this packet may mark Task 179 done.
 
 Each measurement packet needs its suite config, manifest, results JSONL, and

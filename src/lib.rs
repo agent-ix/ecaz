@@ -28,9 +28,9 @@
     clippy::wrong_self_convention
 )]
 
-use pgrx::{extension_sql, extension_sql_file};
 use pgrx::ffi::CString;
 use pgrx::prelude::*;
+use pgrx::{extension_sql, extension_sql_file};
 use pgrx::{pg_sys, Internal};
 
 const MODULE_VERSION_CSTR: &core::ffi::CStr = {
@@ -261,52 +261,6 @@ pub mod bench_api {
         TQ_TURBO_HOT_NEIGHBORTID_OFFSET, TQ_TURBO_HOT_RERANKTID_OFFSET, TQ_TURBO_HOT_TAG_OFFSET,
     };
     pub use crate::am::{
-        distann_node_neighbor_codes_offset, distann_node_neighbor_vec_ids_offset,
-        owner_stream_digest, DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
-        DistannEpochFingerprint, DistannEpochManifestV2, DistannGenerationDescriptor,
-        DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape,
-        DistannManifestBuildOptions, DistannManifestCodecParameters, DistannMetadataPage,
-        DistannNodeTuple, DistannOwnerExpectation, DistannReadyReceipt, DistannRosterEntry,
-        DistannRowSchemaAttribute, DistannRowSchemaDescriptor, DistannSourceSnapshot,
-        DISTANN_BUILD_SPEC_VERSION, DISTANN_BUILD_SPEC_VERSION_OFFSET,
-        DISTANN_CODEC_ARTIFACT_VERSION, DISTANN_CODEC_ARTIFACT_VERSION_OFFSET,
-        DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES,
-        DISTANN_EPOCH_MANIFEST_VERSION, DISTANN_EPOCH_MANIFEST_VERSION_OFFSET,
-        DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES,
-        DISTANN_GENERATION_DESCRIPTOR_VERSION, DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET,
-        DISTANN_GRAPH_RECORD_VERSION, DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES,
-        DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_MAX_BYTES,
-        DISTANN_HANDOFF_VERSION_OFFSET, DISTANN_HANDOFF_WIRE_VERSION,
-        DISTANN_MANIFEST_BUILD_OPTIONS_BYTES, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION,
-        DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET, DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES,
-        DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION,
-        DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET, DISTANN_METADATA_ACTIVE_EPOCH_OFFSET,
-        DISTANN_METADATA_ALPHA_OFFSET, DISTANN_METADATA_BUILD_LIST_SIZE_L_OFFSET,
-        DISTANN_METADATA_BYTES, DISTANN_METADATA_CLOSURE_EPSILON_OFFSET,
-        DISTANN_METADATA_CODEC_SUBVECTOR_COUNT_OFFSET,
-        DISTANN_METADATA_CODEC_SUBVECTOR_DIM_OFFSET,
-        DISTANN_METADATA_CONTENT_DIGEST_OFFSET, DISTANN_METADATA_DELTA_BUFFER_HEAD_OFFSET,
-        DISTANN_METADATA_DELTA_COUNT_OFFSET, DISTANN_METADATA_DIRECTORY_HEAD_OFFSET,
-        DISTANN_METADATA_DIMENSIONS_OFFSET, DISTANN_METADATA_ENTRY_POINT_OFFSET,
-        DISTANN_METADATA_EPOCH_STATE_OFFSET,
-        DISTANN_METADATA_FLAGS_OFFSET, DISTANN_METADATA_FORMAT_VERSION_OFFSET,
-        DISTANN_METADATA_GRAPH_DEGREE_R_OFFSET, DISTANN_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET,
-        DISTANN_METADATA_HEAD_INDEX_CAP_OFFSET, DISTANN_METADATA_HEAD_SAMPLE_HEAD_OFFSET,
-        DISTANN_METADATA_IN_FLIGHT_COUNT_OFFSET, DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET,
-        DISTANN_METADATA_NEIGHBOR_CODEC_KIND_OFFSET, DISTANN_METADATA_NODE_COUNT_OFFSET,
-        DISTANN_METADATA_SEED_OFFSET, DISTANN_NODE_FLAGS_OFFSET,
-        DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
-        DISTANN_NODE_HEADER_BYTES, DISTANN_NODE_HEAP_TID_OFFSET,
-        DISTANN_NODE_NEIGHBOR_COUNT_OFFSET, DISTANN_NODE_SEARCH_CODE_OFFSET,
-        DISTANN_NODE_TAG_OFFSET, DISTANN_NODE_VEC_ID_OFFSET,
-        DISTANN_PHYSICAL_INDEX_FORMAT_VERSION, DISTANN_PLACEMENT_HASH_VERSION,
-        DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
-        DISTANN_READY_RECEIPT_VERSION, DISTANN_READY_RECEIPT_VERSION_OFFSET,
-        DISTANN_ROW_SCHEMA_VERSION, DISTANN_ROW_SCHEMA_VERSION_OFFSET,
-        DISTANN_SOURCE_SNAPSHOT_VERSION, DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET,
-        INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
-    };
-    pub use crate::am::{
         approximate_medoid, bfs_reachable, build_vamana_graph_with_pass1_extra_candidates,
         build_vamana_graph_with_stats, greedy_search, spire_assignment_row_gamma_offset,
         spire_assignment_row_heap_tid_offset, spire_assignment_row_payload_format_offset,
@@ -447,6 +401,48 @@ pub mod bench_api {
         VAMANA_NODE_NEIGHBOR_COUNT_OFFSET, VAMANA_NODE_PRIMARY_HEAPTID_OFFSET,
         VAMANA_NODE_RERANK_TID_OFFSET, VAMANA_NODE_TAG_OFFSET,
     };
+    pub use crate::am::{
+        distann_node_neighbor_codes_offset, distann_node_neighbor_vec_ids_offset,
+        owner_stream_digest, DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
+        DistannEpochFingerprint, DistannEpochManifestV2, DistannGenerationDescriptor,
+        DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannManifestBuildOptions,
+        DistannManifestCodecParameters, DistannMetadataPage, DistannNodeTuple,
+        DistannOwnerExpectation, DistannReadyReceipt, DistannRosterEntry,
+        DistannRowSchemaAttribute, DistannRowSchemaDescriptor, DistannSourceSnapshot,
+        DISTANN_BUILD_SPEC_VERSION, DISTANN_BUILD_SPEC_VERSION_OFFSET,
+        DISTANN_CODEC_ARTIFACT_VERSION, DISTANN_CODEC_ARTIFACT_VERSION_OFFSET,
+        DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES,
+        DISTANN_EPOCH_MANIFEST_VERSION, DISTANN_EPOCH_MANIFEST_VERSION_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES, DISTANN_GENERATION_DESCRIPTOR_VERSION,
+        DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET, DISTANN_GRAPH_RECORD_VERSION,
+        DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES,
+        DISTANN_HANDOFF_MAX_BYTES, DISTANN_HANDOFF_VERSION_OFFSET, DISTANN_HANDOFF_WIRE_VERSION,
+        DISTANN_MANIFEST_BUILD_OPTIONS_BYTES, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION,
+        DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET, DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES,
+        DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION,
+        DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET, DISTANN_METADATA_ACTIVE_EPOCH_OFFSET,
+        DISTANN_METADATA_ALPHA_OFFSET, DISTANN_METADATA_BUILD_LIST_SIZE_L_OFFSET,
+        DISTANN_METADATA_BYTES, DISTANN_METADATA_CLOSURE_EPSILON_OFFSET,
+        DISTANN_METADATA_CODEC_SUBVECTOR_COUNT_OFFSET, DISTANN_METADATA_CODEC_SUBVECTOR_DIM_OFFSET,
+        DISTANN_METADATA_CONTENT_DIGEST_OFFSET, DISTANN_METADATA_DELTA_BUFFER_HEAD_OFFSET,
+        DISTANN_METADATA_DELTA_COUNT_OFFSET, DISTANN_METADATA_DIMENSIONS_OFFSET,
+        DISTANN_METADATA_DIRECTORY_HEAD_OFFSET, DISTANN_METADATA_ENTRY_POINT_OFFSET,
+        DISTANN_METADATA_EPOCH_STATE_OFFSET, DISTANN_METADATA_FLAGS_OFFSET,
+        DISTANN_METADATA_FORMAT_VERSION_OFFSET, DISTANN_METADATA_GRAPH_DEGREE_R_OFFSET,
+        DISTANN_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET, DISTANN_METADATA_HEAD_INDEX_CAP_OFFSET,
+        DISTANN_METADATA_HEAD_SAMPLE_HEAD_OFFSET, DISTANN_METADATA_IN_FLIGHT_COUNT_OFFSET,
+        DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET, DISTANN_METADATA_NEIGHBOR_CODEC_KIND_OFFSET,
+        DISTANN_METADATA_NODE_COUNT_OFFSET, DISTANN_METADATA_SEED_OFFSET,
+        DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
+        DISTANN_NODE_HEADER_BYTES, DISTANN_NODE_HEAP_TID_OFFSET,
+        DISTANN_NODE_NEIGHBOR_COUNT_OFFSET, DISTANN_NODE_SEARCH_CODE_OFFSET,
+        DISTANN_NODE_TAG_OFFSET, DISTANN_NODE_VEC_ID_OFFSET, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+        DISTANN_PLACEMENT_HASH_VERSION, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
+        DISTANN_READY_RECEIPT_VERSION, DISTANN_READY_RECEIPT_VERSION_OFFSET,
+        DISTANN_ROW_SCHEMA_VERSION, DISTANN_ROW_SCHEMA_VERSION_OFFSET,
+        DISTANN_SOURCE_SNAPSHOT_VERSION, DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET,
+        INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
+    };
     pub use crate::storage::page::{
         DataPage, DataPageChain, ItemPointer, HEAPTID_INLINE_CAPACITY,
         ITEM_POINTER_BLOCK_NUMBER_OFFSET, ITEM_POINTER_BYTES, ITEM_POINTER_OFFSET_NUMBER_OFFSET,
@@ -467,32 +463,56 @@ extension_sql!(
     r#"
 ALTER FUNCTION ec_distann_control_identity(regclass) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_control_identity(regclass)
-    SET search_path TO pg_catalog, @extschema@;
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_control_identity(regclass) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_configure_participant_identity(regclass, text)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_configure_participant_identity(regclass, text)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_configure_participant_identity(regclass, text)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_register_node_descriptor(
+    regclass, integer, integer, text, text, text, boolean
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_register_node_descriptor(
+    regclass, integer, integer, text, text, text, boolean
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_register_node_descriptor(
+    regclass, integer, integer, text, text, text, boolean
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_unregister_node_descriptor(regclass, integer)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_unregister_node_descriptor(regclass, integer)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_unregister_node_descriptor(regclass, integer)
+    FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_begin_epoch_handoff(
     regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
 ) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_begin_epoch_handoff(
     regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
-) SET search_path TO pg_catalog, @extschema@;
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_begin_epoch_handoff(
     regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
 ) FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid)
-    SET search_path TO pg_catalog, @extschema@;
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid) FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_list_unpublished_generations(regclass) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_list_unpublished_generations(regclass)
-    SET search_path TO pg_catalog, @extschema@;
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_list_unpublished_generations(regclass) FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_catalog_index_cleanup(oid) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_catalog_index_cleanup(oid)
-    SET search_path TO pg_catalog, @extschema@;
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_catalog_index_cleanup(oid) FROM PUBLIC;
 "#,
     name = "distann_internal_privileges",
@@ -17904,10 +17924,8 @@ fn ec_spire_remote_search_with_initial_threshold(
     let requested_epoch =
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
 
-    let index_relation = open_valid_ec_spire_index_guard(
-        index_oid,
-        "ec_spire_remote_search_with_initial_threshold",
-    );
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_with_initial_threshold");
     let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_candidates_with_initial_threshold,

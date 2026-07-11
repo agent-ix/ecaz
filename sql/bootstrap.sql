@@ -269,23 +269,40 @@ ON ec_spire_placement (index_oid);
 -- local relation OID and the never-reused logical UUID from v5 control
 -- metadata; production lookups must match both so OID reuse cannot select
 -- stale state.
+CREATE TABLE ec_distann_participant_identity (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    endpoint_identity text NOT NULL CHECK (
+        endpoint_identity ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$'
+    ),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid)
+);
+
+CREATE TABLE ec_distann_registry_state (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    revision bigint NOT NULL DEFAULT 0 CHECK (revision >= 0),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid)
+);
+
 CREATE TABLE ec_distann_node_descriptor (
     index_oid oid NOT NULL,
     logical_index_uuid uuid NOT NULL,
     roster_ordinal integer NOT NULL CHECK (roster_ordinal >= 0),
     node_id integer NOT NULL CHECK (node_id > 0),
     endpoint_identity text NOT NULL CHECK (
-        length(endpoint_identity) > 0
-        AND octet_length(endpoint_identity) <= 65535
-        AND endpoint_identity = btrim(endpoint_identity)
+        endpoint_identity ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$'
     ),
     conninfo_secret_name text NOT NULL CHECK (
-        length(conninfo_secret_name) > 0
+        conninfo_secret_name ~ '^[A-Z][A-Z0-9_]{0,127}$'
     ),
     remote_index_regclass text NOT NULL CHECK (
-        length(remote_index_regclass) > 0
+        remote_index_regclass ~ '^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$'
     ),
     participant_logical_index_uuid uuid NOT NULL,
+    compatibility_digest bytea NOT NULL CHECK (octet_length(compatibility_digest) = 32),
     is_local boolean NOT NULL DEFAULT false,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (index_oid, logical_index_uuid, roster_ordinal),
@@ -364,6 +381,7 @@ CREATE TABLE ec_distann_build_registration (
     state text NOT NULL CHECK (
         state IN ('Registered', 'Building', 'Ready', 'Aborted', 'Decided', 'Published')
     ),
+    registry_revision bigint NOT NULL CHECK (registry_revision >= 0),
     roster_snapshot bytea NOT NULL CHECK (octet_length(roster_snapshot) > 0),
     roster_digest bytea NOT NULL CHECK (octet_length(roster_digest) = 32),
     row_schema_fingerprint bytea NOT NULL CHECK (octet_length(row_schema_fingerprint) = 32),
@@ -373,6 +391,40 @@ CREATE TABLE ec_distann_build_registration (
     PRIMARY KEY (index_oid, logical_index_uuid, build_id)
 );
 
+CREATE TABLE ec_distann_build_participant_binding (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    roster_ordinal integer NOT NULL CHECK (roster_ordinal >= 0),
+    node_id integer NOT NULL CHECK (node_id > 0),
+    endpoint_identity text NOT NULL CHECK (
+        endpoint_identity ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$'
+    ),
+    conninfo_secret_name text NOT NULL CHECK (
+        conninfo_secret_name ~ '^[A-Z][A-Z0-9_]{0,127}$'
+    ),
+    remote_index_regclass text NOT NULL CHECK (
+        remote_index_regclass ~ '^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$'
+    ),
+    participant_logical_index_uuid uuid NOT NULL,
+    compatibility_digest bytea NOT NULL CHECK (octet_length(compatibility_digest) = 32),
+    is_local boolean NOT NULL,
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id, roster_ordinal),
+    UNIQUE (index_oid, logical_index_uuid, build_id, node_id),
+    UNIQUE (index_oid, logical_index_uuid, build_id, endpoint_identity),
+    UNIQUE (index_oid, logical_index_uuid, build_id, participant_logical_index_uuid),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_build_registration (index_oid, logical_index_uuid, build_id)
+        ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX ec_distann_build_participant_one_local
+    ON ec_distann_build_participant_binding (index_oid, logical_index_uuid, build_id)
+    WHERE is_local;
+
 CREATE TABLE ec_distann_publish_decision (
     index_oid oid NOT NULL,
     logical_index_uuid uuid NOT NULL,
@@ -381,12 +433,18 @@ CREATE TABLE ec_distann_publish_decision (
         AND (get_byte(uuid_send(build_id), 8) & 192) = 128
     ),
     epoch bigint NOT NULL CHECK (epoch > 0),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
     manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
     epoch_manifest bytea NOT NULL CHECK (octet_length(epoch_manifest) > 0),
     decision_state text NOT NULL CHECK (decision_state IN ('Pending', 'Applied')),
     committed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     applied_at timestamptz,
-    PRIMARY KEY (index_oid, logical_index_uuid, build_id)
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint),
+    UNIQUE (
+        index_oid, logical_index_uuid, build_id, epoch,
+        epoch_fingerprint, manifest_digest
+    )
 );
 
 CREATE TABLE ec_distann_retire_decision (
@@ -408,18 +466,32 @@ CREATE TABLE ec_distann_retire_decision (
 CREATE TABLE ec_distann_active_epoch (
     index_oid oid NOT NULL,
     logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
     epoch bigint NOT NULL CHECK (epoch > 0),
     epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
     manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (index_oid, logical_index_uuid),
-    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint)
+    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint),
+    FOREIGN KEY (
+        index_oid, logical_index_uuid, build_id, epoch,
+        epoch_fingerprint, manifest_digest
+    ) REFERENCES ec_distann_publish_decision (
+        index_oid, logical_index_uuid, build_id, epoch,
+        epoch_fingerprint, manifest_digest
+    )
 );
 
+REVOKE ALL ON TABLE ec_distann_participant_identity FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_registry_state FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_node_descriptor FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_generation FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_generation_batch FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_build_registration FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_build_participant_binding FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_publish_decision FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_retire_decision FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_active_epoch FROM PUBLIC;

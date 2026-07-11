@@ -41,7 +41,6 @@ pub(crate) struct ResolvedRowSchemaColumn {
     pub(crate) sql_type: String,
     pub(crate) collation_sql: Option<String>,
     pub(crate) dropped: bool,
-    pub(crate) not_null: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -69,8 +68,7 @@ pub(crate) fn resolve_relation_schema(relation_oid: pg_sys::Oid) -> Result<Resol
                              ELSE format('%I.%I', recv_ns.nspname, recv_proc.proname) END AS receive_function,
                         CASE WHEN a.attisdropped THEN '' ELSE format_type(a.atttypid, a.atttypmod) END AS sql_type,
                         CASE WHEN a.attisdropped OR a.attcollation = 0 THEN NULL
-                             ELSE format('%I.%I', cn.nspname, c.collname) END AS collation_sql,
-                        a.attnotnull AS not_null
+                             ELSE format('%I.%I', cn.nspname, c.collname) END AS collation_sql
                    FROM pg_catalog.pg_attribute a
                    LEFT JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
                    LEFT JOIN pg_catalog.pg_namespace tn ON tn.oid = t.typnamespace
@@ -132,12 +130,6 @@ pub(crate) fn resolve_relation_schema(relation_oid: pg_sys::Oid) -> Result<Resol
                     .map_err(|error| {
                         format!("EC_SCHEMA_MISMATCH: collation SQL decode failed: {error}")
                     })?;
-                let not_null = row["not_null"]
-                    .value::<bool>()
-                    .map_err(|error| {
-                        format!("EC_SCHEMA_MISMATCH: not-null decode failed: {error}")
-                    })?
-                    .ok_or_else(|| "EC_SCHEMA_MISMATCH: not-null is NULL".to_owned())?;
                 Ok::<(DistannRowSchemaAttribute, ResolvedRowSchemaColumn), String>((
                     DistannRowSchemaAttribute {
                         attnum,
@@ -158,7 +150,6 @@ pub(crate) fn resolve_relation_schema(relation_oid: pg_sys::Oid) -> Result<Resol
                         sql_type: required_string("sql_type")?,
                         collation_sql,
                         dropped,
-                        not_null,
                     },
                 ))
             })

@@ -228,7 +228,10 @@ epoch_fingerprint bytea) RETURNS void`
 - If any required receipt or topology invariant is absent, then the coordinator
   SHALL keep the generation query-invisible.
 - After validation, the coordinator SHALL persist one durable commit-only
-  publish decision containing the manifest digest and complete receipt set.
+  publish decision containing the build id, epoch fingerprint, manifest digest,
+  complete receipt set, and the FR-078 private build-participant binding
+  identity. Fingerprint-to-build lookup SHALL be unique and retained until
+  final reclaim.
 - `ec_distann_decide_epoch_publish` SHALL validate all receipts and topology,
   persist that decision, return its 32-byte manifest digest, and return without
   calling a participant publish endpoint or swapping the active pointer.
@@ -253,6 +256,10 @@ epoch_fingerprint bytea) RETURNS void`
   every participant.
 - The coordinator SHALL atomically swap its active-epoch pointer only after all
   matching acknowledgements are durable.
+- The active pointer SHALL persist the matching build id in addition to epoch,
+  fingerprint, and manifest digest. Active and retained read/recovery transport
+  SHALL resolve the immutable private participant bindings by that build id and
+  SHALL never consult the mutable desired-node registry.
 - The active-pointer swap SHALL be the cluster's query-visible publication
   linearization point.
 - Before that swap, new scans SHALL continue to register the prior active epoch
