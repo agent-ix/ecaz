@@ -1582,7 +1582,7 @@ mod tests {
 
     fn raw_entry(node: u32, neighbors: &[u32]) -> Vec<u8> {
         let mut bytes = Vec::with_capacity(
-            DISTANN_SHARD_SPILL_HEADER_BYTES + neighbors.len() * size_of::<u32>(),
+            DISTANN_SHARD_SPILL_HEADER_BYTES + std::mem::size_of_val(neighbors),
         );
         bytes.extend_from_slice(&node.to_le_bytes());
         bytes.extend_from_slice(&(neighbors.len() as u32).to_le_bytes());
