@@ -543,7 +543,7 @@ unsafe fn shared_view() -> Result<RegistryView<'static>, RegistryError> {
         std::slice::from_raw_parts_mut(
             base.add(header.generation_offset)
                 .cast::<BackendGeneration>(),
-            header.operation_capacity as usize,
+            header.generation_capacity as usize,
         )
     };
     let operation_hash = unsafe {
@@ -556,7 +556,7 @@ unsafe fn shared_view() -> Result<RegistryView<'static>, RegistryError> {
         std::slice::from_raw_parts_mut(
             base.add(header.operation_offset)
                 .cast::<FenceOperationSlot>(),
-            header.generation_capacity as usize,
+            header.operation_capacity as usize,
         )
     };
     let fence_hash = unsafe {
@@ -583,6 +583,16 @@ unsafe fn shared_view() -> Result<RegistryView<'static>, RegistryError> {
             header.token_hash_capacity as usize,
         )
     };
+    debug_assert_eq!(generations.len(), header.generation_capacity as usize);
+    debug_assert_eq!(operations.len(), header.operation_capacity as usize);
+    debug_assert_eq!(
+        operation_hash.len(),
+        header.operation_hash_capacity as usize
+    );
+    debug_assert_eq!(fences.len(), header.fence_capacity as usize);
+    debug_assert_eq!(fence_hash.len(), header.fence_hash_capacity as usize);
+    debug_assert_eq!(tokens.len(), header.token_capacity as usize);
+    debug_assert_eq!(token_hash.len(), header.token_hash_capacity as usize);
     let header = unsafe { &mut *REGISTRY_HEADER };
     Ok(RegistryView {
         header,
@@ -677,8 +687,8 @@ unsafe extern "C-unwind" fn scan_registry_before_shmem_exit(_code: c_int, _arg: 
     let Ok(mut view) = (unsafe { shared_view() }) else {
         return;
     };
-    view.release_owner_tokens(owner);
-    view.recycle_dropped_fences();
+    let _ = view.release_owner_tokens(owner);
+    let _ = view.recycle_dropped_fences();
 }
 
 fn hash_bytes(parts: &[&[u8]]) -> u64 {
@@ -880,7 +890,7 @@ impl RegistryView<'_> {
             };
         }
         if self.header.fence_free_head < 0 {
-            self.recycle_dropped_fences();
+            self.recycle_dropped_fences()?;
         }
         let index = self.pop_fence().ok_or(RegistryError::FenceCapacity)?;
         let fence_id = u32::try_from(index + 1).map_err(|_| RegistryError::FenceCapacity)?;
@@ -906,35 +916,78 @@ impl RegistryView<'_> {
         Ok(index)
     }
 
-    fn decrement_fence_reference(&mut self, fence_id: u32, count: u32) {
+    fn fence_index_for_id(&self, fence_id: u32) -> Result<usize, RegistryError> {
         let index = fence_id.checked_sub(1).map(|value| value as usize);
-        if let Some(fence) = index.and_then(|index| self.fences.get_mut(index)) {
-            if fence.in_use != 0 && fence.fence_id == fence_id {
-                fence.operation_references = fence.operation_references.saturating_sub(count);
-            }
-        }
+        index
+            .filter(|index| {
+                self.fences
+                    .get(*index)
+                    .is_some_and(|fence| fence.in_use != 0 && fence.fence_id == fence_id)
+            })
+            .ok_or(RegistryError::CorruptSharedState)
     }
 
-    fn remove_operation(&mut self, bucket: usize, index: usize) {
+    fn fence_hash_bucket(&self, index: usize) -> Result<usize, RegistryError> {
+        let fence = *self
+            .fences
+            .get(index)
+            .ok_or(RegistryError::CorruptSharedState)?;
+        let (bucket, found) = hash_lookup(
+            self.fence_hash,
+            Self::fence_hash_value(fence.database_oid, &fence.logical_index_uuid),
+            |candidate| candidate == index,
+        )
+        .ok_or(RegistryError::CorruptSharedState)?;
+        if found != index {
+            return Err(RegistryError::CorruptSharedState);
+        }
+        Ok(bucket)
+    }
+
+    fn remove_operation(&mut self, bucket: usize, index: usize) -> Result<usize, RegistryError> {
         let operation = self.operations[index];
-        self.operation_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
-        self.decrement_fence_reference(operation.fence_id, operation.nesting);
-        self.push_operation(index);
-    }
-
-    fn remove_token(&mut self, bucket: usize, index: usize) {
-        let token = self.tokens[index];
-        self.token_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
-        if let Some(fence_index) =
-            self.find_fence_index(token.database_oid, &token.logical_index_uuid)
+        let fence_index = self.fence_index_for_id(operation.fence_id)?;
+        let remaining = self.fences[fence_index]
+            .operation_references
+            .checked_sub(operation.nesting)
+            .ok_or(RegistryError::CorruptSharedState)?;
+        if self.fences[fence_index].dropped != 0
+            && remaining == 0
+            && self.fences[fence_index].token_count == 0
         {
-            self.fences[fence_index].token_count =
-                self.fences[fence_index].token_count.saturating_sub(1);
+            self.fence_hash_bucket(fence_index)?;
         }
-        self.push_token(index);
+        self.operation_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+        self.fences[fence_index].operation_references = remaining;
+        self.push_operation(index);
+        Ok(fence_index)
     }
 
-    fn reap_dead_with(&mut self, mut live: impl FnMut(BackendOwner) -> bool) -> usize {
+    fn remove_token(&mut self, bucket: usize, index: usize) -> Result<usize, RegistryError> {
+        let token = self.tokens[index];
+        let fence_index = self
+            .find_fence_index(token.database_oid, &token.logical_index_uuid)
+            .ok_or(RegistryError::CorruptSharedState)?;
+        let remaining = self.fences[fence_index]
+            .token_count
+            .checked_sub(1)
+            .ok_or(RegistryError::CorruptSharedState)?;
+        if self.fences[fence_index].dropped != 0
+            && remaining == 0
+            && self.fences[fence_index].operation_references == 0
+        {
+            self.fence_hash_bucket(fence_index)?;
+        }
+        self.token_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+        self.fences[fence_index].token_count = remaining;
+        self.push_token(index);
+        Ok(fence_index)
+    }
+
+    fn reap_dead_with(
+        &mut self,
+        mut live: impl FnMut(BackendOwner) -> bool,
+    ) -> Result<usize, RegistryError> {
         let mut reaped = 0;
         for index in 0..self.tokens.len() {
             let token = self.tokens[index];
@@ -954,7 +1007,8 @@ impl RegistryView<'_> {
                     scan_token: token.scan_token,
                 };
                 if let Some((bucket, found)) = self.find_token(&identity) {
-                    self.remove_token(bucket, found);
+                    let fence_index = self.remove_token(bucket, found)?;
+                    self.recycle_fence_if_eligible(fence_index)?;
                     reaped += 1;
                 }
             }
@@ -971,16 +1025,16 @@ impl RegistryView<'_> {
             };
             if !live(owner) {
                 if let Some((bucket, found)) = self.find_operation(owner, operation.fence_id) {
-                    self.remove_operation(bucket, found);
+                    let fence_index = self.remove_operation(bucket, found)?;
+                    self.recycle_fence_if_eligible(fence_index)?;
                     reaped += 1;
                 }
             }
         }
-        self.recycle_dropped_fences();
-        reaped
+        Ok(reaped)
     }
 
-    fn reap_dead(&mut self) -> usize {
+    fn reap_dead(&mut self) -> Result<usize, RegistryError> {
         let generations = self.generations.as_ptr();
         let len = self.generations.len();
         self.reap_dead_with(|owner| {
@@ -989,7 +1043,7 @@ impl RegistryView<'_> {
         })
     }
 
-    fn release_owner_tokens(&mut self, owner: BackendOwner) -> usize {
+    fn release_owner_tokens(&mut self, owner: BackendOwner) -> Result<usize, RegistryError> {
         let mut released = 0;
         for index in 0..self.tokens.len() {
             let token = self.tokens[index];
@@ -1008,12 +1062,13 @@ impl RegistryView<'_> {
                     scan_token: token.scan_token,
                 };
                 if let Some((bucket, found)) = self.find_token(&identity) {
-                    self.remove_token(bucket, found);
+                    let fence_index = self.remove_token(bucket, found)?;
+                    self.recycle_fence_if_eligible(fence_index)?;
                     released += 1;
                 }
             }
         }
-        released
+        Ok(released)
     }
 
     fn acquire_fence_operation(
@@ -1027,14 +1082,19 @@ impl RegistryView<'_> {
             .filter(|slot| slot.in_use != 0)
             .ok_or(RegistryError::CorruptSharedState)?
             .fence_id;
+        let next_references = self.fences[fence_index]
+            .operation_references
+            .checked_add(1)
+            .ok_or(RegistryError::CorruptSharedState)?;
         if let Some((_, index)) = self.find_operation(owner, fence_id) {
-            self.operations[index].nesting = self.operations[index]
+            let next_nesting = self.operations[index]
                 .nesting
                 .checked_add(1)
                 .ok_or(RegistryError::CorruptSharedState)?;
+            self.operations[index].nesting = next_nesting;
         } else {
             if self.header.operation_free_head < 0 {
-                self.reap_dead();
+                self.reap_dead()?;
             }
             let index = self.pop_operation().ok_or(RegistryError::FenceCapacity)?;
             self.operations[index] = FenceOperationSlot {
@@ -1056,10 +1116,7 @@ impl RegistryView<'_> {
                 return Err(error);
             }
         }
-        self.fences[fence_index].operation_references = self.fences[fence_index]
-            .operation_references
-            .checked_add(1)
-            .ok_or(RegistryError::CorruptSharedState)?;
+        self.fences[fence_index].operation_references = next_references;
         Ok(fence_id)
     }
 
@@ -1074,17 +1131,46 @@ impl RegistryView<'_> {
         if self.operations[index].nesting == 0 {
             return Err(RegistryError::CorruptSharedState);
         }
+        let fence_index = self.fence_index_for_id(fence_id)?;
+        let next_references = self.fences[fence_index]
+            .operation_references
+            .checked_sub(1)
+            .ok_or(RegistryError::CorruptSharedState)?;
+        if self.fences[fence_index].dropped != 0
+            && next_references == 0
+            && self.fences[fence_index].token_count == 0
+        {
+            self.fence_hash_bucket(fence_index)?;
+        }
         self.operations[index].nesting -= 1;
-        self.decrement_fence_reference(fence_id, 1);
+        self.fences[fence_index].operation_references = next_references;
         if self.operations[index].nesting == 0 {
             self.operation_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
             self.push_operation(index);
         }
-        self.recycle_dropped_fences();
+        self.recycle_fence_if_eligible(fence_index)?;
         Ok(())
     }
 
-    fn recycle_dropped_fences(&mut self) -> usize {
+    fn recycle_fence_if_eligible(&mut self, index: usize) -> Result<bool, RegistryError> {
+        let fence = *self
+            .fences
+            .get(index)
+            .ok_or(RegistryError::CorruptSharedState)?;
+        if fence.in_use == 0
+            || fence.dropped == 0
+            || fence.operation_references != 0
+            || fence.token_count != 0
+        {
+            return Ok(false);
+        }
+        let bucket = self.fence_hash_bucket(index)?;
+        self.fence_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+        self.push_fence(index);
+        Ok(true)
+    }
+
+    fn recycle_dropped_fences(&mut self) -> Result<usize, RegistryError> {
         let mut recycled = 0;
         for index in 0..self.fences.len() {
             let fence = self.fences[index];
@@ -1092,20 +1178,26 @@ impl RegistryView<'_> {
                 && fence.dropped != 0
                 && fence.operation_references == 0
                 && fence.token_count == 0
+                && self.recycle_fence_if_eligible(index)?
             {
-                if let Some((bucket, found)) = hash_lookup(
-                    self.fence_hash,
-                    Self::fence_hash_value(fence.database_oid, &fence.logical_index_uuid),
-                    |candidate| candidate == index,
-                ) {
-                    debug_assert_eq!(found, index);
-                    self.fence_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
-                    self.push_fence(index);
-                    recycled += 1;
-                }
+                recycled += 1;
             }
         }
-        recycled
+        Ok(recycled)
+    }
+
+    fn discard_empty_fence(&mut self, index: usize) -> Result<(), RegistryError> {
+        let fence = *self
+            .fences
+            .get(index)
+            .ok_or(RegistryError::CorruptSharedState)?;
+        if fence.in_use == 0 || fence.operation_references != 0 || fence.token_count != 0 {
+            return Err(RegistryError::CorruptSharedState);
+        }
+        let bucket = self.fence_hash_bucket(index)?;
+        self.fence_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+        self.push_fence(index);
+        Ok(())
     }
 
     fn register_with(
@@ -1114,7 +1206,11 @@ impl RegistryView<'_> {
         owner: BackendOwner,
         mut live: impl FnMut(BackendOwner) -> bool,
     ) -> Result<RegisterOutcome, RegistryError> {
-        let fence_index = self.ensure_fence(identity.database_oid, identity.logical_index_uuid)?;
+        let existing_fence =
+            self.find_fence_index(identity.database_oid, &identity.logical_index_uuid);
+        if existing_fence.is_some_and(|index| self.fences[index].dropped != 0) {
+            return Err(RegistryError::LogicalIndexDropped);
+        }
         if let Some((bucket, index)) = self.find_token(&identity) {
             let token = self.tokens[index];
             let existing_owner = BackendOwner {
@@ -1131,7 +1227,8 @@ impl RegistryView<'_> {
                 if live(existing_owner) {
                     return Err(RegistryError::TokenConflict);
                 }
-                self.remove_token(bucket, index);
+                let fence_index = self.remove_token(bucket, index)?;
+                self.recycle_fence_if_eligible(fence_index)?;
             } else {
                 return if token.epoch_fingerprint == identity.epoch_fingerprint {
                     Ok(RegisterOutcome::AlreadyRegistered)
@@ -1141,9 +1238,29 @@ impl RegistryView<'_> {
             }
         }
         if self.header.token_free_head < 0 {
-            self.reap_dead_with(&mut live);
+            self.reap_dead_with(&mut live)?;
         }
-        let index = self.pop_token().ok_or(RegistryError::TokenCapacity)?;
+        if self.header.token_free_head < 0 {
+            return Err(RegistryError::TokenCapacity);
+        }
+        let (fence_index, created_fence) = if let Some(index) = existing_fence {
+            (index, false)
+        } else {
+            (
+                self.ensure_fence(identity.database_oid, identity.logical_index_uuid)?,
+                true,
+            )
+        };
+        let next_token_count = self.fences[fence_index]
+            .token_count
+            .checked_add(1)
+            .ok_or(RegistryError::CorruptSharedState)?;
+        let Some(index) = self.pop_token() else {
+            if created_fence {
+                self.discard_empty_fence(fence_index)?;
+            }
+            return Err(RegistryError::CorruptSharedState);
+        };
         self.tokens[index] = TokenSlot {
             in_use: 1,
             _padding: [0; 3],
@@ -1159,12 +1276,12 @@ impl RegistryView<'_> {
         };
         if let Err(error) = hash_insert(self.token_hash, Self::token_hash_value(&identity), index) {
             self.push_token(index);
+            if created_fence {
+                self.discard_empty_fence(fence_index)?;
+            }
             return Err(error);
         }
-        self.fences[fence_index].token_count = self.fences[fence_index]
-            .token_count
-            .checked_add(1)
-            .ok_or(RegistryError::CorruptSharedState)?;
+        self.fences[fence_index].token_count = next_token_count;
         Ok(RegisterOutcome::Registered)
     }
 
@@ -1181,9 +1298,13 @@ impl RegistryView<'_> {
         })
     }
 
-    fn release(&mut self, identity: ScanTokenIdentity, owner: BackendOwner) -> bool {
+    fn release(
+        &mut self,
+        identity: ScanTokenIdentity,
+        owner: BackendOwner,
+    ) -> Result<bool, RegistryError> {
         let Some((bucket, index)) = self.find_token(&identity) else {
-            return false;
+            return Ok(false);
         };
         let token = self.tokens[index];
         if token.epoch_fingerprint != identity.epoch_fingerprint
@@ -1194,20 +1315,27 @@ impl RegistryView<'_> {
                 owner,
             )
         {
-            return false;
+            return Ok(false);
         }
-        self.remove_token(bucket, index);
-        self.recycle_dropped_fences();
-        true
+        let fence_index = self.remove_token(bucket, index)?;
+        self.recycle_fence_if_eligible(fence_index)?;
+        Ok(true)
     }
 
-    fn mark_dropped(&mut self, database_oid: pg_sys::Oid, logical: [u8; 16]) -> bool {
+    fn mark_dropped(
+        &mut self,
+        database_oid: pg_sys::Oid,
+        logical: [u8; 16],
+    ) -> Result<bool, RegistryError> {
         let Some(index) = self.find_fence_index(database_oid, &logical) else {
-            return false;
+            return Ok(false);
         };
+        if self.fences[index].operation_references == 0 && self.fences[index].token_count == 0 {
+            self.fence_hash_bucket(index)?;
+        }
         self.fences[index].dropped = 1;
-        self.recycle_dropped_fences();
-        true
+        self.recycle_fence_if_eligible(index)?;
+        Ok(true)
     }
 }
 
@@ -1240,7 +1368,7 @@ pub(crate) fn release_scan_token(
         scan_token: *scan_token.as_bytes(),
     };
     let _guard = unsafe { lock_registry()? };
-    Ok(unsafe { shared_view()? }.release(identity, owner))
+    unsafe { shared_view()? }.release(identity, owner)
 }
 
 pub(crate) fn mark_logical_index_dropped(
@@ -1248,7 +1376,7 @@ pub(crate) fn mark_logical_index_dropped(
     logical_index_uuid: [u8; 16],
 ) -> Result<bool, RegistryError> {
     let _guard = unsafe { lock_registry()? };
-    Ok(unsafe { shared_view()? }.mark_dropped(database_oid, logical_index_uuid))
+    unsafe { shared_view()? }.mark_dropped(database_oid, logical_index_uuid)
 }
 
 /// Pins a fence-map identity while a later slice waits for or holds its
@@ -1289,9 +1417,18 @@ pub(crate) fn acquire_fence_operation_reference(
     let owner = current_backend_owner()?;
     let _guard = unsafe { lock_registry()? };
     let mut view = unsafe { shared_view()? };
-    view.reap_dead();
+    view.reap_dead()?;
+    let existing_fence = view.find_fence_index(database_oid, &logical_index_uuid);
     let fence_index = view.ensure_fence(database_oid, logical_index_uuid)?;
-    let fence_id = view.acquire_fence_operation(fence_index, owner)?;
+    let fence_id = match view.acquire_fence_operation(fence_index, owner) {
+        Ok(fence_id) => fence_id,
+        Err(error) => {
+            if existing_fence.is_none() {
+                view.discard_empty_fence(fence_index)?;
+            }
+            return Err(error);
+        }
+    };
     Ok(FenceOperationReference {
         owner,
         fence_id,
@@ -1397,12 +1534,36 @@ mod tests {
     #[test]
     fn layout_is_checked_and_nonoverlapping() {
         let layout = RegistryLayout::new(32, 4_096, 65_536).unwrap();
+        assert_eq!(layout.operation_capacity, 32 * OPERATION_SLOTS_PER_BACKEND);
         assert!(layout.generation_offset >= size_of::<RegistryHeader>());
-        assert!(layout.fence_offset > layout.generation_offset);
-        assert!(layout.operation_offset > layout.generation_offset);
-        assert!(layout.fence_offset > layout.operation_offset);
-        assert!(layout.token_offset > layout.fence_offset);
-        assert!(layout.total_bytes > layout.token_offset);
+        assert!(
+            layout.generation_offset + 32 * size_of::<BackendGeneration>()
+                <= layout.operation_offset
+        );
+        assert!(
+            layout.operation_offset + layout.operation_capacity * size_of::<FenceOperationSlot>()
+                <= layout.operation_hash_offset
+        );
+        assert!(
+            layout.operation_hash_offset + layout.operation_hash_capacity * size_of::<HashEntry>()
+                <= layout.fence_offset
+        );
+        assert!(
+            layout.fence_offset + layout.fence_capacity * size_of::<FenceSlot>()
+                <= layout.fence_hash_offset
+        );
+        assert!(
+            layout.fence_hash_offset + layout.fence_hash_capacity * size_of::<HashEntry>()
+                <= layout.token_offset
+        );
+        assert!(
+            layout.token_offset + layout.token_capacity * size_of::<TokenSlot>()
+                <= layout.token_hash_offset
+        );
+        assert!(
+            layout.token_hash_offset + layout.token_hash_capacity * size_of::<HashEntry>()
+                <= layout.total_bytes
+        );
         assert!(RegistryLayout::new(usize::MAX, 1, 1).is_none());
     }
 
@@ -1415,6 +1576,7 @@ mod tests {
                 .register_with(identity(1, 1, 1, 1), live, |_| true),
             Err(RegistryError::TokenCapacity)
         );
+        assert!(zero.fences.iter().all(|slot| slot.in_use == 0));
 
         let mut one = TestRegistry::new(1, 1, 1);
         assert_eq!(
@@ -1509,7 +1671,7 @@ mod tests {
             registry.view().register_with(exact, second, |_| true),
             Err(RegistryError::TokenConflict)
         );
-        assert!(!registry.view().release(exact, second));
+        assert!(!registry.view().release(exact, second).unwrap());
         assert_eq!(
             registry
                 .tokens
@@ -1518,7 +1680,7 @@ mod tests {
                 .count(),
             1
         );
-        assert!(registry.view().release(exact, first));
+        assert!(registry.view().release(exact, first).unwrap());
     }
 
     #[test]
@@ -1591,7 +1753,7 @@ mod tests {
             .view()
             .register_with(identity(1, 1, 7, 2), second, |_| true)
             .unwrap();
-        assert_eq!(registry.view().release_owner_tokens(first), 1);
+        assert_eq!(registry.view().release_owner_tokens(first), Ok(1));
         assert_eq!(
             registry
                 .tokens
@@ -1606,7 +1768,7 @@ mod tests {
     #[test]
     fn fence_capacity_recycles_only_dropped_unreferenced_uuid() {
         let live = owner(0, 100, 1);
-        let mut registry = TestRegistry::new(1, 1, 1);
+        let mut registry = TestRegistry::new(1, 1, 2);
         let first = identity(1, 1, 7, 1);
         registry
             .view()
@@ -1618,9 +1780,9 @@ mod tests {
                 .register_with(identity(1, 2, 7, 2), live, |_| true),
             Err(RegistryError::FenceCapacity)
         );
-        assert!(registry.view().mark_dropped(1.into(), [1; 16]));
+        assert_eq!(registry.view().mark_dropped(1.into(), [1; 16]), Ok(true));
         assert_eq!(registry.fences[0].dropped, 1);
-        assert!(registry.view().release(first, live));
+        assert!(registry.view().release(first, live).unwrap());
         assert_eq!(registry.fences[0].in_use, 0);
         assert_eq!(
             registry
@@ -1640,8 +1802,8 @@ mod tests {
             .view()
             .acquire_fence_operation(index, live)
             .unwrap();
-        assert!(registry.view().mark_dropped(1.into(), [1; 16]));
-        assert_eq!(registry.view().recycle_dropped_fences(), 0);
+        assert_eq!(registry.view().mark_dropped(1.into(), [1; 16]), Ok(true));
+        assert_eq!(registry.view().recycle_dropped_fences(), Ok(0));
         registry
             .view()
             .release_fence_operation(live, fence_id)
@@ -1708,7 +1870,7 @@ mod tests {
             .view()
             .acquire_fence_operation(fence, stale)
             .unwrap();
-        assert_eq!(registry.view().release_owner_tokens(stale), 1);
+        assert_eq!(registry.view().release_owner_tokens(stale), Ok(1));
         assert_eq!(
             registry
                 .operations
@@ -1721,13 +1883,13 @@ mod tests {
             registry
                 .view()
                 .reap_dead_with(|candidate| candidate == stale),
-            0
+            Ok(0)
         );
         assert_eq!(
             registry
                 .view()
                 .reap_dead_with(|candidate| candidate == replacement),
-            1
+            Ok(1)
         );
         assert_eq!(
             registry
@@ -1755,10 +1917,13 @@ mod tests {
                 .view()
                 .register_with(transient, live, |_| true)
                 .unwrap();
-            assert!(registry
-                .view()
-                .mark_dropped(pg_sys::Oid::from(1), [generation; 16]));
-            assert!(registry.view().release(transient, live));
+            assert_eq!(
+                registry
+                    .view()
+                    .mark_dropped(pg_sys::Oid::from(1), [generation; 16]),
+                Ok(true)
+            );
+            assert!(registry.view().release(transient, live).unwrap());
         }
 
         assert!(registry.tokens.iter().any(|slot| {
@@ -1787,7 +1952,7 @@ mod tests {
         registry.fences[index].dropped = 1;
         assert_eq!(
             registry.view().reap_dead_with(|owner| owner == replacement),
-            1
+            Ok(1)
         );
         assert_eq!(registry.fences[index].in_use, 0);
     }
@@ -1820,6 +1985,34 @@ mod tests {
     }
 
     #[test]
+    fn token_capacity_preflight_does_not_leak_a_new_fence() {
+        let live = owner(0, 100, 1);
+        let mut registry = TestRegistry::new(1, 2, 1);
+        registry
+            .view()
+            .register_with(identity(1, 1, 7, 1), live, |_| true)
+            .unwrap();
+        assert_eq!(
+            registry
+                .view()
+                .register_with(identity(1, 2, 7, 2), live, |_| true),
+            Err(RegistryError::TokenCapacity)
+        );
+        assert_eq!(
+            registry
+                .fences
+                .iter()
+                .filter(|slot| slot.in_use != 0)
+                .count(),
+            1
+        );
+        assert!(registry
+            .view()
+            .find_fence_index(1.into(), &[2; 16])
+            .is_none());
+    }
+
+    #[test]
     fn stable_error_categories_are_explicit() {
         assert!(RegistryError::Unavailable
             .stable_message()
@@ -1830,5 +2023,164 @@ mod tests {
         assert!(RegistryError::TokenConflict
             .stable_message()
             .starts_with("EC_EPOCH_PIN_CONFLICT:"));
+    }
+
+    #[test]
+    fn hash_collisions_survive_head_middle_deletion_and_tombstone_reuse() {
+        let mut table = vec![HashEntry::default(); 8];
+        for slot in 0..3 {
+            hash_insert(&mut table, 3, slot).unwrap();
+        }
+        let (head, _) = hash_lookup(&table, 3, |slot| slot == 0).unwrap();
+        table[head].slot_plus_one = HASH_TOMBSTONE;
+        assert_eq!(
+            hash_lookup(&table, 3, |slot| slot == 2).map(|pair| pair.1),
+            Some(2)
+        );
+        let (middle, _) = hash_lookup(&table, 3, |slot| slot == 1).unwrap();
+        table[middle].slot_plus_one = HASH_TOMBSTONE;
+        hash_insert(&mut table, 3, 3).unwrap();
+        assert_eq!(
+            hash_lookup(&table, 3, |slot| slot == 3).map(|pair| pair.1),
+            Some(3)
+        );
+        assert_eq!(
+            hash_lookup(&table, 3, |slot| slot == 2).map(|pair| pair.1),
+            Some(2)
+        );
+    }
+
+    #[test]
+    fn counter_underflow_fails_without_releasing_token_or_operation() {
+        let live = owner(0, 100, 1);
+        let mut registry = TestRegistry::new(1, 1, 1);
+        let token = identity(1, 1, 7, 1);
+        registry
+            .view()
+            .register_with(token, live, |_| true)
+            .unwrap();
+        let fence = registry
+            .view()
+            .find_fence_index(1.into(), &[1; 16])
+            .unwrap();
+        registry.fences[fence].token_count = 0;
+        assert_eq!(
+            registry.view().release(token, live),
+            Err(RegistryError::CorruptSharedState)
+        );
+        assert_eq!(
+            registry
+                .tokens
+                .iter()
+                .filter(|slot| slot.in_use != 0)
+                .count(),
+            1
+        );
+        registry.fences[fence].token_count = 1;
+        let fence_id = registry
+            .view()
+            .acquire_fence_operation(fence, live)
+            .unwrap();
+        registry.fences[fence].operation_references = 0;
+        assert_eq!(
+            registry.view().release_fence_operation(live, fence_id),
+            Err(RegistryError::CorruptSharedState)
+        );
+        assert_eq!(
+            registry
+                .operations
+                .iter()
+                .filter(|slot| slot.in_use != 0)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn recycle_hash_corruption_fails_before_release_mutation() {
+        let live = owner(0, 100, 1);
+        let mut registry = TestRegistry::new(1, 1, 1);
+        let token = identity(1, 1, 7, 1);
+        registry
+            .view()
+            .register_with(token, live, |_| true)
+            .unwrap();
+        let fence = registry
+            .view()
+            .find_fence_index(1.into(), &[1; 16])
+            .unwrap();
+        registry.fences[fence].dropped = 1;
+        let bucket = registry.view().fence_hash_bucket(fence).unwrap();
+        registry.fence_hash[bucket].slot_plus_one = HASH_TOMBSTONE;
+        assert_eq!(
+            registry.view().release(token, live),
+            Err(RegistryError::CorruptSharedState)
+        );
+        assert_eq!(registry.fences[fence].token_count, 1);
+        assert_eq!(
+            registry
+                .tokens
+                .iter()
+                .filter(|slot| slot.in_use != 0)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn free_lists_survive_repeated_exhaust_and_repopulation() {
+        let live = owner(0, 100, 1);
+        let mut registry = TestRegistry::new(1, 1, 2);
+        for round in 0..64_u8 {
+            let first = identity(1, 1, 7, round.wrapping_mul(2));
+            let second = identity(1, 1, 7, round.wrapping_mul(2).wrapping_add(1));
+            registry
+                .view()
+                .register_with(first, live, |_| true)
+                .unwrap();
+            registry
+                .view()
+                .register_with(second, live, |_| true)
+                .unwrap();
+            assert_eq!(registry.header.token_free_head, -1);
+            assert!(registry.view().release(first, live).unwrap());
+            assert!(registry.view().release(second, live).unwrap());
+            assert_eq!(
+                registry
+                    .tokens
+                    .iter()
+                    .filter(|slot| slot.in_use != 0)
+                    .count(),
+                0
+            );
+        }
+        assert!(registry.header.token_free_head >= 0);
+        assert_eq!(registry.fences[0].token_count, 0);
+
+        let mut operations = TestRegistry::new(1, 4, 0);
+        for _ in 0..16 {
+            let mut fence_ids = Vec::new();
+            for logical in 0..4_u8 {
+                let fence = operations
+                    .view()
+                    .ensure_fence(1.into(), [logical; 16])
+                    .unwrap();
+                fence_ids.push(
+                    operations
+                        .view()
+                        .acquire_fence_operation(fence, live)
+                        .unwrap(),
+                );
+            }
+            assert_eq!(operations.header.operation_free_head, -1);
+            for fence_id in fence_ids {
+                operations
+                    .view()
+                    .release_fence_operation(live, fence_id)
+                    .unwrap();
+            }
+            assert!(operations.header.operation_free_head >= 0);
+            assert!(operations.operations.iter().all(|slot| slot.in_use == 0));
+        }
     }
 }
