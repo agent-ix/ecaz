@@ -20,7 +20,7 @@ const CONTROL_GATE: i32 = 2;
 
 static HOOKS_INSTALLED: AtomicBool = AtomicBool::new(false);
 static LOADED_DURING_SHARED_PRELOAD: AtomicBool = AtomicBool::new(false);
-static mut PREVIOUS_PLANNER_HOOK: pg_sys::planner_hook_type = None;
+static mut PREVIOUS_EXECUTOR_START_HOOK: pg_sys::ExecutorStart_hook_type = None;
 static mut PREVIOUS_PROCESS_UTILITY_HOOK: pg_sys::ProcessUtility_hook_type = None;
 
 thread_local! {
@@ -284,77 +284,68 @@ fn reject_if_gated(relation_oid: pg_sys::Oid, required_mask: i32, operation: &st
     }
 }
 
-unsafe fn query_target_relation(query: *mut pg_sys::Query) -> Option<pg_sys::Oid> {
-    let query = unsafe { query.as_ref()? };
-    if !matches!(
-        query.commandType,
-        pg_sys::CmdType::CMD_INSERT
-            | pg_sys::CmdType::CMD_UPDATE
-            | pg_sys::CmdType::CMD_DELETE
-            | pg_sys::CmdType::CMD_MERGE
-    ) || query.resultRelation <= 0
-    {
-        return None;
-    }
-    let offset = query.resultRelation - 1;
-    if offset >= unsafe { pg_sys::list_length(query.rtable) } {
-        return None;
-    }
-    let rte = unsafe { pg_sys::list_nth(query.rtable, offset).cast::<pg_sys::RangeTblEntry>() };
-    let rte = unsafe { rte.as_ref()? };
-    (rte.rtekind == pg_sys::RTEKind::RTE_RELATION).then_some(rte.relid)
-}
-
-unsafe fn reject_query_tree_dml(query: *mut pg_sys::Query) {
-    if let Some(relation_oid) = unsafe { query_target_relation(query) } {
-        reject_if_gated(relation_oid, SOURCE_GATE, "source DML");
-    }
-    let Some(query) = (unsafe { query.as_ref() }) else {
+/// Reject every gated result relation of a finished plan. `resultRelations` is
+/// the global integer list of RT indexes that any `ModifyTable` node writes,
+/// including targets introduced by data-modifying CTEs inside an otherwise
+/// read-only `SELECT`, so no `commandType` filter is needed. Pure reads carry
+/// an empty list and never invoke the durable mask.
+unsafe fn reject_planned_result_relations(plannedstmt: *mut pg_sys::PlannedStmt) {
+    let Some(stmt) = (unsafe { plannedstmt.as_ref() }) else {
         return;
     };
-    let count = unsafe { pg_sys::list_length(query.cteList) };
+    // Utility statements plan no `ModifyTable` node; the ProcessUtility hook
+    // owns their enforcement.
+    if !stmt.utilityStmt.is_null() {
+        return;
+    }
+    let table_length = unsafe { pg_sys::list_length(stmt.rtable) };
+    let count = unsafe { pg_sys::list_length(stmt.resultRelations) };
     for offset in 0..count {
-        let cte =
-            unsafe { pg_sys::list_nth(query.cteList, offset).cast::<pg_sys::CommonTableExpr>() };
-        let Some(cte) = (unsafe { cte.as_ref() }) else {
+        let rt_index = unsafe { pg_sys::list_nth_int(stmt.resultRelations, offset) };
+        if rt_index <= 0 || rt_index > table_length {
+            continue;
+        }
+        let rte = unsafe {
+            pg_sys::list_nth(stmt.rtable, rt_index - 1).cast::<pg_sys::RangeTblEntry>()
+        };
+        let Some(rte) = (unsafe { rte.as_ref() }) else {
             continue;
         };
-        if !cte.ctequery.is_null() && unsafe { (*cte.ctequery).type_ } == pg_sys::NodeTag::T_Query {
-            unsafe { reject_query_tree_dml(cte.ctequery.cast::<pg_sys::Query>()) };
+        if rte.rtekind == pg_sys::RTEKind::RTE_RELATION && rte.relid != pg_sys::InvalidOid {
+            reject_if_gated(rte.relid, SOURCE_GATE, "source DML");
         }
     }
 }
 
-fn call_next_planner(
-    query: *mut pg_sys::Query,
-    query_string: *const core::ffi::c_char,
-    cursor_options: core::ffi::c_int,
-    bound_params: pg_sys::ParamListInfo,
-) -> *mut pg_sys::PlannedStmt {
+fn call_next_executor_start(query_desc: *mut pg_sys::QueryDesc, eflags: core::ffi::c_int) {
     unsafe {
-        if let Some(previous) = PREVIOUS_PLANNER_HOOK {
-            previous(query, query_string, cursor_options, bound_params)
+        if let Some(previous) = PREVIOUS_EXECUTOR_START_HOOK {
+            previous(query_desc, eflags);
         } else {
-            pg_sys::standard_planner(query, query_string, cursor_options, bound_params)
+            pg_sys::standard_ExecutorStart(query_desc, eflags);
         }
     }
 }
 
 #[pg_guard]
-unsafe extern "C-unwind" fn ec_distann_build_gate_planner_hook(
-    query: *mut pg_sys::Query,
-    query_string: *const core::ffi::c_char,
-    cursor_options: core::ffi::c_int,
-    bound_params: pg_sys::ParamListInfo,
-) -> *mut pg_sys::PlannedStmt {
+unsafe extern "C-unwind" fn ec_distann_build_gate_executor_start_hook(
+    query_desc: *mut pg_sys::QueryDesc,
+    eflags: core::ffi::c_int,
+) {
+    // Enforce at executor start rather than plan time so a cached generic plan,
+    // a PL/pgSQL cached plan, or a foreign-key trigger's cached SPI plan built
+    // before the registration committed still re-enters the gate on execution
+    // through `CheckCachedPlan`/`AcquireExecutorLocks`, which never replan.
+    //
     // C-language validation loads the library (and invokes `_PG_init`) while
-    // CREATE EXTENSION is still installing SQL objects. The durable helper and
-    // catalogs are not necessarily present yet, so installation DML must pass
-    // through until PostgreSQL clears `creating_extension`.
+    // CREATE EXTENSION is still installing SQL objects, so installation DML must
+    // pass through until PostgreSQL clears `creating_extension`.
     if !unsafe { pg_sys::creating_extension } && !INSIDE_GATE_LOOKUP.with(Cell::get) {
-        unsafe { reject_query_tree_dml(query) };
+        if let Some(desc) = unsafe { query_desc.as_ref() } {
+            unsafe { reject_planned_result_relations(desc.plannedstmt) };
+        }
     }
-    call_next_planner(query, query_string, cursor_options, bound_params)
+    call_next_executor_start(query_desc, eflags);
 }
 
 unsafe fn rangevar_oid(rangevar: *mut pg_sys::RangeVar, lockmode: pg_sys::LOCKMODE) -> pg_sys::Oid {
@@ -677,8 +668,8 @@ pub(crate) unsafe fn register_build_gate_hooks() {
                 Some(invalidate_gate_function_oid),
                 pg_sys::Datum::from(0_usize),
             );
-            PREVIOUS_PLANNER_HOOK = pg_sys::planner_hook;
-            pg_sys::planner_hook = Some(ec_distann_build_gate_planner_hook);
+            PREVIOUS_EXECUTOR_START_HOOK = pg_sys::ExecutorStart_hook;
+            pg_sys::ExecutorStart_hook = Some(ec_distann_build_gate_executor_start_hook);
             PREVIOUS_PROCESS_UTILITY_HOOK = pg_sys::ProcessUtility_hook;
             pg_sys::ProcessUtility_hook = Some(ec_distann_build_gate_process_utility_hook);
         }

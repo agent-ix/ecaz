@@ -2017,9 +2017,49 @@ fn test_distann_begin_build_competing_backend_busy() {
             "DROP SCHEMA IF EXISTS ec_distann_gate_scratch CASCADE;
              DROP ROLE IF EXISTS ec_distann_gate_empty_owner;
              CREATE SCHEMA ec_distann_gate_scratch;
-             CREATE ROLE ec_distann_gate_empty_owner",
+             CREATE ROLE ec_distann_gate_empty_owner;
+             CREATE TABLE ec_distann_gate_scratch.unrelated_probe(id integer)",
         )
         .expect("global utility scratch objects should create");
+
+    // P1 cached-plan bypass regression: cache a parameterless INSERT plan on
+    // the source BEFORE any registration commits. A zero-parameter prepared
+    // statement is always reused without re-planning, and committing the
+    // durable registration produces no relcache invalidation on the source, so
+    // only ExecutorStart enforcement can gate the reused plan. A second generic
+    // plan targets an unrelated table as the positive control the gate must not
+    // over-block.
+    let mut cached_plan_client = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("cached-plan connection should open");
+    cached_plan_client
+        .batch_execute(&format!(
+            "SET plan_cache_mode = force_generic_plan;
+             PREPARE gated_insert AS INSERT INTO {source} VALUES (
+                 '00000000-0000-4000-8000-000000000188',
+                 encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42));
+             PREPARE unrelated_insert AS
+                 INSERT INTO ec_distann_gate_scratch.unrelated_probe VALUES (1)",
+        ))
+        .expect("generic plans should prepare before the gate exists");
+    // Prime the source plan. Task 167 physical DML is unimplemented, so this
+    // reaches aminsert and fails closed (EC_GENERATION_MISSING) — but the plan
+    // is built and cached before that runtime error, which is what the
+    // regression needs. Whether the gate later reports EC_BUILD_STATE (caught
+    // at ExecutorStart) or EC_GENERATION_MISSING (bypassed to aminsert)
+    // distinguishes enforced from plan-time-only.
+    let prime = cached_plan_client
+        .batch_execute("EXECUTE gated_insert")
+        .expect_err("pre-gate source insert must fail closed at aminsert");
+    assert!(
+        prime
+            .as_db_error()
+            .map(|error| error.message().contains("EC_GENERATION_MISSING"))
+            .unwrap_or(false),
+        "unexpected pre-gate prime error: {prime}"
+    );
+    cached_plan_client
+        .batch_execute("EXECUTE unrelated_insert")
+        .expect("unrelated generic plan should build, cache, and execute before the gate");
 
     let aborted_build_id = "76767676-7676-4676-b676-767676767676";
     let mut aborting = postgres::Client::connect(&conninfo, postgres::NoTls)
@@ -2349,6 +2389,21 @@ fn test_distann_begin_build_competing_backend_busy() {
             "unexpected durable gate error for {sql}: {message}"
         );
     }
+
+    // The generic plan cached before the registration committed must still be
+    // rejected on execution — this is the plan-time-only bypass the executor
+    // hook closes. Enforcing only in the planner would let this EXECUTE through.
+    let cached_plan_message = gate_error(&mut cached_plan_client, "EXECUTE gated_insert");
+    assert!(
+        cached_plan_message.contains("EC_BUILD_STATE"),
+        "cached generic plan bypassed the durable gate: {cached_plan_message}"
+    );
+    // Positive control: a cached generic plan on an unrelated table must still
+    // execute while the gate is live, proving the gate does not over-block.
+    cached_plan_client
+        .execute("EXECUTE unrelated_insert", &[])
+        .expect("unrelated-table DML must succeed while the durable gate is live");
+    drop(cached_plan_client);
 
     let exit_replay = setup
         .query_one(
