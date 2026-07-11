@@ -29,7 +29,7 @@ fn test_ec_distann_access_method_is_registered() {
 }
 
 #[pg_test]
-fn test_ec_distann_scan_registry_preload_contract_and_gucs() {
+fn test_ec_distann_scan_registry_non_preload_contract_and_gucs() {
     let settings = Spi::get_two::<String, String>(
         "SELECT
              (SELECT context FROM pg_settings WHERE name = 'ec_distann.max_scan_pins'),
@@ -40,56 +40,53 @@ fn test_ec_distann_scan_registry_preload_contract_and_gucs() {
     assert_eq!(settings.1.as_deref(), Some("postmaster"));
 
     let logical = pgrx::datum::Uuid::from_bytes([
-        0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x41, 0x11, 0x81, 0x11, 0x11, 0x11, 0x11, 0x11,
-        0x11, 0x11,
+        0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x41, 0x11, 0x81, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11,
+        0x11,
     ]);
     let token = pgrx::datum::Uuid::from_bytes([
-        0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x42, 0x22, 0x82, 0x22, 0x22, 0x22, 0x22, 0x22,
-        0x22, 0x22,
+        0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x42, 0x22, 0x82, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22,
+        0x22,
     ]);
     let fingerprint = [0x33; 34];
 
-    match crate::am::ec_distann::register_scan_token_for_test(logical, fingerprint, token) {
-        Err(crate::am::ec_distann::ScanRegistryError::Unavailable) => {
-            // The ordinary pgrx pg_test cluster loads the extension after
-            // postmaster startup. This is the required fail-closed posture;
-            // preload-enabled validation exercises the branch below.
-        }
-        Ok(crate::am::ec_distann::ScanRegisterOutcome::Registered) => {
-            assert_eq!(
-                crate::am::ec_distann::register_scan_token_for_test(
-                    logical,
-                    fingerprint,
-                    token
-                ),
-                Ok(crate::am::ec_distann::ScanRegisterOutcome::AlreadyRegistered)
-            );
-            assert_eq!(
-                crate::am::ec_distann::register_scan_token_for_test(
-                    logical,
-                    [0x44; 34],
-                    token
-                ),
-                Err(crate::am::ec_distann::ScanRegistryError::TokenConflict)
-            );
-            let fence = crate::am::ec_distann::acquire_scan_fence_for_test(
-                unsafe { pg_sys::MyDatabaseId },
-                *logical.as_bytes(),
-            )
-            .expect("preloaded registry should allocate an operation reference");
-            assert!(fence.fence_id() > 0);
-            drop(fence);
-            assert_eq!(
-                crate::am::ec_distann::release_scan_token_for_test(
-                    logical,
-                    fingerprint,
-                    token
-                ),
-                Ok(true)
-            );
-        }
-        other => panic!("unexpected scan-registry posture: {other:?}"),
-    }
+    assert_eq!(
+        crate::am::ec_distann::register_scan_token_for_test(logical, fingerprint, token),
+        Err(crate::am::ec_distann::ScanRegistryError::Unavailable)
+    );
+}
+
+/// Requires a pg_test postmaster started with `shared_preload_libraries='ecaz'`.
+/// The ordinary pgrx runner cannot satisfy that startup contract, so this is a
+/// distinct integration lane rather than an alternate success branch above.
+#[pg_test]
+#[ignore]
+fn test_ec_distann_scan_registry_preloaded_shared_path() {
+    let logical = pgrx::datum::Uuid::from_bytes([0x11; 16]);
+    let token = pgrx::datum::Uuid::from_bytes([0x22; 16]);
+    let fingerprint = [0x33; 34];
+    assert_eq!(
+        crate::am::ec_distann::register_scan_token_for_test(logical, fingerprint, token),
+        Ok(crate::am::ec_distann::ScanRegisterOutcome::Registered)
+    );
+    assert_eq!(
+        crate::am::ec_distann::register_scan_token_for_test(logical, fingerprint, token),
+        Ok(crate::am::ec_distann::ScanRegisterOutcome::AlreadyRegistered)
+    );
+    assert_eq!(
+        crate::am::ec_distann::register_scan_token_for_test(logical, [0x44; 34], token),
+        Err(crate::am::ec_distann::ScanRegistryError::TokenConflict)
+    );
+    let fence = crate::am::ec_distann::acquire_scan_fence_for_test(
+        unsafe { pg_sys::MyDatabaseId },
+        *logical.as_bytes(),
+    )
+    .expect("preloaded registry should allocate an operation reference");
+    assert!(fence.fence_id() > 0);
+    drop(fence);
+    assert_eq!(
+        crate::am::ec_distann::release_scan_token_for_test(logical, fingerprint, token),
+        Ok(true)
+    );
 }
 
 #[pg_test]
