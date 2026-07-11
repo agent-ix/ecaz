@@ -6,56 +6,81 @@ date: 2026-07-11
 seq: 01
 ---
 
-# Review request — Packet 006 publication/retention contract
+# Review request — Packet 006 build-gate foundation
 
-Please review specification commit
-`d27cc4ce5f89d6542da946aa0a4252f9b294e6b0` before Packet 006 lifecycle code
-is committed.
+Please review the corrected Packet 006 contract and first implementation
+foundation:
 
-## Why this amendment was required
+- contract amendment: `c152ef9751747fabf58b75f89207ab1eba4e6b0`
+- immediate predecessor-cleanup traceability: `004e520c3`
+- implementation foundation: `54d09c177`
 
-The initial Packet 006 implementation audit found that the prior contract could
-not recoverably represent a durable T2 candidate, a removed predecessor owner,
-or idempotent physical reclaim. It also left session-lock rollback, concurrent
-build ownership, and cross-backend scan-token storage under-specified.
+This supersedes the earlier spec-only request at `d27cc4ce5`; Claude's
+`2026-07-11-02-reviewer.md` CHANGES REQUIRED disposition was treated as the
+controlling outside review.
 
-## Contract now frozen
+## Contract corrections
 
-- Begin-build retains source `ShareLock` then control
-  `ShareRowExclusiveLock` as build-specific session ownership, with
-  top/subtransaction cleanup, nonblocking competing-backend rejection, one
-  gate-active build, exact private-binding registration digest, and durable
-  source/control identity gate.
-- Generation descriptor v2 binds the authoritative coordinator UUID. Draft v1
-  is rebuild-only and Packet 006 owns the encoder/decoder/domain/golden
-  migration before lifecycle consumers use it.
-- T2 atomically persists an immutable candidate containing registration,
-  build-spec, descriptor, source-snapshot, Ready-receipt-set, and manifest
-  bytes/digests/fingerprint under a frozen candidate digest.
-- Publication is `Pending → Activated → Applied`: T4a publishes successors and
-  commits the conditional active-pointer swap; later T4b marks every
-  predecessor-roster owner Retired, including removed owners. Scans use the
-  predecessor only before activation and the successor after activation.
-- Participant retirement and reclaim use canonical activation/retire decision
-  bytes plus digests. Reclaim deletes storage transactionally but leaves an
-  immutable status/replay tombstone for the control identity's lifetime.
-- The coordinator scan registry is a bounded, database-namespaced PostgreSQL
-  add-in shared-memory exact-token table. Collision-free allocated fence IDs
-  drive short heavyweight shared registration locks and transaction-exclusive
-  retirement locks; no LWLock spans SPI, ERROR, commit, or RPC.
-- TC-042 now has explicit registration, candidate, pre/post-swap, removed-owner,
-  shared-registry, source/control-gate, and reclaim fault axes. TC-050 owns the
-  new frozen digest/descriptor fixtures.
+- A permanently unavailable predecessor can no longer wedge publication:
+  each immutable predecessor binding terminates as exact `Retired` or explicit
+  audited `Abandoned`; audit insertion and Pending→Abandoned CAS are atomic and
+  exact replay returns stored bytes/time.
+- `Applied` means every predecessor binding has a truthful terminal
+  disposition, not that an unreachable participant reclaimed its local orphan.
+- Normal/forced predecessor retirement requires its covering successor
+  decision to be Applied. Retire decisions carry the exact abandoned
+  ordinal/audit-digest set and skip those bindings during reclaim recovery.
+- Scan-token liveness, dead-token reaping, fence operation references, safe
+  dropped-UUID fence recycling, candidate re-verification, canonical roster
+  encoding, READ COMMITTED rejection, and TC-050 mappings are now explicit.
 
-## Boundaries
+## Foundation implemented
 
-This is a specification/traceability checkpoint. The worktree contains a
-separate uncommitted coordinator draft that is deliberately excluded from this
-request. Packet 006 implementation, PG18 fault evidence, physical reads, the
-three-instance fixture, and benchmark closeout remain open.
+- `ec_distann_begin_epoch_build` persists one durable source/control build gate
+  and exact private-binding digest, with source→control→registry→registration
+  ordering and nonblocking competing-backend rejection.
+- Session ownership is correct across nested subcommit/subabort, top-level
+  abort, terminal replay, outer commit, backend exit, DROP, and REINDEX.
+  Commit-only release intents are tracked by subtransaction ID so a rolled-back
+  savepoint cannot release parent ownership later.
+- Descriptor v2 binds the authoritative coordinator UUID and has exact offsets,
+  independent fixture coverage, rebuild-only v1 rejection, and an updated
+  writable-format matrix. Registration v1 remains correctly classified as a
+  canonical digest preimage rather than a persisted readable format.
+- SQL freezes build registration/candidate/publication/retirement/reclaim state,
+  exact predecessor dispositions, abandon audits, Applied-covering-successor
+  FKs, and immediate predecessor-chain integrity.
+- Destructive cleanup removes a publication chain successor/leaf-first,
+  detects cycles, and is transactional. REINDEX identifies the prior control
+  from its durable registry row rather than already-replaced block-0 storage.
+- Revoked SECURITY DEFINER bridges validate exact control metadata/UUID for
+  ordinary-owner cleanup and replacement-registry initialization. AM-owned
+  relation deletion is marked internal; the global SPIRE sql_drop cleanup
+  trigger now runs under a fixed trusted SECURITY DEFINER boundary so ordinary
+  DistANN DROP does not fail on SPIRE's revoked catalogs.
 
-## Validation
+## Evidence and review history
 
-See `artifacts/manifest.md`. Quire grammar validation and the DistANN
-traceability audit are green; the matrix correctly remains PARTIAL because
-runtime implementation/evidence has not landed.
+The expanded PG18 tests cover:
+
+- same-backend reacquisition after top-level abort;
+- terminal replay and destructive REINDEX inside a rolled-back savepoint,
+  followed by outer commit and a competing backend that must remain busy;
+- terminal commit release, repeated REINDEX, backend-exit reacquisition, and
+  same-backend DROP;
+- ordinary-owner DROP and REINDEX with all installed event triggers enabled;
+- committed and aborted cleanup of a three-decision predecessor chain, exact
+  hidden-relation removal, UUID replacement, and full rollback restoration.
+
+Two final read-only audits reported CLEAN after these runs. See
+`artifacts/manifest.md` for exact-SHA logs.
+
+## Still open in Packet 006
+
+This request is for the build-gate/schema/format foundation, not full Packet
+006 closure. Candidate sealing, T3 decision creation, T4a/T4b publication and
+recovery, abandon endpoint execution, DML/utility gate hooks, the shared scan
+registry/fence implementation, retirement/reclaim RPCs, and the complete
+TC-042 fault matrix remain subsequent code checkpoints. Packet 007 read-path,
+Packet 008 physical three-instance validation, and Packet 009 benchmark
+closeout also remain open.

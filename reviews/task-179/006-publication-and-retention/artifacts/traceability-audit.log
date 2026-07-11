@@ -1,7 +1,6 @@
-command=scripts/audit_distann_spec_traceability.sh
-head=d27cc4ce5f89d6542da946aa0a4252f9b294e6b0
-timestamp=2026-07-11T01:47:32-07:00
-exit=0
+Script started on 2026-07-11 08:40:01-07:00 [<not executed on terminal>]
+head=54d09c17725e7e0e106348ac8dd97722bafd7be4
+timestamp=2026-07-11T08:40:01-07:00
 stable_error_categories_missing_from_matrix=0
 duplicate_test_summary_ids=0
 distann_criterion_mappings_missing=0
@@ -14,3 +13,5 @@ task_179_plan_link=pass
 git_diff_check=pass
 spec_matrix_status=PARTIAL
 reason=physical_hash_shard_implementation_and_runtime_evidence_are_incomplete
+
+Script done on 2026-07-11 08:40:01-07:00 [COMMAND_EXIT_CODE="0"]

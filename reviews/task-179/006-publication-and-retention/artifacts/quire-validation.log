@@ -1,7 +1,4 @@
-command=quire validate --scope /home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards 'spec/**/*.md' --summary
-head=d27cc4ce5f89d6542da946aa0a4252f9b294e6b0
-timestamp=2026-07-11T01:47:32-07:00
-exit=0
+Script started on 2026-07-11 08:39:46-07:00 [<not executed on terminal>]
 DuplicateArchetype: 'ADR' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
 DuplicateArchetype: 'Plan' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
 DuplicateArchetype: 'Review' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
@@ -9,3 +6,5 @@ DuplicateArchetype: 'SpecReview' contributed by modules ["spec-artifacts-process
 DuplicateArchetype: 'Standard' contributed by modules ["spec-artifacts-process", "spec-artifacts-process"]; first-wins
 DuplicateInverseEdge: inverse label 'part_of' declared by verbs ["aggregates", "contains"]; first-wins
 244/244 docs grammar-clean (100%); 0 EARS finding(s): none
+
+Script done on 2026-07-11 08:39:46-07:00 [COMMAND_EXIT_CODE="0"]
