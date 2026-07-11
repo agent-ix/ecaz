@@ -200,11 +200,66 @@ created_at timestamptz)`
   registry/reloptions/schema identity into a coordinator build registration,
   persist the durable build gate, and return its digest without contacting a
   participant.
+- The build registration SHALL persist the local source relation OID alongside
+  the coordinator control-index OID, logical-index UUID, and build id so DML
+  and utility hooks can locate the
+  durable gate without consulting mutable names. `Registered`, `Building`,
+  `Ready`, and `Decided` registrations are gate-active; `Aborted` and
+  `Published` registrations are not. A stale OID without the matching live
+  control-index UUID SHALL never gate a reused relation.
+- Begin-build SHALL acquire the source session `ShareLock` before retaining the
+  coordinator-control session `ShareRowExclusiveLock`, then lock the
+  registry-state row before any registration/replay row. It MAY resolve the source OID under a
+  short-lived control-index `AccessShareLock`, but it SHALL reopen and revalidate
+  the v5 control metadata and logical UUID after the source lock is held. This
+  source → control → registry → registration order is shared by abort and
+  publish recovery and prevents inversion with source DDL.
+- Successful begin-build retains both session locks through build, decision,
+  and active-pointer-swap commit. The control lock prevents concurrent control
+  mutation/DROP/REINDEX and gives one live coordinator backend ownership. A
+  second backend attempting the same or another build while that ownership is
+  live SHALL fail non-blockingly with `EC_BUILD_BUSY`; after owner exit, durable
+  recovery may reacquire both locks in the same order. Desired-roster edits are
+  therefore serialized behind the live build; immutable private bindings remain
+  required for retained epochs and post-publish roster changes.
+- A session source lock acquired by a subtransaction SHALL be promoted to its
+  parent only when that subtransaction commits. Subtransaction or top-level
+  abort SHALL release every newly acquired nontransactional session lock.
+  Committed lock ownership SHALL cover both relations and be keyed by source
+  relation, coordinator control identity, and build id; another build in the
+  same session SHALL not borrow it.
+- The returned registration digest SHALL bind the complete immutable private
+  binding list in ordinal order, including secret reference, canonical remote
+  locator, participant UUID, compatibility digest, endpoint identity, node id,
+  ordinal, and local flag. Exact replay SHALL lock and reconstruct the complete
+  registration and binding list; a count-only replay check is forbidden.
+- Registration-digest version 1 SHALL encode, in order: `version u16 = 1`,
+  coordinator control-index OID `u32`, coordinator logical-index UUID
+  `byte[16]`, source relation OID `u32`, epoch `u64`, build id `byte[16]`,
+  registry revision `u64`, length-prefixed public roster snapshot, roster digest
+  `byte[32]`, row-schema fingerprint `byte[32]`, compatibility digest `byte[32]`,
+  private-binding count `u32`, then each ordinal-ordered binding as ordinal
+  `u32`, node id `u32`, length-prefixed endpoint identity, secret reference,
+  canonical remote locator, participant UUID `byte[16]`, compatibility digest
+  `byte[32]`, and local flag `u8`. Its result SHALL be
+  `SHA-256("ec_distann_build_registration_v1\0" || canonical_bytes)` and is a
+  coordinator-local identity: OIDs SHALL NOT enter a participant descriptor,
+  manifest, or remote request.
+- At most one registration in `Registered`, `Building`, `Ready`, or `Decided`
+  state SHALL exist per `(index_oid, logical_index_uuid)`. A second build id or
+  epoch raises `EC_BUILD_STATE`; exact replay is only the same build id. Epoch
+  identity SHALL additionally be unique per logical index for the retained
+  lifetime through final reclaim.
+- Version 1 also rejects begin-build while any publish decision for the logical
+  index is `Pending` or `Activated`. Recovery is therefore unambiguous for the
+  build-id-free `ec_distann_recover_epoch_publish(index)` operation; a later
+  build may begin only after the prior decision is `Applied`.
 - The transaction containing `ec_distann_begin_epoch_build` SHALL commit before
   the first remote `ec_distann_begin_epoch_handoff` call. A caller SHALL NOT
   invoke `ec_distann_build_epoch` until that commit succeeds.
 - `ec_distann_build_epoch` SHALL require the matching durable registration and
-  held session lock, capture one source MVCC snapshot in its new transaction,
+  held or safely reacquired build-specific session lock, capture one source
+  MVCC snapshot in its new transaction,
   and consume the immutable registered roster, reloptions, and schema.
 - In the physical-generation lane, the coordinator SHALL supply its one
   registered MVCC snapshot to `table_index_build_scan` using concurrent-build
@@ -232,16 +287,62 @@ created_at timestamptz)`
   `COPY FROM`, `TRUNCATE`, source-relation `ALTER`/`DROP`, `CLUSTER`,
   `VACUUM FULL`, and any other source tuple/schema rewrite. It SHALL continue to permit
   `SELECT` and non-rewriting inspection of the prior Published epoch.
+- The same gate SHALL reject DROP, REINDEX, or ALTER of the coordinator control
+  index, because removing or changing the UUID-bearing control while a remote
+  build exists would destroy recovery identity. Gate lookup SHALL revalidate the
+  live `(source_relation_oid, index_oid, logical_index_uuid)` triple before
+  rejecting; OID coincidence alone is never sufficient.
 - The build-to-Ready operation SHALL use one coordinator transaction and MAY
   use bounded PostgreSQL temporary files for FR-077 stitch streams.
 - A successful `ec_distann_build_epoch` call SHALL return the 32-byte candidate
   manifest digest after all owners are Ready. It SHALL NOT return a Published
   fingerprint or make the generation query-visible.
-- The coordinator SHALL keep the session-level relation lock across the
+- Before changing the coordinator registration to `Ready`, build-epoch SHALL
+  atomically persist one immutable build-candidate row containing the canonical
+  build specification and digest, generation descriptor and digest, source
+  snapshot descriptor and digest, epoch manifest and digest/fingerprint, and
+  the complete canonical Ready-receipt set. The manifest supplies the exact
+  global record count and graph/row/head digests. The later decision transaction
+  SHALL consume this durable candidate rather than client memory or a newly
+  observed source snapshot. Exact candidate replay is idempotent; any byte or
+  digest mismatch is `EC_BUILD_ID_CONFLICT` and changes no state.
+- `ec_distann_build_candidate` SHALL have primary/foreign-key identity
+  `(index_oid, logical_index_uuid, build_id)` and store epoch, registration
+  digest, canonical build-spec bytes/digest, generation-descriptor bytes/digest,
+  source-snapshot bytes/digest, roster-ordered Ready-receipt-set bytes/digest,
+  epoch-manifest bytes/digest/fingerprint, candidate digest, and creation time.
+  The receipt set uses the manifest's exact `u32 count` plus repeated
+  `u32 length || receipt` encoding and SHALL byte-equal the receipts embedded in
+  the manifest. Its digest is
+  `SHA-256("ec_distann_ready_receipt_set_v1\0" || exact_receipt_set_bytes)`.
+  Candidate-digest v1 encodes, in exact order: `version u16 = 1`, registration
+  digest, `u32 build_spec_length || build_spec || build_spec_digest`,
+  `u32 descriptor_length || descriptor || descriptor_digest`,
+  `u32 snapshot_length || snapshot || snapshot_digest`,
+  `u32 receipt_set_length || receipt_set || receipt_set_digest`,
+  `u32 manifest_length || manifest || manifest_digest`, and the 34-byte
+  fingerprint; it is
+  `SHA-256("ec_distann_build_candidate_v1\0" || canonical_body)`. The row is
+  immutable. Registration becomes Ready iff candidate insertion succeeds in
+  the same transaction, and publish decision has an exact FK/identity link to
+  it. T3 may re-run read-only topology but SHALL compare it with this candidate.
+- The coordinator SHALL keep both session-level relation locks across the
   build-to-Ready, publish-decision, and publish-recovery transactions.
+- If the owning backend exits, the session locks disappear but the durable gate
+  remains. Explicit abort or publish recovery in another backend SHALL first
+  acquire a new build-specific source `ShareLock`, then revalidate control UUID,
+  registry/registration identity, and lifecycle state in the normative lock
+  order. It does not and cannot release the dead backend's lock. Build-epoch may
+  resume only with the original still-live frozen workspace; a replacement
+  backend without that workspace may abort pre-decision or recover a durable
+  post-decision build, but may not recapture the source under the old build id.
 - `ec_distann_abort_epoch_build` SHALL idempotently abort every remote
   unpublished generation, remove the coordinator build gate, and release the
   session-level lock when held by the caller.
+- Abort and activation recovery SHALL schedule both session-lock releases from a
+  transaction callback only after the gate-clearing transaction commits. An
+  error, subtransaction rollback, or top-level rollback preserves a previously
+  committed build lock and gate; no endpoint releases it precommit.
 - If the coordinator exits before a durable publish decision, recovery SHALL
   leave the prior epoch active and require explicit resume with the original
   frozen build workspace or abort. A build SHALL NOT publish from a newly
@@ -267,9 +368,10 @@ layout:
 
 ```yaml
 record: distann_generation_descriptor
-version: 1
+version: 2
 fields:
-  - { name: descriptor_version, type: u16, rule: exactly 1 }
+  - { name: descriptor_version, type: u16, rule: exactly 2 }
+  - { name: coordinator_logical_index_uuid, type: byte[16], rule: authoritative coordinator control UUID captured by begin-build }
   - { name: index_format_version, type: u16, rule: destination generation format }
   - { name: graph_record_version, type: u16, rule: FR-076 graph-node record version }
   - { name: handoff_wire_version, type: u16, rule: FR-076 handoff version }
@@ -288,7 +390,12 @@ use unsigned little-endian `u32` lengths. Every canonical array SHALL begin
 with an unsigned little-endian `u32` element count; the roster then encodes
 each entry as `node_id u32`, `logical_index_uuid byte[16]`, and one
 length-prefixed UTF-8 endpoint identity. The descriptor digest SHALL be
-`SHA-256("ec_distann_generation_descriptor_v1\0" || canonical_descriptor)`.
+`SHA-256("ec_distann_generation_descriptor_v2\0" || canonical_descriptor)`.
+The pre-publication descriptor-v1 draft is superseded and SHALL be rejected by
+the physical handoff lane rather than reinterpreted; existing draft fixtures
+are rebuild-only. Descriptor v2's coordinator UUID lets every participant bind
+later authenticated activation/retire decisions even when the authoritative
+coordinator is outside the owner roster.
 The handoff endpoint's `roster_digest` SHALL be
 `SHA-256("ec_distann_roster_v1\0" || canonical_roster_array)`, where the
 canonical roster array is the descriptor's exact `u32` count plus ordered entry
@@ -684,6 +791,7 @@ directory_bytes bigint, control_index_bytes bigint)`
 | Code | Condition | Required outcome |
 |------|-----------|------------------|
 | `EC_BUILD_ID_CONFLICT` | Reused build id with different immutable build parameters | Reject before mutation |
+| `EC_BUILD_BUSY` | Another live backend owns the source/control session locks for this logical build surface | Fail non-blockingly without registration or remote mutation |
 | `EC_NODE_DESCRIPTOR` | Roster ordinal/id/endpoint is duplicate, malformed, secret-bearing, or incompatible with the remote control index | Reject before catalog or remote mutation |
 | `EC_SOURCE_IDENTITY` | Physical build lacks one valid global UUID/bytea16 source identity per row | Reject before snapshot capture or handoff |
 | `EC_BATCH_SEQUENCE` | Gap, regression, or out-of-order batch sequence | Reject before mutation |
@@ -729,6 +837,7 @@ directory_bytes bigint, control_index_bytes bigint)`
 | FR-078-AC-13 | A trained-codec generation descriptor round-trips byte-exactly and makes owner query preparation/scoring identical to the coordinator without owner-side retraining | Test (TC-040, TC-050) |
 | FR-078-AC-14 | Participant identity is durably configured; node registration resolves a secret reference, obtains UUID/endpoint/canonical locator only from the secured identity endpoint, rejects duplicate/raw/incompatible inputs before insertion, and desired-roster replacement cannot alter active/retained build bindings | Test (TC-040) |
 | FR-078-AC-15 | The 107-byte owner-stream hash state is golden-frozen, resumes to the one-shot digest across every entry/batch split, rejects malformed or mismatched state before mutation, and preserves empty sequence-zero semantics | Test (TC-040, TC-050) |
+| FR-078-AC-16 | Begin-build commits a source/control-identity gate plus complete golden-frozen private-binding digest under source→control→registry→registration locking; exact replay validates every bound byte, subcommit promotes ownership, top/subtransaction rollback releases new locks, and same-session/competing-backend builds cannot borrow ownership | Test (TC-042, TC-050) |
 
 ## Dependencies
 

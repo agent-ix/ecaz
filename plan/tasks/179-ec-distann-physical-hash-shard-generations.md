@@ -74,7 +74,7 @@ a different observable contract, update and review the spec first.
 | Physical graph | Full replica per node | One hidden owner generation per participant; exact/disjoint global coverage |
 | Source row | Live base-heap TID | Immutable AM-owned row-tier heap copied from the build snapshot |
 | Directory | In-index sorted vec_id→record-TID chain | Generation-local unique vec_id directory over the physical graph store |
-| Epoch | One v4 metadata-page state | Multiple Building/Ready/Published/Retired generations plus Aborted/reclaimed state |
+| Epoch | One v4 metadata-page state | Multiple Building/Ready/Published/Retired generations plus Aborted/Reclaimed state |
 | Fingerprint | 16-byte FNV-style identity | FR-082 v2: `u16_le(2) || SHA-256(manifest)` (34 bytes) |
 | Roster | Session GUC with raw conninfo | Ordered node-descriptor catalog with secret references; immutable manifest snapshot |
 | Row payload | Live owner heap + caller column/function names | Frozen row tier + attnums; owner resolves local send functions and coordinator resolves receive functions |
@@ -171,14 +171,30 @@ reviewed schema checkpoint):
 - `ec_distann_generation_batch`
 - `ec_distann_build_registration`
 - `ec_distann_build_participant_binding` (private immutable transport snapshot)
+- `ec_distann_build_candidate` (immutable T2 manifest/spec/snapshot/receipt state)
 - `ec_distann_publish_decision`
 - `ec_distann_retire_decision`
 - `ec_distann_active_epoch`
+- `ec_distann_generation_reclaim` (participant idempotency tombstone)
 
 Every row is keyed by logical-index UUID in addition to the local index OID.
 Catalog and endpoint privileges are revoked from `PUBLIC`. DROP/REINDEX tests
 must prove hidden relations are dependency-cleaned and stale catalog rows are
 never addressable after OID reuse.
+
+Packet 006 extends these catalog contracts before lifecycle RPCs: registration
+stores source OID and enforces one gate-active build; candidate rows byte-bind
+registration/spec/descriptor/snapshot/receipt/manifest identities; generation
+rows persist descriptor-v2 coordinator identity, Published manifest/fingerprint,
+and successor-retirement marker; publish decisions carry predecessor identity
+and Pending/Activated/Applied progress; retire decisions carry canonical bytes,
+target build/epoch/private roster, and Pending/Applied progress; reclaim
+tombstones retain exact status/replay fields after relation deletion.
+Because authoritative coordinator identity was missing from the already-drafted
+descriptor v1, Packet 006 also owns the deliberate descriptor-v2 encoder,
+decoder, digest domain, offsets/layout assertions, independent golden fixture,
+compatibility-matrix row, handoff migration, and explicit v1 rebuild-only
+rejection before later lifecycle code consumes the format.
 
 Persist stage/seal restart state in `ec_distann_generation`: the last unsigned
 vec-id as eight canonical bytes, one explicitly versioned serializable SHA-256
@@ -268,20 +284,46 @@ MVCC snapshot.
 
 ### 6. Split Ready, decision, and recovery across real commit boundaries
 
-The operator/CLI sequence uses one coordinator connection but four committed
-transactions:
+The operator/CLI sequence uses one coordinator connection: four committed
+transactions for the first publication with no predecessor, and five or more
+when predecessor retirement marking is required:
 
-1. `ec_distann_begin_epoch_build` acquires the session-level source lock,
+1. `ec_distann_begin_epoch_build` acquires the source and coordinator-control
+   session locks,
    snapshots the registry/reloptions/schema identity, and commits the durable
    build registration/gate before any remote handoff call.
 2. `ec_distann_build_epoch` captures/builds/hands off and returns a Ready
    manifest candidate in a new transaction using that registration.
 3. `ec_distann_decide_epoch_publish` re-reads owner topology/receipts and commits
    the immutable commit-only decision. It must not contact publish endpoints.
-4. In a later transaction, `ec_distann_recover_epoch_publish` idempotently
-   publishes participants, waits for matching acknowledgements, swaps the
-   coordinator active pointer last, clears the build gate, and releases the
-   session lock.
+4. In T4a, `ec_distann_recover_epoch_publish` idempotently publishes successor
+   participants, waits for matching acknowledgements, conditionally swaps the
+   coordinator active pointer from the recorded predecessor, records Activated
+   (or Applied when no predecessor exists), clears the build gate, and releases
+   both session locks only after commit.
+5. In T4b, a later recovery invocation uses immutable predecessor bindings to
+   mark every old-roster participant Retired—including removed owners—and marks
+   the decision Applied. It performs no source recapture and needs no live-build
+   source/control lock.
+
+The shared order for begin, abort, and pre-activation publish recovery is source
+session `ShareLock` → coordinator control session `ShareRowExclusiveLock` → registry row →
+registration/decision rows. A lock acquired in an aborted top-level or
+subtransaction is released by callbacks; committed ownership is build-specific.
+The registration digest covers the complete private binding list, not only the
+public roster.
+
+T2 persists an immutable `ec_distann_build_candidate` containing canonical
+build spec, generation descriptor, source snapshot, complete receipt set, and
+manifest bytes/digests before returning Ready. T3 never reconstructs its input
+from client memory.
+
+The successor publish decision stores its all-or-none predecessor build/epoch/
+fingerprint/manifest tuple, canonical activation marker, and
+Pending→Activated→Applied phase. Participant generations persist the published
+manifest/fingerprint and exact successor marker. Retire apply leaves an
+immutable `ec_distann_generation_reclaim` tombstone carrying canonical decision
+bytes and status fields.
 
 Extend the existing SPIRE DML/utility-hook pattern only far enough to enforce
 the durable build gate after coordinator-session loss: source DML and
@@ -289,10 +331,10 @@ schema-changing DDL fail closed until explicit pre-decision abort or
 post-decision recovery. Reads of the prior Published epoch continue.
 
 Replace the current one-page `epoch_manifest.rs` state machine with catalog
-generation state; keep the legacy local implementation behind
+  generation state; keep the legacy local implementation behind
 `distributed_control=false`. Exercise crashes before decision, after decision,
-after each participant acknowledgement, before pointer swap, and after pointer
-swap.
+after each successor acknowledgement, before pointer swap, after pointer swap,
+and after each predecessor retirement mark including a removed owner.
 
 ### 7. Register scans locally and make retirement the expensive path
 
@@ -317,6 +359,11 @@ swap.
 - Participants never reclaim autonomously, so their restart cannot race a live
   scan. Force-retire remains a non-active-epoch operator override with the full
   FR-082 audit record.
+- The scan-token registry and sole per-index fence use PostgreSQL add-in shared
+  memory and require `ecaz` in `shared_preload_libraries` for distributed-control
+  serving. Participant reclaim leaves an immutable tombstone. Successor publish
+  recovery marks every predecessor-roster participant Retired after the active
+  pointer swap, including owners removed from the successor roster.
 
 Suggested module: `generation_retention.rs`; keep this separate from beam
 counters.
