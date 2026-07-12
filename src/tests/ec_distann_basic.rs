@@ -2149,6 +2149,28 @@ fn test_distann_build_epoch_single_node() {
     assert_eq!(participant_state.as_deref(), Some("Ready"));
     assert_eq!(record_count, Some(3));
     assert!(has_receipt, "a Ready participant must expose a receipt digest");
+
+    // Exact replay is idempotent: a second build_epoch returns the same digest
+    // without rebuilding or duplicating the candidate.
+    let replay_digest = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT ec_distann_build_epoch('ec_distann_be_idx'::regclass, 7, '{build_id}'::uuid)"
+    ))
+    .expect("build_epoch replay should execute")
+    .expect("build_epoch replay should return a digest");
+    assert_eq!(
+        replay_digest, candidate_digest,
+        "exact replay must return the stored candidate digest"
+    );
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ec_distann_build_candidate
+              WHERE index_oid = 'ec_distann_be_idx'::regclass::oid
+                AND build_id = '{build_id}'::uuid"
+        ))
+        .unwrap(),
+        Some(1),
+        "replay must not duplicate the build candidate"
+    );
 }
 
 #[pg_test]

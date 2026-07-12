@@ -1228,6 +1228,36 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
                 .to_owned()
         })?;
 
+        // Exact replay is idempotent: a build id whose immutable candidate
+        // already exists returns the stored candidate digest without rebuilding
+        // (FR-078:312-314, 372-373). Divergent inputs under the same build id are
+        // already rejected by replay_registration above.
+        let candidate_table = extension_relation_name("ec_distann_build_candidate")?;
+        let existing_candidate = Spi::connect(|client| -> Result<Option<Vec<u8>>, String> {
+            client
+                .select(
+                    &format!(
+                        "SELECT candidate_digest FROM {candidate_table}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_STATE: candidate replay lookup failed".to_owned())?
+                .map(|row| {
+                    row["candidate_digest"]
+                        .value::<Vec<u8>>()
+                        .map_err(|_| "EC_BUILD_STATE: candidate digest decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_STATE: candidate digest is NULL".to_owned())
+                })
+                .next()
+                .transpose()
+        })?;
+        if let Some(existing_candidate) = existing_candidate {
+            return Ok(existing_candidate);
+        }
+
         // Reacquire the frozen roster (revision-locked so it matches registration).
         let participants = desired_participants(index_oid, logical_index_uuid)?;
         let roster = public_roster(&participants)?;
@@ -1497,7 +1527,6 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
 
         // Atomically persist the immutable candidate and mark the registration
         // Ready in this coordinator transaction.
-        let candidate_table = extension_relation_name("ec_distann_build_candidate")?;
         let registration = extension_relation_name("ec_distann_build_registration")?;
         Spi::connect_mut(|client| -> Result<(), String> {
             client
