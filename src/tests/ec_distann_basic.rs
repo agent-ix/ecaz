@@ -2171,6 +2171,73 @@ fn test_distann_build_epoch_single_node() {
         Some(1),
         "replay must not duplicate the build candidate"
     );
+
+    // Decide to publish (T3): recompute the candidate digest chain, verify no
+    // active pointer (first epoch), and persist a commit-only Pending decision
+    // with canonical successor activation — no participant call, no pointer swap.
+    let manifest_digest = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT manifest_digest FROM ec_distann_build_candidate
+          WHERE index_oid = 'ec_distann_be_idx'::regclass::oid
+            AND build_id = '{build_id}'::uuid"
+    ))
+    .unwrap()
+    .unwrap();
+    let decided = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT ec_distann_decide_epoch_publish('ec_distann_be_idx'::regclass, '{build_id}'::uuid)"
+    ))
+    .expect("decide should execute")
+    .expect("decide should return the manifest digest");
+    assert_eq!(
+        decided, manifest_digest,
+        "decide must return the candidate manifest digest"
+    );
+    // A commit-only Pending decision exists with no predecessor (first epoch).
+    let (decision_state, has_predecessor, has_activation) = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT decision_state, predecessor_build_id IS NOT NULL AS has_pred,
+                            octet_length(successor_activation) > 0 AS has_act
+                       FROM ec_distann_publish_decision
+                      WHERE index_oid = 'ec_distann_be_idx'::regclass::oid
+                        AND build_id = '{build_id}'::uuid"
+                ),
+                None,
+                &[],
+            )
+            .expect("decision lookup should run")
+            .map(|r| {
+                (
+                    r["decision_state"].value::<String>().unwrap().unwrap(),
+                    r["has_pred"].value::<bool>().unwrap().unwrap(),
+                    r["has_act"].value::<bool>().unwrap().unwrap(),
+                )
+            })
+            .next()
+            .expect("a decision row must exist")
+    });
+    assert_eq!(decision_state, "Pending");
+    assert!(!has_predecessor, "first epoch has no predecessor");
+    assert!(has_activation, "the decision must carry a successor activation");
+    // Decide does NOT swap the active pointer.
+    assert_eq!(
+        Spi::get_one::<i64>(
+            "SELECT count(*) FROM ec_distann_active_epoch
+              WHERE index_oid = 'ec_distann_be_idx'::regclass::oid"
+        )
+        .unwrap(),
+        Some(0),
+        "decide must not activate the pointer (that is recover T4a)"
+    );
+    // Exact replay is idempotent.
+    assert_eq!(
+        Spi::get_one::<Vec<u8>>(&format!(
+            "SELECT ec_distann_decide_epoch_publish('ec_distann_be_idx'::regclass, '{build_id}'::uuid)"
+        ))
+        .unwrap(),
+        Some(manifest_digest),
+        "decide replay returns the same manifest digest"
+    );
 }
 
 #[pg_test]

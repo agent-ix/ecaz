@@ -15,7 +15,9 @@ use super::generation_descriptor::{
     DistannRosterEntry,
 };
 use super::handoff_router::{DistannHandoffRouteIdentity, DistannStageAck};
-use super::lifecycle_wire::DistannBuildCandidateV1;
+use super::lifecycle_wire::{
+    DistannBuildCandidateV1, DistannPublishedEpochIdentity, DistannSuccessorActivationV1,
+};
 use super::manifest_v2::{
     DistannEpochManifestV2, DistannManifestBuildOptions, DistannManifestCodecParameters,
     DistannSourceSnapshot,
@@ -1587,6 +1589,271 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         })?;
 
         Ok(candidate_digest.to_vec())
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"))
+}
+
+/// Load the immutable build-candidate row for a build id and reconstruct the
+/// canonical `DistannBuildCandidateV1`, recomputing and verifying its full
+/// digest chain (validate() re-checks every component digest and the
+/// cross-component consistency) — FR-082:266-270.
+fn load_build_candidate(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
+) -> Result<Option<DistannBuildCandidateV1>, String> {
+    let candidate_table = extension_relation_name("ec_distann_build_candidate")?;
+    Spi::connect(|client| -> Result<Option<DistannBuildCandidateV1>, String> {
+        client
+            .select(
+                &format!(
+                    "SELECT registration_digest, build_spec, build_spec_digest,
+                            generation_descriptor, generation_descriptor_digest,
+                            source_snapshot, source_snapshot_digest,
+                            ready_receipt_set, ready_receipt_set_digest,
+                            epoch_manifest, manifest_digest, epoch_fingerprint
+                       FROM {candidate_table}
+                      WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                        AND build_id = $3::uuid"
+                ),
+                None,
+                &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+            )
+            .map_err(|_| "EC_PUBLISH_DIGEST: build candidate lookup failed".to_owned())?
+            .map(|row| {
+                let bytea = |name: &str| -> Result<Vec<u8>, String> {
+                    row[name]
+                        .value::<Vec<u8>>()
+                        .map_err(|_| format!("EC_PUBLISH_DIGEST: candidate {name} decode failed"))?
+                        .ok_or_else(|| format!("EC_PUBLISH_DIGEST: candidate {name} is NULL"))
+                };
+                let fixed32 = |name: &str| -> Result<[u8; 32], String> {
+                    bytea(name)?
+                        .try_into()
+                        .map_err(|_| format!("EC_PUBLISH_DIGEST: candidate {name} is not 32 bytes"))
+                };
+                let candidate = DistannBuildCandidateV1 {
+                    registration_digest: fixed32("registration_digest")?,
+                    build_spec: bytea("build_spec")?,
+                    build_spec_digest: fixed32("build_spec_digest")?,
+                    generation_descriptor: bytea("generation_descriptor")?,
+                    generation_descriptor_digest: fixed32("generation_descriptor_digest")?,
+                    source_snapshot: bytea("source_snapshot")?,
+                    source_snapshot_digest: fixed32("source_snapshot_digest")?,
+                    ready_receipt_set: bytea("ready_receipt_set")?,
+                    ready_receipt_set_digest: fixed32("ready_receipt_set_digest")?,
+                    epoch_manifest: bytea("epoch_manifest")?,
+                    manifest_digest: fixed32("manifest_digest")?,
+                    epoch_fingerprint: bytea("epoch_fingerprint")?.try_into().map_err(|_| {
+                        "EC_PUBLISH_DIGEST: candidate fingerprint is not 34 bytes".to_owned()
+                    })?,
+                };
+                candidate.validate()?;
+                Ok(candidate)
+            })
+            .next()
+            .transpose()
+    })
+}
+
+/// Decide to publish a built epoch (T3, FR-082:251-280): recompute and verify
+/// the candidate digest chain, require the candidate parent fingerprint to equal
+/// the active pointer taken under lock, and persist a commit-only Pending
+/// decision plus canonical successor activation. Makes NO participant call and
+/// does NOT swap the active pointer (that is `ec_distann_recover_epoch_publish`).
+/// Returns the 32-byte manifest digest. Exact replay is idempotent.
+#[pg_extern(volatile, strict)]
+fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -> Vec<u8> {
+    (|| -> Result<Vec<u8>, String> {
+        if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
+            return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
+        }
+        let index_oid = index_regclass.oid();
+        let (mut control, _handle, metadata, logical_index_uuid) = open_control_index(
+            index_oid,
+            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+            "ec_distann_decide_epoch_publish",
+        )?;
+        control.retain_lock_until_transaction_end();
+
+        let candidate = load_build_candidate(index_oid, logical_index_uuid, build_id)?
+            .ok_or_else(|| "EC_PUBLISH_DIGEST: no build candidate for this build id".to_owned())?;
+        let candidate_digest = candidate.digest()?;
+        let build_spec = super::generation_descriptor::DistannBuildSpec::decode(&candidate.build_spec)?;
+        let epoch = i64::try_from(build_spec.epoch)
+            .map_err(|_| "EC_PUBLISH_DIGEST: candidate epoch exceeds bigint".to_owned())?;
+
+        let decision_table = extension_relation_name("ec_distann_publish_decision")?;
+        // Exact replay: an existing decision returns the same manifest digest.
+        let existing_decision = Spi::connect(|client| -> Result<Option<Vec<u8>>, String> {
+            client
+                .select(
+                    &format!(
+                        "SELECT manifest_digest FROM {decision_table}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_PUBLISH_DIGEST: decision replay lookup failed".to_owned())?
+                .map(|row| {
+                    row["manifest_digest"]
+                        .value::<Vec<u8>>()
+                        .map_err(|_| "EC_PUBLISH_DIGEST: decision digest decode failed".to_owned())?
+                        .ok_or_else(|| "EC_PUBLISH_DIGEST: decision digest is NULL".to_owned())
+                })
+                .next()
+                .transpose()
+        })?;
+        if let Some(existing_decision) = existing_decision {
+            if existing_decision != candidate.manifest_digest.to_vec() {
+                return Err(
+                    "EC_PUBLISH_DIGEST: an existing decision for this build id has a different manifest"
+                        .to_owned(),
+                );
+            }
+            return Ok(existing_decision);
+        }
+
+        // Active pointer, taken under the control lock. Require parent==active.
+        let active_table = extension_relation_name("ec_distann_active_epoch")?;
+        let active = Spi::connect_mut(
+            |client| -> Result<Option<([u8; 16], i64, Vec<u8>, [u8; 32])>, String> {
+                client
+                    .update(
+                        &format!(
+                            "SELECT build_id, epoch, epoch_fingerprint, manifest_digest
+                               FROM {active_table}
+                              WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                              FOR UPDATE"
+                        ),
+                        None,
+                        &[index_oid.into(), logical_index_uuid.into()],
+                    )
+                    .map_err(|_| "EC_PUBLISH_DIGEST: active pointer lookup failed".to_owned())?
+                    .map(|row| {
+                        let build_id = row["build_id"]
+                            .value::<Uuid>()
+                            .map_err(|_| "EC_PUBLISH_DIGEST: active build id decode failed".to_owned())?
+                            .ok_or_else(|| "EC_PUBLISH_DIGEST: active build id is NULL".to_owned())?;
+                        let epoch = row["epoch"]
+                            .value::<i64>()
+                            .map_err(|_| "EC_PUBLISH_DIGEST: active epoch decode failed".to_owned())?
+                            .ok_or_else(|| "EC_PUBLISH_DIGEST: active epoch is NULL".to_owned())?;
+                        let fingerprint = row["epoch_fingerprint"]
+                            .value::<Vec<u8>>()
+                            .map_err(|_| "EC_PUBLISH_DIGEST: active fingerprint decode failed".to_owned())?
+                            .ok_or_else(|| "EC_PUBLISH_DIGEST: active fingerprint is NULL".to_owned())?;
+                        let manifest_digest: [u8; 32] = row["manifest_digest"]
+                            .value::<Vec<u8>>()
+                            .map_err(|_| "EC_PUBLISH_DIGEST: active manifest decode failed".to_owned())?
+                            .ok_or_else(|| "EC_PUBLISH_DIGEST: active manifest is NULL".to_owned())?
+                            .try_into()
+                            .map_err(|_| "EC_PUBLISH_DIGEST: active manifest is not 32 bytes".to_owned())?;
+                        Ok((*build_id.as_bytes(), epoch, fingerprint, manifest_digest))
+                    })
+                    .next()
+                    .transpose()
+            },
+        )?;
+
+        let parent_matches = match (&active, build_spec.parent_fingerprint.is_empty()) {
+            (None, true) => true,
+            (Some((_, _, fingerprint, _)), false) => *fingerprint == build_spec.parent_fingerprint,
+            _ => false,
+        };
+        if !parent_matches {
+            return Err(
+                "EC_PUBLISH_DIGEST: candidate parent fingerprint differs from the active pointer"
+                    .to_owned(),
+            );
+        }
+
+        // Canonical successor activation.
+        let successor = DistannPublishedEpochIdentity {
+            build_id: *build_id.as_bytes(),
+            epoch: build_spec.epoch,
+            fingerprint: candidate.epoch_fingerprint,
+            manifest_digest: candidate.manifest_digest,
+        };
+        let predecessor = active.as_ref().map(|(pred_build_id, pred_epoch, pred_fp, pred_md)| {
+            let fingerprint: [u8; 34] = pred_fp.as_slice().try_into().map_err(|_| {
+                "EC_PUBLISH_DIGEST: active fingerprint is not 34 bytes".to_owned()
+            })?;
+            Ok::<DistannPublishedEpochIdentity, String>(DistannPublishedEpochIdentity {
+                build_id: *pred_build_id,
+                epoch: u64::try_from(*pred_epoch)
+                    .map_err(|_| "EC_PUBLISH_DIGEST: active epoch is negative".to_owned())?,
+                fingerprint,
+                manifest_digest: *pred_md,
+            })
+        });
+        let predecessor = predecessor.transpose()?;
+        let activation = DistannSuccessorActivationV1 {
+            coordinator_logical_index_uuid: metadata.logical_index_uuid,
+            predecessor,
+            successor,
+        };
+        let activation_bytes = activation.encode()?;
+        let activation_digest = activation.digest()?;
+
+        // Persist the commit-only Pending decision. No participant call, no swap.
+        let (pred_build_id, pred_epoch, pred_fp, pred_md) = match &active {
+            Some((build_id, epoch, fingerprint, manifest_digest)) => (
+                Some(Uuid::from_bytes(*build_id)),
+                Some(*epoch),
+                Some(fingerprint.clone()),
+                Some(manifest_digest.to_vec()),
+            ),
+            None => (None, None, None, None),
+        };
+        Spi::connect_mut(|client| -> Result<(), String> {
+            client
+                .update(
+                    &format!(
+                        "INSERT INTO {decision_table} (
+                             index_oid, logical_index_uuid, build_id, epoch,
+                             epoch_fingerprint, manifest_digest, epoch_manifest,
+                             registration_digest, candidate_digest,
+                             predecessor_build_id, predecessor_epoch,
+                             predecessor_epoch_fingerprint, predecessor_manifest_digest,
+                             successor_activation, successor_activation_digest,
+                             decision_state, committed_at
+                         ) VALUES (
+                             $1::oid, $2::uuid, $3::uuid, $4::bigint,
+                             $5::bytea, $6::bytea, $7::bytea,
+                             $8::bytea, $9::bytea,
+                             $10::uuid, $11::bigint,
+                             $12::bytea, $13::bytea,
+                             $14::bytea, $15::bytea,
+                             'Pending', clock_timestamp()
+                         )"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        logical_index_uuid.into(),
+                        build_id.into(),
+                        epoch.into(),
+                        candidate.epoch_fingerprint.to_vec().into(),
+                        candidate.manifest_digest.to_vec().into(),
+                        candidate.epoch_manifest.clone().into(),
+                        candidate.registration_digest.to_vec().into(),
+                        candidate_digest.to_vec().into(),
+                        pred_build_id.into(),
+                        pred_epoch.into(),
+                        pred_fp.into(),
+                        pred_md.into(),
+                        activation_bytes.into(),
+                        activation_digest.to_vec().into(),
+                    ],
+                )
+                .map_err(|error| format!("EC_PUBLISH_DIGEST: publish decision insert failed: {error}"))?;
+            Ok(())
+        })?;
+
+        Ok(candidate.manifest_digest.to_vec())
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
