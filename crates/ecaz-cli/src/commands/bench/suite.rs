@@ -501,6 +501,10 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     coordinator_outside_roster: bool,
     #[serde(default)]
+    physical_benchmark: bool,
+    #[serde(default)]
+    benchmark_iterations: Option<u32>,
+    #[serde(default)]
     base_port: Option<u16>,
     #[serde(default)]
     rows: Option<usize>,
@@ -2162,6 +2166,26 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                 values.insert("topology_ok".into(), topology_ok.to_string());
                 rows.push(("physical_topology".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_recall ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_recall".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_latency ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_latency".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_storage ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_storage".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_build ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_build".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_engagement ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_engagement".into(), values));
+            }
         } else if let Some(pass_idx) = body.find(" pass=") {
             // A generic drill-outcome line: `<label> pass=<bool>`.
             let label = body[..pass_idx].trim();
@@ -2848,6 +2872,18 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.benchmark_iterations == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set benchmark_iterations >= 1",
+                        step.name
+                    )
+                }
+                if step.physical_benchmark && step.corpus_prefix.is_none() {
+                    bail!(
+                        "distann-local-multinode step {:?} physical_benchmark requires corpus_prefix",
+                        step.name
+                    )
+                }
                 Ok(())
             }
             SuiteStep::SpirePipeline(step) => {
@@ -3010,6 +3046,14 @@ impl SuiteStep {
                 let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
                 if let Some(dir) = &step.artifact_dir {
                     artifacts.push(dir.join("distann-multinode-summary.log"));
+                    if step.physical_benchmark {
+                        artifacts.extend([
+                            dir.join("physical-recall.log"),
+                            dir.join("physical-latency.log"),
+                            dir.join("single-recall.log"),
+                            dir.join("single-latency.log"),
+                        ]);
+                    }
                 }
                 artifacts
             }
@@ -3609,6 +3653,14 @@ fn expand_distann_local_multinode(
     if step.coordinator_outside_roster {
         args.push("--coordinator-outside-roster".into());
     }
+    if step.physical_benchmark {
+        args.push("--physical-benchmark".into());
+    }
+    push_opt_arg(
+        &mut args,
+        "--benchmark-iterations",
+        step.benchmark_iterations.map(|v| v.to_string()).as_deref(),
+    );
     push_opt_u16(&mut args, "--base-port", step.base_port);
     push_opt_arg(
         &mut args,
@@ -4501,7 +4553,9 @@ mod tests {
     #[test]
     fn distann_physical_topology_and_gate_are_structured() {
         let raw = "[distann-multicluster] physical_topology phase=published node=2 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=65536 row_bytes=16384 directory_bytes=16384 control_bytes=8192\n\
-[distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=3 source_rows=90\n";
+[distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=3 source_rows=90\n\
+[distann-multicluster] physical_benchmark_recall scale=10k arm=physical queries=10 trials=100 recall=1.0000 mean_ms=10727.91\n\
+[distann-multicluster] physical_benchmark_latency scale=10k arm=physical count=5 mean_ms=10744.10 p50_ms=10664.70 p95_ms=11065.20 p99_ms=11125.80 max_ms=11141.00 concurrency=1 cache=warm\n";
         let rows = parse_distann_multinode_rows(raw);
         let topology = rows
             .iter()
@@ -4512,6 +4566,15 @@ mod tests {
             metric == "drill_outcome"
                 && values.get("drill").map(String::as_str) == Some("physical_topology_gate")
                 && values.get("pass").map(String::as_str) == Some("true")
+        }));
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "physical_benchmark_recall"
+                && values.get("arm").map(String::as_str) == Some("physical")
+                && values.get("recall").map(String::as_str) == Some("1.0000")
+        }));
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "physical_benchmark_latency"
+                && values.get("p95_ms").map(String::as_str) == Some("11065.20")
         }));
     }
 

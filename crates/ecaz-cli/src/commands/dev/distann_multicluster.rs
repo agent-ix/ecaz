@@ -10,6 +10,7 @@ use color_eyre::eyre::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::time::Instant;
 use tokio::process::Command;
 
 use super::support::{find_pgrx_install, repo_root, resolve_pgrx_home, run_status};
@@ -49,6 +50,13 @@ pub struct LocalMultinodePg18Args {
     /// Start one additional coordinator instance which is not a physical owner.
     #[arg(long, default_value_t = false)]
     pub coordinator_outside_roster: bool,
+    /// Run same-data single-instance versus physical recall, latency, and
+    /// storage measurements through the standard benchmark commands.
+    #[arg(long, default_value_t = false)]
+    pub physical_benchmark: bool,
+    /// Query iterations per latency arm in physical benchmark mode.
+    #[arg(long, default_value_t = 5)]
+    pub benchmark_iterations: u32,
     /// First TCP port; node k listens on base_port + (k - 1).
     #[arg(long, default_value_t = 39710)]
     pub base_port: u16,
@@ -122,6 +130,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if mode == FixtureMode::ReplicatedServingControl && args.coordinator_outside_roster {
         bail!("replicated-serving-control does not support an outside coordinator");
+    }
+    if args.physical_benchmark && args.corpus_prefix.is_none() {
+        bail!("--physical-benchmark requires --corpus-prefix");
+    }
+    if args.benchmark_iterations == 0 {
+        bail!("--benchmark-iterations must be at least 1");
     }
     let instance_count = args.nodes + u32::from(args.coordinator_outside_roster);
     let repo_root = repo_root()?;
@@ -416,6 +430,31 @@ fn recall_sql(roster: &str, queries: u32, top_k: u32, real: bool) -> String {
 }
 
 fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Result<String> {
+    let physical_dim = if let Some(corpus_prefix) = &args.corpus_prefix {
+        let staged_dir = args
+            .staged_dir
+            .clone()
+            .unwrap_or(repo_root()?.join("data/staged-current"));
+        let manifest_path = staged_dir.join(format!("{corpus_prefix}_manifest.json"));
+        let manifest: serde_json::Value = serde_json::from_slice(
+            &fs::read(&manifest_path)
+                .wrap_err_with(|| format!("reading {}", manifest_path.display()))?,
+        )
+        .wrap_err_with(|| format!("parsing {}", manifest_path.display()))?;
+        manifest
+            .get("dimension")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|value| u32::try_from(value).ok())
+            .filter(|value| *value > 0)
+            .ok_or_else(|| {
+                color_eyre::eyre::eyre!(
+                    "staged manifest {} has no valid dimension",
+                    manifest_path.display()
+                )
+            })?
+    } else {
+        args.dim
+    };
     let prefix = format!(
         "CREATE EXTENSION IF NOT EXISTS ecaz;
         DROP TABLE IF EXISTS dm CASCADE;
@@ -423,7 +462,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
         CREATE TABLE dm (
             id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({})
         );",
-        args.dim
+        physical_dim
     );
     let load = if !coordinator {
         String::new()
@@ -571,6 +610,222 @@ fn validate_physical_topology(
     Ok(())
 }
 
+fn benchmark_table_row(raw: &str) -> Result<Vec<String>> {
+    raw.lines()
+        .filter(|line| line.contains('┆'))
+        .map(|line| {
+            line.split(['│', '┆'])
+                .map(str::trim)
+                .filter(|cell| !cell.is_empty())
+                .map(ToOwned::to_owned)
+                .collect::<Vec<_>>()
+        })
+        .find(|cells| cells.first().is_some_and(|cell| cell.parse::<u32>().is_ok()))
+        .ok_or_else(|| color_eyre::eyre::eyre!("benchmark output has no data row"))
+}
+
+fn benchmark_ms(cell: &str) -> Result<f64> {
+    cell.trim_end_matches(" ms")
+        .trim()
+        .parse::<f64>()
+        .wrap_err_with(|| format!("decoding benchmark duration {cell:?}"))
+}
+
+async fn run_physical_bench_child(args: Vec<String>) -> Result<String> {
+    let executable = std::env::current_exe().wrap_err("resolving benchmark executable")?;
+    let output = Command::new(&executable)
+        .args(&args)
+        .output()
+        .await
+        .wrap_err_with(|| format!("spawning {}", executable.display()))?;
+    if !output.status.success() {
+        bail!(
+            "physical benchmark child failed with {:?}: {}",
+            output.status.code(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+async fn run_physical_benchmarks(
+    args: &LocalMultinodePg18Args,
+    coordinator: &tokio_postgres::Client,
+    coordinator_port: u16,
+    nodes: &[Node],
+    published: &[PhysicalTopologyRow],
+    log_dir: &Path,
+    build_ms: u128,
+    publish_ms: u128,
+) -> Result<Vec<String>> {
+    let corpus_prefix = args
+        .corpus_prefix
+        .as_deref()
+        .ok_or_else(|| color_eyre::eyre::eyre!("physical benchmark requires corpus_prefix"))?;
+    if !corpus_prefix
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_')
+    {
+        bail!("physical benchmark corpus prefix is not a SQL identifier");
+    }
+    let scale = corpus_prefix.strip_prefix("ec_real_").unwrap_or(corpus_prefix);
+    let physical_prefix = format!("task179_physical_{scale}");
+    let single_prefix = format!("task179_single_{scale}");
+    let physical_corpus = format!("{physical_prefix}_corpus");
+    let physical_queries = format!("{physical_prefix}_queries");
+    let single_corpus = format!("{single_prefix}_corpus");
+    let single_queries = format!("{single_prefix}_queries");
+    let single_index = format!("{single_prefix}_idx");
+    coordinator
+        .batch_execute(&format!(
+            "RESET enable_seqscan;
+             ALTER TABLE dm RENAME TO {physical_corpus};
+             ALTER TABLE dm_queries RENAME TO {physical_queries};"
+        ))
+        .await?;
+
+    let single_started = Instant::now();
+    coordinator
+        .batch_execute(&format!(
+            "CREATE TABLE {single_corpus} AS
+                 SELECT id, source, embedding FROM {physical_corpus};
+             CREATE TABLE {single_queries} AS SELECT * FROM {physical_queries};
+             CREATE INDEX {single_index} ON {single_corpus}
+                 USING ec_distann (embedding ecvector_distann_ip_ops)
+                 WITH (graph_degree = {}, neighbor_code_format = 'rabitq');",
+            args.graph_degree
+        ))
+        .await?;
+    let single_build_ms = single_started.elapsed().as_millis();
+
+    let staged_dir = args
+        .staged_dir
+        .clone()
+        .unwrap_or(repo_root()?.join("data/staged-current"));
+    let truth_corpus = std::fs::canonicalize(
+        staged_dir.join(format!("{corpus_prefix}_corpus.tsv")),
+    )?;
+    let truth_cache = nodes[0]
+        .data_dir
+        .parent()
+        .unwrap_or(nodes[0].data_dir.as_path())
+        .join(format!("{corpus_prefix}-truth.json"));
+    let common = vec![
+        "--database".to_owned(),
+        "postgres".to_owned(),
+        "--host".to_owned(),
+        "127.0.0.1".to_owned(),
+        "--port".to_owned(),
+        coordinator_port.to_string(),
+        "--user".to_owned(),
+        "postgres".to_owned(),
+    ];
+    let mut lines = vec![format!(
+        "physical_benchmark_build scale={scale} physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}"
+    )];
+    for (arm, prefix) in [("physical", &physical_prefix), ("single", &single_prefix)] {
+        let recall_log = log_dir.join(format!("{arm}-recall.log"));
+        let mut recall_args = common.clone();
+        recall_args.extend([
+            "bench".into(),
+            "recall".into(),
+            "--prefix".into(),
+            prefix.clone(),
+            "--profile".into(),
+            "ec_distann".into(),
+            "--k".into(),
+            args.top_k.to_string(),
+            "--sweep".into(),
+            "32".into(),
+            "--queries-limit".into(),
+            args.queries.to_string(),
+            "--force-index".into(),
+            "--truth-cache-file".into(),
+            truth_cache.display().to_string(),
+            "--log-output".into(),
+            recall_log.display().to_string(),
+        ]);
+        if arm == "physical" {
+            recall_args.extend([
+                "--truth-corpus-file".into(),
+                truth_corpus.display().to_string(),
+            ]);
+        }
+        let recall = run_physical_bench_child(recall_args).await?;
+        let row = benchmark_table_row(&recall)?;
+        let recall_value = row[3].parse::<f64>()?;
+        let mean_ms = benchmark_ms(&row[11])?;
+        lines.push(format!(
+            "physical_benchmark_recall scale={scale} arm={arm} queries={} trials={} recall={recall_value:.4} mean_ms={mean_ms:.2}",
+            row[1], row[2]
+        ));
+
+        let latency_log = log_dir.join(format!("{arm}-latency.log"));
+        let mut latency_args = common.clone();
+        latency_args.extend([
+            "bench".into(),
+            "latency".into(),
+            "--prefix".into(),
+            prefix.clone(),
+            "--profile".into(),
+            "ec_distann".into(),
+            "--k".into(),
+            args.top_k.to_string(),
+            "--sweep".into(),
+            "32".into(),
+            "--iterations".into(),
+            args.benchmark_iterations.to_string(),
+            "--concurrency".into(),
+            "1".into(),
+            "--force-index".into(),
+            "--cache-state".into(),
+            "warm".into(),
+            "--log-output".into(),
+            latency_log.display().to_string(),
+        ]);
+        let latency = run_physical_bench_child(latency_args).await?;
+        let row = benchmark_table_row(&latency)?;
+        lines.push(format!(
+            "physical_benchmark_latency scale={scale} arm={arm} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm",
+            row[1],
+            benchmark_ms(&row[2])?,
+            benchmark_ms(&row[5])?,
+            benchmark_ms(&row[6])?,
+            benchmark_ms(&row[7])?,
+            benchmark_ms(&row[8])?,
+        ));
+    }
+
+    let sizes = coordinator
+        .query_one(
+            &format!(
+                "SELECT pg_total_relation_size('{single_index}'::regclass)::bigint,
+                        pg_total_relation_size('{single_corpus}'::regclass)::bigint,
+                        pg_total_relation_size('{physical_corpus}'::regclass)::bigint"
+            ),
+            &[],
+        )
+        .await?;
+    let physical_generation_bytes = published
+        .iter()
+        .map(|row| row.graph_bytes + row.row_bytes + row.directory_bytes + row.control_bytes)
+        .sum::<i64>();
+    let single_index_bytes = sizes.get::<_, i64>(0);
+    let single_source_bytes = sizes.get::<_, i64>(1);
+    let coordinator_source_bytes = sizes.get::<_, i64>(2);
+    lines.push(format!(
+        "physical_benchmark_storage scale={scale} owners={} physical_generation_bytes={physical_generation_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
+        published.len()
+    ));
+    lines.push(format!(
+        "physical_benchmark_engagement scale={scale} remote_owners={} materialize_probes={} pass={}",
+        nodes.len().saturating_sub(1),
+        nodes.len().saturating_sub(1),
+        nodes.len() > 1
+    ));
+    Ok(lines)
+}
+
 async fn drive_physical_fixture(
     args: &LocalMultinodePg18Args,
     psql: &Path,
@@ -625,12 +880,14 @@ async fn drive_physical_fixture(
             .await
             .wrap_err_with(|| format!("registering physical node {}", node.node_id))?;
     }
+    let physical_started = Instant::now();
     let build_id = "71717171-7171-4171-8171-717171717171";
     coordinator
         .batch_execute(&format!(
             "SELECT ec_distann_begin_epoch_build('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"
         ))
         .await?;
+    let physical_build_ms = physical_started.elapsed().as_millis();
     coordinator
         .batch_execute(&format!(
             "SELECT ec_distann_build_epoch('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"
@@ -669,6 +926,7 @@ async fn drive_physical_fixture(
             "SELECT ec_distann_recover_epoch_publish('public.dm_idx'::regclass, '{build_id}'::uuid)"
         ))
         .await?;
+    let physical_publish_ms = physical_started.elapsed().as_millis();
     let fingerprint = coordinator
         .query_one(
             "SELECT encode(epoch_fingerprint, 'hex') FROM ec_distann_active_epoch
@@ -807,6 +1065,24 @@ async fn drive_physical_fixture(
         }
         remote_verified += 1;
     }
+    let benchmark_lines = if args.physical_benchmark {
+        run_physical_benchmarks(
+            args,
+            &coordinator,
+            nodes[0].port,
+            owners,
+            &published,
+            log_dir,
+            physical_build_ms,
+            physical_publish_ms,
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
+    for line in &benchmark_lines {
+        crate::ecaz_println!("[distann-multicluster] {line}");
+    }
     drop(coordinator);
     connection_task.abort();
     crate::ecaz_println!(
@@ -842,6 +1118,9 @@ async fn drive_physical_fixture(
         "[distann-multicluster] physical_serving pass=true rows={served} owners={} source_rows={source_count}\n",
         owners.len()
     ));
+    for line in &benchmark_lines {
+        summary.push_str(&format!("[distann-multicluster] {line}\n"));
+    }
     summary.push_str(&format!(
         "[distann-multicluster] physical_topology_gate pass=true owners={} remote_verified={remote_verified} source_rows={source_count}\n",
         owners.len()
