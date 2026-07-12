@@ -1,0 +1,25 @@
+Task 179 packet 023 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: 1959c33743435c14249273f145b64bb33287ecdd
+
+Command:
+  cargo check --lib --no-default-features --features 'pg18 pg_test'
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx test pg18 test_distann_multi_epoch_publish
+Key result:
+  test tests::pg_test_distann_multi_epoch_publish ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2494 filtered out
+
+The live fixture verifies forced retirement rejects the active fingerprint,
+then records forced=true, overridden_in_flight_count=1, the exact operator
+reason, and Pending for a Retired predecessor. Recovery reclaims while the
+overridden token remains live. Exact replay succeeds and a different reason
+fails EC_EPOCH_STATE.
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
