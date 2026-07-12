@@ -2927,6 +2927,109 @@ fn test_distann_multi_epoch_publish() {
         ))
         .expect("retire decision and recovery replay should be idempotent");
 
+    let second_fingerprint: [u8; 34] = client
+        .query_one(
+            &format!(
+                "SELECT epoch_fingerprint FROM ec_distann_publish_decision
+                  WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                    AND build_id = '{second}'::uuid"
+            ),
+            &[],
+        )
+        .expect("second fingerprint should remain durable")
+        .get::<_, Vec<u8>>(0)
+        .try_into()
+        .expect("second fingerprint must be 34 bytes");
+    let second_fingerprint_hex = hex::encode(second_fingerprint);
+    let active_force_error = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_force_retire_epoch(
+                 'ec_distann_me_idx'::regclass,
+                 decode('{second_fingerprint_hex}', 'hex'), 'operator drill'
+             )"
+        ))
+        .expect_err("forced retirement must reject the active epoch");
+    assert!(
+        active_force_error
+            .as_db_error()
+            .map(|error| error.message().contains("EC_EPOCH_STATE"))
+            .unwrap_or(false),
+        "active forced-retire rejection must be classified: {active_force_error}"
+    );
+
+    let third = "47474747-4747-4747-8747-474747474747";
+    prepare_epoch(&mut client, 9, third);
+    recover_epoch(&mut client, 9, third);
+    recover_epoch(&mut client, 9, third);
+    let forced_pin = crate::am::ec_distann::ScanTokenGuardForTest::register(
+        logical_index_uuid,
+        second_fingerprint,
+    )
+    .expect("forced-retire predecessor pin should register");
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_force_retire_epoch(
+                 'ec_distann_me_idx'::regclass,
+                 decode('{second_fingerprint_hex}', 'hex'), 'operator override drill'
+             )"
+        ))
+        .expect("forced retirement should commit an audited decision");
+    let forced_audit = client
+        .query_one(
+            &format!(
+                "SELECT forced, overridden_in_flight_count, reason, decision_state
+                   FROM ec_distann_retire_decision
+                  WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                    AND epoch_fingerprint = decode('{second_fingerprint_hex}', 'hex')"
+            ),
+            &[],
+        )
+        .expect("forced audit row should exist");
+    assert!(forced_audit.get::<_, bool>(0));
+    assert_eq!(forced_audit.get::<_, i64>(1), 1);
+    assert_eq!(forced_audit.get::<_, String>(2), "operator override drill");
+    assert_eq!(forced_audit.get::<_, String>(3), "Pending");
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_epoch_retire(
+                 'ec_distann_me_idx'::regclass,
+                 decode('{second_fingerprint_hex}', 'hex')
+             )"
+        ))
+        .expect("forced retire recovery should reclaim despite the overridden pin");
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT state FROM ec_distann_epoch_generation_status(
+                 'ec_distann_me_idx'::regclass, '{second}'::uuid
+             )"
+        )),
+        "Reclaimed"
+    );
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_force_retire_epoch(
+                 'ec_distann_me_idx'::regclass,
+                 decode('{second_fingerprint_hex}', 'hex'), 'operator override drill'
+             )"
+        ))
+        .expect("exact forced-retire decision replay should succeed");
+    let conflicting_force = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_force_retire_epoch(
+                 'ec_distann_me_idx'::regclass,
+                 decode('{second_fingerprint_hex}', 'hex'), 'different reason'
+             )"
+        ))
+        .expect_err("a different forced-retire reason must conflict");
+    assert!(
+        conflicting_force
+            .as_db_error()
+            .map(|error| error.message().contains("EC_EPOCH_STATE"))
+            .unwrap_or(false),
+        "conflicting forced-retire replay must be classified: {conflicting_force}"
+    );
+    drop(forced_pin);
+
     client
         .batch_execute("DROP TABLE IF EXISTS ec_distann_me_source CASCADE")
         .expect("multi-epoch cleanup should drop the source");

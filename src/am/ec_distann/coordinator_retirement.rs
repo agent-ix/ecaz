@@ -253,119 +253,131 @@ fn caller_and_time() -> Result<(String, i64), String> {
     })
 }
 
-#[pg_extern(name = "ec_distann_retire_epoch", volatile, strict)]
-fn ec_distann_retire_physical_epoch(index_regclass: PgRelation, epoch_fingerprint: Vec<u8>) {
-    (|| -> Result<(), String> {
-        super::build_gate::require_shared_preload()?;
-        let fingerprint: [u8; 34] = fixed(epoch_fingerprint, "epoch fingerprint")?;
-        DistannEpochFingerprint::decode(&fingerprint)?;
-        let index_oid = index_regclass.oid();
-        drop(index_regclass);
-        let (control, _handle, _metadata, logical_index_uuid) = open_control_index(
-            index_oid,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            "ec_distann_retire_epoch preflight",
-        )?;
-        drop(control);
-        acquire_retirement_fence_xact(
-            unsafe { pg_sys::MyDatabaseId },
-            *logical_index_uuid.as_bytes(),
-        )
+fn decide_retirement(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: Vec<u8>,
+    forced: bool,
+    reason: String,
+) -> Result<(), String> {
+    super::build_gate::require_shared_preload()?;
+    let fingerprint: [u8; 34] = fixed(epoch_fingerprint, "epoch fingerprint")?;
+    DistannEpochFingerprint::decode(&fingerprint)?;
+    let (control, _handle, _metadata, logical_index_uuid) = open_control_index(
+        index_oid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        "ec_distann_retire_epoch preflight",
+    )?;
+    drop(control);
+    acquire_retirement_fence_xact(
+        unsafe { pg_sys::MyDatabaseId },
+        *logical_index_uuid.as_bytes(),
+    )
+    .map_err(|error| error.stable_message().to_owned())?;
+    let (mut control, _handle, _metadata, locked_uuid) = open_control_index(
+        index_oid,
+        pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+        "ec_distann_retire_epoch",
+    )?;
+    control.retain_lock_until_transaction_end();
+    if locked_uuid != logical_index_uuid {
+        return Err("EC_EPOCH_STATE: control identity changed during retirement".to_owned());
+    }
+
+    let active = extension_relation_name("ec_distann_active_epoch")?;
+    let is_active = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT 1 FROM {active}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND epoch_fingerprint = $3::bytea"
+                ),
+                None,
+                &[
+                    index_oid.into(),
+                    logical_index_uuid.into(),
+                    fingerprint.to_vec().into(),
+                ],
+            )
+            .map(|rows| !rows.is_empty())
+            .map_err(|error| format!("EC_EPOCH_STATE: active pointer lookup failed: {error}"))
+    })?;
+    if is_active {
+        return Err("EC_EPOCH_STATE: active epoch cannot be retired".to_owned());
+    }
+
+    let retire = extension_relation_name("ec_distann_retire_decision")?;
+    if let Some(existing_decision) = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT retire_decision FROM {retire}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND epoch_fingerprint = $3::bytea"
+                ),
+                None,
+                &[
+                    index_oid.into(),
+                    logical_index_uuid.into(),
+                    fingerprint.to_vec().into(),
+                ],
+            )
+            .map_err(|error| format!("EC_EPOCH_STATE: retire replay lookup failed: {error}"))?
+            .map(|row| {
+                row["retire_decision"]
+                    .value::<Vec<u8>>()
+                    .map_err(|_| "EC_EPOCH_STATE: retire replay decode failed".to_owned())?
+                    .ok_or_else(|| "EC_EPOCH_STATE: retire replay is NULL".to_owned())
+            })
+            .next()
+            .transpose()
+    })? {
+        let existing = DistannRetireDecisionV1::decode(&existing_decision)?;
+        if existing.forced != forced || existing.reason != reason {
+            return Err("EC_EPOCH_STATE: conflicting retire decision replay".to_owned());
+        }
+        return Ok(());
+    }
+
+    let target = lock_retire_target(index_oid, logical_index_uuid, &fingerprint)?;
+    let live = live_token_count_for_fingerprint(logical_index_uuid, fingerprint)
         .map_err(|error| error.stable_message().to_owned())?;
-        let (mut control, _handle, _metadata, locked_uuid) = open_control_index(
-            index_oid,
-            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
-            "ec_distann_retire_epoch",
-        )?;
-        control.retain_lock_until_transaction_end();
-        if locked_uuid != logical_index_uuid {
-            return Err("EC_EPOCH_STATE: control identity changed during retirement".to_owned());
-        }
-
-        let active = extension_relation_name("ec_distann_active_epoch")?;
-        let is_active = Spi::connect(|client| {
-            client
-                .select(
-                    &format!(
-                        "SELECT 1 FROM {active}
-                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                            AND epoch_fingerprint = $3::bytea"
-                    ),
-                    None,
-                    &[
-                        index_oid.into(),
-                        logical_index_uuid.into(),
-                        fingerprint.to_vec().into(),
-                    ],
-                )
-                .map(|rows| !rows.is_empty())
-                .map_err(|error| format!("EC_EPOCH_STATE: active pointer lookup failed: {error}"))
-        })?;
-        if is_active {
-            return Err("EC_EPOCH_STATE: active epoch cannot be retired".to_owned());
-        }
-
-        let retire = extension_relation_name("ec_distann_retire_decision")?;
-        if Spi::connect(|client| {
-            client
-                .select(
-                    &format!(
-                        "SELECT 1 FROM {retire}
-                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                            AND epoch_fingerprint = $3::bytea"
-                    ),
-                    None,
-                    &[
-                        index_oid.into(),
-                        logical_index_uuid.into(),
-                        fingerprint.to_vec().into(),
-                    ],
-                )
-                .map(|rows| !rows.is_empty())
-                .map_err(|error| format!("EC_EPOCH_STATE: retire replay lookup failed: {error}"))
-        })? {
-            return Ok(());
-        }
-
-        let target = lock_retire_target(index_oid, logical_index_uuid, &fingerprint)?;
-        let live = live_token_count_for_fingerprint(logical_index_uuid, fingerprint)
-            .map_err(|error| error.stable_message().to_owned())?;
-        if live != 0 {
-            return Err(format!(
-                "EC_RETENTION_ACTIVE: retired fingerprint has {live} live scan registration(s)"
-            ));
-        }
-        let abandoned = abandoned_bindings(
-            index_oid,
-            logical_index_uuid,
-            target.covering_successor_build_id,
-        )?;
-        let (caller_name, decision_time_unix_micros) = caller_and_time()?;
-        let decision = DistannRetireDecisionV1 {
-            coordinator_logical_index_uuid: *logical_index_uuid.as_bytes(),
-            target_build_id: *target.build_id.as_bytes(),
-            epoch: u64::try_from(target.epoch)
-                .map_err(|_| "EC_EPOCH_STATE: retire target epoch is invalid".to_owned())?,
-            target_fingerprint: target.fingerprint,
-            target_manifest_digest: target.manifest_digest,
-            target_roster_snapshot: target.roster_snapshot.clone(),
-            roster_digest: target.roster_digest,
-            abandoned_bindings: abandoned,
-            forced: false,
-            overridden_in_flight_count: 0,
-            decision_time_unix_micros,
-            caller_name: caller_name.clone(),
-            reason: "normal".to_owned(),
-        };
-        let decision_bytes = decision.encode()?;
-        let decision_digest = decision.digest()?;
-        let abandoned_bytes = decision.abandoned_binding_set_bytes()?;
-        let abandoned_digest = decision.abandoned_binding_set_digest()?;
-        Spi::connect_mut(|client| {
-            client
-                .update(
-                    &format!(
-                        "INSERT INTO {retire} (
+    if live != 0 && !forced {
+        return Err(format!(
+            "EC_RETENTION_ACTIVE: retired fingerprint has {live} live scan registration(s)"
+        ));
+    }
+    let abandoned = abandoned_bindings(
+        index_oid,
+        logical_index_uuid,
+        target.covering_successor_build_id,
+    )?;
+    let (caller_name, decision_time_unix_micros) = caller_and_time()?;
+    let decision = DistannRetireDecisionV1 {
+        coordinator_logical_index_uuid: *logical_index_uuid.as_bytes(),
+        target_build_id: *target.build_id.as_bytes(),
+        epoch: u64::try_from(target.epoch)
+            .map_err(|_| "EC_EPOCH_STATE: retire target epoch is invalid".to_owned())?,
+        target_fingerprint: target.fingerprint,
+        target_manifest_digest: target.manifest_digest,
+        target_roster_snapshot: target.roster_snapshot.clone(),
+        roster_digest: target.roster_digest,
+        abandoned_bindings: abandoned,
+        forced,
+        overridden_in_flight_count: u64::from(live),
+        decision_time_unix_micros,
+        caller_name: caller_name.clone(),
+        reason: reason.clone(),
+    };
+    let decision_bytes = decision.encode()?;
+    let decision_digest = decision.digest()?;
+    let abandoned_bytes = decision.abandoned_binding_set_bytes()?;
+    let abandoned_digest = decision.abandoned_binding_set_digest()?;
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "INSERT INTO {retire} (
                              index_oid, logical_index_uuid, build_id, epoch,
                              epoch_fingerprint, manifest_digest, roster_snapshot,
                              roster_digest, abandoned_binding_set,
@@ -379,37 +391,56 @@ fn ec_distann_retire_physical_epoch(index_regclass: PgRelation, epoch_fingerprin
                              $1::oid, $2::uuid, $3::uuid, $4::bigint,
                              $5::bytea, $6::bytea, $7::bytea, $8::bytea,
                              $9::bytea, $10::bytea, $11::bytea, $12::bytea,
-                             false, 0, $13::text, 'normal', $14::bigint,
-                             $15::uuid, $16::bytea, 'Pending'
+                             $13::boolean, $14::bigint, $15::text, $16::text,
+                             $17::bigint, $18::uuid, $19::bytea, 'Pending'
                          )"
-                    ),
-                    None,
-                    &[
-                        index_oid.into(),
-                        logical_index_uuid.into(),
-                        target.build_id.into(),
-                        target.epoch.into(),
-                        target.fingerprint.to_vec().into(),
-                        target.manifest_digest.to_vec().into(),
-                        target.roster_snapshot.into(),
-                        target.roster_digest.to_vec().into(),
-                        abandoned_bytes.into(),
-                        abandoned_digest.to_vec().into(),
-                        decision_bytes.into(),
-                        decision_digest.to_vec().into(),
-                        caller_name.into(),
-                        decision_time_unix_micros.into(),
-                        target.covering_successor_build_id.into(),
-                        target.covering_successor_activation_digest.to_vec().into(),
-                    ],
-                )
-                .map_err(|error| {
-                    format!("EC_EPOCH_STATE: retire decision insert failed: {error}")
-                })?;
-            Ok::<(), String>(())
-        })
-    })()
-    .unwrap_or_else(|error| pgrx::error!("{error}"));
+                ),
+                None,
+                &[
+                    index_oid.into(),
+                    logical_index_uuid.into(),
+                    target.build_id.into(),
+                    target.epoch.into(),
+                    target.fingerprint.to_vec().into(),
+                    target.manifest_digest.to_vec().into(),
+                    target.roster_snapshot.into(),
+                    target.roster_digest.to_vec().into(),
+                    abandoned_bytes.into(),
+                    abandoned_digest.to_vec().into(),
+                    decision_bytes.into(),
+                    decision_digest.to_vec().into(),
+                    forced.into(),
+                    i64::from(live).into(),
+                    caller_name.into(),
+                    reason.into(),
+                    decision_time_unix_micros.into(),
+                    target.covering_successor_build_id.into(),
+                    target.covering_successor_activation_digest.to_vec().into(),
+                ],
+            )
+            .map_err(|error| format!("EC_EPOCH_STATE: retire decision insert failed: {error}"))?;
+        Ok::<(), String>(())
+    })
+}
+
+#[pg_extern(name = "ec_distann_retire_epoch", volatile, strict)]
+fn ec_distann_retire_physical_epoch(index_regclass: PgRelation, epoch_fingerprint: Vec<u8>) {
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    decide_retirement(index_oid, epoch_fingerprint, false, "normal".to_owned())
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+}
+
+#[pg_extern(name = "ec_distann_force_retire_epoch", volatile, strict)]
+fn ec_distann_force_retire_physical_epoch(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    reason: String,
+) {
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    decide_retirement(index_oid, epoch_fingerprint, true, reason)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
 }
 
 struct RecoveryDecision {

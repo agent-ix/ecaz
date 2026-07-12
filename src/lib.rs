@@ -635,6 +635,11 @@ ALTER FUNCTION ec_distann_retire_epoch(regclass, bytea)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_retire_epoch(regclass, bytea) FROM PUBLIC;
 
+ALTER FUNCTION ec_distann_force_retire_epoch(regclass, bytea, text) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_force_retire_epoch(regclass, bytea, text)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_force_retire_epoch(regclass, bytea, text) FROM PUBLIC;
+
 ALTER FUNCTION ec_distann_recover_epoch_retire(regclass, bytea) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_recover_epoch_retire(regclass, bytea)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
