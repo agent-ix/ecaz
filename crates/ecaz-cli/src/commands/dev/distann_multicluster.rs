@@ -1039,12 +1039,20 @@ async fn drive_physical_fixture(
                 node.node_id
             );
         }
+        // The ec_distann distributed planner intentionally requires a constant
+        // query vector. Extended-protocol parameters remain Params during path
+        // creation and therefore exercise the local AM path instead. `vector`
+        // has already passed the strict numeric-array allowlist above, so use a
+        // literal here to prove the same CustomScan shape as production literal
+        // and benchmark queries.
+        let owner_query = format!(
+            "SELECT source_id FROM dm
+              ORDER BY embedding <#> '{vector}'::real[] LIMIT 1"
+        );
         let owner_plan = coordinator
             .query(
-                "EXPLAIN (FORMAT TEXT, COSTS OFF)
-                 SELECT source_id FROM dm
-                  ORDER BY embedding <#> $1::text::real[] LIMIT 1",
-                &[&vector],
+                &format!("EXPLAIN (FORMAT TEXT, COSTS OFF) {owner_query}"),
+                &[],
             )
             .await?
             .into_iter()
@@ -1060,9 +1068,8 @@ async fn drive_physical_fixture(
         }
         let owner_served = coordinator
             .query_one(
-                "SELECT source_id::text FROM dm
-                  ORDER BY embedding <#> $1::text::real[] LIMIT 1",
-                &[&vector],
+                &format!("SELECT source_id::text FROM ({owner_query}) q"),
+                &[],
             )
             .await?
             .get::<_, String>(0)
