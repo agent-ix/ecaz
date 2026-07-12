@@ -3403,6 +3403,70 @@ fn test_distann_three_owner_physical_handoff() {
     assert!(retired_states
         .iter()
         .all(|row| row.get::<_, String>(0) == "Retired"));
+    let retired_fingerprint = client
+        .query_one(
+            &format!(
+                "SELECT encode(epoch_fingerprint, 'hex')
+                   FROM ec_distann_publish_decision
+                  WHERE index_oid = 'ec_distann_rh_idx'::regclass::oid
+                    AND build_id = '{published_build}'::uuid"
+            ),
+            &[],
+        )
+        .expect("retired fingerprint should remain durable")
+        .get::<_, String>(0);
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_retire_epoch(
+                 'ec_distann_rh_idx'::regclass, decode('{retired_fingerprint}', 'hex'))"
+        ))
+        .expect("zero-pin multi-owner retire decision should commit");
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_epoch_retire(
+                 'ec_distann_rh_idx'::regclass, decode('{retired_fingerprint}', 'hex'))"
+        ))
+        .expect("multi-owner retire recovery should reclaim every predecessor owner");
+    assert_eq!(
+        client
+            .query_one(
+                &format!(
+                    "SELECT count(*) FROM ec_distann_generation
+                      WHERE build_id = '{published_build}'::uuid"
+                ),
+                &[],
+            )
+            .expect("reclaimed generation count should be visible")
+            .get::<_, i64>(0),
+        0
+    );
+    assert_eq!(
+        client
+            .query_one(
+                &format!(
+                    "SELECT count(*) FROM ec_distann_generation_reclaim
+                      WHERE build_id = '{published_build}'::uuid"
+                ),
+                &[],
+            )
+            .expect("reclaim tombstone count should be visible")
+            .get::<_, i64>(0),
+        3
+    );
+    assert_eq!(
+        client
+            .query_one(
+                &format!(
+                    "SELECT decision_state FROM ec_distann_retire_decision
+                      WHERE index_oid = 'ec_distann_rh_idx'::regclass::oid
+                        AND build_id = '{published_build}'::uuid"
+                ),
+                &[],
+            )
+            .expect("retire decision state should be visible")
+            .get::<_, String>(0),
+        "Applied"
+    );
     assert_eq!(
         client
             .query_one(

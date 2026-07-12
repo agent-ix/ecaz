@@ -297,6 +297,32 @@ pub(crate) fn remote_mark_epoch_retired(
     })
 }
 
+pub(crate) fn remote_apply_epoch_retire(
+    conninfo: &str,
+    index_regclass: &str,
+    retire_decision: &[u8],
+    retire_decision_digest: &[u8],
+) -> Result<(), String> {
+    with_transport_state(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            lifecycle_client(connections, conninfo)
+                .await?
+                .query(
+                    "SELECT ec_distann_apply_epoch_retire(
+                         $1::text::regclass, $2::bytea, $3::bytea)",
+                    &[&index_regclass, &retire_decision, &retire_decision_digest],
+                )
+                .await
+                .map_err(|error| remote_error("epoch retire apply", error))?;
+            Ok(())
+        })
+    })
+}
+
 /// One remote expansion request over the transport.
 pub(super) struct DistannRemoteExpandRequest<'a> {
     /// libpq conninfo of the target node.

@@ -529,7 +529,8 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
             client
                 .select(
                     &format!(
-                        "SELECT roster_ordinal, remote_index_regclass, is_local
+                        "SELECT roster_ordinal, remote_index_regclass, is_local,
+                                conninfo_secret_name
                            FROM {binding}
                           WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                             AND build_id = $3::uuid
@@ -544,23 +545,25 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                 )
                 .map_err(|error| format!("EC_EPOCH_STATE: retire binding lookup failed: {error}"))?
                 .map(|row| {
+                    let text = |field: &str| -> Result<String, String> {
+                        row[field]
+                            .value::<String>()
+                            .map_err(|_| format!("EC_EPOCH_STATE: retire {field} decode failed"))?
+                            .ok_or_else(|| format!("EC_EPOCH_STATE: retire {field} is NULL"))
+                    };
                     Ok((
                         row["roster_ordinal"]
                             .value::<i32>()
                             .map_err(|_| "EC_EPOCH_STATE: retire ordinal decode failed".to_owned())?
                             .ok_or_else(|| "EC_EPOCH_STATE: retire ordinal is NULL".to_owned())?,
-                        row["remote_index_regclass"]
-                            .value::<String>()
-                            .map_err(|_| {
-                                "EC_EPOCH_STATE: retire regclass decode failed".to_owned()
-                            })?
-                            .ok_or_else(|| "EC_EPOCH_STATE: retire regclass is NULL".to_owned())?,
+                        text("remote_index_regclass")?,
                         row["is_local"]
                             .value::<bool>()
                             .map_err(|_| {
                                 "EC_EPOCH_STATE: retire locality decode failed".to_owned()
                             })?
                             .ok_or_else(|| "EC_EPOCH_STATE: retire locality is NULL".to_owned())?,
+                        text("conninfo_secret_name")?,
                     ))
                 })
                 .collect::<Result<Vec<_>, String>>()
@@ -569,7 +572,7 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
             return Err("EC_EPOCH_STATE: retire decision has no participant bindings".to_owned());
         }
         let apply = extension_relation_name("ec_distann_apply_epoch_retire")?;
-        for (ordinal, remote_regclass, is_local) in participants {
+        for (ordinal, remote_regclass, is_local, secret_name) in participants {
             if decoded
                 .abandoned_bindings
                 .entries
@@ -579,9 +582,14 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                 continue;
             }
             if !is_local {
-                return Err(
-                    "EC_EPOCH_STATE: remote retire recovery is not yet implemented".to_owned(),
-                );
+                let conninfo = super::node_registry::resolve_conninfo_secret(&secret_name)?;
+                super::remote_transport::remote_apply_epoch_retire(
+                    &conninfo,
+                    &remote_regclass,
+                    &stored.decision,
+                    &stored.digest,
+                )?;
+                continue;
             }
             Spi::connect_mut(|client| {
                 client
