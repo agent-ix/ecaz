@@ -1,0 +1,27 @@
+{
+  "name": "task179-head-cap-suite-surface-dry-run",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "head-cap-256-10k",
+      "artifact_dir": "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run/head-cap-256-10k",
+      "run_dir": "target/task179-head-cap-dry-run",
+      "nodes": 3,
+      "base_port": 40300,
+      "graph_degree": 32,
+      "head_index_cap": 256,
+      "queries": 20,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 20,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}
