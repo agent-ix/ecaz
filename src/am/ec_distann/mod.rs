@@ -25,6 +25,7 @@ pub(crate) use self::ambuild::{
 };
 mod canonical_wire;
 mod cost;
+mod coordinator_retirement;
 mod custom_scan;
 mod dml;
 mod epoch;
@@ -73,6 +74,8 @@ pub mod tuple;
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::generation_catalog::extension_relation_name as catalog_relation_name;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::coordinator_retirement::ensure_fingerprint_not_retiring as ensure_fingerprint_not_retiring_for_test;
 pub use self::generation_descriptor::{
     roster_digest, DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
     DistannGenerationDescriptor, DistannOwnerExpectation, DistannRosterEntry,

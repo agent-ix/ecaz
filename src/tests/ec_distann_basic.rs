@@ -2788,6 +2788,145 @@ fn test_distann_multi_epoch_publish() {
         "Retired"
     );
 
+    let predecessor_identity = client
+        .query_one(
+            &format!(
+                "SELECT index_oid::bigint, uuid_send(logical_index_uuid), epoch_fingerprint
+                   FROM ec_distann_publish_decision
+                  WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                    AND build_id = '{first}'::uuid"
+            ),
+            &[],
+        )
+        .expect("predecessor identity should remain durable");
+    let index_oid = pg_sys::Oid::from(
+        u32::try_from(predecessor_identity.get::<_, i64>(0))
+            .expect("index OID should fit u32"),
+    );
+    let logical_index_uuid = pgrx::datum::Uuid::from_bytes(
+        predecessor_identity
+            .get::<_, Vec<u8>>(1)
+            .try_into()
+            .expect("logical-index UUID must be 16 bytes"),
+    );
+    let predecessor_fingerprint: [u8; 34] = predecessor_identity
+        .get::<_, Vec<u8>>(2)
+        .try_into()
+        .expect("epoch fingerprint must be 34 bytes");
+
+    // Normal retirement observes the exact local registry under the same
+    // logical-index fence. Rejection must leave no durable decision.
+    let scan_pin = crate::am::ec_distann::ScanTokenGuardForTest::register(
+        logical_index_uuid,
+        predecessor_fingerprint,
+    )
+    .expect("retained predecessor scan should pin");
+    let fingerprint_hex = hex::encode(predecessor_fingerprint);
+    let retention_error = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_retire_epoch(
+                 'ec_distann_me_idx'::regclass, decode('{fingerprint_hex}', 'hex')
+             )"
+        ))
+        .expect_err("normal retirement must reject a live predecessor scan");
+    assert!(
+        retention_error
+            .as_db_error()
+            .map(|error| error.message().contains("EC_RETENTION_ACTIVE"))
+            .unwrap_or(false),
+        "retention failure must be classified: {retention_error}"
+    );
+    assert_eq!(
+        scalar(
+            &mut client,
+            "SELECT count(*)::text FROM ec_distann_retire_decision
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid"
+        ),
+        "0",
+        "a rejected retirement must create no decision"
+    );
+    drop(scan_pin);
+
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_retire_epoch(
+                 'ec_distann_me_idx'::regclass, decode('{fingerprint_hex}', 'hex')
+             )"
+        ))
+        .expect("zero-pin retirement should commit its decision");
+    assert_eq!(
+        scalar(
+            &mut client,
+            "SELECT decision_state FROM ec_distann_retire_decision
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid"
+        ),
+        "Pending"
+    );
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT state FROM ec_distann_generation
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                AND build_id = '{first}'::uuid"
+        )),
+        "Retired",
+        "decision commit must precede physical participant reclaim"
+    );
+
+    let registration_after_decision =
+        crate::am::ec_distann::ScanTokenGuardForTest::register_checked(
+            logical_index_uuid,
+            predecessor_fingerprint,
+            || {
+                crate::am::ec_distann::ensure_fingerprint_not_retiring_for_test(
+                    index_oid,
+                    logical_index_uuid,
+                    &predecessor_fingerprint,
+                )
+            },
+        );
+    assert!(
+        matches!(registration_after_decision, Err((_, Some(ref message))) if message.contains("EC_EPOCH_STATE")),
+        "a committed retire decision must reject later scan registration"
+    );
+
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_epoch_retire(
+                 'ec_distann_me_idx'::regclass, decode('{fingerprint_hex}', 'hex')
+             )"
+        ))
+        .expect("retire recovery should reclaim the local predecessor");
+    assert_eq!(
+        scalar(
+            &mut client,
+            "SELECT decision_state FROM ec_distann_retire_decision
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid"
+        ),
+        "Applied"
+    );
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT state FROM ec_distann_epoch_generation_status(
+                 'ec_distann_me_idx'::regclass, '{first}'::uuid
+             )"
+        )),
+        "Reclaimed"
+    );
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT count(*)::text FROM ec_distann_generation
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                AND build_id = '{first}'::uuid"
+        )),
+        "0"
+    );
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_retire_epoch('ec_distann_me_idx'::regclass, decode('{fingerprint_hex}', 'hex'));
+             SELECT ec_distann_recover_epoch_retire('ec_distann_me_idx'::regclass, decode('{fingerprint_hex}', 'hex'))"
+        ))
+        .expect("retire decision and recovery replay should be idempotent");
+
     client
         .batch_execute("DROP TABLE IF EXISTS ec_distann_me_source CASCADE")
         .expect("multi-epoch cleanup should drop the source");

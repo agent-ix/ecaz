@@ -100,8 +100,20 @@ impl PhysicalGenerationScan {
         // attempt and executor-level restart can resolve the successor.
         let first = active_generation_identity(index_oid, logical_index_uuid)?
             .ok_or_else(|| "EC_GENERATION_MISSING: logical index has no active epoch".to_owned())?;
-        let scan_token = ScanTokenGuard::register(logical_index_uuid, first.fingerprint)
-            .map_err(|error| error.stable_message().to_owned())?;
+        let scan_token = ScanTokenGuard::register_checked(
+            logical_index_uuid,
+            first.fingerprint,
+            || {
+                super::coordinator_retirement::ensure_fingerprint_not_retiring(
+                    index_oid,
+                    logical_index_uuid,
+                    &first.fingerprint,
+                )
+            },
+        )
+        .map_err(|(error, detail)| {
+            detail.unwrap_or_else(|| error.stable_message().to_owned())
+        })?;
         let active =
             active_generation_identity(index_oid, logical_index_uuid)?.ok_or_else(|| {
                 "EC_GENERATION_MISSING: active epoch disappeared during registration".to_owned()

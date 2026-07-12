@@ -630,6 +630,16 @@ ALTER FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
 REVOKE ALL ON FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
     FROM PUBLIC;
 
+ALTER FUNCTION ec_distann_retire_epoch(regclass, bytea) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_retire_epoch(regclass, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_retire_epoch(regclass, bytea) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_recover_epoch_retire(regclass, bytea) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_recover_epoch_retire(regclass, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_recover_epoch_retire(regclass, bytea) FROM PUBLIC;
+
 ALTER FUNCTION ec_distann_build_epoch(regclass, bigint, uuid) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_build_epoch(regclass, bigint, uuid)
     SET search_path TO pg_catalog, @extschema@, pg_temp;

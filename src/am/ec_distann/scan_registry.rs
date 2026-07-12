@@ -1502,18 +1502,30 @@ impl ScanTokenGuard {
         logical_index_uuid: Uuid,
         epoch_fingerprint: [u8; 34],
     ) -> Result<Self, RegistryError> {
+        Self::register_checked(logical_index_uuid, epoch_fingerprint, || Ok(()))
+            .map_err(|error| error.0)
+    }
+
+    pub(crate) fn register_checked(
+        logical_index_uuid: Uuid,
+        epoch_fingerprint: [u8; 34],
+        check: impl FnOnce() -> Result<(), String>,
+    ) -> Result<Self, (RegistryError, Option<String>)> {
         let mut token_bytes = [0u8; 16];
         if !unsafe { pg_sys::pg_strong_random(token_bytes.as_mut_ptr().cast(), token_bytes.len()) }
         {
-            return Err(RegistryError::CorruptSharedState);
+            return Err((RegistryError::CorruptSharedState, None));
         }
         token_bytes[6] = (token_bytes[6] & 0x0f) | 0x40;
         token_bytes[8] = (token_bytes[8] & 0x3f) | 0x80;
         let scan_token = Uuid::from_bytes(token_bytes);
         let database_oid = unsafe { pg_sys::MyDatabaseId };
         with_scan_registration_fence(database_oid, *logical_index_uuid.as_bytes(), || {
+            check().map_err(|message| (RegistryError::CorruptSharedState, Some(message)))?;
             register_scan_token(logical_index_uuid, epoch_fingerprint, scan_token)
-        })??;
+                .map_err(|error| (error, None))
+        })
+        .map_err(|error| (error, None))??;
         Ok(Self {
             logical_index_uuid,
             epoch_fingerprint,
