@@ -4322,6 +4322,78 @@ fn apply_distann_participant_retire(
 }
 
 #[pg_test]
+fn test_distann_participant_publish_negative_guards() {
+    let fixture =
+        create_distann_participant_lifecycle_fixture("ec_distann_participant_neg", 0x4d);
+    let catalog = distann_generation_catalog_name();
+    let state = || {
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM {catalog} WHERE index_oid = {} AND build_id = '{}'::uuid",
+            u32::from(fixture.generation.index_oid),
+            fixture.generation.build_id,
+        ))
+        .unwrap()
+    };
+
+    // A non-v4 build id is rejected before any state change.
+    let v4_error = expect_pg_error_rolled_back(|| {
+        Spi::connect_mut(|client| {
+            client
+                .update(
+                    "SELECT ec_distann_publish_epoch(
+                         $1::regclass,
+                         '00000000-0000-0000-0000-000000000000'::uuid,
+                         $2::bytea, $3::bytea
+                     )",
+                    None,
+                    &[
+                        fixture.generation.index_oid.into(),
+                        fixture.manifest_bytes.clone().into(),
+                        fixture.manifest_digest.clone().into(),
+                    ],
+                )
+                .unwrap();
+        });
+    });
+    assert!(
+        v4_error.contains("EC_EPOCH_STATE"),
+        "a non-v4 build id must be rejected: {v4_error}"
+    );
+
+    // A manifest whose build id differs from the requested build id is rejected.
+    let mismatch_error = expect_pg_error_rolled_back(|| {
+        Spi::connect_mut(|client| {
+            client
+                .update(
+                    "SELECT ec_distann_publish_epoch(
+                         $1::regclass,
+                         'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'::uuid,
+                         $2::bytea, $3::bytea
+                     )",
+                    None,
+                    &[
+                        fixture.generation.index_oid.into(),
+                        fixture.manifest_bytes.clone().into(),
+                        fixture.manifest_digest.clone().into(),
+                    ],
+                )
+                .unwrap();
+        });
+    });
+    assert!(
+        mismatch_error.contains("EC_EPOCH_STATE"),
+        "a manifest naming a different build id must be rejected: {mismatch_error}"
+    );
+
+    // Neither rejection changed the generation state.
+    assert_eq!(
+        state().as_deref(),
+        Some("Ready"),
+        "rejected publications must leave the generation Ready"
+    );
+}
+
+#[pg_test]
 fn test_distann_participant_publish_status_replay_and_conflict() {
     let fixture = create_distann_participant_lifecycle_fixture(
         "ec_distann_participant_publish",
