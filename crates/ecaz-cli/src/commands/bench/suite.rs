@@ -474,12 +474,11 @@ struct SpireLocalMultinodeStep {
 }
 
 /// FR-082/NFR-020 distann multinode fixture step: drives
-/// `ecaz dev distann-multicluster local-multinode-pg18`, which replicates a
-/// deterministic ec_distann corpus across N real PG18 instances, runs the
-/// multi-node distinct-recall gate (multi == single-node) plus the TC-042 fault
-/// matrix + FR-082 lifecycle drills, and writes a packet-local summary. This is
-/// the `ecaz bench suite` packaging of the Task 165 "multinode distinct_recall
-/// >= single-node - 0.001" evidence.
+/// `ecaz dev distann-multicluster local-multinode-pg18`, which loads source rows
+/// only on the coordinator, builds one physically sharded generation across N
+/// real PG18 instances, validates Ready/Published topology on every owner, and
+/// exercises cross-process serving. The historical replicated-serving control
+/// has a separate explicit dev subcommand and is not topology evidence.
 #[derive(Debug, Deserialize)]
 struct DistannLocalMultinodeStep {
     name: String,
@@ -499,6 +498,8 @@ struct DistannLocalMultinodeStep {
     pgbin: Option<PathBuf>,
     #[serde(default)]
     nodes: Option<u32>,
+    #[serde(default)]
+    coordinator_outside_roster: bool,
     #[serde(default)]
     base_port: Option<u16>,
     #[serde(default)]
@@ -2151,6 +2152,16 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("storage_node".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_topology ") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                let topology_ok = values
+                    .get("state")
+                    .is_some_and(|state| state == "Ready" || state == "Published")
+                    && values.get("non_owned").is_some_and(|value| value == "0")
+                    && values.get("orphans").is_some_and(|value| value == "0");
+                values.insert("topology_ok".into(), topology_ok.to_string());
+                rows.push(("physical_topology".into(), values));
+            }
         } else if let Some(pass_idx) = body.find(" pass=") {
             // A generic drill-outcome line: `<label> pass=<bool>`.
             let label = body[..pass_idx].trim();
@@ -2162,6 +2173,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                 let mut values = BTreeMap::new();
                 values.insert("drill".into(), sanitize_drill_label(label));
                 values.insert("pass".into(), pass_token.to_owned());
+                values.insert(
+                    "pass_numeric".into(),
+                    if pass_token == "true" { "1" } else { "0" }.into(),
+                );
                 rows.push(("drill_outcome".into(), values));
             }
         }
@@ -3591,6 +3606,9 @@ fn expand_distann_local_multinode(
         "--nodes",
         step.nodes.map(|v| v.to_string()).as_deref(),
     );
+    if step.coordinator_outside_roster {
+        args.push("--coordinator-outside-roster".into());
+    }
     push_opt_u16(&mut args, "--base-port", step.base_port);
     push_opt_arg(
         &mut args,
@@ -4440,7 +4458,9 @@ mod tests {
 
         // The SKIPPED gate line (no `single=`) must NOT produce a gate row.
         assert_eq!(
-            rows.iter().filter(|(m, _)| m == "suite_recall_gate").count(),
+            rows.iter()
+                .filter(|(m, _)| m == "suite_recall_gate")
+                .count(),
             1,
             "only the measured gate line yields a row"
         );
@@ -4451,7 +4471,9 @@ mod tests {
             .filter_map(|(_, v)| v.get("drill"))
             .collect();
         assert!(
-            drills.iter().any(|d| d.contains("fault_drill_remote_statement_timeout")),
+            drills
+                .iter()
+                .any(|d| d.contains("fault_drill_remote_statement_timeout")),
             "fault drill outcome captured: {drills:?}"
         );
         assert!(
@@ -4462,7 +4484,8 @@ mod tests {
 
     #[test]
     fn distann_multinode_recall_mismatch_sets_identity_not_ok() {
-        let raw = "[distann-multicluster] RECALL_RESULT n_queries=50 identical=48 mismatched_ids=4\n";
+        let raw =
+            "[distann-multicluster] RECALL_RESULT n_queries=50 identical=48 mismatched_ids=4\n";
         let rows = parse_distann_multinode_rows(raw);
         let identity = rows
             .iter()
@@ -4473,6 +4496,23 @@ mod tests {
             Some("false"),
             "a nonzero mismatch fails the identity threshold"
         );
+    }
+
+    #[test]
+    fn distann_physical_topology_and_gate_are_structured() {
+        let raw = "[distann-multicluster] physical_topology phase=published node=2 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=65536 row_bytes=16384 directory_bytes=16384 control_bytes=8192\n\
+[distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=3 source_rows=90\n";
+        let rows = parse_distann_multinode_rows(raw);
+        let topology = rows
+            .iter()
+            .find(|(metric, _)| metric == "physical_topology")
+            .expect("topology row");
+        assert_eq!(topology.1.get("topology_ok").map(String::as_str), Some("true"));
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "drill_outcome"
+                && values.get("drill").map(String::as_str) == Some("physical_topology_gate")
+                && values.get("pass").map(String::as_str) == Some("true")
+        }));
     }
 
     #[test]

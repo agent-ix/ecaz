@@ -1304,9 +1304,9 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         let participants = desired_participants(index_oid, logical_index_uuid)?;
         let roster = public_roster(&participants)?;
         let roster_digest_bytes = roster_digest(&roster)?;
-        if participants.iter().filter(|participant| participant.is_local).count() != 1 {
+        if participants.iter().filter(|participant| participant.is_local).count() > 1 {
             return Err(
-                "EC_BUILD_STATE: build_epoch requires exactly one local participant".to_owned(),
+                "EC_BUILD_STATE: build_epoch permits at most one local participant".to_owned(),
             );
         }
 
@@ -1725,7 +1725,7 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
 /// canonical `DistannBuildCandidateV1`, recomputing and verifying its full
 /// digest chain (validate() re-checks every component digest and the
 /// cross-component consistency) — FR-082:266-270.
-fn load_build_candidate(
+pub(crate) fn load_build_candidate(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
     build_id: Uuid,

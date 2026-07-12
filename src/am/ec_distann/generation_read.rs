@@ -102,7 +102,7 @@ fn physical_owner_routes(
             .iter()
             .enumerate()
             .any(|(ordinal, route)| route.roster_ordinal != ordinal)
-        || routes.iter().filter(|route| route.is_local).count() != 1
+        || routes.iter().filter(|route| route.is_local).count() > 1
     {
         return Err(
             "EC_NODE_DESCRIPTOR: immutable participant bindings do not cover the roster".to_owned(),
@@ -613,12 +613,11 @@ fn ec_distann_materialize_physical_row_payloads(
 }
 
 pub(crate) struct PhysicalGenerationScan {
-    pub(crate) row_tier_relid: pg_sys::Oid,
     descriptor: DistannGenerationDescriptor,
-    generation: GenerationCatalogRow,
-    row_relation: HeapRelationGuard,
-    _graph_relation: HeapRelationGuard,
-    graph_relation_name: String,
+    generation: Option<GenerationCatalogRow>,
+    row_relation: Option<HeapRelationGuard>,
+    _graph_relation: Option<HeapRelationGuard>,
+    graph_relation_name: Option<String>,
     fingerprint: [u8; 34],
     routes: Vec<PhysicalOwnerRoute>,
     head_index: Option<super::head_sample::DistannPhysicalHeadIndex>,
@@ -710,19 +709,14 @@ impl PhysicalGenerationScan {
             );
         }
 
-        let generation =
-            generation_catalog::lookup_generation(index_oid, logical_index_uuid, active.build_id)?
-                .ok_or_else(|| {
-                    "EC_GENERATION_MISSING: active generation catalog row is absent".to_owned()
-                })?;
-        if generation.state != "Published" {
-            return Err(format!(
-                "EC_GENERATION_MISSING: active generation is {} rather than Published",
-                generation.state
-            ));
-        }
-        let descriptor = DistannGenerationDescriptor::decode(&generation.generation_descriptor)?;
-        if descriptor.digest()? != generation.generation_descriptor_digest
+        let candidate = super::build_coordinator::load_build_candidate(
+            index_oid,
+            logical_index_uuid,
+            active.build_id,
+        )?
+        .ok_or_else(|| "EC_GENERATION_MISSING: active build candidate is absent".to_owned())?;
+        let descriptor = DistannGenerationDescriptor::decode(&candidate.generation_descriptor)?;
+        if descriptor.digest()? != candidate.generation_descriptor_digest
             || descriptor.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes()
         {
             return Err(
@@ -730,28 +724,59 @@ impl PhysicalGenerationScan {
                     .to_owned(),
             );
         }
-        let row_relation = HeapRelationGuard::try_access_share(generation.row_tier_relid)
-            .ok_or_else(|| "EC_GENERATION_MISSING: row-tier relation is absent".to_owned())?;
-        let graph_relation = HeapRelationGuard::try_access_share(generation.graph_store_relid)
-            .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
-        let graph_relation_name =
-            super::handoff::qualified_relation_name(generation.graph_store_relid)?;
         let routes = physical_owner_routes(
             index_oid,
             logical_index_uuid,
             active.build_id,
             descriptor.roster.len(),
         )?;
-        let local_route = routes
-            .get(generation.owner_ordinal as usize)
-            .ok_or_else(|| {
-                "EC_NODE_DESCRIPTOR: local generation owner is outside the roster".to_owned()
-            })?;
-        if !local_route.is_local {
-            return Err(
-                "EC_NODE_DESCRIPTOR: local generation owner is not the local binding".to_owned(),
-            );
-        }
+        let generation =
+            generation_catalog::lookup_generation(index_oid, logical_index_uuid, active.build_id)?;
+        let (row_relation, graph_relation, graph_relation_name) = match generation.as_ref() {
+            Some(generation) => {
+                if generation.state != "Published" {
+                    return Err(format!(
+                        "EC_GENERATION_MISSING: active generation is {} rather than Published",
+                        generation.state
+                    ));
+                }
+                let local_route =
+                    routes
+                        .get(generation.owner_ordinal as usize)
+                        .ok_or_else(|| {
+                            "EC_NODE_DESCRIPTOR: local generation owner is outside the roster"
+                                .to_owned()
+                        })?;
+                if !local_route.is_local {
+                    return Err(
+                        "EC_NODE_DESCRIPTOR: local generation owner is not the local binding"
+                            .to_owned(),
+                    );
+                }
+                if generation.generation_descriptor_digest != candidate.generation_descriptor_digest
+                {
+                    return Err("EC_GENERATION_DESCRIPTOR: local generation descriptor differs from candidate".to_owned());
+                }
+                let row = HeapRelationGuard::try_access_share(generation.row_tier_relid)
+                    .ok_or_else(|| {
+                        "EC_GENERATION_MISSING: row-tier relation is absent".to_owned()
+                    })?;
+                let graph = HeapRelationGuard::try_access_share(generation.graph_store_relid)
+                    .ok_or_else(|| {
+                        "EC_GENERATION_MISSING: graph-store relation is absent".to_owned()
+                    })?;
+                let name = super::handoff::qualified_relation_name(generation.graph_store_relid)?;
+                (Some(row), Some(graph), Some(name))
+            }
+            None => {
+                if routes.iter().any(|route| route.is_local) {
+                    return Err(
+                        "EC_GENERATION_MISSING: local binding has no active generation".to_owned(),
+                    );
+                }
+                (None, None, None)
+            }
+        };
         let (head_sample, manifest_build_options) = super::head_sample::load_head_sample(
             index_oid,
             logical_index_uuid,
@@ -767,7 +792,6 @@ impl PhysicalGenerationScan {
             exact_options.seed,
         )?;
         Ok(Self {
-            row_tier_relid: generation.row_tier_relid,
             descriptor,
             generation,
             row_relation,
@@ -780,8 +804,8 @@ impl PhysicalGenerationScan {
         })
     }
 
-    pub(crate) fn row_relation(&self) -> pg_sys::Relation {
-        self.row_relation.as_ptr()
+    pub(crate) fn row_relation(&self) -> Option<pg_sys::Relation> {
+        self.row_relation.as_ref().map(HeapRelationGuard::as_ptr)
     }
 
     pub(crate) fn search(
@@ -802,10 +826,15 @@ impl PhysicalGenerationScan {
         let code_len = binding.code_len(usize::from(self.descriptor.dimensions))?;
         let prepared =
             DistannPreparedQuery::prepare_artifact(&self.descriptor.codec_artifact, query)?;
-        let slot =
-            TupleTableSlotGuard::single_for_heap_guard(&self.row_relation).ok_or_else(|| {
-                "EC_GENERATION_MISSING: could not allocate row-tier scan slot".to_owned()
-            })?;
+        let slot = self
+            .row_relation
+            .as_ref()
+            .map(|relation| {
+                TupleTableSlotGuard::single_for_heap_guard(relation).ok_or_else(|| {
+                    "EC_GENERATION_MISSING: could not allocate row-tier scan slot".to_owned()
+                })
+            })
+            .transpose()?;
 
         let seed_limit = (super::options::current_beam_width() * 2).max(32);
         let all_seeds = self
@@ -821,21 +850,35 @@ impl PhysicalGenerationScan {
             });
         }
 
-        let local_expander = GenerationExpander {
-            generation: &self.generation,
-            descriptor: &self.descriptor,
-            graph_relation_name: &self.graph_relation_name,
-            row_relation: &self.row_relation,
-            slot: &slot,
-            snapshot,
-            source_attnum,
-            query,
-            prepared: &prepared,
-            code_len,
+        let local_expander = match (
+            self.generation.as_ref(),
+            self.graph_relation_name.as_deref(),
+            self.row_relation.as_ref(),
+            slot.as_ref(),
+        ) {
+            (Some(generation), Some(graph_relation_name), Some(row_relation), Some(slot)) => {
+                Some(GenerationExpander {
+                    generation,
+                    descriptor: &self.descriptor,
+                    graph_relation_name,
+                    row_relation,
+                    slot,
+                    snapshot,
+                    source_attnum,
+                    query,
+                    prepared: &prepared,
+                    code_len,
+                })
+            }
+            (None, None, None, None) => None,
+            _ => return Err("EC_INTERNAL: incomplete local generation reader".to_owned()),
         };
         let mut expander = PhysicalMultiOwnerExpander {
             local: local_expander,
-            local_ordinal: self.generation.owner_ordinal as usize,
+            local_ordinal: self
+                .generation
+                .as_ref()
+                .map(|generation| generation.owner_ordinal as usize),
             descriptor: &self.descriptor,
             routes: &self.routes,
             fingerprint: &self.fingerprint,
@@ -882,7 +925,11 @@ impl PhysicalGenerationScan {
             if bucket.is_empty() {
                 continue;
             }
-            if ordinal == self.generation.owner_ordinal as usize {
+            if self
+                .generation
+                .as_ref()
+                .is_some_and(|generation| ordinal == generation.owner_ordinal as usize)
+            {
                 return Err(
                     "EC_INTERNAL: local owner produced a remote physical hit locator".to_owned(),
                 );
@@ -931,8 +978,8 @@ impl PhysicalGenerationScan {
 }
 
 struct PhysicalMultiOwnerExpander<'a> {
-    local: GenerationExpander<'a>,
-    local_ordinal: usize,
+    local: Option<GenerationExpander<'a>>,
+    local_ordinal: Option<usize>,
     descriptor: &'a DistannGenerationDescriptor,
     routes: &'a [PhysicalOwnerRoute],
     fingerprint: &'a [u8; 34],
@@ -956,8 +1003,15 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
                 continue;
             }
             let owned = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
-            let response = if ordinal == self.local_ordinal {
-                self.local.expand_nodes(&owned, code_threshold)?
+            let response = if Some(ordinal) == self.local_ordinal {
+                self.local
+                    .as_mut()
+                    .ok_or_else(|| {
+                        DistannExpandError::Internal(
+                            "local owner route has no generation reader".to_owned(),
+                        )
+                    })?
+                    .expand_nodes(&owned, code_threshold)?
             } else {
                 let route = &self.routes[ordinal];
                 super::remote_transport::remote_physical_expand_nodes(

@@ -19,9 +19,11 @@ mod coordinator_abandonment;
 pub(crate) use self::build_coordinator::build_session_lock_count_for_test;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::read_metadata_from_index;
-#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::{
     build_physical_graph_workspace, capture_physical_source_rows,
+};
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ambuild::{
     test_physical_capture_dead_callback_does_not_access_datums,
 };
 mod canonical_wire;

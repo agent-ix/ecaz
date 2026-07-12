@@ -849,7 +849,9 @@ unsafe extern "C-unwind" fn custom_scan_access(
                 let estate = (*scan_state).ps.state;
                 pg_sys::ExecClearTuple(state.frozen_row_slot);
                 let visible = pg_sys::table_tuple_fetch_row_version(
-                    context.row_relation(),
+                    context.row_relation().unwrap_or_else(|| {
+                        pgrx::error!("EC_GENERATION_MISSING: local hit has no local row tier")
+                    }),
                     &mut item,
                     (*estate).es_snapshot,
                     state.frozen_row_slot,
@@ -1048,14 +1050,15 @@ unsafe fn run_physical_generation_search(
         .expect("physical generation initialized");
     if state.frozen_row_slot.is_null() {
         let estate = (*scan_state).ps.state;
-        let relation = context.row_relation();
-        state.frozen_row_slot = pg_sys::ExecInitExtraTupleSlot(
-            estate,
-            (*relation).rd_att,
-            pg_sys::table_slot_callbacks(relation),
-        );
-        if state.frozen_row_slot.is_null() {
-            pgrx::error!("EC_GENERATION_MISSING: could not allocate frozen row-tier slot");
+        if let Some(relation) = context.row_relation() {
+            state.frozen_row_slot = pg_sys::ExecInitExtraTupleSlot(
+                estate,
+                (*relation).rd_att,
+                pg_sys::table_slot_callbacks(relation),
+            );
+            if state.frozen_row_slot.is_null() {
+                pgrx::error!("EC_GENERATION_MISSING: could not allocate frozen row-tier slot");
+            }
         }
     }
     let collection = context

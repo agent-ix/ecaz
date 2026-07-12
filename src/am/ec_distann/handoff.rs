@@ -1270,47 +1270,24 @@ fn ec_distann_epoch_topology(
         if control_owner == pg_sys::InvalidOid {
             return Err("EC_SCHEMA_MISMATCH: control relation owner is invalid".to_owned());
         }
-        // Resolve the fingerprint to its build id through the durable decision.
-        let decision_table =
-            generation_catalog::extension_relation_name("ec_distann_publish_decision")?;
-        let build_id = Spi::connect(|client| -> Result<Option<Uuid>, String> {
-            client
-                .select(
-                    &format!(
-                        "SELECT build_id FROM {decision_table}
-                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                            AND epoch_fingerprint = $3::bytea"
-                    ),
-                    None,
-                    &[
-                        index_oid.into(),
-                        logical_index_uuid.into(),
-                        epoch_fingerprint.clone().into(),
-                    ],
-                )
-                .map_err(|_| "EC_GENERATION_MISSING: epoch fingerprint lookup failed".to_owned())?
-                .map(|row| {
-                    row["build_id"]
-                        .value::<Uuid>()
-                        .map_err(|_| "EC_GENERATION_MISSING: fingerprint build id decode failed".to_owned())?
-                        .ok_or_else(|| "EC_GENERATION_MISSING: fingerprint build id is NULL".to_owned())
-                })
-                .next()
-                .transpose()
-        })?;
-        let Some(build_id) = build_id else {
-            return Err(
-                "EC_GENERATION_MISSING: no published generation for this epoch fingerprint"
-                    .to_owned(),
-            );
-        };
-        let Some(generation) =
-            generation_catalog::lookup_generation(index_oid, logical_index_uuid, build_id)?
+        // A participant does not persist the coordinator's publish-decision
+        // row. Resolve directly through its unique retained generation
+        // fingerprint so the same endpoint works on every real instance.
+        let fingerprint: [u8; 34] = epoch_fingerprint
+            .as_slice()
+            .try_into()
+            .expect("length checked above");
+        let Some(retained) = generation_catalog::lookup_retained_generation_by_fingerprint(
+            index_oid,
+            logical_index_uuid,
+            &fingerprint,
+        )?
         else {
             return Err(
                 "EC_GENERATION_MISSING: the epoch generation has been reclaimed".to_owned(),
             );
         };
+        let generation = retained.generation;
         if !matches!(generation.state.as_str(), "Published" | "Retired") {
             return Err(
                 "EC_GENERATION_MISSING: epoch generation is not Published or retained Retired"

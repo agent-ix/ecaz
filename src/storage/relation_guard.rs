@@ -63,13 +63,11 @@ impl IndexRelationGuard {
         self.lockmode = pg_sys::NoLock as pg_sys::LOCKMODE;
     }
 
-    #[cfg(any(test, feature = "pg_test"))]
     pub(crate) fn handle(&self) -> crate::storage::relation::RelationHandle {
         NonNull::new(self.relation)
             .unwrap_or_else(|| pgrx::error!("index relation guard unexpectedly null"))
     }
 
-    #[cfg(any(test, feature = "pg_test"))]
     pub(crate) fn heap_relation_oid(&self) -> pg_sys::Oid {
         crate::storage::relation::index_heap_relation_oid_handle(self.handle())
     }

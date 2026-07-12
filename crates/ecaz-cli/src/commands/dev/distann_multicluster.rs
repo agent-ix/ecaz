@@ -1,20 +1,9 @@
 //! `ec_distann` real multi-instance fixture (Task 165 M3, Slice A).
 //!
-//! Spins up N real PostgreSQL 18 instances, loads an **identical, deterministic**
-//! corpus in identical order into a fresh table on each (so local-mode `vec_id`s
-//! — hashed from the heap TID — and the seed-deterministic global graph are
-//! byte-identical across nodes), builds an `ec_distann` index on each, wires the
-//! coordinator's roster to all N nodes, and drives a real cross-process
-//! distinct-recall comparison plus a fail-closed transport drill.
-//!
-//! Distribution model (honest): the index is *replicated* and the roster
-//! partitions **ownership of serving** (each node answers `expand` /
-//! `materialize_row_payloads` only for its owned vec_ids). This exercises the
-//! genuine cross-instance read path — remote-owned hits are shipped from another
-//! process and reconstructed by the coordinator's CustomScan — with correct
-//! (single-node-equal) recall. True disjoint-shard storage needs a
-//! build-global-then-distribute step (a follow-up); it is not required to prove
-//! the multi-node read gate.
+//! The primary lane loads source rows only on the coordinator, creates empty
+//! participant shells, and drives the Task 179 physical generation lifecycle.
+//! The historical replicated-serving fixture remains available under an
+//! explicit control-only subcommand.
 
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, Context, Result};
@@ -27,10 +16,18 @@ use super::support::{find_pgrx_install, repo_root, resolve_pgrx_home, run_status
 
 #[derive(Subcommand, Debug)]
 pub enum DistannMulticlusterCommand {
-    /// Spin up N real PG18 instances, replicate a deterministic ec_distann
-    /// corpus, wire the roster, and run the multi-node distinct-recall gate.
+    /// Spin up N real PG18 instances and build one physically sharded epoch.
     #[command(name = "local-multinode-pg18")]
     LocalMultinodePg18(LocalMultinodePg18Args),
+    /// Historical replicated-serving control (not physical topology evidence).
+    #[command(name = "replicated-serving-control-pg18")]
+    ReplicatedServingControlPg18(LocalMultinodePg18Args),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FixtureMode {
+    Physical,
+    ReplicatedServingControl,
 }
 
 #[derive(Args, Debug)]
@@ -45,9 +42,13 @@ pub struct LocalMultinodePg18Args {
     pub run_dir: Option<PathBuf>,
     #[arg(long)]
     pub artifact_dir: Option<PathBuf>,
-    /// Number of real PG instances (node 1 is the coordinator).
+    /// Number of physical owners. Node 1 is also the coordinator unless
+    /// `--coordinator-outside-roster` is set.
     #[arg(long, default_value_t = 3)]
     pub nodes: u32,
+    /// Start one additional coordinator instance which is not a physical owner.
+    #[arg(long, default_value_t = false)]
+    pub coordinator_outside_roster: bool,
     /// First TCP port; node k listens on base_port + (k - 1).
     #[arg(long, default_value_t = 39710)]
     pub base_port: u16,
@@ -93,7 +94,10 @@ impl DistannMulticlusterCommand {
     pub async fn run(&self) -> Result<()> {
         match self {
             DistannMulticlusterCommand::LocalMultinodePg18(args) => {
-                run_local_multinode_pg18(args).await
+                run_local_multinode_pg18(args, FixtureMode::Physical).await
+            }
+            DistannMulticlusterCommand::ReplicatedServingControlPg18(args) => {
+                run_local_multinode_pg18(args, FixtureMode::ReplicatedServingControl).await
             }
         }
     }
@@ -106,13 +110,20 @@ struct Node {
     log_file: PathBuf,
 }
 
-async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args) -> Result<()> {
+async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMode) -> Result<()> {
     if args.pg != 18 {
         bail!("distann local-multinode requires --pg 18, got {}", args.pg);
     }
-    if args.nodes < 2 {
-        bail!("distann local-multinode needs at least 2 nodes, got {}", args.nodes);
+    if args.nodes == 0 || (mode == FixtureMode::ReplicatedServingControl && args.nodes < 2) {
+        bail!(
+            "distann local-multinode has invalid owner count {}",
+            args.nodes
+        );
     }
+    if mode == FixtureMode::ReplicatedServingControl && args.coordinator_outside_roster {
+        bail!("replicated-serving-control does not support an outside coordinator");
+    }
+    let instance_count = args.nodes + u32::from(args.coordinator_outside_roster);
     let repo_root = repo_root()?;
     let pgbin = match args.pgbin.clone() {
         Some(path) => path,
@@ -128,11 +139,14 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args) -> Result<()> {
         .run_dir
         .clone()
         .unwrap_or_else(|| repo_root.join("target/distann-local-multinode"));
-    let socket_dir = run_dir.join("sockets");
-    let log_dir = args.artifact_dir.clone().unwrap_or_else(|| run_dir.join("logs"));
+    let mut socket_dir = run_dir.join("sockets");
+    let mut log_dir = args
+        .artifact_dir
+        .clone()
+        .unwrap_or_else(|| run_dir.join("logs"));
     if run_dir.exists() {
         // Best-effort stop of a prior run before wiping.
-        for k in 0..args.nodes {
+        for k in 0..instance_count {
             let data_dir = run_dir.join(format!("node{}", k + 1));
             let _ = Command::new(&pg_ctl)
                 .arg("-D")
@@ -149,8 +163,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args) -> Result<()> {
     }
     fs::create_dir_all(&socket_dir)?;
     fs::create_dir_all(&log_dir)?;
+    socket_dir = fs::canonicalize(&socket_dir)
+        .wrap_err_with(|| format!("canonicalizing {}", socket_dir.display()))?;
+    log_dir = fs::canonicalize(&log_dir)
+        .wrap_err_with(|| format!("canonicalizing {}", log_dir.display()))?;
 
-    let nodes: Vec<Node> = (0..args.nodes)
+    let nodes: Vec<Node> = (0..instance_count)
         .map(|k| Node {
             node_id: k + 1,
             port: args.base_port + k as u16,
@@ -162,8 +180,14 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args) -> Result<()> {
     crate::ecaz_println!("[distann-multicluster] repo={}", repo_root.display());
     crate::ecaz_println!("[distann-multicluster] pgbin={}", pgbin.display());
     crate::ecaz_println!(
-        "[distann-multicluster] nodes={} base_port={} rows={} dim={}",
+        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={}",
+        match mode {
+            FixtureMode::Physical => "physical",
+            FixtureMode::ReplicatedServingControl => "replicated-serving-control",
+        },
         args.nodes,
+        instance_count,
+        args.coordinator_outside_roster,
         args.base_port,
         args.rows,
         args.dim
@@ -194,19 +218,32 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args) -> Result<()> {
             .arg(&node.log_file)
             .arg("-o")
             .arg(format!(
-                "-p {} -k {} -c listen_addresses=''",
-                node.port,
-                socket_dir.display()
+                "-p {} -c listen_addresses=127.0.0.1 -c unix_socket_directories='' \
+                 -c shared_preload_libraries=ecaz",
+                node.port
             ))
             .arg("start")
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
+        for target in &nodes {
+            command.env(
+                format!("EC_SPIRE_REMOTE_CONNINFO_DISTANN_NODE_{}", target.node_id),
+                conninfo(&socket_dir, target.port),
+            );
+        }
         run_status(command)
             .await
             .wrap_err_with(|| format!("start node {}", node.node_id))?;
     }
 
-    let result = drive_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path()).await;
+    let result = match mode {
+        FixtureMode::Physical => {
+            drive_physical_fixture(args, &psql, &socket_dir, &nodes, log_dir.as_path()).await
+        }
+        FixtureMode::ReplicatedServingControl => {
+            drive_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path()).await
+        }
+    };
 
     if !args.keep_running {
         for node in &nodes {
@@ -231,12 +268,8 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args) -> Result<()> {
 }
 
 /// libpq conninfo for a node over the shared socket dir.
-fn conninfo(socket_dir: &Path, port: u16) -> String {
-    format!(
-        "host={} port={} dbname=postgres user=postgres",
-        socket_dir.display(),
-        port
-    )
+fn conninfo(_socket_dir: &Path, port: u16) -> String {
+    format!("host=127.0.0.1 port={} dbname=postgres user=postgres", port,)
 }
 
 /// The identical, deterministic corpus + index setup run on every node.
@@ -251,8 +284,9 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
             };
             // Canonicalize (absolute + symlinks resolved) so the server-side
             // COPY can read the staged file regardless of the backend's cwd.
-            let corpus_path = std::fs::canonicalize(staged_dir.join(format!("{prefix}_corpus.tsv")))
-                .wrap_err_with(|| format!("resolving staged corpus for prefix {prefix}"))?;
+            let corpus_path =
+                std::fs::canonicalize(staged_dir.join(format!("{prefix}_corpus.tsv")))
+                    .wrap_err_with(|| format!("resolving staged corpus for prefix {prefix}"))?;
             let queries_path =
                 std::fs::canonicalize(staged_dir.join(format!("{prefix}_queries.tsv")))
                     .wrap_err_with(|| format!("resolving staged queries for prefix {prefix}"))?;
@@ -290,12 +324,7 @@ fn insert_vector_expr(args: &LocalMultinodePg18Args) -> String {
 /// `dm_queries(source real[])`. The `4, 42` encode params match both the
 /// synthetic path and the standard suite load (`encode_to_ecvector(source, 4,
 /// 42)`), so this lane is comparable to the single-node suite matrices.
-fn real_setup_sql(
-    corpus_path: &Path,
-    queries_path: &Path,
-    queries_limit: u32,
-    gd: u32,
-) -> String {
+fn real_setup_sql(corpus_path: &Path, queries_path: &Path, queries_limit: u32, gd: u32) -> String {
     // Escape the paths as SQL string literals (double any single quote) so a
     // path containing `'` cannot break out of the COPY ... FROM '<path>' literal
     // (172-P2). Canonical repo paths are unlikely to contain one, but the COPY
@@ -386,6 +415,447 @@ fn recall_sql(roster: &str, queries: u32, top_k: u32, real: bool) -> String {
     )
 }
 
+fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Result<String> {
+    let prefix = format!(
+        "CREATE EXTENSION IF NOT EXISTS ecaz;
+        DROP TABLE IF EXISTS dm CASCADE;
+        DROP TABLE IF EXISTS dm_queries;
+        CREATE TABLE dm (
+            id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({})
+        );",
+        args.dim
+    );
+    let load = if !coordinator {
+        String::new()
+    } else if let Some(corpus_prefix) = &args.corpus_prefix {
+        let staged_dir = args
+            .staged_dir
+            .clone()
+            .unwrap_or(repo_root()?.join("data/staged-current"));
+        let corpus = std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_corpus.tsv")))?
+            .display()
+            .to_string()
+            .replace('\'', "''");
+        let queries =
+            std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_queries.tsv")))?
+                .display()
+                .to_string()
+                .replace('\'', "''");
+        format!(
+            "CREATE TEMP TABLE dm_stage (id bigint, vec text);
+             COPY dm_stage (id, vec) FROM '{corpus}' WITH (FORMAT text, DELIMITER E'\\t');
+             INSERT INTO dm
+             SELECT id,
+                    (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||
+                     substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||
+                     substr(md5(id::text),21,12))::uuid,
+                    translate(vec, '[]', '{{}}')::real[],
+                    encode_to_ecvector(translate(vec, '[]', '{{}}')::real[], 4, 42)
+               FROM dm_stage ORDER BY id;
+             CREATE TABLE dm_queries (id bigint, source real[]);
+             CREATE TEMP TABLE dmq_stage (id bigint, vec text);
+             COPY dmq_stage (id, vec) FROM '{queries}' WITH (FORMAT text, DELIMITER E'\\t');
+             INSERT INTO dm_queries
+             SELECT id, translate(vec, '[]', '{{}}')::real[]
+               FROM dmq_stage ORDER BY id LIMIT {};",
+            args.queries
+        )
+    } else {
+        format!(
+            "INSERT INTO dm
+             SELECT g,
+                    (substr(md5(g::text),1,8)||'-'||substr(md5(g::text),9,4)||'-4'||
+                     substr(md5(g::text),14,3)||'-8'||substr(md5(g::text),18,3)||'-'||
+                     substr(md5(g::text),21,12))::uuid,
+                    arr, encode_to_ecvector(arr, 4, 42)
+               FROM (
+                 SELECT g,
+                        (SELECT array_agg((sin(g * 0.017 * (d + 1)) +
+                                           cos(g * 0.0031 * (d + 1)))::real)
+                           FROM generate_series(0, {} - 1) AS d) AS arr
+                   FROM generate_series(1, {}) AS g
+               ) source_rows;",
+            args.dim, args.rows
+        )
+    };
+    Ok(format!(
+        "{prefix}
+         {load}
+         CREATE INDEX dm_idx ON dm USING ec_distann
+             (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
+             WITH (distributed_control = true, source_identity = 'include',
+                   graph_degree = {}, neighbor_code_format = 'rabitq');",
+        args.graph_degree
+    ))
+}
+
+#[derive(Debug)]
+struct PhysicalTopologyRow {
+    node_id: i64,
+    state: String,
+    records: i64,
+    rows: i64,
+    non_owned_live: i64,
+    non_owned_tombstones: i64,
+    orphan_records: i64,
+    orphan_rows: i64,
+    graph_bytes: i64,
+    row_bytes: i64,
+    directory_bytes: i64,
+    control_bytes: i64,
+}
+
+async fn physical_topology(
+    psql: &Path,
+    socket_dir: &Path,
+    node: &Node,
+    selector_sql: &str,
+) -> Result<PhysicalTopologyRow> {
+    let sql = format!(
+        "SELECT concat_ws('|', node_id, state, record_count, row_count,
+                non_owned_live_count, non_owned_tombstone_count,
+                orphan_record_count, orphan_row_count, graph_bytes,
+                row_tier_bytes, directory_bytes, control_index_bytes)
+           FROM {selector_sql}"
+    );
+    let raw = capture_psql(psql, socket_dir, node.port, &sql).await?;
+    let fields = raw.trim().split('|').collect::<Vec<_>>();
+    if fields.len() != 12 {
+        bail!(
+            "physical topology node {} returned malformed row {:?}",
+            node.node_id,
+            raw.trim()
+        );
+    }
+    let number = |index: usize, field: &str| -> Result<i64> {
+        fields[index]
+            .parse::<i64>()
+            .wrap_err_with(|| format!("decoding topology {field}"))
+    };
+    Ok(PhysicalTopologyRow {
+        node_id: number(0, "node_id")?,
+        state: fields[1].to_owned(),
+        records: number(2, "record_count")?,
+        rows: number(3, "row_count")?,
+        non_owned_live: number(4, "non_owned_live_count")?,
+        non_owned_tombstones: number(5, "non_owned_tombstone_count")?,
+        orphan_records: number(6, "orphan_record_count")?,
+        orphan_rows: number(7, "orphan_row_count")?,
+        graph_bytes: number(8, "graph_bytes")?,
+        row_bytes: number(9, "row_tier_bytes")?,
+        directory_bytes: number(10, "directory_bytes")?,
+        control_bytes: number(11, "control_index_bytes")?,
+    })
+}
+
+fn validate_physical_topology(
+    phase: &str,
+    topology: &[PhysicalTopologyRow],
+    expected_state: &str,
+    source_count: i64,
+) -> Result<()> {
+    if topology.is_empty()
+        || topology.iter().any(|row| {
+            row.state != expected_state
+                || row.records <= 0
+                || row.records != row.rows
+                || row.non_owned_live != 0
+                || row.non_owned_tombstones != 0
+                || row.orphan_records != 0
+                || row.orphan_rows != 0
+        })
+        || topology.iter().map(|row| row.records).sum::<i64>() != source_count
+    {
+        bail!("physical topology {phase} is incomplete or inconsistent: {topology:?}");
+    }
+    Ok(())
+}
+
+async fn drive_physical_fixture(
+    args: &LocalMultinodePg18Args,
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    log_dir: &Path,
+) -> Result<()> {
+    for (ordinal, node) in nodes.iter().enumerate() {
+        let setup = physical_setup_sql(args, ordinal == 0)?;
+        run_psql_file(psql, socket_dir, node.port, &setup)
+            .await
+            .wrap_err_with(|| format!("physical shell setup on node {}", node.node_id))?;
+        run_psql_file(
+            psql,
+            socket_dir,
+            node.port,
+            &format!(
+                "SELECT ec_distann_configure_participant_identity(
+                    'public.dm_idx'::regclass, 'physical/node-{}')",
+                node.node_id
+            ),
+        )
+        .await?;
+    }
+    let source_count = capture_psql(psql, socket_dir, nodes[0].port, "SELECT count(*) FROM dm")
+        .await?
+        .trim()
+        .parse::<i64>()?;
+
+    let coordinator_conninfo = conninfo(socket_dir, nodes[0].port);
+    let (coordinator, connection) =
+        tokio_postgres::connect(&coordinator_conninfo, tokio_postgres::NoTls)
+            .await
+            .wrap_err("connecting persistent physical coordinator session")?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let owners = if args.coordinator_outside_roster {
+        &nodes[1..]
+    } else {
+        nodes
+    };
+    for (ordinal, node) in owners.iter().enumerate() {
+        coordinator
+            .batch_execute(&format!(
+                "SELECT ec_distann_register_node_descriptor(
+                    'public.dm_idx'::regclass, {ordinal}, {}, 'physical/node-{}',
+                    'DISTANN_NODE_{}', 'public.dm_idx', {})",
+                node.node_id,
+                node.node_id,
+                node.node_id,
+                !args.coordinator_outside_roster && ordinal == 0
+            ))
+            .await
+            .wrap_err_with(|| format!("registering physical node {}", node.node_id))?;
+    }
+    let build_id = "71717171-7171-4171-8171-717171717171";
+    coordinator
+        .batch_execute(&format!(
+            "SELECT ec_distann_begin_epoch_build('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"
+        ))
+        .await?;
+    coordinator
+        .batch_execute(&format!(
+            "SELECT ec_distann_build_epoch('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"
+        ))
+        .await?;
+
+    let ready_selector =
+        format!("ec_distann_generation_topology('public.dm_idx'::regclass, '{build_id}'::uuid)");
+    let mut ready = Vec::with_capacity(owners.len());
+    for node in owners {
+        let row = physical_topology(psql, socket_dir, node, &ready_selector).await?;
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_topology phase=ready node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}",
+            row.node_id,
+            row.state,
+            row.records,
+            row.rows,
+            row.non_owned_live + row.non_owned_tombstones,
+            row.orphan_records + row.orphan_rows,
+            row.graph_bytes,
+            row.row_bytes,
+            row.directory_bytes,
+            row.control_bytes,
+        );
+        ready.push(row);
+    }
+    validate_physical_topology("ready", &ready, "Ready", source_count)?;
+
+    coordinator
+        .batch_execute(&format!(
+            "SELECT ec_distann_decide_epoch_publish('public.dm_idx'::regclass, '{build_id}'::uuid)"
+        ))
+        .await?;
+    coordinator
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_epoch_publish('public.dm_idx'::regclass, '{build_id}'::uuid)"
+        ))
+        .await?;
+    let fingerprint = coordinator
+        .query_one(
+            "SELECT encode(epoch_fingerprint, 'hex') FROM ec_distann_active_epoch
+              WHERE index_oid = 'public.dm_idx'::regclass::oid",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    let published_selector = format!(
+        "ec_distann_epoch_topology('public.dm_idx'::regclass, decode('{fingerprint}', 'hex'))"
+    );
+    let mut published = Vec::with_capacity(owners.len());
+    for node in owners {
+        let row = physical_topology(psql, socket_dir, node, &published_selector).await?;
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_topology phase=published node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}",
+            row.node_id,
+            row.state,
+            row.records,
+            row.rows,
+            row.non_owned_live + row.non_owned_tombstones,
+            row.orphan_records + row.orphan_rows,
+            row.graph_bytes,
+            row.row_bytes,
+            row.directory_bytes,
+            row.control_bytes,
+        );
+        published.push(row);
+    }
+    validate_physical_topology("published", &published, "Published", source_count)?;
+
+    let query_limit = i64::from(args.top_k.max(1));
+    coordinator
+        .batch_execute("SET enable_seqscan = off")
+        .await?;
+    let served = coordinator
+        .query_one(
+            &format!(
+                "SELECT count(*) FROM (
+                     SELECT source_id FROM dm
+                      ORDER BY embedding <#> (SELECT source FROM dm ORDER BY id LIMIT 1)
+                      LIMIT {query_limit}
+                 ) served"
+            ),
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let serving_ok = served == query_limit.min(source_count);
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_serving pass={} rows={} owners={} source_rows={}",
+        serving_ok,
+        served,
+        owners.len(),
+        source_count
+    );
+    if !serving_ok {
+        bail!("physical serving returned {served} rows, expected {query_limit}");
+    }
+    let mut remote_verified = 0_usize;
+    let remote_owners = if args.coordinator_outside_roster {
+        owners
+    } else {
+        &owners[1..]
+    };
+    for node in remote_owners {
+        let row_relation = capture_psql(
+            psql,
+            socket_dir,
+            node.port,
+            &format!(
+                "SELECT row_tier_relid::regclass::text FROM ec_distann_generation
+                  WHERE index_oid = 'public.dm_idx'::regclass::oid
+                    AND epoch_fingerprint = decode('{fingerprint}', 'hex')"
+            ),
+        )
+        .await?;
+        let row_relation = row_relation.trim();
+        if row_relation.is_empty()
+            || !row_relation
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"'))
+        {
+            bail!("remote owner {} returned unsafe row relation", node.node_id);
+        }
+        let sample = capture_psql(
+            psql,
+            socket_dir,
+            node.port,
+            &format!(
+                "SELECT source_id::text || '|' || source::text
+                   FROM {row_relation} ORDER BY source_id LIMIT 1"
+            ),
+        )
+        .await?;
+        let (source_id, vector) = sample
+            .trim()
+            .split_once('|')
+            .ok_or_else(|| color_eyre::eyre::eyre!("remote owner sample is malformed"))?;
+        if source_id.len() != 36
+            || !vector.starts_with('{')
+            || !vector.ends_with('}')
+            || !vector.bytes().all(|byte| {
+                byte.is_ascii_digit()
+                    || matches!(byte, b'{' | b'}' | b',' | b'.' | b'-' | b'+' | b'e' | b'E')
+            })
+        {
+            bail!(
+                "remote owner {} returned malformed identity/vector",
+                node.node_id
+            );
+        }
+        let owner_served = coordinator
+            .query_one(
+                "SELECT EXISTS (
+                     SELECT 1 FROM dm
+                      WHERE source_id = $1::text::uuid
+                      ORDER BY embedding <#> (
+                          SELECT source FROM dm WHERE source_id = $1::text::uuid
+                      ) LIMIT 1
+                 )",
+                &[&source_id],
+            )
+            .await?
+            .get::<_, bool>(0);
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_remote_owner node={} pass={}",
+            node.node_id,
+            owner_served
+        );
+        if !owner_served {
+            bail!(
+                "coordinator did not materialize selected row from remote owner {}",
+                node.node_id
+            );
+        }
+        remote_verified += 1;
+    }
+    drop(coordinator);
+    connection_task.abort();
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_topology_gate pass=true owners={} remote_verified={} source_rows={}",
+        owners.len(),
+        remote_verified,
+        source_count
+    );
+    let mut summary = format!(
+        "physical_fixture owners={} coordinator_outside_roster={} source_rows={}\n",
+        owners.len(),
+        args.coordinator_outside_roster,
+        source_count
+    );
+    for (phase, rows) in [("ready", &ready), ("published", &published)] {
+        for row in rows {
+            summary.push_str(&format!(
+                "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}\n",
+                row.node_id,
+                row.state,
+                row.records,
+                row.rows,
+                row.non_owned_live + row.non_owned_tombstones,
+                row.orphan_records + row.orphan_rows,
+                row.graph_bytes,
+                row.row_bytes,
+                row.directory_bytes,
+                row.control_bytes,
+            ));
+        }
+    }
+    summary.push_str(&format!(
+        "[distann-multicluster] physical_serving pass=true rows={served} owners={} source_rows={source_count}\n",
+        owners.len()
+    ));
+    summary.push_str(&format!(
+        "[distann-multicluster] physical_topology_gate pass=true owners={} remote_verified={remote_verified} source_rows={source_count}\n",
+        owners.len()
+    ));
+    let summary_path = log_dir.join("distann-multinode-summary.log");
+    fs::write(&summary_path, summary)
+        .wrap_err_with(|| format!("writing {}", summary_path.display()))?;
+    crate::ecaz_println!(
+        "[distann-multicluster] summary written to {}",
+        summary_path.display()
+    );
+    Ok(())
+}
+
 async fn drive_fixture(
     args: &LocalMultinodePg18Args,
     pg_ctl: &Path,
@@ -400,7 +870,10 @@ async fn drive_fixture(
         run_psql_file(psql, socket_dir, node.port, &setup)
             .await
             .wrap_err_with(|| format!("corpus/index setup on node {}", node.node_id))?;
-        crate::ecaz_println!("[distann-multicluster] node {} loaded + indexed", node.node_id);
+        crate::ecaz_println!(
+            "[distann-multicluster] node {} loaded + indexed",
+            node.node_id
+        );
     }
 
     // Coordinator roster: every node by socket conninfo, in node-id order.
@@ -412,7 +885,12 @@ async fn drive_fixture(
 
     // Distinct-recall gate on the coordinator (node 1).
     let coord_port = nodes[0].port;
-    let recall = recall_sql(&roster, args.queries, args.top_k, args.corpus_prefix.is_some());
+    let recall = recall_sql(
+        &roster,
+        args.queries,
+        args.top_k,
+        args.corpus_prefix.is_some(),
+    );
     let out = capture_psql(psql, socket_dir, coord_port, &recall)
         .await
         .wrap_err("running the multi-node recall comparison")?;
@@ -441,7 +919,8 @@ async fn drive_fixture(
     // plus LIMIT. Multi-node must match single-node exactly — this exercises
     // shipping the qual column (source) for remote rows and over-fetching so the
     // LIMIT applies after the qual. Runs early, on the clean/consistent corpus.
-    let (qual_line, qual_ok) = qual_correctness_drill(psql, socket_dir, coord_port, &roster, args).await;
+    let (qual_line, qual_ok) =
+        qual_correctness_drill(psql, socket_dir, coord_port, &roster, args).await;
     crate::ecaz_println!("[distann-multicluster] {qual_line}");
 
     // FR-082 published-epoch read consumption: reads must source the epoch from
@@ -536,7 +1015,10 @@ async fn drive_fixture(
             "SET enable_seqscan=off; SET ec_distann.roster='{dead_roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; {single_query}"
         );
         let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
-        drills.push(("simulated_network_partition".to_owned(), query_errored(&out)));
+        drills.push((
+            "simulated_network_partition".to_owned(),
+            query_errored(&out),
+        ));
     }
 
     // 2. epoch_bump_no_false_reject: a bare epoch-number bump must NOT reject —
@@ -548,7 +1030,10 @@ async fn drive_fixture(
         );
         let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
         // Pass = no false reject: no error AND a result row came back.
-        drills.push(("epoch_bump_no_false_reject".to_owned(), !query_errored(&out) && out.contains('\n')));
+        drills.push((
+            "epoch_bump_no_false_reject".to_owned(),
+            !query_errored(&out) && out.contains('\n'),
+        ));
     }
 
     // 3. remote_content_divergence (real epoch/fingerprint mismatch): rebuild an
@@ -599,7 +1084,10 @@ async fn drive_fixture(
             "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; {single_query}"
         );
         let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
-        drills.push(("missing_or_reindexed_remote_index".to_owned(), query_errored(&out)));
+        drills.push((
+            "missing_or_reindexed_remote_index".to_owned(),
+            query_errored(&out),
+        ));
         // Rebuild for recovery.
         run_psql_file(
             psql,
@@ -648,7 +1136,9 @@ async fn drive_fixture(
             .arg("start")
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
-        run_status(restart).await.wrap_err("restarting owner after the drill")?;
+        run_status(restart)
+            .await
+            .wrap_err("restarting owner after the drill")?;
     }
 
     // 6. placement_drift: coordinator local_node_id absent from the roster ⇒ no
@@ -736,7 +1226,10 @@ async fn drive_fixture(
     // STAYS deleted — the caller sees an error but the row never resurrects.
     {
         let mid_delete_ok = mid_delete_drill(psql, socket_dir, coord_port, args).await;
-        drills.push(("mid_delete_lost_tombstone_no_resurrect".to_owned(), mid_delete_ok));
+        drills.push((
+            "mid_delete_lost_tombstone_no_resurrect".to_owned(),
+            mid_delete_ok,
+        ));
     }
 
     // 8b. mid-insert failure (FR-083 fold path, TC-043): a graph insert that fails
@@ -752,8 +1245,11 @@ async fn drive_fixture(
     // background inserter mutating the coordinator's table. Every scan must
     // complete (return only expanded records; never a torn/half-applied read that
     // errors). A single failing session fails the drill.
-    let concurrency_ok = concurrency_drill(psql, socket_dir, coord_port, nodes, &roster, args).await?;
-    crate::ecaz_println!("[distann-multicluster] concurrency_scan_insert_epochswap pass={concurrency_ok}");
+    let concurrency_ok =
+        concurrency_drill(psql, socket_dir, coord_port, nodes, &roster, args).await?;
+    crate::ecaz_println!(
+        "[distann-multicluster] concurrency_scan_insert_epochswap pass={concurrency_ok}"
+    );
 
     // 7b. live retention gate (FR-082-AC-3): a scan held open (AccessShareLock)
     // must block retire; once it drains, retire succeeds.
@@ -766,13 +1262,25 @@ async fn drive_fixture(
     // reranked, and a live record's heap TID is never reclaimed → its vector is
     // frozen without a separate tier, under D10).
     let frozen_ok = frozen_vector_drill(psql, socket_dir, coord_port, &roster, nodes, args).await;
-    crate::ecaz_println!("[distann-multicluster] ac5_frozen_vector_after_vacuum_reuse pass={frozen_ok}");
+    crate::ecaz_println!(
+        "[distann-multicluster] ac5_frozen_vector_after_vacuum_reuse pass={frozen_ok}"
+    );
 
     // 8. recovery / no-false-reject: after all faults clear, the full-roster
     // query must match the single-node baseline again.
-    let recovery = capture_psql(psql, socket_dir, coord_port, &recall_sql(&roster, args.queries, args.top_k, args.corpus_prefix.is_some()))
-        .await
-        .wrap_err("running the post-recovery recall comparison")?;
+    let recovery = capture_psql(
+        psql,
+        socket_dir,
+        coord_port,
+        &recall_sql(
+            &roster,
+            args.queries,
+            args.top_k,
+            args.corpus_prefix.is_some(),
+        ),
+    )
+    .await
+    .wrap_err("running the post-recovery recall comparison")?;
     let recovery_line = recovery
         .lines()
         .find(|line| line.contains("RECALL_RESULT"))
@@ -788,7 +1296,8 @@ async fn drive_fixture(
 
     // Disjoint-shard demonstration (destructive — prunes to owned shards; runs
     // last, after the replicated-corpus recovery check).
-    let (disjoint_line, disjoint_ok) = disjoint_shard_drill(psql, socket_dir, nodes, &roster, args).await;
+    let (disjoint_line, disjoint_ok) =
+        disjoint_shard_drill(psql, socket_dir, nodes, &roster, args).await;
     crate::ecaz_println!("[distann-multicluster] {disjoint_line}");
 
     // Persist the evidence.
@@ -929,9 +1438,16 @@ async fn co_placement_drift_drill(
     // correct-complete) and a remote-owned record (remote rerank → structural
     // fault). Both must satisfy the NFR-020 disjunction.
     let coord = co_placement_drift_case(psql, socket_dir, coord_port, roster, nodes, args, 0).await;
-    let remote =
-        co_placement_drift_case(psql, socket_dir, coord_port, roster, nodes, args, args.nodes - 1)
-            .await;
+    let remote = co_placement_drift_case(
+        psql,
+        socket_dir,
+        coord_port,
+        roster,
+        nodes,
+        args,
+        args.nodes - 1,
+    )
+    .await;
     coord && remote
 }
 
@@ -1039,7 +1555,10 @@ async fn mid_delete_drill(
          CREATE INDEX md_idx ON md USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {gd});",
         gd = args.graph_degree,
     );
-    if run_psql_file(psql, socket_dir, coord_port, &setup).await.is_err() {
+    if run_psql_file(psql, socket_dir, coord_port, &setup)
+        .await
+        .is_err()
+    {
         return false;
     }
     // Discover a live owned vec_id + its id (to check scan exclusion).
@@ -1056,7 +1575,9 @@ async fn mid_delete_drill(
         .filter(|(v, i)| v.parse::<i64>().is_ok() && i.parse::<i64>().is_ok())
         .map(|(v, i)| (v.to_owned(), i.to_owned()))
     else {
-        crate::ecaz_println!("[distann-multicluster] mid_delete: no live vec_id discovered (skipped)");
+        crate::ecaz_println!(
+            "[distann-multicluster] mid_delete: no live vec_id discovered (skipped)"
+        );
         let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS md;").await;
         return false;
     };
@@ -1119,7 +1640,10 @@ async fn mid_insert_drill(
         gvec = vec("g"),
         gd = args.graph_degree,
     );
-    if run_psql_file(psql, socket_dir, coord_port, &setup).await.is_err() {
+    if run_psql_file(psql, socket_dir, coord_port, &setup)
+        .await
+        .is_err()
+    {
         return false;
     }
     // Buffer a few inserts into the delta buffer (aminsert), to be folded.
@@ -1127,7 +1651,10 @@ async fn mid_insert_drill(
         "INSERT INTO mi SELECT g, {gvec} FROM generate_series(501, 510) AS g;",
         gvec = vec("g"),
     );
-    if run_psql_file(psql, socket_dir, coord_port, &more).await.is_err() {
+    if run_psql_file(psql, socket_dir, coord_port, &more)
+        .await
+        .is_err()
+    {
         return false;
     }
     let scan = "SET enable_seqscan=off; SELECT id FROM mi ORDER BY embedding <#> (SELECT embedding FROM mi WHERE id=1) LIMIT 10;";
@@ -1138,9 +1665,8 @@ async fn mid_insert_drill(
     let fold_errored = query_errored(&fold_out);
     // Post-failed-fold scan: must still work and match the pre-fold result.
     let after = capture_psql_allow_error(psql, socket_dir, coord_port, scan).await;
-    let ids = |out: &str| -> Vec<i64> {
-        out.lines().filter_map(|l| l.trim().parse().ok()).collect()
-    };
+    let ids =
+        |out: &str| -> Vec<i64> { out.lines().filter_map(|l| l.trim().parse().ok()).collect() };
     let (before_ids, after_ids) = (ids(&before), ids(&after));
     let consistent = !after_ids.is_empty() && after_ids == before_ids;
     let pass = fold_errored && consistent;
@@ -1252,7 +1778,9 @@ async fn co_placement_drift_case(
 /// A drill query satisfies NFR-020's fail-closed arm if it raised an ERROR
 /// rather than returning a (possibly wrong/partial) result.
 fn query_errored(output: &str) -> bool {
-    output.contains("ERROR") || output.contains("EC_INTERNAL") || output.contains("could not connect")
+    output.contains("ERROR")
+        || output.contains("EC_INTERNAL")
+        || output.contains("could not connect")
 }
 
 /// FR-082-AC-4 concurrency drill: `scanners` concurrent multi-node scan loops on
@@ -1282,7 +1810,11 @@ async fn concurrency_drill(
 
     let mut tasks = Vec::new();
     for _ in 0..scanners {
-        let (psql, socket_dir, sql) = (psql.to_path_buf(), socket_dir.to_path_buf(), scan_sql.clone());
+        let (psql, socket_dir, sql) = (
+            psql.to_path_buf(),
+            socket_dir.to_path_buf(),
+            scan_sql.clone(),
+        );
         tasks.push(tokio::spawn(async move {
             for _ in 0..iters {
                 let out = run_capture(&psql, &socket_dir, coord_port, &sql).await;
@@ -1332,9 +1864,8 @@ async fn concurrency_drill(
         tasks.push(tokio::spawn(async move {
             for i in 0..iters {
                 let epoch = if i % 2 == 0 { 2 } else { 1 };
-                let sql = format!(
-                    "SELECT ec_distann_publish_epoch('dm_idx'::regclass::oid, {epoch});"
-                );
+                let sql =
+                    format!("SELECT ec_distann_publish_epoch('dm_idx'::regclass::oid, {epoch});");
                 for &port in &ports {
                     let out = run_capture(&psql, &socket_dir, port, &sql).await;
                     if !out.status_ok {
@@ -1364,7 +1895,9 @@ async fn concurrency_drill(
                 ok = false;
             }
             Err(join_err) => {
-                crate::ecaz_println!("[distann-multicluster] concurrency task panicked: {join_err}");
+                crate::ecaz_println!(
+                    "[distann-multicluster] concurrency task panicked: {join_err}"
+                );
                 ok = false;
             }
         }
@@ -1400,7 +1933,10 @@ async fn disjoint_shard_drill(
     )
     .await;
     if !setup.status_ok {
-        return ("disjoint_shard=SKIPPED(no benchgate_corpus)".to_owned(), false);
+        return (
+            "disjoint_shard=SKIPPED(no benchgate_corpus)".to_owned(),
+            false,
+        );
     }
     // Signature over (id, EXACT DISTANCE) per query in a canonical (dist, id)
     // order (021-P2): includes the distance — not just the id set — so a
@@ -1415,7 +1951,13 @@ async fn disjoint_shard_drill(
              SELECT id, embedding FROM benchgate_corpus ORDER BY embedding <#> q.v LIMIT {k}) r) t;",
         k = args.top_k
     );
-    let sig = |out: String| out.lines().map(str::trim).find(|l| l.len() == 32).unwrap_or("").to_owned();
+    let sig = |out: String| {
+        out.lines()
+            .map(str::trim)
+            .find(|l| l.len() == 32)
+            .unwrap_or("")
+            .to_owned()
+    };
     let before = sig(capture_psql_allow_error(psql, socket_dir, coord_port, &sig_sql).await);
 
     // Prune each node to its owned shard: delete the heap rows for vec_ids this
@@ -1424,9 +1966,16 @@ async fn disjoint_shard_drill(
     let mut row_report = Vec::new();
     for node in nodes {
         let owner_idx = node.node_id - 1; // placement index = roster position
-        let before_rows = capture_psql_allow_error(psql, socket_dir, node.port, "SELECT count(*) FROM benchgate_corpus;")
-            .await
-            .lines().find_map(|l| l.trim().parse::<i64>().ok()).unwrap_or(-1);
+        let before_rows = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            node.port,
+            "SELECT count(*) FROM benchgate_corpus;",
+        )
+        .await
+        .lines()
+        .find_map(|l| l.trim().parse::<i64>().ok())
+        .unwrap_or(-1);
         let del = run_capture(
             psql,
             socket_dir,
@@ -1443,9 +1992,16 @@ async fn disjoint_shard_drill(
         if !del.status_ok || !vac.status_ok {
             return ("disjoint_shard=SKIPPED(prune failed)".to_owned(), false);
         }
-        let after_rows = capture_psql_allow_error(psql, socket_dir, node.port, "SELECT count(*) FROM benchgate_corpus;")
-            .await
-            .lines().find_map(|l| l.trim().parse::<i64>().ok()).unwrap_or(-1);
+        let after_rows = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            node.port,
+            "SELECT count(*) FROM benchgate_corpus;",
+        )
+        .await
+        .lines()
+        .find_map(|l| l.trim().parse::<i64>().ok())
+        .unwrap_or(-1);
         row_report.push(format!("n{}:{}->{}", node.node_id, before_rows, after_rows));
     }
 
@@ -1490,11 +2046,21 @@ async fn storage_summation(
         let out = capture_psql_allow_error(psql, socket_dir, node.port, sql).await;
         let vals: Vec<i64> = out
             .lines()
-            .find(|l| l.split_whitespace().count() == 4 && l.split_whitespace().all(|f| f.parse::<i64>().is_ok()))
-            .map(|l| l.split_whitespace().filter_map(|f| f.parse().ok()).collect())
+            .find(|l| {
+                l.split_whitespace().count() == 4
+                    && l.split_whitespace().all(|f| f.parse::<i64>().is_ok())
+            })
+            .map(|l| {
+                l.split_whitespace()
+                    .filter_map(|f| f.parse().ok())
+                    .collect()
+            })
             .unwrap_or_default();
         if vals.len() != 4 {
-            lines.push(format!("storage_node node={} index_bytes=0 heap_bytes=0 rows=0 (parse failed)", node.node_id));
+            lines.push(format!(
+                "storage_node node={} index_bytes=0 heap_bytes=0 rows=0 (parse failed)",
+                node.node_id
+            ));
             continue;
         }
         let (idx, heap, n, d) = (vals[0], vals[1], vals[2], vals[3]);
@@ -1540,7 +2106,10 @@ async fn suite_recall_gate(
              CREATE INDEX benchgate_corpus_idx ON benchgate_corpus \
                USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {gd});"
         );
-        if !run_capture(psql, socket_dir, node.port, &sql).await.status_ok {
+        if !run_capture(psql, socket_dir, node.port, &sql)
+            .await
+            .status_ok
+        {
             return "suite_recall_gate=SKIPPED(benchgate setup failed)".to_owned();
         }
     }
@@ -1619,7 +2188,12 @@ async fn run_bench_recall(
             "[distann-multicluster] bench recall (roster={:?}) exit={:?} stderr={}",
             !roster_val.is_empty(),
             out.status.code(),
-            errtext.lines().rev().take(3).collect::<Vec<_>>().join(" | ")
+            errtext
+                .lines()
+                .rev()
+                .take(3)
+                .collect::<Vec<_>>()
+                .join(" | ")
         );
     }
     // comfy-table data row (columns: top_k/sweep, queries, recall_trials,
@@ -1712,7 +2286,12 @@ async fn frozen_vector_drill(
            FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 1;"
     );
     let baseline = capture_psql_allow_error(psql, socket_dir, coord_port, &probe).await;
-    let baseline = baseline.lines().find(|l| l.contains(':')).unwrap_or("").trim().to_owned();
+    let baseline = baseline
+        .lines()
+        .find(|l| l.contains(':'))
+        .unwrap_or("")
+        .trim()
+        .to_owned();
     if baseline.is_empty() {
         crate::ecaz_println!("[distann-multicluster] ac5 baseline probe empty");
         return false;
@@ -1732,7 +2311,10 @@ async fn frozen_vector_drill(
         .await;
         let vac = run_capture(psql, socket_dir, node.port, "VACUUM dm;").await;
         if !del.status_ok || !vac.status_ok {
-            crate::ecaz_println!("[distann-multicluster] ac5 delete/vacuum failed on node {}", node.node_id);
+            crate::ecaz_println!(
+                "[distann-multicluster] ac5 delete/vacuum failed on node {}",
+                node.node_id
+            );
             return false;
         }
     }
@@ -1752,7 +2334,10 @@ async fn frozen_vector_drill(
         )
         .await;
         if !ins.status_ok {
-            crate::ecaz_println!("[distann-multicluster] ac5 reinsert failed on node {}", node.node_id);
+            crate::ecaz_println!(
+                "[distann-multicluster] ac5 reinsert failed on node {}",
+                node.node_id
+            );
             return false;
         }
     }
@@ -1763,7 +2348,12 @@ async fn frozen_vector_drill(
         crate::ecaz_println!("[distann-multicluster] ac5 post-churn probe errored: {after}");
         return false;
     }
-    let after = after.lines().find(|l| l.contains(':')).unwrap_or("").trim().to_owned();
+    let after = after
+        .lines()
+        .find(|l| l.contains(':'))
+        .unwrap_or("")
+        .trim()
+        .to_owned();
     baseline == after
 }
 
@@ -1799,11 +2389,24 @@ async fn qual_correctness_drill(
     let out = capture_psql_allow_error(psql, socket_dir, coord_port, &sql).await;
     let parsed: Vec<i64> = out
         .lines()
-        .find(|l| l.split_whitespace().count() == 3 && l.split_whitespace().all(|f| f.parse::<i64>().is_ok()))
-        .map(|l| l.split_whitespace().filter_map(|f| f.parse().ok()).collect())
+        .find(|l| {
+            l.split_whitespace().count() == 3
+                && l.split_whitespace().all(|f| f.parse::<i64>().is_ok())
+        })
+        .map(|l| {
+            l.split_whitespace()
+                .filter_map(|f| f.parse().ok())
+                .collect()
+        })
         .unwrap_or_default();
     if parsed.len() != 3 {
-        return (format!("qual_correctness=INCONCLUSIVE({})", out.lines().last().unwrap_or("").trim()), false);
+        return (
+            format!(
+                "qual_correctness=INCONCLUSIVE({})",
+                out.lines().last().unwrap_or("").trim()
+            ),
+            false,
+        );
     }
     let (s_n, m_n, mismatch) = (parsed[0], parsed[1], parsed[2]);
     // Pass = same count and zero id mismatch (single==multi under the qual+LIMIT).
@@ -1821,7 +2424,11 @@ struct CaptureOut {
 
 async fn run_capture(psql: &Path, socket_dir: &Path, port: u16, sql: &str) -> CaptureOut {
     let mut command = psql_base(psql, socket_dir, port);
-    command.arg("-v").arg("ON_ERROR_STOP=1").arg("-tAc").arg(sql);
+    command
+        .arg("-v")
+        .arg("ON_ERROR_STOP=1")
+        .arg("-tAc")
+        .arg(sql);
     match command.output().await {
         Ok(output) => CaptureOut {
             status_ok: output.status.success(),
@@ -1834,11 +2441,11 @@ async fn run_capture(psql: &Path, socket_dir: &Path, port: u16, sql: &str) -> Ca
     }
 }
 
-fn psql_base(psql: &Path, socket_dir: &Path, port: u16) -> Command {
+fn psql_base(psql: &Path, _socket_dir: &Path, port: u16) -> Command {
     let mut command = Command::new(psql);
     command
         .arg("-h")
-        .arg(socket_dir)
+        .arg("127.0.0.1")
         .arg("-p")
         .arg(port.to_string())
         .arg("-U")
@@ -1862,13 +2469,14 @@ async fn run_psql_file(psql: &Path, socket_dir: &Path, port: u16, sql: &str) -> 
 
 async fn capture_psql(psql: &Path, socket_dir: &Path, port: u16, sql: &str) -> Result<String> {
     let mut command = psql_base(psql, socket_dir, port);
-    command.arg("-v").arg("ON_ERROR_STOP=1").arg("-tAc").arg(sql);
+    command
+        .arg("-v")
+        .arg("ON_ERROR_STOP=1")
+        .arg("-tAc")
+        .arg(sql);
     let output = command.output().await.wrap_err("spawning psql")?;
     if !output.status.success() {
-        bail!(
-            "psql failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
+        bail!("psql failed: {}", String::from_utf8_lossy(&output.stderr));
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
