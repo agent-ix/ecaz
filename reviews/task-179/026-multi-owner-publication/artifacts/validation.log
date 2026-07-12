@@ -1,0 +1,24 @@
+Task 179 packet 026 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: e4e6d9b1ad83c38b70a2ff9d00740ac477fe4890
+
+Command:
+  cargo check --lib --no-default-features --features 'pg18 pg_test'
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx test pg18 test_distann_three_owner_physical_handoff
+Key result:
+  test tests::pg_test_distann_three_owner_physical_handoff ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2495 filtered out
+
+The fixture verifies remote abort for one unpublished multi-owner build. A
+fresh build then crosses Ready, durable decision, and recovery transactions;
+all three participant generations report Published and the coordinator active
+pointer names the same build only after all acknowledgements match.
