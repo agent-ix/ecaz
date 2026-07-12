@@ -3839,6 +3839,517 @@ fn test_distann_seal_ready_replay_and_receipt() {
     );
 }
 
+struct DistannParticipantLifecycleFixture {
+    generation: DistannPhysicalGenerationFixture,
+    manifest: crate::am::ec_distann::DistannEpochManifestV2,
+    manifest_bytes: Vec<u8>,
+    manifest_digest: Vec<u8>,
+    fingerprint: Vec<u8>,
+    activation: crate::am::ec_distann::DistannSuccessorActivationV1,
+    activation_bytes: Vec<u8>,
+    activation_digest: Vec<u8>,
+    retire_decision: crate::am::ec_distann::DistannRetireDecisionV1,
+    retire_decision_bytes: Vec<u8>,
+    retire_decision_digest: Vec<u8>,
+    relations: (pg_sys::Oid, pg_sys::Oid, pg_sys::Oid),
+}
+
+fn distann_test_v4_uuid(marker: u8) -> [u8; 16] {
+    let mut bytes = [marker; 16];
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    bytes
+}
+
+fn distann_canonical_roster_bytes(
+    roster: &[crate::am::ec_distann::DistannRosterEntry],
+) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    bytes.extend_from_slice(&(roster.len() as u32).to_le_bytes());
+    for entry in roster {
+        bytes.extend_from_slice(&entry.node_id.to_le_bytes());
+        bytes.extend_from_slice(&entry.logical_index_uuid);
+        bytes.extend_from_slice(&(entry.endpoint_identity.len() as u32).to_le_bytes());
+        bytes.extend_from_slice(entry.endpoint_identity.as_bytes());
+    }
+    bytes
+}
+
+fn create_distann_participant_lifecycle_fixture(
+    stem: &str,
+    build_marker: u8,
+) -> DistannParticipantLifecycleFixture {
+    let generation = create_distann_physical_generation_fixture(stem, build_marker);
+    let (batch_digest, encoded_batch, _) =
+        distann_stage_batch_fixture(&generation, 0, build_marker.wrapping_add(1));
+    let owner_digest = distann_owner_digest_for_batch(&generation, &encoded_batch);
+    begin_distann_physical_generation_count(&generation, 1, &owner_digest);
+    stage_distann_physical_batch(&generation, 0, &batch_digest, &encoded_batch);
+    let receipt = crate::am::ec_distann::DistannReadyReceipt::decode(
+        &seal_distann_physical_generation(&generation, 1, &owner_digest),
+    )
+    .expect("participant lifecycle Ready receipt should decode");
+    let descriptor = crate::am::ec_distann::DistannGenerationDescriptor::decode(
+        &generation.descriptor,
+    )
+    .expect("participant lifecycle descriptor should decode");
+    let codec_binding = crate::am::ec_distann::quantizer::DistannCodecBinding::from_artifact(
+        &descriptor.codec_artifact,
+    )
+    .expect("participant lifecycle codec should restore");
+    let manifest = crate::am::ec_distann::DistannEpochManifestV2 {
+        epoch: 7,
+        build_id: *generation.build_id.as_bytes(),
+        parent_fingerprint: Vec::new(),
+        source_snapshot_digest: [0x11; 32],
+        build_spec_digest: generation
+            .build_spec_digest
+            .clone()
+            .try_into()
+            .unwrap(),
+        generation_descriptor_digest: generation
+            .descriptor_digest
+            .clone()
+            .try_into()
+            .unwrap(),
+        placement_hash_version: crate::am::ec_distann::DISTANN_PLACEMENT_HASH_VERSION,
+        roster: descriptor.roster.clone(),
+        index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+        graph_record_version: crate::am::ec_distann::DISTANN_GRAPH_RECORD_VERSION,
+        handoff_wire_version: crate::am::ec_distann::DISTANN_HANDOFF_WIRE_VERSION,
+        codec_parameters: crate::am::ec_distann::DistannManifestCodecParameters {
+            codec_kind: descriptor.codec_artifact.codec_kind(),
+            dimensions: descriptor.dimensions,
+            code_stride: codec_binding
+                .code_len(usize::from(descriptor.dimensions))
+                .unwrap() as u32,
+            seed: descriptor.codec_artifact.seed(),
+            transform_dim: 0,
+            group_count: 0,
+            group_size: 0,
+            centroids_per_group: 0,
+        },
+        build_options: crate::am::ec_distann::DistannManifestBuildOptions {
+            graph_degree: descriptor.graph_degree,
+            options: crate::am::ec_distann::DistannBuildOptions {
+                build_list_size: 100,
+                alpha: 1.2,
+                seed: 42,
+                closure_epsilon: 0.3,
+                head_index_cap: 4096,
+                build_shards: 1,
+            },
+        },
+        row_schema_fingerprint: descriptor.row_schema.fingerprint().unwrap(),
+        head_sample_digest: [0x33; 32],
+        global_record_count: 1,
+        global_graph_digest: receipt.persisted_graph_digest,
+        global_row_tier_digest: receipt.persisted_row_tier_digest,
+        participant_receipts: vec![receipt],
+    };
+    let manifest_bytes = manifest.encode().unwrap();
+    let manifest_digest = manifest.digest().unwrap().to_vec();
+    let fingerprint = manifest.fingerprint().unwrap().as_bytes().to_vec();
+    let successor_digest = [0x93; 32];
+    let activation = crate::am::ec_distann::DistannSuccessorActivationV1 {
+        coordinator_logical_index_uuid: descriptor.coordinator_logical_index_uuid,
+        predecessor: Some(crate::am::ec_distann::DistannPublishedEpochIdentity {
+            build_id: *generation.build_id.as_bytes(),
+            epoch: manifest.epoch,
+            fingerprint: fingerprint.clone().try_into().unwrap(),
+            manifest_digest: manifest_digest.clone().try_into().unwrap(),
+        }),
+        successor: crate::am::ec_distann::DistannPublishedEpochIdentity {
+            build_id: distann_test_v4_uuid(build_marker.wrapping_add(0x20)),
+            epoch: 8,
+            fingerprint: crate::am::ec_distann::DistannEpochFingerprint::from_manifest_digest(
+                successor_digest,
+            )
+            .as_bytes()
+            .to_owned(),
+            manifest_digest: successor_digest,
+        },
+    };
+    let activation_bytes = activation.encode().unwrap();
+    let activation_digest = activation.digest().unwrap().to_vec();
+    let retire_decision = crate::am::ec_distann::DistannRetireDecisionV1 {
+        coordinator_logical_index_uuid: descriptor.coordinator_logical_index_uuid,
+        target_build_id: *generation.build_id.as_bytes(),
+        epoch: manifest.epoch,
+        target_fingerprint: fingerprint.clone().try_into().unwrap(),
+        target_manifest_digest: manifest_digest.clone().try_into().unwrap(),
+        target_roster_snapshot: distann_canonical_roster_bytes(&descriptor.roster),
+        roster_digest: crate::am::ec_distann::roster_digest(&descriptor.roster).unwrap(),
+        abandoned_bindings: crate::am::ec_distann::DistannAbandonedBindingSetV1 {
+            entries: Vec::new(),
+        },
+        forced: false,
+        overridden_in_flight_count: 0,
+        decision_time_unix_micros: 1_700_000_000_000_000,
+        caller_name: "ecaz_cluster_operator".to_owned(),
+        reason: "normal".to_owned(),
+    };
+    let retire_decision_bytes = retire_decision.encode().unwrap();
+    let retire_decision_digest = retire_decision.digest().unwrap().to_vec();
+    let relations = distann_generation_relation_oids(&generation);
+    DistannParticipantLifecycleFixture {
+        generation,
+        manifest,
+        manifest_bytes,
+        manifest_digest,
+        fingerprint,
+        activation,
+        activation_bytes,
+        activation_digest,
+        retire_decision,
+        retire_decision_bytes,
+        retire_decision_digest,
+        relations,
+    }
+}
+
+fn publish_distann_participant(fixture: &DistannParticipantLifecycleFixture) -> Vec<u8> {
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT ec_distann_publish_epoch(
+                     $1::regclass, $2::uuid, $3::bytea, $4::bytea
+                 ) AS fingerprint",
+                None,
+                &[
+                    fixture.generation.index_oid.into(),
+                    fixture.generation.build_id.into(),
+                    fixture.manifest_bytes.clone().into(),
+                    fixture.manifest_digest.clone().into(),
+                ],
+            )
+            .unwrap()
+            .map(|row| row["fingerprint"].value::<Vec<u8>>().unwrap().unwrap())
+            .next()
+            .expect("publish should return one fingerprint")
+    })
+}
+
+fn mark_distann_participant_retired(fixture: &DistannParticipantLifecycleFixture) {
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                "SELECT ec_distann_mark_epoch_retired($1::regclass, $2::bytea, $3::bytea)",
+                None,
+                &[
+                    fixture.generation.index_oid.into(),
+                    fixture.activation_bytes.clone().into(),
+                    fixture.activation_digest.clone().into(),
+                ],
+            )
+            .unwrap();
+    });
+}
+
+fn apply_distann_participant_retire(
+    fixture: &DistannParticipantLifecycleFixture,
+    bytes: &[u8],
+    digest: &[u8],
+) {
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                "SELECT ec_distann_apply_epoch_retire($1::regclass, $2::bytea, $3::bytea)",
+                None,
+                &[
+                    fixture.generation.index_oid.into(),
+                    bytes.to_vec().into(),
+                    digest.to_vec().into(),
+                ],
+            )
+            .unwrap();
+    });
+}
+
+#[pg_test]
+fn test_distann_participant_publish_status_replay_and_conflict() {
+    let fixture = create_distann_participant_lifecycle_fixture(
+        "ec_distann_participant_publish",
+        0x4a,
+    );
+    let mut corrupt_digest = fixture.manifest_digest.clone();
+    corrupt_digest[0] ^= 0x80;
+    let digest_error = expect_pg_error_rolled_back(|| {
+        Spi::connect_mut(|client| {
+            client
+                .update(
+                    "SELECT ec_distann_publish_epoch(
+                         $1::regclass, $2::uuid, $3::bytea, $4::bytea
+                     )",
+                    None,
+                    &[
+                        fixture.generation.index_oid.into(),
+                        fixture.generation.build_id.into(),
+                        fixture.manifest_bytes.clone().into(),
+                        corrupt_digest.clone().into(),
+                    ],
+                )
+                .unwrap();
+        });
+    });
+    assert!(digest_error.contains("EC_PUBLISH_DIGEST"));
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM {} WHERE index_oid = {} AND build_id = '{}'::uuid",
+            distann_generation_catalog_name(),
+            u32::from(fixture.generation.index_oid),
+            fixture.generation.build_id,
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Ready"),
+        "digest rejection must not publish"
+    );
+
+    assert_eq!(publish_distann_participant(&fixture), fixture.fingerprint);
+    assert_eq!(
+        publish_distann_participant(&fixture),
+        fixture.fingerprint,
+        "exact publish replay returns the same acknowledgement"
+    );
+    let status = Spi::get_two::<String, Vec<u8>>(&format!(
+        "SELECT state, epoch_fingerprint
+           FROM ec_distann_epoch_generation_status(
+               '{}'::regclass, '{}'::uuid
+           )",
+        fixture.generation.index_name, fixture.generation.build_id,
+    ))
+    .unwrap();
+    assert_eq!(status.0.as_deref(), Some("Published"));
+    assert_eq!(status.1.as_deref(), Some(fixture.fingerprint.as_slice()));
+
+    let mut conflict = fixture.manifest.clone();
+    conflict.head_sample_digest[0] ^= 0x01;
+    let conflict_bytes = conflict.encode().unwrap();
+    let conflict_digest = conflict.digest().unwrap().to_vec();
+    let conflict_error = expect_pg_error_rolled_back(|| {
+        Spi::connect_mut(|client| {
+            client
+                .update(
+                    "SELECT ec_distann_publish_epoch(
+                         $1::regclass, $2::uuid, $3::bytea, $4::bytea
+                     )",
+                    None,
+                    &[
+                        fixture.generation.index_oid.into(),
+                        fixture.generation.build_id.into(),
+                        conflict_bytes.clone().into(),
+                        conflict_digest.clone().into(),
+                    ],
+                )
+                .unwrap();
+        });
+    });
+    assert!(conflict_error.contains("EC_EPOCH_STATE"));
+    assert_eq!(publish_distann_participant(&fixture), fixture.fingerprint);
+}
+
+#[pg_test]
+fn test_distann_participant_retire_reclaim_and_rollback() {
+    let fixture = create_distann_participant_lifecycle_fixture(
+        "ec_distann_participant_retire",
+        0x5a,
+    );
+    publish_distann_participant(&fixture);
+    mark_distann_participant_retired(&fixture);
+    mark_distann_participant_retired(&fixture);
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM ec_distann_epoch_generation_status(
+                 '{}'::regclass, '{}'::uuid
+             )",
+            fixture.generation.index_name, fixture.generation.build_id,
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Retired")
+    );
+
+    let mut conflicting_activation = fixture.activation;
+    conflicting_activation.successor.manifest_digest[0] ^= 0x01;
+    conflicting_activation.successor.fingerprint =
+        *crate::am::ec_distann::DistannEpochFingerprint::from_manifest_digest(
+            conflicting_activation.successor.manifest_digest,
+        )
+        .as_bytes();
+    let conflicting_activation_bytes = conflicting_activation.encode().unwrap();
+    let conflicting_activation_digest = conflicting_activation.digest().unwrap().to_vec();
+    let activation_error = expect_pg_error_rolled_back(|| {
+        Spi::connect_mut(|client| {
+            client
+                .update(
+                    "SELECT ec_distann_mark_epoch_retired($1::regclass, $2::bytea, $3::bytea)",
+                    None,
+                    &[
+                        fixture.generation.index_oid.into(),
+                        conflicting_activation_bytes.clone().into(),
+                        conflicting_activation_digest.clone().into(),
+                    ],
+                )
+                .unwrap();
+        });
+    });
+    assert!(activation_error.contains("EC_EPOCH_STATE"));
+
+    let mut abandoned_self = fixture.retire_decision.clone();
+    abandoned_self.abandoned_bindings.entries.push(
+        crate::am::ec_distann::DistannAbandonedBinding {
+            roster_ordinal: 0,
+            abandon_audit_digest: [0x77; 32],
+        },
+    );
+    let abandoned_self_bytes = abandoned_self.encode().unwrap();
+    let abandoned_self_digest = abandoned_self.digest().unwrap().to_vec();
+    let abandoned_error = expect_pg_error_rolled_back(|| {
+        apply_distann_participant_retire(
+            &fixture,
+            &abandoned_self_bytes,
+            &abandoned_self_digest,
+        );
+    });
+    assert!(abandoned_error.contains("EC_EPOCH_STATE"));
+
+    let generation_catalog = distann_generation_catalog_name();
+    let original_receipt = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT ready_receipt FROM {generation_catalog}
+          WHERE index_oid = {} AND build_id = '{}'::uuid",
+        u32::from(fixture.generation.index_oid),
+        fixture.generation.build_id,
+    ))
+    .unwrap()
+    .unwrap();
+    let mut corrupt_receipt =
+        crate::am::ec_distann::DistannReadyReceipt::decode(&original_receipt).unwrap();
+    corrupt_receipt.build_spec_digest[0] ^= 0x01;
+    let corrupt_receipt = corrupt_receipt.encode().unwrap();
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "UPDATE {generation_catalog} SET ready_receipt = $3::bytea
+                      WHERE index_oid = $1::oid AND build_id = $2::uuid"
+                ),
+                None,
+                &[
+                    fixture.generation.index_oid.into(),
+                    fixture.generation.build_id.into(),
+                    corrupt_receipt.clone().into(),
+                ],
+            )
+            .unwrap();
+    });
+    let receipt_error = expect_pg_error_rolled_back(|| {
+        apply_distann_participant_retire(
+            &fixture,
+            &fixture.retire_decision_bytes,
+            &fixture.retire_decision_digest,
+        );
+    });
+    assert!(
+        receipt_error.contains("stored Ready receipt disagrees"),
+        "unexpected stored-receipt corruption error: {receipt_error}"
+    );
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {} WHERE index_oid = {} AND build_id = '{}'::uuid",
+            distann_catalog_name("ec_distann_generation_reclaim"),
+            u32::from(fixture.generation.index_oid),
+            fixture.generation.build_id,
+        ))
+        .unwrap(),
+        Some(0),
+        "corrupt receipt must not create a tombstone"
+    );
+    for relation in [fixture.relations.0, fixture.relations.1, fixture.relations.2] {
+        assert_ne!(unsafe { pg_sys::get_rel_relkind(relation) }, 0);
+    }
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "UPDATE {generation_catalog} SET ready_receipt = $3::bytea
+                      WHERE index_oid = $1::oid AND build_id = $2::uuid"
+                ),
+                None,
+                &[
+                    fixture.generation.index_oid.into(),
+                    fixture.generation.build_id.into(),
+                    original_receipt.clone().into(),
+                ],
+            )
+            .unwrap();
+    });
+
+    let rollback_error = expect_pg_error_rolled_back(|| {
+        apply_distann_participant_retire(
+            &fixture,
+            &fixture.retire_decision_bytes,
+            &fixture.retire_decision_digest,
+        );
+        pgrx::error!("EC_TEST_ROLLBACK: reclaim transaction rollback");
+    });
+    assert!(rollback_error.contains("EC_TEST_ROLLBACK"));
+    for relation in [fixture.relations.0, fixture.relations.1, fixture.relations.2] {
+        assert_ne!(unsafe { pg_sys::get_rel_relkind(relation) }, 0);
+    }
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM {} WHERE index_oid = {} AND build_id = '{}'::uuid",
+            distann_catalog_name("ec_distann_generation_reclaim"),
+            u32::from(fixture.generation.index_oid),
+            fixture.generation.build_id,
+        ))
+        .unwrap(),
+        Some(0),
+        "rollback must remove the tombstone"
+    );
+
+    apply_distann_participant_retire(
+        &fixture,
+        &fixture.retire_decision_bytes,
+        &fixture.retire_decision_digest,
+    );
+    apply_distann_participant_retire(
+        &fixture,
+        &fixture.retire_decision_bytes,
+        &fixture.retire_decision_digest,
+    );
+    for relation in [fixture.relations.0, fixture.relations.1, fixture.relations.2] {
+        assert_eq!(unsafe { pg_sys::get_rel_relkind(relation) }, 0);
+    }
+    let status = Spi::get_two::<String, Vec<u8>>(&format!(
+        "SELECT state, retire_decision_digest
+           FROM ec_distann_epoch_generation_status(
+               '{}'::regclass, '{}'::uuid
+           )",
+        fixture.generation.index_name, fixture.generation.build_id,
+    ))
+    .unwrap();
+    assert_eq!(status.0.as_deref(), Some("Reclaimed"));
+    assert_eq!(
+        status.1.as_deref(),
+        Some(fixture.retire_decision_digest.as_slice())
+    );
+
+    let mut conflicting_decision = fixture.retire_decision.clone();
+    conflicting_decision.decision_time_unix_micros += 1;
+    let conflicting_decision_bytes = conflicting_decision.encode().unwrap();
+    let conflicting_decision_digest = conflicting_decision.digest().unwrap().to_vec();
+    let replay_error = expect_pg_error_rolled_back(|| {
+        apply_distann_participant_retire(
+            &fixture,
+            &conflicting_decision_bytes,
+            &conflicting_decision_digest,
+        );
+    });
+    assert!(replay_error.contains("EC_EPOCH_STATE"));
+}
+
 #[pg_test]
 fn test_distann_generation_topology_reports_ready_and_building() {
     use sha2::Digest;
