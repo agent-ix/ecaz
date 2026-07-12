@@ -1054,6 +1054,112 @@ fn diagnose_physical_generation(
     })
 }
 
+/// The 15-column physical topology row shared by the by-build-id and
+/// by-fingerprint inspection endpoints.
+type DistannTopologyRow = (
+    i32,
+    String,
+    i64,
+    i64,
+    Vec<u8>,
+    Vec<u8>,
+    Vec<u8>,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+    i64,
+);
+
+/// Diagnose one already-resolved physical generation and emit its 15-column
+/// topology row. Decodes and identity-checks the descriptor, locks the physical
+/// relations against concurrent reclaim, recomputes the counts/digests from
+/// storage, and reads the exact relation sizes.
+fn build_topology_row(
+    index_oid: pg_sys::Oid,
+    generation: &GenerationCatalogRow,
+    control_owner: pg_sys::Oid,
+) -> Result<DistannTopologyRow, String> {
+    let descriptor = DistannGenerationDescriptor::decode(&generation.generation_descriptor)?;
+    if descriptor.digest()? != generation.generation_descriptor_digest
+        || roster_digest(&descriptor.roster)? != generation.roster_digest
+    {
+        return Err(
+            "EC_GENERATION_DESCRIPTOR: cataloged generation descriptor identity is corrupt"
+                .to_owned(),
+        );
+    }
+    let binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
+    let shape = DistannHandoffShape {
+        code_stride: binding.code_len(usize::from(descriptor.dimensions))?,
+        graph_degree: usize::from(descriptor.graph_degree),
+        non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
+    };
+    // Hold AccessShareLock on each physical relation so a concurrent retirement
+    // reclaim (which drops them under AccessExclusiveLock) cannot delete storage
+    // mid-inspection.
+    let row_relation = HeapRelationGuard::try_open(
+        generation.row_tier_relid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )
+    .ok_or_else(|| "EC_GENERATION_MISSING: row-tier relation is absent".to_owned())?;
+    let _graph_relation_guard = HeapRelationGuard::try_open(
+        generation.graph_store_relid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )
+    .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
+    // The local directory is a unique index on the graph relation, not a heap,
+    // so it is lock-held by OID rather than opened as a table.
+    unsafe {
+        pg_sys::LockRelationOid(
+            generation.directory_relid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        )
+    };
+    validate_generation_relations(generation, &descriptor, control_owner)?;
+    let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
+    let row_relation_name = qualified_relation_name(generation.row_tier_relid)?;
+    let identity_attnum = identity_attnum(index_oid)?;
+    let row_count = relation_row_count(&row_relation_name)?;
+    let summary = with_restricted_type_io_owner(control_owner, || {
+        diagnose_physical_generation(
+            generation,
+            &descriptor,
+            shape,
+            identity_attnum,
+            &row_relation,
+            &graph_relation,
+            row_count,
+        )
+    })?;
+    let (graph_bytes, row_tier_bytes, directory_bytes) = generation_sizes(generation)?;
+    let control_index_bytes = control_index_total_bytes(index_oid)?;
+    let to_i64 = |value: u64, field: &str| -> Result<i64, String> {
+        i64::try_from(value).map_err(|_| format!("EC_BUILD_INCOMPLETE: {field} exceeds bigint"))
+    };
+    Ok((
+        i32::try_from(generation.node_id)
+            .map_err(|_| "EC_BUILD_INCOMPLETE: node id exceeds integer".to_owned())?,
+        generation.state.clone(),
+        to_i64(summary.record_count, "record_count")?,
+        to_i64(row_count, "row_count")?,
+        summary.owned_vec_id_digest.to_vec(),
+        summary.graph_digest.to_vec(),
+        summary.row_tier_digest.to_vec(),
+        to_i64(summary.non_owned_live_count, "non_owned_live_count")?,
+        to_i64(summary.non_owned_tombstone_count, "non_owned_tombstone_count")?,
+        to_i64(summary.orphan_record_count, "orphan_record_count")?,
+        to_i64(summary.orphan_row_count, "orphan_row_count")?,
+        to_i64(graph_bytes, "graph_bytes")?,
+        to_i64(row_tier_bytes, "row_tier_bytes")?,
+        to_i64(directory_bytes, "directory_bytes")?,
+        to_i64(control_index_bytes, "control_index_bytes")?,
+    ))
+}
+
 /// Report the physical topology of a build-id-selected generation. Only
 /// in-progress `Building`/`Ready` generations are reported by build id;
 /// Published and retained Retired generations are inspected by fingerprint
@@ -1085,24 +1191,7 @@ fn ec_distann_generation_topology(
         name!(control_index_bytes, i64),
     ),
 > {
-    type TopologyRow = (
-        i32,
-        String,
-        i64,
-        i64,
-        Vec<u8>,
-        Vec<u8>,
-        Vec<u8>,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-        i64,
-    );
-    let rows = (|| -> Result<Vec<TopologyRow>, String> {
+    let rows = (|| -> Result<Vec<DistannTopologyRow>, String> {
         if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
@@ -1124,83 +1213,111 @@ fn ec_distann_generation_topology(
         if !matches!(generation.state.as_str(), "Building" | "Ready") {
             return Ok(Vec::new());
         }
-        let descriptor = DistannGenerationDescriptor::decode(&generation.generation_descriptor)?;
-        if descriptor.digest()? != generation.generation_descriptor_digest
-            || roster_digest(&descriptor.roster)? != generation.roster_digest
+        Ok(vec![build_topology_row(index_oid, &generation, control_owner)?])
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    TableIterator::new(rows.into_iter())
+}
+
+/// Report the physical topology of a Published or retained Retired generation
+/// selected by its 34-byte epoch fingerprint (`u16_le(2) || manifest digest`).
+/// Building/Ready generations are selectable only by build id; an unknown
+/// fingerprint version fails `EC_EPOCH_FINGERPRINT_VERSION`, and a fingerprint
+/// that resolves to no retained generation (unknown, in-progress, or Reclaimed)
+/// fails `EC_GENERATION_MISSING`. All counts and digests are recomputed from the
+/// physical relations.
+#[pg_extern(stable, strict, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_epoch_topology(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+) -> TableIterator<
+    'static,
+    (
+        name!(node_id, i32),
+        name!(state, String),
+        name!(record_count, i64),
+        name!(row_count, i64),
+        name!(owned_vec_id_digest, Vec<u8>),
+        name!(graph_digest, Vec<u8>),
+        name!(row_tier_digest, Vec<u8>),
+        name!(non_owned_live_count, i64),
+        name!(non_owned_tombstone_count, i64),
+        name!(orphan_record_count, i64),
+        name!(orphan_row_count, i64),
+        name!(graph_bytes, i64),
+        name!(row_tier_bytes, i64),
+        name!(directory_bytes, i64),
+        name!(control_index_bytes, i64),
+    ),
+> {
+    let rows = (|| -> Result<Vec<DistannTopologyRow>, String> {
+        if epoch_fingerprint.len() != 34
+            || epoch_fingerprint[0] != 2
+            || epoch_fingerprint[1] != 0
         {
             return Err(
-                "EC_GENERATION_DESCRIPTOR: cataloged generation descriptor identity is corrupt"
+                "EC_EPOCH_FINGERPRINT_VERSION: unsupported epoch fingerprint version".to_owned(),
+            );
+        }
+        let index_oid = index_regclass.oid();
+        let (_control_guard, control_handle, _metadata, logical_index_uuid) = open_control_index(
+            index_oid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            "ec_distann_epoch_topology",
+        )?;
+        let (_, control_owner, _) = relation_namespace_owner_persistence_handle(control_handle);
+        if control_owner == pg_sys::InvalidOid {
+            return Err("EC_SCHEMA_MISMATCH: control relation owner is invalid".to_owned());
+        }
+        // Resolve the fingerprint to its build id through the durable decision.
+        let decision_table =
+            generation_catalog::extension_relation_name("ec_distann_publish_decision")?;
+        let build_id = Spi::connect(|client| -> Result<Option<Uuid>, String> {
+            client
+                .select(
+                    &format!(
+                        "SELECT build_id FROM {decision_table}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND epoch_fingerprint = $3::bytea"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        logical_index_uuid.into(),
+                        epoch_fingerprint.clone().into(),
+                    ],
+                )
+                .map_err(|_| "EC_GENERATION_MISSING: epoch fingerprint lookup failed".to_owned())?
+                .map(|row| {
+                    row["build_id"]
+                        .value::<Uuid>()
+                        .map_err(|_| "EC_GENERATION_MISSING: fingerprint build id decode failed".to_owned())?
+                        .ok_or_else(|| "EC_GENERATION_MISSING: fingerprint build id is NULL".to_owned())
+                })
+                .next()
+                .transpose()
+        })?;
+        let Some(build_id) = build_id else {
+            return Err(
+                "EC_GENERATION_MISSING: no published generation for this epoch fingerprint"
+                    .to_owned(),
+            );
+        };
+        let Some(generation) =
+            generation_catalog::lookup_generation(index_oid, logical_index_uuid, build_id)?
+        else {
+            return Err(
+                "EC_GENERATION_MISSING: the epoch generation has been reclaimed".to_owned(),
+            );
+        };
+        if !matches!(generation.state.as_str(), "Published" | "Retired") {
+            return Err(
+                "EC_GENERATION_MISSING: epoch generation is not Published or retained Retired"
                     .to_owned(),
             );
         }
-        let binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
-        let shape = DistannHandoffShape {
-            code_stride: binding.code_len(usize::from(descriptor.dimensions))?,
-            graph_degree: usize::from(descriptor.graph_degree),
-            non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
-        };
-        // Hold AccessShareLock on each physical relation so a concurrent
-        // retirement reclaim (which drops them under AccessExclusiveLock) cannot
-        // delete storage mid-inspection.
-        let row_relation = HeapRelationGuard::try_open(
-            generation.row_tier_relid,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        )
-        .ok_or_else(|| "EC_GENERATION_MISSING: row-tier relation is absent".to_owned())?;
-        let _graph_relation_guard = HeapRelationGuard::try_open(
-            generation.graph_store_relid,
-            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-        )
-        .ok_or_else(|| "EC_GENERATION_MISSING: graph-store relation is absent".to_owned())?;
-        // The local directory is a unique index on the graph relation, not a
-        // heap, so it is lock-held by OID rather than opened as a table. The
-        // AccessShareLock (released at transaction end) blocks a concurrent
-        // reclaim from dropping it mid-inspection.
-        unsafe {
-            pg_sys::LockRelationOid(
-                generation.directory_relid,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-            )
-        };
-        validate_generation_relations(&generation, &descriptor, control_owner)?;
-        let graph_relation = qualified_relation_name(generation.graph_store_relid)?;
-        let row_relation_name = qualified_relation_name(generation.row_tier_relid)?;
-        let identity_attnum = identity_attnum(index_oid)?;
-        let row_count = relation_row_count(&row_relation_name)?;
-        let summary = with_restricted_type_io_owner(control_owner, || {
-            diagnose_physical_generation(
-                &generation,
-                &descriptor,
-                shape,
-                identity_attnum,
-                &row_relation,
-                &graph_relation,
-                row_count,
-            )
-        })?;
-        let (graph_bytes, row_tier_bytes, directory_bytes) = generation_sizes(&generation)?;
-        let control_index_bytes = control_index_total_bytes(index_oid)?;
-        let to_i64 = |value: u64, field: &str| -> Result<i64, String> {
-            i64::try_from(value).map_err(|_| format!("EC_BUILD_INCOMPLETE: {field} exceeds bigint"))
-        };
-        Ok(vec![(
-            i32::try_from(generation.node_id)
-                .map_err(|_| "EC_BUILD_INCOMPLETE: node id exceeds integer".to_owned())?,
-            generation.state.clone(),
-            to_i64(summary.record_count, "record_count")?,
-            to_i64(row_count, "row_count")?,
-            summary.owned_vec_id_digest.to_vec(),
-            summary.graph_digest.to_vec(),
-            summary.row_tier_digest.to_vec(),
-            to_i64(summary.non_owned_live_count, "non_owned_live_count")?,
-            to_i64(summary.non_owned_tombstone_count, "non_owned_tombstone_count")?,
-            to_i64(summary.orphan_record_count, "orphan_record_count")?,
-            to_i64(summary.orphan_row_count, "orphan_row_count")?,
-            to_i64(graph_bytes, "graph_bytes")?,
-            to_i64(row_tier_bytes, "row_tier_bytes")?,
-            to_i64(directory_bytes, "directory_bytes")?,
-            to_i64(control_index_bytes, "control_index_bytes")?,
-        )])
+        Ok(vec![build_topology_row(index_oid, &generation, control_owner)?])
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"));
     TableIterator::new(rows.into_iter())

@@ -2295,6 +2295,68 @@ fn test_distann_build_epoch_single_node() {
         Some(0),
         "publishing the epoch clears the durable source gate"
     );
+    // epoch_topology (by fingerprint) now resolves the Published generation.
+    let (etop_state, etop_records) = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT state, record_count
+                   FROM ec_distann_epoch_topology('ec_distann_be_idx'::regclass, $1::bytea)",
+                None,
+                &[candidate_fingerprint.clone().into()],
+            )
+            .expect("epoch topology should execute")
+            .map(|r| {
+                (
+                    r["state"].value::<String>().unwrap(),
+                    r["record_count"].value::<i64>().unwrap(),
+                )
+            })
+            .next()
+            .expect("a Published generation must report one topology row")
+    });
+    assert_eq!(etop_state.as_deref(), Some("Published"));
+    assert_eq!(etop_records, Some(3));
+    // An unknown fingerprint (valid version u16_le(2), no decision) fails closed.
+    let mut unknown_fp = vec![0xAAu8; 34];
+    unknown_fp[0] = 0x02;
+    unknown_fp[1] = 0x00;
+    let unknown_err = expect_pg_error_rolled_back(|| {
+        Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT record_count
+                       FROM ec_distann_epoch_topology('ec_distann_be_idx'::regclass, $1::bytea)",
+                    None,
+                    &[unknown_fp.into()],
+                )
+                .expect("unknown fingerprint should error")
+                .next();
+        });
+    });
+    assert!(
+        unknown_err.contains("EC_GENERATION_MISSING"),
+        "unknown fingerprint must fail EC_GENERATION_MISSING: {unknown_err}"
+    );
+    // A bad fingerprint version is rejected before any lookup.
+    let bad_version = vec![0x03u8; 34];
+    let version_err = expect_pg_error_rolled_back(|| {
+        Spi::connect(|client| {
+            client
+                .select(
+                    "SELECT record_count
+                       FROM ec_distann_epoch_topology('ec_distann_be_idx'::regclass, $1::bytea)",
+                    None,
+                    &[bad_version.into()],
+                )
+                .expect("bad version should error")
+                .next();
+        });
+    });
+    assert!(
+        version_err.contains("EC_EPOCH_FINGERPRINT_VERSION"),
+        "bad fingerprint version must fail EC_EPOCH_FINGERPRINT_VERSION: {version_err}"
+    );
+
     // Idempotent replay returns the same fingerprint.
     assert_eq!(
         Spi::get_one::<Vec<u8>>(&format!(
