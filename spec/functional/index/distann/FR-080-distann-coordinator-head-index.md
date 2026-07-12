@@ -70,3 +70,15 @@ in the correct region of the global graph.
 - **Upstream**: [FR-077](./FR-077-distann-sharded-build-and-stitch.md);
   ADR-085 decision D3 (C policy)
 - **Downstream**: [FR-081](./FR-081-distann-query-orchestration.md)
+
+## Measured head-cap outcome
+
+The Task 179 real three-owner PG18 suite in
+`reviews/task-179/038-head-cap-sensitivity/` measured caps 64, 256, and 4096 at
+10k, 50k, and 100k using 20 held-out queries (200 recall trials) and 20 latency
+iterations per cell. Physical recall for 64 / 256 / 4096 was respectively
+0.995 / 0.995 / 1.000 at 10k, 0.975 / 0.980 / 0.980 at 50k, and
+0.920 / 0.945 / 0.950 at 100k. All nine cells had exact disjoint topology and
+two proven remote owners. The 100k result rejects 64 and retains the D3 default
+of 4096 over 256 for its final 0.005 recall increment; warm physical p50 at
+4096 was also no worse in this matrix (70.7, 100.8, and 78.9 ms).

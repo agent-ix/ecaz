@@ -95,7 +95,11 @@ Build `ec_distann` as a fifth access method:
   built.
 - **D3 — Head-index size C: fixed cap reloption** (`head_index_cap`,
   default 4096, breadth-first sample unioned across shard top layers);
-  recall sensitivity measured at M0 before the default is frozen.
+  recall sensitivity measured at M0 before the default is frozen. **Measured
+  outcome (2026-07-12, `reviews/task-179/038-head-cap-sensitivity/`): retain
+  4096.** Physical recall for C=64/256/4096 was 0.995/0.995/1.000 at 10k,
+  0.975/0.980/0.980 at 50k, and 0.920/0.945/0.950 at 100k; all topology and
+  remote-engagement gates passed.
 - **D4 — BatANN baton passing rejected for now** (operator decision:
   orchestrator-pull only). Reopen trigger: M2 measurement showing hop-round
   RTT ≥ 50% of multinode p50 at gate-relevant BW/H.
