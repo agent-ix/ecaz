@@ -74,6 +74,9 @@ use storage::relation_guard::IndexRelationGuard;
 pub unsafe extern "C-unwind" fn _PG_init() {
     fault::register_gucs();
     am::register_gucs();
+    // SAFETY: hook installation is restricted to PostgreSQL's
+    // shared_preload_libraries processing window and chains prior hooks.
+    unsafe { am::ec_distann::register_scan_registry_shared_memory() };
     // SAFETY: `_PG_init` runs once in a backend during extension load, before
     // SQL callbacks use these process-local hook registrations.
     unsafe {
