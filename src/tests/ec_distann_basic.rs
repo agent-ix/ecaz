@@ -3030,6 +3030,76 @@ fn test_distann_multi_epoch_publish() {
     );
     drop(forced_pin);
 
+    // A later epoch exercises the operator-only T4b escape hatch without
+    // contacting the predecessor participant. Abandonment advances the
+    // covering decision but truthfully leaves the participant generation
+    // Published and unreclaimed.
+    let fourth = "48484848-4848-4848-8848-484848484848";
+    prepare_epoch(&mut client, 10, fourth);
+    recover_epoch(&mut client, 10, fourth);
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_abandon_predecessor_binding(
+                 'ec_distann_me_idx'::regclass, '{fourth}'::uuid, 0,
+                 'participant permanently unavailable'
+             )"
+        ))
+        .expect("operator abandonment should terminalize the pending binding");
+    let abandoned = client
+        .query_one(
+            &format!(
+                "SELECT predecessor.disposition,
+                        predecessor.abandon_audit IS NOT NULL,
+                        octet_length(predecessor.abandon_audit_digest),
+                        successor.decision_state
+                   FROM ec_distann_predecessor_disposition predecessor
+                   JOIN ec_distann_publish_decision successor
+                     ON successor.index_oid = predecessor.index_oid
+                    AND successor.logical_index_uuid = predecessor.logical_index_uuid
+                    AND successor.build_id = predecessor.successor_build_id
+                  WHERE predecessor.index_oid = 'ec_distann_me_idx'::regclass::oid
+                    AND predecessor.successor_build_id = '{fourth}'::uuid"
+            ),
+            &[],
+        )
+        .expect("abandonment audit should remain durable");
+    assert_eq!(abandoned.get::<_, String>(0), "Abandoned");
+    assert!(abandoned.get::<_, bool>(1));
+    assert_eq!(abandoned.get::<_, i32>(2), 32);
+    assert_eq!(abandoned.get::<_, String>(3), "Applied");
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT state FROM ec_distann_generation
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                AND build_id = '{third}'::uuid"
+        )),
+        "Published",
+        "coordinator abandonment must not claim participant retirement"
+    );
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_abandon_predecessor_binding(
+                 'ec_distann_me_idx'::regclass, '{fourth}'::uuid, 0,
+                 'participant permanently unavailable'
+             )"
+        ))
+        .expect("exact abandonment replay should succeed");
+    let conflicting_abandon = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_abandon_predecessor_binding(
+                 'ec_distann_me_idx'::regclass, '{fourth}'::uuid, 0,
+                 'different reason'
+             )"
+        ))
+        .expect_err("conflicting abandonment replay must fail");
+    assert!(
+        conflicting_abandon
+            .as_db_error()
+            .map(|error| error.message().contains("EC_PREDECESSOR_ABANDON"))
+            .unwrap_or(false),
+        "conflicting abandonment must be classified: {conflicting_abandon}"
+    );
+
     client
         .batch_execute("DROP TABLE IF EXISTS ec_distann_me_source CASCADE")
         .expect("multi-epoch cleanup should drop the source");

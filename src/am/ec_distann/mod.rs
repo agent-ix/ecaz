@@ -14,6 +14,7 @@
 mod ambuild;
 mod build_gate;
 mod build_coordinator;
+mod coordinator_abandonment;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::build_coordinator::build_session_lock_count_for_test;
 #[cfg(any(test, feature = "pg_test"))]
