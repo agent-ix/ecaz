@@ -1,0 +1,15 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=4 coordinator_outside_roster=true base_port=39940 rows=90 dim=4
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=33 rows=33 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=24 rows=24 non_owned=0 orphans=0 graph_bytes=16384 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=4 state=Ready records=33 rows=33 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=24 rows=24 non_owned=0 orphans=0 graph_bytes=16384 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=4 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=90
+[distann-multicluster] physical_remote_owner node=2 pass=true
+[distann-multicluster] physical_remote_owner node=3 pass=true
+[distann-multicluster] physical_remote_owner node=4 pass=true
+[distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=3 source_rows=90
+[distann-multicluster] summary written to /home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/reviews/task-179/031-real-physical-multicluster/artifacts/physical-three-owner-outside-roster/distann-multinode-summary.log

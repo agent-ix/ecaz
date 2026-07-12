@@ -1,0 +1,8 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=1 instances=1 coordinator_outside_roster=false base_port=39920 rows=30 dim=4
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=30 rows=30 non_owned=0 orphans=0 graph_bytes=16384 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=30 rows=30 non_owned=0 orphans=0 graph_bytes=16384 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=1 source_rows=30
+[distann-multicluster] physical_topology_gate pass=true owners=1 remote_verified=0 source_rows=30
+[distann-multicluster] summary written to /home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/reviews/task-179/031-real-physical-multicluster/artifacts/physical-one-owner/distann-multinode-summary.log

@@ -1,0 +1,80 @@
+{
+  "name": "task179-real-physical-fixture",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-179/031-real-physical-multicluster/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [
+    {
+      "name": "one-owner-topology-gate",
+      "step": "physical-one-owner",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "three-owner-in-roster-topology-gate",
+      "step": "physical-three-owner-in-roster",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "three-owner-outside-roster-topology-gate",
+      "step": "physical-three-owner-outside-roster",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "physical-one-owner",
+      "tags": ["task179", "physical", "one-owner"],
+      "nodes": 1,
+      "base_port": 39920,
+      "rows": 30,
+      "dim": 4,
+      "graph_degree": 8,
+      "queries": 1,
+      "top_k": 10,
+      "run_dir": "target/task179-suite-one-owner"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "physical-three-owner-in-roster",
+      "tags": ["task179", "physical", "three-owner", "coordinator-in-roster"],
+      "nodes": 3,
+      "base_port": 39930,
+      "rows": 90,
+      "dim": 4,
+      "graph_degree": 8,
+      "queries": 1,
+      "top_k": 10,
+      "run_dir": "target/task179-suite-three-in-roster"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "physical-three-owner-outside-roster",
+      "tags": ["task179", "physical", "three-owner", "coordinator-outside-roster"],
+      "nodes": 3,
+      "coordinator_outside_roster": true,
+      "base_port": 39940,
+      "rows": 90,
+      "dim": 4,
+      "graph_degree": 8,
+      "queries": 1,
+      "top_k": 10,
+      "run_dir": "target/task179-suite-three-outside-roster"
+    }
+  ]
+}

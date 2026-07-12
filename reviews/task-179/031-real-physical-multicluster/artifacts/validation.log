@@ -1,0 +1,18 @@
+head=2aabb45f9e3abcc058980c7308666897bc7ba6e8
+
+command: cargo check -p ecaz-cli
+result: PASS
+note: one pre-existing dead_code warning for LoadedDistributedPlacementConfig.path
+
+command: cargo test -p ecaz-cli distann_physical_topology_and_gate_are_structured -- --nocapture
+result: PASS
+summary: 1 passed; 0 failed; 427 filtered out
+
+command: target/debug/ecaz bench suite audit --config reviews/task-179/031-real-physical-multicluster/artifacts/physical-fixture-suite.json
+result: PASS
+summary: audit passed: 3 steps
+
+command: target/debug/ecaz bench suite run --config reviews/task-179/031-real-physical-multicluster/artifacts/physical-fixture-suite.json --log-file reviews/task-179/031-real-physical-multicluster/artifacts/suite-run.log
+result: PASS
+summary: 3 steps succeeded; 3 topology thresholds passed
+
