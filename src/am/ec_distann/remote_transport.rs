@@ -82,6 +82,173 @@ fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
     format!("EC_BUILD_INCOMPLETE: remote {context} failed: {detail}")
 }
 
+pub(crate) fn remote_physical_seed_candidates(
+    conninfo: &str,
+    index_regclass: &str,
+    epoch_fingerprint: &[u8],
+    query: &[f32],
+    limit: i32,
+) -> Result<Vec<DistannSeedCandidate>, DistannExpandError> {
+    with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            let client = lifecycle_client(connections, conninfo)
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            let rows = client
+                .query(
+                    "SELECT vec_id, code_dist
+                       FROM ec_distann_physical_seed_candidates(
+                           $1::text::regclass, $2::bytea, $3::real[], $4::integer)",
+                    &[&index_regclass, &epoch_fingerprint, &query, &limit],
+                )
+                .await
+                .map_err(classify_physical_read_error)?;
+            rows.into_iter()
+                .map(|row| {
+                    let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+                    let dist: f32 = row.try_get(1).map_err(row_err)?;
+                    Ok(DistannSeedCandidate {
+                        vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
+                        dist,
+                    })
+                })
+                .collect()
+        })
+    })
+}
+
+pub(crate) fn remote_physical_expand_nodes(
+    conninfo: &str,
+    index_regclass: &str,
+    epoch_fingerprint: &[u8],
+    query: &[f32],
+    vec_ids: &[u64],
+    code_threshold: Option<f32>,
+) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+    let vec_ids = vec_ids
+        .iter()
+        .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+        .collect::<Vec<_>>();
+    with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            let client = lifecycle_client(connections, conninfo)
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            let rows = client
+                .query(
+                    "SELECT vec_id, exact_dist, is_tombstone,
+                            neighbor_vec_ids, neighbor_code_dists
+                       FROM ec_distann_expand_nodes(
+                           $1::text::regclass, $2::bytea, $3::real[],
+                           $4::bigint[], $5::real)",
+                    &[
+                        &index_regclass,
+                        &epoch_fingerprint,
+                        &query,
+                        &vec_ids,
+                        &code_threshold,
+                    ],
+                )
+                .await
+                .map_err(classify_physical_read_error)?;
+            rows.into_iter()
+                .map(|row| {
+                    let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+                    let exact_dist: Option<f32> = row.try_get(1).map_err(row_err)?;
+                    let is_tombstone: bool = row.try_get(2).map_err(row_err)?;
+                    let neighbor_vec_ids: Vec<i64> = row.try_get(3).map_err(row_err)?;
+                    let neighbor_code_dists: Vec<f32> = row.try_get(4).map_err(row_err)?;
+                    Ok(DistannExpandedNode {
+                        vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
+                        exact_dist,
+                        is_tombstone,
+                        heap_tid: ItemPointer::INVALID,
+                        neighbor_vec_ids: neighbor_vec_ids
+                            .into_iter()
+                            .map(|id| u64::from_le_bytes(id.to_le_bytes()))
+                            .collect(),
+                        neighbor_code_dists,
+                    })
+                })
+                .collect()
+        })
+    })
+}
+
+pub(crate) fn remote_physical_materialize_payloads(
+    conninfo: &str,
+    index_regclass: &str,
+    epoch_fingerprint: &[u8],
+    vec_ids: &[u64],
+    projection_attnums: &[i16],
+    expected_schema_fingerprint: &[u8],
+) -> Result<Vec<DistannMaterializedRow>, DistannExpandError> {
+    let vec_ids = vec_ids
+        .iter()
+        .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+        .collect::<Vec<_>>();
+    with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            let client = lifecycle_client(connections, conninfo)
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            let rows = client
+                .query(
+                    "SELECT vec_id, is_tombstone, tuple_payload_missing,
+                            payload_nulls, payload_values
+                       FROM ec_distann_materialize_row_payloads(
+                           $1::text::regclass, $2::bytea, $3::bigint[],
+                           $4::smallint[], $5::bytea)",
+                    &[
+                        &index_regclass,
+                        &epoch_fingerprint,
+                        &vec_ids,
+                        &projection_attnums,
+                        &expected_schema_fingerprint,
+                    ],
+                )
+                .await
+                .map_err(classify_physical_read_error)?;
+            rows.into_iter()
+                .map(|row| {
+                    let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+                    Ok(DistannMaterializedRow {
+                        vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
+                        is_tombstone: row.try_get(1).map_err(row_err)?,
+                        tuple_payload_missing: row.try_get(2).map_err(row_err)?,
+                        payload_nulls: row.try_get(3).map_err(row_err)?,
+                        payload_values: row.try_get(4).map_err(row_err)?,
+                    })
+                })
+                .collect()
+        })
+    })
+}
+
+fn classify_physical_read_error(error: tokio_postgres::Error) -> DistannExpandError {
+    let code = error.code().map(|state| state.code().to_owned());
+    let detail = error
+        .as_db_error()
+        .map(|db| db.message().to_owned())
+        .unwrap_or_else(|| error.to_string());
+    DistannExpandError::from_wire_sqlstate(
+        code.as_deref(),
+        format!("physical generation RPC failed: {detail}"),
+    )
+}
+
 pub(crate) struct RemoteHandoffBegin<'a> {
     pub conninfo: &'a str,
     pub index_regclass: &'a str,

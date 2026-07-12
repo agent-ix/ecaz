@@ -3333,6 +3333,53 @@ fn test_distann_three_owner_physical_handoff() {
             .get::<_, String>(0),
         published_build
     );
+    client
+        .batch_execute("SET enable_seqscan = off")
+        .expect("physical multi-owner read test should disable seqscan");
+    let plan = client
+        .query(
+            "EXPLAIN (FORMAT TEXT)
+             SELECT source_id
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+            &[],
+        )
+        .expect("physical multi-owner query should plan")
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        plan.contains("EcDistannDistributedScan"),
+        "published physical generation must use CustomScan: {plan}"
+    );
+    let served = client
+        .query(
+            "SELECT pg_catalog.uuid_send(source_id)
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+            &[],
+        )
+        .expect("physical multi-owner CustomScan should serve frozen rows");
+    assert_eq!(served.len(), 30, "all frozen rows should be served");
+    let served_owners = served
+        .into_iter()
+        .map(|row| {
+            let identity: [u8; 16] = row
+                .get::<_, Vec<u8>>(0)
+                .try_into()
+                .expect("uuid_send should return 16 bytes");
+            let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
+            crate::am::ec_distann::placement::owning_node(vec_id, 3, 1)
+        })
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(
+        served_owners,
+        std::collections::BTreeSet::from([0, 1, 2]),
+        "CustomScan must materialize rows from every physical owner"
+    );
     let successor_build = "4b4b4b4b-4b4b-4b4b-8b4b-4b4b4b4b4b4b";
     for statement in [
         format!(

@@ -126,6 +126,12 @@ pub(crate) struct GenerationCatalogRow {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct RetainedGenerationCatalogRow {
+    pub(crate) build_id: Uuid,
+    pub(crate) generation: GenerationCatalogRow,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GenerationBatchCatalogRow {
     pub(crate) batch_seq: u64,
     pub(crate) batch_digest: [u8; 32],
@@ -296,6 +302,56 @@ pub(crate) fn lookup_generation(
     build_id: Uuid,
 ) -> Result<Option<GenerationCatalogRow>, String> {
     lookup_generation_with_lock(index_oid, logical_index_uuid, build_id, false)
+}
+
+/// Resolve the immutable participant generation named by an FR-079 epoch
+/// fingerprint.  Remote read endpoints deliberately use this lookup rather
+/// than the participant's active pointer: a coordinator scan may remain pinned
+/// to a Retired predecessor until its scan token drains.
+pub(crate) fn lookup_retained_generation_by_fingerprint(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    epoch_fingerprint: &[u8; 34],
+) -> Result<Option<RetainedGenerationCatalogRow>, String> {
+    let catalogs = CatalogRelations::resolve()?;
+    let sql = format!(
+        "SELECT build_id, {GENERATION_SELECT_COLUMNS}
+           FROM {}
+          WHERE index_oid = $1::oid
+            AND logical_index_uuid = $2::uuid
+            AND epoch_fingerprint = $3::bytea
+            AND state IN ('Published', 'Retired')",
+        catalogs.generation
+    );
+    Spi::connect(|client| {
+        client
+            .select(
+                &sql,
+                None,
+                &[
+                    index_oid.into(),
+                    logical_index_uuid.into(),
+                    epoch_fingerprint.to_vec().into(),
+                ],
+            )
+            .map_err(|error| {
+                format!("EC_GENERATION_MISSING: retained generation lookup failed: {error}")
+            })?
+            .map(|row| {
+                let build_id = row["build_id"]
+                    .value::<Uuid>()
+                    .map_err(|error| {
+                        format!("EC_GENERATION_MISSING: build id decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_GENERATION_MISSING: build id is NULL".to_owned())?;
+                Ok(RetainedGenerationCatalogRow {
+                    build_id,
+                    generation: decode_generation_row(row)?,
+                })
+            })
+            .next()
+            .transpose()
+    })
 }
 
 pub(crate) fn lookup_generation_for_update(

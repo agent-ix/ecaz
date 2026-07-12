@@ -11,7 +11,9 @@ use crate::am::ec_diskann::DiskannScanDescView;
 
 use super::expand_error::DistannExpandError;
 use super::{
-    ambuild, cost, expand::LocalNodeExpander, head_cache, options,
+    ambuild, cost,
+    expand::LocalNodeExpander,
+    head_cache, options,
     quantizer::{self, DistannPreparedQuery},
     scan::{
         distann_orchestrated_search, DistannOrchestrationParams, DistannScanCounters,
@@ -397,71 +399,70 @@ pub(crate) unsafe fn collect_distann_hits(
     // so a retriable epoch mismatch from any hop discards all partial state and
     // restarts once from the head seeds under a refreshed epoch view (the closure
     // re-reads the active epoch each attempt); a second mismatch fails the query.
-    let (mut hits, counters, multi_node) =
-        super::scan::run_scan_attempt_with_restart(|| {
-            // FR-082: consume the epoch from the published manifest (re-read per
-            // attempt so a concurrent republish is picked up on restart). The
-            // fingerprint below then attests to the published epoch, not the GUC.
-            let scan_metadata = ambuild::read_metadata_from_index_handle(handle)
-                .map_err(DistannExpandError::Internal)?;
-            let scan_epoch = super::roster::scan_epoch(&scan_metadata);
-            let placement = super::roster::placement_directory_for_epoch(scan_epoch)
-                .map_err(DistannExpandError::Internal)?;
-            let multi_node = placement.node_count() > 1;
-            // Rebuilt per attempt: orchestration consumes the expander, and a
-            // restart must not carry stale beam/visited state.
-            let local_expander = LocalNodeExpander {
-                index_handle: handle,
-                directory: &entry.directory,
-                graph_degree_r: metadata.graph_degree_r,
-                code_len,
-                prepared_query: &prepared_query,
-                heap_relation,
-                snapshot,
-                slot,
-                source_attnum,
-                raw_query,
-                pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
+    let (mut hits, counters, multi_node) = super::scan::run_scan_attempt_with_restart(|| {
+        // FR-082: consume the epoch from the published manifest (re-read per
+        // attempt so a concurrent republish is picked up on restart). The
+        // fingerprint below then attests to the published epoch, not the GUC.
+        let scan_metadata = ambuild::read_metadata_from_index_handle(handle)
+            .map_err(DistannExpandError::Internal)?;
+        let scan_epoch = super::roster::scan_epoch(&scan_metadata);
+        let placement = super::roster::placement_directory_for_epoch(scan_epoch)
+            .map_err(DistannExpandError::Internal)?;
+        let multi_node = placement.node_count() > 1;
+        // Rebuilt per attempt: orchestration consumes the expander, and a
+        // restart must not carry stale beam/visited state.
+        let local_expander = LocalNodeExpander {
+            index_handle: handle,
+            directory: &entry.directory,
+            graph_degree_r: metadata.graph_degree_r,
+            code_len,
+            prepared_query: &prepared_query,
+            heap_relation,
+            snapshot,
+            slot,
+            source_attnum,
+            raw_query,
+            pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
+        };
+        let (hits, counters) = if multi_node {
+            let local_index = placement
+                .nodes
+                .iter()
+                .position(|node| node.is_local)
+                .ok_or_else(|| {
+                    DistannExpandError::Internal(
+                        "ec_distann scan: no local node in the roster".to_owned(),
+                    )
+                })?;
+            // Identity carries the published scan epoch (placement.epoch) plus
+            // this index's build-time metadata — the fresh scan_metadata so a
+            // republished epoch/state is reflected in the fingerprint.
+            let identity = super::roster::local_epoch_identity(&placement, &scan_metadata);
+            let fingerprint = super::epoch::compute_epoch_fingerprint(
+                &identity,
+                super::epoch::DISTANN_EPOCH_FINGERPRINT_V1,
+            )
+            .to_vec();
+            let roster_spec = super::roster::current_roster_spec();
+            let epoch = scan_epoch;
+            let index_name = distann_index_relname(index_relation);
+            let mut remote = super::remote_transport::RemoteNodeExpander {
+                local: local_expander,
+                placement: &placement,
+                local_index,
+                index_regclass: &index_name,
+                epoch_fingerprint: &fingerprint,
+                roster_spec: &roster_spec,
+                epoch,
             };
-            let (hits, counters) = if multi_node {
-                let local_index = placement
-                    .nodes
-                    .iter()
-                    .position(|node| node.is_local)
-                    .ok_or_else(|| {
-                        DistannExpandError::Internal(
-                            "ec_distann scan: no local node in the roster".to_owned(),
-                        )
-                    })?;
-                // Identity carries the published scan epoch (placement.epoch) plus
-                // this index's build-time metadata — the fresh scan_metadata so a
-                // republished epoch/state is reflected in the fingerprint.
-                let identity = super::roster::local_epoch_identity(&placement, &scan_metadata);
-                let fingerprint = super::epoch::compute_epoch_fingerprint(
-                    &identity,
-                    super::epoch::DISTANN_EPOCH_FINGERPRINT_V1,
-                )
-                .to_vec();
-                let roster_spec = super::roster::current_roster_spec();
-                let epoch = scan_epoch;
-                let index_name = distann_index_relname(index_relation);
-                let mut remote = super::remote_transport::RemoteNodeExpander {
-                    local: local_expander,
-                    placement: &placement,
-                    local_index,
-                    index_regclass: &index_name,
-                    epoch_fingerprint: &fingerprint,
-                    roster_spec: &roster_spec,
-                    epoch,
-                };
-                distann_orchestrated_search(&seeds, &mut remote, params)?
-            } else {
-                let mut local = local_expander;
-                distann_orchestrated_search(&seeds, &mut local, params)?
-            };
-            Ok((hits, counters, multi_node))
-        })
-        .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
+            distann_orchestrated_search(&seeds, &mut remote, params)?
+        } else {
+            let mut local = local_expander;
+            distann_orchestrated_search(&seeds, &mut local, params)?
+        };
+        Ok((hits, counters, multi_node))
+    })
+    .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
 
     // Loopback-only remote-hit materialization. Remote responses carry
     // heap_tid = INVALID (not in the FR-079 wire contract); on the co-located
@@ -688,7 +689,9 @@ pub(super) unsafe fn distann_index_relname(index_relation: pg_sys::Relation) -> 
     if nsp_ptr.is_null() {
         return quote_ident(&relname);
     }
-    let namespace = std::ffi::CStr::from_ptr(nsp_ptr).to_string_lossy().into_owned();
+    let namespace = std::ffi::CStr::from_ptr(nsp_ptr)
+        .to_string_lossy()
+        .into_owned();
     pg_sys::pfree(nsp_ptr.cast());
     format!("{}.{}", quote_ident(&namespace), quote_ident(&relname))
 }
@@ -699,7 +702,7 @@ fn quote_ident(ident: &str) -> String {
     format!("\"{}\"", ident.replace('"', "\"\""))
 }
 
-pub(super) fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
+pub(crate) fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
     // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd
     // metadata that remains valid until it is released at the end of this block.
     unsafe {

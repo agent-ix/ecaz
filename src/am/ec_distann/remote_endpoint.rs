@@ -39,16 +39,18 @@ use super::expand_error::DistannExpandError;
 use super::head_cache::cached_index_entry;
 use super::placement::owning_node;
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
-use super::reader::{directory_lookup, read_directory_from_relation, read_raw_tuple_bytes_from_relation};
+use super::reader::{
+    directory_lookup, read_directory_from_relation, read_raw_tuple_bytes_from_relation,
+};
 use super::roster::{local_epoch_identity, placement_directory_for_epoch, scan_epoch};
 use super::routine::indexed_ecvector_attnum;
 use super::scan::DistannNodeExpander;
+use super::tuple::DistannNodeTuple;
 use super::tuple::{
     DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_HEAP_TID_OFFSET,
     DISTANN_NODE_TAG, DISTANN_NODE_TAG_OFFSET,
 };
 use crate::storage::page::ItemPointer;
-use super::tuple::DistannNodeTuple;
 
 /// One wire response row (no `heap_tid` — see module docs).
 type ExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
@@ -103,7 +105,9 @@ fn ec_distann_list_directory(
     TableIterator::new(rows)
 }
 
-fn list_directory_impl(index_oid: pg_sys::Oid) -> Result<Vec<(i64, i64, i32, bool)>, DistannExpandError> {
+fn list_directory_impl(
+    index_oid: pg_sys::Oid,
+) -> Result<Vec<(i64, i64, i32, bool)>, DistannExpandError> {
     let index_guard = IndexRelationGuard::try_access_share(index_oid)
         .ok_or_else(|| "ec_distann_list_directory could not open the index relation".to_owned())?;
     let handle = NonNull::new(index_guard.as_ptr())
@@ -114,13 +118,17 @@ fn list_directory_impl(index_oid: pg_sys::Oid) -> Result<Vec<(i64, i64, i32, boo
     if metadata.node_count == 0 || metadata.directory_head == ItemPointer::INVALID {
         return Ok(Vec::new());
     }
-    let directory =
-        read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)
-            .map_err(DistannExpandError::Internal)?;
+    let directory = read_directory_from_relation(
+        handle,
+        metadata.directory_head,
+        metadata.node_count as usize,
+    )
+    .map_err(DistannExpandError::Internal)?;
     let mut rows = Vec::with_capacity(directory.len());
     for (vec_id, record_tid) in directory {
-        let raw = read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann list directory")
-            .map_err(DistannExpandError::Internal)?;
+        let raw =
+            read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann list directory")
+                .map_err(DistannExpandError::Internal)?;
         let (heap_tid, is_tombstone) =
             decode_node_heap_identity(&raw).map_err(DistannExpandError::Internal)?;
         rows.push((
@@ -384,9 +392,12 @@ fn resolve_owned_rows(
         return Ok(Vec::new());
     }
 
-    let directory =
-        read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)
-            .map_err(DistannExpandError::Internal)?;
+    let directory = read_directory_from_relation(
+        handle,
+        metadata.directory_head,
+        metadata.node_count as usize,
+    )
+    .map_err(DistannExpandError::Internal)?;
     let mut rows = Vec::with_capacity(vec_ids.len());
     for &vec_id in vec_ids {
         // Owned-but-absent is EC_RECORD_MISSING (never a silent skip).
@@ -396,8 +407,9 @@ fn resolve_owned_rows(
                 vec_id as u64
             ))
         })?;
-        let raw = read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann materialize row")
-            .map_err(DistannExpandError::Internal)?;
+        let raw =
+            read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann materialize row")
+                .map_err(DistannExpandError::Internal)?;
         let (heap_tid, is_tombstone) =
             decode_node_heap_identity(&raw).map_err(DistannExpandError::Internal)?;
         rows.push((vec_id, heap_tid, is_tombstone));
@@ -522,7 +534,12 @@ fn materialize_row_payloads_impl(
             let payload_values = row["payload_values"]
                 .value::<pgrx::datum::Array<&[u8]>>()
                 .map_err(|e| format!("ec_distann row payload values decode failed: {e}"))?
-                .map(|array| array.iter_deny_null().map(<[u8]>::to_vec).collect::<Vec<_>>())
+                .map(|array| {
+                    array
+                        .iter_deny_null()
+                        .map(<[u8]>::to_vec)
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             if payload_nulls.len() != column_count || payload_values.len() != column_count {
                 return Err(format!(
@@ -549,11 +566,9 @@ fn materialize_row_payloads_impl(
     Ok(resolved
         .into_iter()
         .zip(payloads)
-        .map(
-            |((vec_id, _tid, is_tombstone), (missing, nulls, values))| {
-                (vec_id, is_tombstone, missing, nulls, values)
-            },
-        )
+        .map(|((vec_id, _tid, is_tombstone), (missing, nulls, values))| {
+            (vec_id, is_tombstone, missing, nulls, values)
+        })
         .collect())
 }
 
@@ -575,7 +590,9 @@ unsafe fn heap_relation_qualified_name(
             u32::from(heap_oid)
         )));
     }
-    let relname = std::ffi::CStr::from_ptr(name_ptr).to_string_lossy().into_owned();
+    let relname = std::ffi::CStr::from_ptr(name_ptr)
+        .to_string_lossy()
+        .into_owned();
     let nsp_oid = pg_sys::get_rel_namespace(heap_oid);
     let nsp_ptr = pg_sys::get_namespace_name(nsp_oid);
     if nsp_ptr.is_null() {
@@ -584,11 +601,17 @@ unsafe fn heap_relation_qualified_name(
             u32::from(heap_oid)
         )));
     }
-    let nspname = std::ffi::CStr::from_ptr(nsp_ptr).to_string_lossy().into_owned();
-    Ok(format!("{}.{}", quote_ident(&nspname), quote_ident(&relname)))
+    let nspname = std::ffi::CStr::from_ptr(nsp_ptr)
+        .to_string_lossy()
+        .into_owned();
+    Ok(format!(
+        "{}.{}",
+        quote_ident(&nspname),
+        quote_ident(&relname)
+    ))
 }
 
-fn build_payload_sql(
+pub(crate) fn build_payload_sql(
     heap_relation: &str,
     payload_columns: &[String],
     payload_send_functions: &[String],
@@ -600,7 +623,9 @@ fn build_payload_sql(
         let ident = quote_ident(column);
         let send = validate_send_function(send_function)?;
         projected.push(format!("heap_row.{ident} AS {ident}"));
-        null_exprs.push(format!("(heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL)"));
+        null_exprs.push(format!(
+            "(heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL)"
+        ));
         value_exprs.push(format!(
             "CASE WHEN heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL \
                   THEN ''::bytea ELSE {send}(heap.{ident}) END"
@@ -646,9 +671,7 @@ fn quote_ident(ident: &str) -> String {
 fn validate_send_function(name: &str) -> Result<String, String> {
     let is_ident = |part: &str| {
         !part.is_empty()
-            && part
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || c == '_')
+            && part.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
             && !part.chars().next().unwrap().is_ascii_digit()
     };
     let ok = match name.split_once('.') {

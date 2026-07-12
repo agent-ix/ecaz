@@ -686,6 +686,35 @@ ALTER FUNCTION ec_distann_epoch_topology(regclass, bytea) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_epoch_topology(regclass, bytea)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_epoch_topology(regclass, bytea) FROM PUBLIC;
+
+-- FR-079 physical-generation overloads. The implementation functions keep
+-- unique generated names so pgrx's entity graph remains unambiguous; these SQL
+-- wrappers provide the normative endpoint names alongside the legacy oid
+-- signatures during the format transition.
+CREATE FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bigint[], real DEFAULT NULL
+) RETURNS TABLE (
+    vec_id bigint, exact_dist real, is_tombstone boolean,
+    neighbor_vec_ids bigint[], neighbor_code_dists real[]
+)
+LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
+AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5)';
+
+CREATE FUNCTION ec_distann_materialize_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) RETURNS TABLE (
+    vec_id bigint, is_tombstone boolean, tuple_payload_missing boolean,
+    payload_nulls boolean[], payload_values bytea[]
+)
+LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
+AS 'SELECT * FROM ec_distann_materialize_physical_row_payloads($1, $2, $3, $4, $5)';
+
+REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bigint[], real
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION ec_distann_materialize_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) FROM PUBLIC;
 "#,
     name = "distann_internal_privileges",
     finalize,

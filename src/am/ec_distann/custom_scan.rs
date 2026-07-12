@@ -248,7 +248,9 @@ unsafe fn index_first_key_attno(index_info: &pg_sys::IndexOptInfo) -> Option<pg_
         return None;
     }
     let key = *index_info.indexkeys;
-    pg_sys::AttrNumber::try_from(key).ok().filter(|attno| *attno > 0)
+    pg_sys::AttrNumber::try_from(key)
+        .ok()
+        .filter(|attno| *attno > 0)
 }
 
 unsafe fn is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
@@ -308,16 +310,17 @@ unsafe fn custom_scan_candidate_index(planner_rel: PlannerRel<'_>) -> Option<pg_
             continue;
         };
         if index_info.relam == am_oid && index_first_key_attno(index_info) == Some(order_by_attno) {
-            let physical_control = crate::storage::relation_guard::IndexRelationGuard::try_access_share(
-                index_info.indexoid,
-            )
-            .and_then(|guard| {
-                let handle = ptr::NonNull::new(guard.as_ptr())?;
-                super::ambuild::read_metadata_from_index_handle(handle)
-                    .ok()
-                    .map(|metadata| metadata.is_distributed_control())
-            })
-            .unwrap_or(false);
+            let physical_control =
+                crate::storage::relation_guard::IndexRelationGuard::try_access_share(
+                    index_info.indexoid,
+                )
+                .and_then(|guard| {
+                    let handle = ptr::NonNull::new(guard.as_ptr())?;
+                    super::ambuild::read_metadata_from_index_handle(handle)
+                        .ok()
+                        .map(|metadata| metadata.is_distributed_control())
+                })
+                .unwrap_or(false);
             if physical_control || distann_multi_node_roster() {
                 return Some(index_info.indexoid);
             }
@@ -373,7 +376,10 @@ unsafe extern "C-unwind" fn set_rel_pathlist_hook(
     custom_path.custom_paths = ptr::null_mut();
     custom_path.custom_restrictinfo = planner_rel.rel_ref.baserestrictinfo;
     custom_path.custom_private = pg_sys::lappend_oid(
-        pg_sys::lappend_oid(ptr::null_mut(), pg_sys::Oid::from(PLAN_MODE_VECTOR_ORDER_LIMIT)),
+        pg_sys::lappend_oid(
+            ptr::null_mut(),
+            pg_sys::Oid::from(PLAN_MODE_VECTOR_ORDER_LIMIT),
+        ),
         index_oid,
     );
     custom_path.methods = &raw const CUSTOM_PATH_METHODS;
@@ -429,7 +435,10 @@ unsafe extern "C-unwind" fn plan_custom_path(
     custom_scan.custom_exprs = custom_exprs;
     custom_scan.custom_private = pg_sys::lappend_oid(
         pg_sys::lappend_oid(
-            pg_sys::lappend_oid(ptr::null_mut(), pg_sys::Oid::from(PLAN_MODE_VECTOR_ORDER_LIMIT)),
+            pg_sys::lappend_oid(
+                ptr::null_mut(),
+                pg_sys::Oid::from(PLAN_MODE_VECTOR_ORDER_LIMIT),
+            ),
             index_oid,
         ),
         pg_sys::Oid::from(u32::try_from(top_k).unwrap_or_else(|_| {
@@ -812,11 +821,7 @@ unsafe extern "C-unwind" fn custom_scan_access(
         match &state.outputs[output_index] {
             CustomScanOutputRow::Local(tid) => {
                 let mut item = pg_sys::ItemPointerData::default();
-                pgrx::itemptr::item_pointer_set_all(
-                    &mut item,
-                    tid.block_number,
-                    tid.offset_number,
-                );
+                pgrx::itemptr::item_pointer_set_all(&mut item, tid.block_number, tid.offset_number);
                 let estate = (*scan_state).ps.state;
                 if estate.is_null() {
                     pgrx::error!("EcDistannDistributedScan missing executor estate");
@@ -840,11 +845,7 @@ unsafe extern "C-unwind" fn custom_scan_access(
                     pgrx::error!("EcDistannDistributedScan lost its physical generation context")
                 });
                 let mut item = pg_sys::ItemPointerData::default();
-                pgrx::itemptr::item_pointer_set_all(
-                    &mut item,
-                    tid.block_number,
-                    tid.offset_number,
-                );
+                pgrx::itemptr::item_pointer_set_all(&mut item, tid.block_number, tid.offset_number);
                 let estate = (*scan_state).ps.state;
                 pg_sys::ExecClearTuple(state.frozen_row_slot);
                 let visible = pg_sys::table_tuple_fetch_row_version(
@@ -949,10 +950,11 @@ unsafe fn run_search_and_build_outputs(
     let estate = (*scan_state).ps.state;
     let snapshot = (*estate).es_snapshot;
 
-    let index_guard = crate::storage::relation_guard::IndexRelationGuard::try_access_share(
-        state.index_oid,
-    )
-    .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan could not open the index relation"));
+    let index_guard =
+        crate::storage::relation_guard::IndexRelationGuard::try_access_share(state.index_oid)
+            .unwrap_or_else(|| {
+                pgrx::error!("EcDistannDistributedScan could not open the index relation")
+            });
     let index_relation = index_guard.as_ptr();
     let handle = ptr::NonNull::new(index_relation)
         .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan got a null index relation"));
@@ -961,13 +963,7 @@ unsafe fn run_search_and_build_outputs(
     let metadata = super::ambuild::read_metadata_from_index_handle(handle)
         .unwrap_or_else(|e| pgrx::error!("EcDistannDistributedScan metadata read failed: {e}"));
     if metadata.is_distributed_control() {
-        run_physical_generation_search(
-            state,
-            scan_state,
-            snapshot,
-            source_attnum,
-            effective,
-        );
+        run_physical_generation_search(state, scan_state, snapshot, source_attnum, effective);
         return;
     }
     let rerank_slot =
@@ -1006,10 +1002,12 @@ unsafe fn run_search_and_build_outputs(
             Some(CustomScanOutputRow::Local(hit.heap_tid))
         } else {
             match payloads.get(&hit.vec_id) {
-                Some(payload) if !payload.tuple_payload_missing => Some(CustomScanOutputRow::Remote {
-                    payload_nulls: payload.payload_nulls.clone(),
-                    payload_values: payload.payload_values.clone(),
-                }),
+                Some(payload) if !payload.tuple_payload_missing => {
+                    Some(CustomScanOutputRow::Remote {
+                        payload_nulls: payload.payload_nulls.clone(),
+                        payload_values: payload.payload_values.clone(),
+                    })
+                }
                 // A missing payload means the owner no longer holds a live row
                 // for this vec_id (deleted between search and materialize); drop
                 // it rather than emit a wrong row.
@@ -1065,12 +1063,32 @@ unsafe fn run_physical_generation_search(
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     state.effective = effective;
     state.early_exit = collection.counters.early_exit;
-    state.proven_outputs = collection.hits.len().min(effective);
+    let remote_payloads = context
+        .materialize_remote_payloads(&collection.hits, &state.payload_attnums)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let mut proven_outputs = 0;
     state.outputs = collection
         .hits
         .into_iter()
-        .map(|hit| CustomScanOutputRow::Frozen(hit.heap_tid))
+        .enumerate()
+        .filter_map(|(raw_rank, hit)| {
+            let output = if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
+                Some(CustomScanOutputRow::Frozen(hit.heap_tid))
+            } else {
+                remote_payloads
+                    .get(&hit.vec_id)
+                    .map(|payload| CustomScanOutputRow::Remote {
+                        payload_nulls: payload.payload_nulls.clone(),
+                        payload_values: payload.payload_values.clone(),
+                    })
+            };
+            if output.is_some() && raw_rank < effective {
+                proven_outputs += 1;
+            }
+            output
+        })
         .collect();
+    state.proven_outputs = proven_outputs;
 }
 
 struct RemotePayload {
@@ -1118,7 +1136,8 @@ unsafe fn fetch_remote_payloads(
     let index_name = super::routine::distann_index_relname(index_relation);
 
     // Bucket vec_ids by owning-node index.
-    let mut buckets: std::collections::BTreeMap<usize, Vec<u64>> = std::collections::BTreeMap::new();
+    let mut buckets: std::collections::BTreeMap<usize, Vec<u64>> =
+        std::collections::BTreeMap::new();
     for &vec_id in &remote_vec_ids {
         let owner = owning_node(vec_id, node_count, placement.hash_version);
         buckets.entry(owner).or_default().push(vec_id);
