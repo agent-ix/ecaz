@@ -1346,10 +1346,36 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         let descriptor_bytes = descriptor.encode()?;
         let descriptor_digest = descriptor.digest()?;
 
+        // A successor build binds the current active-epoch fingerprint as its
+        // parent (empty for the first epoch); the decision re-checks it against
+        // the pointer taken under lock.
+        let active_table = extension_relation_name("ec_distann_active_epoch")?;
+        let parent_fingerprint = Spi::connect(|client| -> Result<Vec<u8>, String> {
+            Ok(client
+                .select(
+                    &format!(
+                        "SELECT epoch_fingerprint FROM {active_table}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into()],
+                )
+                .map_err(|_| "EC_BUILD_INCOMPLETE: active pointer lookup failed".to_owned())?
+                .map(|row| {
+                    row["epoch_fingerprint"]
+                        .value::<Vec<u8>>()
+                        .map_err(|_| "EC_BUILD_INCOMPLETE: active fingerprint decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: active fingerprint is NULL".to_owned())
+                })
+                .next()
+                .transpose()?
+                .unwrap_or_default())
+        })?;
+
         let build_spec = DistannBuildSpec {
             epoch: epoch_u64,
             build_id: *build_id.as_bytes(),
-            parent_fingerprint: Vec::new(),
+            parent_fingerprint: parent_fingerprint.clone(),
             source_snapshot_digest,
             generation_descriptor_digest: descriptor_digest,
             build_options: build_options.clone(),
@@ -1496,7 +1522,7 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         let manifest = DistannEpochManifestV2 {
             epoch: epoch_u64,
             build_id: *build_id.as_bytes(),
-            parent_fingerprint: Vec::new(),
+            parent_fingerprint: parent_fingerprint.clone(),
             source_snapshot_digest,
             build_spec_digest,
             generation_descriptor_digest: descriptor_digest,
@@ -1881,12 +1907,12 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
 
         let decision_table = extension_relation_name("ec_distann_publish_decision")?;
         let decision = Spi::connect(
-            |client| -> Result<Option<(i64, Vec<u8>, Vec<u8>, Vec<u8>, bool)>, String> {
+            |client| -> Result<Option<(i64, Vec<u8>, Vec<u8>, Vec<u8>, Option<Uuid>, Vec<u8>)>, String> {
                 client
                     .select(
                         &format!(
                             "SELECT epoch, epoch_fingerprint, manifest_digest, epoch_manifest,
-                                    predecessor_build_id IS NOT NULL AS has_predecessor
+                                    predecessor_build_id, successor_activation_digest
                                FROM {decision_table}
                               WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                                 AND build_id = $3::uuid"
@@ -1906,16 +1932,16 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                                 .map_err(|_| format!("EC_EPOCH_STATE: decision {name} decode failed"))?
                                 .ok_or_else(|| format!("EC_EPOCH_STATE: decision {name} is NULL"))
                         };
-                        let has_predecessor = row["has_predecessor"]
-                            .value::<bool>()
-                            .map_err(|_| "EC_EPOCH_STATE: predecessor flag decode failed".to_owned())?
-                            .ok_or_else(|| "EC_EPOCH_STATE: predecessor flag is NULL".to_owned())?;
+                        let predecessor_build_id = row["predecessor_build_id"]
+                            .value::<Uuid>()
+                            .map_err(|_| "EC_EPOCH_STATE: predecessor build id decode failed".to_owned())?;
                         Ok((
                             epoch,
                             field("epoch_fingerprint")?,
                             field("manifest_digest")?,
                             field("epoch_manifest")?,
-                            has_predecessor,
+                            predecessor_build_id,
+                            field("successor_activation_digest")?,
                         ))
                     })
                     .next()
@@ -1925,10 +1951,10 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
         .ok_or_else(|| {
             "EC_EPOCH_STATE: no durable publish decision for this build id".to_owned()
         })?;
-        let (epoch, epoch_fingerprint, manifest_digest, epoch_manifest, has_predecessor) = decision;
+        let (epoch, epoch_fingerprint, manifest_digest, epoch_manifest, predecessor_build_id, _activation_digest) =
+            decision;
 
-        // Idempotent replay: if the active pointer already names this build, the
-        // epoch is published; return its fingerprint.
+        // Read the active pointer under the control lock.
         let active_table = extension_relation_name("ec_distann_active_epoch")?;
         let active_build = Spi::connect_mut(|client| -> Result<Option<Uuid>, String> {
             client
@@ -1951,19 +1977,27 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                 .next()
                 .transpose()
         })?;
-        if let Some(active_build) = active_build {
-            if active_build.as_bytes() == build_id.as_bytes() {
+        match (&active_build, &predecessor_build_id) {
+            // Idempotent replay: this build is already the active pointer.
+            (Some(active), _) if active.as_bytes() == build_id.as_bytes() => {
                 return Ok(epoch_fingerprint);
             }
-            return Err(
-                "EC_EPOCH_STATE: the active pointer names a different build id".to_owned(),
-            );
-        }
-        if has_predecessor {
-            return Err(
-                "EC_EPOCH_STATE: multi-epoch publish recovery (T4b) is not yet implemented"
-                    .to_owned(),
-            );
+            // A successor may swap only when the recorded predecessor is active.
+            (Some(active), Some(predecessor))
+                if active.as_bytes() == predecessor.as_bytes() => {}
+            (Some(_), _) => {
+                return Err(
+                    "EC_EPOCH_STATE: the active pointer names an unexpected build id".to_owned(),
+                );
+            }
+            // First epoch: no active pointer and no predecessor.
+            (None, None) => {}
+            (None, Some(_)) => {
+                return Err(
+                    "EC_EPOCH_STATE: a successor decision requires its predecessor to be active"
+                        .to_owned(),
+                );
+            }
         }
 
         // Publish the local participant (Ready -> Published) and verify the
@@ -2002,47 +2036,138 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
             );
         }
 
-        // Swap the active pointer to the successor, mark the decision Applied
-        // (no predecessor), and publish the registration to clear the gate — one
-        // atomic transaction.
+        // Swap the active pointer to the successor and publish the registration
+        // to clear the gate. A first epoch records Applied immediately; a
+        // successor CAS-swaps from its predecessor, records Activated, and opens
+        // one Pending disposition per predecessor binding (T4b retires them).
         let registration = extension_relation_name("ec_distann_build_registration")?;
+        let disposition = extension_relation_name("ec_distann_predecessor_disposition")?;
+        let binding = extension_relation_name("ec_distann_build_participant_binding")?;
         Spi::connect_mut(|client| -> Result<(), String> {
-            client
-                .update(
-                    &format!(
-                        "INSERT INTO {active_table} (
-                             index_oid, logical_index_uuid, build_id, epoch,
-                             epoch_fingerprint, manifest_digest, updated_at
-                         ) VALUES (
-                             $1::oid, $2::uuid, $3::uuid, $4::bigint,
-                             $5::bytea, $6::bytea, clock_timestamp()
-                         )"
-                    ),
-                    None,
-                    &[
-                        index_oid.into(),
-                        logical_index_uuid.into(),
-                        build_id.into(),
-                        epoch.into(),
-                        epoch_fingerprint.clone().into(),
-                        manifest_digest.clone().into(),
-                    ],
-                )
-                .map_err(|error| format!("EC_EPOCH_STATE: active pointer swap failed: {error}"))?;
-            client
-                .update(
-                    &format!(
-                        "UPDATE {decision_table}
-                            SET decision_state = 'Applied',
-                                activated_at = clock_timestamp(),
-                                applied_at = clock_timestamp()
-                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                            AND build_id = $3::uuid AND decision_state = 'Pending'"
-                    ),
-                    None,
-                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
-                )
-                .map_err(|_| "EC_EPOCH_STATE: decision Applied transition failed".to_owned())?;
+            match &predecessor_build_id {
+                None => {
+                    client
+                        .update(
+                            &format!(
+                                "INSERT INTO {active_table} (
+                                     index_oid, logical_index_uuid, build_id, epoch,
+                                     epoch_fingerprint, manifest_digest, updated_at
+                                 ) VALUES (
+                                     $1::oid, $2::uuid, $3::uuid, $4::bigint,
+                                     $5::bytea, $6::bytea, clock_timestamp()
+                                 )"
+                            ),
+                            None,
+                            &[
+                                index_oid.into(),
+                                logical_index_uuid.into(),
+                                build_id.into(),
+                                epoch.into(),
+                                epoch_fingerprint.clone().into(),
+                                manifest_digest.clone().into(),
+                            ],
+                        )
+                        .map_err(|error| {
+                            format!("EC_EPOCH_STATE: active pointer insert failed: {error}")
+                        })?;
+                    client
+                        .update(
+                            &format!(
+                                "UPDATE {decision_table}
+                                    SET decision_state = 'Applied',
+                                        activated_at = clock_timestamp(),
+                                        applied_at = clock_timestamp()
+                                  WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                                    AND build_id = $3::uuid AND decision_state = 'Pending'"
+                            ),
+                            None,
+                            &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                        )
+                        .map_err(|_| "EC_EPOCH_STATE: decision Applied transition failed".to_owned())?;
+                }
+                Some(predecessor) => {
+                    let swapped = client
+                        .update(
+                            &format!(
+                                "UPDATE {active_table}
+                                    SET build_id = $3::uuid, epoch = $4::bigint,
+                                        epoch_fingerprint = $5::bytea,
+                                        manifest_digest = $6::bytea,
+                                        updated_at = clock_timestamp()
+                                  WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                                    AND build_id = $7::uuid"
+                            ),
+                            None,
+                            &[
+                                index_oid.into(),
+                                logical_index_uuid.into(),
+                                build_id.into(),
+                                epoch.into(),
+                                epoch_fingerprint.clone().into(),
+                                manifest_digest.clone().into(),
+                                (*predecessor).into(),
+                            ],
+                        )
+                        .map_err(|error| {
+                            format!("EC_EPOCH_STATE: active pointer swap failed: {error}")
+                        })?
+                        .len();
+                    if swapped != 1 {
+                        return Err(
+                            "EC_EPOCH_STATE: active pointer no longer names the recorded predecessor"
+                                .to_owned(),
+                        );
+                    }
+                    client
+                        .update(
+                            &format!(
+                                "UPDATE {decision_table}
+                                    SET decision_state = 'Activated',
+                                        activated_at = clock_timestamp()
+                                  WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                                    AND build_id = $3::uuid AND decision_state = 'Pending'"
+                            ),
+                            None,
+                            &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                        )
+                        .map_err(|_| "EC_EPOCH_STATE: decision Activated transition failed".to_owned())?;
+                    // Open one Pending disposition per predecessor participant,
+                    // pulling predecessor identity from the decision and
+                    // participant identity from the predecessor's bindings.
+                    client
+                        .update(
+                            &format!(
+                                "INSERT INTO {disposition} (
+                                     index_oid, logical_index_uuid, successor_build_id,
+                                     predecessor_build_id, predecessor_epoch,
+                                     predecessor_epoch_fingerprint, predecessor_manifest_digest,
+                                     predecessor_roster_ordinal, node_id, endpoint_identity,
+                                     remote_index_regclass, participant_logical_index_uuid,
+                                     successor_activation_digest, disposition
+                                 )
+                                 SELECT d.index_oid, d.logical_index_uuid, d.build_id,
+                                        d.predecessor_build_id, d.predecessor_epoch,
+                                        d.predecessor_epoch_fingerprint, d.predecessor_manifest_digest,
+                                        b.roster_ordinal, b.node_id, b.endpoint_identity,
+                                        b.remote_index_regclass, b.participant_logical_index_uuid,
+                                        d.successor_activation_digest, 'Pending'
+                                   FROM {decision_table} d
+                                   JOIN {binding} b
+                                     ON b.index_oid = d.index_oid
+                                    AND b.logical_index_uuid = d.logical_index_uuid
+                                    AND b.build_id = d.predecessor_build_id
+                                  WHERE d.index_oid = $1::oid
+                                    AND d.logical_index_uuid = $2::uuid
+                                    AND d.build_id = $3::uuid"
+                            ),
+                            None,
+                            &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                        )
+                        .map_err(|error| {
+                            format!("EC_EPOCH_STATE: predecessor disposition insert failed: {error}")
+                        })?;
+                }
+            }
             client
                 .update(
                     &format!(

@@ -2429,6 +2429,129 @@ fn test_distann_build_epoch_single_node() {
 }
 
 #[pg_test]
+fn test_distann_multi_epoch_publish() {
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_MULTI_EPOCH";
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+
+    // Multi-epoch spans commits (each epoch's session locks release on commit),
+    // so this test drives a real backend with autocommit rather than SPI inside
+    // one transaction. The objects it creates are committed, so it is
+    // rerun-safe via DROP IF EXISTS and cleans up at the end.
+    let conninfo = current_pg_test_loopback_conninfo();
+    let mut client = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("multi-epoch loopback connection should open");
+    let extension_schema = client
+        .query_one(
+            "SELECT pg_catalog.quote_ident(n.nspname)
+               FROM pg_catalog.pg_extension e
+               JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+              WHERE e.extname = 'ecaz'",
+            &[],
+        )
+        .expect("extension schema should resolve")
+        .get::<_, String>(0);
+    client
+        .batch_execute(&format!("SET search_path = {extension_schema}, public"))
+        .expect("search_path should set");
+    client
+        .batch_execute(
+            "DROP TABLE IF EXISTS ec_distann_me_source CASCADE;
+             CREATE TABLE ec_distann_me_source (
+                 source_id uuid NOT NULL,
+                 embedding ecvector(4) NOT NULL
+             );
+             INSERT INTO ec_distann_me_source VALUES
+                 ('11111111-1111-4111-8111-111111111111',
+                  encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+                 ('22222222-2222-4222-8222-222222222222',
+                  encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+                 ('33333333-3333-4333-8333-333333333333',
+                  encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42));
+             CREATE INDEX ec_distann_me_idx ON ec_distann_me_source
+                 USING ec_distann (embedding ecvector_distann_ip_ops)
+                 INCLUDE (source_id)
+                 WITH (distributed_control = true, source_identity = 'include',
+                       graph_degree = 4, neighbor_code_format = 'rabitq');
+             SELECT ec_distann_configure_participant_identity(
+                 'ec_distann_me_idx'::regclass, 'multiepoch/node-17'
+             );
+             INSERT INTO ec_distann_node_descriptor (
+                 index_oid, logical_index_uuid, roster_ordinal, node_id,
+                 endpoint_identity, conninfo_secret_name, remote_index_regclass,
+                 participant_logical_index_uuid, compatibility_digest, is_local
+             )
+             SELECT 'ec_distann_me_idx'::regclass::oid, logical_index_uuid, 0, 17,
+                    'multiepoch/node-17', 'DISTANN_MULTI_EPOCH', canonical_index_regclass,
+                    logical_index_uuid, compatibility_digest, true
+               FROM ec_distann_control_identity('ec_distann_me_idx'::regclass)",
+        )
+        .expect("distributed-control source + index + self-registration should create");
+
+    let publish_epoch = |client: &mut postgres::Client, epoch: i64, build_id: &str| {
+        for stmt in [
+            format!("SELECT ec_distann_begin_epoch_build('ec_distann_me_idx'::regclass, {epoch}, '{build_id}'::uuid)"),
+            format!("SELECT ec_distann_build_epoch('ec_distann_me_idx'::regclass, {epoch}, '{build_id}'::uuid)"),
+            format!("SELECT ec_distann_decide_epoch_publish('ec_distann_me_idx'::regclass, '{build_id}'::uuid)"),
+            format!("SELECT ec_distann_recover_epoch_publish('ec_distann_me_idx'::regclass, '{build_id}'::uuid)"),
+        ] {
+            client
+                .batch_execute(&stmt)
+                .unwrap_or_else(|e| panic!("epoch {epoch} step failed: {stmt}: {e}"));
+        }
+    };
+    let scalar = |client: &mut postgres::Client, sql: &str| -> String {
+        client.query_one(sql, &[]).expect("query should run").get::<_, String>(0)
+    };
+
+    let first = "45454545-4545-4545-8545-454545454545";
+    let second = "46464646-4646-4646-8646-464646464646";
+    publish_epoch(&mut client, 7, first);
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT decision_state FROM ec_distann_publish_decision
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid AND build_id = '{first}'::uuid"
+        )),
+        "Applied",
+        "first epoch (no predecessor) records Applied"
+    );
+
+    publish_epoch(&mut client, 8, second);
+    assert_eq!(
+        scalar(&mut client,
+            "SELECT build_id::text FROM ec_distann_active_epoch
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid"),
+        second,
+        "the active pointer must name the successor epoch"
+    );
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT decision_state FROM ec_distann_publish_decision
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid AND build_id = '{second}'::uuid"
+        )),
+        "Activated",
+        "the successor decision is Activated (predecessor retirement pending T4b)"
+    );
+    let disposition = client
+        .query_one(
+            &format!(
+                "SELECT disposition, node_id FROM ec_distann_predecessor_disposition
+                  WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                    AND successor_build_id = '{second}'::uuid
+                    AND predecessor_build_id = '{first}'::uuid"
+            ),
+            &[],
+        )
+        .expect("a predecessor disposition must exist");
+    assert_eq!(disposition.get::<_, String>(0), "Pending");
+    assert_eq!(disposition.get::<_, i32>(1), 17);
+
+    client
+        .batch_execute("DROP TABLE IF EXISTS ec_distann_me_source CASCADE")
+        .expect("multi-epoch cleanup should drop the source");
+}
+
+#[pg_test]
 fn test_distann_epoch_build_status_registration() {
     const SECRET_NAME: &str = "DISTANN_BUILD_STATUS";
     const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BUILD_STATUS";
