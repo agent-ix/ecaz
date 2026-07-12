@@ -3,7 +3,8 @@
 use std::cell::{Cell, RefCell};
 
 use pgrx::datum::Uuid;
-use pgrx::{pg_extern, pg_sys, PgRelation, Spi};
+use pgrx::iter::TableIterator;
+use pgrx::{name, pg_extern, pg_sys, PgRelation, Spi};
 
 use crate::storage::relation::index_heap_relation_oid_handle;
 
@@ -1214,6 +1215,184 @@ fn ec_distann_abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
         Ok(())
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"))
+}
+
+/// Report the coordinator's view of a build (FR-078:80-83), one row per
+/// registered roster participant. The registration supplies the epoch and build
+/// state; the publish decision (if any) supplies the decision state; each local
+/// participant reports its live generation state, sequence, record count, and a
+/// content digest of its Ready receipt. An absent build id yields no rows. A
+/// multi-node roster fails closed — remote participant status is a later slice.
+#[pg_extern(stable, strict, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_epoch_build_status(
+    index_regclass: PgRelation,
+    build_id: Uuid,
+) -> TableIterator<
+    'static,
+    (
+        name!(epoch, i64),
+        name!(build_state, String),
+        name!(publish_decision_state, Option<String>),
+        name!(node_id, i32),
+        name!(participant_state, Option<String>),
+        name!(next_batch_seq, Option<i64>),
+        name!(record_count, Option<i64>),
+        name!(receipt_digest, Option<Vec<u8>>),
+        name!(last_error_category, Option<String>),
+    ),
+> {
+    type StatusRow = (
+        i64,
+        String,
+        Option<String>,
+        i32,
+        Option<String>,
+        Option<i64>,
+        Option<i64>,
+        Option<Vec<u8>>,
+        Option<String>,
+    );
+    let rows = (|| -> Result<Vec<StatusRow>, String> {
+        if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
+            return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
+        }
+        let index_oid = index_regclass.oid();
+        let (_control_guard, _handle, _metadata, logical_index_uuid) = open_control_index(
+            index_oid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            "ec_distann_epoch_build_status",
+        )?;
+        let registration = extension_relation_name("ec_distann_build_registration")?;
+        let decision = extension_relation_name("ec_distann_publish_decision")?;
+        let binding = extension_relation_name("ec_distann_build_participant_binding")?;
+
+        // Registration epoch + state. An absent build id yields no rows.
+        let registration_row = Spi::connect(|client| -> Result<Option<(i64, String)>, String> {
+            client
+                .select(
+                    &format!(
+                        "SELECT epoch, state FROM {registration}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_STATE: registration lookup failed".to_owned())?
+                .map(|row| {
+                    let epoch = row["epoch"]
+                        .value::<i64>()
+                        .map_err(|_| "EC_BUILD_STATE: registration epoch decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_STATE: registration epoch is NULL".to_owned())?;
+                    let state = row["state"]
+                        .value::<String>()
+                        .map_err(|_| "EC_BUILD_STATE: registration state decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_STATE: registration state is NULL".to_owned())?;
+                    Ok((epoch, state))
+                })
+                .next()
+                .transpose()
+        })?;
+        let Some((epoch, build_state)) = registration_row else {
+            return Ok(Vec::new());
+        };
+
+        // Publish decision state, if a decision exists for this build.
+        let publish_decision_state = Spi::connect(|client| -> Result<Option<String>, String> {
+            client
+                .select(
+                    &format!(
+                        "SELECT decision_state FROM {decision}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_STATE: decision lookup failed".to_owned())?
+                .map(|row| {
+                    row["decision_state"]
+                        .value::<String>()
+                        .map_err(|_| "EC_BUILD_STATE: decision state decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_STATE: decision state is NULL".to_owned())
+                })
+                .next()
+                .transpose()
+        })?;
+
+        // Roster participants (node ids), rejecting a not-yet-supported remote roster.
+        let bindings = Spi::connect(|client| -> Result<Vec<(i32, bool)>, String> {
+            client
+                .select(
+                    &format!(
+                        "SELECT node_id, is_local FROM {binding}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid
+                          ORDER BY roster_ordinal"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_STATE: participant binding lookup failed".to_owned())?
+                .map(|row| {
+                    let node_id = row["node_id"]
+                        .value::<i32>()
+                        .map_err(|_| "EC_BUILD_STATE: participant node id decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_STATE: participant node id is NULL".to_owned())?;
+                    let is_local = row["is_local"]
+                        .value::<bool>()
+                        .map_err(|_| "EC_BUILD_STATE: participant locality decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_STATE: participant locality is NULL".to_owned())?;
+                    Ok((node_id, is_local))
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })?;
+        if bindings.iter().any(|(_, is_local)| !is_local) {
+            return Err(
+                "EC_BUILD_STATE: remote participant status is not yet implemented".to_owned(),
+            );
+        }
+
+        // The single local participant serves the coordinator's own index.
+        let generation =
+            super::generation_catalog::lookup_generation(index_oid, logical_index_uuid, build_id)?;
+
+        let mut rows = Vec::with_capacity(bindings.len());
+        for (node_id, _is_local) in bindings {
+            let matching = generation
+                .as_ref()
+                .filter(|row| i32::try_from(row.node_id).ok() == Some(node_id));
+            let (participant_state, next_batch_seq, record_count, receipt_digest) = match matching {
+                Some(row) => (
+                    Some(row.state.clone()),
+                    Some(i64::try_from(row.next_batch_seq).map_err(|_| {
+                        "EC_BUILD_STATE: next batch sequence exceeds bigint".to_owned()
+                    })?),
+                    Some(i64::try_from(row.cumulative_record_count).map_err(|_| {
+                        "EC_BUILD_STATE: record count exceeds bigint".to_owned()
+                    })?),
+                    row.ready_receipt
+                        .map(|receipt| domain_digest(b"ec_distann_ready_receipt_v1\0", &receipt).to_vec()),
+                ),
+                None => (None, None, None, None),
+            };
+            rows.push((
+                epoch,
+                build_state.clone(),
+                publish_decision_state.clone(),
+                node_id,
+                participant_state,
+                next_batch_seq,
+                record_count,
+                receipt_digest,
+                None,
+            ));
+        }
+        Ok(rows)
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    TableIterator::new(rows.into_iter())
 }
 
 #[cfg(test)]

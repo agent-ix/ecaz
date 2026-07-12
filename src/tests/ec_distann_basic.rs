@@ -2044,6 +2044,95 @@ fn test_distann_abort_epoch_build_clears_gate_and_is_idempotent() {
 }
 
 #[pg_test]
+fn test_distann_epoch_build_status_registration() {
+    const SECRET_NAME: &str = "DISTANN_BUILD_STATUS";
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BUILD_STATUS";
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+    let coordinator = create_distann_physical_generation_fixture("ec_distann_buildstatus", 0x86);
+    configure_distann_participant_identity(&coordinator, "buildstatus/node-17");
+    Spi::run(&format!(
+        "INSERT INTO ec_distann_node_descriptor (
+             index_oid, logical_index_uuid, roster_ordinal, node_id,
+             endpoint_identity, conninfo_secret_name, remote_index_regclass,
+             participant_logical_index_uuid, compatibility_digest, is_local
+         )
+         SELECT '{index}'::regclass::oid, logical_index_uuid, 0, 17,
+                'buildstatus/node-17', '{SECRET_NAME}', canonical_index_regclass,
+                logical_index_uuid, compatibility_digest, true
+           FROM ec_distann_control_identity('{index}'::regclass)",
+        index = coordinator.index_name,
+    ))
+    .expect("coordinator self-registration should succeed");
+    let build_id = coordinator.build_id.to_string();
+
+    // Before begin the build id resolves to no registration and no rows.
+    assert_eq!(
+        Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ec_distann_epoch_build_status(
+                 '{}'::regclass, '{build_id}'::uuid
+             )",
+            coordinator.index_name,
+        ))
+        .unwrap(),
+        Some(0),
+        "an unregistered build id must report no status rows"
+    );
+
+    Spi::run(&format!(
+        "SELECT ec_distann_begin_epoch_build('{}'::regclass, 7, '{build_id}'::uuid)",
+        coordinator.index_name,
+    ))
+    .expect("begin epoch build should register the coordinator build");
+
+    let row = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT epoch, build_state, publish_decision_state, node_id,
+                            participant_state, next_batch_seq, record_count,
+                            receipt_digest, last_error_category
+                       FROM ec_distann_epoch_build_status(
+                           '{}'::regclass, '{build_id}'::uuid
+                       )",
+                    coordinator.index_name,
+                ),
+                None,
+                &[],
+            )
+            .expect("build status should execute")
+            .map(|r| {
+                (
+                    r["epoch"].value::<i64>().unwrap().unwrap(),
+                    r["build_state"].value::<String>().unwrap().unwrap(),
+                    r["publish_decision_state"].value::<String>().unwrap(),
+                    r["node_id"].value::<i32>().unwrap().unwrap(),
+                    r["participant_state"].value::<String>().unwrap(),
+                    r["next_batch_seq"].value::<i64>().unwrap(),
+                    r["receipt_digest"].value::<Vec<u8>>().unwrap(),
+                    r["last_error_category"].value::<String>().unwrap(),
+                )
+            })
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(row.len(), 1, "single-node roster must report exactly one row");
+    let (epoch, build_state, decision, node_id, participant_state, next_seq, receipt, last_error) =
+        &row[0];
+    assert_eq!(*epoch, 7);
+    assert_eq!(build_state, "Registered");
+    assert_eq!(decision.as_deref(), None, "no publish decision exists yet");
+    assert_eq!(*node_id, 17);
+    assert_eq!(
+        participant_state.as_deref(),
+        None,
+        "no generation exists before build_epoch, so the participant state is NULL"
+    );
+    assert_eq!(next_seq, &None);
+    assert_eq!(receipt, &None);
+    assert_eq!(last_error.as_deref(), None);
+}
+
+#[pg_test]
 fn test_distann_begin_build_competing_backend_busy() {
     let conninfo = current_pg_test_loopback_conninfo();
     let mut setup = postgres::Client::connect(&conninfo, postgres::NoTls)
