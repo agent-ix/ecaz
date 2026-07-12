@@ -1,0 +1,25 @@
+Task 179 packet 022 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: ce84a8bc270d28dc48838702e5846081ec29e56d
+
+Command:
+  cargo check --lib --no-default-features --features 'pg18 pg_test'
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx test pg18 test_distann_multi_epoch_publish
+Key result:
+  test tests::pg_test_distann_multi_epoch_publish ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2494 filtered out
+
+The live fixture verifies a cross-backend exact token produces
+EC_RETENTION_ACTIVE with no decision; zero pins commit Pending without physical
+drop; a committed decision rejects later registration; recovery reports
+Reclaimed, deletes the generation row/relations transactionally, marks the
+decision Applied, and exact decision/recovery replay succeeds.
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
