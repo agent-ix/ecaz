@@ -59,9 +59,11 @@ mod row_schema;
 mod scan_registry;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::scan_registry::{
+    live_token_count_for_fingerprint as live_scan_token_count_for_test,
     register_scan_token as register_scan_token_for_test,
     release_scan_token as release_scan_token_for_test, RegisterOutcome as ScanRegisterOutcome,
-    RegistryError as ScanRegistryError, with_scan_registration_fence as with_scan_fence_for_test,
+    RegistryError as ScanRegistryError, ScanTokenGuard as ScanTokenGuardForTest,
+    with_scan_registration_fence as with_scan_fence_for_test,
 };
 pub(crate) mod scan;
 mod shard_build;

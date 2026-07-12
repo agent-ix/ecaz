@@ -1419,6 +1419,25 @@ impl RegistryView<'_> {
         Ok(true)
     }
 
+    fn token_count_for_fingerprint(
+        &self,
+        database_oid: pg_sys::Oid,
+        logical_index_uuid: [u8; 16],
+        epoch_fingerprint: [u8; 34],
+    ) -> Result<u32, RegistryError> {
+        let count = self
+            .tokens
+            .iter()
+            .filter(|token| {
+                token.in_use != 0
+                    && token.database_oid == database_oid
+                    && token.logical_index_uuid == logical_index_uuid
+                    && token.epoch_fingerprint == epoch_fingerprint
+            })
+            .count();
+        u32::try_from(count).map_err(|_| RegistryError::CorruptSharedState)
+    }
+
     fn mark_dropped(
         &mut self,
         database_oid: pg_sys::Oid,
@@ -1466,6 +1485,81 @@ pub(crate) fn release_scan_token(
     };
     let _guard = unsafe { lock_registry()? };
     unsafe { shared_view()? }.release(identity, owner)
+}
+
+/// Exact scan registration owned by executor state. Registration happens under
+/// the logical-index shared fence; normal executor shutdown releases eagerly,
+/// while abrupt backend death remains covered by the shared registry reaper.
+pub(crate) struct ScanTokenGuard {
+    logical_index_uuid: Uuid,
+    epoch_fingerprint: [u8; 34],
+    scan_token: Uuid,
+    active: bool,
+}
+
+impl ScanTokenGuard {
+    pub(crate) fn register(
+        logical_index_uuid: Uuid,
+        epoch_fingerprint: [u8; 34],
+    ) -> Result<Self, RegistryError> {
+        let mut token_bytes = [0u8; 16];
+        if !unsafe { pg_sys::pg_strong_random(token_bytes.as_mut_ptr().cast(), token_bytes.len()) }
+        {
+            return Err(RegistryError::CorruptSharedState);
+        }
+        token_bytes[6] = (token_bytes[6] & 0x0f) | 0x40;
+        token_bytes[8] = (token_bytes[8] & 0x3f) | 0x80;
+        let scan_token = Uuid::from_bytes(token_bytes);
+        let database_oid = unsafe { pg_sys::MyDatabaseId };
+        with_scan_registration_fence(database_oid, *logical_index_uuid.as_bytes(), || {
+            register_scan_token(logical_index_uuid, epoch_fingerprint, scan_token)
+        })??;
+        Ok(Self {
+            logical_index_uuid,
+            epoch_fingerprint,
+            scan_token,
+            active: true,
+        })
+    }
+
+    pub(crate) fn release(mut self) -> Result<bool, RegistryError> {
+        let released = release_scan_token(
+            self.logical_index_uuid,
+            self.epoch_fingerprint,
+            self.scan_token,
+        )?;
+        self.active = false;
+        Ok(released)
+    }
+}
+
+impl Drop for ScanTokenGuard {
+    fn drop(&mut self) {
+        if !self.active {
+            return;
+        }
+        let _ = release_scan_token(
+            self.logical_index_uuid,
+            self.epoch_fingerprint,
+            self.scan_token,
+        );
+        self.active = false;
+    }
+}
+
+pub(crate) fn live_token_count_for_fingerprint(
+    logical_index_uuid: Uuid,
+    epoch_fingerprint: [u8; 34],
+) -> Result<u32, RegistryError> {
+    let database_oid = unsafe { pg_sys::MyDatabaseId };
+    let _guard = unsafe { lock_registry()? };
+    let mut view = unsafe { shared_view()? };
+    view.reap_dead()?;
+    view.token_count_for_fingerprint(
+        database_oid,
+        *logical_index_uuid.as_bytes(),
+        epoch_fingerprint,
+    )
 }
 
 pub(crate) fn mark_logical_index_dropped(
@@ -2273,6 +2367,40 @@ mod tests {
                 .filter(|slot| slot.in_use != 0)
                 .count(),
             MAX
+        );
+    }
+
+    #[test]
+    fn fingerprint_count_is_exact_not_logical_index_wide() {
+        let live = owner(0, 100, 1);
+        let mut registry = TestRegistry::new(1, 1, 3);
+        for identity in [
+            identity(1, 1, 7, 1),
+            identity(1, 1, 7, 2),
+            identity(1, 1, 8, 3),
+        ] {
+            registry
+                .view()
+                .register_with(identity, live, |_| true)
+                .unwrap();
+        }
+        assert_eq!(
+            registry
+                .view()
+                .token_count_for_fingerprint(1.into(), [1; 16], [7; 34]),
+            Ok(2)
+        );
+        assert_eq!(
+            registry
+                .view()
+                .token_count_for_fingerprint(1.into(), [1; 16], [8; 34]),
+            Ok(1)
+        );
+        assert_eq!(
+            registry
+                .view()
+                .token_count_for_fingerprint(1.into(), [2; 16], [7; 34]),
+            Ok(0)
         );
     }
 

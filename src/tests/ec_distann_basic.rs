@@ -83,8 +83,31 @@ fn test_ec_distann_scan_registry_preloaded_shared_path() {
     )
     .expect("preloaded registry should hold and release the shared fence");
     assert_eq!(
+        crate::am::ec_distann::live_scan_token_count_for_test(logical, fingerprint),
+        Ok(1)
+    );
+    {
+        let _guard = crate::am::ec_distann::ScanTokenGuardForTest::register(
+            logical,
+            fingerprint,
+        )
+        .expect("RAII scan token should register under the shared fence");
+        assert_eq!(
+            crate::am::ec_distann::live_scan_token_count_for_test(logical, fingerprint),
+            Ok(2)
+        );
+    }
+    assert_eq!(
+        crate::am::ec_distann::live_scan_token_count_for_test(logical, fingerprint),
+        Ok(1)
+    );
+    assert_eq!(
         crate::am::ec_distann::release_scan_token_for_test(logical, fingerprint, token),
         Ok(true)
+    );
+    assert_eq!(
+        crate::am::ec_distann::live_scan_token_count_for_test(logical, fingerprint),
+        Ok(0)
     );
 }
 
