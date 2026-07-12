@@ -74,7 +74,10 @@ only incremental distributed insert is the final milestone.
   so FR-079 exact rerank of a freshly inserted vec_id always has a
   node-local vector and final tuple payload. `aminsert`/`ambulkdelete` run on the
   coordinator and drive this endpoint; degree re-pruning executes on the
-  data node that owns the amended record.
+  data node that owns the amended record. The endpoint SHALL reject any
+  transaction isolation level other than READ COMMITTED before relation access
+  or mutation, SHALL revoke `PUBLIC` execute, and SHALL use the same fixed
+  SECURITY DEFINER search path as the FR-079 remote endpoint class.
 - **Incremental distributed insert (committed scope, final milestone)**:
   `aminsert` SHALL run the [FR-081](./FR-081-distann-query-orchestration.md)
   beam search for the new vector, select its edges with `robust_prune`,
@@ -103,6 +106,7 @@ only incremental distributed insert is the final milestone.
 | FR-083-AC-2 | Epoch build drops tombstoned records, repairs all referencing adjacency, and re-establishes FR-077 invariants; expansion never encounters a reclaimed record within an epoch | Test |
 | FR-083-AC-3 | Interim delta-buffer insert gives same-statement visibility and drains at the next epoch build | Test |
 | FR-083-AC-4 | After incremental insert, distinct_recall@10 on queries targeting the inserted rows' neighborhoods matches a fresh rebuild containing the same rows | Test (bench A/B via `ecaz bench suite`) |
+| FR-083-AC-5 | The remote write endpoint rejects stronger isolation before relation access and is absent from every unprivileged remote-endpoint EXECUTE surface | Test (TC-040) |
 | FR-083-AC-5 | A mid-insert fault leaves no dangling forward edge (graph consistent) | Test (fault drill) |
 | FR-083-AC-6 | Concurrent inserts and queries interleave without wrong results | Test (concurrency drill) |
 | FR-083-AC-7 | After incremental insert, a query expanding and materializing the inserted vec_id reads its co-placed source row node-locally, returns a valid exact_dist, and reconstructs every requested payload column | Test (TC-043) |

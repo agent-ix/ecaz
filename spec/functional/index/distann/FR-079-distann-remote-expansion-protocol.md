@@ -152,6 +152,11 @@ entry.
   receive functions after validating the same schema fingerprint.
 - The coordinator SHALL evaluate remaining SQL quals against reconstructed
   tuples before exposing rows to the executor.
+- Every generated implementation function and normative SQL overload in the
+  remote expansion/materialization endpoint class SHALL revoke `PUBLIC`
+  execute, run as `SECURITY DEFINER`, and fix `search_path` to
+  `pg_catalog`, the extension schema, and `pg_temp`. An unprivileged role SHALL
+  not execute an implementation-signature sibling to bypass a secured wrapper.
 
 ## Error Conditions
 
@@ -184,6 +189,7 @@ zero returned rows when one request member fails.
 | FR-079-AC-8 | Unknown generation, schema mismatch, invalid attnum, non-owner, missing record, and missing row-tier tuple each produce their documented error with zero partial rows | Test (TC-040, TC-042) |
 | FR-079-AC-9 | Structural inspection proves the materialization request contains no caller-selected function name/OID and no raw conninfo | Test (TC-040) |
 | FR-079-AC-10 | While an old epoch is retained, both old and new Published fingerprints resolve their own record and row-tier generations without cross-generation reads | Test (TC-042) |
+| FR-079-AC-11 | An unprivileged role has no EXECUTE privilege on any generated or normative expansion/materialization overload; every overload is SECURITY DEFINER with the fixed safe search path | Test (TC-040) |
 
 ## Dependencies
 

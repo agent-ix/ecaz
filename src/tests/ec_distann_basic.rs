@@ -7793,6 +7793,91 @@ fn test_ec_distann_expand_nodes_single_node_matches_local() {
 }
 
 #[pg_test]
+fn test_distann_remote_endpoint_acl_class() {
+    const ROLE: &str = "ec_distann_unprivileged_remote_reader";
+    Spi::run(&format!("CREATE ROLE {ROLE} NOLOGIN")).expect("test role should create");
+
+    let (endpoint_count, exposed_count) = Spi::get_two::<i64, i64>(&format!(
+        "SELECT count(*)::bigint,
+                count(*) FILTER (
+                    WHERE has_function_privilege('{ROLE}', proc.oid, 'EXECUTE')
+                       OR NOT proc.prosecdef
+                       OR NOT EXISTS (
+                           SELECT 1 FROM unnest(proc.proconfig) setting
+                            WHERE setting = format(
+                                'search_path=pg_catalog, %s, pg_temp',
+                                quote_ident(namespace.nspname)
+                            )
+                       )
+                )::bigint
+           FROM pg_proc proc
+           JOIN pg_namespace namespace ON namespace.oid = proc.pronamespace
+           JOIN pg_extension extension ON extension.extnamespace = namespace.oid
+          WHERE extension.extname = 'ecaz'
+            AND proc.proname IN (
+                'ec_distann_expand_nodes',
+                'ec_distann_expand_physical_nodes',
+                'ec_distann_materialize_rows',
+                'ec_distann_materialize_row_payloads',
+                'ec_distann_materialize_physical_row_payloads',
+                'ec_distann_apply_record_writes'
+            )"
+    ))
+    .expect("endpoint privilege audit should run");
+    assert_eq!(
+        endpoint_count,
+        Some(8),
+        "audit must cover every current overload"
+    );
+    assert_eq!(
+        exposed_count,
+        Some(0),
+        "remote read/write endpoints must be SECURITY DEFINER with a fixed safe search_path and no PUBLIC execute"
+    );
+}
+
+#[pg_test]
+fn test_ec_distann_apply_record_writes_requires_read_committed() {
+    let mut client =
+        postgres::Client::connect(&current_pg_test_loopback_conninfo(), postgres::NoTls)
+            .expect("loopback connection should open");
+    let extension_schema = client
+        .query_one(
+            "SELECT pg_catalog.quote_ident(namespace.nspname)
+               FROM pg_catalog.pg_extension extension
+               JOIN pg_catalog.pg_namespace namespace
+                 ON namespace.oid = extension.extnamespace
+              WHERE extension.extname = 'ecaz'",
+            &[],
+        )
+        .expect("extension schema should resolve")
+        .get::<_, String>(0);
+    client
+        .batch_execute(&format!(
+            "SET search_path = {extension_schema}, public;
+             BEGIN ISOLATION LEVEL REPEATABLE READ"
+        ))
+        .expect("repeatable-read probe should begin");
+    let error = client
+        .batch_execute(
+            "SELECT ec_distann_apply_record_writes(
+                 0::oid, '\\x'::bytea, ARRAY[]::bigint[]
+             )",
+        )
+        .expect_err("mutating endpoint outside READ COMMITTED must fail before relation access");
+    assert!(
+        error
+            .as_db_error()
+            .map(|db_error| db_error.message().contains("EC_TRANSACTION_ISOLATION"))
+            .unwrap_or(false),
+        "isolation failure must be classified before relation access: {error}"
+    );
+    client
+        .batch_execute("ROLLBACK")
+        .expect("repeatable-read probe should roll back");
+}
+
+#[pg_test]
 fn test_ec_distann_expand_nodes_rejects_epoch_mismatch() {
     // FR-079-AC-2: a stale/wrong epoch fingerprint yields the retriable
     // epoch-mismatch error, never data.

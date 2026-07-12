@@ -231,6 +231,8 @@ fn ec_distann_apply_record_writes(
     epoch_fingerprint: &[u8],
     tombstone_vec_ids: Vec<i64>,
 ) -> i64 {
+    super::lifecycle_guard::require_read_committed("ec_distann_apply_record_writes")
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
     apply_record_writes_impl(index_regclass, epoch_fingerprint, &tombstone_vec_ids)
         .unwrap_or_else(|e| e.raise())
 }

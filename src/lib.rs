@@ -715,6 +715,30 @@ REVOKE ALL ON FUNCTION ec_distann_epoch_topology(regclass, bytea) FROM PUBLIC;
 -- unique generated names so pgrx's entity graph remains unambiguous; these SQL
 -- wrappers provide the normative endpoint names alongside the legacy oid
 -- signatures during the format transition.
+ALTER FUNCTION ec_distann_expand_nodes(oid, bytea, real[], bigint[], real)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_expand_nodes(oid, bytea, real[], bigint[], real)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
+    oid, bytea, real[], bigint[], real
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_materialize_rows(oid, bytea, bigint[])
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_materialize_rows(oid, bytea, bigint[])
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_materialize_rows(
+    oid, bytea, bigint[]
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_apply_record_writes(oid, bytea, bigint[])
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_apply_record_writes(oid, bytea, bigint[])
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_apply_record_writes(
+    oid, bytea, bigint[]
+) FROM PUBLIC;
+
 ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real)
     SECURITY DEFINER;
 ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real)
