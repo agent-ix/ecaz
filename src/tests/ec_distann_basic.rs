@@ -3266,6 +3266,24 @@ fn test_distann_three_owner_physical_handoff() {
         30,
         "physical owner union must exactly cover the source"
     );
+    let ready_head = client
+        .query_one(
+            &format!(
+                "SELECT sample_count,
+                        head_sample_digest <> decode(repeat('00', 32), 'hex')
+                   FROM ec_distann_generation_head_state
+                  WHERE index_oid = 'ec_distann_rh_idx'::regclass::oid
+                    AND build_id = '{build_id}'::uuid"
+            ),
+            &[],
+        )
+        .expect("Ready build should persist its bounded head state");
+    let ready_head_count = ready_head.get::<_, i32>(0);
+    assert!(
+        (1..=30).contains(&ready_head_count),
+        "head sample must be nonempty and bounded by source cardinality"
+    );
+    assert!(ready_head.get::<_, bool>(1), "head digest must not be zero");
 
     client
         .batch_execute(&format!(
@@ -3284,6 +3302,20 @@ fn test_distann_three_owner_physical_handoff() {
             .expect("aborted generations should be inspectable")
             .get::<_, i64>(0),
         0
+    );
+    assert_eq!(
+        client
+            .query_one(
+                &format!(
+                    "SELECT count(*) FROM ec_distann_generation_head_state
+                      WHERE build_id = '{build_id}'::uuid"
+                ),
+                &[],
+            )
+            .expect("aborted head state should be inspectable")
+            .get::<_, i64>(0),
+        0,
+        "build abort must cascade to its head object"
     );
 
     let published_build = "4a4a4a4a-4a4a-4a4a-8a4a-4a4a4a4a4a4a";
@@ -3379,6 +3411,21 @@ fn test_distann_three_owner_physical_handoff() {
         served_owners,
         std::collections::BTreeSet::from([0, 1, 2]),
         "CustomScan must materialize rows from every physical owner"
+    );
+    assert_eq!(
+        client
+            .query_one(
+                &format!(
+                    "SELECT sample_count FROM ec_distann_generation_head_state
+                      WHERE index_oid = 'ec_distann_rh_idx'::regclass::oid
+                        AND build_id = '{published_build}'::uuid"
+                ),
+                &[],
+            )
+            .expect("Published generation head state should remain readable")
+            .get::<_, i32>(0),
+        ready_head_count,
+        "identical source/options must persist a deterministic head count"
     );
     let successor_build = "4b4b4b4b-4b4b-4b4b-8b4b-4b4b4b4b4b4b";
     for statement in [
@@ -3524,6 +3571,27 @@ fn test_distann_three_owner_physical_handoff() {
             .expect("successor active pointer should exist")
             .get::<_, String>(0),
         successor_build
+    );
+    let remaining_heads = client
+        .query_one(
+            &format!(
+                "SELECT count(*) FILTER (WHERE build_id = '{published_build}'::uuid),
+                        count(*) FILTER (WHERE build_id = '{successor_build}'::uuid)
+                   FROM ec_distann_generation_head_state
+                  WHERE index_oid = 'ec_distann_rh_idx'::regclass::oid"
+            ),
+            &[],
+        )
+        .expect("head reclaim state should be visible");
+    assert_eq!(
+        remaining_heads.get::<_, i64>(0),
+        0,
+        "reclaimed predecessor head object must be removed"
+    );
+    assert_eq!(
+        remaining_heads.get::<_, i64>(1),
+        1,
+        "active successor head object must remain"
     );
     client
         .batch_execute(

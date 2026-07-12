@@ -55,6 +55,8 @@ struct CatalogRelations {
     build_registration: String,
     build_participant_binding: String,
     build_candidate: String,
+    generation_head_state: String,
+    generation_head_sample: String,
     publish_decision: String,
     predecessor_disposition: String,
     retire_decision: String,
@@ -75,6 +77,8 @@ impl CatalogRelations {
                 "ec_distann_build_participant_binding",
             )?,
             build_candidate: extension_relation_name("ec_distann_build_candidate")?,
+            generation_head_state: extension_relation_name("ec_distann_generation_head_state")?,
+            generation_head_sample: extension_relation_name("ec_distann_generation_head_sample")?,
             publish_decision: extension_relation_name("ec_distann_publish_decision")?,
             predecessor_disposition: extension_relation_name("ec_distann_predecessor_disposition")?,
             retire_decision: extension_relation_name("ec_distann_retire_decision")?,
@@ -860,6 +864,8 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
+            (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
+            (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid)
             AS removed_count",
         catalogs.participant_identity,
@@ -870,6 +876,8 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
         catalogs.build_registration,
         catalogs.build_participant_binding,
         catalogs.build_candidate,
+        catalogs.generation_head_state,
+        catalogs.generation_head_sample,
         catalogs.publish_decision,
         catalogs.predecessor_disposition,
         catalogs.retire_decision,

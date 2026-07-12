@@ -82,45 +82,6 @@ fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
     format!("EC_BUILD_INCOMPLETE: remote {context} failed: {detail}")
 }
 
-pub(crate) fn remote_physical_seed_candidates(
-    conninfo: &str,
-    index_regclass: &str,
-    epoch_fingerprint: &[u8],
-    query: &[f32],
-    limit: i32,
-) -> Result<Vec<DistannSeedCandidate>, DistannExpandError> {
-    with_transport_state::<_, DistannExpandError>(|state| {
-        let DistannTransportState {
-            runtime,
-            connections,
-        } = state;
-        runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo)
-                .await
-                .map_err(DistannExpandError::Internal)?;
-            let rows = client
-                .query(
-                    "SELECT vec_id, code_dist
-                       FROM ec_distann_physical_seed_candidates(
-                           $1::text::regclass, $2::bytea, $3::real[], $4::integer)",
-                    &[&index_regclass, &epoch_fingerprint, &query, &limit],
-                )
-                .await
-                .map_err(classify_physical_read_error)?;
-            rows.into_iter()
-                .map(|row| {
-                    let vec_id: i64 = row.try_get(0).map_err(row_err)?;
-                    let dist: f32 = row.try_get(1).map_err(row_err)?;
-                    Ok(DistannSeedCandidate {
-                        vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
-                        dist,
-                    })
-                })
-                .collect()
-        })
-    })
-}
-
 pub(crate) fn remote_physical_expand_nodes(
     conninfo: &str,
     index_regclass: &str,

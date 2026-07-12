@@ -22,7 +22,7 @@ use super::quantizer::{DistannCodecBinding, DistannPreparedQuery};
 use super::routine::DistannHitCollection;
 use super::scan::{
     distann_orchestrated_search, DistannExpandedNode, DistannNodeExpander,
-    DistannOrchestrationParams, DistannScanHit, DistannSeedCandidate,
+    DistannOrchestrationParams, DistannScanHit,
 };
 use super::scan_registry::ScanTokenGuard;
 use super::tuple::DistannNodeTuple;
@@ -273,80 +273,6 @@ impl RetainedGenerationScan {
             code_len,
         };
         expander.expand_nodes(vec_ids, code_threshold)
-    }
-
-    fn seed_candidates(
-        &self,
-        query: &[f32],
-        limit: usize,
-    ) -> Result<Vec<DistannSeedCandidate>, DistannExpandError> {
-        self.validate_request(query, &[])?;
-        if limit == 0 {
-            return Ok(Vec::new());
-        }
-        let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)
-            .map_err(DistannExpandError::Internal)?;
-        let code_len = binding
-            .code_len(usize::from(self.descriptor.dimensions))
-            .map_err(DistannExpandError::Internal)?;
-        let prepared =
-            DistannPreparedQuery::prepare_artifact(&self.descriptor.codec_artifact, query)
-                .map_err(DistannExpandError::Internal)?;
-        let mut candidates = Spi::connect(|client| {
-            client
-                .select(
-                    &format!(
-                        "SELECT graph_record FROM {} ORDER BY vec_id",
-                        self.graph_relation_name
-                    ),
-                    None,
-                    &[],
-                )
-                .map_err(|error| {
-                    DistannExpandError::GenerationMissing(format!(
-                        "physical seed scan failed: {error}"
-                    ))
-                })?
-                .map(|row| {
-                    let bytes = row["graph_record"]
-                        .value::<Vec<u8>>()
-                        .map_err(|error| {
-                            DistannExpandError::GenerationMissing(format!(
-                                "physical seed graph record decode failed: {error}"
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            DistannExpandError::GenerationMissing(
-                                "physical seed graph record is NULL".to_owned(),
-                            )
-                        })?;
-                    let node = DistannNodeTuple::decode_physical_v1(
-                        &bytes,
-                        self.descriptor.graph_degree,
-                        code_len,
-                    )
-                    .map_err(DistannExpandError::GenerationMissing)?;
-                    let owner = super::placement::owning_node(
-                        node.vec_id,
-                        self.descriptor.roster.len(),
-                        self.descriptor.placement_hash_version,
-                    );
-                    if owner != self.generation.owner_ordinal as usize {
-                        return Err(DistannExpandError::Placement(format!(
-                            "stored vec_id {:#018x} belongs to roster ordinal {owner}, not {}",
-                            node.vec_id, self.generation.owner_ordinal
-                        )));
-                    }
-                    Ok(DistannSeedCandidate {
-                        vec_id: node.vec_id,
-                        dist: prepared.score_dist(&node.search_code),
-                    })
-                })
-                .collect::<Result<Vec<_>, DistannExpandError>>()
-        })?;
-        candidates.sort_unstable_by(|left, right| left.dist.total_cmp(&right.dist));
-        candidates.truncate(limit);
-        Ok(candidates)
     }
 
     fn resolve_nodes(&self, vec_ids: &[u64]) -> Result<Vec<DistannNodeTuple>, DistannExpandError> {
@@ -653,32 +579,6 @@ fn ec_distann_expand_physical_nodes(
     TableIterator::new(rows.into_iter())
 }
 
-/// Internal owner-local seed RPC used until the persisted bounded head sample
-/// is wired into the generation manifest.  Its response is bounded even though
-/// this initial adapter still scans the immutable owner graph.
-#[pg_extern(volatile, parallel_restricted)]
-fn ec_distann_physical_seed_candidates(
-    index_regclass: PgRelation,
-    epoch_fingerprint: Vec<u8>,
-    query: Vec<f32>,
-    limit: i32,
-) -> TableIterator<'static, (name!(vec_id, i64), name!(code_dist, f32))> {
-    let limit = usize::try_from(limit)
-        .ok()
-        .filter(|limit| (1..=4096).contains(limit))
-        .unwrap_or_else(|| pgrx::error!("physical seed limit must be in 1..=4096"));
-    let rows = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
-        .and_then(|store| store.seed_candidates(&query, limit))
-        .map(|seeds| {
-            seeds
-                .into_iter()
-                .map(|seed| (i64::from_le_bytes(seed.vec_id.to_le_bytes()), seed.dist))
-                .collect::<Vec<_>>()
-        })
-        .unwrap_or_else(|error| error.raise());
-    TableIterator::new(rows.into_iter())
-}
-
 /// FR-079 physical-generation payload overload.  Projection identity is by
 /// attnum and the owner resolves each binary send function from its frozen
 /// row-tier schema; callers cannot select SQL function names.
@@ -721,6 +621,7 @@ pub(crate) struct PhysicalGenerationScan {
     graph_relation_name: String,
     fingerprint: [u8; 34],
     routes: Vec<PhysicalOwnerRoute>,
+    head_index: Option<super::head_sample::DistannPhysicalHeadIndex>,
     _scan_token: ScanTokenGuard,
 }
 
@@ -851,6 +752,20 @@ impl PhysicalGenerationScan {
                 "EC_NODE_DESCRIPTOR: local generation owner is not the local binding".to_owned(),
             );
         }
+        let (head_sample, manifest_build_options) = super::head_sample::load_head_sample(
+            index_oid,
+            logical_index_uuid,
+            active.build_id,
+            &active.fingerprint,
+        )?;
+        let exact_options = manifest_build_options.options;
+        let head_index = super::head_sample::DistannPhysicalHeadIndex::build(
+            head_sample,
+            usize::from(manifest_build_options.graph_degree),
+            usize::from(exact_options.build_list_size),
+            exact_options.alpha,
+            exact_options.seed,
+        )?;
         Ok(Self {
             row_tier_relid: generation.row_tier_relid,
             descriptor,
@@ -860,6 +775,7 @@ impl PhysicalGenerationScan {
             graph_relation_name,
             fingerprint: active.fingerprint,
             routes,
+            head_index,
             _scan_token: scan_token,
         })
     }
@@ -891,74 +807,12 @@ impl PhysicalGenerationScan {
                 "EC_GENERATION_MISSING: could not allocate row-tier scan slot".to_owned()
             })?;
 
-        let mut all_seeds = Spi::connect(|client| {
-            client
-                .select(
-                    &format!(
-                        "SELECT graph_record FROM {} ORDER BY vec_id",
-                        self.graph_relation_name
-                    ),
-                    None,
-                    &[],
-                )
-                .map_err(|error| format!("EC_GENERATION_MISSING: seed scan failed: {error}"))?
-                .map(|row| {
-                    let bytes = row["graph_record"]
-                        .value::<Vec<u8>>()
-                        .map_err(|_| {
-                            "EC_GENERATION_MISSING: seed graph record decode failed".to_owned()
-                        })?
-                        .ok_or_else(|| {
-                            "EC_GENERATION_MISSING: seed graph record is NULL".to_owned()
-                        })?;
-                    let node = DistannNodeTuple::decode_physical_v1(
-                        &bytes,
-                        self.descriptor.graph_degree,
-                        code_len,
-                    )?;
-                    let owner = super::placement::owning_node(
-                        node.vec_id,
-                        self.descriptor.roster.len(),
-                        self.descriptor.placement_hash_version,
-                    );
-                    if owner != self.generation.owner_ordinal as usize {
-                        return Err(format!(
-                            "EC_PLACEMENT: stored vec_id {:#018x} belongs to roster ordinal {owner}, not {}",
-                            node.vec_id, self.generation.owner_ordinal
-                        ));
-                    }
-                    Ok(DistannSeedCandidate {
-                        vec_id: node.vec_id,
-                        dist: prepared.score_dist(&node.search_code),
-                    })
-                })
-                .collect::<Result<Vec<_>, String>>()
-        })?;
-        all_seeds.sort_unstable_by(|left, right| left.dist.total_cmp(&right.dist));
-        all_seeds.truncate(
-            (super::options::current_beam_width() * 2)
-                .max(32)
-                .min(all_seeds.len()),
-        );
-
-        let seed_limit = i32::try_from((super::options::current_beam_width() * 2).max(32))
-            .map_err(|_| "EC_BAD_INPUT: seed limit exceeds integer".to_owned())?;
-        for route in self.routes.iter().filter(|route| !route.is_local) {
-            let remote = super::remote_transport::remote_physical_seed_candidates(
-                route
-                    .conninfo
-                    .as_deref()
-                    .expect("remote route has conninfo"),
-                &route.remote_index_regclass,
-                &self.fingerprint,
-                query,
-                seed_limit,
-            )
-            .map_err(|error| error.to_string())?;
-            all_seeds.extend(remote);
-        }
-        all_seeds.sort_unstable_by(|left, right| left.dist.total_cmp(&right.dist));
-        all_seeds.truncate(seed_limit as usize);
+        let seed_limit = (super::options::current_beam_width() * 2).max(32);
+        let all_seeds = self
+            .head_index
+            .as_ref()
+            .map(|head| head.search(query, seed_limit))
+            .unwrap_or_default();
         if all_seeds.is_empty() {
             return Ok(DistannHitCollection {
                 hits: Vec::new(),

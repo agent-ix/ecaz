@@ -608,6 +608,31 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                 Ok::<(), String>(())
             })?;
         }
+        // No new scan can register after the retire decision is durable, and
+        // this recovery runs only after the exact fingerprint's scan tokens
+        // drained. Remove the coordinator-local FR-080 object in the same
+        // transaction that marks reclaim Applied; replay tolerates its absence.
+        let head_state = extension_relation_name("ec_distann_generation_head_state")?;
+        Spi::connect_mut(|client| {
+            client
+                .update(
+                    &format!(
+                        "DELETE FROM {head_state}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        logical_index_uuid.into(),
+                        stored.build_id.into(),
+                    ],
+                )
+                .map_err(|error| {
+                    format!("EC_EPOCH_STATE: head-sample reclaim failed: {error}")
+                })?;
+            Ok::<(), String>(())
+        })?;
         let updated = Spi::connect_mut(|client| {
             client
                 .update(

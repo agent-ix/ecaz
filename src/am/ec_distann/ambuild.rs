@@ -101,6 +101,7 @@ pub(crate) struct PhysicalGraphWorkspace {
     canonical_nodes: Vec<usize>,
     codes: Vec<Vec<u8>>,
     graph: crate::am::VamanaGraph,
+    medoid: u32,
     codec_artifact: DistannCodecArtifact,
     shape: DistannHandoffShape,
 }
@@ -116,6 +117,26 @@ impl PhysicalGraphWorkspace {
 
     pub(crate) fn record_count(&self) -> u64 {
         self.vec_ids.len() as u64
+    }
+
+    pub(crate) fn head_sample(
+        &self,
+        head_index_cap: usize,
+    ) -> Result<super::head_sample::DistannHeadSample, String> {
+        let vectors = self
+            .capture
+            .rows
+            .iter()
+            .map(|row| row.source_vector.clone())
+            .collect::<Vec<_>>();
+        super::head_sample::build_head_sample(
+            &self.graph,
+            self.medoid,
+            head_index_cap,
+            self.capture.dimensions,
+            &self.vec_ids,
+            &vectors,
+        )
     }
 
     fn entry_for_node(&mut self, node: usize) -> Result<DistannHandoffEntry, String> {
@@ -917,8 +938,8 @@ pub(crate) fn build_physical_graph_workspace(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    let graph = if node_count == 0 {
-        crate::am::VamanaGraph::empty(0, graph_degree)
+    let (graph, medoid) = if node_count == 0 {
+        (crate::am::VamanaGraph::empty(0, graph_degree), 0)
     } else {
         let dist = |left: u32, right: u32| -> f32 {
             source_inner_product_distance(source_refs[left as usize], source_refs[right as usize])
@@ -928,7 +949,7 @@ pub(crate) fn build_physical_graph_workspace(
             usize::try_from(options.build_shards.max(0)).unwrap_or(0),
         );
         if shard_count >= 2 {
-            let (graph, _medoid, stats) = super::shard_build::build_sharded_graph(
+            let (graph, medoid, stats) = super::shard_build::build_sharded_graph(
                 &source_refs,
                 usize::from(dimensions),
                 graph_degree,
@@ -946,11 +967,12 @@ pub(crate) fn build_physical_graph_workspace(
                 stats.shard_output_spill_bytes,
                 stats.stitch_peak_retained_bytes,
             );
-            graph
+            (graph, medoid)
         } else {
             let medoid =
                 crate::am::approximate_medoid(node_count, DISTANN_MEDOID_SAMPLE_CAP, seed, dist);
-            crate::am::build_vamana_graph_with_stats(
+            (
+                crate::am::build_vamana_graph_with_stats(
                 node_count,
                 medoid,
                 graph_degree,
@@ -959,7 +981,9 @@ pub(crate) fn build_physical_graph_workspace(
                 seed,
                 dist,
             )
-            .0
+                .0,
+                medoid,
+            )
         }
     };
     let codec_artifact = binding.to_artifact(dimensions, seed)?;
@@ -972,6 +996,7 @@ pub(crate) fn build_physical_graph_workspace(
         canonical_nodes,
         codes,
         graph,
+        medoid,
         codec_artifact,
         shape,
     })

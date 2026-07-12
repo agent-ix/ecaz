@@ -536,6 +536,38 @@ CREATE TABLE ec_distann_build_candidate (
         ON DELETE CASCADE
 );
 
+-- FR-080 coordinator-local, epoch-versioned head object. The state row makes
+-- an empty generation distinguishable from a missing/corrupt sample; vectors
+-- are row-wise so the canonical bounded object is not constrained by one
+-- PostgreSQL varlena value. Build abort cascades through the candidate FK.
+CREATE TABLE ec_distann_generation_head_state (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL,
+    dimensions integer NOT NULL CHECK (dimensions > 0 AND dimensions <= 65535),
+    sample_count integer NOT NULL CHECK (sample_count >= 0),
+    head_sample_digest bytea NOT NULL CHECK (octet_length(head_sample_digest) = 32),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_build_candidate (index_oid, logical_index_uuid, build_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE ec_distann_generation_head_sample (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL,
+    sample_ordinal integer NOT NULL CHECK (sample_ordinal >= 0),
+    vec_id bigint NOT NULL,
+    vector real[] NOT NULL,
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id, sample_ordinal),
+    UNIQUE (index_oid, logical_index_uuid, build_id, vec_id),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_generation_head_state (index_oid, logical_index_uuid, build_id)
+        ON DELETE CASCADE
+);
+
 CREATE TABLE ec_distann_publish_decision (
     index_oid oid NOT NULL,
     logical_index_uuid uuid NOT NULL,

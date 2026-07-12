@@ -1165,7 +1165,7 @@ where
 /// so the "no accepting source" branch is unreachable in practice; it is an
 /// `Err` rather than a silent CON-1 violation. Deterministic (stranded nodes
 /// processed ascending). Returns the repair count (expected 0 at corpus scale).
-fn repair_reachability<D>(
+pub(super) fn repair_reachability<D>(
     graph: &mut VamanaGraph,
     medoid: u32,
     graph_degree: usize,

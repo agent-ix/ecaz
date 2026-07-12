@@ -1339,11 +1339,6 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
             workspace.owner_expectations(&roster, super::DISTANN_PLACEMENT_HASH_VERSION)?;
         let (global_count, global_graph_digest, global_row_tier_digest) =
             workspace.global_digests()?;
-        // The coordinator head sample is not derived in this slice; both the
-        // build spec and manifest carry the same value so the candidate chain
-        // round-trips through the publish-decision re-verification.
-        let head_sample_digest = [0u8; 32];
-
         let options = super::options::relation_options(index_relation.as_ptr());
         let to_u16 = |value: i32, field: &str| -> Result<u16, String> {
             u16::try_from(value).map_err(|_| format!("EC_BUILD_STATE: {field} out of range"))
@@ -1359,6 +1354,8 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
             head_index_cap: to_u32(options.head_index_cap, "head_index_cap")?,
             build_shards: to_u32(options.build_shards, "build_shards")?,
         };
+        let head_sample = workspace.head_sample(build_options.head_index_cap as usize)?;
+        let head_sample_digest = head_sample.digest()?;
 
         let codec_artifact = workspace.codec_artifact().clone();
         let dimensions = to_u16(i32::from(codec_artifact.dimensions()), "dimensions")?;
@@ -1698,6 +1695,13 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
                     ],
                 )
                 .map_err(|_| "EC_BUILD_INCOMPLETE: build candidate insert failed".to_owned())?;
+            super::head_sample::persist_head_sample(
+                client,
+                index_oid,
+                logical_index_uuid,
+                build_id,
+                &head_sample,
+            )?;
             client
                 .update(
                     &format!(
@@ -2821,7 +2825,19 @@ fn ec_distann_abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
 
         // Move the registration to Aborted. The durable gate only matches
         // Registered/Building/Ready/Decided, so this clears it.
+        let head_state = extension_relation_name("ec_distann_generation_head_state")?;
         Spi::connect_mut(|client| -> Result<(), String> {
+            client
+                .update(
+                    &format!(
+                        "DELETE FROM {head_state}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_STATE: head-sample abort cleanup failed".to_owned())?;
             client
                 .update(
                     &format!(

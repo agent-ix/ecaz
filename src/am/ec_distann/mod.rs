@@ -43,6 +43,7 @@ pub(crate) use self::handoff::with_restricted_type_io_owner;
 mod handoff_router;
 mod handoff_wire;
 mod head_cache;
+mod head_sample;
 mod identity;
 mod insert;
 mod lifecycle_wire;
