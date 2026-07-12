@@ -53,6 +53,11 @@ neighbors into the beam and exact distances into the result heap.
 - The scan SHALL surface per-query counters (rounds executed, records
   expanded, candidates code-scored, per-node batch sizes, pool reuse) via
   EXPLAIN and the bench pipeline step.
+- Every remote connection SHALL have a nonzero connect deadline. Every remote
+  lifecycle, expansion, and materialization call SHALL have both a nonzero
+  client-side deadline and a remote `statement_timeout`; the coordinator SHALL
+  check PostgreSQL interrupts before and after each awaited RPC. Timeout and
+  cancellation SHALL fail the attempt without returning partial results.
 - While the deployment is single-node, the same loop SHALL run with a local
   expansion function of identical signature (no transport).
 
@@ -65,6 +70,7 @@ neighbors into the beam and exact distances into the result heap.
 | FR-081-AC-3 | No vec_id is expanded twice within one scan | Test |
 | FR-081-AC-4 | Early-exit never returns results different from running all H rounds | Test (A/B on fixed corpus) |
 | FR-081-AC-5 | EXPLAIN reports the per-query traversal counters | Inspection |
+| FR-081-AC-6 | A stalled connect or remote statement terminates within its configured nonzero budget, and cancellation is observed between RPC awaits without returning partial rows | Test |
 
 ## Dependencies
 

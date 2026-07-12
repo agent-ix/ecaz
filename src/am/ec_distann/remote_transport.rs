@@ -15,11 +15,14 @@
 
 use std::cell::RefCell;
 use std::collections::HashMap;
+use std::future::Future;
 use std::ptr::NonNull;
+use std::time::Duration;
 
 use pgrx::iter::TableIterator;
 use pgrx::{name, pg_extern, pg_sys};
-use tokio_postgres::{Client, NoTls};
+use tokio_postgres::types::ToSql;
+use tokio_postgres::{Client, NoTls, Row};
 
 use crate::storage::page::ItemPointer;
 use crate::storage::relation::index_heap_relation_oid_handle;
@@ -42,6 +45,188 @@ use super::scan::{
     DistannOrchestrationParams, DistannScanHit, DistannSeedCandidate,
 };
 use super::tuple::DistannNodeTuple;
+use crate::am::ec_diskann::maybe_check_for_interrupts;
+
+enum RemoteAwaitError<E> {
+    Remote(E),
+    TimedOut,
+}
+
+async fn await_remote<T, E>(
+    timeout: Duration,
+    future: impl Future<Output = Result<T, E>>,
+) -> Result<T, RemoteAwaitError<E>> {
+    maybe_check_for_interrupts();
+    let result = tokio::time::timeout(timeout, future).await;
+    maybe_check_for_interrupts();
+    match result {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(RemoteAwaitError::Remote(error)),
+        Err(_) => Err(RemoteAwaitError::TimedOut),
+    }
+}
+
+fn connect_timeout() -> Duration {
+    Duration::from_millis(super::options::remote_connect_timeout_ms())
+}
+
+fn call_timeout() -> Duration {
+    // Let PostgreSQL's remote statement_timeout report the primary error; the
+    // client deadline is a bounded fallback if cancellation or transport
+    // delivery stalls.
+    Duration::from_millis(super::options::remote_statement_timeout_ms().saturating_add(5_000))
+}
+
+fn parse_remote_config(conninfo: &str, error_prefix: &str) -> Result<tokio_postgres::Config, String> {
+    let mut config = conninfo
+        .parse::<tokio_postgres::Config>()
+        .map_err(|_| format!("{error_prefix}: could not parse participant connection descriptor"))?;
+    config.connect_timeout(connect_timeout());
+    Ok(config)
+}
+
+async fn configure_remote_statement_timeout(
+    client: &Client,
+    error_prefix: &str,
+) -> Result<(), String> {
+    let timeout = super::options::remote_statement_timeout_ms().to_string();
+    match await_remote(
+        call_timeout(),
+        client.query_one(
+            "SELECT set_config('statement_timeout', $1, false)",
+            &[&timeout],
+        ),
+    )
+    .await
+    {
+        Ok(_) => Ok(()),
+        Err(RemoteAwaitError::Remote(error)) => Err(format!(
+            "{error_prefix}: could not configure participant statement timeout: {error}"
+        )),
+        Err(RemoteAwaitError::TimedOut) => Err(format!(
+            "{error_prefix}: participant statement-timeout setup timed out"
+        )),
+    }
+}
+
+async fn lifecycle_query(
+    client: &Client,
+    context: &str,
+    sql: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Result<Vec<Row>, String> {
+    match await_remote(call_timeout(), client.query(sql, params)).await {
+        Ok(rows) => Ok(rows),
+        Err(RemoteAwaitError::Remote(error)) => Err(remote_error(context, error)),
+        Err(RemoteAwaitError::TimedOut) => Err(format!(
+            "EC_BUILD_INCOMPLETE: remote {context} timed out"
+        )),
+    }
+}
+
+async fn lifecycle_query_one(
+    client: &Client,
+    context: &str,
+    sql: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Result<Row, String> {
+    match await_remote(call_timeout(), client.query_one(sql, params)).await {
+        Ok(row) => Ok(row),
+        Err(RemoteAwaitError::Remote(error)) => Err(remote_error(context, error)),
+        Err(RemoteAwaitError::TimedOut) => Err(format!(
+            "EC_BUILD_INCOMPLETE: remote {context} timed out"
+        )),
+    }
+}
+
+async fn physical_query(
+    client: &Client,
+    sql: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Result<Vec<Row>, DistannExpandError> {
+    match await_remote(call_timeout(), client.query(sql, params)).await {
+        Ok(rows) => Ok(rows),
+        Err(RemoteAwaitError::Remote(error)) => Err(classify_physical_read_error(error)),
+        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::Internal(
+            "physical generation RPC timed out".to_owned(),
+        )),
+    }
+}
+
+async fn scan_query(
+    client: &Client,
+    context: &str,
+    sql: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Result<Vec<Row>, DistannExpandError> {
+    match await_remote(call_timeout(), client.query(sql, params)).await {
+        Ok(rows) => Ok(rows),
+        Err(RemoteAwaitError::Remote(error)) => {
+            let code = error.code().map(|state| state.code().to_owned());
+            let detail = error
+                .as_db_error()
+                .map(|db| db.message().to_owned())
+                .unwrap_or_else(|| error.to_string());
+            Err(DistannExpandError::from_wire_sqlstate(
+                code.as_deref(),
+                format!("ec_distann remote {context} failed: {detail}"),
+            ))
+        }
+        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::Internal(format!(
+            "ec_distann remote {context} timed out"
+        ))),
+    }
+}
+
+async fn open_remote_connection(
+    conninfo: &str,
+    error_prefix: &str,
+) -> Result<(Client, tokio::task::JoinHandle<()>), String> {
+    let config = parse_remote_config(conninfo, error_prefix)?;
+    let (client, connection) = match await_remote(connect_timeout(), config.connect(NoTls)).await {
+        Ok(connection) => connection,
+        Err(RemoteAwaitError::Remote(error)) => {
+            return Err(format!("{error_prefix}: could not connect to participant: {error}"));
+        }
+        Err(RemoteAwaitError::TimedOut) => {
+            return Err(format!("{error_prefix}: participant connection timed out"));
+        }
+    };
+    let task = tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    if let Err(error) = configure_remote_statement_timeout(&client, error_prefix).await {
+        task.abort();
+        return Err(error);
+    }
+    Ok((client, task))
+}
+
+async fn configure_scan_identity(
+    client: &Client,
+    identity: &(String, String, String),
+) -> Result<(), String> {
+    match await_remote(
+        call_timeout(),
+        client.query(SESSION_SETUP_SQL, &[&identity.0, &identity.1, &identity.2]),
+    )
+    .await
+    {
+        Ok(_) => Ok(()),
+        Err(RemoteAwaitError::Remote(error)) => {
+            let detail = error
+                .as_db_error()
+                .map(|db| db.message().to_owned())
+                .unwrap_or_else(|| error.to_string());
+            Err(format!(
+                "ec_distann remote transport session setup failed: {detail}"
+            ))
+        }
+        Err(RemoteAwaitError::TimedOut) => {
+            Err("ec_distann remote transport session setup timed out".to_owned())
+        }
+    }
+}
 
 async fn lifecycle_client<'a>(
     connections: &'a mut HashMap<String, PooledConnection>,
@@ -53,25 +238,26 @@ async fn lifecycle_client<'a>(
         .map(|pooled| pooled.task.is_finished())
         .unwrap_or(true);
     if needs_connect {
-        let config = conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
-            "EC_BUILD_INCOMPLETE: could not parse participant connection descriptor".to_owned()
-        })?;
-        let (client, connection) = config.connect(NoTls).await.map_err(|error| {
-            format!("EC_BUILD_INCOMPLETE: could not connect to participant: {error}")
-        })?;
-        let task = tokio::spawn(async move {
-            let _ = connection.await;
-        });
+        let (client, task) = open_remote_connection(conninfo, "EC_BUILD_INCOMPLETE").await?;
         connections.insert(
             key.clone(),
             PooledConnection {
                 client,
                 task,
                 applied_identity: None,
+                applied_statement_timeout_ms: super::options::remote_statement_timeout_ms(),
             },
         );
     }
-    Ok(&connections[&key].client)
+    let desired_timeout = super::options::remote_statement_timeout_ms();
+    let pooled = connections
+        .get_mut(&key)
+        .expect("lifecycle connection just ensured");
+    if pooled.applied_statement_timeout_ms != desired_timeout {
+        configure_remote_statement_timeout(&pooled.client, "EC_BUILD_INCOMPLETE").await?;
+        pooled.applied_statement_timeout_ms = desired_timeout;
+    }
+    Ok(&pooled.client)
 }
 
 fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
@@ -103,8 +289,8 @@ pub(crate) fn remote_physical_expand_nodes(
             let client = lifecycle_client(connections, conninfo)
                 .await
                 .map_err(DistannExpandError::Internal)?;
-            let rows = client
-                .query(
+            let rows = physical_query(
+                client,
                     "SELECT vec_id, exact_dist, is_tombstone,
                             neighbor_vec_ids, neighbor_code_dists
                        FROM ec_distann_expand_nodes(
@@ -118,8 +304,7 @@ pub(crate) fn remote_physical_expand_nodes(
                         &code_threshold,
                     ],
                 )
-                .await
-                .map_err(classify_physical_read_error)?;
+                .await?;
             rows.into_iter()
                 .map(|row| {
                     let vec_id: i64 = row.try_get(0).map_err(row_err)?;
@@ -165,8 +350,8 @@ pub(crate) fn remote_physical_materialize_payloads(
             let client = lifecycle_client(connections, conninfo)
                 .await
                 .map_err(DistannExpandError::Internal)?;
-            let rows = client
-                .query(
+            let rows = physical_query(
+                client,
                     "SELECT vec_id, is_tombstone, tuple_payload_missing,
                             payload_nulls, payload_values
                        FROM ec_distann_materialize_row_payloads(
@@ -180,8 +365,7 @@ pub(crate) fn remote_physical_materialize_payloads(
                         &expected_schema_fingerprint,
                     ],
                 )
-                .await
-                .map_err(classify_physical_read_error)?;
+                .await?;
             rows.into_iter()
                 .map(|row| {
                     let vec_id: i64 = row.try_get(0).map_err(row_err)?;
@@ -230,9 +414,10 @@ pub(crate) fn remote_begin_epoch_handoff(request: RemoteHandoffBegin<'_>) -> Res
             connections,
         } = state;
         runtime.block_on(async {
-            lifecycle_client(connections, request.conninfo)
-                .await?
-                .query(
+            let client = lifecycle_client(connections, request.conninfo).await?;
+            lifecycle_query(
+                client,
+                "handoff begin",
                     "SELECT state FROM ec_distann_begin_epoch_handoff(
                          $1::text::regclass, $2::bigint, $3::text::uuid,
                          $4::bytea, $5::bytea, $6::bytea, $7::bytea,
@@ -249,8 +434,7 @@ pub(crate) fn remote_begin_epoch_handoff(request: RemoteHandoffBegin<'_>) -> Res
                         &request.expected_owner_digest,
                     ],
                 )
-                .await
-                .map_err(|error| remote_error("handoff begin", error))?;
+                .await?;
             Ok(())
         })
     })
@@ -270,9 +454,10 @@ pub(crate) fn remote_stage_epoch_batch(
             connections,
         } = state;
         runtime.block_on(async {
-            let row = lifecycle_client(connections, conninfo)
-                .await?
-                .query_one(
+            let client = lifecycle_client(connections, conninfo).await?;
+            let row = lifecycle_query_one(
+                client,
+                "handoff stage",
                     "SELECT accepted_record_count, cumulative_record_count,
                             cumulative_owner_digest
                        FROM ec_distann_stage_epoch_batch(
@@ -280,8 +465,7 @@ pub(crate) fn remote_stage_epoch_batch(
                            $4::bytea, $5::bytea)",
                     &[&index_regclass, &build_id, &sequence, &digest, &encoded],
                 )
-                .await
-                .map_err(|error| remote_error("handoff stage", error))?;
+                .await?;
             let accepted: i64 = row
                 .try_get(0)
                 .map_err(|error| remote_error("stage row", error))?;
@@ -319,9 +503,10 @@ pub(crate) fn remote_seal_epoch_handoff(
             connections,
         } = state;
         runtime.block_on(async {
-            let row = lifecycle_client(connections, conninfo)
-                .await?
-                .query_one(
+            let client = lifecycle_client(connections, conninfo).await?;
+            let row = lifecycle_query_one(
+                client,
+                "handoff seal",
                     "SELECT ec_distann_seal_epoch_handoff(
                          $1::text::regclass, $2::text::uuid, $3::bigint,
                          $4::bytea)",
@@ -332,8 +517,7 @@ pub(crate) fn remote_seal_epoch_handoff(
                         &expected_owner_digest,
                     ],
                 )
-                .await
-                .map_err(|error| remote_error("handoff seal", error))?;
+                .await?;
             row.try_get(0)
                 .map_err(|error| remote_error("seal row", error))
         })
@@ -351,15 +535,15 @@ pub(crate) fn remote_abort_epoch_handoff(
             connections,
         } = state;
         runtime.block_on(async {
-            lifecycle_client(connections, conninfo)
-                .await?
-                .query(
+            let client = lifecycle_client(connections, conninfo).await?;
+            lifecycle_query(
+                client,
+                "handoff abort",
                     "SELECT ec_distann_abort_epoch_handoff(
                          $1::text::regclass, $2::text::uuid)",
                     &[&index_regclass, &build_id],
                 )
-                .await
-                .map_err(|error| remote_error("handoff abort", error))?;
+                .await?;
             Ok(())
         })
     })
@@ -378,9 +562,10 @@ pub(crate) fn remote_publish_epoch(
             connections,
         } = state;
         runtime.block_on(async {
-            let row = lifecycle_client(connections, conninfo)
-                .await?
-                .query_one(
+            let client = lifecycle_client(connections, conninfo).await?;
+            let row = lifecycle_query_one(
+                client,
+                "epoch publish",
                     "SELECT ec_distann_publish_epoch(
                          $1::text::regclass, $2::text::uuid, $3::bytea,
                          $4::bytea)",
@@ -391,8 +576,7 @@ pub(crate) fn remote_publish_epoch(
                         &manifest_digest,
                     ],
                 )
-                .await
-                .map_err(|error| remote_error("epoch publish", error))?;
+                .await?;
             row.try_get(0)
                 .map_err(|error| remote_error("publish row", error))
         })
@@ -411,15 +595,15 @@ pub(crate) fn remote_mark_epoch_retired(
             connections,
         } = state;
         runtime.block_on(async {
-            lifecycle_client(connections, conninfo)
-                .await?
-                .query(
+            let client = lifecycle_client(connections, conninfo).await?;
+            lifecycle_query(
+                client,
+                "predecessor retirement",
                     "SELECT ec_distann_mark_epoch_retired(
                          $1::text::regclass, $2::bytea, $3::bytea)",
                     &[&index_regclass, &successor_activation, &activation_digest],
                 )
-                .await
-                .map_err(|error| remote_error("predecessor retirement", error))?;
+                .await?;
             Ok(())
         })
     })
@@ -437,15 +621,15 @@ pub(crate) fn remote_apply_epoch_retire(
             connections,
         } = state;
         runtime.block_on(async {
-            lifecycle_client(connections, conninfo)
-                .await?
-                .query(
+            let client = lifecycle_client(connections, conninfo).await?;
+            lifecycle_query(
+                client,
+                "epoch retire apply",
                     "SELECT ec_distann_apply_epoch_retire(
                          $1::text::regclass, $2::bytea, $3::bytea)",
                     &[&index_regclass, &retire_decision, &retire_decision_digest],
                 )
-                .await
-                .map_err(|error| remote_error("epoch retire apply", error))?;
+                .await?;
             Ok(())
         })
     })
@@ -463,9 +647,10 @@ pub(crate) fn remote_reclaim_cancelled_generation(
             connections,
         } = state;
         runtime.block_on(async {
-            lifecycle_client(connections, conninfo)
-                .await?
-                .query(
+            let client = lifecycle_client(connections, conninfo).await?;
+            lifecycle_query(
+                client,
+                "cancelled generation reclaim",
                     "SELECT ec_distann_reclaim_cancelled_generation(
                          $1::text::regclass, $2::bytea, $3::bytea)",
                     &[
@@ -474,8 +659,7 @@ pub(crate) fn remote_reclaim_cancelled_generation(
                         &cancellation_audit_digest,
                     ],
                 )
-                .await
-                .map_err(|error| remote_error("cancelled generation reclaim", error))?;
+                .await?;
             Ok(())
         })
     })
@@ -511,6 +695,10 @@ struct PooledConnection {
     /// round-trip when it is unchanged, and re-applies (epoch-aware) on a
     /// mismatch so a mid-backend epoch change is never served stale.
     applied_identity: Option<(String, String, String)>,
+    /// Remote `statement_timeout` last applied to this pooled session. Userset
+    /// changes are refreshed before the next RPC instead of leaving a warm
+    /// session under its old budget.
+    applied_statement_timeout_ms: u64,
 }
 
 struct DistannTransportState {
@@ -553,6 +741,30 @@ where
         f(state
             .as_mut()
             .expect("ec_distann transport state initialized"))
+    })
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn remote_timeout_probe_for_test(
+    conninfo: &str,
+    sleep_seconds: f64,
+) -> Result<(), String> {
+    with_transport_state(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            let client = lifecycle_client(connections, conninfo).await?;
+            lifecycle_query(
+                client,
+                "timeout probe",
+                "SELECT pg_sleep($1::double precision)",
+                &[&sleep_seconds],
+            )
+            .await?;
+            Ok(())
+        })
     })
 }
 
@@ -623,28 +835,19 @@ pub(super) fn remote_expand_batch(
                     .map(|pooled| pooled.task.is_finished())
                     .unwrap_or(true);
                 if needs_connect {
-                    let config =
-                        request
-                            .conninfo
-                            .parse::<tokio_postgres::Config>()
-                            .map_err(|_| {
-                                "ec_distann remote transport could not parse connection descriptor"
-                                    .to_owned()
-                            })?;
-                    let (client, connection) = config.connect(NoTls).await.map_err(|error| {
-                        format!(
-                            "ec_distann remote transport could not connect to participant: {error}"
-                        )
-                    })?;
-                    let task = tokio::spawn(async move {
-                        let _ = connection.await;
-                    });
+                    let (client, task) = open_remote_connection(
+                        request.conninfo,
+                        "ec_distann remote transport",
+                    )
+                    .await?;
                     connections.insert(
                         conn_key.clone(),
                         PooledConnection {
                             client,
                             task,
                             applied_identity: None,
+                            applied_statement_timeout_ms:
+                                super::options::remote_statement_timeout_ms(),
                         },
                     );
                 }
@@ -657,18 +860,17 @@ pub(super) fn remote_expand_batch(
                 let pooled = connections
                     .get_mut(conn_key)
                     .expect("connection just ensured");
+                let desired_timeout = super::options::remote_statement_timeout_ms();
+                if pooled.applied_statement_timeout_ms != desired_timeout {
+                    configure_remote_statement_timeout(
+                        &pooled.client,
+                        "ec_distann remote transport",
+                    )
+                    .await?;
+                    pooled.applied_statement_timeout_ms = desired_timeout;
+                }
                 if pooled.applied_identity.as_ref() != Some(&identity) {
-                    pooled
-                        .client
-                        .query(SESSION_SETUP_SQL, &[&identity.0, &identity.1, &identity.2])
-                        .await
-                        .map_err(|error| {
-                            let detail = error
-                                .as_db_error()
-                                .map(|db| db.message().to_owned())
-                                .unwrap_or_else(|| error.to_string());
-                            format!("ec_distann remote transport session setup failed: {detail}")
-                        })?;
+                    configure_scan_identity(&pooled.client, &identity).await?;
                     pooled.applied_identity = Some(identity);
                 }
             }
@@ -701,8 +903,9 @@ async fn run_one_remote(
     request: &DistannRemoteExpandRequest<'_>,
     vec_ids_i64: &[i64],
 ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
-    let rows = client
-        .query(
+    let rows = scan_query(
+        client,
+        "expand call",
             EXPAND_SQL,
             &[
                 &request.index_regclass,
@@ -712,22 +915,7 @@ async fn run_one_remote(
                 &request.code_threshold,
             ],
         )
-        .await
-        .map_err(|error| {
-            // Classify by the remote endpoint's SQLSTATE so the coordinator can
-            // distinguish a retriable epoch mismatch from non-retriable
-            // placement/structural faults (FR-082-AC-2). Surface the remote
-            // db-error message (tokio_postgres's Display is just "db error").
-            let code = error.code().map(|state| state.code().to_owned());
-            let detail = error
-                .as_db_error()
-                .map(|db| db.message().to_owned())
-                .unwrap_or_else(|| error.to_string());
-            DistannExpandError::from_wire_sqlstate(
-                code.as_deref(),
-                format!("ec_distann remote expand call failed: {detail}"),
-            )
-        })?;
+        .await?;
 
     rows.into_iter()
         .map(|row| {
@@ -835,28 +1023,19 @@ pub(super) fn remote_materialize_row_payloads_batch(
                     .map(|pooled| pooled.task.is_finished())
                     .unwrap_or(true);
                 if needs_connect {
-                    let config =
-                        request
-                            .conninfo
-                            .parse::<tokio_postgres::Config>()
-                            .map_err(|_| {
-                                "ec_distann remote transport could not parse connection descriptor"
-                                    .to_owned()
-                            })?;
-                    let (client, connection) = config.connect(NoTls).await.map_err(|error| {
-                        format!(
-                            "ec_distann remote transport could not connect to participant: {error}"
-                        )
-                    })?;
-                    let task = tokio::spawn(async move {
-                        let _ = connection.await;
-                    });
+                    let (client, task) = open_remote_connection(
+                        request.conninfo,
+                        "ec_distann remote transport",
+                    )
+                    .await?;
                     connections.insert(
                         conn_key.clone(),
                         PooledConnection {
                             client,
                             task,
                             applied_identity: None,
+                            applied_statement_timeout_ms:
+                                super::options::remote_statement_timeout_ms(),
                         },
                     );
                 }
@@ -869,18 +1048,17 @@ pub(super) fn remote_materialize_row_payloads_batch(
                 let pooled = connections
                     .get_mut(conn_key)
                     .expect("connection just ensured");
+                let desired_timeout = super::options::remote_statement_timeout_ms();
+                if pooled.applied_statement_timeout_ms != desired_timeout {
+                    configure_remote_statement_timeout(
+                        &pooled.client,
+                        "ec_distann remote transport",
+                    )
+                    .await?;
+                    pooled.applied_statement_timeout_ms = desired_timeout;
+                }
                 if pooled.applied_identity.as_ref() != Some(&identity) {
-                    pooled
-                        .client
-                        .query(SESSION_SETUP_SQL, &[&identity.0, &identity.1, &identity.2])
-                        .await
-                        .map_err(|error| {
-                            let detail = error
-                                .as_db_error()
-                                .map(|db| db.message().to_owned())
-                                .unwrap_or_else(|| error.to_string());
-                            format!("ec_distann remote transport session setup failed: {detail}")
-                        })?;
+                    configure_scan_identity(&pooled.client, &identity).await?;
                     pooled.applied_identity = Some(identity);
                 }
             }
@@ -909,8 +1087,9 @@ async fn run_one_materialize(
     payload_columns: &[String],
     send_functions: &[String],
 ) -> Result<Vec<DistannMaterializedRow>, DistannExpandError> {
-    let rows = client
-        .query(
+    let rows = scan_query(
+        client,
+        "row-payload call",
             MATERIALIZE_ROW_PAYLOADS_SQL,
             &[
                 &request.index_regclass,
@@ -920,18 +1099,7 @@ async fn run_one_materialize(
                 &send_functions,
             ],
         )
-        .await
-        .map_err(|error| {
-            let code = error.code().map(|state| state.code().to_owned());
-            let detail = error
-                .as_db_error()
-                .map(|db| db.message().to_owned())
-                .unwrap_or_else(|| error.to_string());
-            DistannExpandError::from_wire_sqlstate(
-                code.as_deref(),
-                format!("ec_distann remote row-payload call failed: {detail}"),
-            )
-        })?;
+        .await?;
 
     rows.into_iter()
         .map(|row| {
@@ -1240,6 +1408,58 @@ fn finalize_request_order(
 mod tests {
     use super::*;
     use crate::am::ec_distann::placement::{placement_hash, DISTANN_PLACEMENT_HASH_V1};
+
+    #[test]
+    fn remote_await_enforces_client_deadline() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        let outcome = runtime.block_on(await_remote(
+            Duration::from_millis(1),
+            std::future::pending::<Result<(), ()>>(),
+        ));
+        assert!(matches!(outcome, Err(RemoteAwaitError::TimedOut)));
+    }
+
+    #[test]
+    fn remote_await_preserves_remote_error() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        let outcome = runtime.block_on(await_remote(
+            Duration::from_secs(1),
+            std::future::ready(Err::<(), _>("remote")),
+        ));
+        assert!(matches!(
+            outcome,
+            Err(RemoteAwaitError::Remote("remote"))
+        ));
+    }
+
+    #[test]
+    fn parsed_remote_config_has_nonzero_connect_timeout() {
+        let config = parse_remote_config(
+            "host=127.0.0.1 port=5432 dbname=postgres",
+            "test transport",
+        )
+        .expect("conninfo should parse");
+        assert_eq!(config.get_connect_timeout().copied(), Some(connect_timeout()));
+        assert!(!connect_timeout().is_zero());
+    }
+
+    #[test]
+    fn conninfo_parse_error_is_redacted() {
+        let error = parse_remote_config(
+            "host=/secret dbname=private password=do_not_expose port=invalid",
+            "test transport",
+        )
+        .expect_err("invalid port must fail parsing");
+        for forbidden in ["/secret", "private", "do_not_expose"] {
+            assert!(!error.contains(forbidden), "error leaked {forbidden}: {error}");
+        }
+    }
 
     fn node(vec_id: u64) -> DistannExpandedNode {
         DistannExpandedNode {

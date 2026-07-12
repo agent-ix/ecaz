@@ -439,6 +439,10 @@ Update `expand.rs`, `reader.rs`, `remote_endpoint.rs`, `remote_transport.rs`,
   build the immutable head graph, then retain only descriptor/head state in a
   two-entry backend-local LRU. Never cache conninfo, relation handles, active
   pointer state, or scan tokens. Keep a Userset off switch for suite-driven A/B.
+- Bound every remote connection and RPC with nonzero Userset connect and
+  statement/call budgets. Apply the remote `statement_timeout` when a pooled
+  session is opened, retain client-side deadlines for lifecycle and scan calls,
+  and check PostgreSQL interrupts before and after each awaited RPC.
 
 ### 9. Replace the fixture's pruning drill with a physical build
 

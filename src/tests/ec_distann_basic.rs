@@ -7815,6 +7815,35 @@ fn test_ec_distann_expand_nodes_rejects_epoch_mismatch() {
 }
 
 #[pg_test]
+fn test_ec_distann_remote_transport_statement_timeout() {
+    let conninfo = format!(
+        "{} application_name=ecaz_distann_timeout_{}",
+        current_pg_test_loopback_conninfo(),
+        unsafe { pg_sys::MyProcPid }
+    );
+    Spi::run("SET ec_distann.remote_connect_timeout_ms = 1000")
+        .expect("connect timeout should set");
+    Spi::run("SET ec_distann.remote_statement_timeout_ms = 10000")
+        .expect("initial statement timeout should set");
+    crate::am::ec_distann::remote_timeout_probe_for_test(&conninfo, 0.0)
+        .expect("initial probe should establish the pooled session");
+    Spi::run("SET ec_distann.remote_statement_timeout_ms = 10")
+        .expect("updated statement timeout should set");
+
+    let started = std::time::Instant::now();
+    let error = crate::am::ec_distann::remote_timeout_probe_for_test(&conninfo, 1.0)
+        .expect_err("one-second remote sleep must exceed the 10ms budget");
+    assert!(
+        started.elapsed() < std::time::Duration::from_secs(2),
+        "remote timeout probe exceeded its bounded client deadline"
+    );
+    assert!(
+        error.contains("statement timeout") || error.contains("timed out"),
+        "unexpected timeout error: {error}"
+    );
+}
+
+#[pg_test]
 fn test_ec_distann_expand_nodes_rejects_nonowned_placement() {
     // FR-079-AC-3 case (b): a vec_id not owned by this node under the epoch
     // placement is a placement error, never a silent miss. Configure a 2-node

@@ -35,6 +35,13 @@ static ECDISTANN_TOP_K_GUC: GucSetting<i32> = GucSetting::<i32>::new(ECDISTANN_D
 
 static ECDISTANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+const ECDISTANN_DEFAULT_REMOTE_CONNECT_TIMEOUT_MS: i32 = 5_000;
+const ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS: i32 = 120_000;
+const ECDISTANN_MAX_REMOTE_TIMEOUT_MS: i32 = 3_600_000;
+static ECDISTANN_REMOTE_CONNECT_TIMEOUT_MS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(ECDISTANN_DEFAULT_REMOTE_CONNECT_TIMEOUT_MS);
+static ECDISTANN_REMOTE_STATEMENT_TIMEOUT_MS_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS);
 
 /// NFR-020 fault-injection hook (debug only): when >= 0, an ec_distann scan
 /// raises an error at the start of the hop round with this 0-based index, after
@@ -259,6 +266,26 @@ pub(super) fn register_gucs() {
         GucFlags::default(),
     );
     GucRegistry::define_int_guc(
+        c"ec_distann.remote_connect_timeout_ms",
+        c"Connect-timeout budget for ec_distann remote participant RPCs.",
+        c"Maximum milliseconds spent opening a remote participant connection. The nonzero default bounds waits while the coordinator holds lifecycle or scan state.",
+        &ECDISTANN_REMOTE_CONNECT_TIMEOUT_MS_GUC,
+        1,
+        ECDISTANN_MAX_REMOTE_TIMEOUT_MS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_distann.remote_statement_timeout_ms",
+        c"Statement and client-call timeout budget for ec_distann remote participant RPCs.",
+        c"Maximum milliseconds for each remote lifecycle, expansion, or materialization statement. The transport configures the same remote statement_timeout and a bounded client-side deadline.",
+        &ECDISTANN_REMOTE_STATEMENT_TIMEOUT_MS_GUC,
+        1,
+        ECDISTANN_MAX_REMOTE_TIMEOUT_MS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
         c"ec_distann.debug_fail_hop_round",
         c"NFR-020 fault injection (debug): fail an ec_distann scan at this 0-based hop round.",
         c"When >= 0, the scan raises an error at the start of the hop round with this index, after earlier rounds executed. Values >= 1 inject a hop_round_failure_mid_beam fault used by the multinode fault-drill matrix (TC-042). -1 disables injection.",
@@ -332,6 +359,18 @@ pub(super) fn scan_profile_notice_enabled() -> bool {
 
 pub(super) fn physical_epoch_cache_enabled() -> bool {
     ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC.get()
+}
+
+pub(super) fn remote_connect_timeout_ms() -> u64 {
+    u64::try_from(ECDISTANN_REMOTE_CONNECT_TIMEOUT_MS_GUC.get())
+        .unwrap_or(ECDISTANN_DEFAULT_REMOTE_CONNECT_TIMEOUT_MS as u64)
+        .max(1)
+}
+
+pub(super) fn remote_statement_timeout_ms() -> u64 {
+    u64::try_from(ECDISTANN_REMOTE_STATEMENT_TIMEOUT_MS_GUC.get())
+        .unwrap_or(ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS as u64)
+        .max(1)
 }
 
 pub(super) fn current_beam_width() -> usize {

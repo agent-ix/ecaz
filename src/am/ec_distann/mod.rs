@@ -60,6 +60,8 @@ pub(crate) mod quantizer;
 pub(crate) mod reader;
 mod remote_endpoint;
 mod remote_transport;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::remote_transport::remote_timeout_probe_for_test;
 mod roster;
 mod routine;
 mod row_schema;
