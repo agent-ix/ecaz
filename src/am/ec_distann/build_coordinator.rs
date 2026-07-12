@@ -2057,13 +2057,13 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
 
         let decision_table = extension_relation_name("ec_distann_publish_decision")?;
         let decision = Spi::connect(
-            |client| -> Result<Option<(i64, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Option<Uuid>, Vec<u8>)>, String> {
+            |client| -> Result<Option<(i64, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Option<Uuid>, Vec<u8>, u32)>, String> {
                 client
                     .select(
                         &format!(
                             "SELECT epoch, epoch_fingerprint, manifest_digest, epoch_manifest,
                                     candidate_digest, predecessor_build_id,
-                                    successor_activation_digest
+                                    successor_activation_digest, xmin::text AS decision_xmin
                                FROM {decision_table}
                               WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                                 AND build_id = $3::uuid"
@@ -2086,6 +2086,12 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                         let predecessor_build_id = row["predecessor_build_id"]
                             .value::<Uuid>()
                             .map_err(|_| "EC_EPOCH_STATE: predecessor build id decode failed".to_owned())?;
+                        let decision_xmin = row["decision_xmin"]
+                            .value::<String>()
+                            .map_err(|_| "EC_TRANSACTION_BOUNDARY: decision xmin decode failed".to_owned())?
+                            .ok_or_else(|| "EC_TRANSACTION_BOUNDARY: decision xmin is NULL".to_owned())?
+                            .parse::<u32>()
+                            .map_err(|_| "EC_TRANSACTION_BOUNDARY: decision xmin is invalid".to_owned())?;
                         Ok((
                             epoch,
                             field("epoch_fingerprint")?,
@@ -2094,6 +2100,7 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                             field("candidate_digest")?,
                             predecessor_build_id,
                             field("successor_activation_digest")?,
+                            decision_xmin,
                         ))
                     })
                     .next()
@@ -2103,8 +2110,16 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
         .ok_or_else(|| {
             "EC_EPOCH_STATE: no durable publish decision for this build id".to_owned()
         })?;
-        let (epoch, epoch_fingerprint, manifest_digest, epoch_manifest, decision_candidate_digest, predecessor_build_id, _activation_digest) =
+        let (epoch, epoch_fingerprint, manifest_digest, epoch_manifest, decision_candidate_digest, predecessor_build_id, _activation_digest, decision_xmin) =
             decision;
+        if unsafe {
+            pg_sys::TransactionIdIsCurrentTransactionId(pg_sys::TransactionId::from(decision_xmin))
+        } {
+            return Err(
+                "EC_TRANSACTION_BOUNDARY: publish decision must commit before recovery begins"
+                    .to_owned(),
+            );
+        }
         if decision_candidate_digest != candidate_digest
             || epoch_fingerprint != candidate.epoch_fingerprint
             || manifest_digest != candidate.manifest_digest
@@ -2196,6 +2211,12 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
         if acked_fingerprint != epoch_fingerprint {
             return Err(
                 "EC_EPOCH_STATE: participant acknowledged a different epoch fingerprint".to_owned(),
+            );
+        }
+        if super::options::debug_fail_recover_after_publish_ack() {
+            return Err(
+                "EC_FAULT_INJECTED: publish recovery stopped after participant acknowledgement and before active-pointer swap"
+                    .to_owned(),
             );
         }
 

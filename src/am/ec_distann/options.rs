@@ -62,6 +62,13 @@ static ECDISTANN_DEBUG_FAIL_INSERT_GUC: GucSetting<bool> = GucSetting::<bool>::n
 static ECDISTANN_DEBUG_FAIL_HANDOFF_AFTER_PREPARE_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(false);
 
+/// Task 179 T4a crash-window fault: fail after every participant has returned
+/// its Published acknowledgement but before the coordinator active-pointer
+/// compare-and-swap. The recovery transaction must roll back participant-local
+/// state and leave the already-committed Pending decision recoverable.
+static ECDISTANN_DEBUG_FAIL_RECOVER_AFTER_PUBLISH_ACK_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+
 /// 0=off, 1=absent index TID, 2=callback vector mismatch, 3=callback identity
 /// mismatch. Used to exercise otherwise race-impossible single-snapshot checks.
 static ECDISTANN_DEBUG_SOURCE_CAPTURE_FAULT_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
@@ -276,6 +283,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.debug_fail_recover_after_publish_ack",
+        c"Task 179 fault injection: fail T4a after participant publish acknowledgement.",
+        c"When on, publish recovery errors after exact participant acknowledgement and before active-pointer mutation. Off by default.",
+        &ECDISTANN_DEBUG_FAIL_RECOVER_AFTER_PUBLISH_ACK_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.debug_source_capture_fault",
         c"Task 179 source-callback mismatch fault selector.",
@@ -336,6 +351,10 @@ pub(super) fn debug_fail_insert() -> bool {
 
 pub(super) fn debug_fail_handoff_after_prepare() -> bool {
     ECDISTANN_DEBUG_FAIL_HANDOFF_AFTER_PREPARE_GUC.get()
+}
+
+pub(super) fn debug_fail_recover_after_publish_ack() -> bool {
+    ECDISTANN_DEBUG_FAIL_RECOVER_AFTER_PUBLISH_ACK_GUC.get()
 }
 
 pub(super) fn debug_source_capture_fault() -> i32 {
