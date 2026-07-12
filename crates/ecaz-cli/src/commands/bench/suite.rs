@@ -513,6 +513,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     graph_degree: Option<u32>,
     #[serde(default)]
+    head_index_cap: Option<u32>,
+    #[serde(default)]
     queries: Option<u32>,
     #[serde(default)]
     top_k: Option<u32>,
@@ -2872,6 +2874,15 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step
+                    .head_index_cap
+                    .is_some_and(|value| !(16..=1_048_576).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set head_index_cap in 16..=1048576",
+                        step.name
+                    )
+                }
                 if step.benchmark_iterations == Some(0) {
                     bail!(
                         "distann-local-multinode step {:?} must set benchmark_iterations >= 1",
@@ -3676,6 +3687,11 @@ fn expand_distann_local_multinode(
         &mut args,
         "--graph-degree",
         step.graph_degree.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--head-index-cap",
+        step.head_index_cap.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -4869,6 +4885,46 @@ mod tests {
             .expected_artifacts
             .iter()
             .any(|path| path.ends_with("bench-suite/results.jsonl")));
+    }
+
+    #[test]
+    fn distann_local_multinode_step_expands_head_index_cap() {
+        let raw = r#"{
+          "name": "distann-head-cap",
+          "schema_version": 1,
+          "defaults": {"pg": 18},
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "cap-256",
+            "nodes": 3,
+            "head_index_cap": 256,
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_10k"
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--head-index-cap", "256"]));
+    }
+
+    #[test]
+    fn distann_local_multinode_rejects_out_of_range_head_index_cap() {
+        let step: SuiteStep = serde_json::from_str(
+            r#"{
+              "kind": "distann-local-multinode",
+              "name": "invalid-cap",
+              "head_index_cap": 15
+            }"#,
+        )
+        .expect("step parses");
+
+        assert!(step.validate().is_err());
     }
 
     #[test]

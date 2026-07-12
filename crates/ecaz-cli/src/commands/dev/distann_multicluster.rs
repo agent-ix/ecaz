@@ -69,6 +69,10 @@ pub struct LocalMultinodePg18Args {
     /// ec_distann graph degree reloption.
     #[arg(long, default_value_t = 32)]
     pub graph_degree: u32,
+    /// Persisted coordinator head-sample cap reloption. Exposed so FR-080
+    /// sensitivity matrices can vary the cap through `ecaz bench suite`.
+    #[arg(long, default_value_t = 4096)]
+    pub head_index_cap: u32,
     /// Query count for the recall comparison.
     #[arg(long, default_value_t = 50)]
     pub queries: u32,
@@ -137,6 +141,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.benchmark_iterations == 0 {
         bail!("--benchmark-iterations must be at least 1");
     }
+    if !(16..=1_048_576).contains(&args.head_index_cap) {
+        bail!("--head-index-cap must be in 16..=1048576");
+    }
     let instance_count = args.nodes + u32::from(args.coordinator_outside_roster);
     let repo_root = repo_root()?;
     let pgbin = match args.pgbin.clone() {
@@ -194,7 +201,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     crate::ecaz_println!("[distann-multicluster] repo={}", repo_root.display());
     crate::ecaz_println!("[distann-multicluster] pgbin={}", pgbin.display());
     crate::ecaz_println!(
-        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={}",
+        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} head_index_cap={}",
         match mode {
             FixtureMode::Physical => "physical",
             FixtureMode::ReplicatedServingControl => "replicated-serving-control",
@@ -204,7 +211,8 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         args.coordinator_outside_roster,
         args.base_port,
         args.rows,
-        args.dim
+        args.dim,
+        args.head_index_cap
     );
 
     // initdb + start + extension on every node.
@@ -309,6 +317,7 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
                 &queries_path,
                 args.queries,
                 args.graph_degree,
+                args.head_index_cap,
             ))
         }
         None => Ok(setup_sql(args)),
@@ -338,7 +347,13 @@ fn insert_vector_expr(args: &LocalMultinodePg18Args) -> String {
 /// `dm_queries(source real[])`. The `4, 42` encode params match both the
 /// synthetic path and the standard suite load (`encode_to_ecvector(source, 4,
 /// 42)`), so this lane is comparable to the single-node suite matrices.
-fn real_setup_sql(corpus_path: &Path, queries_path: &Path, queries_limit: u32, gd: u32) -> String {
+fn real_setup_sql(
+    corpus_path: &Path,
+    queries_path: &Path,
+    queries_limit: u32,
+    gd: u32,
+    head_index_cap: u32,
+) -> String {
     // Escape the paths as SQL string literals (double any single quote) so a
     // path containing `'` cannot break out of the COPY ... FROM '<path>' literal
     // (172-P2). Canonical repo paths are unlikely to contain one, but the COPY
@@ -365,7 +380,7 @@ fn real_setup_sql(corpus_path: &Path, queries_path: &Path, queries_limit: u32, g
            FROM dmq_stage ORDER BY id LIMIT {queries_limit};\n\
          DROP TABLE dmq_stage;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-           WITH (graph_degree = {gd});\n",
+           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap});\n",
     )
 }
 
@@ -386,10 +401,11 @@ fn setup_sql(args: &LocalMultinodePg18Args) -> String {
            FROM generate_series(1, {rows}) AS g\n\
          ) s;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-           WITH (graph_degree = {gd});\n",
+           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap});\n",
         dim = args.dim,
         rows = args.rows,
         gd = args.graph_degree,
+        head_index_cap = args.head_index_cap,
     )
 }
 
@@ -523,8 +539,9 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
          CREATE INDEX dm_idx ON dm USING ec_distann
              (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
              WITH (distributed_control = true, source_identity = 'include',
-                   graph_degree = {}, neighbor_code_format = 'rabitq');",
-        args.graph_degree
+                   graph_degree = {}, head_index_cap = {},
+                   neighbor_code_format = 'rabitq');",
+        args.graph_degree, args.head_index_cap
     ))
 }
 
@@ -692,8 +709,9 @@ async fn run_physical_benchmarks(
              CREATE TABLE {single_queries} AS SELECT * FROM {physical_queries};
              CREATE INDEX {single_index} ON {single_corpus}
                  USING ec_distann (embedding ecvector_distann_ip_ops)
-                 WITH (graph_degree = {}, neighbor_code_format = 'rabitq');",
-            args.graph_degree
+                 WITH (graph_degree = {}, head_index_cap = {},
+                       neighbor_code_format = 'rabitq');",
+            args.graph_degree, args.head_index_cap
         ))
         .await?;
     let single_build_ms = single_started.elapsed().as_millis();
@@ -721,7 +739,8 @@ async fn run_physical_benchmarks(
         "postgres".to_owned(),
     ];
     let mut lines = vec![format!(
-        "physical_benchmark_build scale={scale} physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}"
+        "physical_benchmark_build scale={scale} head_index_cap={} physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+        args.head_index_cap
     )];
     for (arm, prefix) in [("physical", &physical_prefix), ("single", &single_prefix)] {
         let recall_log = log_dir.join(format!("{arm}-recall.log"));
@@ -756,8 +775,8 @@ async fn run_physical_benchmarks(
         let recall_value = row[3].parse::<f64>()?;
         let mean_ms = benchmark_ms(&row[11])?;
         lines.push(format!(
-            "physical_benchmark_recall scale={scale} arm={arm} queries={} trials={} recall={recall_value:.4} mean_ms={mean_ms:.2}",
-            row[1], row[2]
+            "physical_benchmark_recall scale={scale} head_index_cap={} arm={arm} queries={} trials={} recall={recall_value:.4} mean_ms={mean_ms:.2}",
+            args.head_index_cap, row[1], row[2]
         ));
 
         let latency_log = log_dir.join(format!("{arm}-latency.log"));
@@ -786,7 +805,8 @@ async fn run_physical_benchmarks(
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} arm={arm} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm",
+            "physical_benchmark_latency scale={scale} head_index_cap={} arm={arm} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm",
+            args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
             benchmark_ms(&row[5])?,
@@ -814,11 +834,12 @@ async fn run_physical_benchmarks(
     let single_source_bytes = sizes.get::<_, i64>(1);
     let coordinator_source_bytes = sizes.get::<_, i64>(2);
     lines.push(format!(
-        "physical_benchmark_storage scale={scale} owners={} physical_generation_bytes={physical_generation_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
-        published.len()
+        "physical_benchmark_storage scale={scale} head_index_cap={} owners={} physical_generation_bytes={physical_generation_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
+        args.head_index_cap, published.len()
     ));
     lines.push(format!(
-        "physical_benchmark_engagement scale={scale} remote_owners={} materialize_probes={} pass={}",
+        "physical_benchmark_engagement scale={scale} head_index_cap={} remote_owners={} materialize_probes={} pass={}",
+        args.head_index_cap,
         nodes.len().saturating_sub(1),
         nodes.len().saturating_sub(1),
         nodes.len() > 1
@@ -1268,8 +1289,14 @@ async fn drive_fixture(
             None => "corpus=synthetic".to_owned(),
         };
         let mut summary = format!(
-            "distann-multinode fixture (recall-only)\n{corpus_label}\nnodes={}\nrows={measured_rows}\ndim={measured_dim}\ngraph_degree={}\nqueries={}\ntop_k={}\nroster={}\n{}\n",
-            args.nodes, args.graph_degree, args.queries, args.top_k, roster, result_line
+            "distann-multinode fixture (recall-only)\n{corpus_label}\nnodes={}\nrows={measured_rows}\ndim={measured_dim}\ngraph_degree={}\nhead_index_cap={}\nqueries={}\ntop_k={}\nroster={}\n{}\n",
+            args.nodes,
+            args.graph_degree,
+            args.head_index_cap,
+            args.queries,
+            args.top_k,
+            roster,
+            result_line
         );
         summary.push_str(&format!("{qual_line}\n"));
         summary.push_str(&format!("{fr082_line}\n"));
