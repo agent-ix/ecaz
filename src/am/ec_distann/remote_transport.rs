@@ -451,6 +451,36 @@ pub(crate) fn remote_apply_epoch_retire(
     })
 }
 
+pub(crate) fn remote_reclaim_cancelled_generation(
+    conninfo: &str,
+    index_regclass: &str,
+    cancellation_audit: &[u8],
+    cancellation_audit_digest: &[u8],
+) -> Result<(), String> {
+    with_transport_state(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            lifecycle_client(connections, conninfo)
+                .await?
+                .query(
+                    "SELECT ec_distann_reclaim_cancelled_generation(
+                         $1::text::regclass, $2::bytea, $3::bytea)",
+                    &[
+                        &index_regclass,
+                        &cancellation_audit,
+                        &cancellation_audit_digest,
+                    ],
+                )
+                .await
+                .map_err(|error| remote_error("cancelled generation reclaim", error))?;
+            Ok(())
+        })
+    })
+}
+
 /// One remote expansion request over the transport.
 pub(super) struct DistannRemoteExpandRequest<'a> {
     /// libpq conninfo of the target node.

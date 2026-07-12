@@ -176,6 +176,7 @@ reviewed schema checkpoint):
 - `ec_distann_retire_decision`
 - `ec_distann_active_epoch`
 - `ec_distann_generation_reclaim` (participant idempotency tombstone)
+- `ec_distann_cancelled_generation_reclaim` (never-active cancellation tombstone)
 
 Every row is keyed by logical-index UUID in addition to the local index OID.
 Catalog and endpoint privileges are revoked from `PUBLIC`. DROP/REINDEX tests
@@ -344,8 +345,11 @@ fingerprint/manifest tuple, canonical activation marker, and
 Pending→Activated→Applied phase. An operator-only Pending→Cancelled CAS verifies
 that exact predecessor is still active, records caller/reason/time, clears the
 build gate without deleting the durable fingerprint registration, and leaves
-any partially Published successor storage non-routable until audited forced
-orphan retirement. Participant generations persist the published
+any partially Published successor storage non-routable until explicit
+cancelled-publish recovery replays the private bindings. Each participant
+atomically records the canonical cancellation audit tombstone before deleting
+Ready or Published-but-never-active storage; partial remote cleanup is
+idempotently re-driven. Participant generations persist the published
 manifest/fingerprint and exact successor marker. Retire apply leaves an
 immutable `ec_distann_generation_reclaim` tombstone carrying canonical decision
 bytes and status fields.

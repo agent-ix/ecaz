@@ -409,7 +409,8 @@ pub mod bench_api {
         distann_node_neighbor_codes_offset, distann_node_neighbor_vec_ids_offset,
         owner_stream_digest, DistannAbandonBindingAuditV1, DistannAbandonedBinding,
         DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildOptions,
-        DistannBuildSpec, DistannCodecArtifact, DistannEpochFingerprint, DistannEpochManifestV2,
+        DistannBuildSpec, DistannCancelPublishAuditV1, DistannCodecArtifact,
+        DistannEpochFingerprint, DistannEpochManifestV2,
         DistannGenerationDescriptor,
         DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannManifestBuildOptions,
         DistannManifestCodecParameters, DistannMetadataPage, DistannNodeTuple,
@@ -431,6 +432,12 @@ pub mod bench_api {
         DISTANN_BUILD_CANDIDATE_FIXED_PREFIX_BYTES,
         DISTANN_BUILD_CANDIDATE_REGISTRATION_DIGEST_OFFSET, DISTANN_BUILD_CANDIDATE_VERSION,
         DISTANN_BUILD_CANDIDATE_VERSION_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_COORDINATOR_UUID_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_EPOCH_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_FINGERPRINT_LENGTH_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_FIXED_PREFIX_BYTES, DISTANN_CANCEL_PUBLISH_AUDIT_VERSION,
+        DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET,
         DISTANN_CODEC_ARTIFACT_VERSION, DISTANN_CODEC_ARTIFACT_VERSION_OFFSET,
         DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES,
         DISTANN_EPOCH_MANIFEST_VERSION, DISTANN_EPOCH_MANIFEST_VERSION_OFFSET,
@@ -630,6 +637,13 @@ ALTER FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
 REVOKE ALL ON FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
     FROM PUBLIC;
 
+ALTER FUNCTION ec_distann_reclaim_cancelled_generation(regclass, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_reclaim_cancelled_generation(regclass, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_reclaim_cancelled_generation(regclass, bytea, bytea)
+    FROM PUBLIC;
+
 ALTER FUNCTION ec_distann_retire_epoch(regclass, bytea) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_retire_epoch(regclass, bytea)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
@@ -671,6 +685,11 @@ ALTER FUNCTION ec_distann_cancel_epoch_publish(regclass, uuid, text) SECURITY DE
 ALTER FUNCTION ec_distann_cancel_epoch_publish(regclass, uuid, text)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_cancel_epoch_publish(regclass, uuid, text) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_recover_cancelled_publish(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_recover_cancelled_publish(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_recover_cancelled_publish(regclass, uuid) FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_abort_epoch_build(regclass, uuid) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_abort_epoch_build(regclass, uuid)

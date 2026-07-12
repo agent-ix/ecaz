@@ -14,7 +14,9 @@ use super::canonical_wire::{domain_digest, is_rfc4122_v4_uuid, CanonicalEncoder}
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::{encode_roster, roster_digest, DistannGenerationDescriptor};
 use super::generation_store::{drop_generation_relations, open_control_index, GenerationRelations};
-use super::lifecycle_wire::{DistannRetireDecisionV1, DistannSuccessorActivationV1};
+use super::lifecycle_wire::{
+    DistannCancelPublishAuditV1, DistannRetireDecisionV1, DistannSuccessorActivationV1,
+};
 use super::manifest_v2::{
     DistannEpochFingerprint, DistannEpochManifestV2, DistannReadyReceipt,
     DISTANN_EPOCH_FINGERPRINT_BYTES,
@@ -33,6 +35,7 @@ type GenerationStatusRow = (
     Option<Vec<u8>>,
     i64,
     i64,
+    Option<Vec<u8>>,
     Option<Vec<u8>>,
     Option<Vec<u8>>,
 );
@@ -311,6 +314,7 @@ fn ec_distann_epoch_generation_status(
         name!(row_count, i64),
         name!(successor_activation_digest, Option<Vec<u8>>),
         name!(retire_decision_digest, Option<Vec<u8>>),
+        name!(cancellation_audit_digest, Option<Vec<u8>>),
     ),
 > {
     let result = (|| -> Result<GenerationStatusRow, String> {
@@ -323,16 +327,21 @@ fn ec_distann_epoch_generation_status(
         )?;
         let generation = generation_catalog::extension_relation_name("ec_distann_generation")?;
         let reclaim = generation_catalog::extension_relation_name("ec_distann_generation_reclaim")?;
+        let cancelled_reclaim = generation_catalog::extension_relation_name(
+            "ec_distann_cancelled_generation_reclaim",
+        )?;
         let sql = format!(
             "SELECT epoch, state, build_spec_digest, generation_descriptor_digest,
                     epoch_fingerprint, manifest_digest, record_count, row_count,
-                    successor_activation_digest, retire_decision_digest
+                    successor_activation_digest, retire_decision_digest,
+                    cancellation_audit_digest
                FROM (
                    SELECT epoch, state, build_spec_digest,
                           generation_descriptor_digest, epoch_fingerprint,
                           manifest_digest, cumulative_record_count AS record_count,
                           cumulative_record_count AS row_count,
-                          successor_activation_digest, NULL::bytea AS retire_decision_digest
+                          successor_activation_digest, NULL::bytea AS retire_decision_digest,
+                          NULL::bytea AS cancellation_audit_digest
                      FROM {generation}
                     WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                       AND build_id = $3::uuid
@@ -340,8 +349,19 @@ fn ec_distann_epoch_generation_status(
                    SELECT epoch, 'Reclaimed'::text, build_spec_digest,
                           generation_descriptor_digest, epoch_fingerprint,
                           manifest_digest, record_count, row_count,
-                          successor_activation_digest, retire_decision_digest
+                          successor_activation_digest, retire_decision_digest,
+                          NULL::bytea AS cancellation_audit_digest
                      FROM {reclaim}
+                    WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                      AND build_id = $3::uuid
+                   UNION ALL
+                   SELECT epoch, 'CancelledReclaimed'::text, build_spec_digest,
+                          generation_descriptor_digest, epoch_fingerprint,
+                          manifest_digest, record_count, row_count,
+                          NULL::bytea AS successor_activation_digest,
+                          NULL::bytea AS retire_decision_digest,
+                          cancellation_audit_digest
+                     FROM {cancelled_reclaim}
                     WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                       AND build_id = $3::uuid
                ) status"
@@ -393,6 +413,7 @@ fn ec_distann_epoch_generation_status(
                 required_i64("row_count")?,
                 optional_bytes(&row, "successor_activation_digest")?,
                 optional_bytes(&row, "retire_decision_digest")?,
+                optional_bytes(&row, "cancellation_audit_digest")?,
             ))
         })
     })()
@@ -835,6 +856,284 @@ fn ec_distann_apply_epoch_retire(
         })?;
         if deleted != 1 {
             return Err("EC_EPOCH_STATE: reclaimed generation changed concurrently".to_owned());
+        }
+        Ok(())
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+}
+
+/// Explicitly reclaim a Ready or partially Published generation whose
+/// coordinator publish decision was durably cancelled before activation.
+/// The canonical cancellation audit is the authenticated authorization; an
+/// immutable local tombstone makes partial remote cleanup replayable.
+#[pg_extern(volatile, strict, parallel_restricted)]
+fn ec_distann_reclaim_cancelled_generation(
+    index_regclass: PgRelation,
+    cancellation_audit: Vec<u8>,
+    cancellation_audit_digest: Vec<u8>,
+) {
+    (|| -> Result<(), String> {
+        super::lifecycle_guard::require_read_committed(
+            "ec_distann_reclaim_cancelled_generation",
+        )?;
+        let supplied_digest = fixed_digest(
+            cancellation_audit_digest,
+            "cancellation audit digest",
+            "EC_PUBLISH_CANCEL",
+        )?;
+        let audit = DistannCancelPublishAuditV1::decode(&cancellation_audit)?;
+        if audit.digest()? != supplied_digest {
+            return Err("EC_PUBLISH_CANCEL: cancellation audit digest mismatch".to_owned());
+        }
+        let build_id = Uuid::from_bytes(audit.build_id);
+        let index_oid = index_regclass.oid();
+        let (_guard, _handle, _metadata, logical_index_uuid) = open_control_index(
+            index_oid,
+            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+            "ec_distann_reclaim_cancelled_generation",
+        )?;
+        if audit.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes() {
+            return Err(
+                "EC_PUBLISH_CANCEL: cancellation audit coordinator identity mismatch".to_owned(),
+            );
+        }
+
+        let tombstone = generation_catalog::extension_relation_name(
+            "ec_distann_cancelled_generation_reclaim",
+        )?;
+        let replay = Spi::connect_mut(|client| {
+            client
+                .update(
+                    &format!(
+                        "SELECT epoch, epoch_fingerprint, manifest_digest,
+                                cancellation_audit, cancellation_audit_digest
+                           FROM {tombstone}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid
+                          FOR UPDATE"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|error| {
+                    format!("EC_PUBLISH_CANCEL: cancellation tombstone lookup failed: {error}")
+                })?
+                .map(|row| {
+                    let required = |field: &str| -> Result<Vec<u8>, String> {
+                        row[field]
+                            .value::<Vec<u8>>()
+                            .map_err(|_| {
+                                format!("EC_PUBLISH_CANCEL: tombstone {field} decode failed")
+                            })?
+                            .ok_or_else(|| {
+                                format!("EC_PUBLISH_CANCEL: tombstone {field} is NULL")
+                            })
+                    };
+                    Ok::<_, String>((
+                        row["epoch"]
+                            .value::<i64>()
+                            .map_err(|_| {
+                                "EC_PUBLISH_CANCEL: tombstone epoch decode failed".to_owned()
+                            })?
+                            .ok_or_else(|| {
+                                "EC_PUBLISH_CANCEL: tombstone epoch is NULL".to_owned()
+                            })?,
+                        required("epoch_fingerprint")?,
+                        required("manifest_digest")?,
+                        required("cancellation_audit")?,
+                        required("cancellation_audit_digest")?,
+                    ))
+                })
+                .next()
+                .transpose()
+        })?;
+        if let Some((epoch, fingerprint, manifest_digest, stored_audit, stored_digest)) = replay {
+            if epoch == i64::try_from(audit.epoch).unwrap_or(i64::MIN)
+                && fingerprint == audit.epoch_fingerprint
+                && manifest_digest == audit.manifest_digest
+                && stored_audit == cancellation_audit
+                && stored_digest == supplied_digest
+            {
+                return Ok(());
+            }
+            return Err("EC_PUBLISH_CANCEL: conflicting cancellation reclaim replay".to_owned());
+        }
+
+        let row = generation_catalog::lookup_generation_for_update(
+            index_oid,
+            logical_index_uuid,
+            build_id,
+        )?
+        .ok_or_else(|| {
+            "EC_GENERATION_MISSING: cancelled generation and tombstone are absent".to_owned()
+        })?;
+        if !matches!(row.state.as_str(), "Ready" | "Published") {
+            return Err(format!(
+                "EC_PUBLISH_CANCEL: generation state {} cannot be cancellation-reclaimed",
+                row.state
+            ));
+        }
+        let descriptor = decode_generation_descriptor(&row)?;
+        if descriptor.coordinator_logical_index_uuid
+            != audit.coordinator_logical_index_uuid
+            || row.epoch != audit.epoch
+        {
+            return Err(
+                "EC_PUBLISH_CANCEL: cancellation audit generation identity mismatch".to_owned(),
+            );
+        }
+        if row.state == "Published" {
+            let generation =
+                generation_catalog::extension_relation_name("ec_distann_generation")?;
+            let persisted = Spi::connect(|client| {
+                client
+                    .select(
+                        &format!(
+                            "SELECT epoch_fingerprint, manifest_digest
+                               FROM {generation}
+                              WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                                AND build_id = $3::uuid"
+                        ),
+                        None,
+                        &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                    )
+                    .map_err(|error| {
+                        format!("EC_PUBLISH_CANCEL: Published identity lookup failed: {error}")
+                    })?
+                    .map(|catalog_row| {
+                        Ok::<_, String>((
+                            optional_bytes(&catalog_row, "epoch_fingerprint")?,
+                            optional_bytes(&catalog_row, "manifest_digest")?,
+                        ))
+                    })
+                    .next()
+                    .transpose()?
+                    .ok_or_else(|| {
+                        "EC_PUBLISH_CANCEL: locked Published generation disappeared".to_owned()
+                    })
+            })?;
+            if persisted.0.as_deref() != Some(audit.epoch_fingerprint.as_slice())
+                || persisted.1.as_deref() != Some(audit.manifest_digest.as_slice())
+            {
+                return Err(
+                    "EC_PUBLISH_CANCEL: cancellation audit differs from Published generation"
+                        .to_owned(),
+                );
+            }
+        }
+        let ready_receipt = DistannReadyReceipt::decode(
+            row.ready_receipt
+                .as_ref()
+                .ok_or_else(|| "EC_PUBLISH_CANCEL: generation has no Ready receipt".to_owned())?,
+        )?;
+        if ready_receipt.build_id != audit.build_id
+            || ready_receipt.epoch != audit.epoch
+            || ready_receipt.owned_record_count != row.cumulative_record_count
+            || ready_receipt.row_count != row.cumulative_record_count
+        {
+            return Err(
+                "EC_PUBLISH_CANCEL: Ready receipt differs from cancelled generation".to_owned(),
+            );
+        }
+
+        let active = generation_catalog::extension_relation_name("ec_distann_active_epoch")?;
+        let is_active = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT 1 FROM {active}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map(|rows| !rows.is_empty())
+                .map_err(|error| {
+                    format!("EC_PUBLISH_CANCEL: active pointer lookup failed: {error}")
+                })
+        })?;
+        if is_active {
+            return Err("EC_PUBLISH_CANCEL: active generation cannot be reclaimed".to_owned());
+        }
+
+        let epoch = i64::try_from(audit.epoch)
+            .map_err(|_| "EC_PUBLISH_CANCEL: cancelled epoch exceeds bigint".to_owned())?;
+        Spi::connect_mut(|client| -> Result<(), String> {
+            client
+                .update(
+                    &format!(
+                        "INSERT INTO {tombstone} (
+                             index_oid, logical_index_uuid, build_id, epoch,
+                             epoch_fingerprint, manifest_digest, prior_state,
+                             build_spec_digest, generation_descriptor_digest,
+                             record_count, row_count, cancellation_audit,
+                             cancellation_audit_digest
+                         ) VALUES (
+                             $1::oid, $2::uuid, $3::uuid, $4::bigint,
+                             $5::bytea, $6::bytea, $7::text,
+                             $8::bytea, $9::bytea, $10::bigint, $11::bigint,
+                             $12::bytea, $13::bytea
+                         )"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        logical_index_uuid.into(),
+                        build_id.into(),
+                        epoch.into(),
+                        audit.epoch_fingerprint.to_vec().into(),
+                        audit.manifest_digest.to_vec().into(),
+                        row.state.clone().into(),
+                        row.build_spec_digest.to_vec().into(),
+                        row.generation_descriptor_digest.to_vec().into(),
+                        i64::try_from(ready_receipt.owned_record_count)
+                            .map_err(|_| {
+                                "EC_PUBLISH_CANCEL: record count exceeds bigint".to_owned()
+                            })?
+                            .into(),
+                        i64::try_from(ready_receipt.row_count)
+                            .map_err(|_| {
+                                "EC_PUBLISH_CANCEL: row count exceeds bigint".to_owned()
+                            })?
+                            .into(),
+                        cancellation_audit.clone().into(),
+                        supplied_digest.to_vec().into(),
+                    ],
+                )
+                .map_err(|error| {
+                    format!("EC_PUBLISH_CANCEL: cancellation tombstone insert failed: {error}")
+                })?;
+            Ok(())
+        })?;
+        drop_generation_relations(
+            index_oid,
+            GenerationRelations {
+                row_tier_relid: row.row_tier_relid,
+                graph_store_relid: row.graph_store_relid,
+                directory_relid: row.directory_relid,
+            },
+        )?;
+        let generation = generation_catalog::extension_relation_name("ec_distann_generation")?;
+        let deleted = Spi::connect_mut(|client| {
+            client
+                .update(
+                    &format!(
+                        "DELETE FROM {generation}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid AND state IN ('Ready', 'Published')
+                          RETURNING 1"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map(|rows| rows.len())
+                .map_err(|error| {
+                    format!("EC_PUBLISH_CANCEL: cancelled generation delete failed: {error}")
+                })
+        })?;
+        if deleted != 1 {
+            return Err("EC_PUBLISH_CANCEL: cancelled generation changed concurrently".to_owned());
         }
         Ok(())
     })()

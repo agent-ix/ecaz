@@ -362,12 +362,28 @@ parent.
   audit fields; another reason conflicts. `Activated` and `Applied` decisions
   cannot be cancelled, and publish recovery SHALL issue no participant call for
   a `Cancelled` decision.
+- Canonical cancel-publish audit version 1 SHALL contain, in order: `version
+  u16 = 1`, coordinator logical-index UUID `byte[16]`, cancelled build id
+  `byte[16]`, epoch `u64`, length-prefixed 34-byte epoch fingerprint, manifest
+  digest `byte[32]`, decision timestamp as signed Unix microseconds `i64`,
+  length-prefixed caller name, and length-prefixed reason. Its digest SHALL be
+  `SHA-256("ec_distann_cancel_epoch_publish_v1\0" || canonical_bytes)`. TC-050
+  SHALL freeze its bytes, independent decode, endian handling, and
+  unknown-version rejection.
 - A cancelled decision remains the authoritative registration for its
   never-active fingerprint. A participant that acknowledged publication before
   cancellation may retain a Published-but-never-active orphan; it is never
   routable and may be reclaimed only through an explicit audited force-retire
-  path tied to that cancelled decision. Ordinary abort and unaudited cleanup
-  continue to refuse every generation named by a durable publish decision.
+  path tied to that cancelled decision. `ec_distann_recover_cancelled_publish`
+  SHALL replay the immutable private participant bindings and send the exact
+  canonical audit/digest to each participant. Each participant SHALL accept
+  only a matching non-active Ready or Published generation, atomically insert
+  an immutable `CancelledReclaimed` tombstone before relation deletion, and
+  replay exactly from that tombstone. A crash after a subset of remote commits
+  is completed by re-drive; only after every binding acknowledges may the
+  coordinator record `cancellation_reclaimed_at`. Ordinary abort and unaudited
+  cleanup continue to refuse every generation named by a durable publish
+  decision.
 - T4a SHALL create one pending predecessor-disposition row for every ordinal in
   the immutable predecessor private-binding roster. T4b changes a row from
   `Pending` to `Retired` only after exact remote acknowledgement. Exact replay
@@ -741,7 +757,8 @@ parent.
 | FR-082-AC-14 | Ready commit durably stores the exact canonical build candidate, and both decision and later recovery after client/backend loss recompute its digest chain and consume those bytes without recapturing the source snapshot | Test (TC-042, TC-050) |
 | FR-082-AC-15 | After successor activation, every predecessor-roster binding—including an owner removed from the successor roster—reaches exactly one immutable Retired acknowledgement or explicit audited Abandoned disposition; exact replay is stable, a returning abandoned binding fails closed, and conflicting successor identity changes no state or physical bytes | Test (TC-042, TC-050) |
 | FR-082-AC-16 | Retire apply atomically removes physical storage and leaves an immutable Reclaimed tombstone; exact replay/status succeeds from it and conflicting identity fails closed | Test (TC-042, TC-050) |
-| FR-082-AC-17 | An audited Pending-decision cancellation leaves the predecessor active, clears the build gate, permanently blocks activation of the cancelled fingerprint, and keeps any partially published successor storage non-routable until explicit audited force-retirement | Test (TC-042) |
+| FR-082-AC-17 | An audited Pending-decision cancellation leaves the predecessor active, clears the build gate, permanently blocks activation of the cancelled fingerprint, and keeps any partially published successor storage non-routable until explicit audited cancellation recovery | Test (TC-042) |
+| FR-082-AC-18 | Cancelled-generation recovery reclaims each reachable Ready or Published-but-never-active participant generation from the exact canonical cancellation audit, leaves an immutable participant tombstone, and replays safely after partial remote completion | Test (TC-042, TC-050) |
 
 ## Constraints
 

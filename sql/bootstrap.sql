@@ -606,6 +606,13 @@ CREATE TABLE ec_distann_publish_decision (
     cancelled_at timestamptz,
     cancelled_by text,
     cancellation_reason text,
+    cancellation_time_unix_micros bigint,
+    cancellation_audit bytea,
+    cancellation_audit_digest bytea CHECK (
+        cancellation_audit_digest IS NULL
+        OR octet_length(cancellation_audit_digest) = 32
+    ),
+    cancellation_reclaimed_at timestamptz,
     CHECK (
         (predecessor_build_id IS NULL AND predecessor_epoch IS NULL
          AND predecessor_epoch_fingerprint IS NULL
@@ -625,11 +632,18 @@ CREATE TABLE ec_distann_publish_decision (
          AND cancelled_at IS NOT NULL
          AND cancelled_by IS NOT NULL AND length(cancelled_by) > 0
          AND cancellation_reason IS NOT NULL
-         AND octet_length(cancellation_reason) BETWEEN 1 AND 1024)
+         AND octet_length(cancellation_reason) BETWEEN 1 AND 1024
+         AND cancellation_time_unix_micros IS NOT NULL
+         AND cancellation_audit IS NOT NULL
+         AND octet_length(cancellation_audit) > 0
+         AND cancellation_audit_digest IS NOT NULL)
         OR
         (decision_state <> 'Cancelled'
          AND cancelled_at IS NULL AND cancelled_by IS NULL
-         AND cancellation_reason IS NULL)
+         AND cancellation_reason IS NULL
+         AND cancellation_time_unix_micros IS NULL
+         AND cancellation_audit IS NULL AND cancellation_audit_digest IS NULL
+         AND cancellation_reclaimed_at IS NULL)
     ),
     PRIMARY KEY (index_oid, logical_index_uuid, build_id),
     UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint),
@@ -876,6 +890,32 @@ CREATE TABLE ec_distann_generation_reclaim (
     UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint)
 );
 
+CREATE TABLE ec_distann_cancelled_generation_reclaim (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    prior_state text NOT NULL CHECK (prior_state IN ('Ready', 'Published')),
+    build_spec_digest bytea NOT NULL CHECK (octet_length(build_spec_digest) = 32),
+    generation_descriptor_digest bytea NOT NULL CHECK (
+        octet_length(generation_descriptor_digest) = 32
+    ),
+    record_count bigint NOT NULL CHECK (record_count >= 0),
+    row_count bigint NOT NULL CHECK (row_count >= 0),
+    cancellation_audit bytea NOT NULL CHECK (octet_length(cancellation_audit) > 0),
+    cancellation_audit_digest bytea NOT NULL CHECK (
+        octet_length(cancellation_audit_digest) = 32
+    ),
+    reclaimed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint)
+);
+
 CREATE TABLE ec_distann_active_epoch (
     index_oid oid NOT NULL,
     logical_index_uuid uuid NOT NULL,
@@ -911,6 +951,7 @@ REVOKE ALL ON TABLE ec_distann_predecessor_disposition FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_retire_decision FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_active_epoch FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_generation_reclaim FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_cancelled_generation_reclaim FROM PUBLIC;
 
 CREATE TYPE ec_spire_placement_entry AS (
     pk_value bytea,

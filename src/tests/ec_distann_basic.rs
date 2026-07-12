@@ -3128,6 +3128,26 @@ fn test_distann_multi_epoch_publish() {
     let cancelled = "49494949-4949-4949-8949-494949494949";
     prepare_epoch(&mut client, 11, cancelled);
     client
+        .batch_execute(&format!(
+            "SELECT ec_distann_publish_epoch(
+                 'ec_distann_me_idx'::regclass, '{cancelled}'::uuid,
+                 candidate.epoch_manifest, candidate.manifest_digest
+             )
+               FROM ec_distann_build_candidate candidate
+              WHERE candidate.index_oid = 'ec_distann_me_idx'::regclass::oid
+                AND candidate.build_id = '{cancelled}'::uuid"
+        ))
+        .expect("fixture should persist a pre-swap participant publication acknowledgement");
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT state FROM ec_distann_generation
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                AND build_id = '{cancelled}'::uuid"
+        )),
+        "Published",
+        "fixture must cover Published-but-never-active cancellation cleanup"
+    );
+    client
         .batch_execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
         .expect("repeatable-read cancellation probe should begin");
     let isolation_error = client
@@ -3163,7 +3183,9 @@ fn test_distann_multi_epoch_publish() {
                         d.cancellation_reason,
                         a.build_id::text,
                         ec_distann_build_gate_relation_mask(
-                            'ec_distann_me_source'::regclass::oid)
+                            'ec_distann_me_source'::regclass::oid),
+                        octet_length(d.cancellation_audit) > 0,
+                        octet_length(d.cancellation_audit_digest)
                    FROM ec_distann_publish_decision d
                    JOIN ec_distann_build_registration r USING
                         (index_oid, logical_index_uuid, build_id)
@@ -3188,6 +3210,8 @@ fn test_distann_multi_epoch_publish() {
         "cancellation must preserve the exact active predecessor"
     );
     assert_eq!(cancellation.get::<_, i32>(5), 0, "cancellation clears the gate");
+    assert!(cancellation.get::<_, bool>(6), "canonical cancellation audit is stored");
+    assert_eq!(cancellation.get::<_, i32>(7), 32);
     client
         .batch_execute(&format!(
             "SELECT ec_distann_cancel_epoch_publish(
@@ -3209,6 +3233,44 @@ fn test_distann_multi_epoch_publish() {
             .unwrap_or(false),
         "cancelled recovery must fail closed: {recovery_after_cancel}"
     );
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_cancelled_publish(
+                 'ec_distann_me_idx'::regclass, '{cancelled}'::uuid)"
+        ))
+        .expect("cancelled generation cleanup should be replayable");
+    let cancellation_cleanup = client
+        .query_one(
+            &format!(
+                "SELECT d.cancellation_reclaimed_at IS NOT NULL,
+                        NOT EXISTS (
+                            SELECT 1 FROM ec_distann_generation g
+                             WHERE g.index_oid = d.index_oid
+                               AND g.logical_index_uuid = d.logical_index_uuid
+                               AND g.build_id = d.build_id
+                        ),
+                        r.prior_state, r.cancellation_audit = d.cancellation_audit,
+                        r.cancellation_audit_digest = d.cancellation_audit_digest
+                   FROM ec_distann_publish_decision d
+                   JOIN ec_distann_cancelled_generation_reclaim r USING
+                        (index_oid, logical_index_uuid, build_id)
+                  WHERE d.index_oid = 'ec_distann_me_idx'::regclass::oid
+                    AND d.build_id = '{cancelled}'::uuid"
+            ),
+            &[],
+        )
+        .expect("cancelled generation tombstone should remain durable");
+    assert!(cancellation_cleanup.get::<_, bool>(0));
+    assert!(cancellation_cleanup.get::<_, bool>(1));
+    assert_eq!(cancellation_cleanup.get::<_, String>(2), "Published");
+    assert!(cancellation_cleanup.get::<_, bool>(3));
+    assert!(cancellation_cleanup.get::<_, bool>(4));
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_cancelled_publish(
+                 'ec_distann_me_idx'::regclass, '{cancelled}'::uuid)"
+        ))
+        .expect("cancelled cleanup replay should succeed from the tombstone");
     let after_cancel = "4a4a4a4a-4a4a-4a4a-8a4a-4a4a4a4a4a4b";
     client
         .batch_execute(&format!(

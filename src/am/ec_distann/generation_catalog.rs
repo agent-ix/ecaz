@@ -62,6 +62,7 @@ struct CatalogRelations {
     retire_decision: String,
     active_epoch: String,
     generation_reclaim: String,
+    cancelled_generation_reclaim: String,
 }
 
 impl CatalogRelations {
@@ -84,6 +85,9 @@ impl CatalogRelations {
             retire_decision: extension_relation_name("ec_distann_retire_decision")?,
             active_epoch: extension_relation_name("ec_distann_active_epoch")?,
             generation_reclaim: extension_relation_name("ec_distann_generation_reclaim")?,
+            cancelled_generation_reclaim: extension_relation_name(
+                "ec_distann_cancelled_generation_reclaim",
+            )?,
         })
     }
 }
@@ -866,6 +870,7 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
+            (SELECT count(*) FROM {} WHERE index_oid = $1::oid) +
             (SELECT count(*) FROM {} WHERE index_oid = $1::oid)
             AS removed_count",
         catalogs.participant_identity,
@@ -883,6 +888,7 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
         catalogs.retire_decision,
         catalogs.active_epoch,
         catalogs.generation_reclaim,
+        catalogs.cancelled_generation_reclaim,
     );
     let delete_before_publish = [
         format!(
@@ -892,6 +898,10 @@ pub(crate) fn delete_index_catalog_rows(index_oid: pg_sys::Oid) -> Result<i64, S
         format!(
             "DELETE FROM {} WHERE index_oid = $1::oid",
             catalogs.generation_reclaim
+        ),
+        format!(
+            "DELETE FROM {} WHERE index_oid = $1::oid",
+            catalogs.cancelled_generation_reclaim
         ),
         format!(
             "DELETE FROM {} WHERE index_oid = $1::oid",

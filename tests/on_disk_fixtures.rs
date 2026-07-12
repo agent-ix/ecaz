@@ -10,7 +10,8 @@ use ecaz::bench_api::{
     spire_decode_routing_partition_object_fixture, spire_decode_top_graph_partition_object_fixture,
     vamana_decode_overflow_tuple_fixture, DistannAbandonBindingAuditV1,
     DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildSpec, DistannCodecArtifact,
-    DistannEpochFingerprint, DistannEpochManifestV2, DistannGenerationDescriptor,
+    DistannCancelPublishAuditV1, DistannEpochFingerprint, DistannEpochManifestV2,
+    DistannGenerationDescriptor,
     DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannManifestBuildOptions,
     DistannManifestCodecParameters, DistannMetadataPage, DistannNodeTuple, DistannReadyReceipt,
     DistannRetireDecisionV1, DistannRowSchemaDescriptor, DistannSourceSnapshot,
@@ -680,6 +681,44 @@ fn distann_abandon_binding_audit_v1_fixture_decodes_independently_and_rejects_ve
     let mut swapped = bytes;
     swapped.swap(0, 1);
     assert!(DistannAbandonBindingAuditV1::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_cancel_publish_audit_v1_fixture_decodes_independently_and_rejects_version_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_cancel_publish_audit_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    independent.take(16); // coordinator UUID
+    independent.take(16); // cancelled build id
+    assert_eq!(independent.u64(), 8);
+    let fingerprint = independent.len_bytes();
+    let manifest_digest = independent.take(32);
+    assert_eq!(&fingerprint[2..], manifest_digest);
+    assert_eq!(independent.i64(), 1_750_000_000_654_321);
+    assert_eq!(independent.len_bytes(), b"ecaz_operator");
+    assert_eq!(
+        independent.len_bytes(),
+        b"successor participant permanently unavailable"
+    );
+    independent.finish();
+
+    let audit = DistannCancelPublishAuditV1::decode(&bytes).unwrap();
+    assert_eq!(audit.epoch, 8);
+    assert_distann_domain_digest(
+        &bytes,
+        b"ec_distann_cancel_epoch_publish_v1\0",
+        "42a9358f6ec4998673293572fffba5db37127c328d5e7fd2141ac34a9dc2bb53",
+    );
+    assert_eq!(
+        hex::encode(audit.digest().unwrap()),
+        "42a9358f6ec4998673293572fffba5db37127c328d5e7fd2141ac34a9dc2bb53"
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannCancelPublishAuditV1::decode(&swapped).is_err());
 }
 
 #[test]

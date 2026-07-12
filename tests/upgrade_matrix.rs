@@ -94,6 +94,7 @@ fn upgrade_matrix_names_current_writable_formats() {
         ("diskann", 3),
         ("distann-build-candidate", 1),
         ("distann-build-spec", 1),
+        ("distann-cancel-publish-audit", 1),
         ("distann-abandon-binding-audit", 1),
         ("distann-abandoned-binding-set", 1),
         ("distann-codec-artifact", 1),

@@ -23,6 +23,7 @@ pub const DISTANN_SUCCESSOR_ACTIVATION_VERSION: u16 = 1;
 pub const DISTANN_ABANDON_BINDING_AUDIT_VERSION: u16 = 1;
 pub const DISTANN_ABANDONED_BINDING_SET_VERSION: u16 = 1;
 pub const DISTANN_RETIRE_DECISION_VERSION: u16 = 1;
+pub const DISTANN_CANCEL_PUBLISH_AUDIT_VERSION: u16 = 1;
 
 pub const DISTANN_BUILD_CANDIDATE_VERSION_OFFSET: usize = 0;
 pub const DISTANN_BUILD_CANDIDATE_REGISTRATION_DIGEST_OFFSET: usize = 2;
@@ -47,6 +48,12 @@ pub const DISTANN_RETIRE_DECISION_TARGET_BUILD_ID_OFFSET: usize = 18;
 pub const DISTANN_RETIRE_DECISION_EPOCH_OFFSET: usize = 34;
 pub const DISTANN_RETIRE_DECISION_FINGERPRINT_LENGTH_OFFSET: usize = 42;
 pub const DISTANN_RETIRE_DECISION_FIXED_PREFIX_BYTES: usize = 46;
+pub const DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET: usize = 0;
+pub const DISTANN_CANCEL_PUBLISH_AUDIT_COORDINATOR_UUID_OFFSET: usize = 2;
+pub const DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET: usize = 18;
+pub const DISTANN_CANCEL_PUBLISH_AUDIT_EPOCH_OFFSET: usize = 34;
+pub const DISTANN_CANCEL_PUBLISH_AUDIT_FINGERPRINT_LENGTH_OFFSET: usize = 42;
+pub const DISTANN_CANCEL_PUBLISH_AUDIT_FIXED_PREFIX_BYTES: usize = 46;
 
 const BUILD_CANDIDATE_DOMAIN: &[u8] = b"ec_distann_build_candidate_v1\0";
 const READY_RECEIPT_SET_DOMAIN: &[u8] = b"ec_distann_ready_receipt_set_v1\0";
@@ -54,6 +61,7 @@ const SUCCESSOR_ACTIVATION_DOMAIN: &[u8] = b"ec_distann_successor_activation_v1\
 const ABANDON_BINDING_AUDIT_DOMAIN: &[u8] = b"ec_distann_abandon_predecessor_binding_v1\0";
 const ABANDONED_BINDING_SET_DOMAIN: &[u8] = b"ec_distann_abandoned_binding_set_v1\0";
 const RETIRE_DECISION_DOMAIN: &[u8] = b"ec_distann_retire_decision_v1\0";
+const CANCEL_PUBLISH_AUDIT_DOMAIN: &[u8] = b"ec_distann_cancel_epoch_publish_v1\0";
 const DIGEST_BYTES: usize = 32;
 const MAX_REASON_BYTES: usize = 1024;
 
@@ -62,6 +70,13 @@ fn predecessor_abandon_error(error: String) -> String {
         .split_once(": ")
         .map_or(error.as_str(), |(_, detail)| detail);
     format!("EC_PREDECESSOR_ABANDON: {detail}")
+}
+
+fn publish_cancel_error(error: String) -> String {
+    let detail = error
+        .split_once(": ")
+        .map_or(error.as_str(), |(_, detail)| detail);
+    format!("EC_PUBLISH_CANCEL: {detail}")
 }
 
 fn validate_uuid(value: &[u8; 16], field: &str) -> Result<(), String> {
@@ -433,6 +448,101 @@ impl DistannSuccessorActivationV1 {
 
     pub fn digest(&self) -> Result<[u8; DIGEST_BYTES], String> {
         Ok(domain_digest(SUCCESSOR_ACTIVATION_DOMAIN, &self.encode()?))
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DistannCancelPublishAuditV1 {
+    pub coordinator_logical_index_uuid: [u8; 16],
+    pub build_id: [u8; 16],
+    pub epoch: u64,
+    pub epoch_fingerprint: [u8; DISTANN_EPOCH_FINGERPRINT_BYTES],
+    pub manifest_digest: [u8; DIGEST_BYTES],
+    pub decision_time_unix_micros: i64,
+    pub caller_name: String,
+    pub reason: String,
+}
+
+impl DistannCancelPublishAuditV1 {
+    fn validate_inner(&self) -> Result<(), String> {
+        validate_uuid(
+            &self.coordinator_logical_index_uuid,
+            "coordinator logical-index UUID",
+        )?;
+        validate_uuid(&self.build_id, "cancelled build id")?;
+        if self.epoch == 0 {
+            return Err("EC_PUBLISH_CANCEL: cancelled epoch must be nonzero".to_owned());
+        }
+        validate_fingerprint(
+            &self.epoch_fingerprint,
+            Some(&self.manifest_digest),
+            "cancelled epoch fingerprint",
+        )?;
+        validate_nonempty_text(
+            &self.caller_name,
+            DISTANN_MAX_CANONICAL_BYTES,
+            "cancellation caller",
+        )?;
+        validate_nonempty_text(&self.reason, MAX_REASON_BYTES, "cancellation reason")
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        self.validate_inner().map_err(publish_cancel_error)
+    }
+
+    pub fn encode(&self) -> Result<Vec<u8>, String> {
+        self.validate_inner().map_err(publish_cancel_error)?;
+        let mut encoder = CanonicalEncoder::with_capacity(
+            160usize
+                .saturating_add(self.caller_name.len())
+                .saturating_add(self.reason.len()),
+        );
+        encoder.put_u16(DISTANN_CANCEL_PUBLISH_AUDIT_VERSION);
+        encoder.put_fixed(&self.coordinator_logical_index_uuid);
+        encoder.put_fixed(&self.build_id);
+        encoder.put_u64(self.epoch);
+        encoder.put_len_prefixed(&self.epoch_fingerprint)?;
+        encoder.put_fixed(&self.manifest_digest);
+        encoder.put_i64(self.decision_time_unix_micros);
+        encoder.put_string(&self.caller_name)?;
+        encoder.put_string(&self.reason)?;
+        encoder.finish().map_err(publish_cancel_error)
+    }
+
+    pub fn decode(input: &[u8]) -> Result<Self, String> {
+        let result = (|| {
+            let mut decoder = CanonicalDecoder::new(input, "cancel-publish audit v1")?;
+            let version = decoder.get_u16("cancel-publish audit version")?;
+            if version != DISTANN_CANCEL_PUBLISH_AUDIT_VERSION {
+                return Err(format!(
+                    "EC_PUBLISH_CANCEL: unsupported cancel-publish audit version {version}"
+                ));
+            }
+            let audit = Self {
+                coordinator_logical_index_uuid: decoder
+                    .get_fixed("coordinator logical-index UUID")?,
+                build_id: decoder.get_fixed("cancelled build id")?,
+                epoch: decoder.get_u64("cancelled epoch")?,
+                epoch_fingerprint: decoder
+                    .get_len_prefixed("cancelled epoch fingerprint")?
+                    .try_into()
+                    .map_err(|_| {
+                        "EC_PUBLISH_CANCEL: cancelled fingerprint length is not 34".to_owned()
+                    })?,
+                manifest_digest: decoder.get_fixed("cancelled manifest digest")?,
+                decision_time_unix_micros: decoder.get_i64("cancellation timestamp")?,
+                caller_name: decoder.get_string("cancellation caller")?,
+                reason: decoder.get_string("cancellation reason")?,
+            };
+            decoder.finish("cancel-publish audit v1")?;
+            audit.validate_inner()?;
+            Ok(audit)
+        })();
+        result.map_err(publish_cancel_error)
+    }
+
+    pub fn digest(&self) -> Result<[u8; DIGEST_BYTES], String> {
+        Ok(domain_digest(CANCEL_PUBLISH_AUDIT_DOMAIN, &self.encode()?))
     }
 }
 
@@ -929,6 +1039,20 @@ mod tests {
         }
     }
 
+    fn sample_cancel_audit() -> DistannCancelPublishAuditV1 {
+        let successor = sample_activation().successor;
+        DistannCancelPublishAuditV1 {
+            coordinator_logical_index_uuid: sample_activation().coordinator_logical_index_uuid,
+            build_id: successor.build_id,
+            epoch: successor.epoch,
+            epoch_fingerprint: successor.fingerprint,
+            manifest_digest: successor.manifest_digest,
+            decision_time_unix_micros: 1_750_000_000_654_321,
+            caller_name: "ecaz_operator".to_owned(),
+            reason: "successor participant permanently unavailable".to_owned(),
+        }
+    }
+
     fn sample_abandoned_set() -> DistannAbandonedBindingSetV1 {
         DistannAbandonedBindingSetV1 {
             entries: vec![
@@ -992,6 +1116,11 @@ mod tests {
             DistannSuccessorActivationV1::decode(&activation.encode().unwrap()).unwrap(),
             activation
         );
+        let cancel_audit = sample_cancel_audit();
+        assert_eq!(
+            DistannCancelPublishAuditV1::decode(&cancel_audit.encode().unwrap()).unwrap(),
+            cancel_audit
+        );
         let audit = sample_audit();
         assert_eq!(
             DistannAbandonBindingAuditV1::decode(&audit.encode().unwrap()).unwrap(),
@@ -1026,6 +1155,10 @@ mod tests {
         let mut audit_version = sample_audit().encode().unwrap();
         audit_version[0..2].copy_from_slice(&99_u16.to_le_bytes());
         assert!(DistannAbandonBindingAuditV1::decode(&audit_version).is_err());
+
+        let mut cancel_version = sample_cancel_audit().encode().unwrap();
+        cancel_version[0..2].copy_from_slice(&99_u16.to_le_bytes());
+        assert!(DistannCancelPublishAuditV1::decode(&cancel_version).is_err());
 
         let mut decision_version = sample_retire_decision().encode().unwrap();
         decision_version[0..2].copy_from_slice(&99_u16.to_le_bytes());
@@ -1313,6 +1446,10 @@ mod tests {
         emit(
             "distann_abandon_binding_audit_v1.hex",
             &sample_audit().encode().unwrap(),
+        );
+        emit(
+            "distann_cancel_publish_audit_v1.hex",
+            &sample_cancel_audit().encode().unwrap(),
         );
         emit(
             "distann_abandoned_binding_set_v1.hex",
