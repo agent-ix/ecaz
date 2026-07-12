@@ -2011,9 +2011,144 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
 /// participant, compare-and-swap the active pointer to the successor, transition
 /// the decision and registration to their published terminal states, and release
 /// the coordinator session locks from the post-commit callback. Returns the
-/// 34-byte active epoch fingerprint. This slice handles the first-epoch
-/// (no-predecessor) single-node case; multi-epoch T4b predecessor retirement is
-/// a later slice.
+/// 34-byte active epoch fingerprint. Recovery separates T4a activation from
+/// single-local T4b predecessor retirement so each acknowledgement is durable
+/// before the covering publish decision becomes Applied.
+fn recover_local_predecessor_retirement(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    successor_build_id: Uuid,
+    activation_bytes: &[u8],
+    activation_digest: &[u8],
+) -> Result<(), String> {
+    let disposition = extension_relation_name("ec_distann_predecessor_disposition")?;
+    let binding = extension_relation_name("ec_distann_build_participant_binding")?;
+    let pending = Spi::connect_mut(|client| -> Result<Vec<bool>, String> {
+        client
+            .update(
+                &format!(
+                    "SELECT b.is_local
+                       FROM {disposition} p
+                       JOIN {binding} b
+                         ON b.index_oid = p.index_oid
+                        AND b.logical_index_uuid = p.logical_index_uuid
+                        AND b.build_id = p.predecessor_build_id
+                        AND b.roster_ordinal = p.predecessor_roster_ordinal
+                      WHERE p.index_oid = $1::oid
+                        AND p.logical_index_uuid = $2::uuid
+                        AND p.successor_build_id = $3::uuid
+                        AND p.disposition = 'Pending'
+                      ORDER BY p.predecessor_roster_ordinal
+                      FOR UPDATE OF p"
+                ),
+                None,
+                &[index_oid.into(), logical_index_uuid.into(), successor_build_id.into()],
+            )
+            .map_err(|error| format!("EC_PREDECESSOR_RETIRE_PENDING: disposition lookup failed: {error}"))?
+            .map(|row| {
+                row["is_local"]
+                    .value::<bool>()
+                    .map_err(|_| "EC_PREDECESSOR_RETIRE_PENDING: locality decode failed".to_owned())?
+                    .ok_or_else(|| "EC_PREDECESSOR_RETIRE_PENDING: locality is NULL".to_owned())
+            })
+            .collect()
+    })?;
+    if pending.iter().any(|is_local| !is_local) {
+        return Err(
+            "EC_PREDECESSOR_RETIRE_PENDING: remote predecessor retirement is not yet implemented"
+                .to_owned(),
+        );
+    }
+    if !pending.is_empty() {
+        let mark = extension_relation_name("ec_distann_mark_epoch_retired")?;
+        Spi::connect_mut(|client| -> Result<(), String> {
+            client
+                .update(
+                    &format!("SELECT {mark}($1::oid::regclass, $2::bytea, $3::bytea)"),
+                    None,
+                    &[
+                        index_oid.into(),
+                        activation_bytes.to_vec().into(),
+                        activation_digest.to_vec().into(),
+                    ],
+                )
+                .map_err(|error| {
+                    format!("EC_PREDECESSOR_RETIRE_PENDING: participant mark failed: {error}")
+                })?;
+            Ok(())
+        })?;
+        let updated = Spi::connect_mut(|client| {
+            client
+                .update(
+                    &format!(
+                        "UPDATE {disposition}
+                            SET disposition = 'Retired',
+                                retired_activation_digest = $4::bytea,
+                                updated_at = clock_timestamp()
+                          WHERE index_oid = $1::oid
+                            AND logical_index_uuid = $2::uuid
+                            AND successor_build_id = $3::uuid
+                            AND disposition = 'Pending'
+                          RETURNING 1"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        logical_index_uuid.into(),
+                        successor_build_id.into(),
+                        activation_digest.to_vec().into(),
+                    ],
+                )
+                .map(|rows| rows.len())
+                .map_err(|error| {
+                    format!("EC_PREDECESSOR_RETIRE_PENDING: disposition update failed: {error}")
+                })
+        })?;
+        if updated != pending.len() {
+            return Err(
+                "EC_PREDECESSOR_RETIRE_PENDING: predecessor disposition changed concurrently"
+                    .to_owned(),
+            );
+        }
+    }
+
+    let decision = extension_relation_name("ec_distann_publish_decision")?;
+    let applied = Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "UPDATE {decision} d
+                        SET decision_state = 'Applied', applied_at = clock_timestamp()
+                      WHERE d.index_oid = $1::oid
+                        AND d.logical_index_uuid = $2::uuid
+                        AND d.build_id = $3::uuid
+                        AND d.decision_state = 'Activated'
+                        AND NOT EXISTS (
+                            SELECT 1 FROM {disposition} p
+                             WHERE p.index_oid = d.index_oid
+                               AND p.logical_index_uuid = d.logical_index_uuid
+                               AND p.successor_build_id = d.build_id
+                               AND p.disposition = 'Pending'
+                        )
+                      RETURNING 1"
+                ),
+                None,
+                &[index_oid.into(), logical_index_uuid.into(), successor_build_id.into()],
+            )
+            .map(|rows| rows.len())
+            .map_err(|error| {
+                format!("EC_PREDECESSOR_RETIRE_PENDING: covering decision apply failed: {error}")
+            })
+    })?;
+    if applied != 1 {
+        return Err(
+            "EC_PREDECESSOR_RETIRE_PENDING: covering decision still has pending predecessors"
+                .to_owned(),
+        );
+    }
+    Ok(())
+}
+
 #[pg_extern(volatile, strict)]
 fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -> Vec<u8> {
     (|| -> Result<Vec<u8>, String> {
@@ -2057,13 +2192,14 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
 
         let decision_table = extension_relation_name("ec_distann_publish_decision")?;
         let decision = Spi::connect(
-            |client| -> Result<Option<(i64, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Option<Uuid>, Vec<u8>, u32)>, String> {
+            |client| -> Result<Option<(i64, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Option<Uuid>, Vec<u8>, Vec<u8>, String, u32)>, String> {
                 client
                     .select(
                         &format!(
                             "SELECT epoch, epoch_fingerprint, manifest_digest, epoch_manifest,
                                     candidate_digest, predecessor_build_id,
-                                    successor_activation_digest, xmin::text AS decision_xmin
+                                    successor_activation, successor_activation_digest,
+                                    decision_state, xmin::text AS decision_xmin
                                FROM {decision_table}
                               WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                                 AND build_id = $3::uuid"
@@ -2099,7 +2235,12 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                             field("epoch_manifest")?,
                             field("candidate_digest")?,
                             predecessor_build_id,
+                            field("successor_activation")?,
                             field("successor_activation_digest")?,
+                            row["decision_state"]
+                                .value::<String>()
+                                .map_err(|_| "EC_EPOCH_STATE: decision state decode failed".to_owned())?
+                                .ok_or_else(|| "EC_EPOCH_STATE: decision state is NULL".to_owned())?,
                             decision_xmin,
                         ))
                     })
@@ -2110,7 +2251,7 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
         .ok_or_else(|| {
             "EC_EPOCH_STATE: no durable publish decision for this build id".to_owned()
         })?;
-        let (epoch, epoch_fingerprint, manifest_digest, epoch_manifest, decision_candidate_digest, predecessor_build_id, _activation_digest, decision_xmin) =
+        let (epoch, epoch_fingerprint, manifest_digest, epoch_manifest, decision_candidate_digest, predecessor_build_id, activation_bytes, activation_digest, decision_state, decision_xmin) =
             decision;
         if unsafe {
             pg_sys::TransactionIdIsCurrentTransactionId(pg_sys::TransactionId::from(decision_xmin))
@@ -2157,6 +2298,15 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
         match (&active_build, &predecessor_build_id) {
             // Idempotent replay: this build is already the active pointer.
             (Some(active), _) if active.as_bytes() == build_id.as_bytes() => {
+                if predecessor_build_id.is_some() && decision_state == "Activated" {
+                    recover_local_predecessor_retirement(
+                        index_oid,
+                        logical_index_uuid,
+                        build_id,
+                        &activation_bytes,
+                        &activation_digest,
+                    )?;
+                }
                 source_lock.release_after_commit();
                 return Ok(epoch_fingerprint);
             }

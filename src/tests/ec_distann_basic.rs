@@ -2760,6 +2760,34 @@ fn test_distann_multi_epoch_publish() {
     assert_eq!(disposition.get::<_, String>(0), "Pending");
     assert_eq!(disposition.get::<_, i32>(1), 17);
 
+    // A later recovery transaction performs T4b: mark the predecessor Retired,
+    // persist the exact activation acknowledgement, then make the covering
+    // successor decision Applied.
+    recover_epoch(&mut client, 8, second);
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT decision_state FROM ec_distann_publish_decision
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid AND build_id = '{second}'::uuid"
+        )),
+        "Applied"
+    );
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT disposition FROM ec_distann_predecessor_disposition
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                AND successor_build_id = '{second}'::uuid"
+        )),
+        "Retired"
+    );
+    assert_eq!(
+        scalar(&mut client, &format!(
+            "SELECT state FROM ec_distann_generation
+              WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                AND build_id = '{first}'::uuid"
+        )),
+        "Retired"
+    );
+
     client
         .batch_execute("DROP TABLE IF EXISTS ec_distann_me_source CASCADE")
         .expect("multi-epoch cleanup should drop the source");
