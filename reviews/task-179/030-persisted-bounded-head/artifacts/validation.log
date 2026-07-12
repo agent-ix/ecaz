@@ -1,0 +1,30 @@
+Task 179 packet 030 validation
+Date: 2026-07-12 America/Los_Angeles
+Head: 961056f6b63d267218196776c0c6bc5842453a1a
+
+Command:
+  cargo clippy --lib --no-default-features --features pg18,pg_test -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx schema pg18 --no-default-features --features pg18,pg_test \
+    --out /tmp/task179-head-schema.sql
+Key result:
+  Discovered 1090 SQL entities: 1086 functions
+  Bootstrap contains ec_distann_generation_head_state and
+  ec_distann_generation_head_sample; the removed temporary physical seed RPC is
+  absent.
+
+Command:
+  cargo pgrx test pg18 test_distann_three_owner_physical_handoff \
+    --no-default-features --features pg18,pg_test
+Key result:
+  test tests::pg_test_distann_three_owner_physical_handoff ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2495 filtered out
+
+The final fixture run verifies: nonzero canonical head digest; nonempty bounded
+sample; deterministic sample count on the identical successor build; aborted
+head cleanup; EcDistannDistributedScan returning 30 frozen rows covering owner
+ordinals {0,1,2}; reclaimed predecessor head count 0; active successor head
+count 1.
