@@ -237,6 +237,40 @@ pub(crate) fn remote_abort_epoch_handoff(
     })
 }
 
+pub(crate) fn remote_publish_epoch(
+    conninfo: &str,
+    index_regclass: &str,
+    build_id: &str,
+    epoch_manifest: &[u8],
+    manifest_digest: &[u8],
+) -> Result<Vec<u8>, String> {
+    with_transport_state(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            let row = lifecycle_client(connections, conninfo)
+                .await?
+                .query_one(
+                    "SELECT ec_distann_publish_epoch(
+                         $1::text::regclass, $2::text::uuid, $3::bytea,
+                         $4::bytea)",
+                    &[
+                        &index_regclass,
+                        &build_id,
+                        &epoch_manifest,
+                        &manifest_digest,
+                    ],
+                )
+                .await
+                .map_err(|error| remote_error("epoch publish", error))?;
+            row.try_get(0)
+                .map_err(|error| remote_error("publish row", error))
+        })
+    })
+}
+
 /// One remote expansion request over the transport.
 pub(super) struct DistannRemoteExpandRequest<'a> {
     /// libpq conninfo of the target node.

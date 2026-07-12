@@ -3269,12 +3269,77 @@ fn test_distann_three_owner_physical_handoff() {
 
     client
         .batch_execute(&format!(
-            "SELECT ec_distann_abort_epoch_build('ec_distann_rh_idx'::regclass, '{build_id}'::uuid);
-             DROP TABLE ec_distann_rh_source CASCADE;
-             DROP TABLE ec_distann_rh_owner2 CASCADE;
-             DROP TABLE ec_distann_rh_owner3 CASCADE;"
+            "SELECT ec_distann_abort_epoch_build('ec_distann_rh_idx'::regclass, '{build_id}'::uuid)"
         ))
-        .expect("three-owner fixture should clean up");
+        .expect("three-owner unpublished build should abort remotely");
+    assert_eq!(
+        client
+            .query_one(
+                &format!(
+                    "SELECT count(*) FROM ec_distann_generation
+                      WHERE build_id = '{build_id}'::uuid"
+                ),
+                &[],
+            )
+            .expect("aborted generations should be inspectable")
+            .get::<_, i64>(0),
+        0
+    );
+
+    let published_build = "4a4a4a4a-4a4a-4a4a-8a4a-4a4a4a4a4a4a";
+    for statement in [
+        format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 'ec_distann_rh_idx'::regclass, 12, '{published_build}'::uuid)"
+        ),
+        format!(
+            "SELECT ec_distann_build_epoch(
+                 'ec_distann_rh_idx'::regclass, 12, '{published_build}'::uuid)"
+        ),
+        format!(
+            "SELECT ec_distann_decide_epoch_publish(
+                 'ec_distann_rh_idx'::regclass, '{published_build}'::uuid)"
+        ),
+        format!(
+            "SELECT ec_distann_recover_epoch_publish(
+                 'ec_distann_rh_idx'::regclass, '{published_build}'::uuid)"
+        ),
+    ] {
+        client
+            .batch_execute(&statement)
+            .unwrap_or_else(|error| panic!("three-owner publication failed: {statement}: {error}"));
+    }
+    let published_states = client
+        .query(
+            &format!(
+                "SELECT state FROM ec_distann_generation
+                  WHERE build_id = '{published_build}'::uuid ORDER BY node_id"
+            ),
+            &[],
+        )
+        .expect("published participant states should be visible");
+    assert_eq!(published_states.len(), 3);
+    assert!(published_states
+        .iter()
+        .all(|row| row.get::<_, String>(0) == "Published"));
+    assert_eq!(
+        client
+            .query_one(
+                "SELECT build_id::text FROM ec_distann_active_epoch
+                  WHERE index_oid = 'ec_distann_rh_idx'::regclass::oid",
+                &[],
+            )
+            .expect("coordinator active pointer should exist")
+            .get::<_, String>(0),
+        published_build
+    );
+    client
+        .batch_execute(
+            "DROP TABLE ec_distann_rh_source CASCADE;
+             DROP TABLE ec_distann_rh_owner2 CASCADE;
+             DROP TABLE ec_distann_rh_owner3 CASCADE;",
+        )
+        .expect("published three-owner fixture should clean up");
 }
 
 #[pg_test]

@@ -2386,40 +2386,89 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
             }
         }
 
-        // Publish the local participant (Ready -> Published) and verify the
-        // acknowledged fingerprint matches the decided one.
+        // Publish every successor participant before moving the coordinator
+        // pointer. Exact replay is safe after a partial remote acknowledgement.
         let publish_fn = extension_relation_name("ec_distann_publish_epoch")?;
-        let acked_fingerprint = Spi::connect_mut(|client| -> Result<Vec<u8>, String> {
+        let binding = extension_relation_name("ec_distann_build_participant_binding")?;
+        let successor_bindings = Spi::connect(|client| {
             client
-                .update(
+                .select(
                     &format!(
-                        "SELECT {publish_fn}(
-                             $1::oid::regclass, $2::uuid, $3::bytea, $4::bytea
-                         ) AS fingerprint"
+                        "SELECT is_local, conninfo_secret_name, remote_index_regclass
+                           FROM {binding}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid
+                          ORDER BY roster_ordinal"
                     ),
                     None,
-                    &[
-                        index_oid.into(),
-                        build_id.into(),
-                        epoch_manifest.clone().into(),
-                        manifest_digest.clone().into(),
-                    ],
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
                 )
-                .map_err(|error| format!("EC_EPOCH_STATE: participant publish failed: {error}"))?
+                .map_err(|error| format!("EC_EPOCH_STATE: successor binding lookup failed: {error}"))?
                 .map(|row| {
-                    row["fingerprint"]
-                        .value::<Vec<u8>>()
-                        .map_err(|_| "EC_EPOCH_STATE: participant fingerprint decode failed".to_owned())?
-                        .ok_or_else(|| "EC_EPOCH_STATE: participant fingerprint is NULL".to_owned())
+                    let text = |field: &str| -> Result<String, String> {
+                        row[field]
+                            .value::<String>()
+                            .map_err(|_| format!("EC_EPOCH_STATE: {field} decode failed"))?
+                            .ok_or_else(|| format!("EC_EPOCH_STATE: {field} is NULL"))
+                    };
+                    Ok((
+                        row["is_local"]
+                            .value::<bool>()
+                            .map_err(|_| "EC_EPOCH_STATE: successor locality decode failed".to_owned())?
+                            .ok_or_else(|| "EC_EPOCH_STATE: successor locality is NULL".to_owned())?,
+                        text("conninfo_secret_name")?,
+                        text("remote_index_regclass")?,
+                    ))
                 })
-                .next()
-                .transpose()?
-                .ok_or_else(|| "EC_EPOCH_STATE: participant publish returned no fingerprint".to_owned())
+                .collect::<Result<Vec<_>, String>>()
         })?;
-        if acked_fingerprint != epoch_fingerprint {
-            return Err(
-                "EC_EPOCH_STATE: participant acknowledged a different epoch fingerprint".to_owned(),
-            );
+        if successor_bindings.is_empty() {
+            return Err("EC_EPOCH_STATE: publish decision has no successor bindings".to_owned());
+        }
+        let build_id_text = build_id.to_string();
+        for (is_local, secret_name, remote_index_regclass) in successor_bindings {
+            let acked_fingerprint = if is_local {
+                Spi::connect_mut(|client| -> Result<Vec<u8>, String> {
+                    client
+                        .update(
+                            &format!(
+                                "SELECT {publish_fn}(
+                                     $1::oid::regclass, $2::uuid, $3::bytea, $4::bytea
+                                 ) AS fingerprint"
+                            ),
+                            None,
+                            &[
+                                index_oid.into(), build_id.into(), epoch_manifest.clone().into(),
+                                manifest_digest.clone().into(),
+                            ],
+                        )
+                        .map_err(|error| format!("EC_EPOCH_STATE: local publish failed: {error}"))?
+                        .map(|row| {
+                            row["fingerprint"]
+                                .value::<Vec<u8>>()
+                                .map_err(|_| "EC_EPOCH_STATE: participant fingerprint decode failed".to_owned())?
+                                .ok_or_else(|| "EC_EPOCH_STATE: participant fingerprint is NULL".to_owned())
+                        })
+                        .next()
+                        .transpose()?
+                        .ok_or_else(|| "EC_EPOCH_STATE: participant publish returned no fingerprint".to_owned())
+                })?
+            } else {
+                let conninfo = super::node_registry::resolve_conninfo_secret(&secret_name)?;
+                super::remote_transport::remote_publish_epoch(
+                    &conninfo,
+                    &remote_index_regclass,
+                    &build_id_text,
+                    &epoch_manifest,
+                    &manifest_digest,
+                )?
+            };
+            if acked_fingerprint != epoch_fingerprint {
+                return Err(
+                    "EC_EPOCH_STATE: participant acknowledged a different epoch fingerprint"
+                        .to_owned(),
+                );
+            }
         }
         if super::options::debug_fail_recover_after_publish_ack() {
             return Err(
@@ -2434,7 +2483,6 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
         // one Pending disposition per predecessor binding (T4b retires them).
         let registration = extension_relation_name("ec_distann_build_registration")?;
         let disposition = extension_relation_name("ec_distann_predecessor_disposition")?;
-        let binding = extension_relation_name("ec_distann_build_participant_binding")?;
         Spi::connect_mut(|client| -> Result<(), String> {
             match &predecessor_build_id {
                 None => {
