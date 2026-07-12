@@ -1,0 +1,12 @@
+[suite:task179-physical-epoch-cache-ab-10k-50k-100k] wrote reviews/task-179/035-physical-epoch-cache/artifacts/suite-manifest.json
+[suite:task179-physical-epoch-cache-ab-10k-50k-100k] cache-off-10k -> PGOPTIONS="-c ec_distann.physical_epoch_cache=off" --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-179/035-physical-epoch-cache/artifacts/cache-off-10k --run-dir target/task179-cache-off-10k --log-file reviews/task-179/035-physical-epoch-cache/artifacts/cache-off-10k/distann-local-multinode.log --nodes 3 --physical-benchmark --benchmark-iterations 20 --base-port 40200 --graph-degree 32 --queries 20 --top-k 10 --corpus-prefix ec_real_10k --staged-dir /home/peter/dev/ecaz/data/staged-current
+[suite:task179-physical-epoch-cache-ab-10k-50k-100k] wrote reviews/task-179/035-physical-epoch-cache/artifacts/suite-manifest.json
+[suite:task179-physical-epoch-cache-ab-10k-50k-100k] wrote reviews/task-179/035-physical-epoch-cache/artifacts/suite-manifest.json
+
+   0: [91msuite step "cache-off-10k" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1030[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
