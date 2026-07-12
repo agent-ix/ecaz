@@ -1088,6 +1088,134 @@ fn ec_distann_begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
     .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
+/// Idempotently abort an unpublished coordinator build: abort every
+/// participant's unpublished generation, clear the durable build gate by moving
+/// the registration to `Aborted`, and release the caller's session locks after
+/// the gate-clearing transaction commits (FR-078:354-360). A Decided or
+/// Published build cannot be aborted; an already-Aborted or absent build id is a
+/// no-op. Remote participants are not yet driven — a multi-node roster fails
+/// closed rather than silently skipping a remote generation.
+#[pg_extern(volatile, strict)]
+fn ec_distann_abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
+    (|| -> Result<(), String> {
+        if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
+            return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
+        }
+        let index_oid = index_regclass.oid();
+        let (_control_guard, _handle, _metadata, logical_index_uuid) = open_control_index(
+            index_oid,
+            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+            "ec_distann_abort_epoch_build",
+        )?;
+        let registration = extension_relation_name("ec_distann_build_registration")?;
+        let binding = extension_relation_name("ec_distann_build_participant_binding")?;
+
+        // Lock the registration row and read its state. Absence is idempotent.
+        let state = Spi::connect_mut(|client| -> Result<Option<String>, String> {
+            client
+                .update(
+                    &format!(
+                        "SELECT state FROM {registration}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid
+                          FOR UPDATE"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_STATE: registration lookup failed".to_owned())?
+                .map(|row| {
+                    row["state"]
+                        .value::<String>()
+                        .map_err(|_| "EC_BUILD_STATE: registration state decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_STATE: registration state is NULL".to_owned())
+                })
+                .next()
+                .transpose()
+        })?;
+        let Some(state) = state else {
+            return Ok(());
+        };
+        match state.as_str() {
+            "Aborted" => return Ok(()),
+            "Registered" | "Building" | "Ready" => {}
+            other => {
+                return Err(format!(
+                    "EC_BUILD_STATE: cannot abort a build in state {other}"
+                ));
+            }
+        }
+
+        // Abort each participant's unpublished generation. A single-node roster
+        // has exactly one local participant (the coordinator); remote dispatch
+        // is a later slice.
+        let bindings = Spi::connect(|client| -> Result<Vec<bool>, String> {
+            client
+                .select(
+                    &format!(
+                        "SELECT is_local FROM {binding}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid
+                          ORDER BY roster_ordinal"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_STATE: participant binding lookup failed".to_owned())?
+                .map(|row| {
+                    row["is_local"]
+                        .value::<bool>()
+                        .map_err(|_| "EC_BUILD_STATE: participant locality decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_STATE: participant locality is NULL".to_owned())
+                })
+                .collect::<Result<Vec<_>, _>>()
+        })?;
+        if bindings.iter().any(|is_local| !is_local) {
+            return Err(
+                "EC_BUILD_STATE: remote participant abort is not yet implemented".to_owned(),
+            );
+        }
+        let abort_handoff = extension_relation_name("ec_distann_abort_epoch_handoff")?;
+        for _local in bindings.iter().filter(|is_local| **is_local) {
+            Spi::connect_mut(|client| -> Result<(), String> {
+                client
+                    .update(
+                        &format!("SELECT {abort_handoff}($1::oid::regclass, $2::uuid)"),
+                        None,
+                        &[index_oid.into(), build_id.into()],
+                    )
+                    .map_err(|_| {
+                        "EC_BUILD_STATE: local participant generation abort failed".to_owned()
+                    })?;
+                Ok(())
+            })?;
+        }
+
+        // Move the registration to Aborted. The durable gate only matches
+        // Registered/Building/Ready/Decided, so this clears it.
+        Spi::connect_mut(|client| -> Result<(), String> {
+            client
+                .update(
+                    &format!(
+                        "UPDATE {registration} SET state = 'Aborted'
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_STATE: registration abort update failed".to_owned())?;
+            Ok(())
+        })?;
+
+        // Release the coordinator's held session locks, but only after this
+        // gate-clearing transaction commits.
+        schedule_session_lock_release_for_control(index_oid);
+        Ok(())
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::canonical_wire::sample_rfc4122_v4_uuid;

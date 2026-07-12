@@ -1956,6 +1956,94 @@ fn test_distann_begin_build_rejects_inherited_source_topology() {
 }
 
 #[pg_test]
+fn test_distann_abort_epoch_build_clears_gate_and_is_idempotent() {
+    const SECRET_NAME: &str = "DISTANN_ABORT_BUILD";
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_ABORT_BUILD";
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+    let coordinator = create_distann_physical_generation_fixture("ec_distann_abortbuild", 0x85);
+    configure_distann_participant_identity(&coordinator, "abortbuild/node-17");
+    // Coordinator-in-roster: register the coordinator as the sole local
+    // participant serving its own index.
+    Spi::run(&format!(
+        "INSERT INTO ec_distann_node_descriptor (
+             index_oid, logical_index_uuid, roster_ordinal, node_id,
+             endpoint_identity, conninfo_secret_name, remote_index_regclass,
+             participant_logical_index_uuid, compatibility_digest, is_local
+         )
+         SELECT '{index}'::regclass::oid, logical_index_uuid, 0, 17,
+                'abortbuild/node-17', '{SECRET_NAME}', canonical_index_regclass,
+                logical_index_uuid, compatibility_digest, true
+           FROM ec_distann_control_identity('{index}'::regclass)",
+        index = coordinator.index_name,
+    ))
+    .expect("coordinator self-registration should succeed");
+
+    let build_id = coordinator.build_id.to_string();
+    let index_oid = u32::from(coordinator.index_oid);
+    let source_mask = || {
+        Spi::get_one::<i32>(
+            "SELECT ec_distann_build_gate_relation_mask(
+                 'ec_distann_abortbuild_source'::regclass::oid
+             )",
+        )
+        .unwrap()
+        .unwrap()
+    };
+    let registration_state = || {
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM ec_distann_build_registration
+              WHERE index_oid = {index_oid}::oid AND build_id = '{build_id}'::uuid"
+        ))
+        .unwrap()
+    };
+
+    // Before any build the source is not gated.
+    assert_eq!(source_mask() & 1, 0, "source must not be gated before begin");
+
+    Spi::run(&format!(
+        "SELECT ec_distann_begin_epoch_build('{}'::regclass, 7, '{build_id}'::uuid)",
+        coordinator.index_name,
+    ))
+    .expect("begin epoch build should register the coordinator build");
+    assert_eq!(registration_state().as_deref(), Some("Registered"));
+    assert_ne!(
+        source_mask() & 1,
+        0,
+        "the durable gate must block the source while the build is Registered"
+    );
+
+    Spi::run(&format!(
+        "SELECT ec_distann_abort_epoch_build('{}'::regclass, '{build_id}'::uuid)",
+        coordinator.index_name,
+    ))
+    .expect("abort epoch build should succeed");
+    assert_eq!(registration_state().as_deref(), Some("Aborted"));
+    assert_eq!(
+        source_mask(),
+        0,
+        "aborting the build must clear the durable source gate"
+    );
+
+    // Idempotent: a second abort succeeds and leaves the registration Aborted.
+    Spi::run(&format!(
+        "SELECT ec_distann_abort_epoch_build('{}'::regclass, '{build_id}'::uuid)",
+        coordinator.index_name,
+    ))
+    .expect("second abort should be idempotent");
+    assert_eq!(registration_state().as_deref(), Some("Aborted"));
+
+    // Aborting an unknown build id is a no-op.
+    Spi::run(&format!(
+        "SELECT ec_distann_abort_epoch_build(
+             '{}'::regclass, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid
+         )",
+        coordinator.index_name,
+    ))
+    .expect("aborting an unknown build id must be a no-op");
+}
+
+#[pg_test]
 fn test_distann_begin_build_competing_backend_busy() {
     let conninfo = current_pg_test_loopback_conninfo();
     let mut setup = postgres::Client::connect(&conninfo, postgres::NoTls)
