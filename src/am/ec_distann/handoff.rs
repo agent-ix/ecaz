@@ -127,7 +127,7 @@ fn owned_cstring(pointer: *mut std::ffi::c_char, field: &str) -> Result<String, 
     Ok(value)
 }
 
-fn qualified_relation_name(relation_oid: pg_sys::Oid) -> Result<String, String> {
+pub(crate) fn qualified_relation_name(relation_oid: pg_sys::Oid) -> Result<String, String> {
     let relation = owned_cstring(unsafe { pg_sys::get_rel_name(relation_oid) }, "name")?;
     let namespace_oid = unsafe { pg_sys::get_rel_namespace(relation_oid) };
     if namespace_oid == pg_sys::InvalidOid {

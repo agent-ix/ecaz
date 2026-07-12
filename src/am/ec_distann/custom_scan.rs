@@ -292,9 +292,6 @@ unsafe fn query_values_from_const(expr: *mut pg_sys::Expr) -> Option<Vec<f32>> {
 
 /// Is there an ec_distann index on this relation whose scan should be replaced?
 unsafe fn custom_scan_candidate_index(planner_rel: PlannerRel<'_>) -> Option<pg_sys::Oid> {
-    if !distann_multi_node_roster() {
-        return None;
-    }
     if !planner_rel.is_plain_base_relation() || !planner_rel.has_vector_order_limit_shape() {
         return None;
     }
@@ -311,7 +308,19 @@ unsafe fn custom_scan_candidate_index(planner_rel: PlannerRel<'_>) -> Option<pg_
             continue;
         };
         if index_info.relam == am_oid && index_first_key_attno(index_info) == Some(order_by_attno) {
-            return Some(index_info.indexoid);
+            let physical_control = crate::storage::relation_guard::IndexRelationGuard::try_access_share(
+                index_info.indexoid,
+            )
+            .and_then(|guard| {
+                let handle = ptr::NonNull::new(guard.as_ptr())?;
+                super::ambuild::read_metadata_from_index_handle(handle)
+                    .ok()
+                    .map(|metadata| metadata.is_distributed_control())
+            })
+            .unwrap_or(false);
+            if physical_control || distann_multi_node_roster() {
+                return Some(index_info.indexoid);
+            }
         }
     }
     None
@@ -446,6 +455,9 @@ struct PayloadAttrIo {
 enum CustomScanOutputRow {
     /// A local-heap hit: fetch the visible row by ctid from the scan relation.
     Local(crate::storage::page::ItemPointer),
+    /// A Published physical-generation hit: fetch the immutable row-tier tuple
+    /// rather than the coordinator's live source heap.
+    Frozen(crate::storage::page::ItemPointer),
     /// A remote-owned hit: reconstruct a virtual tuple from the owner-shipped
     /// per-column binary payload.
     Remote {
@@ -494,6 +506,8 @@ struct DistannCustomScanExecState {
     /// against; the fetched row is then copied into the virtual scan slot the
     /// projection is compiled for). Estate-managed.
     local_heap_slot: *mut pg_sys::TupleTableSlot,
+    frozen_row_slot: *mut pg_sys::TupleTableSlot,
+    physical_generation: Option<super::generation_read::PhysicalGenerationScan>,
 }
 
 fn default_exec_state() -> DistannCustomScanExecState {
@@ -512,6 +526,8 @@ fn default_exec_state() -> DistannCustomScanExecState {
         next_output: 0,
         loaded: false,
         local_heap_slot: ptr::null_mut(),
+        frozen_row_slot: ptr::null_mut(),
+        physical_generation: None,
         query: Vec::new(),
         effective: 0,
         early_exit: false,
@@ -819,6 +835,33 @@ unsafe extern "C-unwind" fn custom_scan_access(
                 }
                 // Row no longer visible under the snapshot — skip to the next.
             }
+            CustomScanOutputRow::Frozen(tid) => {
+                let context = state.physical_generation.as_ref().unwrap_or_else(|| {
+                    pgrx::error!("EcDistannDistributedScan lost its physical generation context")
+                });
+                let mut item = pg_sys::ItemPointerData::default();
+                pgrx::itemptr::item_pointer_set_all(
+                    &mut item,
+                    tid.block_number,
+                    tid.offset_number,
+                );
+                let estate = (*scan_state).ps.state;
+                pg_sys::ExecClearTuple(state.frozen_row_slot);
+                let visible = pg_sys::table_tuple_fetch_row_version(
+                    context.row_relation(),
+                    &mut item,
+                    (*estate).es_snapshot,
+                    state.frozen_row_slot,
+                );
+                if visible {
+                    return pg_sys::ExecCopySlot(scan_slot, state.frozen_row_slot);
+                }
+                pgrx::error!(
+                    "EC_GENERATION_MISSING: published row-tier tuple ({},{}) disappeared",
+                    tid.block_number,
+                    tid.offset_number
+                );
+            }
             CustomScanOutputRow::Remote {
                 payload_nulls,
                 payload_values,
@@ -915,6 +958,18 @@ unsafe fn run_search_and_build_outputs(
         .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan got a null index relation"));
     let source_attnum = super::routine::indexed_ecvector_attnum(index_relation)
         .unwrap_or_else(|e| pgrx::error!("EcDistannDistributedScan source column: {e}"));
+    let metadata = super::ambuild::read_metadata_from_index_handle(handle)
+        .unwrap_or_else(|e| pgrx::error!("EcDistannDistributedScan metadata read failed: {e}"));
+    if metadata.is_distributed_control() {
+        run_physical_generation_search(
+            state,
+            scan_state,
+            snapshot,
+            source_attnum,
+            effective,
+        );
+        return;
+    }
     let rerank_slot =
         crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
             .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan rerank slot setup failed"));
@@ -974,6 +1029,48 @@ unsafe fn run_search_and_build_outputs(
     // superset whose proven prefix (the already-served rows) is stable, so serving
     // continues from where it left off. The initial build starts at 0 (set by
     // create/rescan).
+}
+
+unsafe fn run_physical_generation_search(
+    state: &mut DistannCustomScanExecState,
+    scan_state: *mut pg_sys::ScanState,
+    snapshot: pg_sys::Snapshot,
+    source_attnum: i32,
+    effective: usize,
+) {
+    if state.physical_generation.is_none() {
+        state.physical_generation = Some(
+            super::generation_read::PhysicalGenerationScan::open(state.index_oid)
+                .unwrap_or_else(|error| pgrx::error!("{error}")),
+        );
+    }
+    let context = state
+        .physical_generation
+        .as_ref()
+        .expect("physical generation initialized");
+    if state.frozen_row_slot.is_null() {
+        let estate = (*scan_state).ps.state;
+        let relation = context.row_relation();
+        state.frozen_row_slot = pg_sys::ExecInitExtraTupleSlot(
+            estate,
+            (*relation).rd_att,
+            pg_sys::table_slot_callbacks(relation),
+        );
+        if state.frozen_row_slot.is_null() {
+            pgrx::error!("EC_GENERATION_MISSING: could not allocate frozen row-tier slot");
+        }
+    }
+    let collection = context
+        .search(snapshot, source_attnum, &state.query, effective)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    state.effective = effective;
+    state.early_exit = collection.counters.early_exit;
+    state.proven_outputs = collection.hits.len().min(effective);
+    state.outputs = collection
+        .hits
+        .into_iter()
+        .map(|hit| CustomScanOutputRow::Frozen(hit.heap_tid))
+        .collect();
 }
 
 struct RemotePayload {

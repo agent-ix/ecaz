@@ -2695,6 +2695,31 @@ fn test_distann_multi_epoch_publish() {
         .batch_execute("SET ec_distann.debug_fail_recover_after_publish_ack = off")
         .expect("T4a crash-window fault should disable");
     recover_epoch(&mut client, 7, first);
+    let plan = client
+        .query(
+            "EXPLAIN (COSTS OFF)
+             SELECT source_id FROM ec_distann_me_source
+              ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] LIMIT 1",
+            &[],
+        )
+        .expect("physical generation scan should plan")
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        plan.contains("EcDistannDistributedScan"),
+        "distributed-control query must use the physical CustomScan:\n{plan}"
+    );
+    assert_eq!(
+        scalar(
+            &mut client,
+            "SELECT source_id::text FROM ec_distann_me_source
+              ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[] LIMIT 1"
+        ),
+        "11111111-1111-4111-8111-111111111111",
+        "Published physical graph search must materialize the frozen row-tier winner"
+    );
     assert_eq!(
         scalar(&mut client, &format!(
             "SELECT decision_state FROM ec_distann_publish_decision

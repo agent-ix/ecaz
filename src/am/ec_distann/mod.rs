@@ -33,6 +33,7 @@ mod expand;
 mod expand_error;
 mod generation_catalog;
 mod generation_descriptor;
+mod generation_read;
 mod generation_store;
 mod handoff;
 #[cfg(any(test, feature = "pg_test"))]
