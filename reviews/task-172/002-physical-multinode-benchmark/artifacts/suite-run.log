@@ -1,0 +1,20 @@
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json
+[suite:task172-physical-multinode-10k-50k-100k] physical-10k -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-172/002-physical-multinode-benchmark/artifacts/physical-10k --run-dir target/task172-physical-10k --log-file reviews/task-172/002-physical-multinode-benchmark/artifacts/physical-10k/distann-local-multinode.log --nodes 3 --physical-benchmark --benchmark-iterations 5 --base-port 40100 --graph-degree 32 --queries 10 --top-k 10 --corpus-prefix ec_real_10k --staged-dir /home/peter/dev/ecaz/data/staged-current
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json
+[suite:task172-physical-multinode-10k-50k-100k] physical-50k -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-172/002-physical-multinode-benchmark/artifacts/physical-50k --run-dir target/task172-physical-50k --log-file reviews/task-172/002-physical-multinode-benchmark/artifacts/physical-50k/distann-local-multinode.log --nodes 3 --physical-benchmark --benchmark-iterations 5 --base-port 40110 --graph-degree 32 --queries 10 --top-k 10 --corpus-prefix ec_real_50k --staged-dir /home/peter/dev/ecaz/data/staged-current
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json
+[suite:task172-physical-multinode-10k-50k-100k] physical-100k -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-172/002-physical-multinode-benchmark/artifacts/physical-100k --run-dir target/task172-physical-100k --log-file reviews/task-172/002-physical-multinode-benchmark/artifacts/physical-100k/distann-local-multinode.log --nodes 3 --physical-benchmark --benchmark-iterations 5 --base-port 40120 --graph-degree 32 --queries 10 --top-k 10 --corpus-prefix ec_real_100k --staged-dir /home/peter/dev/ecaz/data/staged-current
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/results.jsonl
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json
+
+   0: [91msuite thresholds failed: 2[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1049[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

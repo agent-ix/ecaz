@@ -1,0 +1,136 @@
+{
+  "name": "task172-physical-multinode-10k-50k-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-172/002-physical-multinode-benchmark/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [
+    {
+      "name": "10k-topology",
+      "step": "physical-10k",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "10k-recall",
+      "step": "physical-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "arm": "physical" },
+      "field": "recall",
+      "op": "gte",
+      "value": 0
+    },
+    {
+      "name": "10k-remote",
+      "step": "physical-10k",
+      "metric": "physical_benchmark_engagement",
+      "field": "remote_owners",
+      "op": "gte",
+      "value": 1
+    },
+    {
+      "name": "50k-topology",
+      "step": "physical-50k",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "50k-recall",
+      "step": "physical-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "arm": "physical" },
+      "field": "recall",
+      "op": "gte",
+      "value": 0
+    },
+    {
+      "name": "50k-remote",
+      "step": "physical-50k",
+      "metric": "physical_benchmark_engagement",
+      "field": "remote_owners",
+      "op": "gte",
+      "value": 1
+    },
+    {
+      "name": "100k-topology",
+      "step": "physical-100k",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "100k-recall",
+      "step": "physical-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "arm": "physical" },
+      "field": "recall",
+      "op": "gte",
+      "value": 0
+    },
+    {
+      "name": "100k-remote",
+      "step": "physical-100k",
+      "metric": "physical_benchmark_engagement",
+      "field": "remote_owners",
+      "op": "gte",
+      "value": 1
+    }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "physical-10k",
+      "tags": ["task172", "task179", "physical", "release", "ec_real_10k"],
+      "nodes": 3,
+      "base_port": 40100,
+      "graph_degree": 32,
+      "queries": 10,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 5,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "run_dir": "target/task172-physical-10k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "physical-50k",
+      "tags": ["task172", "task179", "physical", "release", "ec_real_50k"],
+      "nodes": 3,
+      "base_port": 40110,
+      "graph_degree": 32,
+      "queries": 10,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 5,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "run_dir": "target/task172-physical-50k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "physical-100k",
+      "tags": ["task172", "task179", "physical", "release", "ec_real_100k"],
+      "nodes": 3,
+      "base_port": 40120,
+      "graph_degree": 32,
+      "queries": 10,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 5,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "run_dir": "target/task172-physical-100k"
+    }
+  ]
+}
