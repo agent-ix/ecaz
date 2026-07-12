@@ -1,0 +1,97 @@
+{
+  "name": "task179-physical-epoch-cache-ab-10k-50k-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-179/035-physical-epoch-cache/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [
+    { "name": "10k-off-topology", "step": "cache-off-10k", "metric": "drill_outcome", "filters": { "drill": "physical_topology_gate" }, "field": "pass_numeric", "op": "eq", "value": 1 },
+    { "name": "10k-off-recall", "step": "cache-off-10k", "metric": "physical_benchmark_recall", "filters": { "arm": "physical" }, "field": "recall", "op": "gte", "value": 0 },
+    { "name": "10k-off-remote", "step": "cache-off-10k", "metric": "physical_benchmark_engagement", "field": "remote_owners", "op": "gte", "value": 1 },
+    { "name": "10k-on-topology", "step": "cache-on-10k", "metric": "drill_outcome", "filters": { "drill": "physical_topology_gate" }, "field": "pass_numeric", "op": "eq", "value": 1 },
+    { "name": "10k-on-recall", "step": "cache-on-10k", "metric": "physical_benchmark_recall", "filters": { "arm": "physical" }, "field": "recall", "op": "gte", "value": 0 },
+    { "name": "10k-on-remote", "step": "cache-on-10k", "metric": "physical_benchmark_engagement", "field": "remote_owners", "op": "gte", "value": 1 },
+    { "name": "50k-off-topology", "step": "cache-off-50k", "metric": "drill_outcome", "filters": { "drill": "physical_topology_gate" }, "field": "pass_numeric", "op": "eq", "value": 1 },
+    { "name": "50k-off-recall", "step": "cache-off-50k", "metric": "physical_benchmark_recall", "filters": { "arm": "physical" }, "field": "recall", "op": "gte", "value": 0 },
+    { "name": "50k-off-remote", "step": "cache-off-50k", "metric": "physical_benchmark_engagement", "field": "remote_owners", "op": "gte", "value": 1 },
+    { "name": "50k-on-topology", "step": "cache-on-50k", "metric": "drill_outcome", "filters": { "drill": "physical_topology_gate" }, "field": "pass_numeric", "op": "eq", "value": 1 },
+    { "name": "50k-on-recall", "step": "cache-on-50k", "metric": "physical_benchmark_recall", "filters": { "arm": "physical" }, "field": "recall", "op": "gte", "value": 0 },
+    { "name": "50k-on-remote", "step": "cache-on-50k", "metric": "physical_benchmark_engagement", "field": "remote_owners", "op": "gte", "value": 1 },
+    { "name": "100k-off-topology", "step": "cache-off-100k", "metric": "drill_outcome", "filters": { "drill": "physical_topology_gate" }, "field": "pass_numeric", "op": "eq", "value": 1 },
+    { "name": "100k-off-recall", "step": "cache-off-100k", "metric": "physical_benchmark_recall", "filters": { "arm": "physical" }, "field": "recall", "op": "gte", "value": 0 },
+    { "name": "100k-off-remote", "step": "cache-off-100k", "metric": "physical_benchmark_engagement", "field": "remote_owners", "op": "gte", "value": 1 },
+    { "name": "100k-on-topology", "step": "cache-on-100k", "metric": "drill_outcome", "filters": { "drill": "physical_topology_gate" }, "field": "pass_numeric", "op": "eq", "value": 1 },
+    { "name": "100k-on-recall", "step": "cache-on-100k", "metric": "physical_benchmark_recall", "filters": { "arm": "physical" }, "field": "recall", "op": "gte", "value": 0 },
+    { "name": "100k-on-remote", "step": "cache-on-100k", "metric": "physical_benchmark_engagement", "field": "remote_owners", "op": "gte", "value": 1 }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "cache-off-10k",
+      "tags": ["task179", "physical", "cache-off", "ec_real_10k"],
+      "pgoptions": "-c ec_distann.physical_epoch_cache=off",
+      "artifact_dir": "reviews/task-179/035-physical-epoch-cache/artifacts/cache-off-10k",
+      "nodes": 3, "base_port": 40200, "graph_degree": 32, "queries": 20,
+      "top_k": 10, "physical_benchmark": true, "benchmark_iterations": 20,
+      "corpus_prefix": "ec_real_10k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "run_dir": "target/task179-cache-off-10k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "cache-on-10k",
+      "tags": ["task179", "physical", "cache-on", "ec_real_10k"],
+      "pgoptions": "-c ec_distann.physical_epoch_cache=on",
+      "artifact_dir": "reviews/task-179/035-physical-epoch-cache/artifacts/cache-on-10k",
+      "nodes": 3, "base_port": 40210, "graph_degree": 32, "queries": 20,
+      "top_k": 10, "physical_benchmark": true, "benchmark_iterations": 20,
+      "corpus_prefix": "ec_real_10k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "run_dir": "target/task179-cache-on-10k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "cache-off-50k",
+      "tags": ["task179", "physical", "cache-off", "ec_real_50k"],
+      "pgoptions": "-c ec_distann.physical_epoch_cache=off",
+      "artifact_dir": "reviews/task-179/035-physical-epoch-cache/artifacts/cache-off-50k",
+      "nodes": 3, "base_port": 40220, "graph_degree": 32, "queries": 20,
+      "top_k": 10, "physical_benchmark": true, "benchmark_iterations": 20,
+      "corpus_prefix": "ec_real_50k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "run_dir": "target/task179-cache-off-50k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "cache-on-50k",
+      "tags": ["task179", "physical", "cache-on", "ec_real_50k"],
+      "pgoptions": "-c ec_distann.physical_epoch_cache=on",
+      "artifact_dir": "reviews/task-179/035-physical-epoch-cache/artifacts/cache-on-50k",
+      "nodes": 3, "base_port": 40230, "graph_degree": 32, "queries": 20,
+      "top_k": 10, "physical_benchmark": true, "benchmark_iterations": 20,
+      "corpus_prefix": "ec_real_50k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "run_dir": "target/task179-cache-on-50k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "cache-off-100k",
+      "tags": ["task179", "physical", "cache-off", "ec_real_100k"],
+      "pgoptions": "-c ec_distann.physical_epoch_cache=off",
+      "artifact_dir": "reviews/task-179/035-physical-epoch-cache/artifacts/cache-off-100k",
+      "nodes": 3, "base_port": 40240, "graph_degree": 32, "queries": 20,
+      "top_k": 10, "physical_benchmark": true, "benchmark_iterations": 20,
+      "corpus_prefix": "ec_real_100k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "run_dir": "target/task179-cache-off-100k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "cache-on-100k",
+      "tags": ["task179", "physical", "cache-on", "ec_real_100k"],
+      "pgoptions": "-c ec_distann.physical_epoch_cache=on",
+      "artifact_dir": "reviews/task-179/035-physical-epoch-cache/artifacts/cache-on-100k",
+      "nodes": 3, "base_port": 40250, "graph_degree": 32, "queries": 20,
+      "top_k": 10, "physical_benchmark": true, "benchmark_iterations": 20,
+      "corpus_prefix": "ec_real_100k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "run_dir": "target/task179-cache-on-100k"
+    }
+  ]
+}
