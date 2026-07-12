@@ -1,0 +1,32 @@
+Script started on 2026-07-12 08:38:30-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 12s
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-6b5b7a0d84528f2e)
+
+running 13 tests
+test compression_ratio_1536_4bit ... ok
+test element_tuple_encoded_len_1536_4bit ... ok
+test heaptid_inline_capacity ... ok
+test item_pointer_struct_size ... ok
+test item_pointer_wire_size ... ok
+test mse_code_len_1536_4bit ... ok
+test page_header_size ... ok
+test payload_len_1536_dim_2bit ... ok
+test payload_len_1536_dim_3bit ... ok
+test payload_len_1536_dim_4bit ... ok
+test payload_len_1536_dim_6bit ... ok
+test payload_len_1536_dim_8bit ... ok
+test qjl_code_len_1536 ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-587d69ce82a7583a)
+
+running 2 tests
+test upgrade_matrix_names_current_writable_formats ... ok
+test upgrade_matrix_has_unique_entries_and_existing_fixtures ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-12 08:39:39-07:00 [COMMAND_EXIT_CODE="0"]
