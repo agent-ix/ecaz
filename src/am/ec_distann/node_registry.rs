@@ -72,7 +72,7 @@ pub(crate) fn validate_canonical_index_locator(value: &str) -> Result<(), String
     Ok(())
 }
 
-fn resolve_conninfo_secret(conninfo_secret_name: &str) -> Result<String, String> {
+pub(crate) fn resolve_conninfo_secret(conninfo_secret_name: &str) -> Result<String, String> {
     validate_secret_reference(conninfo_secret_name)?;
     let key = crate::am::spire_remote_conninfo_secret_provider_lookup_key(conninfo_secret_name)
         .map_err(|_| "EC_NODE_DESCRIPTOR: conninfo secret reference is invalid".to_owned())?;
@@ -81,6 +81,18 @@ fn resolve_conninfo_secret(conninfo_secret_name: &str) -> Result<String, String>
         Ok(_) => Err("EC_NODE_DESCRIPTOR: conninfo secret resolved to an empty value".to_owned()),
         Err(_) => Err("EC_NODE_DESCRIPTOR: conninfo secret is unavailable".to_owned()),
     }
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern(volatile, strict)]
+fn ec_distann_test_set_conninfo_secret(conninfo_secret_name: String, conninfo: String) {
+    validate_secret_reference(&conninfo_secret_name)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let key = crate::am::spire_remote_conninfo_secret_provider_lookup_key(&conninfo_secret_name)
+        .unwrap_or_else(|_| pgrx::error!("EC_NODE_DESCRIPTOR: invalid test secret reference"));
+    // SAFETY: pg_test invokes this before the backend initializes any transport
+    // worker; the value is process-local to that isolated test backend.
+    unsafe { std::env::set_var(key, conninfo) };
 }
 
 fn parse_uuid_text(value: &str) -> Result<Uuid, String> {

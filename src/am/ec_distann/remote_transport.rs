@@ -22,8 +22,8 @@ use pgrx::{name, pg_extern, pg_sys};
 use tokio_postgres::{Client, NoTls};
 
 use crate::storage::page::ItemPointer;
-use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::relation::index_heap_relation_oid_handle;
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::slot_guard::TupleTableSlotGuard;
 
 use super::ambuild::read_metadata_from_index_handle;
@@ -42,6 +42,200 @@ use super::scan::{
     DistannOrchestrationParams, DistannScanHit, DistannSeedCandidate,
 };
 use super::tuple::DistannNodeTuple;
+
+async fn lifecycle_client<'a>(
+    connections: &'a mut HashMap<String, PooledConnection>,
+    conninfo: &str,
+) -> Result<&'a Client, String> {
+    let key = format!("lifecycle\u{1}{conninfo}");
+    let needs_connect = connections
+        .get(&key)
+        .map(|pooled| pooled.task.is_finished())
+        .unwrap_or(true);
+    if needs_connect {
+        let config = conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
+            format!("EC_BUILD_INCOMPLETE: could not parse participant conninfo {conninfo:?}")
+        })?;
+        let (client, connection) = config.connect(NoTls).await.map_err(|error| {
+            format!("EC_BUILD_INCOMPLETE: could not connect to participant: {error}")
+        })?;
+        let task = tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        connections.insert(
+            key.clone(),
+            PooledConnection {
+                client,
+                task,
+                applied_identity: None,
+            },
+        );
+    }
+    Ok(&connections[&key].client)
+}
+
+fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
+    let detail = error
+        .as_db_error()
+        .map(|db| db.message().to_owned())
+        .unwrap_or_else(|| error.to_string());
+    format!("EC_BUILD_INCOMPLETE: remote {context} failed: {detail}")
+}
+
+pub(crate) struct RemoteHandoffBegin<'a> {
+    pub conninfo: &'a str,
+    pub index_regclass: &'a str,
+    pub epoch: i64,
+    pub build_id: &'a str,
+    pub build_spec_digest: &'a [u8],
+    pub roster_digest: &'a [u8],
+    pub descriptor: &'a [u8],
+    pub descriptor_digest: &'a [u8],
+    pub expected_count: i64,
+    pub expected_owner_digest: &'a [u8],
+}
+
+pub(crate) fn remote_begin_epoch_handoff(request: RemoteHandoffBegin<'_>) -> Result<(), String> {
+    with_transport_state(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            lifecycle_client(connections, request.conninfo)
+                .await?
+                .query(
+                    "SELECT state FROM ec_distann_begin_epoch_handoff(
+                         $1::text::regclass, $2::bigint, $3::text::uuid,
+                         $4::bytea, $5::bytea, $6::bytea, $7::bytea,
+                         $8::bigint, $9::bytea)",
+                    &[
+                        &request.index_regclass,
+                        &request.epoch,
+                        &request.build_id,
+                        &request.build_spec_digest,
+                        &request.roster_digest,
+                        &request.descriptor,
+                        &request.descriptor_digest,
+                        &request.expected_count,
+                        &request.expected_owner_digest,
+                    ],
+                )
+                .await
+                .map_err(|error| remote_error("handoff begin", error))?;
+            Ok(())
+        })
+    })
+}
+
+pub(crate) fn remote_stage_epoch_batch(
+    conninfo: &str,
+    index_regclass: &str,
+    build_id: &str,
+    sequence: i64,
+    digest: &[u8],
+    encoded: &[u8],
+) -> Result<super::handoff_router::DistannStageAck, String> {
+    with_transport_state(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            let row = lifecycle_client(connections, conninfo)
+                .await?
+                .query_one(
+                    "SELECT accepted_record_count, cumulative_record_count,
+                            cumulative_owner_digest
+                       FROM ec_distann_stage_epoch_batch(
+                           $1::text::regclass, $2::text::uuid, $3::bigint,
+                           $4::bytea, $5::bytea)",
+                    &[&index_regclass, &build_id, &sequence, &digest, &encoded],
+                )
+                .await
+                .map_err(|error| remote_error("handoff stage", error))?;
+            let accepted: i64 = row
+                .try_get(0)
+                .map_err(|error| remote_error("stage row", error))?;
+            let cumulative: i64 = row
+                .try_get(1)
+                .map_err(|error| remote_error("stage row", error))?;
+            let cumulative_digest: Vec<u8> = row
+                .try_get(2)
+                .map_err(|error| remote_error("stage row", error))?;
+            Ok(super::handoff_router::DistannStageAck {
+                accepted_record_count: u64::try_from(accepted).map_err(|_| {
+                    "EC_BUILD_INCOMPLETE: remote accepted count is negative".to_owned()
+                })?,
+                cumulative_record_count: u64::try_from(cumulative).map_err(|_| {
+                    "EC_BUILD_INCOMPLETE: remote cumulative count is negative".to_owned()
+                })?,
+                cumulative_owner_digest: cumulative_digest.try_into().map_err(|_| {
+                    "EC_BUILD_INCOMPLETE: remote cumulative digest is not 32 bytes".to_owned()
+                })?,
+            })
+        })
+    })
+}
+
+pub(crate) fn remote_seal_epoch_handoff(
+    conninfo: &str,
+    index_regclass: &str,
+    build_id: &str,
+    expected_count: i64,
+    expected_owner_digest: &[u8],
+) -> Result<Vec<u8>, String> {
+    with_transport_state(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            let row = lifecycle_client(connections, conninfo)
+                .await?
+                .query_one(
+                    "SELECT ec_distann_seal_epoch_handoff(
+                         $1::text::regclass, $2::text::uuid, $3::bigint,
+                         $4::bytea)",
+                    &[
+                        &index_regclass,
+                        &build_id,
+                        &expected_count,
+                        &expected_owner_digest,
+                    ],
+                )
+                .await
+                .map_err(|error| remote_error("handoff seal", error))?;
+            row.try_get(0)
+                .map_err(|error| remote_error("seal row", error))
+        })
+    })
+}
+
+pub(crate) fn remote_abort_epoch_handoff(
+    conninfo: &str,
+    index_regclass: &str,
+    build_id: &str,
+) -> Result<(), String> {
+    with_transport_state(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            lifecycle_client(connections, conninfo)
+                .await?
+                .query(
+                    "SELECT ec_distann_abort_epoch_handoff(
+                         $1::text::regclass, $2::text::uuid)",
+                    &[&index_regclass, &build_id],
+                )
+                .await
+                .map_err(|error| remote_error("handoff abort", error))?;
+            Ok(())
+        })
+    })
+}
 
 /// One remote expansion request over the transport.
 pub(super) struct DistannRemoteExpandRequest<'a> {
@@ -91,7 +285,9 @@ impl DistannTransportState {
             .enable_io()
             .enable_time()
             .build()
-            .map_err(|_| "ec_distann remote transport failed to build the pooled runtime".to_owned())?;
+            .map_err(|_| {
+                "ec_distann remote transport failed to build the pooled runtime".to_owned()
+            })?;
         Ok(Self {
             runtime,
             connections: HashMap::new(),
@@ -110,7 +306,9 @@ where
         if state.is_none() {
             *state = Some(DistannTransportState::new()?);
         }
-        f(state.as_mut().expect("ec_distann transport state initialized"))
+        f(state
+            .as_mut()
+            .expect("ec_distann transport state initialized"))
     })
 }
 
@@ -182,12 +380,15 @@ pub(super) fn remote_expand_batch(
                     .unwrap_or(true);
                 if needs_connect {
                     let config =
-                        request.conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
-                            format!(
-                                "ec_distann remote transport could not parse conninfo {:?}",
-                                request.conninfo
-                            )
-                        })?;
+                        request
+                            .conninfo
+                            .parse::<tokio_postgres::Config>()
+                            .map_err(|_| {
+                                format!(
+                                    "ec_distann remote transport could not parse conninfo {:?}",
+                                    request.conninfo
+                                )
+                            })?;
                     let (client, connection) = config.connect(NoTls).await.map_err(|error| {
                         format!(
                             "ec_distann remote transport could not connect to {:?}: {error}",
@@ -199,7 +400,11 @@ pub(super) fn remote_expand_batch(
                     });
                     connections.insert(
                         conn_key.clone(),
-                        PooledConnection { client, task, applied_identity: None },
+                        PooledConnection {
+                            client,
+                            task,
+                            applied_identity: None,
+                        },
                     );
                 }
 
@@ -214,19 +419,14 @@ pub(super) fn remote_expand_batch(
                 if pooled.applied_identity.as_ref() != Some(&identity) {
                     pooled
                         .client
-                        .query(
-                            SESSION_SETUP_SQL,
-                            &[&identity.0, &identity.1, &identity.2],
-                        )
+                        .query(SESSION_SETUP_SQL, &[&identity.0, &identity.1, &identity.2])
                         .await
                         .map_err(|error| {
                             let detail = error
                                 .as_db_error()
                                 .map(|db| db.message().to_owned())
                                 .unwrap_or_else(|| error.to_string());
-                            format!(
-                                "ec_distann remote transport session setup failed: {detail}"
-                            )
+                            format!("ec_distann remote transport session setup failed: {detail}")
                         })?;
                     pooled.applied_identity = Some(identity);
                 }
@@ -372,7 +572,10 @@ pub(super) fn remote_materialize_row_payloads_batch(
         .iter()
         .map(|request| format!("{}\u{1}{}", request.conninfo, request.target_node_id))
         .collect();
-    let epoch_strs: Vec<String> = requests.iter().map(|request| request.epoch.to_string()).collect();
+    let epoch_strs: Vec<String> = requests
+        .iter()
+        .map(|request| request.epoch.to_string())
+        .collect();
     let columns = payload_columns.to_vec();
     let sends = send_functions.to_vec();
 
@@ -392,12 +595,15 @@ pub(super) fn remote_materialize_row_payloads_batch(
                     .unwrap_or(true);
                 if needs_connect {
                     let config =
-                        request.conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
-                            format!(
-                                "ec_distann remote transport could not parse conninfo {:?}",
-                                request.conninfo
-                            )
-                        })?;
+                        request
+                            .conninfo
+                            .parse::<tokio_postgres::Config>()
+                            .map_err(|_| {
+                                format!(
+                                    "ec_distann remote transport could not parse conninfo {:?}",
+                                    request.conninfo
+                                )
+                            })?;
                     let (client, connection) = config.connect(NoTls).await.map_err(|error| {
                         format!(
                             "ec_distann remote transport could not connect to {:?}: {error}",
@@ -527,14 +733,7 @@ fn ec_distann_debug_expand_search(
     beam_width: i32,
     hop_rounds: i32,
     top_k: i32,
-) -> TableIterator<
-    'static,
-    (
-        name!(rank, i32),
-        name!(vec_id, i64),
-        name!(exact_dist, f32),
-    ),
-> {
+) -> TableIterator<'static, (name!(rank, i32), name!(vec_id, i64), name!(exact_dist, f32))> {
     let hits = debug_expand_search_impl(
         index_regclass,
         index_name,
@@ -582,7 +781,9 @@ fn debug_expand_search_impl(
     let code_len = metadata_code_len(&metadata)?;
 
     // FR-080 head-index descent → hop-round seeds (same rule as the scan).
-    let head_list_size = (beam_width * 2).max(32).min(entry.head_vectors.len().max(1));
+    let head_list_size = (beam_width * 2)
+        .max(32)
+        .min(entry.head_vectors.len().max(1));
     let head_result = crate::am::greedy_search(
         &entry.head_graph,
         entry.head_entry,
@@ -717,7 +918,10 @@ impl DistannNodeExpander for RemoteNodeExpander<'_> {
             .enumerate()
             .filter(|(node_index, bucket)| *node_index != self.local_index && !bucket.is_empty())
             .map(|(node_index, bucket)| {
-                (node_index, bucket.iter().map(|(_, vec_id)| *vec_id).collect())
+                (
+                    node_index,
+                    bucket.iter().map(|(_, vec_id)| *vec_id).collect(),
+                )
             })
             .collect();
         if !remote_ids.is_empty() {
@@ -817,13 +1021,16 @@ mod tests {
     fn reassembles_interleaved_request_across_owners() {
         // Pick ids and a 2-node roster; group them, then feed each bucket's
         // responses back in bucket order and check the final order.
-        let vec_ids: Vec<u64> =
-            (0..12).map(|i| placement_hash(i, DISTANN_PLACEMENT_HASH_V1)).collect();
+        let vec_ids: Vec<u64> = (0..12)
+            .map(|i| placement_hash(i, DISTANN_PLACEMENT_HASH_V1))
+            .collect();
         let node_count = 2;
-        let buckets =
-            group_by_owning_node(&vec_ids, node_count, DISTANN_PLACEMENT_HASH_V1);
+        let buckets = group_by_owning_node(&vec_ids, node_count, DISTANN_PLACEMENT_HASH_V1);
         // Require a genuine split so the test actually exercises interleaving.
-        assert!(buckets.iter().all(|b| !b.is_empty()), "both owners populated");
+        assert!(
+            buckets.iter().all(|b| !b.is_empty()),
+            "both owners populated"
+        );
 
         let mut ordered: Vec<Option<DistannExpandedNode>> =
             (0..vec_ids.len()).map(|_| None).collect();

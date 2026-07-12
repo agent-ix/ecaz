@@ -3106,6 +3106,178 @@ fn test_distann_multi_epoch_publish() {
 }
 
 #[pg_test]
+fn test_distann_three_owner_physical_handoff() {
+    let conninfo = current_pg_test_loopback_conninfo();
+    let mut client = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("physical handoff loopback connection should open");
+    let extension_schema = client
+        .query_one(
+            "SELECT pg_catalog.quote_ident(n.nspname)
+               FROM pg_catalog.pg_extension e
+               JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+              WHERE e.extname = 'ecaz'",
+            &[],
+        )
+        .expect("extension schema should resolve")
+        .get::<_, String>(0);
+    client
+        .batch_execute(&format!("SET search_path = {extension_schema}, public"))
+        .expect("search_path should set");
+    client
+        .execute(
+            "SELECT ec_distann_test_set_conninfo_secret($1::text, $2::text)",
+            &[&"DISTANN_REMOTE_HANDOFF", &conninfo],
+        )
+        .expect("coordinator backend should receive the loopback secret");
+    client
+        .batch_execute(
+            "DROP TABLE IF EXISTS ec_distann_rh_source CASCADE;
+             DROP TABLE IF EXISTS ec_distann_rh_owner2 CASCADE;
+             DROP TABLE IF EXISTS ec_distann_rh_owner3 CASCADE;
+             CREATE TABLE ec_distann_rh_source (
+                 source_id uuid NOT NULL,
+                 embedding ecvector(4) NOT NULL
+             );
+             CREATE TABLE ec_distann_rh_owner2 (LIKE ec_distann_rh_source);
+             CREATE TABLE ec_distann_rh_owner3 (LIKE ec_distann_rh_source);
+             INSERT INTO ec_distann_rh_source
+             SELECT (
+                        substr(md5(g::text), 1, 8) || '-' ||
+                        substr(md5(g::text), 9, 4) || '-4' ||
+                        substr(md5(g::text), 14, 3) || '-8' ||
+                        substr(md5(g::text), 18, 3) || '-' ||
+                        substr(md5(g::text), 21, 12)
+                    )::uuid,
+                    encode_to_ecvector(
+                        ARRAY[g::real, (g % 7)::real, (g % 5)::real, 1.0], 4, 42
+                    )
+               FROM generate_series(1, 30) AS g;
+             CREATE INDEX ec_distann_rh_idx ON ec_distann_rh_source
+                 USING ec_distann (embedding ecvector_distann_ip_ops)
+                 INCLUDE (source_id)
+                 WITH (distributed_control = true, source_identity = 'include',
+                       graph_degree = 4, neighbor_code_format = 'rabitq');
+             CREATE INDEX ec_distann_rh_owner2_idx ON ec_distann_rh_owner2
+                 USING ec_distann (embedding ecvector_distann_ip_ops)
+                 INCLUDE (source_id)
+                 WITH (distributed_control = true, source_identity = 'include',
+                       graph_degree = 4, neighbor_code_format = 'rabitq');
+             CREATE INDEX ec_distann_rh_owner3_idx ON ec_distann_rh_owner3
+                 USING ec_distann (embedding ecvector_distann_ip_ops)
+                 INCLUDE (source_id)
+                 WITH (distributed_control = true, source_identity = 'include',
+                       graph_degree = 4, neighbor_code_format = 'rabitq');
+             SELECT ec_distann_configure_participant_identity(
+                 'ec_distann_rh_idx'::regclass, 'handoff/node-17');
+             SELECT ec_distann_configure_participant_identity(
+                 'ec_distann_rh_owner2_idx'::regclass, 'handoff/node-18');
+             SELECT ec_distann_configure_participant_identity(
+                 'ec_distann_rh_owner3_idx'::regclass, 'handoff/node-19');
+             INSERT INTO ec_distann_node_descriptor (
+                 index_oid, logical_index_uuid, roster_ordinal, node_id,
+                 endpoint_identity, conninfo_secret_name, remote_index_regclass,
+                 participant_logical_index_uuid, compatibility_digest, is_local
+             )
+             SELECT 'ec_distann_rh_idx'::regclass::oid, coordinator.logical_index_uuid,
+                    participant.roster_ordinal, participant.node_id,
+                    participant.endpoint_identity, 'DISTANN_REMOTE_HANDOFF',
+                    participant.canonical_index_regclass,
+                    participant.logical_index_uuid, participant.compatibility_digest,
+                    participant.is_local
+               FROM ec_distann_control_identity('ec_distann_rh_idx'::regclass) coordinator
+               CROSS JOIN LATERAL (
+                   SELECT 0 AS roster_ordinal, 17 AS node_id,
+                          'handoff/node-17'::text AS endpoint_identity,
+                          identity.canonical_index_regclass,
+                          identity.logical_index_uuid, identity.compatibility_digest,
+                          true AS is_local
+                     FROM ec_distann_control_identity('ec_distann_rh_idx'::regclass) identity
+                   UNION ALL
+                   SELECT 1, 18, 'handoff/node-18',
+                          identity.canonical_index_regclass,
+                          identity.logical_index_uuid, identity.compatibility_digest, false
+                     FROM ec_distann_control_identity('ec_distann_rh_owner2_idx'::regclass) identity
+                   UNION ALL
+                   SELECT 2, 19, 'handoff/node-19',
+                          identity.canonical_index_regclass,
+                          identity.logical_index_uuid, identity.compatibility_digest, false
+                     FROM ec_distann_control_identity('ec_distann_rh_owner3_idx'::regclass) identity
+               ) participant",
+        )
+        .expect("three physical owner controls should create and register");
+
+    let build_id = "49494949-4949-4949-8949-494949494949";
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 'ec_distann_rh_idx'::regclass, 11, '{build_id}'::uuid
+             )"
+        ))
+        .expect("three-owner begin should commit");
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_build_epoch(
+                 'ec_distann_rh_idx'::regclass, 11, '{build_id}'::uuid
+             )"
+        ))
+        .expect("three-owner physical handoff should reach Ready");
+
+    let generations = client
+        .query(
+            &format!(
+                "SELECT index_oid::regclass::text, cumulative_record_count,
+                        graph_store_relid::regclass::text, state
+                   FROM ec_distann_generation
+                  WHERE build_id = '{build_id}'::uuid
+                  ORDER BY node_id"
+            ),
+            &[],
+        )
+        .expect("three participant generations should be visible");
+    assert_eq!(generations.len(), 3);
+    let mut owner_sets = Vec::new();
+    let mut total = 0_i64;
+    for generation in generations {
+        assert_eq!(generation.get::<_, String>(3), "Ready");
+        let count = generation.get::<_, i64>(1);
+        assert!(count > 0, "each owner should receive at least one record");
+        total += count;
+        let graph_relation = generation.get::<_, String>(2);
+        let ids = client
+            .query(&format!("SELECT vec_id FROM {graph_relation} ORDER BY vec_id"), &[])
+            .expect("physical graph relation should be readable")
+            .into_iter()
+            .map(|row| row.get::<_, i64>(0))
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(ids.len() as i64, count);
+        owner_sets.push(ids);
+    }
+    assert_eq!(total, 30);
+    for left in 0..owner_sets.len() {
+        for right in left + 1..owner_sets.len() {
+            assert!(
+                owner_sets[left].is_disjoint(&owner_sets[right]),
+                "physical owner generations must be disjoint"
+            );
+        }
+    }
+    assert_eq!(
+        owner_sets.iter().flatten().copied().collect::<std::collections::BTreeSet<_>>().len(),
+        30,
+        "physical owner union must exactly cover the source"
+    );
+
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_abort_epoch_build('ec_distann_rh_idx'::regclass, '{build_id}'::uuid);
+             DROP TABLE ec_distann_rh_source CASCADE;
+             DROP TABLE ec_distann_rh_owner2 CASCADE;
+             DROP TABLE ec_distann_rh_owner3 CASCADE;"
+        ))
+        .expect("three-owner fixture should clean up");
+}
+
+#[pg_test]
 fn test_distann_decide_abort_guards() {
     const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_DECIDE_ABORT";
     let _env_lock = env_var_test_lock();

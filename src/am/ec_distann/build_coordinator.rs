@@ -1304,10 +1304,9 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         let participants = desired_participants(index_oid, logical_index_uuid)?;
         let roster = public_roster(&participants)?;
         let roster_digest_bytes = roster_digest(&roster)?;
-        if participants.len() != 1 || !participants[0].is_local {
+        if participants.iter().filter(|participant| participant.is_local).count() != 1 {
             return Err(
-                "EC_BUILD_STATE: build_epoch currently supports only a single local participant"
-                    .to_owned(),
+                "EC_BUILD_STATE: build_epoch requires exactly one local participant".to_owned(),
             );
         }
 
@@ -1427,36 +1426,70 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         };
         let build_spec_digest = build_spec.digest()?;
 
-        // Drive the single local participant: begin -> stage -> seal.
-        let local = expectations[0].clone();
-        let local_owner_count = i64::try_from(local.expected_count)
-            .map_err(|_| "EC_BUILD_STATE: owner count exceeds bigint".to_owned())?;
+        // Resolve private transport only after all public build identities are
+        // frozen. Secret values never enter the descriptor, candidate, or log.
+        let conninfos = participants
+            .iter()
+            .map(|participant| {
+                if participant.is_local {
+                    Ok(None)
+                } else {
+                    super::node_registry::resolve_conninfo_secret(
+                        &participant.conninfo_secret_name,
+                    )
+                    .map(Some)
+                }
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let build_id_text = build_id.to_string();
         let begin_fn = extension_relation_name("ec_distann_begin_epoch_handoff")?;
-        Spi::connect_mut(|client| -> Result<(), String> {
-            client
-                .update(
-                    &format!(
-                        "SELECT state FROM {begin_fn}(
-                             $1::oid::regclass, $2::bigint, $3::uuid, $4::bytea, $5::bytea,
-                             $6::bytea, $7::bytea, $8::bigint, $9::bytea
-                         )"
-                    ),
-                    None,
-                    &[
-                        index_oid.into(),
-                        epoch.into(),
-                        build_id.into(),
-                        build_spec_digest.to_vec().into(),
-                        roster_digest_bytes.to_vec().into(),
-                        descriptor_bytes.clone().into(),
-                        descriptor_digest.to_vec().into(),
-                        local_owner_count.into(),
-                        local.expected_owner_digest.to_vec().into(),
-                    ],
-                )
-                .map_err(|_| "EC_BUILD_INCOMPLETE: begin generation dispatch failed".to_owned())?;
-            Ok(())
-        })?;
+        for (owner, participant) in participants.iter().enumerate() {
+            let expectation = expectations.get(owner).ok_or_else(|| {
+                "EC_BUILD_INCOMPLETE: owner expectation count disagrees with roster".to_owned()
+            })?;
+            if expectation.node_id != participant.node_id {
+                return Err("EC_BUILD_INCOMPLETE: owner expectation order mismatch".to_owned());
+            }
+            let owner_count = i64::try_from(expectation.expected_count)
+                .map_err(|_| "EC_BUILD_STATE: owner count exceeds bigint".to_owned())?;
+            if participant.is_local {
+                Spi::connect_mut(|client| -> Result<(), String> {
+                    client
+                        .update(
+                            &format!(
+                                "SELECT state FROM {begin_fn}(
+                                     $1::oid::regclass, $2::bigint, $3::uuid, $4::bytea, $5::bytea,
+                                     $6::bytea, $7::bytea, $8::bigint, $9::bytea
+                                 )"
+                            ),
+                            None,
+                            &[
+                                index_oid.into(), epoch.into(), build_id.into(),
+                                build_spec_digest.to_vec().into(), roster_digest_bytes.to_vec().into(),
+                                descriptor_bytes.clone().into(), descriptor_digest.to_vec().into(),
+                                owner_count.into(), expectation.expected_owner_digest.to_vec().into(),
+                            ],
+                        )
+                        .map_err(|error| format!("EC_BUILD_INCOMPLETE: local begin failed: {error}"))?;
+                    Ok(())
+                })?;
+            } else {
+                super::remote_transport::remote_begin_epoch_handoff(
+                    super::remote_transport::RemoteHandoffBegin {
+                        conninfo: conninfos[owner].as_deref().expect("remote conninfo resolved"),
+                        index_regclass: &participant.remote_index_regclass,
+                        epoch,
+                        build_id: &build_id_text,
+                        build_spec_digest: &build_spec_digest,
+                        roster_digest: &roster_digest_bytes,
+                        descriptor: &descriptor_bytes,
+                        descriptor_digest: &descriptor_digest,
+                        expected_count: owner_count,
+                        expected_owner_digest: &expectation.expected_owner_digest,
+                    },
+                )?;
+            }
+        }
 
         let route_identity = DistannHandoffRouteIdentity {
             epoch: epoch_u64,
@@ -1468,9 +1501,20 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
             placement_hash_version: super::DISTANN_PLACEMENT_HASH_VERSION,
         };
         let stage_fn = extension_relation_name("ec_distann_stage_epoch_batch")?;
-        workspace.route(route_identity, 1, &mut |_owner, sequence, digest, encoded| {
+        workspace.route(route_identity, participants.len(), &mut |owner, sequence, digest, encoded| {
             let sequence = i64::try_from(sequence)
                 .map_err(|_| "EC_BUILD_STATE: batch sequence exceeds bigint".to_owned())?;
+            let participant = &participants[owner];
+            if !participant.is_local {
+                return super::remote_transport::remote_stage_epoch_batch(
+                    conninfos[owner].as_deref().expect("remote conninfo resolved"),
+                    &participant.remote_index_regclass,
+                    &build_id_text,
+                    sequence,
+                    digest,
+                    encoded,
+                );
+            }
             Spi::connect_mut(|client| -> Result<DistannStageAck, String> {
                 let row = client
                     .update(
@@ -1520,34 +1564,48 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         })?;
 
         let seal_fn = extension_relation_name("ec_distann_seal_epoch_handoff")?;
-        let receipt_bytes = Spi::connect_mut(|client| -> Result<Vec<u8>, String> {
-            client
-                .update(
-                    &format!(
-                        "SELECT {seal_fn}(
-                             $1::oid::regclass, $2::uuid, $3::bigint, $4::bytea
-                         ) AS ready_receipt"
-                    ),
-                    None,
-                    &[
-                        index_oid.into(),
-                        build_id.into(),
-                        local_owner_count.into(),
-                        local.expected_owner_digest.to_vec().into(),
-                    ],
-                )
-                .map_err(|_| "EC_BUILD_INCOMPLETE: seal dispatch failed".to_owned())?
-                .map(|row| {
-                    row["ready_receipt"]
-                        .value::<Vec<u8>>()
-                        .map_err(|_| "EC_BUILD_INCOMPLETE: ready receipt decode failed".to_owned())?
-                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: ready receipt is NULL".to_owned())
-                })
-                .next()
-                .transpose()?
-                .ok_or_else(|| "EC_BUILD_INCOMPLETE: seal returned no receipt".to_owned())
-        })?;
-        let receipt = super::manifest_v2::DistannReadyReceipt::decode(&receipt_bytes)?;
+        let mut receipts = Vec::with_capacity(participants.len());
+        for (owner, participant) in participants.iter().enumerate() {
+            let expectation = &expectations[owner];
+            let owner_count = i64::try_from(expectation.expected_count)
+                .map_err(|_| "EC_BUILD_STATE: owner count exceeds bigint".to_owned())?;
+            let receipt_bytes = if participant.is_local {
+                Spi::connect_mut(|client| -> Result<Vec<u8>, String> {
+                    client
+                        .update(
+                            &format!(
+                                "SELECT {seal_fn}(
+                                     $1::oid::regclass, $2::uuid, $3::bigint, $4::bytea
+                                 ) AS ready_receipt"
+                            ),
+                            None,
+                            &[
+                                index_oid.into(), build_id.into(), owner_count.into(),
+                                expectation.expected_owner_digest.to_vec().into(),
+                            ],
+                        )
+                        .map_err(|error| format!("EC_BUILD_INCOMPLETE: local seal failed: {error}"))?
+                        .map(|row| {
+                            row["ready_receipt"]
+                                .value::<Vec<u8>>()
+                                .map_err(|_| "EC_BUILD_INCOMPLETE: ready receipt decode failed".to_owned())?
+                                .ok_or_else(|| "EC_BUILD_INCOMPLETE: ready receipt is NULL".to_owned())
+                        })
+                        .next()
+                        .transpose()?
+                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: seal returned no receipt".to_owned())
+                })?
+            } else {
+                super::remote_transport::remote_seal_epoch_handoff(
+                    conninfos[owner].as_deref().expect("remote conninfo resolved"),
+                    &participant.remote_index_regclass,
+                    &build_id_text,
+                    owner_count,
+                    &expectation.expected_owner_digest,
+                )?
+            };
+            receipts.push(super::manifest_v2::DistannReadyReceipt::decode(&receipt_bytes)?);
+        }
 
         let codec_parameters = DistannManifestCodecParameters {
             codec_kind: metadata.neighbor_codec_kind,
@@ -1581,7 +1639,7 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
             global_record_count: global_count,
             global_graph_digest,
             global_row_tier_digest,
-            participant_receipts: vec![receipt],
+            participant_receipts: receipts,
         };
 
         let candidate = DistannBuildCandidateV1::from_components(
@@ -2638,14 +2696,15 @@ fn ec_distann_abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
             );
         }
 
-        // Abort each participant's unpublished generation. A single-node roster
-        // has exactly one local participant (the coordinator); remote dispatch
-        // is a later slice.
-        let bindings = Spi::connect(|client| -> Result<Vec<bool>, String> {
+        // Abort each participant's unpublished generation from the immutable
+        // private binding snapshot, including owners removed from the desired
+        // roster after begin-build.
+        let bindings = Spi::connect(|client| -> Result<Vec<(bool, String, String)>, String> {
             client
                 .select(
                     &format!(
-                        "SELECT is_local FROM {binding}
+                        "SELECT is_local, conninfo_secret_name, remote_index_regclass
+                           FROM {binding}
                           WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                             AND build_id = $3::uuid
                           ORDER BY roster_ordinal"
@@ -2655,32 +2714,44 @@ fn ec_distann_abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
                 )
                 .map_err(|_| "EC_BUILD_STATE: participant binding lookup failed".to_owned())?
                 .map(|row| {
-                    row["is_local"]
+                    let is_local = row["is_local"]
                         .value::<bool>()
                         .map_err(|_| "EC_BUILD_STATE: participant locality decode failed".to_owned())?
-                        .ok_or_else(|| "EC_BUILD_STATE: participant locality is NULL".to_owned())
+                        .ok_or_else(|| "EC_BUILD_STATE: participant locality is NULL".to_owned())?;
+                    let text = |field: &str| -> Result<String, String> {
+                        row[field]
+                            .value::<String>()
+                            .map_err(|_| format!("EC_BUILD_STATE: {field} decode failed"))?
+                            .ok_or_else(|| format!("EC_BUILD_STATE: {field} is NULL"))
+                    };
+                    Ok((is_local, text("conninfo_secret_name")?, text("remote_index_regclass")?))
                 })
                 .collect::<Result<Vec<_>, _>>()
         })?;
-        if bindings.iter().any(|is_local| !is_local) {
-            return Err(
-                "EC_BUILD_STATE: remote participant abort is not yet implemented".to_owned(),
-            );
-        }
         let abort_handoff = extension_relation_name("ec_distann_abort_epoch_handoff")?;
-        for _local in bindings.iter().filter(|is_local| **is_local) {
-            Spi::connect_mut(|client| -> Result<(), String> {
-                client
-                    .update(
-                        &format!("SELECT {abort_handoff}($1::oid::regclass, $2::uuid)"),
-                        None,
-                        &[index_oid.into(), build_id.into()],
-                    )
-                    .map_err(|_| {
-                        "EC_BUILD_STATE: local participant generation abort failed".to_owned()
-                    })?;
-                Ok(())
-            })?;
+        let build_id_text = build_id.to_string();
+        for (is_local, secret_name, remote_index_regclass) in bindings {
+            if is_local {
+                Spi::connect_mut(|client| -> Result<(), String> {
+                    client
+                        .update(
+                            &format!("SELECT {abort_handoff}($1::oid::regclass, $2::uuid)"),
+                            None,
+                            &[index_oid.into(), build_id.into()],
+                        )
+                        .map_err(|error| {
+                            format!("EC_BUILD_STATE: local generation abort failed: {error}")
+                        })?;
+                    Ok(())
+                })?;
+            } else {
+                let conninfo = super::node_registry::resolve_conninfo_secret(&secret_name)?;
+                super::remote_transport::remote_abort_epoch_handoff(
+                    &conninfo,
+                    &remote_index_regclass,
+                    &build_id_text,
+                )?;
+            }
         }
 
         // Move the registration to Aborted. The durable gate only matches
