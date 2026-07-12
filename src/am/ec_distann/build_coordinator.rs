@@ -1742,6 +1742,42 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
             return Ok(existing_decision);
         }
 
+        // T3 requires the registration to be Ready and CASes it to 'Decided'
+        // atomically with the decision insert, so a concurrent abort cannot
+        // destroy the build under a durable Pending decision. Lock the row now.
+        let registration = extension_relation_name("ec_distann_build_registration")?;
+        let registration_state = Spi::connect_mut(|client| -> Result<Option<String>, String> {
+            client
+                .update(
+                    &format!(
+                        "SELECT state FROM {registration}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid
+                          FOR UPDATE"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_EPOCH_STATE: registration lookup failed".to_owned())?
+                .map(|row| {
+                    row["state"]
+                        .value::<String>()
+                        .map_err(|_| "EC_EPOCH_STATE: registration state decode failed".to_owned())?
+                        .ok_or_else(|| "EC_EPOCH_STATE: registration state is NULL".to_owned())
+                })
+                .next()
+                .transpose()
+        })?;
+        match registration_state.as_deref() {
+            Some("Ready") => {}
+            Some(other) => {
+                return Err(format!(
+                    "EC_EPOCH_STATE: cannot decide a build whose registration is {other}"
+                ));
+            }
+            None => return Err("EC_EPOCH_STATE: build registration is absent".to_owned()),
+        }
+
         // Active pointer, taken under the control lock. Require parent==active.
         let active_table = extension_relation_name("ec_distann_active_epoch")?;
         let active = Spi::connect_mut(
@@ -1876,6 +1912,25 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
                     ],
                 )
                 .map_err(|error| format!("EC_PUBLISH_DIGEST: publish decision insert failed: {error}"))?;
+            // Atomically transition the registration Ready -> Decided so the
+            // durable decision and the registration state cannot diverge.
+            let transitioned = client
+                .update(
+                    &format!(
+                        "UPDATE {registration} SET state = 'Decided'
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid AND state = 'Ready'"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_EPOCH_STATE: registration Decided transition failed".to_owned())?
+                .len();
+            if transitioned != 1 {
+                return Err(
+                    "EC_EPOCH_STATE: registration was not Ready at the decision commit".to_owned(),
+                );
+            }
             Ok(())
         })?;
 
@@ -2173,7 +2228,7 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                     &format!(
                         "UPDATE {registration} SET state = 'Published'
                           WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                            AND build_id = $3::uuid AND state = 'Ready'"
+                            AND build_id = $3::uuid AND state = 'Decided'"
                     ),
                     None,
                     &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
@@ -2245,6 +2300,42 @@ fn ec_distann_abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
                     "EC_BUILD_STATE: cannot abort a build in state {other}"
                 ));
             }
+        }
+        // A build with a durable Pending/Activated publish decision cannot be
+        // aborted — destroying its generation would strand the decision (there
+        // is no decision-abort). Decide moves the registration to 'Decided',
+        // which the state check above already rejects; this guards the boundary
+        // explicitly (FR-082 P1-1).
+        let decision = extension_relation_name("ec_distann_publish_decision")?;
+        let has_active_decision = Spi::connect(|client| -> Result<bool, String> {
+            client
+                .select(
+                    &format!(
+                        "SELECT EXISTS (
+                             SELECT 1 FROM {decision}
+                              WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                                AND build_id = $3::uuid
+                                AND decision_state IN ('Pending', 'Activated')
+                         ) AS present"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_STATE: decision presence lookup failed".to_owned())?
+                .map(|row| {
+                    row["present"]
+                        .value::<bool>()
+                        .map_err(|_| "EC_BUILD_STATE: decision presence decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_STATE: decision presence is NULL".to_owned())
+                })
+                .next()
+                .transpose()?
+                .ok_or_else(|| "EC_BUILD_STATE: decision presence returned no row".to_owned())
+        })?;
+        if has_active_decision {
+            return Err(
+                "EC_BUILD_STATE: cannot abort a build with a durable publish decision".to_owned(),
+            );
         }
 
         // Abort each participant's unpublished generation. A single-node roster

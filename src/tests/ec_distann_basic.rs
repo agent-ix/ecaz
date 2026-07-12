@@ -2552,6 +2552,149 @@ fn test_distann_multi_epoch_publish() {
 }
 
 #[pg_test]
+fn test_distann_decide_abort_guards() {
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_DECIDE_ABORT";
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+    let conninfo = current_pg_test_loopback_conninfo();
+    let mut client = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("decide/abort guard connection should open");
+    let extension_schema = client
+        .query_one(
+            "SELECT pg_catalog.quote_ident(n.nspname)
+               FROM pg_catalog.pg_extension e
+               JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+              WHERE e.extname = 'ecaz'",
+            &[],
+        )
+        .expect("extension schema should resolve")
+        .get::<_, String>(0);
+    client
+        .batch_execute(&format!("SET search_path = {extension_schema}, public"))
+        .expect("search_path should set");
+    client
+        .batch_execute(
+            "DROP TABLE IF EXISTS ec_distann_dag_source CASCADE;
+             CREATE TABLE ec_distann_dag_source (
+                 source_id uuid NOT NULL,
+                 embedding ecvector(4) NOT NULL
+             );
+             INSERT INTO ec_distann_dag_source VALUES
+                 ('11111111-1111-4111-8111-111111111111',
+                  encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+                 ('22222222-2222-4222-8222-222222222222',
+                  encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42));
+             CREATE INDEX ec_distann_dag_idx ON ec_distann_dag_source
+                 USING ec_distann (embedding ecvector_distann_ip_ops)
+                 INCLUDE (source_id)
+                 WITH (distributed_control = true, source_identity = 'include',
+                       graph_degree = 4, neighbor_code_format = 'rabitq');
+             SELECT ec_distann_configure_participant_identity(
+                 'ec_distann_dag_idx'::regclass, 'decideabort/node-17'
+             );
+             INSERT INTO ec_distann_node_descriptor (
+                 index_oid, logical_index_uuid, roster_ordinal, node_id,
+                 endpoint_identity, conninfo_secret_name, remote_index_regclass,
+                 participant_logical_index_uuid, compatibility_digest, is_local
+             )
+             SELECT 'ec_distann_dag_idx'::regclass::oid, logical_index_uuid, 0, 17,
+                    'decideabort/node-17', 'DISTANN_DECIDE_ABORT', canonical_index_regclass,
+                    logical_index_uuid, compatibility_digest, true
+               FROM ec_distann_control_identity('ec_distann_dag_idx'::regclass)",
+        )
+        .expect("decide/abort guard fixture should create");
+
+    let run = |client: &mut postgres::Client, sql: &str| {
+        client.batch_execute(sql).map_err(|e| {
+            e.as_db_error()
+                .map(|db| db.message().to_owned())
+                .unwrap_or_else(|| e.to_string())
+        })
+    };
+    let reg_state = |client: &mut postgres::Client, build_id: &str| -> String {
+        client
+            .query_one(
+                &format!(
+                    "SELECT state FROM ec_distann_build_registration
+                      WHERE index_oid = 'ec_distann_dag_idx'::regclass::oid
+                        AND build_id = '{build_id}'::uuid"
+                ),
+                &[],
+            )
+            .expect("registration should exist")
+            .get::<_, String>(0)
+    };
+
+    // Sequence A (abort → decide): a build aborted before deciding cannot be
+    // decided afterward.
+    let id_a = "51515151-5151-4151-8151-515151515151";
+    for sql in [
+        format!("SELECT ec_distann_begin_epoch_build('ec_distann_dag_idx'::regclass, 7, '{id_a}'::uuid)"),
+        format!("SELECT ec_distann_build_epoch('ec_distann_dag_idx'::regclass, 7, '{id_a}'::uuid)"),
+        format!("SELECT ec_distann_abort_epoch_build('ec_distann_dag_idx'::regclass, '{id_a}'::uuid)"),
+    ] {
+        run(&mut client, &sql).unwrap_or_else(|e| panic!("seq-A setup {sql}: {e}"));
+    }
+    assert_eq!(reg_state(&mut client, id_a), "Aborted");
+    let decide_after_abort = run(
+        &mut client,
+        &format!("SELECT ec_distann_decide_epoch_publish('ec_distann_dag_idx'::regclass, '{id_a}'::uuid)"),
+    )
+    .expect_err("deciding an aborted build must fail");
+    assert!(
+        decide_after_abort.contains("EC_EPOCH_STATE"),
+        "decide-after-abort must fail EC_EPOCH_STATE: {decide_after_abort}"
+    );
+
+    // Sequence B (decide → abort): a decided build cannot be aborted, and its
+    // generation is not destroyed.
+    let id_b = "52525252-5252-4252-8252-525252525252";
+    for sql in [
+        format!("SELECT ec_distann_begin_epoch_build('ec_distann_dag_idx'::regclass, 8, '{id_b}'::uuid)"),
+        format!("SELECT ec_distann_build_epoch('ec_distann_dag_idx'::regclass, 8, '{id_b}'::uuid)"),
+        format!("SELECT ec_distann_decide_epoch_publish('ec_distann_dag_idx'::regclass, '{id_b}'::uuid)"),
+    ] {
+        run(&mut client, &sql).unwrap_or_else(|e| panic!("seq-B setup {sql}: {e}"));
+    }
+    assert_eq!(reg_state(&mut client, id_b), "Decided", "decide moves registration to Decided");
+    let abort_after_decide = run(
+        &mut client,
+        &format!("SELECT ec_distann_abort_epoch_build('ec_distann_dag_idx'::regclass, '{id_b}'::uuid)"),
+    )
+    .expect_err("aborting a decided build must fail");
+    assert!(
+        abort_after_decide.contains("EC_BUILD_STATE"),
+        "abort-after-decide must fail EC_BUILD_STATE: {abort_after_decide}"
+    );
+    // The decision and registration are unchanged (generation not destroyed).
+    assert_eq!(reg_state(&mut client, id_b), "Decided");
+    assert_eq!(
+        client
+            .query_one(
+                &format!(
+                    "SELECT decision_state FROM ec_distann_publish_decision
+                      WHERE index_oid = 'ec_distann_dag_idx'::regclass::oid AND build_id = '{id_b}'::uuid"
+                ),
+                &[],
+            )
+            .expect("decision should exist")
+            .get::<_, String>(0),
+        "Pending"
+    );
+
+    // Recover id_b to publish it, which clears its build gate so the source can
+    // be dropped (a Decided build cannot be aborted — recovery is the only exit).
+    run(
+        &mut client,
+        &format!("SELECT ec_distann_recover_epoch_publish('ec_distann_dag_idx'::regclass, '{id_b}'::uuid)"),
+    )
+    .unwrap_or_else(|e| panic!("recover of the decided build should publish it: {e}"));
+    client
+        .batch_execute("DROP TABLE IF EXISTS ec_distann_dag_source CASCADE")
+        .expect("decide/abort guard cleanup should drop the source");
+}
+
+#[pg_test]
 fn test_distann_epoch_build_status_registration() {
     const SECRET_NAME: &str = "DISTANN_BUILD_STATUS";
     const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BUILD_STATUS";

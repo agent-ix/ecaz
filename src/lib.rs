@@ -629,6 +629,41 @@ ALTER FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
     FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_build_epoch(regclass, bigint, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_build_epoch(regclass, bigint, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_build_epoch(regclass, bigint, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_decide_epoch_publish(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_decide_epoch_publish(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_decide_epoch_publish(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_recover_epoch_publish(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_recover_epoch_publish(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_recover_epoch_publish(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_abort_epoch_build(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_abort_epoch_build(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_abort_epoch_build(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_epoch_build_status(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_epoch_build_status(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_epoch_build_status(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_generation_topology(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_generation_topology(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_generation_topology(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_epoch_topology(regclass, bytea) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_epoch_topology(regclass, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_epoch_topology(regclass, bytea) FROM PUBLIC;
 "#,
     name = "distann_internal_privileges",
     finalize,
