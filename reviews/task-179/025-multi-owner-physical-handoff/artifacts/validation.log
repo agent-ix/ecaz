@@ -1,0 +1,24 @@
+Task 179 packet 025 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: c2929fcb59ddf2ef94a0737bc8a2cc42e5e38fea
+
+Command:
+  cargo check --lib --no-default-features --features 'pg18 pg_test'
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx test pg18 test_distann_three_owner_physical_handoff
+Key result:
+  test tests::pg_test_distann_three_owner_physical_handoff ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2495 filtered out
+
+The fixture asserts three Ready generations, every owner count greater than
+zero, total record count 30, pairwise-disjoint graph-store vec-id sets, and an
+exact 30-id union. Coordinator abort remotely removes all unpublished
+generations, clears the build gate, and allows all three controls to drop.
