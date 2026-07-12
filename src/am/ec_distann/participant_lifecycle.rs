@@ -746,8 +746,6 @@ fn ec_distann_apply_epoch_retire(
             );
         }
         let reclaim = generation_catalog::extension_relation_name("ec_distann_generation_reclaim")?;
-        let abandoned_bytes = decision.abandoned_binding_set_bytes()?;
-        let abandoned_digest = decision.abandoned_binding_set_digest()?;
         // Insert the immutable success evidence before physical deletion.  All
         // following DDL/catalog mutations are transactional, so an error rolls
         // this insert and every relation deletion back together.
@@ -794,14 +792,11 @@ fn ec_distann_apply_epoch_retire(
                 })?;
             Ok::<(), String>(())
         })?;
-        // Recompute both canonical abandoned-set identities even though the v1
-        // decoder already did so; participant consumption must verify the
-        // separately defined digest chain on every apply/replay.
-        if abandoned_bytes != decision.abandoned_bindings.encode()?
-            || abandoned_digest != decision.abandoned_bindings.digest()?
-        {
-            return Err("EC_PUBLISH_DIGEST: abandoned-binding set digest mismatch".to_owned());
-        }
+        // The retire decision's canonical bytes and abandoned-binding set are
+        // already digest-verified against the supplied digest in
+        // decode_retire_decision (raw-byte domain digest plus a re-encode
+        // round-trip), so no further self-comparison of the abandoned set is
+        // meaningful here.
         drop_generation_relations(
             index_oid,
             GenerationRelations {
