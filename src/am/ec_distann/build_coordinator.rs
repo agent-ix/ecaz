@@ -2072,7 +2072,7 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
 /// 34-byte active epoch fingerprint. Recovery separates T4a activation from
 /// single-local T4b predecessor retirement so each acknowledgement is durable
 /// before the covering publish decision becomes Applied.
-fn recover_local_predecessor_retirement(
+fn recover_predecessor_retirement(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
     successor_build_id: Uuid,
@@ -2081,11 +2081,12 @@ fn recover_local_predecessor_retirement(
 ) -> Result<(), String> {
     let disposition = extension_relation_name("ec_distann_predecessor_disposition")?;
     let binding = extension_relation_name("ec_distann_build_participant_binding")?;
-    let pending = Spi::connect_mut(|client| -> Result<Vec<bool>, String> {
+    let pending = Spi::connect_mut(|client| -> Result<Vec<(i32, bool, String, String)>, String> {
         client
             .update(
                 &format!(
-                    "SELECT b.is_local
+                    "SELECT p.predecessor_roster_ordinal, b.is_local,
+                            b.conninfo_secret_name, b.remote_index_regclass
                        FROM {disposition} p
                        JOIN {binding} b
                          ON b.index_oid = p.index_oid
@@ -2104,37 +2105,51 @@ fn recover_local_predecessor_retirement(
             )
             .map_err(|error| format!("EC_PREDECESSOR_RETIRE_PENDING: disposition lookup failed: {error}"))?
             .map(|row| {
-                row["is_local"]
+                let ordinal = row["predecessor_roster_ordinal"]
+                    .value::<i32>()
+                    .map_err(|_| "EC_PREDECESSOR_RETIRE_PENDING: ordinal decode failed".to_owned())?
+                    .ok_or_else(|| "EC_PREDECESSOR_RETIRE_PENDING: ordinal is NULL".to_owned())?;
+                let is_local = row["is_local"]
                     .value::<bool>()
                     .map_err(|_| "EC_PREDECESSOR_RETIRE_PENDING: locality decode failed".to_owned())?
-                    .ok_or_else(|| "EC_PREDECESSOR_RETIRE_PENDING: locality is NULL".to_owned())
+                    .ok_or_else(|| "EC_PREDECESSOR_RETIRE_PENDING: locality is NULL".to_owned())?;
+                let text = |field: &str| -> Result<String, String> {
+                    row[field]
+                        .value::<String>()
+                        .map_err(|_| format!("EC_PREDECESSOR_RETIRE_PENDING: {field} decode failed"))?
+                        .ok_or_else(|| format!("EC_PREDECESSOR_RETIRE_PENDING: {field} is NULL"))
+                };
+                Ok((ordinal, is_local, text("conninfo_secret_name")?, text("remote_index_regclass")?))
             })
             .collect()
     })?;
-    if pending.iter().any(|is_local| !is_local) {
-        return Err(
-            "EC_PREDECESSOR_RETIRE_PENDING: remote predecessor retirement is not yet implemented"
-                .to_owned(),
-        );
-    }
-    if !pending.is_empty() {
-        let mark = extension_relation_name("ec_distann_mark_epoch_retired")?;
-        Spi::connect_mut(|client| -> Result<(), String> {
-            client
-                .update(
-                    &format!("SELECT {mark}($1::oid::regclass, $2::bytea, $3::bytea)"),
-                    None,
-                    &[
-                        index_oid.into(),
-                        activation_bytes.to_vec().into(),
-                        activation_digest.to_vec().into(),
-                    ],
-                )
-                .map_err(|error| {
-                    format!("EC_PREDECESSOR_RETIRE_PENDING: participant mark failed: {error}")
-                })?;
-            Ok(())
-        })?;
+    let mark = extension_relation_name("ec_distann_mark_epoch_retired")?;
+    for (ordinal, is_local, secret_name, remote_index_regclass) in &pending {
+        if *is_local {
+            Spi::connect_mut(|client| -> Result<(), String> {
+                client
+                    .update(
+                        &format!("SELECT {mark}($1::oid::regclass, $2::bytea, $3::bytea)"),
+                        None,
+                        &[
+                            index_oid.into(), activation_bytes.to_vec().into(),
+                            activation_digest.to_vec().into(),
+                        ],
+                    )
+                    .map_err(|error| {
+                        format!("EC_PREDECESSOR_RETIRE_PENDING: local mark failed: {error}")
+                    })?;
+                Ok(())
+            })?;
+        } else {
+            let conninfo = super::node_registry::resolve_conninfo_secret(secret_name)?;
+            super::remote_transport::remote_mark_epoch_retired(
+                &conninfo,
+                remote_index_regclass,
+                activation_bytes,
+                activation_digest,
+            )?;
+        }
         let updated = Spi::connect_mut(|client| {
             client
                 .update(
@@ -2146,6 +2161,7 @@ fn recover_local_predecessor_retirement(
                           WHERE index_oid = $1::oid
                             AND logical_index_uuid = $2::uuid
                             AND successor_build_id = $3::uuid
+                            AND predecessor_roster_ordinal = $5::integer
                             AND disposition = 'Pending'
                           RETURNING 1"
                     ),
@@ -2155,6 +2171,7 @@ fn recover_local_predecessor_retirement(
                         logical_index_uuid.into(),
                         successor_build_id.into(),
                         activation_digest.to_vec().into(),
+                        (*ordinal).into(),
                     ],
                 )
                 .map(|rows| rows.len())
@@ -2162,7 +2179,7 @@ fn recover_local_predecessor_retirement(
                     format!("EC_PREDECESSOR_RETIRE_PENDING: disposition update failed: {error}")
                 })
         })?;
-        if updated != pending.len() {
+        if updated != 1 {
             return Err(
                 "EC_PREDECESSOR_RETIRE_PENDING: predecessor disposition changed concurrently"
                     .to_owned(),
@@ -2357,7 +2374,7 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
             // Idempotent replay: this build is already the active pointer.
             (Some(active), _) if active.as_bytes() == build_id.as_bytes() => {
                 if predecessor_build_id.is_some() && decision_state == "Activated" {
-                    recover_local_predecessor_retirement(
+                    recover_predecessor_retirement(
                         index_oid,
                         logical_index_uuid,
                         build_id,

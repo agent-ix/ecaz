@@ -3333,6 +3333,87 @@ fn test_distann_three_owner_physical_handoff() {
             .get::<_, String>(0),
         published_build
     );
+    let successor_build = "4b4b4b4b-4b4b-4b4b-8b4b-4b4b4b4b4b4b";
+    for statement in [
+        format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 'ec_distann_rh_idx'::regclass, 13, '{successor_build}'::uuid)"
+        ),
+        format!(
+            "SELECT ec_distann_build_epoch(
+                 'ec_distann_rh_idx'::regclass, 13, '{successor_build}'::uuid)"
+        ),
+        format!(
+            "SELECT ec_distann_decide_epoch_publish(
+                 'ec_distann_rh_idx'::regclass, '{successor_build}'::uuid)"
+        ),
+        format!(
+            "SELECT ec_distann_recover_epoch_publish(
+                 'ec_distann_rh_idx'::regclass, '{successor_build}'::uuid)"
+        ),
+    ] {
+        client.batch_execute(&statement).unwrap_or_else(|error| {
+            panic!("three-owner successor T4a failed: {statement}: {error}")
+        });
+    }
+    assert_eq!(
+        client
+            .query_one(
+                &format!(
+                    "SELECT decision_state FROM ec_distann_publish_decision
+                      WHERE index_oid = 'ec_distann_rh_idx'::regclass::oid
+                        AND build_id = '{successor_build}'::uuid"
+                ),
+                &[],
+            )
+            .expect("successor T4a state should be visible")
+            .get::<_, String>(0),
+        "Activated"
+    );
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_epoch_publish(
+                 'ec_distann_rh_idx'::regclass, '{successor_build}'::uuid)"
+        ))
+        .expect("three-owner successor T4b should retire every predecessor owner");
+    assert_eq!(
+        client
+            .query_one(
+                &format!(
+                    "SELECT decision_state FROM ec_distann_publish_decision
+                      WHERE index_oid = 'ec_distann_rh_idx'::regclass::oid
+                        AND build_id = '{successor_build}'::uuid"
+                ),
+                &[],
+            )
+            .expect("successor T4b state should be visible")
+            .get::<_, String>(0),
+        "Applied"
+    );
+    let retired_states = client
+        .query(
+            &format!(
+                "SELECT state FROM ec_distann_generation
+                  WHERE build_id = '{published_build}'::uuid ORDER BY node_id"
+            ),
+            &[],
+        )
+        .expect("predecessor participant states should be visible");
+    assert_eq!(retired_states.len(), 3);
+    assert!(retired_states
+        .iter()
+        .all(|row| row.get::<_, String>(0) == "Retired"));
+    assert_eq!(
+        client
+            .query_one(
+                "SELECT build_id::text FROM ec_distann_active_epoch
+                  WHERE index_oid = 'ec_distann_rh_idx'::regclass::oid",
+                &[],
+            )
+            .expect("successor active pointer should exist")
+            .get::<_, String>(0),
+        successor_build
+    );
     client
         .batch_execute(
             "DROP TABLE ec_distann_rh_source CASCADE;
