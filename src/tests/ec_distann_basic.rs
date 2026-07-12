@@ -2238,6 +2238,72 @@ fn test_distann_build_epoch_single_node() {
         Some(manifest_digest),
         "decide replay returns the same manifest digest"
     );
+
+    // Recover/publish (T4a): publish the local participant, swap the active
+    // pointer to the successor, mark the decision Applied and the registration
+    // Published (clearing the gate), and return the 34-byte fingerprint.
+    let candidate_fingerprint = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT epoch_fingerprint FROM ec_distann_build_candidate
+          WHERE index_oid = 'ec_distann_be_idx'::regclass::oid
+            AND build_id = '{build_id}'::uuid"
+    ))
+    .unwrap()
+    .unwrap();
+    let recovered = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT ec_distann_recover_epoch_publish('ec_distann_be_idx'::regclass, '{build_id}'::uuid)"
+    ))
+    .expect("recover should execute")
+    .expect("recover should return the active epoch fingerprint");
+    assert_eq!(recovered.len(), 34, "active epoch fingerprint must be 34 bytes");
+    assert_eq!(recovered, candidate_fingerprint, "recover returns the epoch fingerprint");
+    // Active pointer now names this build; decision Applied; registration Published.
+    assert_eq!(
+        Spi::get_one::<Vec<u8>>(
+            "SELECT epoch_fingerprint FROM ec_distann_active_epoch
+              WHERE index_oid = 'ec_distann_be_idx'::regclass::oid"
+        )
+        .unwrap(),
+        Some(candidate_fingerprint.clone()),
+        "the active pointer must name the published successor"
+    );
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT decision_state FROM ec_distann_publish_decision
+              WHERE index_oid = 'ec_distann_be_idx'::regclass::oid AND build_id = '{build_id}'::uuid"
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Applied"),
+        "a no-predecessor recovery records Applied"
+    );
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM ec_distann_build_registration
+              WHERE index_oid = 'ec_distann_be_idx'::regclass::oid AND build_id = '{build_id}'::uuid"
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Published"),
+        "publishing the epoch must move the registration to Published"
+    );
+    // The build gate is cleared once the registration is Published.
+    assert_eq!(
+        Spi::get_one::<i32>(
+            "SELECT ec_distann_build_gate_relation_mask('ec_distann_be_source'::regclass::oid)"
+        )
+        .unwrap(),
+        Some(0),
+        "publishing the epoch clears the durable source gate"
+    );
+    // Idempotent replay returns the same fingerprint.
+    assert_eq!(
+        Spi::get_one::<Vec<u8>>(&format!(
+            "SELECT ec_distann_recover_epoch_publish('ec_distann_be_idx'::regclass, '{build_id}'::uuid)"
+        ))
+        .unwrap(),
+        Some(candidate_fingerprint),
+        "recover replay returns the same fingerprint without re-publishing"
+    );
 }
 
 #[pg_test]

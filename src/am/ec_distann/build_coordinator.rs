@@ -1858,6 +1858,212 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
     .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
+/// Recover/publish a decided epoch (T4a, FR-082:604-645): publish the local
+/// participant, compare-and-swap the active pointer to the successor, transition
+/// the decision and registration to their published terminal states, and release
+/// the coordinator session locks from the post-commit callback. Returns the
+/// 34-byte active epoch fingerprint. This slice handles the first-epoch
+/// (no-predecessor) single-node case; multi-epoch T4b predecessor retirement is
+/// a later slice.
+#[pg_extern(volatile, strict)]
+fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -> Vec<u8> {
+    (|| -> Result<Vec<u8>, String> {
+        if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
+            return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
+        }
+        let index_oid = index_regclass.oid();
+        let (mut control, _handle, _metadata, logical_index_uuid) = open_control_index(
+            index_oid,
+            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+            "ec_distann_recover_epoch_publish",
+        )?;
+        control.retain_lock_until_transaction_end();
+
+        let decision_table = extension_relation_name("ec_distann_publish_decision")?;
+        let decision = Spi::connect(
+            |client| -> Result<Option<(i64, Vec<u8>, Vec<u8>, Vec<u8>, bool)>, String> {
+                client
+                    .select(
+                        &format!(
+                            "SELECT epoch, epoch_fingerprint, manifest_digest, epoch_manifest,
+                                    predecessor_build_id IS NOT NULL AS has_predecessor
+                               FROM {decision_table}
+                              WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                                AND build_id = $3::uuid"
+                        ),
+                        None,
+                        &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                    )
+                    .map_err(|_| "EC_EPOCH_STATE: publish decision lookup failed".to_owned())?
+                    .map(|row| {
+                        let epoch = row["epoch"]
+                            .value::<i64>()
+                            .map_err(|_| "EC_EPOCH_STATE: decision epoch decode failed".to_owned())?
+                            .ok_or_else(|| "EC_EPOCH_STATE: decision epoch is NULL".to_owned())?;
+                        let field = |name: &str| -> Result<Vec<u8>, String> {
+                            row[name]
+                                .value::<Vec<u8>>()
+                                .map_err(|_| format!("EC_EPOCH_STATE: decision {name} decode failed"))?
+                                .ok_or_else(|| format!("EC_EPOCH_STATE: decision {name} is NULL"))
+                        };
+                        let has_predecessor = row["has_predecessor"]
+                            .value::<bool>()
+                            .map_err(|_| "EC_EPOCH_STATE: predecessor flag decode failed".to_owned())?
+                            .ok_or_else(|| "EC_EPOCH_STATE: predecessor flag is NULL".to_owned())?;
+                        Ok((
+                            epoch,
+                            field("epoch_fingerprint")?,
+                            field("manifest_digest")?,
+                            field("epoch_manifest")?,
+                            has_predecessor,
+                        ))
+                    })
+                    .next()
+                    .transpose()
+            },
+        )?
+        .ok_or_else(|| {
+            "EC_EPOCH_STATE: no durable publish decision for this build id".to_owned()
+        })?;
+        let (epoch, epoch_fingerprint, manifest_digest, epoch_manifest, has_predecessor) = decision;
+
+        // Idempotent replay: if the active pointer already names this build, the
+        // epoch is published; return its fingerprint.
+        let active_table = extension_relation_name("ec_distann_active_epoch")?;
+        let active_build = Spi::connect_mut(|client| -> Result<Option<Uuid>, String> {
+            client
+                .update(
+                    &format!(
+                        "SELECT build_id FROM {active_table}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                          FOR UPDATE"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into()],
+                )
+                .map_err(|_| "EC_EPOCH_STATE: active pointer lookup failed".to_owned())?
+                .map(|row| {
+                    row["build_id"]
+                        .value::<Uuid>()
+                        .map_err(|_| "EC_EPOCH_STATE: active build id decode failed".to_owned())?
+                        .ok_or_else(|| "EC_EPOCH_STATE: active build id is NULL".to_owned())
+                })
+                .next()
+                .transpose()
+        })?;
+        if let Some(active_build) = active_build {
+            if active_build.as_bytes() == build_id.as_bytes() {
+                return Ok(epoch_fingerprint);
+            }
+            return Err(
+                "EC_EPOCH_STATE: the active pointer names a different build id".to_owned(),
+            );
+        }
+        if has_predecessor {
+            return Err(
+                "EC_EPOCH_STATE: multi-epoch publish recovery (T4b) is not yet implemented"
+                    .to_owned(),
+            );
+        }
+
+        // Publish the local participant (Ready -> Published) and verify the
+        // acknowledged fingerprint matches the decided one.
+        let publish_fn = extension_relation_name("ec_distann_publish_epoch")?;
+        let acked_fingerprint = Spi::connect_mut(|client| -> Result<Vec<u8>, String> {
+            client
+                .update(
+                    &format!(
+                        "SELECT {publish_fn}(
+                             $1::oid::regclass, $2::uuid, $3::bytea, $4::bytea
+                         ) AS fingerprint"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        build_id.into(),
+                        epoch_manifest.clone().into(),
+                        manifest_digest.clone().into(),
+                    ],
+                )
+                .map_err(|error| format!("EC_EPOCH_STATE: participant publish failed: {error}"))?
+                .map(|row| {
+                    row["fingerprint"]
+                        .value::<Vec<u8>>()
+                        .map_err(|_| "EC_EPOCH_STATE: participant fingerprint decode failed".to_owned())?
+                        .ok_or_else(|| "EC_EPOCH_STATE: participant fingerprint is NULL".to_owned())
+                })
+                .next()
+                .transpose()?
+                .ok_or_else(|| "EC_EPOCH_STATE: participant publish returned no fingerprint".to_owned())
+        })?;
+        if acked_fingerprint != epoch_fingerprint {
+            return Err(
+                "EC_EPOCH_STATE: participant acknowledged a different epoch fingerprint".to_owned(),
+            );
+        }
+
+        // Swap the active pointer to the successor, mark the decision Applied
+        // (no predecessor), and publish the registration to clear the gate — one
+        // atomic transaction.
+        let registration = extension_relation_name("ec_distann_build_registration")?;
+        Spi::connect_mut(|client| -> Result<(), String> {
+            client
+                .update(
+                    &format!(
+                        "INSERT INTO {active_table} (
+                             index_oid, logical_index_uuid, build_id, epoch,
+                             epoch_fingerprint, manifest_digest, updated_at
+                         ) VALUES (
+                             $1::oid, $2::uuid, $3::uuid, $4::bigint,
+                             $5::bytea, $6::bytea, clock_timestamp()
+                         )"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        logical_index_uuid.into(),
+                        build_id.into(),
+                        epoch.into(),
+                        epoch_fingerprint.clone().into(),
+                        manifest_digest.clone().into(),
+                    ],
+                )
+                .map_err(|error| format!("EC_EPOCH_STATE: active pointer swap failed: {error}"))?;
+            client
+                .update(
+                    &format!(
+                        "UPDATE {decision_table}
+                            SET decision_state = 'Applied',
+                                activated_at = clock_timestamp(),
+                                applied_at = clock_timestamp()
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid AND decision_state = 'Pending'"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_EPOCH_STATE: decision Applied transition failed".to_owned())?;
+            client
+                .update(
+                    &format!(
+                        "UPDATE {registration} SET state = 'Published'
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid AND state = 'Ready'"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_EPOCH_STATE: registration Published transition failed".to_owned())?;
+            Ok(())
+        })?;
+
+        // Release the coordinator session locks after this swap commits.
+        schedule_session_lock_release_for_control(index_oid);
+        Ok(epoch_fingerprint)
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"))
+}
+
 /// Idempotently abort an unpublished coordinator build: abort every
 /// participant's unpublished generation, clear the durable build gate by moving
 /// the registration to `Aborted`, and release the caller's session locks after
