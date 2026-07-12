@@ -18,6 +18,7 @@ use std::ffi::c_void;
 use std::ptr::{self, NonNull};
 
 use pgrx::{pg_sys, FromDatum, IntoDatum, PgBox, Spi};
+use sha2::{Digest, Sha256};
 
 use crate::am::common::callback::pg_am_callback;
 use crate::am::ec_diskann::{
@@ -191,6 +192,57 @@ impl PhysicalGraphWorkspace {
                 expected_owner_digest: hashers[owner].digest(),
             })
             .collect())
+    }
+
+    /// Compute the coordinator's global record count and the canonical global
+    /// graph and row-tier digests over every node in unsigned vec_id order,
+    /// with no participant-local locator (FR-078:741-747). These bind the
+    /// build specification and are re-verified at the publish decision.
+    pub(crate) fn global_digests(&mut self) -> Result<(u64, [u8; 32], [u8; 32]), String> {
+        fn put_len_prefixed(hasher: &mut Sha256, bytes: &[u8]) -> Result<(), String> {
+            let length = u32::try_from(bytes.len())
+                .map_err(|_| "EC_BUILD_INCOMPLETE: global digest field exceeds u32".to_owned())?;
+            hasher.update(length.to_le_bytes());
+            hasher.update(bytes);
+            Ok(())
+        }
+        let mut graph = Sha256::new();
+        graph.update(b"ec_distann_global_graph_v1\0");
+        let mut row = Sha256::new();
+        row.update(b"ec_distann_global_row_tier_v1\0");
+        let mut count = 0_u64;
+        for order_index in 0..self.canonical_nodes.len() {
+            let node = self.canonical_nodes[order_index];
+            let entry = self.entry_for_node(node)?;
+
+            // locator_free_graph
+            graph.update(entry.vec_id.to_le_bytes());
+            graph.update(entry.graph_flags.to_le_bytes());
+            put_len_prefixed(&mut graph, &entry.search_code)?;
+            let neighbor_count = u32::try_from(entry.neighbor_vec_ids.len())
+                .map_err(|_| "EC_BUILD_INCOMPLETE: neighbor count exceeds u32".to_owned())?;
+            graph.update(neighbor_count.to_le_bytes());
+            for neighbor_vec_id in &entry.neighbor_vec_ids {
+                graph.update(neighbor_vec_id.to_le_bytes());
+            }
+            put_len_prefixed(&mut graph, &entry.neighbor_codes)?;
+
+            // canonical_row
+            row.update(entry.vec_id.to_le_bytes());
+            put_len_prefixed(&mut row, &entry.source_identity)?;
+            put_len_prefixed(&mut row, &entry.row_null_bitmap)?;
+            let value_count = u32::try_from(entry.row_values.len())
+                .map_err(|_| "EC_BUILD_INCOMPLETE: row value count exceeds u32".to_owned())?;
+            row.update(value_count.to_le_bytes());
+            for value in &entry.row_values {
+                put_len_prefixed(&mut row, value)?;
+            }
+
+            count = count
+                .checked_add(1)
+                .ok_or_else(|| "EC_BUILD_INCOMPLETE: global record count overflow".to_owned())?;
+        }
+        Ok((count, graph.finalize().into(), row.finalize().into()))
     }
 
     pub(crate) fn route<F>(

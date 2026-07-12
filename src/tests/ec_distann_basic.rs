@@ -2044,6 +2044,114 @@ fn test_distann_abort_epoch_build_clears_gate_and_is_idempotent() {
 }
 
 #[pg_test]
+fn test_distann_build_epoch_single_node() {
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BUILD_EPOCH";
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+
+    // Rows must exist before the distributed-control index is created; DML
+    // through the index is gated post-creation.
+    Spi::run(
+        "CREATE TABLE ec_distann_be_source (
+             source_id uuid NOT NULL,
+             embedding ecvector(4) NOT NULL
+         );
+         INSERT INTO ec_distann_be_source VALUES
+             ('11111111-1111-4111-8111-111111111111',
+              encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             ('22222222-2222-4222-8222-222222222222',
+              encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42)),
+             ('33333333-3333-4333-8333-333333333333',
+              encode_to_ecvector(ARRAY[0.0, 0.0, 1.0, 0.0], 4, 42));
+         CREATE INDEX ec_distann_be_idx ON ec_distann_be_source
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             INCLUDE (source_id)
+             WITH (distributed_control = true, source_identity = 'include',
+                   graph_degree = 4, neighbor_code_format = 'rabitq');
+         SELECT ec_distann_configure_participant_identity(
+             'ec_distann_be_idx'::regclass, 'buildepoch/node-17'
+         );
+         INSERT INTO ec_distann_node_descriptor (
+             index_oid, logical_index_uuid, roster_ordinal, node_id,
+             endpoint_identity, conninfo_secret_name, remote_index_regclass,
+             participant_logical_index_uuid, compatibility_digest, is_local
+         )
+         SELECT 'ec_distann_be_idx'::regclass::oid, logical_index_uuid, 0, 17,
+                'buildepoch/node-17', 'DISTANN_BUILD_EPOCH', canonical_index_regclass,
+                logical_index_uuid, compatibility_digest, true
+           FROM ec_distann_control_identity('ec_distann_be_idx'::regclass)",
+    )
+    .expect("distributed-control source, index, and self-registration should create");
+
+    let build_id = "45454545-4545-4545-8545-454545454545";
+    Spi::run(&format!(
+        "SELECT ec_distann_begin_epoch_build('ec_distann_be_idx'::regclass, 7, '{build_id}'::uuid)"
+    ))
+    .expect("begin epoch build should register the coordinator build");
+
+    let candidate_digest = Spi::get_one::<Vec<u8>>(&format!(
+        "SELECT ec_distann_build_epoch('ec_distann_be_idx'::regclass, 7, '{build_id}'::uuid)"
+    ))
+    .expect("build_epoch should execute")
+    .expect("build_epoch should return a candidate digest");
+    assert_eq!(candidate_digest.len(), 32, "candidate digest must be 32 bytes");
+
+    // Registration transitioned to Ready.
+    assert_eq!(
+        Spi::get_one::<String>(&format!(
+            "SELECT state FROM ec_distann_build_registration
+              WHERE index_oid = 'ec_distann_be_idx'::regclass::oid
+                AND build_id = '{build_id}'::uuid"
+        ))
+        .unwrap()
+        .as_deref(),
+        Some("Ready"),
+        "a successful build must leave the registration Ready"
+    );
+
+    // An immutable build candidate row exists with the returned digest.
+    assert_eq!(
+        Spi::get_one::<Vec<u8>>(&format!(
+            "SELECT candidate_digest FROM ec_distann_build_candidate
+              WHERE index_oid = 'ec_distann_be_idx'::regclass::oid
+                AND build_id = '{build_id}'::uuid"
+        ))
+        .unwrap(),
+        Some(candidate_digest.clone()),
+        "the persisted candidate digest must equal the returned digest"
+    );
+
+    // Build status now reports the local participant Ready with its receipt.
+    let (participant_state, record_count, has_receipt) = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT participant_state, record_count,
+                            receipt_digest IS NOT NULL AS has_receipt
+                       FROM ec_distann_epoch_build_status(
+                           'ec_distann_be_idx'::regclass, '{build_id}'::uuid
+                       )"
+                ),
+                None,
+                &[],
+            )
+            .expect("build status should execute")
+            .map(|r| {
+                (
+                    r["participant_state"].value::<String>().unwrap(),
+                    r["record_count"].value::<i64>().unwrap(),
+                    r["has_receipt"].value::<bool>().unwrap().unwrap(),
+                )
+            })
+            .next()
+            .expect("build status should report one participant")
+    });
+    assert_eq!(participant_state.as_deref(), Some("Ready"));
+    assert_eq!(record_count, Some(3));
+    assert!(has_receipt, "a Ready participant must expose a receipt digest");
+}
+
+#[pg_test]
 fn test_distann_epoch_build_status_registration() {
     const SECRET_NAME: &str = "DISTANN_BUILD_STATUS";
     const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BUILD_STATUS";

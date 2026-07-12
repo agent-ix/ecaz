@@ -10,7 +10,16 @@ use crate::storage::relation::index_heap_relation_oid_handle;
 
 use super::canonical_wire::{domain_digest, is_rfc4122_v4_uuid, CanonicalEncoder};
 use super::generation_catalog::extension_relation_name;
-use super::generation_descriptor::{validate_roster, DistannRosterEntry};
+use super::generation_descriptor::{
+    validate_roster, DistannBuildOptions, DistannBuildSpec, DistannGenerationDescriptor,
+    DistannRosterEntry,
+};
+use super::handoff_router::{DistannHandoffRouteIdentity, DistannStageAck};
+use super::lifecycle_wire::DistannBuildCandidateV1;
+use super::manifest_v2::{
+    DistannEpochManifestV2, DistannManifestBuildOptions, DistannManifestCodecParameters,
+    DistannSourceSnapshot,
+};
 use super::generation_store::{control_compatibility_digest, open_control_index};
 use super::roster_digest;
 use super::row_schema::resolve_relation_schema;
@@ -1085,6 +1094,470 @@ fn ec_distann_begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id
         })?;
         source_lock.retain();
         Ok(digest.to_vec())
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"))
+}
+
+/// Capture the coordinator's frozen source MVCC snapshot as a canonical
+/// `DistannSourceSnapshot` (FR-082). The active snapshot's 32-bit transaction
+/// ids are widened to full wrap-safe 64-bit ids against `ReadNextFullTransactionId`,
+/// matching PostgreSQL's `FullTransactionIdFromAllowableAt`; the in-progress
+/// arrays are sorted into the canonical strictly-ascending order the encoding
+/// requires. build_epoch takes this once, before the counting/digest pass.
+fn capture_source_snapshot() -> Result<DistannSourceSnapshot, String> {
+    let snapshot_ptr = unsafe { pg_sys::GetActiveSnapshot() };
+    if snapshot_ptr.is_null() {
+        return Err("EC_SOURCE_SNAPSHOT: build_epoch has no active PostgreSQL snapshot".to_owned());
+    }
+    let snapshot = unsafe { &*snapshot_ptr };
+    let next_full = unsafe { pg_sys::ReadNextFullTransactionId() }.value;
+    let next_lo = next_full as u32;
+    let next_epoch = (next_full >> 32) as u32;
+    // A read snapshot's ids all precede nextXid, so place each in the epoch that
+    // keeps its full id at or below nextFullXid.
+    let to_full = |xid: pg_sys::TransactionId| -> u64 {
+        let xid = xid.into_inner();
+        let epoch = if xid > next_lo {
+            next_epoch.wrapping_sub(1)
+        } else {
+            next_epoch
+        };
+        (u64::from(epoch) << 32) | u64::from(xid)
+    };
+    let read_full_array = |base: *mut pg_sys::TransactionId, count: usize| -> Vec<u64> {
+        let mut ids = Vec::with_capacity(count);
+        if !base.is_null() {
+            for offset in 0..count {
+                ids.push(to_full(unsafe { *base.add(offset) }));
+            }
+        }
+        // The snapshot arrays are unordered sets; canonical encoding requires a
+        // strictly-ascending order and the members are distinct in-progress ids.
+        ids.sort_unstable();
+        ids
+    };
+
+    let xcnt = usize::try_from(snapshot.xcnt)
+        .map_err(|_| "EC_SOURCE_SNAPSHOT: in-progress xid count is invalid".to_owned())?;
+    let xip = read_full_array(snapshot.xip, xcnt);
+    let subxip = if snapshot.suboverflowed {
+        Vec::new()
+    } else {
+        let subxcnt = usize::try_from(snapshot.subxcnt)
+            .map_err(|_| "EC_SOURCE_SNAPSHOT: subtransaction xid count is invalid".to_owned())?;
+        read_full_array(snapshot.subxip, subxcnt)
+    };
+
+    let database_name = {
+        let name_ptr = unsafe { pg_sys::get_database_name(pg_sys::MyDatabaseId) };
+        if name_ptr.is_null() {
+            return Err("EC_SOURCE_SNAPSHOT: current database name is unavailable".to_owned());
+        }
+        let name = unsafe { std::ffi::CStr::from_ptr(name_ptr) }
+            .to_str()
+            .map_err(|_| "EC_SOURCE_SNAPSHOT: database name is not UTF-8".to_owned())?
+            .to_owned();
+        unsafe { pg_sys::pfree(name_ptr.cast()) };
+        name
+    };
+
+    let captured = DistannSourceSnapshot {
+        system_identifier: unsafe { pg_sys::GetSystemIdentifier() },
+        database_name,
+        xmin_full: to_full(snapshot.xmin),
+        xmax_full: to_full(snapshot.xmax),
+        curcid: snapshot.curcid,
+        xip,
+        subxip,
+        suboverflowed: snapshot.suboverflowed,
+        taken_during_recovery: snapshot.takenDuringRecovery,
+    };
+    captured.validate()?;
+    Ok(captured)
+}
+
+/// Build a distributed epoch to Ready in one coordinator transaction and return
+/// the 32-byte candidate manifest digest (FR-078:275-323). Requires the durable
+/// registration from `ec_distann_begin_epoch_build`. Captures one frozen source
+/// snapshot, builds the physical graph workspace, makes the counting/digest pass
+/// binding per-owner and global identities, drives the single local participant
+/// begin/stage/seal, then atomically persists the immutable build candidate and
+/// transitions the registration to Ready. This slice supports a single local
+/// participant; multi-owner remote transport is a later slice.
+#[pg_extern(volatile, strict)]
+fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid) -> Vec<u8> {
+    (|| -> Result<Vec<u8>, String> {
+        super::build_gate::require_shared_preload()?;
+        let epoch_u64 = u64::try_from(epoch)
+            .ok()
+            .filter(|value| *value > 0)
+            .ok_or_else(|| "EC_BUILD_STATE: epoch must be positive".to_owned())?;
+        if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
+            return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
+        }
+        let index_oid = index_regclass.oid();
+
+        // One frozen source MVCC snapshot for the whole build.
+        let source_snapshot = capture_source_snapshot()?;
+        let source_snapshot_digest = source_snapshot.digest()?;
+
+        let (mut control, handle, metadata, logical_index_uuid) = open_control_index(
+            index_oid,
+            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+            "ec_distann_build_epoch",
+        )?;
+        control.retain_lock_until_transaction_end();
+        let source_relation_oid = index_heap_relation_oid_handle(handle);
+        let _registry_revision = lock_registry_revision(index_oid, logical_index_uuid)?;
+        let row_schema = resolve_relation_schema(source_relation_oid)?.descriptor;
+        let row_schema_fingerprint = row_schema.fingerprint()?;
+        let compatibility_digest = control_compatibility_digest(handle, &metadata)?;
+
+        // build_epoch consumes the durable registration written by begin.
+        let (registration_digest, _requires_source_lock) = replay_registration(
+            index_oid,
+            logical_index_uuid,
+            build_id,
+            epoch_u64,
+            row_schema_fingerprint,
+            compatibility_digest,
+            source_relation_oid,
+        )?
+        .ok_or_else(|| {
+            "EC_BUILD_STATE: build_epoch requires a durable registration from begin_epoch_build"
+                .to_owned()
+        })?;
+
+        // Reacquire the frozen roster (revision-locked so it matches registration).
+        let participants = desired_participants(index_oid, logical_index_uuid)?;
+        let roster = public_roster(&participants)?;
+        let roster_digest_bytes = roster_digest(&roster)?;
+        if participants.len() != 1 || !participants[0].is_local {
+            return Err(
+                "EC_BUILD_STATE: build_epoch currently supports only a single local participant"
+                    .to_owned(),
+            );
+        }
+
+        // Capture source rows and build the physical graph workspace.
+        let index_relation = crate::storage::relation_guard::IndexRelationGuard::open(
+            index_oid,
+            pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+            "ec_distann_build_epoch",
+        );
+        let heap = crate::storage::relation_guard::HeapRelationGuard::try_access_share(
+            index_relation.heap_relation_oid(),
+        )
+        .ok_or_else(|| "EC_BUILD_INCOMPLETE: source heap could not open".to_owned())?;
+        let index_info = crate::am::common::index_info::IndexInfoGuard::build(
+            index_relation.as_ptr(),
+            "ec_distann_build_epoch",
+        );
+        let capture = unsafe {
+            super::capture_physical_source_rows(
+                heap.as_ptr(),
+                index_relation.as_ptr(),
+                index_info.as_ptr(),
+            )
+        }?;
+        let mut workspace =
+            super::build_physical_graph_workspace(index_relation.as_ptr(), capture)?;
+
+        // Counting/digest pass before the first participant begin.
+        let expectations =
+            workspace.owner_expectations(&roster, super::DISTANN_PLACEMENT_HASH_VERSION)?;
+        let (global_count, global_graph_digest, global_row_tier_digest) =
+            workspace.global_digests()?;
+        // The coordinator head sample is not derived in this slice; both the
+        // build spec and manifest carry the same value so the candidate chain
+        // round-trips through the publish-decision re-verification.
+        let head_sample_digest = [0u8; 32];
+
+        let options = super::options::relation_options(index_relation.as_ptr());
+        let to_u16 = |value: i32, field: &str| -> Result<u16, String> {
+            u16::try_from(value).map_err(|_| format!("EC_BUILD_STATE: {field} out of range"))
+        };
+        let to_u32 = |value: i32, field: &str| -> Result<u32, String> {
+            u32::try_from(value).map_err(|_| format!("EC_BUILD_STATE: {field} out of range"))
+        };
+        let build_options = DistannBuildOptions {
+            build_list_size: to_u16(options.build_list_size, "build_list_size")?,
+            alpha: options.alpha,
+            seed: metadata.seed,
+            closure_epsilon: options.closure_epsilon,
+            head_index_cap: to_u32(options.head_index_cap, "head_index_cap")?,
+            build_shards: to_u32(options.build_shards, "build_shards")?,
+        };
+
+        let codec_artifact = workspace.codec_artifact().clone();
+        let dimensions = to_u16(i32::from(codec_artifact.dimensions()), "dimensions")?;
+        let shape = workspace.shape();
+        let code_stride = to_u32(
+            i32::try_from(shape.code_stride)
+                .map_err(|_| "EC_BUILD_STATE: code stride out of range".to_owned())?,
+            "code_stride",
+        )?;
+
+        let descriptor = DistannGenerationDescriptor {
+            coordinator_logical_index_uuid: metadata.logical_index_uuid,
+            index_format_version: super::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+            graph_record_version: super::DISTANN_GRAPH_RECORD_VERSION,
+            handoff_wire_version: super::DISTANN_HANDOFF_WIRE_VERSION,
+            dimensions,
+            graph_degree: metadata.graph_degree_r,
+            placement_hash_version: super::DISTANN_PLACEMENT_HASH_VERSION,
+            roster: roster.clone(),
+            neighbor_codec_kind: metadata.neighbor_codec_kind,
+            codec_artifact,
+            row_schema,
+        };
+        let descriptor_bytes = descriptor.encode()?;
+        let descriptor_digest = descriptor.digest()?;
+
+        let build_spec = DistannBuildSpec {
+            epoch: epoch_u64,
+            build_id: *build_id.as_bytes(),
+            parent_fingerprint: Vec::new(),
+            source_snapshot_digest,
+            generation_descriptor_digest: descriptor_digest,
+            build_options: build_options.clone(),
+            expected_global_count: global_count,
+            expected_global_graph_digest: global_graph_digest,
+            expected_global_row_tier_digest: global_row_tier_digest,
+            head_sample_digest,
+            owner_expectations: expectations.clone(),
+        };
+        let build_spec_digest = build_spec.digest()?;
+
+        // Drive the single local participant: begin -> stage -> seal.
+        let local = expectations[0].clone();
+        let local_owner_count = i64::try_from(local.expected_count)
+            .map_err(|_| "EC_BUILD_STATE: owner count exceeds bigint".to_owned())?;
+        let begin_fn = extension_relation_name("ec_distann_begin_epoch_handoff")?;
+        Spi::connect_mut(|client| -> Result<(), String> {
+            client
+                .update(
+                    &format!(
+                        "SELECT state FROM {begin_fn}(
+                             $1::oid::regclass, $2::bigint, $3::uuid, $4::bytea, $5::bytea,
+                             $6::bytea, $7::bytea, $8::bigint, $9::bytea
+                         )"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        epoch.into(),
+                        build_id.into(),
+                        build_spec_digest.to_vec().into(),
+                        roster_digest_bytes.to_vec().into(),
+                        descriptor_bytes.clone().into(),
+                        descriptor_digest.to_vec().into(),
+                        local_owner_count.into(),
+                        local.expected_owner_digest.to_vec().into(),
+                    ],
+                )
+                .map_err(|_| "EC_BUILD_INCOMPLETE: begin generation dispatch failed".to_owned())?;
+            Ok(())
+        })?;
+
+        let route_identity = DistannHandoffRouteIdentity {
+            epoch: epoch_u64,
+            build_id: *build_id.as_bytes(),
+            build_spec_digest,
+            row_schema_fingerprint,
+            index_format_version: super::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+            neighbor_codec_kind: metadata.neighbor_codec_kind,
+            placement_hash_version: super::DISTANN_PLACEMENT_HASH_VERSION,
+        };
+        let stage_fn = extension_relation_name("ec_distann_stage_epoch_batch")?;
+        workspace.route(route_identity, 1, &mut |_owner, sequence, digest, encoded| {
+            let sequence = i64::try_from(sequence)
+                .map_err(|_| "EC_BUILD_STATE: batch sequence exceeds bigint".to_owned())?;
+            Spi::connect_mut(|client| -> Result<DistannStageAck, String> {
+                let row = client
+                    .update(
+                        &format!(
+                            "SELECT accepted_record_count, cumulative_record_count,
+                                    cumulative_owner_digest
+                               FROM {stage_fn}(
+                                   $1::oid::regclass, $2::uuid, $3::bigint, $4::bytea, $5::bytea
+                               )"
+                        ),
+                        None,
+                        &[
+                            index_oid.into(),
+                            build_id.into(),
+                            sequence.into(),
+                            digest.to_vec().into(),
+                            encoded.to_vec().into(),
+                        ],
+                    )
+                    .map_err(|_| "EC_BUILD_INCOMPLETE: stage batch dispatch failed".to_owned())?
+                    .next()
+                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: stage batch returned no row".to_owned())?;
+                let accepted = row["accepted_record_count"]
+                    .value::<i64>()
+                    .map_err(|_| "EC_BUILD_INCOMPLETE: accepted count decode failed".to_owned())?
+                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: accepted count is NULL".to_owned())?;
+                let cumulative = row["cumulative_record_count"]
+                    .value::<i64>()
+                    .map_err(|_| "EC_BUILD_INCOMPLETE: cumulative count decode failed".to_owned())?
+                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: cumulative count is NULL".to_owned())?;
+                let cumulative_owner_digest = row["cumulative_owner_digest"]
+                    .value::<Vec<u8>>()
+                    .map_err(|_| "EC_BUILD_INCOMPLETE: cumulative digest decode failed".to_owned())?
+                    .ok_or_else(|| "EC_BUILD_INCOMPLETE: cumulative digest is NULL".to_owned())?;
+                Ok(DistannStageAck {
+                    accepted_record_count: u64::try_from(accepted).map_err(|_| {
+                        "EC_BUILD_INCOMPLETE: accepted count is negative".to_owned()
+                    })?,
+                    cumulative_record_count: u64::try_from(cumulative).map_err(|_| {
+                        "EC_BUILD_INCOMPLETE: cumulative count is negative".to_owned()
+                    })?,
+                    cumulative_owner_digest: cumulative_owner_digest.try_into().map_err(|_| {
+                        "EC_BUILD_INCOMPLETE: cumulative digest is not 32 bytes".to_owned()
+                    })?,
+                })
+            })
+        })?;
+
+        let seal_fn = extension_relation_name("ec_distann_seal_epoch_handoff")?;
+        let receipt_bytes = Spi::connect_mut(|client| -> Result<Vec<u8>, String> {
+            client
+                .update(
+                    &format!(
+                        "SELECT {seal_fn}(
+                             $1::oid::regclass, $2::uuid, $3::bigint, $4::bytea
+                         ) AS ready_receipt"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        build_id.into(),
+                        local_owner_count.into(),
+                        local.expected_owner_digest.to_vec().into(),
+                    ],
+                )
+                .map_err(|_| "EC_BUILD_INCOMPLETE: seal dispatch failed".to_owned())?
+                .map(|row| {
+                    row["ready_receipt"]
+                        .value::<Vec<u8>>()
+                        .map_err(|_| "EC_BUILD_INCOMPLETE: ready receipt decode failed".to_owned())?
+                        .ok_or_else(|| "EC_BUILD_INCOMPLETE: ready receipt is NULL".to_owned())
+                })
+                .next()
+                .transpose()?
+                .ok_or_else(|| "EC_BUILD_INCOMPLETE: seal returned no receipt".to_owned())
+        })?;
+        let receipt = super::manifest_v2::DistannReadyReceipt::decode(&receipt_bytes)?;
+
+        let codec_parameters = DistannManifestCodecParameters {
+            codec_kind: metadata.neighbor_codec_kind,
+            dimensions,
+            code_stride,
+            seed: metadata.seed,
+            transform_dim: 0,
+            group_count: 0,
+            group_size: 0,
+            centroids_per_group: 0,
+        };
+        let manifest = DistannEpochManifestV2 {
+            epoch: epoch_u64,
+            build_id: *build_id.as_bytes(),
+            parent_fingerprint: Vec::new(),
+            source_snapshot_digest,
+            build_spec_digest,
+            generation_descriptor_digest: descriptor_digest,
+            placement_hash_version: super::DISTANN_PLACEMENT_HASH_VERSION,
+            roster: roster.clone(),
+            index_format_version: super::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+            graph_record_version: super::DISTANN_GRAPH_RECORD_VERSION,
+            handoff_wire_version: super::DISTANN_HANDOFF_WIRE_VERSION,
+            codec_parameters,
+            build_options: DistannManifestBuildOptions {
+                graph_degree: metadata.graph_degree_r,
+                options: build_options,
+            },
+            row_schema_fingerprint,
+            head_sample_digest,
+            global_record_count: global_count,
+            global_graph_digest,
+            global_row_tier_digest,
+            participant_receipts: vec![receipt],
+        };
+
+        let candidate = DistannBuildCandidateV1::from_components(
+            registration_digest,
+            &build_spec,
+            &descriptor,
+            &source_snapshot,
+            &manifest,
+        )?;
+        let candidate_digest = candidate.digest()?;
+
+        // Atomically persist the immutable candidate and mark the registration
+        // Ready in this coordinator transaction.
+        let candidate_table = extension_relation_name("ec_distann_build_candidate")?;
+        let registration = extension_relation_name("ec_distann_build_registration")?;
+        Spi::connect_mut(|client| -> Result<(), String> {
+            client
+                .update(
+                    &format!(
+                        "INSERT INTO {candidate_table} (
+                             index_oid, logical_index_uuid, build_id, epoch,
+                             registration_digest, build_spec, build_spec_digest,
+                             generation_descriptor, generation_descriptor_digest,
+                             source_snapshot, source_snapshot_digest,
+                             ready_receipt_set, ready_receipt_set_digest,
+                             epoch_manifest, manifest_digest, epoch_fingerprint,
+                             candidate_digest
+                         ) VALUES (
+                             $1::oid, $2::uuid, $3::uuid, $4::bigint,
+                             $5::bytea, $6::bytea, $7::bytea,
+                             $8::bytea, $9::bytea,
+                             $10::bytea, $11::bytea,
+                             $12::bytea, $13::bytea,
+                             $14::bytea, $15::bytea, $16::bytea,
+                             $17::bytea
+                         )"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        logical_index_uuid.into(),
+                        build_id.into(),
+                        epoch.into(),
+                        candidate.registration_digest.to_vec().into(),
+                        candidate.build_spec.clone().into(),
+                        candidate.build_spec_digest.to_vec().into(),
+                        candidate.generation_descriptor.clone().into(),
+                        candidate.generation_descriptor_digest.to_vec().into(),
+                        candidate.source_snapshot.clone().into(),
+                        candidate.source_snapshot_digest.to_vec().into(),
+                        candidate.ready_receipt_set.clone().into(),
+                        candidate.ready_receipt_set_digest.to_vec().into(),
+                        candidate.epoch_manifest.clone().into(),
+                        candidate.manifest_digest.to_vec().into(),
+                        candidate.epoch_fingerprint.to_vec().into(),
+                        candidate_digest.to_vec().into(),
+                    ],
+                )
+                .map_err(|_| "EC_BUILD_INCOMPLETE: build candidate insert failed".to_owned())?;
+            client
+                .update(
+                    &format!(
+                        "UPDATE {registration} SET state = 'Ready'
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid AND state = 'Registered'"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_BUILD_INCOMPLETE: registration Ready transition failed".to_owned())?;
+            Ok(())
+        })?;
+
+        Ok(candidate_digest.to_vec())
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
