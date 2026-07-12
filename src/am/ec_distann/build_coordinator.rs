@@ -335,9 +335,17 @@ impl SourceSessionLockGuard {
         // session lock while unwinding a failed SQL call is not safe across
         // backends. Successful acquisition is promoted below to retained
         // session ownership in the same source-before-control order.
-        unsafe {
-            pg_sys::LockRelationOid(source_relation_oid, pg_sys::ShareLock as pg_sys::LOCKMODE)
+        let owns_source_transaction_lock = unsafe {
+            pg_sys::ConditionalLockRelationOid(
+                source_relation_oid,
+                pg_sys::ShareLock as pg_sys::LOCKMODE,
+            )
         };
+        if !owns_source_transaction_lock {
+            return Err(
+                "EC_BUILD_BUSY: source relation is busy with a conflicting operation".to_owned(),
+            );
+        }
         let owns_control_transaction_lock = unsafe {
             pg_sys::ConditionalLockRelationOid(
                 control_index_oid,
@@ -382,6 +390,10 @@ impl SourceSessionLockGuard {
         self.retained = true;
     }
 
+    fn reacquired_after_owner_loss(&self) -> bool {
+        self.acquired
+    }
+
     fn release_after_commit(&mut self) {
         let lock = self.lock;
         schedule_lock_release_after_commit(lock);
@@ -391,6 +403,20 @@ impl SourceSessionLockGuard {
         // remains owned on abort because only the commit callback acts.
         self.retained = self.acquired;
     }
+}
+
+fn preflight_build_lock_identity(
+    index_oid: pg_sys::Oid,
+    context: &'static str,
+) -> Result<(pg_sys::Oid, Uuid), String> {
+    let (control, handle, _metadata, logical_index_uuid) = open_control_index(
+        index_oid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+        context,
+    )?;
+    let source_relation_oid = index_heap_relation_oid_handle(handle);
+    drop(control);
+    Ok((source_relation_oid, logical_index_uuid))
 }
 
 impl Drop for SourceSessionLockGuard {
@@ -1198,10 +1224,21 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
         let index_oid = index_regclass.oid();
+        drop(index_regclass);
 
-        // One frozen source MVCC snapshot for the whole build.
-        let source_snapshot = capture_source_snapshot()?;
-        let source_snapshot_digest = source_snapshot.digest()?;
+        // Match begin-build's source -> control order. A replacement backend
+        // may reacquire these locks to inspect or abort durable state, but it
+        // must not capture a new source snapshot under the old build id.
+        let (preflight_source_oid, preflight_uuid) = preflight_build_lock_identity(
+            index_oid,
+            "ec_distann_build_epoch preflight",
+        )?;
+        let mut source_lock = SourceSessionLockGuard::acquire(
+            preflight_source_oid,
+            index_oid,
+            preflight_uuid,
+            build_id,
+        )?;
 
         let (mut control, handle, metadata, logical_index_uuid) = open_control_index(
             index_oid,
@@ -1210,13 +1247,19 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         )?;
         control.retain_lock_until_transaction_end();
         let source_relation_oid = index_heap_relation_oid_handle(handle);
+        if logical_index_uuid != preflight_uuid || source_relation_oid != preflight_source_oid {
+            return Err(
+                "EC_BUILD_ID_CONFLICT: control identity changed while acquiring source lock"
+                    .to_owned(),
+            );
+        }
         let _registry_revision = lock_registry_revision(index_oid, logical_index_uuid)?;
         let row_schema = resolve_relation_schema(source_relation_oid)?.descriptor;
         let row_schema_fingerprint = row_schema.fingerprint()?;
         let compatibility_digest = control_compatibility_digest(handle, &metadata)?;
 
         // build_epoch consumes the durable registration written by begin.
-        let (registration_digest, _requires_source_lock) = replay_registration(
+        let (registration_digest, requires_source_lock) = replay_registration(
             index_oid,
             logical_index_uuid,
             build_id,
@@ -1235,30 +1278,27 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         // (FR-078:312-314, 372-373). Divergent inputs under the same build id are
         // already rejected by replay_registration above.
         let candidate_table = extension_relation_name("ec_distann_build_candidate")?;
-        let existing_candidate = Spi::connect(|client| -> Result<Option<Vec<u8>>, String> {
-            client
-                .select(
-                    &format!(
-                        "SELECT candidate_digest FROM {candidate_table}
-                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                            AND build_id = $3::uuid"
-                    ),
-                    None,
-                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
-                )
-                .map_err(|_| "EC_BUILD_STATE: candidate replay lookup failed".to_owned())?
-                .map(|row| {
-                    row["candidate_digest"]
-                        .value::<Vec<u8>>()
-                        .map_err(|_| "EC_BUILD_STATE: candidate digest decode failed".to_owned())?
-                        .ok_or_else(|| "EC_BUILD_STATE: candidate digest is NULL".to_owned())
-                })
-                .next()
-                .transpose()
-        })?;
-        if let Some(existing_candidate) = existing_candidate {
-            return Ok(existing_candidate);
+        if let Some(existing_candidate) =
+            load_build_candidate(index_oid, logical_index_uuid, build_id)?
+        {
+            if requires_source_lock {
+                source_lock.retain();
+            } else {
+                source_lock.release_after_commit();
+            }
+            return Ok(existing_candidate.digest()?.to_vec());
         }
+        if source_lock.reacquired_after_owner_loss() {
+            return Err(
+                "EC_BUILD_STATE: replacement backend cannot recapture the source snapshot under an existing build id; abort and begin a new build"
+                    .to_owned(),
+            );
+        }
+
+        // One frozen source MVCC snapshot for the whole build, captured only
+        // after the original owner proves its retained build-lock ownership.
+        let source_snapshot = capture_source_snapshot()?;
+        let source_snapshot_digest = source_snapshot.digest()?;
 
         // Reacquire the frozen roster (revision-locked so it matches registration).
         let participants = desired_participants(index_oid, logical_index_uuid)?;
@@ -1695,12 +1735,33 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
         let index_oid = index_regclass.oid();
-        let (mut control, _handle, metadata, logical_index_uuid) = open_control_index(
+        drop(index_regclass);
+        let (preflight_source_oid, preflight_uuid) = preflight_build_lock_identity(
+            index_oid,
+            "ec_distann_decide_epoch_publish preflight",
+        )?;
+        let mut source_lock = SourceSessionLockGuard::acquire(
+            preflight_source_oid,
+            index_oid,
+            preflight_uuid,
+            build_id,
+        )?;
+        let (mut control, handle, metadata, logical_index_uuid) = open_control_index(
             index_oid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
             "ec_distann_decide_epoch_publish",
         )?;
         control.retain_lock_until_transaction_end();
+        if logical_index_uuid != preflight_uuid
+            || index_heap_relation_oid_handle(handle) != preflight_source_oid
+        {
+            return Err(
+                "EC_BUILD_ID_CONFLICT: control identity changed while acquiring source lock"
+                    .to_owned(),
+            );
+        }
+        let _registry_revision = lock_registry_revision(index_oid, logical_index_uuid)?;
+        source_lock.retain();
 
         let candidate = load_build_candidate(index_oid, logical_index_uuid, build_id)?
             .ok_or_else(|| "EC_PUBLISH_DIGEST: no build candidate for this build id".to_owned())?;
@@ -1711,11 +1772,11 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
 
         let decision_table = extension_relation_name("ec_distann_publish_decision")?;
         // Exact replay: an existing decision returns the same manifest digest.
-        let existing_decision = Spi::connect(|client| -> Result<Option<Vec<u8>>, String> {
+        let existing_decision = Spi::connect(|client| -> Result<Option<(Vec<u8>, String)>, String> {
             client
                 .select(
                     &format!(
-                        "SELECT manifest_digest FROM {decision_table}
+                        "SELECT manifest_digest, decision_state FROM {decision_table}
                           WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                             AND build_id = $3::uuid"
                     ),
@@ -1723,21 +1784,28 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
                     &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
                 )
                 .map_err(|_| "EC_PUBLISH_DIGEST: decision replay lookup failed".to_owned())?
-                .map(|row| {
+                .map(|row| Ok((
                     row["manifest_digest"]
                         .value::<Vec<u8>>()
                         .map_err(|_| "EC_PUBLISH_DIGEST: decision digest decode failed".to_owned())?
-                        .ok_or_else(|| "EC_PUBLISH_DIGEST: decision digest is NULL".to_owned())
-                })
+                        .ok_or_else(|| "EC_PUBLISH_DIGEST: decision digest is NULL".to_owned())?,
+                    row["decision_state"]
+                        .value::<String>()
+                        .map_err(|_| "EC_EPOCH_STATE: decision state decode failed".to_owned())?
+                        .ok_or_else(|| "EC_EPOCH_STATE: decision state is NULL".to_owned())?,
+                )))
                 .next()
                 .transpose()
         })?;
-        if let Some(existing_decision) = existing_decision {
+        if let Some((existing_decision, decision_state)) = existing_decision {
             if existing_decision != candidate.manifest_digest.to_vec() {
                 return Err(
                     "EC_PUBLISH_DIGEST: an existing decision for this build id has a different manifest"
                         .to_owned(),
                 );
+            }
+            if decision_state == "Applied" {
+                source_lock.release_after_commit();
             }
             return Ok(existing_decision);
         }
@@ -1953,21 +2021,49 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
         let index_oid = index_regclass.oid();
-        let (mut control, _handle, _metadata, logical_index_uuid) = open_control_index(
+        drop(index_regclass);
+        let (preflight_source_oid, preflight_uuid) = preflight_build_lock_identity(
+            index_oid,
+            "ec_distann_recover_epoch_publish preflight",
+        )?;
+        let mut source_lock = SourceSessionLockGuard::acquire(
+            preflight_source_oid,
+            index_oid,
+            preflight_uuid,
+            build_id,
+        )?;
+        let (mut control, handle, _metadata, logical_index_uuid) = open_control_index(
             index_oid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
             "ec_distann_recover_epoch_publish",
         )?;
         control.retain_lock_until_transaction_end();
+        if logical_index_uuid != preflight_uuid
+            || index_heap_relation_oid_handle(handle) != preflight_source_oid
+        {
+            return Err(
+                "EC_BUILD_ID_CONFLICT: control identity changed while acquiring source lock"
+                    .to_owned(),
+            );
+        }
+        let _registry_revision = lock_registry_revision(index_oid, logical_index_uuid)?;
+        source_lock.retain();
+
+        // Every T4 transaction, including an idempotent replay, recomputes the
+        // complete candidate digest chain before consuming decision bytes.
+        let candidate = load_build_candidate(index_oid, logical_index_uuid, build_id)?
+            .ok_or_else(|| "EC_PUBLISH_DIGEST: no build candidate for recovery".to_owned())?;
+        let candidate_digest = candidate.digest()?;
 
         let decision_table = extension_relation_name("ec_distann_publish_decision")?;
         let decision = Spi::connect(
-            |client| -> Result<Option<(i64, Vec<u8>, Vec<u8>, Vec<u8>, Option<Uuid>, Vec<u8>)>, String> {
+            |client| -> Result<Option<(i64, Vec<u8>, Vec<u8>, Vec<u8>, Vec<u8>, Option<Uuid>, Vec<u8>)>, String> {
                 client
                     .select(
                         &format!(
                             "SELECT epoch, epoch_fingerprint, manifest_digest, epoch_manifest,
-                                    predecessor_build_id, successor_activation_digest
+                                    candidate_digest, predecessor_build_id,
+                                    successor_activation_digest
                                FROM {decision_table}
                               WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                                 AND build_id = $3::uuid"
@@ -1995,6 +2091,7 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                             field("epoch_fingerprint")?,
                             field("manifest_digest")?,
                             field("epoch_manifest")?,
+                            field("candidate_digest")?,
                             predecessor_build_id,
                             field("successor_activation_digest")?,
                         ))
@@ -2006,8 +2103,18 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
         .ok_or_else(|| {
             "EC_EPOCH_STATE: no durable publish decision for this build id".to_owned()
         })?;
-        let (epoch, epoch_fingerprint, manifest_digest, epoch_manifest, predecessor_build_id, _activation_digest) =
+        let (epoch, epoch_fingerprint, manifest_digest, epoch_manifest, decision_candidate_digest, predecessor_build_id, _activation_digest) =
             decision;
+        if decision_candidate_digest != candidate_digest
+            || epoch_fingerprint != candidate.epoch_fingerprint
+            || manifest_digest != candidate.manifest_digest
+            || epoch_manifest != candidate.epoch_manifest
+        {
+            return Err(
+                "EC_PUBLISH_DIGEST: publish decision differs from the validated build candidate"
+                    .to_owned(),
+            );
+        }
 
         // Read the active pointer under the control lock.
         let active_table = extension_relation_name("ec_distann_active_epoch")?;
@@ -2035,6 +2142,7 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
         match (&active_build, &predecessor_build_id) {
             // Idempotent replay: this build is already the active pointer.
             (Some(active), _) if active.as_bytes() == build_id.as_bytes() => {
+                source_lock.release_after_commit();
                 return Ok(epoch_fingerprint);
             }
             // A successor may swap only when the recorded predecessor is active.
@@ -2258,11 +2366,31 @@ fn ec_distann_abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
         let index_oid = index_regclass.oid();
-        let (_control_guard, _handle, _metadata, logical_index_uuid) = open_control_index(
+        drop(index_regclass);
+        let (preflight_source_oid, preflight_uuid) = preflight_build_lock_identity(
+            index_oid,
+            "ec_distann_abort_epoch_build preflight",
+        )?;
+        let mut source_lock = SourceSessionLockGuard::acquire(
+            preflight_source_oid,
+            index_oid,
+            preflight_uuid,
+            build_id,
+        )?;
+        let (_control_guard, handle, _metadata, logical_index_uuid) = open_control_index(
             index_oid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
             "ec_distann_abort_epoch_build",
         )?;
+        if logical_index_uuid != preflight_uuid
+            || index_heap_relation_oid_handle(handle) != preflight_source_oid
+        {
+            return Err(
+                "EC_BUILD_ID_CONFLICT: control identity changed while acquiring source lock"
+                    .to_owned(),
+            );
+        }
+        let _registry_revision = lock_registry_revision(index_oid, logical_index_uuid)?;
         let registration = extension_relation_name("ec_distann_build_registration")?;
         let binding = extension_relation_name("ec_distann_build_participant_binding")?;
 
@@ -2301,6 +2429,7 @@ fn ec_distann_abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
                 ));
             }
         }
+        source_lock.retain();
         // A build with a durable Pending/Activated publish decision cannot be
         // aborted — destroying its generation would strand the decision (there
         // is no decision-abort). Decide moves the registration to 'Decided',

@@ -2104,6 +2104,108 @@ fn test_distann_abort_epoch_build_clears_gate_and_is_idempotent() {
 }
 
 #[pg_test]
+fn test_distann_build_lock_recovery_guards() {
+    const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_LOCK_GUARDS";
+    let _env_lock = env_var_test_lock();
+    let _secret = ScopedEnvVar::set(SECRET_KEY, "host=/unused dbname=unused");
+    let conninfo = current_pg_test_loopback_conninfo();
+    let mut owner = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("owner loopback connection should open");
+    let mut replacement = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("replacement loopback connection should open");
+    let extension_schema = owner
+        .query_one(
+            "SELECT pg_catalog.quote_ident(n.nspname)
+               FROM pg_catalog.pg_extension e
+               JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+              WHERE e.extname = 'ecaz'",
+            &[],
+        )
+        .expect("extension schema should resolve")
+        .get::<_, String>(0);
+    for client in [&mut owner, &mut replacement] {
+        client
+            .batch_execute(&format!("SET search_path = {extension_schema}, public"))
+            .expect("search_path should set");
+    }
+    owner
+        .batch_execute(
+            "DROP TABLE IF EXISTS ec_distann_lg_source CASCADE;
+             CREATE TABLE ec_distann_lg_source (
+                 source_id uuid NOT NULL,
+                 embedding ecvector(4) NOT NULL
+             );
+             INSERT INTO ec_distann_lg_source VALUES
+                 ('11111111-1111-4111-8111-111111111111',
+                  encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42));
+             CREATE INDEX ec_distann_lg_idx ON ec_distann_lg_source
+                 USING ec_distann (embedding ecvector_distann_ip_ops)
+                 INCLUDE (source_id)
+                 WITH (distributed_control = true, source_identity = 'include',
+                       graph_degree = 4, neighbor_code_format = 'rabitq');
+             SELECT ec_distann_configure_participant_identity(
+                 'ec_distann_lg_idx'::regclass, 'lockguards/node-17'
+             );
+             INSERT INTO ec_distann_node_descriptor (
+                 index_oid, logical_index_uuid, roster_ordinal, node_id,
+                 endpoint_identity, conninfo_secret_name, remote_index_regclass,
+                 participant_logical_index_uuid, compatibility_digest, is_local
+             )
+             SELECT 'ec_distann_lg_idx'::regclass::oid, logical_index_uuid, 0, 17,
+                    'lockguards/node-17', 'DISTANN_LOCK_GUARDS', canonical_index_regclass,
+                    logical_index_uuid, compatibility_digest, true
+               FROM ec_distann_control_identity('ec_distann_lg_idx'::regclass)",
+        )
+        .expect("lock-guard fixture should create");
+
+    let build_id = "56565656-5656-4656-8656-565656565656";
+    owner
+        .batch_execute(&format!(
+            "SELECT ec_distann_begin_epoch_build('ec_distann_lg_idx'::regclass, 7, '{build_id}'::uuid)"
+        ))
+        .expect("owner should register and retain the build locks");
+
+    let busy = replacement
+        .batch_execute(&format!(
+            "SELECT ec_distann_build_epoch('ec_distann_lg_idx'::regclass, 7, '{build_id}'::uuid)"
+        ))
+        .expect_err("a competing backend must fail without waiting");
+    assert!(
+        busy.as_db_error()
+            .map(|error| error.message().contains("EC_BUILD_BUSY"))
+            .unwrap_or(false),
+        "competing build must fail EC_BUILD_BUSY: {busy}"
+    );
+
+    // Backend exit releases the session locks, but does not authorize a fresh
+    // source snapshot under the durable old build id.
+    drop(owner);
+    let recapture = replacement
+        .batch_execute(&format!(
+            "SELECT ec_distann_build_epoch('ec_distann_lg_idx'::regclass, 7, '{build_id}'::uuid)"
+        ))
+        .expect_err("replacement backend must not recapture the source snapshot");
+    assert!(
+        recapture
+            .as_db_error()
+            .map(|error| error.message().contains("EC_BUILD_STATE"))
+            .unwrap_or(false),
+        "replacement recapture must fail EC_BUILD_STATE: {recapture}"
+    );
+
+    // Explicit abort is the allowed pre-decision recovery action and must
+    // reacquire the same source-before-control lock pair successfully.
+    replacement
+        .batch_execute(&format!(
+            "SELECT ec_distann_abort_epoch_build('ec_distann_lg_idx'::regclass, '{build_id}'::uuid)"
+        ))
+        .expect("replacement abort should clear the gate");
+    replacement
+        .batch_execute("DROP TABLE ec_distann_lg_source CASCADE")
+        .expect("cleanup should succeed after abort commits and releases session locks");
+}
+
+#[pg_test]
 fn test_distann_build_epoch_single_node() {
     const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_BUILD_EPOCH";
     let _env_lock = env_var_test_lock();
