@@ -887,12 +887,12 @@ async fn drive_physical_fixture(
             "SELECT ec_distann_begin_epoch_build('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"
         ))
         .await?;
-    let physical_build_ms = physical_started.elapsed().as_millis();
     coordinator
         .batch_execute(&format!(
             "SELECT ec_distann_build_epoch('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"
         ))
         .await?;
+    let physical_build_ms = physical_started.elapsed().as_millis();
 
     let ready_selector =
         format!("ec_distann_generation_topology('public.dm_idx'::regclass, '{build_id}'::uuid)");
@@ -1039,21 +1039,36 @@ async fn drive_physical_fixture(
                 node.node_id
             );
         }
-        let owner_served = coordinator
-            .query_one(
-                "SELECT EXISTS (
-                     SELECT 1 FROM dm
-                      WHERE source_id = $1::text::uuid
-                      ORDER BY embedding <#> (
-                          SELECT source FROM dm WHERE source_id = $1::text::uuid
-                      ) LIMIT 1
-                 )",
-                &[&source_id],
+        let owner_plan = coordinator
+            .query(
+                "EXPLAIN (FORMAT TEXT, COSTS OFF)
+                 SELECT source_id FROM dm
+                  ORDER BY embedding <#> $1::text::real[] LIMIT 1",
+                &[&vector],
             )
             .await?
-            .get::<_, bool>(0);
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>()
+            .join("\n");
+        if !owner_plan.contains("EcDistannDistributedScan") {
+            bail!(
+                "remote-owner proof did not plan EcDistannDistributedScan for owner {}: {}",
+                node.node_id,
+                owner_plan
+            );
+        }
+        let owner_served = coordinator
+            .query_one(
+                "SELECT source_id::text FROM dm
+                  ORDER BY embedding <#> $1::text::real[] LIMIT 1",
+                &[&vector],
+            )
+            .await?
+            .get::<_, String>(0)
+            == source_id;
         crate::ecaz_println!(
-            "[distann-multicluster] physical_remote_owner node={} pass={}",
+            "[distann-multicluster] physical_remote_owner node={} custom_scan=true pass={}",
             node.node_id,
             owner_served
         );

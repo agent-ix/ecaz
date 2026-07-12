@@ -49,6 +49,7 @@ mod head_sample;
 mod identity;
 mod insert;
 mod lifecycle_wire;
+mod lifecycle_guard;
 mod manifest_v2;
 mod node_registry;
 mod options;

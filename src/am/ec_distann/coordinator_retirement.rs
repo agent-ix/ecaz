@@ -425,6 +425,8 @@ fn decide_retirement(
 
 #[pg_extern(name = "ec_distann_retire_epoch", volatile, strict)]
 fn ec_distann_retire_physical_epoch(index_regclass: PgRelation, epoch_fingerprint: Vec<u8>) {
+    super::lifecycle_guard::require_read_committed("ec_distann_retire_epoch")
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
     let index_oid = index_regclass.oid();
     drop(index_regclass);
     decide_retirement(index_oid, epoch_fingerprint, false, "normal".to_owned())
@@ -437,6 +439,8 @@ fn ec_distann_force_retire_physical_epoch(
     epoch_fingerprint: Vec<u8>,
     reason: String,
 ) {
+    super::lifecycle_guard::require_read_committed("ec_distann_force_retire_epoch")
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
     let index_oid = index_regclass.oid();
     drop(index_regclass);
     decide_retirement(index_oid, epoch_fingerprint, true, reason)
@@ -448,11 +452,13 @@ struct RecoveryDecision {
     decision: Vec<u8>,
     digest: Vec<u8>,
     state: String,
+    xmin: u32,
 }
 
 #[pg_extern(volatile, strict)]
 fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint: Vec<u8>) {
     (|| -> Result<(), String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_recover_epoch_retire")?;
         let fingerprint: [u8; 34] = fixed(epoch_fingerprint, "epoch fingerprint")?;
         DistannEpochFingerprint::decode(&fingerprint)?;
         let index_oid = index_regclass.oid();
@@ -468,7 +474,8 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
             client
                 .update(
                     &format!(
-                        "SELECT build_id, retire_decision, retire_decision_digest, decision_state
+                        "SELECT build_id, retire_decision, retire_decision_digest, decision_state,
+                                xmin::text AS decision_xmin
                            FROM {retire}
                           WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                             AND epoch_fingerprint = $3::bytea
@@ -504,6 +511,20 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                             .value::<String>()
                             .map_err(|_| "EC_EPOCH_STATE: retire state decode failed".to_owned())?
                             .ok_or_else(|| "EC_EPOCH_STATE: retire state is NULL".to_owned())?,
+                        xmin: row["decision_xmin"]
+                            .value::<String>()
+                            .map_err(|_| {
+                                "EC_TRANSACTION_BOUNDARY: retire decision xmin decode failed"
+                                    .to_owned()
+                            })?
+                            .ok_or_else(|| {
+                                "EC_TRANSACTION_BOUNDARY: retire decision xmin is NULL".to_owned()
+                            })?
+                            .parse::<u32>()
+                            .map_err(|_| {
+                                "EC_TRANSACTION_BOUNDARY: retire decision xmin is invalid"
+                                    .to_owned()
+                            })?,
                     })
                 })
                 .next()
@@ -512,6 +533,14 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                     "EC_EPOCH_STATE: no durable retire decision for fingerprint".to_owned()
                 })
         })?;
+        if unsafe {
+            pg_sys::TransactionIdIsCurrentTransactionId(pg_sys::TransactionId::from(stored.xmin))
+        } {
+            return Err(
+                "EC_TRANSACTION_BOUNDARY: retire decision must commit before recovery begins"
+                    .to_owned(),
+            );
+        }
         if stored.state == "Applied" {
             return Ok(());
         }

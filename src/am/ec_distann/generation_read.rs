@@ -674,6 +674,13 @@ fn active_generation_identity(
 
 impl PhysicalGenerationScan {
     pub(crate) fn open(index_oid: pg_sys::Oid) -> Result<Self, String> {
+        match Self::open_once(index_oid) {
+            Err(error) if error.starts_with("EC_EPOCH_MISMATCH:") => Self::open_once(index_oid),
+            result => result,
+        }
+    }
+
+    fn open_once(index_oid: pg_sys::Oid) -> Result<Self, String> {
         let (control, _handle, _metadata, logical_index_uuid) =
             super::generation_store::open_control_index(
                 index_oid,
@@ -685,7 +692,7 @@ impl PhysicalGenerationScan {
         // Resolve, pin, then revalidate. If activation changes between the
         // first read and registration, the exact old fingerprint is pinned
         // before its relations can retire; the second read rejects the stale
-        // attempt and executor-level restart can resolve the successor.
+        // attempt and the bounded open() retry above resolves the successor.
         let first = active_generation_identity(index_oid, logical_index_uuid)?
             .ok_or_else(|| "EC_GENERATION_MISSING: logical index has no active epoch".to_owned())?;
         let scan_token =

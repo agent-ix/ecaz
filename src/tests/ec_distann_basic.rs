@@ -2814,6 +2814,28 @@ fn test_distann_multi_epoch_publish() {
         .try_into()
         .expect("epoch fingerprint must be 34 bytes");
 
+    // PostgreSQL ERROR bypasses Rust Drop. The transaction/subtransaction
+    // callback must release the exact token when the failed statement's
+    // subtransaction is rolled back, or a pooled backend would pin this
+    // generation forever.
+    let scan_abort = expect_pg_error_rolled_back(|| {
+        let _token = crate::am::ec_distann::ScanTokenGuardForTest::register(
+            logical_index_uuid,
+            predecessor_fingerprint,
+        )
+        .expect("scan token should register before injected ERROR");
+        pgrx::error!("EC_FAULT_INJECTED: scan abort after registration");
+    });
+    assert!(scan_abort.contains("EC_FAULT_INJECTED"));
+    assert_eq!(
+        crate::am::ec_distann::live_scan_token_count_for_test(
+            logical_index_uuid,
+            predecessor_fingerprint,
+        ),
+        Ok(0),
+        "subtransaction abort must release a token whose Rust guard was skipped"
+    );
+
     // Normal retirement observes the exact local registry under the same
     // logical-index fence. Rejection must leave no durable decision.
     let scan_pin = crate::am::ec_distann::ScanTokenGuardForTest::register(
@@ -3099,6 +3121,107 @@ fn test_distann_multi_epoch_publish() {
             .unwrap_or(false),
         "conflicting abandonment must be classified: {conflicting_abandon}"
     );
+
+    // A pre-activation successor loss has an audited terminal escape hatch.
+    // Cancellation preserves the exact active predecessor and durable
+    // fingerprint registration, but clears the build gate for a later epoch.
+    let cancelled = "49494949-4949-4949-8949-494949494949";
+    prepare_epoch(&mut client, 11, cancelled);
+    client
+        .batch_execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
+        .expect("repeatable-read cancellation probe should begin");
+    let isolation_error = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_cancel_epoch_publish(
+                 'ec_distann_me_idx'::regclass, '{cancelled}'::uuid,
+                 'successor participant permanently unavailable'
+             )"
+        ))
+        .expect_err("lifecycle mutation outside READ COMMITTED must fail");
+    assert!(
+        isolation_error
+            .as_db_error()
+            .map(|error| error.message().contains("EC_TRANSACTION_ISOLATION"))
+            .unwrap_or(false),
+        "isolation failure must be classified: {isolation_error}"
+    );
+    client
+        .batch_execute("ROLLBACK")
+        .expect("repeatable-read cancellation probe should roll back");
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_cancel_epoch_publish(
+                 'ec_distann_me_idx'::regclass, '{cancelled}'::uuid,
+                 'successor participant permanently unavailable'
+             )"
+        ))
+        .expect("Pending cancellation should commit");
+    let cancellation = client
+        .query_one(
+            &format!(
+                "SELECT d.decision_state, r.state, d.cancelled_by = session_user,
+                        d.cancellation_reason,
+                        a.build_id::text,
+                        ec_distann_build_gate_relation_mask(
+                            'ec_distann_me_source'::regclass::oid)
+                   FROM ec_distann_publish_decision d
+                   JOIN ec_distann_build_registration r USING
+                        (index_oid, logical_index_uuid, build_id)
+                   JOIN ec_distann_active_epoch a USING
+                        (index_oid, logical_index_uuid)
+                  WHERE d.index_oid = 'ec_distann_me_idx'::regclass::oid
+                    AND d.build_id = '{cancelled}'::uuid"
+            ),
+            &[],
+        )
+        .expect("cancellation audit should remain queryable");
+    assert_eq!(cancellation.get::<_, String>(0), "Cancelled");
+    assert_eq!(cancellation.get::<_, String>(1), "Cancelled");
+    assert!(cancellation.get::<_, bool>(2));
+    assert_eq!(
+        cancellation.get::<_, String>(3),
+        "successor participant permanently unavailable"
+    );
+    assert_eq!(
+        cancellation.get::<_, String>(4),
+        fourth,
+        "cancellation must preserve the exact active predecessor"
+    );
+    assert_eq!(cancellation.get::<_, i32>(5), 0, "cancellation clears the gate");
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_cancel_epoch_publish(
+                 'ec_distann_me_idx'::regclass, '{cancelled}'::uuid,
+                 'successor participant permanently unavailable'
+             )"
+        ))
+        .expect("exact cancellation replay should succeed");
+    let recovery_after_cancel = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_epoch_publish(
+                 'ec_distann_me_idx'::regclass, '{cancelled}'::uuid)"
+        ))
+        .expect_err("cancelled decision must never activate");
+    assert!(
+        recovery_after_cancel
+            .as_db_error()
+            .map(|error| error.message().contains("EC_PUBLISH_CANCEL"))
+            .unwrap_or(false),
+        "cancelled recovery must fail closed: {recovery_after_cancel}"
+    );
+    let after_cancel = "4a4a4a4a-4a4a-4a4a-8a4a-4a4a4a4a4a4b";
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 'ec_distann_me_idx'::regclass, 12, '{after_cancel}'::uuid)"
+        ))
+        .expect("a cancelled decision must not wedge the next build");
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_abort_epoch_build(
+                 'ec_distann_me_idx'::regclass, '{after_cancel}'::uuid)"
+        ))
+        .expect("post-cancellation build should remain abortable");
 
     client
         .batch_execute("DROP TABLE IF EXISTS ec_distann_me_source CASCADE")

@@ -182,6 +182,7 @@ fn ec_distann_publish_generation(
     manifest_digest: Vec<u8>,
 ) -> Vec<u8> {
     (|| -> Result<Vec<u8>, String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_publish_epoch")?;
         validate_build_id(build_id)?;
         let manifest_digest =
             fixed_digest(manifest_digest, "manifest digest", "EC_PUBLISH_DIGEST")?;
@@ -406,6 +407,7 @@ fn ec_distann_mark_epoch_retired(
     successor_activation_digest: Vec<u8>,
 ) {
     (|| -> Result<(), String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_mark_epoch_retired")?;
         let supplied_digest = fixed_digest(
             successor_activation_digest,
             "successor activation digest",
@@ -614,6 +616,7 @@ fn ec_distann_apply_epoch_retire(
     retire_decision_digest: Vec<u8>,
 ) {
     (|| -> Result<(), String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_apply_epoch_retire")?;
         let supplied_digest = fixed_digest(
             retire_decision_digest,
             "retire decision digest",

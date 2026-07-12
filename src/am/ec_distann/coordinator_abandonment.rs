@@ -127,6 +127,7 @@ fn ec_distann_abandon_predecessor_binding(
     reason: String,
 ) {
     (|| -> Result<(), String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_abandon_predecessor_binding")?;
         let ordinal = u32::try_from(predecessor_roster_ordinal).map_err(|_| {
             "EC_PREDECESSOR_ABANDON: predecessor roster ordinal is negative".to_owned()
         })?;

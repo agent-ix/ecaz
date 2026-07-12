@@ -37,6 +37,8 @@ thread_local! {
     static EXIT_CALLBACK_REGISTERED: Cell<bool> = const { Cell::new(false) };
     static XACT_FENCE_REFERENCES: RefCell<Vec<XactFenceReference>> = const { RefCell::new(Vec::new()) };
     static NEXT_XACT_FENCE_ID: Cell<u64> = const { Cell::new(1) };
+    static XACT_SCAN_TOKENS: RefCell<Vec<XactScanToken>> = const { RefCell::new(Vec::new()) };
+    static NEXT_XACT_SCAN_TOKEN_ID: Cell<u64> = const { Cell::new(1) };
 }
 
 #[repr(C)]
@@ -1491,6 +1493,7 @@ pub(crate) fn release_scan_token(
 /// the logical-index shared fence; normal executor shutdown releases eagerly,
 /// while abrupt backend death remains covered by the shared registry reaper.
 pub(crate) struct ScanTokenGuard {
+    tracking_id: u64,
     logical_index_uuid: Uuid,
     epoch_fingerprint: [u8; 34],
     scan_token: Uuid,
@@ -1526,7 +1529,9 @@ impl ScanTokenGuard {
                 .map_err(|error| (error, None))
         })
         .map_err(|error| (error, None))??;
+        let tracking_id = track_scan_token(logical_index_uuid, epoch_fingerprint, scan_token);
         Ok(Self {
+            tracking_id,
             logical_index_uuid,
             epoch_fingerprint,
             scan_token,
@@ -1540,6 +1545,7 @@ impl ScanTokenGuard {
             self.epoch_fingerprint,
             self.scan_token,
         )?;
+        remove_tracked_scan_token(self.tracking_id, false);
         self.active = false;
         Ok(released)
     }
@@ -1550,13 +1556,106 @@ impl Drop for ScanTokenGuard {
         if !self.active {
             return;
         }
-        let _ = release_scan_token(
+        let released = release_scan_token(
             self.logical_index_uuid,
             self.epoch_fingerprint,
             self.scan_token,
         );
+        if let Err(error) = released {
+            pgrx::warning!(
+                "ec_distann scan-token eager release failed; transaction cleanup will retry: {}",
+                error.stable_message()
+            );
+            return;
+        }
+        remove_tracked_scan_token(self.tracking_id, false);
         self.active = false;
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct XactScanToken {
+    id: u64,
+    pending_subid: pg_sys::SubTransactionId,
+    logical_index_uuid: Uuid,
+    epoch_fingerprint: [u8; 34],
+    scan_token: Uuid,
+}
+
+fn remove_tracked_scan_token(id: u64, release: bool) {
+    let entry = XACT_SCAN_TOKENS.with(|tokens| {
+        let mut tokens = tokens.borrow_mut();
+        tokens
+            .iter()
+            .position(|entry| entry.id == id)
+            .map(|position| tokens.remove(position))
+    });
+    if release {
+        if let Some(entry) = entry {
+            let _ = release_scan_token(
+                entry.logical_index_uuid,
+                entry.epoch_fingerprint,
+                entry.scan_token,
+            );
+        }
+    }
+}
+
+fn track_scan_token(
+    logical_index_uuid: Uuid,
+    epoch_fingerprint: [u8; 34],
+    scan_token: Uuid,
+) -> u64 {
+    let id = NEXT_XACT_SCAN_TOKEN_ID.with(|next| {
+        let id = next.get();
+        next.set(id.checked_add(1).expect("scan-token callback id exhausted"));
+        id
+    });
+    let pending_subid = unsafe { pg_sys::GetCurrentSubTransactionId() };
+    XACT_SCAN_TOKENS.with(|tokens| {
+        tokens.borrow_mut().push(XactScanToken {
+            id,
+            pending_subid,
+            logical_index_uuid,
+            epoch_fingerprint,
+            scan_token,
+        });
+    });
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
+        remove_tracked_scan_token(id, true);
+    });
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
+        remove_tracked_scan_token(id, true);
+    });
+    pgrx::register_subxact_callback(
+        pgrx::PgSubXactCallbackEvent::CommitSub,
+        move |my_subid, parent_subid| {
+            XACT_SCAN_TOKENS.with(|tokens| {
+                if let Some(entry) = tokens
+                    .borrow_mut()
+                    .iter_mut()
+                    .find(|entry| entry.id == id && entry.pending_subid == my_subid)
+                {
+                    entry.pending_subid = parent_subid;
+                }
+            });
+        },
+    );
+    pgrx::register_subxact_callback(
+        pgrx::PgSubXactCallbackEvent::AbortSub,
+        move |my_subid, _parent_subid| {
+            let remove = XACT_SCAN_TOKENS.with(|tokens| {
+                tokens
+                    .borrow()
+                    .iter()
+                    .any(|entry| entry.id == id && entry.pending_subid == my_subid)
+            });
+            if remove {
+                remove_tracked_scan_token(id, true);
+            }
+        },
+    );
+    id
 }
 
 pub(crate) fn live_token_count_for_fingerprint(
@@ -1675,6 +1774,9 @@ fn drop_after_confirmed_lock_release<T>(value: T, released: bool) {
     if released {
         drop(value);
     } else {
+        pgrx::warning!(
+            "ec_distann retirement fence lock release was not confirmed; retaining its shared-memory reference"
+        );
         std::mem::forget(value);
     }
 }

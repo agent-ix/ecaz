@@ -54,7 +54,7 @@ async fn lifecycle_client<'a>(
         .unwrap_or(true);
     if needs_connect {
         let config = conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
-            format!("EC_BUILD_INCOMPLETE: could not parse participant conninfo {conninfo:?}")
+            "EC_BUILD_INCOMPLETE: could not parse participant connection descriptor".to_owned()
         })?;
         let (client, connection) = config.connect(NoTls).await.map_err(|error| {
             format!("EC_BUILD_INCOMPLETE: could not connect to participant: {error}")
@@ -598,15 +598,12 @@ pub(super) fn remote_expand_batch(
                             .conninfo
                             .parse::<tokio_postgres::Config>()
                             .map_err(|_| {
-                                format!(
-                                    "ec_distann remote transport could not parse conninfo {:?}",
-                                    request.conninfo
-                                )
+                                "ec_distann remote transport could not parse connection descriptor"
+                                    .to_owned()
                             })?;
                     let (client, connection) = config.connect(NoTls).await.map_err(|error| {
                         format!(
-                            "ec_distann remote transport could not connect to {:?}: {error}",
-                            request.conninfo
+                            "ec_distann remote transport could not connect to participant: {error}"
                         )
                     })?;
                     let task = tokio::spawn(async move {
@@ -813,15 +810,12 @@ pub(super) fn remote_materialize_row_payloads_batch(
                             .conninfo
                             .parse::<tokio_postgres::Config>()
                             .map_err(|_| {
-                                format!(
-                                    "ec_distann remote transport could not parse conninfo {:?}",
-                                    request.conninfo
-                                )
+                                "ec_distann remote transport could not parse connection descriptor"
+                                    .to_owned()
                             })?;
                     let (client, connection) = config.connect(NoTls).await.map_err(|error| {
                         format!(
-                            "ec_distann remote transport could not connect to {:?}: {error}",
-                            request.conninfo
+                            "ec_distann remote transport could not connect to participant: {error}"
                         )
                     })?;
                     let task = tokio::spawn(async move {

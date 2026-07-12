@@ -434,7 +434,10 @@ CREATE TABLE ec_distann_build_registration (
     ),
     epoch bigint NOT NULL CHECK (epoch > 0),
     state text NOT NULL CHECK (
-        state IN ('Registered', 'Building', 'Ready', 'Aborted', 'Decided', 'Published')
+        state IN (
+            'Registered', 'Building', 'Ready', 'Aborted', 'Decided',
+            'Published', 'Cancelled'
+        )
     ),
     registry_revision bigint NOT NULL CHECK (registry_revision >= 0),
     roster_snapshot bytea NOT NULL CHECK (octet_length(roster_snapshot) > 0),
@@ -595,11 +598,14 @@ CREATE TABLE ec_distann_publish_decision (
         octet_length(successor_activation_digest) = 32
     ),
     decision_state text NOT NULL CHECK (
-        decision_state IN ('Pending', 'Activated', 'Applied')
+        decision_state IN ('Pending', 'Activated', 'Applied', 'Cancelled')
     ),
     committed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     activated_at timestamptz,
     applied_at timestamptz,
+    cancelled_at timestamptz,
+    cancelled_by text,
+    cancellation_reason text,
     CHECK (
         (predecessor_build_id IS NULL AND predecessor_epoch IS NULL
          AND predecessor_epoch_fingerprint IS NULL
@@ -612,8 +618,19 @@ CREATE TABLE ec_distann_publish_decision (
          AND octet_length(predecessor_epoch_fingerprint) = 34
          AND octet_length(predecessor_manifest_digest) = 32)
     ),
-    CHECK ((decision_state = 'Pending') = (activated_at IS NULL)),
+    CHECK ((decision_state IN ('Pending', 'Cancelled')) = (activated_at IS NULL)),
     CHECK ((decision_state = 'Applied') = (applied_at IS NOT NULL)),
+    CHECK (
+        (decision_state = 'Cancelled'
+         AND cancelled_at IS NOT NULL
+         AND cancelled_by IS NOT NULL AND length(cancelled_by) > 0
+         AND cancellation_reason IS NOT NULL
+         AND octet_length(cancellation_reason) BETWEEN 1 AND 1024)
+        OR
+        (decision_state <> 'Cancelled'
+         AND cancelled_at IS NULL AND cancelled_by IS NULL
+         AND cancellation_reason IS NULL)
+    ),
     PRIMARY KEY (index_oid, logical_index_uuid, build_id),
     UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint),
     UNIQUE (
@@ -1250,7 +1267,7 @@ CREATE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event()
 RETURNS event_trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, @extschema@
+SET search_path = pg_catalog, @extschema@, pg_temp
 AS $$
 DECLARE
     dropped_object record;
@@ -1277,7 +1294,7 @@ CREATE FUNCTION ec_distann_catalog_drop_index_cleanup_event()
 RETURNS event_trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = pg_catalog, @extschema@
+SET search_path = pg_catalog, @extschema@, pg_temp
 AS $$
 DECLARE
     dropped_object record;

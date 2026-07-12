@@ -187,7 +187,7 @@ stores source OID and enforces one gate-active build; candidate rows byte-bind
 registration/spec/descriptor/snapshot/receipt/manifest identities; generation
 rows persist descriptor-v2 coordinator identity, Published manifest/fingerprint,
 and successor-retirement marker; publish decisions carry predecessor identity
-and Pending/Activated/Applied progress; retire decisions carry canonical bytes,
+and Pending/Activated/Applied or audited terminal Cancelled progress; retire decisions carry canonical bytes,
 target build/epoch/private roster, and Pending/Applied progress; reclaim
 tombstones retain exact status/replay fields after relation deletion. One
 predecessor-disposition row per immutable binding records Pending, exact
@@ -341,7 +341,11 @@ candidate digest chain over the stored canonical bytes before consuming it.
 
 The successor publish decision stores its all-or-none predecessor build/epoch/
 fingerprint/manifest tuple, canonical activation marker, and
-Pending→Activated→Applied phase. Participant generations persist the published
+Pending→Activated→Applied phase. An operator-only Pending→Cancelled CAS verifies
+that exact predecessor is still active, records caller/reason/time, clears the
+build gate without deleting the durable fingerprint registration, and leaves
+any partially Published successor storage non-routable until audited forced
+orphan retirement. Participant generations persist the published
 manifest/fingerprint and exact successor marker. Retire apply leaves an
 immutable `ec_distann_generation_reclaim` tombstone carrying canonical decision
 bytes and status fields.

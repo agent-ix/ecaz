@@ -710,6 +710,7 @@ fn ec_distann_begin_epoch_handoff(
     ),
 > {
     let result = (|| -> Result<GenerationCatalogRow, String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_begin_epoch_handoff")?;
         if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
@@ -815,6 +816,7 @@ fn ec_distann_begin_epoch_handoff(
 #[pg_extern(volatile, strict, parallel_restricted)]
 fn ec_distann_abort_epoch_handoff(index_regclass: PgRelation, build_id: Uuid) {
     let result = (|| -> Result<(), String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_abort_epoch_handoff")?;
         if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }

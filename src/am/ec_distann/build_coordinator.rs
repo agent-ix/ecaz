@@ -929,6 +929,7 @@ fn replay_registration(
 #[pg_extern(volatile, strict)]
 fn ec_distann_begin_epoch_build(index_regclass: PgRelation, epoch: i64, build_id: Uuid) -> Vec<u8> {
     (|| -> Result<Vec<u8>, String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_begin_epoch_build")?;
         super::build_gate::require_shared_preload()?;
         super::build_gate::lock_global_gate_serialization(false)?;
         let epoch = u64::try_from(epoch)
@@ -1215,6 +1216,7 @@ fn capture_source_snapshot() -> Result<DistannSourceSnapshot, String> {
 #[pg_extern(volatile, strict)]
 fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid) -> Vec<u8> {
     (|| -> Result<Vec<u8>, String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_build_epoch")?;
         super::build_gate::require_shared_preload()?;
         let epoch_u64 = u64::try_from(epoch)
             .ok()
@@ -1793,6 +1795,7 @@ pub(crate) fn load_build_candidate(
 #[pg_extern(volatile, strict)]
 fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -> Vec<u8> {
     (|| -> Result<Vec<u8>, String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_decide_epoch_publish")?;
         if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
@@ -1863,6 +1866,12 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
             if existing_decision != candidate.manifest_digest.to_vec() {
                 return Err(
                     "EC_PUBLISH_DIGEST: an existing decision for this build id has a different manifest"
+                        .to_owned(),
+                );
+            }
+            if decision_state == "Cancelled" {
+                return Err(
+                    "EC_PUBLISH_CANCEL: cancelled publish decision cannot be decided again"
                         .to_owned(),
                 );
             }
@@ -2069,6 +2078,292 @@ fn ec_distann_decide_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -
     .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
+/// Cancel a committed publish decision before activation.  The active pointer
+/// must still name the decision's exact predecessor (or remain absent for a
+/// first epoch), so cancellation cannot roll back an activation.  The durable
+/// decision and its fingerprint remain registered for audit and orphan
+/// cleanup, while the registration moves to a terminal state that clears the
+/// logical-index build gate.
+#[pg_extern(volatile, strict)]
+fn ec_distann_cancel_epoch_publish(
+    index_regclass: PgRelation,
+    build_id: Uuid,
+    reason: String,
+) {
+    (|| -> Result<(), String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_cancel_epoch_publish")?;
+        if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
+            return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
+        }
+        if !(1..=1024).contains(&reason.len()) {
+            return Err(
+                "EC_PUBLISH_CANCEL: cancellation reason must contain 1 to 1024 bytes".to_owned(),
+            );
+        }
+
+        let index_oid = index_regclass.oid();
+        drop(index_regclass);
+        let (preflight_source_oid, preflight_uuid) = preflight_build_lock_identity(
+            index_oid,
+            "ec_distann_cancel_epoch_publish preflight",
+        )?;
+        let mut source_lock = SourceSessionLockGuard::acquire(
+            preflight_source_oid,
+            index_oid,
+            preflight_uuid,
+            build_id,
+        )?;
+        let (mut control, handle, _metadata, logical_index_uuid) = open_control_index(
+            index_oid,
+            pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+            "ec_distann_cancel_epoch_publish",
+        )?;
+        control.retain_lock_until_transaction_end();
+        if logical_index_uuid != preflight_uuid
+            || index_heap_relation_oid_handle(handle) != preflight_source_oid
+        {
+            return Err(
+                "EC_BUILD_ID_CONFLICT: control identity changed while acquiring source lock"
+                    .to_owned(),
+            );
+        }
+        let _registry_revision = lock_registry_revision(index_oid, logical_index_uuid)?;
+
+        type CancelTarget = (
+            String,
+            Option<Uuid>,
+            Option<i64>,
+            Option<Vec<u8>>,
+            Option<Vec<u8>>,
+            u32,
+            Option<String>,
+        );
+        let decision_table = extension_relation_name("ec_distann_publish_decision")?;
+        let target = Spi::connect_mut(|client| -> Result<Option<CancelTarget>, String> {
+            client
+                .update(
+                    &format!(
+                        "SELECT decision_state, predecessor_build_id, predecessor_epoch,
+                                predecessor_epoch_fingerprint, predecessor_manifest_digest,
+                                xmin::text AS decision_xmin, cancellation_reason
+                           FROM {decision_table}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid
+                          FOR UPDATE"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|error| {
+                    format!("EC_PUBLISH_CANCEL: publish decision lookup failed: {error}")
+                })?
+                .map(|row| {
+                    let state = row["decision_state"]
+                        .value::<String>()
+                        .map_err(|_| "EC_PUBLISH_CANCEL: decision state decode failed".to_owned())?
+                        .ok_or_else(|| "EC_PUBLISH_CANCEL: decision state is NULL".to_owned())?;
+                    let xmin = row["decision_xmin"]
+                        .value::<String>()
+                        .map_err(|_| {
+                            "EC_TRANSACTION_BOUNDARY: publish decision xmin decode failed"
+                                .to_owned()
+                        })?
+                        .ok_or_else(|| {
+                            "EC_TRANSACTION_BOUNDARY: publish decision xmin is NULL".to_owned()
+                        })?
+                        .parse::<u32>()
+                        .map_err(|_| {
+                            "EC_TRANSACTION_BOUNDARY: publish decision xmin is invalid".to_owned()
+                        })?;
+                    Ok((
+                        state,
+                        row["predecessor_build_id"].value::<Uuid>().map_err(|_| {
+                            "EC_PUBLISH_CANCEL: predecessor build id decode failed".to_owned()
+                        })?,
+                        row["predecessor_epoch"].value::<i64>().map_err(|_| {
+                            "EC_PUBLISH_CANCEL: predecessor epoch decode failed".to_owned()
+                        })?,
+                        row["predecessor_epoch_fingerprint"]
+                            .value::<Vec<u8>>()
+                            .map_err(|_| {
+                                "EC_PUBLISH_CANCEL: predecessor fingerprint decode failed"
+                                    .to_owned()
+                            })?,
+                        row["predecessor_manifest_digest"]
+                            .value::<Vec<u8>>()
+                            .map_err(|_| {
+                                "EC_PUBLISH_CANCEL: predecessor manifest decode failed".to_owned()
+                            })?,
+                        xmin,
+                        row["cancellation_reason"].value::<String>().map_err(|_| {
+                            "EC_PUBLISH_CANCEL: cancellation reason decode failed".to_owned()
+                        })?,
+                    ))
+                })
+                .next()
+                .transpose()
+        })?
+        .ok_or_else(|| "EC_PUBLISH_CANCEL: publish decision does not exist".to_owned())?;
+        let (state, predecessor_build, predecessor_epoch, predecessor_fingerprint,
+            predecessor_manifest, decision_xmin, existing_reason) = target;
+        if unsafe {
+            pg_sys::TransactionIdIsCurrentTransactionId(pg_sys::TransactionId::from(decision_xmin))
+        } {
+            return Err(
+                "EC_TRANSACTION_BOUNDARY: publish decision must commit before cancellation begins"
+                    .to_owned(),
+            );
+        }
+        if state == "Cancelled" {
+            if existing_reason.as_deref() != Some(reason.as_str()) {
+                return Err("EC_PUBLISH_CANCEL: conflicting cancellation replay".to_owned());
+            }
+            source_lock.release_after_commit();
+            return Ok(());
+        }
+        if state != "Pending" {
+            return Err(format!(
+                "EC_PUBLISH_CANCEL: only a Pending decision can be cancelled; state is {state}"
+            ));
+        }
+
+        let active_table = extension_relation_name("ec_distann_active_epoch")?;
+        let active = Spi::connect_mut(
+            |client| -> Result<Option<(Uuid, i64, Vec<u8>, Vec<u8>)>, String> {
+                client
+                    .update(
+                        &format!(
+                            "SELECT build_id, epoch, epoch_fingerprint, manifest_digest
+                               FROM {active_table}
+                              WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                              FOR UPDATE"
+                        ),
+                        None,
+                        &[index_oid.into(), logical_index_uuid.into()],
+                    )
+                    .map_err(|error| {
+                        format!("EC_PUBLISH_CANCEL: active pointer lookup failed: {error}")
+                    })?
+                    .map(|row| {
+                        Ok((
+                            row["build_id"]
+                                .value::<Uuid>()
+                                .map_err(|_| {
+                                    "EC_PUBLISH_CANCEL: active build id decode failed".to_owned()
+                                })?
+                                .ok_or_else(|| {
+                                    "EC_PUBLISH_CANCEL: active build id is NULL".to_owned()
+                                })?,
+                            row["epoch"]
+                                .value::<i64>()
+                                .map_err(|_| {
+                                    "EC_PUBLISH_CANCEL: active epoch decode failed".to_owned()
+                                })?
+                                .ok_or_else(|| {
+                                    "EC_PUBLISH_CANCEL: active epoch is NULL".to_owned()
+                                })?,
+                            row["epoch_fingerprint"]
+                                .value::<Vec<u8>>()
+                                .map_err(|_| {
+                                    "EC_PUBLISH_CANCEL: active fingerprint decode failed"
+                                        .to_owned()
+                                })?
+                                .ok_or_else(|| {
+                                    "EC_PUBLISH_CANCEL: active fingerprint is NULL".to_owned()
+                                })?,
+                            row["manifest_digest"]
+                                .value::<Vec<u8>>()
+                                .map_err(|_| {
+                                    "EC_PUBLISH_CANCEL: active manifest decode failed".to_owned()
+                                })?
+                                .ok_or_else(|| {
+                                    "EC_PUBLISH_CANCEL: active manifest is NULL".to_owned()
+                                })?,
+                        ))
+                    })
+                    .next()
+                    .transpose()
+            },
+        )?;
+        let predecessor_still_active = match (
+            active,
+            predecessor_build,
+            predecessor_epoch,
+            predecessor_fingerprint,
+            predecessor_manifest,
+        ) {
+            (None, None, None, None, None) => true,
+            (Some((active_build, active_epoch, active_fingerprint, active_manifest)),
+             Some(predecessor_build), Some(predecessor_epoch),
+             Some(predecessor_fingerprint), Some(predecessor_manifest)) => {
+                active_build == predecessor_build
+                    && active_epoch == predecessor_epoch
+                    && active_fingerprint == predecessor_fingerprint
+                    && active_manifest == predecessor_manifest
+            }
+            _ => false,
+        };
+        if !predecessor_still_active {
+            return Err(
+                "EC_PUBLISH_CANCEL: active pointer no longer matches the decision predecessor"
+                    .to_owned(),
+            );
+        }
+
+        let registration = extension_relation_name("ec_distann_build_registration")?;
+        Spi::connect_mut(|client| -> Result<(), String> {
+            let cancelled = client
+                .update(
+                    &format!(
+                        "UPDATE {decision_table}
+                            SET decision_state = 'Cancelled',
+                                cancelled_at = clock_timestamp(),
+                                cancelled_by = session_user::text,
+                                cancellation_reason = $4::text
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid AND decision_state = 'Pending'
+                          RETURNING 1"
+                    ),
+                    None,
+                    &[
+                        index_oid.into(), logical_index_uuid.into(), build_id.into(), reason.into(),
+                    ],
+                )
+                .map_err(|error| {
+                    format!("EC_PUBLISH_CANCEL: decision cancellation failed: {error}")
+                })?
+                .len();
+            if cancelled != 1 {
+                return Err("EC_PUBLISH_CANCEL: decision changed concurrently".to_owned());
+            }
+            let terminal = client
+                .update(
+                    &format!(
+                        "UPDATE {registration} SET state = 'Cancelled'
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid AND state = 'Decided'
+                          RETURNING 1"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|error| {
+                    format!("EC_PUBLISH_CANCEL: registration cancellation failed: {error}")
+                })?
+                .len();
+            if terminal != 1 {
+                return Err(
+                    "EC_PUBLISH_CANCEL: registration was not Decided at cancellation".to_owned(),
+                );
+            }
+            Ok(())
+        })?;
+        source_lock.release_after_commit();
+        Ok(())
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+}
+
 /// Recover/publish a decided epoch (T4a, FR-082:604-645): publish the local
 /// participant, compare-and-swap the active pointer to the successor, transition
 /// the decision and registration to their published terminal states, and release
@@ -2231,6 +2526,7 @@ fn recover_predecessor_retirement(
 #[pg_extern(volatile, strict)]
 fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) -> Vec<u8> {
     (|| -> Result<Vec<u8>, String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_recover_epoch_publish")?;
         if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
@@ -2338,6 +2634,11 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
             return Err(
                 "EC_TRANSACTION_BOUNDARY: publish decision must commit before recovery begins"
                     .to_owned(),
+            );
+        }
+        if decision_state == "Cancelled" {
+            return Err(
+                "EC_PUBLISH_CANCEL: cancelled publish decision cannot be recovered".to_owned(),
             );
         }
         if decision_candidate_digest != candidate_digest
@@ -2660,6 +2961,7 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
 #[pg_extern(volatile, strict)]
 fn ec_distann_abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
     (|| -> Result<(), String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_abort_epoch_build")?;
         if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }

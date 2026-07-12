@@ -338,7 +338,11 @@ parent.
   a remote transaction committed. A participant validates the marker digest,
   its exact predecessor generation identity, and the coordinator UUID captured
   for that build before mutation.
-- A successor decision transitions `Pending → Activated → Applied`. `Pending`
+- A successor decision normally transitions `Pending → Activated → Applied`.
+  An operator may instead make the terminal transition `Pending → Cancelled`
+  through `ec_distann_cancel_epoch_publish` only while the exact recorded
+  predecessor tuple is still the active pointer (or both are absent for a
+  first epoch). `Pending`
   means the durable decision exists while the predecessor pointer remains
   active. `Activated` means the successor pointer swap committed while one or
   more predecessor retirement marks remain. A successor decision reaches
@@ -350,6 +354,20 @@ parent.
   progress. An unavailable predecessor reports
   `EC_PREDECESSOR_RETIRE_PENDING`; the successor remains active and the pointer
   never rolls back.
+- Cancellation SHALL require a nonempty UTF-8 reason of at most 1,024 bytes,
+  record `session_user`, reason, and timestamp atomically with the decision CAS,
+  and move the matching build registration `Decided → Cancelled`. It clears the
+  build gate but never deletes the decision, candidate, fingerprint, or private
+  participant bindings. Exact replay with the same reason succeeds from stored
+  audit fields; another reason conflicts. `Activated` and `Applied` decisions
+  cannot be cancelled, and publish recovery SHALL issue no participant call for
+  a `Cancelled` decision.
+- A cancelled decision remains the authoritative registration for its
+  never-active fingerprint. A participant that acknowledged publication before
+  cancellation may retain a Published-but-never-active orphan; it is never
+  routable and may be reclaimed only through an explicit audited force-retire
+  path tied to that cancelled decision. Ordinary abort and unaudited cleanup
+  continue to refuse every generation named by a durable publish decision.
 - T4a SHALL create one pending predecessor-disposition row for every ordinal in
   the immutable predecessor private-binding roster. T4b changes a row from
   `Pending` to `Retired` only after exact remote acknowledgement. Exact replay
@@ -582,7 +600,9 @@ parent.
 - If a successor participant is unavailable after the decision but before
   activation, then the coordinator
   SHALL keep the old active pointer until all participants acknowledge the new
-  Published generation.
+  Published generation. An authorized operator may terminate that wait only by
+  cancelling the still-`Pending` decision; timeout or transport failure never
+  cancels it automatically.
 - If a predecessor-only participant is unavailable after activation, the new
   active pointer remains authoritative, decision state remains `Activated`, and
   recovery raises `EC_PREDECESSOR_RETIRE_PENDING`. Only predecessor retirement
@@ -695,6 +715,7 @@ parent.
 | `EC_PUBLISH_INCOMPLETE` | Receipt, schema, count, digest, coverage, co-placement, or topology proof is missing/mismatched before decision | Keep generation Ready and query-invisible; do not persist decision |
 | `EC_PUBLISH_DIGEST` | Manifest/receipt bytes do not match their canonical digest | Reject before participant state or pointer mutation |
 | `EC_PUBLISH_PENDING` | A successor participant is unavailable while decision state is `Pending` | Keep the predecessor pointer active; retain commit-only decision for retry |
+| `EC_PUBLISH_CANCEL` | Cancellation is malformed, conflicts with its audit replay, targets a non-Pending decision, or the exact predecessor is no longer active | Change no pointer, decision, registration, or participant state |
 | `EC_PREDECESSOR_RETIRE_PENDING` | A predecessor owner is unavailable after successor activation | Keep the successor pointer active and decision `Activated`; retry only missing predecessor marks |
 | `EC_PREDECESSOR_ABANDON` | Abandonment is unauthorized, malformed, targets a non-Activated decision or non-Pending binding, or conflicts with an existing audit | Change no binding/decision state; issue no participant call |
 | `EC_RETENTION_ACTIVE` | Normal retirement sees one or more coordinator-local in-flight references under the fence | Keep generation retained; require drain or explicit audited force-retire |
@@ -720,6 +741,7 @@ parent.
 | FR-082-AC-14 | Ready commit durably stores the exact canonical build candidate, and both decision and later recovery after client/backend loss recompute its digest chain and consume those bytes without recapturing the source snapshot | Test (TC-042, TC-050) |
 | FR-082-AC-15 | After successor activation, every predecessor-roster binding—including an owner removed from the successor roster—reaches exactly one immutable Retired acknowledgement or explicit audited Abandoned disposition; exact replay is stable, a returning abandoned binding fails closed, and conflicting successor identity changes no state or physical bytes | Test (TC-042, TC-050) |
 | FR-082-AC-16 | Retire apply atomically removes physical storage and leaves an immutable Reclaimed tombstone; exact replay/status succeeds from it and conflicting identity fails closed | Test (TC-042, TC-050) |
+| FR-082-AC-17 | An audited Pending-decision cancellation leaves the predecessor active, clears the build gate, permanently blocks activation of the cancelled fingerprint, and keeps any partially published successor storage non-routable until explicit audited force-retirement | Test (TC-042) |
 
 ## Constraints
 

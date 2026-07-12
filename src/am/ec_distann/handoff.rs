@@ -1316,6 +1316,7 @@ fn ec_distann_stage_epoch_batch(
     ),
 > {
     let result = (|| -> Result<StageResult, String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_stage_epoch_batch")?;
         if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
@@ -1520,6 +1521,7 @@ fn ec_distann_seal_epoch_handoff(
     expected_owner_digest: Vec<u8>,
 ) -> Vec<u8> {
     (|| -> Result<Vec<u8>, String> {
+        super::lifecycle_guard::require_read_committed("ec_distann_seal_epoch_handoff")?;
         if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
             return Err("EC_BUILD_ID_CONFLICT: build id must be an RFC 4122 v4 UUID".to_owned());
         }
