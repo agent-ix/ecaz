@@ -435,6 +435,10 @@ Update `expand.rs`, `reader.rs`, `remote_endpoint.rs`, `remote_transport.rs`,
   classified structural error.
 - Load the head sample and codec artifact for the exact registered manifest so
   retained old and new fingerprints can be read concurrently.
+- On first use per exact control-UUID/build/fingerprint identity, validate and
+  build the immutable head graph, then retain only descriptor/head state in a
+  two-entry backend-local LRU. Never cache conninfo, relation handles, active
+  pointer state, or scan tokens. Keep a Userset off switch for suite-driven A/B.
 
 ### 9. Replace the fixture's pruning drill with a physical build
 

@@ -33,7 +33,15 @@ in the correct region of the global graph.
   sample on first use per epoch (reusing the in-memory Vamana builder used
   by the SPIRE top-graph, via **extract-to-shared** — the pure builder is
   lifted into a shared module, not forked and not edited in place under
-  SPIRE's spec ownership) and cache it keyed on `(index_oid, epoch)`.
+  SPIRE's spec ownership) and cache it keyed on the exact `(index_oid,
+  logical_index_uuid, build_id, epoch_fingerprint)` identity. A cold fill SHALL
+  validate the immutable candidate/descriptor/head-sample digest chain before
+  insertion. A hit may reuse only the validated descriptor digest and head
+  graph; raw conninfo, relation handles, active-pointer state, and scan tokens
+  SHALL NOT be cached. Each backend retains at most two immutable epoch entries
+  and uses LRU eviction. The cache SHALL have a Userset off switch for A/B
+  measurement and diagnosis; disabling it restores cold validation/construction
+  on every scan without changing results.
 - A query SHALL search the head index first; its best results seed the hop
   round frontier of [FR-081](./FR-081-distann-query-orchestration.md).
 - Head-index construction SHALL be deterministic under a fixed seed.
@@ -55,6 +63,7 @@ in the correct region of the global graph.
 | FR-080-AC-2 | Construction is deterministic for a fixed seed and epoch | Test |
 | FR-080-AC-3 | Every build shard's region is reachable from the head sample | Test (property/BFS) |
 | FR-080-AC-4 | Recall sensitivity to C is measured and recorded at M0 (informs the default) | Analysis (bench) |
+| FR-080-AC-5 | Warm repeated scans reuse one validated epoch head graph, cache identity cannot alias OID/UUID/build/fingerprint changes, and bounded LRU eviction retains at most two entries per backend | Test + benchmark |
 
 ## Dependencies
 

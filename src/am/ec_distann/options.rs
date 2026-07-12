@@ -34,6 +34,7 @@ static ECDISTANN_HOP_ROUNDS_GUC: GucSetting<i32> =
 static ECDISTANN_TOP_K_GUC: GucSetting<i32> = GucSetting::<i32>::new(ECDISTANN_DEFAULT_TOP_K);
 
 static ECDISTANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 /// NFR-020 fault-injection hook (debug only): when >= 0, an ec_distann scan
 /// raises an error at the start of the hop round with this 0-based index, after
@@ -249,6 +250,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.physical_epoch_cache",
+        c"Cache validated immutable physical epoch descriptors and head graphs per backend.",
+        c"Avoids rebuilding the bounded Vamana head graph and revalidating immutable candidate bytes on every scan open. The cache is bounded and keyed by control OID, logical UUID, build id, and fingerprint. Disable only for A/B measurement or diagnosis.",
+        &ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.debug_fail_hop_round",
         c"NFR-020 fault injection (debug): fail an ec_distann scan at this 0-based hop round.",
@@ -319,6 +328,10 @@ pub(super) fn current_top_k() -> usize {
 
 pub(super) fn scan_profile_notice_enabled() -> bool {
     ECDISTANN_SCAN_PROFILE_NOTICE_GUC.get()
+}
+
+pub(super) fn physical_epoch_cache_enabled() -> bool {
+    ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC.get()
 }
 
 pub(super) fn current_beam_width() -> usize {

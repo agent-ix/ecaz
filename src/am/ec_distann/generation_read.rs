@@ -5,7 +5,9 @@
 //! the shared scan registry, and adapts those relations to the existing FR-081
 //! orchestration seam.
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, VecDeque};
+use std::sync::Arc;
 
 use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
@@ -30,6 +32,113 @@ use super::tuple::DistannNodeTuple;
 struct ActiveGenerationIdentity {
     build_id: Uuid,
     fingerprint: [u8; 34],
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+
+    fn identity(marker: u8) -> ActiveGenerationIdentity {
+        let mut build = [marker; 16];
+        build[6] = (build[6] & 0x0f) | 0x40;
+        build[8] = (build[8] & 0x3f) | 0x80;
+        let mut fingerprint = [marker; 34];
+        fingerprint[0..2].copy_from_slice(&2_u16.to_le_bytes());
+        ActiveGenerationIdentity {
+            build_id: Uuid::from_bytes(build),
+            fingerprint,
+        }
+    }
+
+    #[test]
+    fn physical_epoch_cache_is_bounded_and_lru() {
+        PHYSICAL_EPOCH_CACHE.with(|cache| cache.borrow_mut().clear());
+        let index_oid = pg_sys::Oid::from(42_u32);
+        let logical_index_uuid = Uuid::from_bytes([0x44; 16]);
+        let descriptor = super::super::generation_descriptor::sample_generation_descriptor();
+        let descriptor_digest = descriptor.digest().unwrap();
+        let insert = |active: &ActiveGenerationIdentity| {
+            cache_physical_epoch(CachedPhysicalEpoch {
+                index_oid,
+                logical_index_uuid,
+                build_id: active.build_id,
+                fingerprint: active.fingerprint,
+                descriptor: descriptor.clone(),
+                descriptor_digest,
+                head_index: None,
+            });
+        };
+        let first = identity(0x11);
+        let second = identity(0x22);
+        let third = identity(0x33);
+        insert(&first);
+        insert(&second);
+        assert!(cached_physical_epoch(index_oid, logical_index_uuid, &first).is_some());
+        insert(&third);
+        assert!(cached_physical_epoch(index_oid, logical_index_uuid, &second).is_none());
+        assert!(cached_physical_epoch(index_oid, logical_index_uuid, &first).is_some());
+        assert!(cached_physical_epoch(index_oid, logical_index_uuid, &third).is_some());
+        PHYSICAL_EPOCH_CACHE.with(|cache| cache.borrow_mut().clear());
+    }
+}
+
+const PHYSICAL_EPOCH_CACHE_CAPACITY: usize = 2;
+
+#[derive(Clone)]
+struct CachedPhysicalEpoch {
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    build_id: Uuid,
+    fingerprint: [u8; 34],
+    descriptor: DistannGenerationDescriptor,
+    descriptor_digest: [u8; 32],
+    head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
+}
+
+thread_local! {
+    static PHYSICAL_EPOCH_CACHE: RefCell<VecDeque<CachedPhysicalEpoch>> =
+        const { RefCell::new(VecDeque::new()) };
+}
+
+fn cached_physical_epoch(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    active: &ActiveGenerationIdentity,
+) -> Option<CachedPhysicalEpoch> {
+    if !super::options::physical_epoch_cache_enabled() {
+        return None;
+    }
+    PHYSICAL_EPOCH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let position = cache.iter().position(|entry| {
+            entry.index_oid == index_oid
+                && entry.logical_index_uuid == logical_index_uuid
+                && entry.build_id == active.build_id
+                && entry.fingerprint == active.fingerprint
+        })?;
+        let entry = cache.remove(position)?;
+        cache.push_back(entry.clone());
+        Some(entry)
+    })
+}
+
+fn cache_physical_epoch(entry: CachedPhysicalEpoch) {
+    if !super::options::physical_epoch_cache_enabled() {
+        return;
+    }
+    PHYSICAL_EPOCH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.retain(|candidate| {
+            candidate.index_oid != entry.index_oid
+                || candidate.logical_index_uuid != entry.logical_index_uuid
+                || candidate.build_id != entry.build_id
+                || candidate.fingerprint != entry.fingerprint
+        });
+        while cache.len() >= PHYSICAL_EPOCH_CACHE_CAPACITY {
+            cache.pop_front();
+        }
+        cache.push_back(entry);
+    });
 }
 
 #[derive(Debug)]
@@ -620,7 +729,7 @@ pub(crate) struct PhysicalGenerationScan {
     graph_relation_name: Option<String>,
     fingerprint: [u8; 34],
     routes: Vec<PhysicalOwnerRoute>,
-    head_index: Option<super::head_sample::DistannPhysicalHeadIndex>,
+    head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
     _scan_token: ScanTokenGuard,
 }
 
@@ -716,21 +825,57 @@ impl PhysicalGenerationScan {
             );
         }
 
-        let candidate = super::build_coordinator::load_build_candidate(
-            index_oid,
-            logical_index_uuid,
-            active.build_id,
-        )?
-        .ok_or_else(|| "EC_GENERATION_MISSING: active build candidate is absent".to_owned())?;
-        let descriptor = DistannGenerationDescriptor::decode(&candidate.generation_descriptor)?;
-        if descriptor.digest()? != candidate.generation_descriptor_digest
-            || descriptor.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes()
-        {
-            return Err(
-                "EC_GENERATION_DESCRIPTOR: active generation descriptor identity mismatch"
-                    .to_owned(),
-            );
-        }
+        let (descriptor, descriptor_digest, head_index) =
+            if let Some(cached) = cached_physical_epoch(index_oid, logical_index_uuid, &active) {
+                (cached.descriptor, cached.descriptor_digest, cached.head_index)
+            } else {
+                let candidate = super::build_coordinator::load_build_candidate(
+                    index_oid,
+                    logical_index_uuid,
+                    active.build_id,
+                )?
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: active build candidate is absent".to_owned()
+                })?;
+                let descriptor =
+                    DistannGenerationDescriptor::decode(&candidate.generation_descriptor)?;
+                let descriptor_digest = descriptor.digest()?;
+                if descriptor_digest != candidate.generation_descriptor_digest
+                    || descriptor.coordinator_logical_index_uuid
+                        != *logical_index_uuid.as_bytes()
+                {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: active generation descriptor identity mismatch"
+                            .to_owned(),
+                    );
+                }
+                let (head_sample, manifest_build_options) =
+                    super::head_sample::load_head_sample(
+                        index_oid,
+                        logical_index_uuid,
+                        active.build_id,
+                        &active.fingerprint,
+                    )?;
+                let exact_options = manifest_build_options.options;
+                let head_index = super::head_sample::DistannPhysicalHeadIndex::build(
+                    head_sample,
+                    usize::from(manifest_build_options.graph_degree),
+                    usize::from(exact_options.build_list_size),
+                    exact_options.alpha,
+                    exact_options.seed,
+                )?
+                .map(Arc::new);
+                cache_physical_epoch(CachedPhysicalEpoch {
+                    index_oid,
+                    logical_index_uuid,
+                    build_id: active.build_id,
+                    fingerprint: active.fingerprint,
+                    descriptor: descriptor.clone(),
+                    descriptor_digest,
+                    head_index: head_index.clone(),
+                });
+                (descriptor, descriptor_digest, head_index)
+            };
         let routes = physical_owner_routes(
             index_oid,
             logical_index_uuid,
@@ -760,8 +905,7 @@ impl PhysicalGenerationScan {
                             .to_owned(),
                     );
                 }
-                if generation.generation_descriptor_digest != candidate.generation_descriptor_digest
-                {
+                if generation.generation_descriptor_digest != descriptor_digest {
                     return Err("EC_GENERATION_DESCRIPTOR: local generation descriptor differs from candidate".to_owned());
                 }
                 let row = HeapRelationGuard::try_access_share(generation.row_tier_relid)
@@ -784,20 +928,6 @@ impl PhysicalGenerationScan {
                 (None, None, None)
             }
         };
-        let (head_sample, manifest_build_options) = super::head_sample::load_head_sample(
-            index_oid,
-            logical_index_uuid,
-            active.build_id,
-            &active.fingerprint,
-        )?;
-        let exact_options = manifest_build_options.options;
-        let head_index = super::head_sample::DistannPhysicalHeadIndex::build(
-            head_sample,
-            usize::from(manifest_build_options.graph_degree),
-            usize::from(exact_options.build_list_size),
-            exact_options.alpha,
-            exact_options.seed,
-        )?;
         Ok(Self {
             descriptor,
             generation,
