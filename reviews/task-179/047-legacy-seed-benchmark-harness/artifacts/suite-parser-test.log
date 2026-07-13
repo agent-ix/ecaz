@@ -1,0 +1,13 @@
+Script started on 2026-07-12 22:30:30-07:00 [TERM="dumb" TTY="/dev/pts/21" COLUMNS="80" LINES="24"]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 50.27s
+     Running unittests src/main.rs (target/debug/deps/ecaz-35b6ba101cd4e391)
+
+running 1 test
+test commands::bench::suite::tests::distann_physical_topology_and_gate_are_structured ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 429 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-12 22:31:18-07:00 [COMMAND_EXIT_CODE="0"]

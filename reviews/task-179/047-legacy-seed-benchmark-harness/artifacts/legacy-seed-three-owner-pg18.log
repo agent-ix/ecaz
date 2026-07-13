@@ -1,0 +1,114 @@
+Script started on 2026-07-12 22:31:26-07:00 [TERM="dumb" TTY="/dev/pts/21" COLUMNS="80" LINES="24"]
+[32m[1m       Using[0m[39m [37m[1mCliArgument("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+CARGO_TARGET_DIR="/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/target" PGRX_ALL_FEATURES="false" PGRX_BUILD_PROFILE="dev" PGRX_FEATURES="distann-legacy-seed-benchmark pg18 pg_test" PGRX_NO_DEFAULT_FEATURES="true" PGRX_NO_SCHEMA="false" "/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "test" "--features" "distann-legacy-seed-benchmark pg18 pg_test" "--no-default-features" "test_distann_three_owner_physical_handoff"
+   Compiling ring v0.17.14
+   Compiling regex v1.13.0
+   Compiling clap-cargo v0.14.1
+   Compiling iai-callgrind v0.14.2
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling criterion v0.5.1
+   Compiling pgrx-tests v0.17.0
+   Compiling rustls-webpki v0.103.13
+   Compiling rustls v0.23.41
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5m 23s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-046b641b8964441f)
+
+running 1 test
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg18 distann-legacy-seed-benchmark pg_test[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg18 distann-legacy-seed-benchmark pg_test" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 34.36s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m1100[0m[39m SQL entities: [36m[1m2[0m[39m schemas ([36m[1m1[0m[39m unique), [36m[1m1096[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m2[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg18 distann-legacy-seed-benchmark pg_test[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+test tests::pg_test_distann_three_owner_physical_handoff has been running for over 60 seconds
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 52.23s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+test tests::pg_test_distann_three_owner_physical_handoff ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2506 filtered out; finished in 89.82s
+
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-7f6b014c85aef82f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-bad6362c2b2f70da)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-14c46b933660d1f0)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (target/debug/deps/kani_item_pointer-54ab06749128bc1d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-5cfa0d0e89ff0798)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 74 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (target/debug/deps/proptest_page-2e5d53b22eeb9f38)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (target/debug/deps/proptest_quant-890bfaf985d61df4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (target/debug/deps/recall_integration-7d5261e88acd7890)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (target/debug/deps/simd_diff-e7db34c253c41a4f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-539c92672beee42e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-87a1b9a5ba749cfc)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (target/debug/deps/wal_policy-c7d4efa5d30e2072)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-12 22:37:59-07:00 [COMMAND_EXIT_CODE="0"]
