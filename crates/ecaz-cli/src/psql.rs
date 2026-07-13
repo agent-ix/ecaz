@@ -13,7 +13,8 @@
 //! behavior for benchmark suite session overrides.
 
 use color_eyre::eyre::{Context, Result};
-use tokio_postgres::{Client, Config, NoTls};
+use std::future::poll_fn;
+use tokio_postgres::{AsyncMessage, Client, Config, NoTls};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ConnectionOptions {
@@ -93,6 +94,17 @@ impl ConnectTarget for String {
 
 /// Open a connection using the already-resolved connection options.
 pub async fn connect<T: ConnectTarget>(target: T) -> Result<Client> {
+    connect_inner(target, false).await
+}
+
+/// Open a connection that mirrors PostgreSQL NOTICE messages into the CLI
+/// packet log. Measurement commands use this when server-emitted diagnostics
+/// are part of the review evidence.
+pub async fn connect_reporting_notices<T: ConnectTarget>(target: T) -> Result<Client> {
+    connect_inner(target, true).await
+}
+
+async fn connect_inner<T: ConnectTarget>(target: T, report_notices: bool) -> Result<Client> {
     let options = target.connection_options();
     let config = options.config();
     let (client, connection) = config
@@ -101,7 +113,21 @@ pub async fn connect<T: ConnectTarget>(target: T) -> Result<Client> {
         .wrap_err_with(|| format!("connecting to Postgres database {:?}", options.database))?;
 
     tokio::spawn(async move {
-        if let Err(e) = connection.await {
+        if report_notices {
+            let mut connection = connection;
+            while let Some(message) = poll_fn(|cx| connection.poll_message(cx)).await {
+                match message {
+                    Ok(AsyncMessage::Notice(notice)) => {
+                        crate::ecaz_eprintln!("[postgres notice] {}", notice.message());
+                    }
+                    Ok(_) => {}
+                    Err(error) => {
+                        tracing::error!(%error, "postgres connection task failed");
+                        break;
+                    }
+                }
+            }
+        } else if let Err(e) = connection.await {
             tracing::error!(error = %e, "postgres connection task failed");
         }
     });

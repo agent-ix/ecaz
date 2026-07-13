@@ -2117,6 +2117,13 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
             if let Some(values) = parse_space_key_values(rest) {
                 rows.push(("build_memory".into(), values));
             }
+        } else if let Some(rest) = line
+            .trim_start()
+            .strip_prefix("[postgres notice] ec_distann sharded build: ")
+        {
+            if let Some(values) = parse_space_key_values(rest) {
+                rows.push(("distann_shard_build".into(), values));
+            }
         } else if let Some((name, seconds)) = parse_timed_loader_line(line, "completed prefix ") {
             rows.push(("load_timing".into(), timed_values("total", &name, seconds)));
         }
@@ -6709,6 +6716,22 @@ mod tests {
         assert_eq!(
             rows[0].1.get("hwm_peak_kb").map(String::as_str),
             Some("950")
+        );
+    }
+
+    #[test]
+    fn parses_distann_shard_build_notice() {
+        let rows = parse_load_rows(
+            "[postgres notice] ec_distann sharded build: shards=4 duplication_factor=1.2 max_shard_size=4000 stitch_edges_before_prune=10 stitch_edges_after_prune=9 stitch_peak_union_len=64 shard_output_spill_bytes=2000 stitch_peak_cursor_bytes=34000 stitch_peak_group_bytes=1000 stitch_peak_retained_bytes=35000 build_peak_completion_bytes=1500 reachability_repairs=0\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "distann_shard_build");
+        assert_eq!(
+            rows[0]
+                .1
+                .get("build_peak_completion_bytes")
+                .map(String::as_str),
+            Some("1500")
         );
     }
 

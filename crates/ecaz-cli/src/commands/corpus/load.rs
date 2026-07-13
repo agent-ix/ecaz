@@ -400,7 +400,11 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
             print_distributed_placement_output_summary(output_dir, &plan);
             return Ok(());
         }
-        let mut client = psql::connect(conn).await?;
+        let mut client = if args.sample_backend_memory {
+            psql::connect_reporting_notices(conn).await?
+        } else {
+            psql::connect(conn).await?
+        };
         client
             .batch_execute("CREATE EXTENSION IF NOT EXISTS ecaz")
             .await
@@ -540,7 +544,11 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut client = psql::connect(conn).await?;
+    let mut client = if args.sample_backend_memory {
+        psql::connect_reporting_notices(conn).await?
+    } else {
+        psql::connect(conn).await?
+    };
     client
         .batch_execute("CREATE EXTENSION IF NOT EXISTS ecaz")
         .await
