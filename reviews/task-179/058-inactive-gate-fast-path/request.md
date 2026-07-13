@@ -6,11 +6,10 @@ Please review commit `a4d374c2f294dc209b1b0f499bd527e52b375b06`,
 which adds a transactionally invalidated backend-local negative cache for the
 database-wide absence of active DistANN build registrations.
 
-The first A/B run in the following measurement packet found the prior
-installed/no-gate path at `283.637 µs` median per cached INSERT versus
-`6.921 µs` without the extension (`40.984x`). That result is not accepted as
-closeout; this code checkpoint addresses the measured cause before the same
-suite is rerun unchanged.
+A preliminary A/B exposed material installed/no-gate overhead and motivated
+this checkpoint. That diagnostic run was overwritten by the canonical
+post-fix rerun and is not durable review evidence; packet 057 owns the
+traceable exact-SHA result used for closeout.
 
 ## Design
 
