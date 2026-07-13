@@ -1,0 +1,15 @@
+Script started on 2026-07-12 18:26:41-07:00 [<not executed on terminal>]
+PASS: zero debug endpoint occurrences in production SQL
+1879:-- ecaz::am::ec_distann::remote_endpoint::ec_distann_epoch_fingerprint
+1880:CREATE  FUNCTION "ec_distann_epoch_fingerprint"(
+1885:AS 'MODULE_PATHNAME', 'ec_distann_epoch_fingerprint_wrapper';
+1999:-- ecaz::am::ec_distann::insert::ec_distann_fold_delta_into_graph
+2000:CREATE  FUNCTION "ec_distann_fold_delta_into_graph"(
+2005:AS 'MODULE_PATHNAME', 'ec_distann_fold_delta_into_graph_wrapper';
+2074:-- ecaz::am::ec_distann::remote_endpoint::ec_distann_list_directory
+2075:CREATE  FUNCTION "ec_distann_list_directory"(
+2085:AS 'MODULE_PATHNAME', 'ec_distann_list_directory_wrapper';
+8241:DO $distann_endpoint_privileges$
+8288:$distann_endpoint_privileges$;
+
+Script done on 2026-07-12 18:26:41-07:00 [COMMAND_EXIT_CODE="0"]
