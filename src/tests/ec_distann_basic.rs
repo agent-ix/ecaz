@@ -4156,10 +4156,23 @@ fn test_distann_begin_build_competing_backend_busy() {
     setup
         .batch_execute(
             "DROP SCHEMA IF EXISTS ec_distann_gate_scratch CASCADE;
+             DROP TABLE IF EXISTS ec_distann_gate_attach_parent CASCADE;
+             DROP TABLE IF EXISTS ec_distann_gate_truncate_root CASCADE;
              DROP ROLE IF EXISTS ec_distann_gate_empty_owner;
              CREATE SCHEMA ec_distann_gate_scratch;
              CREATE ROLE ec_distann_gate_empty_owner;
-             CREATE TABLE ec_distann_gate_scratch.unrelated_probe(id integer)",
+             CREATE TABLE ec_distann_gate_scratch.unrelated_probe(id integer);
+             CREATE TABLE ec_distann_gate_attach_parent (
+                 source_id uuid NOT NULL,
+                 embedding ecvector(4) NOT NULL
+             ) PARTITION BY LIST (source_id);
+             CREATE TABLE ec_distann_gate_truncate_root (source_id uuid PRIMARY KEY);
+             INSERT INTO ec_distann_gate_truncate_root VALUES
+                 ('00000000-0000-4000-8000-000000000179');
+             ALTER TABLE ec_distann_begin_contention_source
+                 ADD CONSTRAINT ec_distann_gate_truncate_fk
+                 FOREIGN KEY (source_id)
+                 REFERENCES ec_distann_gate_truncate_root(source_id)",
         )
         .expect("global utility scratch objects should create");
 
@@ -4523,6 +4536,12 @@ fn test_distann_begin_build_competing_backend_busy() {
         format!("REINDEX INDEX {index}"),
         format!("REINDEX TABLE {source}"),
         format!("DROP INDEX {index}"),
+        format!(
+            "ALTER TABLE ec_distann_gate_attach_parent
+                 ATTACH PARTITION {source}
+                 FOR VALUES IN ('00000000-0000-4000-8000-000000000179')"
+        ),
+        "TRUNCATE ec_distann_gate_truncate_root CASCADE".to_owned(),
     ] {
         let message = gate_error(&mut fresh_gate_client, &sql);
         assert!(
@@ -4530,6 +4549,41 @@ fn test_distann_begin_build_competing_backend_busy() {
             "unexpected durable gate error for {sql}: {message}"
         );
     }
+
+    // EXPLAIN without ANALYZE starts an executor solely to produce plan
+    // properties. It must remain observational even though the described DML
+    // would be rejected if executed.
+    fresh_gate_client
+        .batch_execute(&format!(
+            "EXPLAIN (COSTS OFF) INSERT INTO {source} VALUES (
+                 '00000000-0000-4000-8000-000000000181',
+                 encode_to_ecvector(ARRAY[0.0, 0.0, 0.0, 1.0], 4, 42)
+             )"
+        ))
+        .expect("EXPLAIN-only source DML must remain available while gated");
+    assert_eq!(
+        fresh_gate_client
+            .query_one(
+                "SELECT count(*) FROM ec_distann_gate_truncate_root",
+                &[],
+            )
+            .expect("failed TRUNCATE CASCADE must preserve the referenced row")
+            .get::<_, i64>(0),
+        1
+    );
+    assert_eq!(
+        fresh_gate_client
+            .query_one(
+                "SELECT count(*)
+                   FROM pg_catalog.pg_inherits
+                  WHERE inhparent = 'ec_distann_gate_attach_parent'::regclass
+                    AND inhrelid = 'ec_distann_begin_contention_source'::regclass",
+                &[],
+            )
+            .expect("failed ATTACH PARTITION must leave the source standalone")
+            .get::<_, i64>(0),
+        0
+    );
 
     // The generic plan cached before the registration committed must still be
     // rejected on execution — this is the plan-time-only bypass the executor
@@ -4568,7 +4622,9 @@ fn test_distann_begin_build_competing_backend_busy() {
         .expect("same-backend DROP should reconcile active session locks");
     setup
         .batch_execute(
-            "DROP SCHEMA ec_distann_gate_scratch CASCADE;
+            "DROP TABLE ec_distann_gate_attach_parent;
+             DROP TABLE ec_distann_gate_truncate_root;
+             DROP SCHEMA ec_distann_gate_scratch CASCADE;
              DROP ROLE ec_distann_gate_empty_owner",
         )
         .expect("global utility scratch objects should clean up");

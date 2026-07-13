@@ -340,7 +340,15 @@ unsafe extern "C-unwind" fn ec_distann_build_gate_executor_start_hook(
     // C-language validation loads the library (and invokes `_PG_init`) while
     // CREATE EXTENSION is still installing SQL objects, so installation DML must
     // pass through until PostgreSQL clears `creating_extension`.
-    if !unsafe { pg_sys::creating_extension } && !INSIDE_GATE_LOOKUP.with(Cell::get) {
+    // Logical replication's apply worker can call ExecSimpleRelationInsert /
+    // Update / Delete without ExecutorStart. Task 179 does not claim that
+    // path: distributed source tables must remain outside publications until
+    // a replication-specific gate is added.
+    let explain_only = (eflags as u32 & pg_sys::EXEC_FLAG_EXPLAIN_ONLY) != 0;
+    if !explain_only
+        && !unsafe { pg_sys::creating_extension }
+        && !INSIDE_GATE_LOOKUP.with(Cell::get)
+    {
         if let Some(desc) = unsafe { query_desc.as_ref() } {
             unsafe { reject_planned_result_relations(desc.plannedstmt) };
         }
@@ -348,14 +356,19 @@ unsafe extern "C-unwind" fn ec_distann_build_gate_executor_start_hook(
     call_next_executor_start(query_desc, eflags);
 }
 
-unsafe fn rangevar_oid(rangevar: *mut pg_sys::RangeVar, lockmode: pg_sys::LOCKMODE) -> pg_sys::Oid {
+unsafe fn rangevar_oid(rangevar: *mut pg_sys::RangeVar) -> pg_sys::Oid {
     if rangevar.is_null() {
         return pg_sys::InvalidOid;
     }
+    // This hook runs before standard_ProcessUtility. Resolve only: PostgreSQL's
+    // statement-specific callbacks must perform ownership checks before the
+    // statement acquires its true lock level. Acquiring an escalated lock here
+    // with a NULL callback would let an unprivileged failing command lock an
+    // arbitrary nameable relation and would over-lock CONCURRENTLY variants.
     unsafe {
         pg_sys::RangeVarGetRelidExtended(
             rangevar,
-            lockmode,
+            pg_sys::NoLock as pg_sys::LOCKMODE,
             pg_sys::RVROption::RVR_MISSING_OK,
             None,
             ptr::null_mut(),
@@ -386,8 +399,7 @@ unsafe fn gate_drop(stmt: *mut pg_sys::DropStmt) {
             continue;
         }
         let rangevar = unsafe { pg_sys::makeRangeVarFromNameList(names) };
-        let oid =
-            unsafe { rangevar_oid(rangevar, pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE) };
+        let oid = unsafe { rangevar_oid(rangevar) };
         reject_if_gated(oid, required_mask, "DROP");
     }
 }
@@ -417,13 +429,28 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
     match node_ref.type_ {
         pg_sys::NodeTag::T_AlterTableStmt => {
             let stmt = unsafe { &*node.cast::<pg_sys::AlterTableStmt>() };
-            let oid = unsafe {
-                rangevar_oid(
-                    stmt.relation,
-                    pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
-                )
-            };
+            let oid = unsafe { rangevar_oid(stmt.relation) };
             reject_if_gated(oid, SOURCE_GATE | CONTROL_GATE, "ALTER");
+
+            // ATTACH names the parent in AlterTableStmt::relation and the
+            // prospective child in PartitionCmd. A build may have registered
+            // the child while it was standalone, so gate both identities.
+            let count = unsafe { pg_sys::list_length(stmt.cmds) };
+            for offset in 0..count {
+                let command =
+                    unsafe { pg_sys::list_nth(stmt.cmds, offset).cast::<pg_sys::AlterTableCmd>() };
+                let Some(command) = (unsafe { command.as_ref() }) else {
+                    continue;
+                };
+                if command.subtype != pg_sys::AlterTableType::AT_AttachPartition
+                    || command.def.is_null()
+                {
+                    continue;
+                }
+                let partition = unsafe { &*command.def.cast::<pg_sys::PartitionCmd>() };
+                let attached_oid = unsafe { rangevar_oid(partition.name) };
+                reject_if_gated(attached_oid, SOURCE_GATE, "ATTACH PARTITION");
+            }
         }
         pg_sys::NodeTag::T_RenameStmt => {
             let stmt = unsafe { &*node.cast::<pg_sys::RenameStmt>() };
@@ -431,12 +458,7 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
                 stmt.renameType,
                 pg_sys::ObjectType::OBJECT_TABLE | pg_sys::ObjectType::OBJECT_INDEX
             ) {
-                let oid = unsafe {
-                    rangevar_oid(
-                        stmt.relation,
-                        pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
-                    )
-                };
+                let oid = unsafe { rangevar_oid(stmt.relation) };
                 reject_if_gated(oid, SOURCE_GATE | CONTROL_GATE, "RENAME");
             }
         }
@@ -446,12 +468,7 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
                 stmt.objectType,
                 pg_sys::ObjectType::OBJECT_TABLE | pg_sys::ObjectType::OBJECT_INDEX
             ) {
-                let oid = unsafe {
-                    rangevar_oid(
-                        stmt.relation,
-                        pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
-                    )
-                };
+                let oid = unsafe { rangevar_oid(stmt.relation) };
                 reject_if_gated(oid, SOURCE_GATE | CONTROL_GATE, "SET SCHEMA");
             }
         }
@@ -462,22 +479,26 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
         pg_sys::NodeTag::T_CopyStmt => {
             let stmt = unsafe { &*node.cast::<pg_sys::CopyStmt>() };
             if stmt.is_from {
-                let oid = unsafe {
-                    rangevar_oid(stmt.relation, pg_sys::RowExclusiveLock as pg_sys::LOCKMODE)
-                };
+                let oid = unsafe { rangevar_oid(stmt.relation) };
                 reject_if_gated(oid, SOURCE_GATE, "COPY FROM");
             }
         }
         pg_sys::NodeTag::T_DropStmt => unsafe { gate_drop(node.cast()) },
         pg_sys::NodeTag::T_TruncateStmt => {
             let stmt = unsafe { &*node.cast::<pg_sys::TruncateStmt>() };
+            if stmt.behavior == pg_sys::DropBehavior::DROP_CASCADE {
+                // The set reached through foreign keys is discovered only by
+                // ExecuteTruncate. Serialize against begin-build, then reject
+                // conservatively when any source gate is active.
+                lock_global_gate_serialization(true)
+                    .unwrap_or_else(|error| pgrx::error!("{error}"));
+                reject_if_any_source_gate("TRUNCATE CASCADE");
+            }
             let count = unsafe { pg_sys::list_length(stmt.relations) };
             for offset in 0..count {
                 let relation =
                     unsafe { pg_sys::list_nth(stmt.relations, offset).cast::<pg_sys::RangeVar>() };
-                let oid = unsafe {
-                    rangevar_oid(relation, pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE)
-                };
+                let oid = unsafe { rangevar_oid(relation) };
                 reject_if_gated(oid, SOURCE_GATE, "TRUNCATE");
             }
         }
@@ -488,12 +509,7 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
                     .unwrap_or_else(|error| pgrx::error!("{error}"));
                 reject_if_any_source_gate("CLUSTER");
             } else {
-                let oid = unsafe {
-                    rangevar_oid(
-                        stmt.relation,
-                        pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
-                    )
-                };
+                let oid = unsafe { rangevar_oid(stmt.relation) };
                 reject_if_gated(oid, SOURCE_GATE, "CLUSTER");
             }
         }
@@ -512,12 +528,7 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
                     let oid = if relation.oid != pg_sys::InvalidOid {
                         relation.oid
                     } else {
-                        unsafe {
-                            rangevar_oid(
-                                relation.relation,
-                                pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
-                            )
-                        }
+                        unsafe { rangevar_oid(relation.relation) }
                     };
                     if oid == pg_sys::InvalidOid {
                         // PostgreSQL represents unqualified VACUUM with a
@@ -542,12 +553,7 @@ unsafe fn gate_utility_node(node: *mut pg_sys::Node) {
                 pg_sys::ReindexObjectType::REINDEX_OBJECT_INDEX
                     | pg_sys::ReindexObjectType::REINDEX_OBJECT_TABLE
             ) {
-                let oid = unsafe {
-                    rangevar_oid(
-                        stmt.relation,
-                        pg_sys::AccessExclusiveLock as pg_sys::LOCKMODE,
-                    )
-                };
+                let oid = unsafe { rangevar_oid(stmt.relation) };
                 let required_mask = if stmt.kind == pg_sys::ReindexObjectType::REINDEX_OBJECT_TABLE
                 {
                     SOURCE_GATE | CONTROL_GATE
