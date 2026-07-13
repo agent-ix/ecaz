@@ -1,0 +1,2 @@
+CREATE EXTENSION
+[suite-result] dml_gate_extension lane=installed extension_installed=1

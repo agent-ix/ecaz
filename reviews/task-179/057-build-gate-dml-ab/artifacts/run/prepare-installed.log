@@ -1,0 +1,9 @@
+SET
+SET
+DROP TABLE
+DROP TABLE
+CREATE TABLE
+CREATE TABLE
+[suite-result] dml_gate_setup lane=installed extension_installed=1 preload_ok=1
+psql:reviews/task-179/057-build-gate-dml-ab/artifacts/prepare-lane.sql:4: NOTICE:  table "task179_dml_gate_probe" does not exist, skipping
+psql:reviews/task-179/057-build-gate-dml-ab/artifacts/prepare-lane.sql:5: NOTICE:  table "task179_dml_gate_results" does not exist, skipping
