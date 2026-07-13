@@ -92,6 +92,11 @@ pub struct LocalMultinodePg18Args {
     /// (expensive at scale) per-drill re-setups.
     #[arg(long, default_value_t = false)]
     pub skip_fault_drills: bool,
+    /// After the physical fixture passes, drop the extension on every owner
+    /// and prove AM-owned generation relations are dependency-cleaned and the
+    /// preloaded hooks pass through ordinary DML without the extension.
+    #[arg(long, default_value_t = false)]
+    pub drop_extension_cleanup_drill: bool,
     /// Load a real staged corpus instead of the synthetic deterministic corpus.
     /// When set, each node loads `{staged_dir}/{corpus_prefix}_corpus.tsv` into
     /// `dm` (encoded with the standard `encode_to_ecvector(source, 4, 42)`) and
@@ -1184,6 +1189,14 @@ async fn drive_physical_fixture(
     }
     drop(coordinator);
     connection_task.abort();
+    let drop_extension_lines = if args.drop_extension_cleanup_drill {
+        physical_drop_extension_cleanup_drill(psql, socket_dir, nodes).await?
+    } else {
+        Vec::new()
+    };
+    for line in &drop_extension_lines {
+        crate::ecaz_println!("[distann-multicluster] {line}");
+    }
     crate::ecaz_println!(
         "[distann-multicluster] physical_topology_gate pass=true owners={} remote_verified={} source_rows={}",
         owners.len(),
@@ -1223,6 +1236,9 @@ async fn drive_physical_fixture(
     for line in &benchmark_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
+    for line in &drop_extension_lines {
+        summary.push_str(&format!("[distann-multicluster] {line}\n"));
+    }
     summary.push_str(&format!(
         "[distann-multicluster] physical_topology_gate pass=true owners={} remote_verified={remote_verified} source_rows={source_count}\n",
         owners.len()
@@ -1235,6 +1251,64 @@ async fn drive_physical_fixture(
         summary_path.display()
     );
     Ok(())
+}
+
+async fn physical_drop_extension_cleanup_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+) -> Result<Vec<String>> {
+    let mut lines = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        let hidden_before = capture_psql(
+            psql,
+            socket_dir,
+            node.port,
+            "SELECT count(*) FROM pg_class WHERE relname ~ '^_ecdz_'",
+        )
+        .await?
+        .trim()
+        .parse::<i64>()?;
+        if hidden_before < 3 {
+            bail!(
+                "physical DROP EXTENSION drill found only {hidden_before} hidden relations on node {}",
+                node.node_id
+            );
+        }
+        run_psql_file(
+            psql,
+            socket_dir,
+            node.port,
+            "DROP EXTENSION ecaz CASCADE;
+             CREATE TABLE ecaz_drop_extension_probe(id integer PRIMARY KEY);
+             INSERT INTO ecaz_drop_extension_probe VALUES (1);",
+        )
+        .await
+        .wrap_err_with(|| format!("dropping ecaz on physical node {}", node.node_id))?;
+        let after = capture_psql(
+            psql,
+            socket_dir,
+            node.port,
+            "SELECT
+                 (SELECT count(*) FROM pg_extension WHERE extname = 'ecaz')::text || '|' ||
+                 (SELECT count(*) FROM pg_class WHERE relname ~ '^_ecdz_')::text || '|' ||
+                 (SELECT count(*) FROM ecaz_drop_extension_probe)::text",
+        )
+        .await?;
+        let fields = after.trim().split('|').collect::<Vec<_>>();
+        if fields.as_slice() != ["0", "0", "1"] {
+            bail!(
+                "physical DROP EXTENSION cleanup failed on node {}: expected 0|0|1, got {}",
+                node.node_id,
+                after.trim()
+            );
+        }
+        lines.push(format!(
+            "physical_drop_extension_cleanup pass=true node={} hidden_before={hidden_before} hidden_after=0 extension_after=0 post_drop_dml_rows=1",
+            node.node_id
+        ));
+    }
+    Ok(lines)
 }
 
 async fn physical_publish_fault_drills(

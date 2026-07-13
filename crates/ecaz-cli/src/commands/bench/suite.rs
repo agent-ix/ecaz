@@ -522,6 +522,8 @@ struct DistannLocalMultinodeStep {
     top_k: Option<u32>,
     #[serde(default)]
     skip_fault_drills: bool,
+    #[serde(default)]
+    drop_extension_cleanup_drill: bool,
     /// Load a real staged corpus (`{staged_dir}/{corpus_prefix}_*.tsv`) instead
     /// of the synthetic deterministic corpus. Makes this a real-corpus
     /// distributed quality lane (Task 172).
@@ -3715,6 +3717,9 @@ fn expand_distann_local_multinode(
     if step.skip_fault_drills {
         args.push("--skip-fault-drills".into());
     }
+    if step.drop_extension_cleanup_drill {
+        args.push("--drop-extension-cleanup-drill".into());
+    }
     push_opt_arg(&mut args, "--corpus-prefix", step.corpus_prefix.as_deref());
     push_opt_path(&mut args, "--staged-dir", step.staged_dir.as_deref());
     args
@@ -4925,6 +4930,7 @@ mod tests {
             "head_index_cap": 256,
             "physical_benchmark": true,
             "benchmark_warmup_iterations": 7,
+            "drop_extension_cleanup_drill": true,
             "corpus_prefix": "ec_real_10k"
           }]
         }"#;
@@ -4940,6 +4946,20 @@ mod tests {
         assert!(command
             .windows(2)
             .any(|window| window == ["--benchmark-warmup-iterations", "7"]));
+        assert!(command.contains(&"--drop-extension-cleanup-drill".into()));
+    }
+
+    #[test]
+    fn distann_drop_extension_cleanup_is_structured() {
+        let raw = "[distann-multicluster] physical_drop_extension_cleanup pass=true node=2 hidden_before=4 hidden_after=0 extension_after=0 post_drop_dml_rows=1\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "drill_outcome");
+        assert_eq!(
+            rows[0].1.get("drill").map(String::as_str),
+            Some("physical_drop_extension_cleanup")
+        );
+        assert_eq!(rows[0].1.get("pass").map(String::as_str), Some("true"));
     }
 
     #[test]
