@@ -44,7 +44,10 @@ use std::mem::size_of;
 #[cfg(not(test))]
 use std::ptr::NonNull;
 use std::sync::mpsc::{sync_channel, RecvTimeoutError};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc, Mutex,
+};
 use std::time::Duration;
 
 use pgrx::pg_sys;
@@ -116,6 +119,10 @@ pub(super) struct ShardBuildStats {
     pub(super) stitch_peak_union_len: usize,
     /// Total encoded bytes written to the PostgreSQL-managed shard spool.
     pub(super) shard_output_spill_bytes: u64,
+    /// Peak bytes retained by completed flat shard encodings before the
+    /// backend finishes writing them to BufFile. Includes queued and
+    /// send-blocked worker completions plus the completion being drained.
+    pub(super) build_peak_completion_bytes: usize,
     /// Peak retained bytes for every shard BufFile block buffer plus cursor and
     /// merge-heap metadata. Cursor lookahead contains no adjacency payload.
     pub(super) stitch_peak_cursor_bytes: usize,
@@ -305,6 +312,7 @@ struct ShardSpill {
 struct ShardSpool {
     spills: Vec<Option<ShardSpill>>,
     bytes_written: u64,
+    build_peak_completion_bytes: usize,
 }
 
 impl ShardSpool {
@@ -312,6 +320,7 @@ impl ShardSpool {
         Ok(Self {
             spills: (0..shard_count).map(|_| None).collect(),
             bytes_written: 0,
+            build_peak_completion_bytes: 0,
         })
     }
 
@@ -339,6 +348,9 @@ impl ShardSpool {
                 "ec_distann duplicate or invalid shard spool index {shard_index}"
             ));
         }
+        self.build_peak_completion_bytes = self
+            .build_peak_completion_bytes
+            .max(encoded.bytes.len());
         let mut io = ShardSpoolIo::create()?;
         io.write_all(&encoded.bytes);
         let shard_bytes = u64::try_from(encoded.bytes.len())
@@ -712,6 +724,38 @@ fn nearest_centroid_index(source: &[f32], centroids: &[Vec<f32>]) -> usize {
 /// thread. Parallel and sequential builds are identical because each shard is
 /// pure and seeded. Membership lists are consumed by the workers and no shard
 /// graph or assignment remains resident when the stitch starts.
+fn retain_completion_bytes(
+    current: &AtomicUsize,
+    peak: &AtomicUsize,
+    bytes: usize,
+) -> Result<(), String> {
+    if bytes == 0 {
+        return Ok(());
+    }
+    let previous = current
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+            value.checked_add(bytes)
+        })
+        .map_err(|_| "ec_distann shard completion byte count overflow".to_owned())?;
+    let retained = previous
+        .checked_add(bytes)
+        .ok_or_else(|| "ec_distann shard completion byte count overflow".to_owned())?;
+    peak.fetch_max(retained, Ordering::AcqRel);
+    Ok(())
+}
+
+fn release_completion_bytes(current: &AtomicUsize, bytes: usize) -> Result<(), String> {
+    if bytes == 0 {
+        return Ok(());
+    }
+    current
+        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |value| {
+            value.checked_sub(bytes)
+        })
+        .map(|_| ())
+        .map_err(|_| "ec_distann shard completion byte count underflow".to_owned())
+}
+
 fn build_shard_spool<D>(
     members: Vec<Vec<u32>>,
     graph_degree: usize,
@@ -751,11 +795,15 @@ where
     let jobs = Arc::new(Mutex::new(
         members.into_iter().enumerate().collect::<VecDeque<_>>(),
     ));
+    let retained_completion_bytes = Arc::new(AtomicUsize::new(0));
+    let peak_completion_bytes = Arc::new(AtomicUsize::new(0));
     let (sender, receiver) = sync_channel::<(usize, Result<EncodedShard, String>)>(worker_count);
     std::thread::scope(|scope| -> Result<(), String> {
         for _ in 0..worker_count {
             let sender = sender.clone();
             let jobs = Arc::clone(&jobs);
+            let retained_completion_bytes = Arc::clone(&retained_completion_bytes);
+            let peak_completion_bytes = Arc::clone(&peak_completion_bytes);
             scope.spawn(move || loop {
                 let job = {
                     let mut jobs = match jobs.lock() {
@@ -776,10 +824,26 @@ where
                     seed,
                     dist,
                 );
-                let result = encode_shard(shard_index, graph, graph_degree);
+                let mut result = encode_shard(shard_index, graph, graph_degree);
+                let mut encoded_bytes = result
+                    .as_ref()
+                    .map(|encoded| encoded.bytes.len())
+                    .unwrap_or(0);
+                if let Err(error) = retain_completion_bytes(
+                    &retained_completion_bytes,
+                    &peak_completion_bytes,
+                    encoded_bytes,
+                ) {
+                    encoded_bytes = 0;
+                    result = Err(error);
+                }
                 // A send failure means the backend is already unwinding; no
                 // PostgreSQL API or panic belongs on this worker thread.
                 if sender.send((shard_index, result)).is_err() {
+                    let _ = release_completion_bytes(
+                        &retained_completion_bytes,
+                        encoded_bytes,
+                    );
                     return;
                 }
             });
@@ -793,6 +857,10 @@ where
                 Ok((shard_index, result)) => {
                     received += 1;
                     maybe_check_for_interrupts();
+                    let encoded_bytes = result
+                        .as_ref()
+                        .map(|encoded| encoded.bytes.len())
+                        .unwrap_or(0);
                     match result {
                         Ok(encoded) if first_error.is_none() => {
                             if let Err(error) = spool.append_encoded_shard(shard_index, encoded) {
@@ -805,6 +873,13 @@ where
                         }
                         Err(error) if first_error.is_none() => first_error = Some(error),
                         Err(_) => {}
+                    }
+                    if let Err(error) =
+                        release_completion_bytes(&retained_completion_bytes, encoded_bytes)
+                    {
+                        if first_error.is_none() {
+                            first_error = Some(error);
+                        }
                     }
                 }
                 Err(RecvTimeoutError::Timeout) => maybe_check_for_interrupts(),
@@ -820,6 +895,9 @@ where
         }
         first_error.map_or(Ok(()), Err)
     })?;
+    spool.build_peak_completion_bytes = spool
+        .build_peak_completion_bytes
+        .max(peak_completion_bytes.load(Ordering::Acquire));
     Ok(spool)
 }
 
@@ -1121,6 +1199,7 @@ where
         stitch_edges_after_prune: edges_after,
         stitch_peak_union_len: peak_union_len,
         shard_output_spill_bytes: shard_spool.bytes_written,
+        build_peak_completion_bytes: shard_spool.build_peak_completion_bytes,
         stitch_peak_cursor_bytes: peak_cursor_bytes,
         stitch_peak_group_bytes: peak_group_bytes,
         stitch_peak_retained_bytes: peak_retained_bytes,
@@ -1405,11 +1484,17 @@ mod tests {
             seed in any::<u64>(),
         ) {
             let corpus = random_corpus(node_count, dimensions, seed);
-            let (graph_a, medoid_a, stats_a) =
+            let (graph_a, medoid_a, mut stats_a) =
                 build(&corpus, dimensions, graph_degree, shard_count, eps, seed);
-            let (graph_b, medoid_b, stats_b) =
+            let (graph_b, medoid_b, mut stats_b) =
                 build(&corpus, dimensions, graph_degree, shard_count, eps, seed);
             prop_assert_eq!(medoid_a, medoid_b);
+            // The completion high-water mark intentionally observes worker
+            // scheduling and is not part of graph determinism.
+            prop_assert!(stats_a.build_peak_completion_bytes > 0);
+            prop_assert!(stats_b.build_peak_completion_bytes > 0);
+            stats_a.build_peak_completion_bytes = 0;
+            stats_b.build_peak_completion_bytes = 0;
             prop_assert_eq!(stats_a, stats_b);
             prop_assert_eq!(graph_a.neighbors, graph_b.neighbors);
         }
@@ -1535,6 +1620,8 @@ mod tests {
             build(&corpus, dimensions, graph_degree, shard_count, 0.3, 0xD8);
 
         assert!(stats.shard_output_spill_bytes > 0);
+        assert!(stats.build_peak_completion_bytes > 0);
+        assert!(stats.build_peak_completion_bytes <= stats.shard_output_spill_bytes as usize);
         assert!(stats.stitch_peak_cursor_bytes >= pg_sys::BLCKSZ as usize);
         assert!(stats.stitch_peak_group_bytes > 0);
         assert!(
@@ -1577,6 +1664,7 @@ mod tests {
                 })
                 .collect(),
             bytes_written,
+            build_peak_completion_bytes: 0,
         }
     }
 

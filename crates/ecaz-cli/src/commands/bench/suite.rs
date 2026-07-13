@@ -293,6 +293,10 @@ struct LoadStep {
     reloptions: Vec<String>,
     #[serde(default)]
     log_file: Option<PathBuf>,
+    #[serde(default)]
+    sample_backend_memory: Option<bool>,
+    #[serde(default)]
+    memory_sample_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -2106,6 +2110,13 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
             rows.push(("ec_ivf_build_timing".into(), values));
         } else if let Some(values) = parse_ec_diskann_build_timing_line(line) {
             rows.push(("ec_diskann_build_timing".into(), values));
+        } else if let Some(rest) = line
+            .trim_start()
+            .strip_prefix("[loader] build_memory ")
+        {
+            if let Some(values) = parse_space_key_values(rest) {
+                rows.push(("build_memory".into(), values));
+            }
         } else if let Some((name, seconds)) = parse_timed_loader_line(line, "completed prefix ") {
             rows.push(("load_timing".into(), timed_values("total", &name, seconds)));
         }
@@ -2740,6 +2751,14 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.sample_backend_memory.unwrap_or(false)
+                    && step.memory_sample_interval_ms == Some(0)
+                {
+                    bail!(
+                        "load step {:?} must set memory_sample_interval_ms >= 1",
+                        step.name
+                    )
+                }
                 Ok(())
             }
             SuiteStep::Recall(step) => {
@@ -3345,6 +3364,22 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     }
     for reloption in &step.reloptions {
         push_arg(&mut args, "--reloption", reloption);
+    }
+    if step
+        .sample_backend_memory
+        .or(defaults.sample_backend_memory)
+        .unwrap_or(false)
+    {
+        args.push("--sample-backend-memory".into());
+        push_arg(
+            &mut args,
+            "--memory-sample-interval-ms",
+            &step
+                .memory_sample_interval_ms
+                .or(defaults.memory_sample_interval_ms)
+                .unwrap_or(25)
+                .to_string(),
+        );
     }
     args
 }
@@ -4741,6 +4776,8 @@ mod tests {
                 table_reloptions: Vec::new(),
                 reloptions: Vec::new(),
                 log_file: Some("${artifact_dir}/load.log".into()),
+                sample_backend_memory: None,
+                memory_sample_interval_ms: None,
             })],
         };
 
@@ -5516,6 +5553,8 @@ mod tests {
             table_reloptions: Vec::new(),
             reloptions: vec!["nlists=1024".into()],
             log_file: Some("load.log".into()),
+            sample_backend_memory: Some(true),
+            memory_sample_interval_ms: Some(10),
         };
         let args = expand_load(&step, &defaults);
         assert!(args.contains(&"--chunked".into()));
@@ -5528,6 +5567,10 @@ mod tests {
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
         assert!(!args.iter().any(|arg| arg == "--corpus-file"));
         assert!(!args.iter().any(|arg| arg == "--queries-file"));
+        assert!(args.contains(&"--sample-backend-memory".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--memory-sample-interval-ms", "10"]));
     }
 
     #[test]
@@ -5560,6 +5603,8 @@ mod tests {
                 table_reloptions: vec!["parallel_workers=4".into()],
                 reloptions: vec!["nlists=128".into()],
                 log_file: Some("load.log".into()),
+                sample_backend_memory: None,
+                memory_sample_interval_ms: None,
             })],
         };
         let args = SuiteRunOptions {
@@ -5964,6 +6009,8 @@ mod tests {
             table_reloptions: Vec::new(),
             reloptions: Vec::new(),
             log_file: Some("load.log".into()),
+            sample_backend_memory: None,
+            memory_sample_interval_ms: None,
         });
 
         assert_eq!(step.pgoptions(), Some("-c ec_spire.leaf_block_rows=16"));
@@ -6645,6 +6692,23 @@ mod tests {
         assert_eq!(
             rows[1].1.get("seconds").map(String::as_str),
             Some("0.183480")
+        );
+    }
+
+    #[test]
+    fn parses_loader_build_memory_rows() {
+        let rows = parse_load_rows(
+            "[loader] build_memory index=d8_idx backend_pid=42 rss_before_kb=100 hwm_before_kb=120 rss_peak_kb=900 hwm_peak_kb=950 samples=31 sample_interval_ms=25\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "build_memory");
+        assert_eq!(
+            rows[0].1.get("index").map(String::as_str),
+            Some("d8_idx")
+        );
+        assert_eq!(
+            rows[0].1.get("hwm_peak_kb").map(String::as_str),
+            Some("950")
         );
     }
 

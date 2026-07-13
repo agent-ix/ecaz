@@ -624,21 +624,21 @@ struct LatencyWorkerResult {
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-struct MemorySample {
-    rss_peak_kb: i64,
-    hwm_peak_kb: i64,
-    samples: i64,
+pub(crate) struct MemorySample {
+    pub(crate) rss_peak_kb: i64,
+    pub(crate) hwm_peak_kb: i64,
+    pub(crate) samples: i64,
 }
 
 impl MemorySample {
-    fn merge(&mut self, other: Self) {
+    pub(crate) fn merge(&mut self, other: Self) {
         self.rss_peak_kb = self.rss_peak_kb.max(other.rss_peak_kb);
         self.hwm_peak_kb = self.hwm_peak_kb.max(other.hwm_peak_kb);
         self.samples += other.samples;
     }
 }
 
-async fn monitor_backend_memory(
+pub(crate) async fn monitor_backend_memory(
     pid: i32,
     sample_interval_ms: u64,
     stop: Arc<AtomicBool>,
@@ -656,7 +656,7 @@ async fn monitor_backend_memory(
     Ok(())
 }
 
-async fn read_proc_status_memory(pid: i32) -> Result<Option<MemorySample>> {
+pub(crate) async fn read_proc_status_memory(pid: i32) -> Result<Option<MemorySample>> {
     let path = format!("/proc/{pid}/status");
     let Ok(contents) = tokio::fs::read_to_string(&path).await else {
         return Ok(None);

@@ -19,7 +19,12 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tokio_postgres::{Client, Transaction};
 
 use crate::manifest;
@@ -102,6 +107,15 @@ pub struct LoadArgs {
     /// This is for build-time AM switches such as ec_spire.leaf_block_rows.
     #[arg(long = "session-guc", value_parser = parse_session_guc)]
     pub session_gucs: Vec<(String, String)>,
+
+    /// Sample the PostgreSQL build backend's VmRSS/VmHWM while CREATE INDEX
+    /// runs and emit one structured build_memory row per index.
+    #[arg(long, default_value_t = false)]
+    pub sample_backend_memory: bool,
+
+    /// Poll interval for --sample-backend-memory.
+    #[arg(long, default_value_t = 25)]
+    pub memory_sample_interval_ms: u64,
 
     /// Optional manifest file path (auto-discovered when corpus/queries files
     /// follow the `<basename>_{corpus,queries}.tsv` convention).
@@ -273,6 +287,9 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
             profiles::names().join(", ")
         )
     })?;
+    if args.sample_backend_memory && args.memory_sample_interval_ms == 0 {
+        return Err(eyre!("--memory-sample-interval-ms must be >= 1"));
+    }
 
     if !profile.sweep_axis_is_m() && !args.m.is_empty() {
         return Err(eyre!(unsupported_m_error(profile)));
@@ -416,7 +433,15 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
             )
         };
         for job in &index_jobs {
-            ensure_index(&client, &corpus_table, job, profile).await?;
+            ensure_index(
+                &client,
+                &corpus_table,
+                job,
+                profile,
+                args.sample_backend_memory,
+                args.memory_sample_interval_ms,
+            )
+            .await?;
         }
         print_summary(
             profile,
@@ -551,7 +576,15 @@ pub async fn run(conn: &ConnectionOptions, args: LoadArgs) -> Result<()> {
         };
 
     for job in &index_jobs {
-        ensure_index(&client, &corpus_table, job, profile).await?;
+        ensure_index(
+            &client,
+            &corpus_table,
+            job,
+            profile,
+            args.sample_backend_memory,
+            args.memory_sample_interval_ms,
+        )
+        .await?;
     }
 
     print_summary(
@@ -2095,6 +2128,8 @@ async fn ensure_index(
     corpus_table: &str,
     job: &IndexJob,
     profile: &IndexProfile,
+    sample_backend_memory: bool,
+    memory_sample_interval_ms: u64,
 ) -> Result<()> {
     let summary = if job.reloptions.is_empty() {
         "<none>".to_owned()
@@ -2122,10 +2157,49 @@ async fn ensure_index(
     );
     let sql = psql::build_create_index_sql(corpus_table, &job.name, profile, &job.reloptions);
     let build_started = Instant::now();
-    client
-        .batch_execute(&sql)
-        .await
-        .wrap_err_with(|| format!("building index {}", job.name))?;
+    let memory_monitor = if sample_backend_memory {
+        let backend_pid = client
+            .query_one("SELECT pg_backend_pid()", &[])
+            .await
+            .wrap_err("fetching build backend pid")?
+            .get::<_, i32>(0);
+        let before = crate::commands::bench::latency::read_proc_status_memory(backend_pid)
+            .await?
+            .unwrap_or_default();
+        let peak = Arc::new(Mutex::new(before));
+        let stop = Arc::new(AtomicBool::new(false));
+        let task = tokio::spawn(crate::commands::bench::latency::monitor_backend_memory(
+            backend_pid,
+            memory_sample_interval_ms,
+            Arc::clone(&stop),
+            Arc::clone(&peak),
+        ));
+        Some((backend_pid, before, peak, stop, task))
+    } else {
+        None
+    };
+    let build_result = client.batch_execute(&sql).await;
+    if let Some((backend_pid, before, peak, stop, task)) = memory_monitor {
+        stop.store(true, Ordering::SeqCst);
+        task.await
+            .map_err(|error| eyre!("build memory monitor task failed: {error}"))??;
+        if let Some(after) = crate::commands::bench::latency::read_proc_status_memory(backend_pid)
+            .await?
+        {
+            peak.lock().await.merge(after);
+        }
+        let peak = *peak.lock().await;
+        crate::ecaz_eprintln!(
+            "[loader] build_memory index={} backend_pid={backend_pid} rss_before_kb={} hwm_before_kb={} rss_peak_kb={} hwm_peak_kb={} samples={} sample_interval_ms={memory_sample_interval_ms}",
+            job.name,
+            before.rss_peak_kb,
+            before.hwm_peak_kb,
+            peak.rss_peak_kb,
+            peak.hwm_peak_kb,
+            peak.samples,
+        );
+    }
+    build_result.wrap_err_with(|| format!("building index {}", job.name))?;
     crate::ecaz_eprintln!(
         "[loader] built {index} in {:.2?}",
         build_started.elapsed(),
