@@ -29,7 +29,7 @@ fn test_ec_distann_access_method_is_registered() {
 }
 
 #[pg_test]
-fn test_ec_distann_scan_registry_non_preload_contract_and_gucs() {
+fn test_ec_distann_scan_registry_contract_and_gucs() {
     let settings = Spi::get_two::<String, String>(
         "SELECT
              (SELECT context FROM pg_settings WHERE name = 'ec_distann.max_scan_pins'),
@@ -49,10 +49,29 @@ fn test_ec_distann_scan_registry_non_preload_contract_and_gucs() {
     ]);
     let fingerprint = [0x33; 34];
 
-    assert_eq!(
-        crate::am::ec_distann::register_scan_token_for_test(logical, fingerprint, token),
-        Err(crate::am::ec_distann::ScanRegistryError::Unavailable)
-    );
+    let shared_preload = Spi::get_one::<String>("SHOW shared_preload_libraries")
+        .expect("shared_preload_libraries inspection should succeed")
+        .unwrap_or_default();
+    let is_preloaded = shared_preload
+        .split(',')
+        .any(|library| library.trim() == "ecaz");
+    let registration =
+        crate::am::ec_distann::register_scan_token_for_test(logical, fingerprint, token);
+    if is_preloaded {
+        assert_eq!(
+            registration,
+            Ok(crate::am::ec_distann::ScanRegisterOutcome::Registered)
+        );
+        assert_eq!(
+            crate::am::ec_distann::release_scan_token_for_test(logical, fingerprint, token),
+            Ok(true)
+        );
+    } else {
+        assert_eq!(
+            registration,
+            Err(crate::am::ec_distann::ScanRegistryError::Unavailable)
+        );
+    }
 }
 
 /// Requires a pg_test postmaster started with `shared_preload_libraries='ecaz'`.
@@ -192,7 +211,7 @@ fn test_distann_control_metadata_and_fail_closed() {
     Spi::run(
         "CREATE TABLE ec_distann_control (
              source_id uuid NOT NULL,
-             embedding ecvector NOT NULL
+             embedding ecvector(4) NOT NULL
          )",
     )
     .expect("control source table should create");
@@ -437,7 +456,7 @@ fn test_distann_control_mode_change_reindex() {
     Spi::run(
         "CREATE TABLE ec_distann_control_mode (
              source_id uuid NOT NULL,
-             embedding ecvector NOT NULL
+             embedding ecvector(4) NOT NULL
          );
          INSERT INTO ec_distann_control_mode VALUES
            ('00000000-0000-4000-8000-000000000021', encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)),
@@ -504,7 +523,7 @@ fn test_distann_control_vacuum_and_concurrent_create() {
             "DROP TABLE IF EXISTS ec_distann_control_loopback CASCADE;
              CREATE TABLE ec_distann_control_loopback (
                source_id uuid NOT NULL,
-               embedding ecvector NOT NULL
+               embedding ecvector(4) NOT NULL
              );
              INSERT INTO ec_distann_control_loopback VALUES
                ('00000000-0000-4000-8000-000000000031', encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42))",
@@ -2084,6 +2103,17 @@ fn test_distann_abort_epoch_build_clears_gate_and_is_idempotent() {
     // Before any build the source is not gated.
     assert_eq!(source_mask() & 1, 0, "source must not be gated before begin");
 
+    // Unknown build ids are no-ops. Exercise this before begin so the pg_test
+    // function's enclosing transaction is not still holding the real build's
+    // session lock pending commit.
+    Spi::run(&format!(
+        "SELECT ec_distann_abort_epoch_build(
+             '{}'::regclass, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid
+         )",
+        coordinator.index_name,
+    ))
+    .expect("aborting an unknown build id must be a no-op");
+
     Spi::run(&format!(
         "SELECT ec_distann_begin_epoch_build('{}'::regclass, 7, '{build_id}'::uuid)",
         coordinator.index_name,
@@ -2116,14 +2146,6 @@ fn test_distann_abort_epoch_build_clears_gate_and_is_idempotent() {
     .expect("second abort should be idempotent");
     assert_eq!(registration_state().as_deref(), Some("Aborted"));
 
-    // Aborting an unknown build id is a no-op.
-    Spi::run(&format!(
-        "SELECT ec_distann_abort_epoch_build(
-             '{}'::regclass, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'::uuid
-         )",
-        coordinator.index_name,
-    ))
-    .expect("aborting an unknown build id must be a no-op");
 }
 
 #[pg_test]
@@ -6810,7 +6832,12 @@ fn test_distann_legacy_build_as_unprivileged_table_owner() {
             && endpoint_denial.contains("ec_distann_list_unpublished_generations"),
         "unexpected internal endpoint ACL error: {endpoint_denial}"
     );
-    Spi::run(&format!("DROP SCHEMA {SCHEMA} CASCADE; DROP ROLE {ROLE}")).unwrap();
+    Spi::run(&format!(
+        "DROP SCHEMA {SCHEMA} CASCADE;
+         REVOKE USAGE ON SCHEMA {extension_schema} FROM {ROLE};
+         DROP ROLE {ROLE}"
+    ))
+    .unwrap();
 }
 
 #[pg_test]
