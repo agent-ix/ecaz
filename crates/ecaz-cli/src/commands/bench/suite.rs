@@ -1804,6 +1804,17 @@ fn parse_result_rows(
                 values: add_result_context(manifest, step, values),
             })
             .collect(),
+        "raw" => parse_raw_result_rows(raw)
+            .into_iter()
+            .map(|(metric, values)| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric,
+                artifact: artifact.into(),
+                values: add_result_context(manifest, step, values),
+            })
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -1993,6 +2004,28 @@ fn parse_space_key_values(rest: &str) -> Option<BTreeMap<String, String>> {
         values.insert(key.to_owned(), value.to_owned());
     }
     (!values.is_empty()).then_some(values)
+}
+
+/// Normalize decision-grade output from a raw suite step without teaching the
+/// runner about the command that produced it. The emitting command owns the
+/// metric name and whitespace-delimited key/value fields; the suite owns
+/// provenance, JSONL persistence, and threshold evaluation.
+fn parse_raw_result_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
+    const PREFIX: &str = "[suite-result] ";
+    raw.lines()
+        .filter_map(|line| {
+            let body = line.trim().strip_prefix(PREFIX)?;
+            let (metric, fields) = body.split_once(char::is_whitespace)?;
+            if metric.is_empty()
+                || !metric
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+            {
+                return None;
+            }
+            parse_space_key_values(fields.trim()).map(|values| (metric.to_owned(), values))
+        })
+        .collect()
 }
 
 fn parse_storage_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
@@ -4542,6 +4575,27 @@ mod tests {
             user: None,
             password: Some("secret".into()),
         }
+    }
+
+    #[test]
+    fn raw_suite_result_rows_are_structured() {
+        let raw = "\
+psql header noise\n\
+[suite-result] dml_gate_latency lane=control trial=1 us_per_statement=3.125\n\
+[suite-result] dml_gate_latency lane=installed trial=1 us_per_statement=17.750\n\
+[suite-result] invalid/metric lane=ignored\n\
+[suite-result] missing_fields\n";
+        let rows = parse_raw_result_rows(raw);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "dml_gate_latency");
+        assert_eq!(
+            rows[0].1.get("lane").map(String::as_str),
+            Some("control")
+        );
+        assert_eq!(
+            rows[1].1.get("us_per_statement").map(String::as_str),
+            Some("17.750")
+        );
     }
 
     #[test]
