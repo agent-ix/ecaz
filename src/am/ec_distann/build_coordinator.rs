@@ -2520,7 +2520,7 @@ fn ec_distann_recover_cancelled_publish(index_regclass: PgRelation, build_id: Uu
                     &format!(
                         "SELECT decision_state, cancellation_audit,
                                 cancellation_audit_digest, cancellation_reclaimed_at IS NOT NULL
-                                    AS reclaimed
+                                    AS reclaimed, xmin::text AS decision_xmin
                            FROM {decision}
                           WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                             AND build_id = $3::uuid
@@ -2562,12 +2562,35 @@ fn ec_distann_recover_cancelled_publish(index_regclass: PgRelation, build_id: Uu
                             .ok_or_else(|| {
                                 "EC_PUBLISH_CANCEL: reclaimed flag is NULL".to_owned()
                             })?,
+                        row["decision_xmin"]
+                            .value::<String>()
+                            .map_err(|_| {
+                                "EC_TRANSACTION_BOUNDARY: cancelled decision xmin decode failed"
+                                    .to_owned()
+                            })?
+                            .ok_or_else(|| {
+                                "EC_TRANSACTION_BOUNDARY: cancelled decision xmin is NULL"
+                                    .to_owned()
+                            })?
+                            .parse::<u32>()
+                            .map_err(|_| {
+                                "EC_TRANSACTION_BOUNDARY: cancelled decision xmin is invalid"
+                                    .to_owned()
+                            })?,
                     ))
                 })
                 .next()
                 .transpose()
         })?
         .ok_or_else(|| "EC_PUBLISH_CANCEL: cancelled publish decision is absent".to_owned())?;
+        if unsafe {
+            pg_sys::TransactionIdIsCurrentTransactionId(pg_sys::TransactionId::from(stored.4))
+        } {
+            return Err(
+                "EC_TRANSACTION_BOUNDARY: cancelled publish decision must commit before recovery begins"
+                    .to_owned(),
+            );
+        }
         if stored.0 != "Cancelled" {
             return Err(format!(
                 "EC_PUBLISH_CANCEL: cleanup requires a Cancelled decision; state is {}",

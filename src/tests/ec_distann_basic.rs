@@ -3169,6 +3169,33 @@ fn test_distann_multi_epoch_publish() {
         .batch_execute("ROLLBACK")
         .expect("repeatable-read cancellation probe should roll back");
     client
+        .batch_execute("BEGIN")
+        .expect("same-transaction cancellation probe should begin");
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_cancel_epoch_publish(
+                 'ec_distann_me_idx'::regclass, '{cancelled}'::uuid,
+                 'successor participant permanently unavailable'
+             )"
+        ))
+        .expect("cancellation should write inside the probe transaction");
+    let same_transaction_recovery = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_cancelled_publish(
+                 'ec_distann_me_idx'::regclass, '{cancelled}'::uuid)"
+        ))
+        .expect_err("cancelled decision must commit before cleanup recovery");
+    assert!(
+        same_transaction_recovery
+            .as_db_error()
+            .map(|error| error.message().contains("EC_TRANSACTION_BOUNDARY"))
+            .unwrap_or(false),
+        "same-transaction recovery must fail at the commit boundary: {same_transaction_recovery}"
+    );
+    client
+        .batch_execute("ROLLBACK")
+        .expect("same-transaction cancellation probe should roll back");
+    client
         .batch_execute(&format!(
             "SELECT ec_distann_cancel_epoch_publish(
                  'ec_distann_me_idx'::regclass, '{cancelled}'::uuid,

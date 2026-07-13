@@ -375,9 +375,11 @@ parent.
   cancellation may retain a Published-but-never-active orphan; it is never
   routable and may be reclaimed only through an explicit audited force-retire
   path tied to that cancelled decision. `ec_distann_recover_cancelled_publish`
-  SHALL replay the immutable private participant bindings and send the exact
-  canonical audit/digest to each participant. Each participant SHALL accept
-  only a matching non-active Ready or Published generation, atomically insert
+  SHALL reject recovery when the cancelled decision's `xmin` belongs to the
+  current transaction; cancellation must commit before cleanup recovery begins.
+  Recovery SHALL replay the immutable private participant bindings and send
+  the exact canonical audit/digest to each participant. Each participant SHALL
+  accept only a matching non-active Ready or Published generation, atomically insert
   an immutable `CancelledReclaimed` tombstone before relation deletion, and
   replay exactly from that tombstone. A crash after a subset of remote commits
   is completed by re-drive; only after every binding acknowledges may the
