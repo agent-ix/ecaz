@@ -15,6 +15,7 @@
 //! local AM `amgettuple` path.
 
 use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, Spi};
+use std::ffi::c_void;
 use std::ptr;
 
 use crate::am::common::{
@@ -253,6 +254,70 @@ unsafe fn index_first_key_attno(index_info: &pg_sys::IndexOptInfo) -> Option<pg_
         .filter(|attno| *attno > 0)
 }
 
+struct SystemColumnWalkerContext {
+    scan_relid: pg_sys::Index,
+    system_attnum: Option<pg_sys::AttrNumber>,
+}
+
+/// Find a system-column `Var` belonging to this CustomScan's base relation.
+///
+/// PostgreSQL represents `ctid`, `xmin`, `cmin`, `xmax`, `cmax`, and
+/// `tableoid` with negative attribute numbers. A remote physical row has no
+/// meaningful coordinator-local identity for any of them, so allowing the
+/// executor to compile such a projection or qual would evaluate it against a
+/// NULL virtual-slot field.
+unsafe extern "C-unwind" fn find_system_column_var(
+    node: *mut pg_sys::Node,
+    context: *mut c_void,
+) -> bool {
+    if node.is_null() || context.is_null() {
+        return false;
+    }
+    let context = &mut *context.cast::<SystemColumnWalkerContext>();
+    if (*node).type_ == pg_sys::NodeTag::T_Var {
+        let var = &*node.cast::<pg_sys::Var>();
+        if u32::try_from(var.varno).ok() == Some(context.scan_relid)
+            && var.varlevelsup == 0
+            && var.varattno < 0
+        {
+            context.system_attnum = Some(var.varattno);
+            return true;
+        }
+    }
+    pg_sys::expression_tree_walker(
+        node,
+        Some(find_system_column_var),
+        context as *mut _ as *mut _,
+    )
+}
+
+/// Reject relation-local system columns before constructing an executable
+/// distributed plan. FR-078 deliberately leaves their cross-node identity
+/// undefined; fail closed instead of returning NULL or coordinator-local
+/// values for remote-owned rows.
+unsafe fn reject_unsupported_system_columns(
+    scan_relid: pg_sys::Index,
+    trees: &[*mut pg_sys::Node],
+) {
+    let mut context = SystemColumnWalkerContext {
+        scan_relid,
+        system_attnum: None,
+    };
+    for tree in trees {
+        if tree.is_null() {
+            continue;
+        }
+        if find_system_column_var(*tree, &mut context as *mut _ as *mut c_void) {
+            let attnum = context
+                .system_attnum
+                .expect("system-column walker stopped only after recording an attnum");
+            pgrx::error!(
+                "EC_UNSUPPORTED_PROJECTION: multi-node ec_distann scan references system attribute {attnum}"
+            );
+        }
+    }
+}
+
 unsafe fn is_relation_var(expr: *mut pg_sys::Expr, relid: pg_sys::Index) -> bool {
     let Some(node) = cs_pg_ref(expr.cast::<pg_sys::Node>()) else {
         return false;
@@ -350,6 +415,15 @@ unsafe extern "C-unwind" fn set_rel_pathlist_hook(
     let Some(index_oid) = custom_scan_candidate_index(planner_rel) else {
         return;
     };
+    let query = cs_pg_ref(planner_rel.root_ref.parse)
+        .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan planner query is missing"));
+    reject_unsupported_system_columns(
+        planner_rel.rel_ref.relid,
+        &[
+            query.targetList.cast::<pg_sys::Node>(),
+            query.jointree.cast::<pg_sys::Node>(),
+        ],
+    );
 
     // SAFETY: pointers are the live planner hook arguments; the CustomPath node
     // and its private OID list are allocated in planner memory and transferred
@@ -414,6 +488,11 @@ unsafe extern "C-unwind" fn plan_custom_path(
         ptr::null_mut(),
         pg_sys::copyObjectImpl(query_expr.cast()).cast(),
     );
+    let quals = pg_sys::extract_actual_clauses(clauses, false);
+    reject_unsupported_system_columns(
+        planner_rel.rel_ref.relid,
+        &[tlist.cast::<pg_sys::Node>(), quals.cast::<pg_sys::Node>()],
+    );
 
     let mut custom_scan = PgBox::<pg_sys::CustomScan>::alloc_node(pg_sys::NodeTag::T_CustomScan);
     custom_scan.scan.plan.type_ = pg_sys::NodeTag::T_CustomScan;
@@ -428,7 +507,7 @@ unsafe extern "C-unwind" fn plan_custom_path(
     custom_scan.scan.plan.parallel_safe = false;
     custom_scan.scan.plan.async_capable = false;
     custom_scan.scan.plan.targetlist = tlist;
-    custom_scan.scan.plan.qual = pg_sys::extract_actual_clauses(clauses, false);
+    custom_scan.scan.plan.qual = quals;
     custom_scan.scan.scanrelid = planner_rel.rel_ref.relid;
     custom_scan.flags = best_path.flags;
     custom_scan.custom_plans = custom_plans;

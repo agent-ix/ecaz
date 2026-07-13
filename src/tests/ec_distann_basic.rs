@@ -3624,6 +3624,44 @@ fn test_distann_three_owner_physical_handoff() {
         std::collections::BTreeSet::from([0, 1, 2]),
         "CustomScan must materialize rows from every physical owner"
     );
+    for (surface, statement) in [
+        (
+            "projection",
+            "EXPLAIN (COSTS OFF)
+             SELECT ctid, source_id
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+        ),
+        (
+            "qual",
+            "EXPLAIN (COSTS OFF)
+             SELECT source_id
+               FROM ec_distann_rh_source
+              WHERE xmin = '1'::xid
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+        ),
+    ] {
+        let error = match client.query(statement, &[]) {
+            Ok(rows) => {
+                let plan = rows
+                    .into_iter()
+                    .map(|row| row.get::<_, String>(0))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                panic!("system-column {surface} must fail during planning; plan was:\n{plan}")
+            }
+            Err(error) => error,
+        };
+        assert!(
+            error
+                .as_db_error()
+                .map(|error| error.message().contains("EC_UNSUPPORTED_PROJECTION"))
+                .unwrap_or(false),
+            "system-column {surface} must be classified: {error}"
+        );
+    }
     assert_eq!(
         client
             .query_one(
