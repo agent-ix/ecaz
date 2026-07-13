@@ -314,7 +314,8 @@ fn test_distann_control_metadata_and_fail_closed() {
         .expect("direct control scan must fail before returning");
     });
     assert!(
-        scan_error.contains("EC_DISTANN_CONTROL_SCAN"),
+        scan_error.contains("EC_GENERATION_MISSING")
+            && scan_error.contains("logical index has no active epoch"),
         "unexpected direct-scan error: {scan_error}"
     );
     Spi::run("RESET enable_seqscan").unwrap();
