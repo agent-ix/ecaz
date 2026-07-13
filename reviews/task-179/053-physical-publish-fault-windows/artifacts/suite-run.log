@@ -1,0 +1,6 @@
+[suite:task179-physical-publish-fault-windows] wrote reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run/suite-manifest.json
+[suite:task179-physical-publish-fault-windows] physical-publish-faults -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run --run-dir target/task179-physical-publish-faults --log-file reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run/distann-local-multinode.log --nodes 3 --base-port 40480 --rows 90 --dim 4 --graph-degree 8 --head-index-cap 4096 --queries 1 --top-k 10
+[suite:task179-physical-publish-fault-windows] wrote reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run/suite-manifest.json
+[suite:task179-physical-publish-fault-windows] wrote reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run/suite-manifest.json
+[suite:task179-physical-publish-fault-windows] wrote reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run/results.jsonl
+[suite:task179-physical-publish-fault-windows] wrote reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run/suite-manifest.json
