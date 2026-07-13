@@ -13,7 +13,7 @@
 //! TLS / connection-secret handling (NFR-014) is deferred to the productionizing
 //! pass; M2's gate substrate is loopback multi-instance.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::future::Future;
 use std::ptr::NonNull;
@@ -53,18 +53,73 @@ use crate::am::ec_diskann::maybe_check_for_interrupts;
 enum RemoteAwaitError<E> {
     Remote(E),
     TimedOut,
+    Interrupted,
 }
+
+const POSTGRES_INTERRUPT_POLL_MS: u64 = 5;
+const REMOTE_CANCEL_DELIVERY_TIMEOUT_MS: u64 = 100;
 
 async fn await_remote<T, E>(
     timeout: Duration,
+    cancel_token: Option<tokio_postgres::CancelToken>,
     future: impl Future<Output = Result<T, E>>,
 ) -> Result<T, RemoteAwaitError<E>> {
-    let result = tokio::time::timeout(timeout, future).await;
-    match result {
-        Ok(Ok(value)) => Ok(value),
-        Ok(Err(error)) => Err(RemoteAwaitError::Remote(error)),
-        Err(_) => Err(RemoteAwaitError::TimedOut),
+    let remote = tokio::time::timeout(timeout, future);
+    let interrupt = postgres_interrupt_signal();
+    match futures_util::future::select(Box::pin(remote), Box::pin(interrupt)).await {
+        futures_util::future::Either::Left((result, _)) => match result {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(error)) => Err(RemoteAwaitError::Remote(error)),
+            Err(_) => Err(RemoteAwaitError::TimedOut),
+        },
+        futures_util::future::Either::Right(((), _)) => {
+            mark_transport_interrupt_observed();
+            if let Some(cancel_token) = cancel_token {
+                // Best-effort graceful cancellation is deliberately short. If
+                // delivery stalls, with_transport_state drops the pooled
+                // clients/driver tasks before CHECK_FOR_INTERRUPTS raises.
+                let _ = tokio::time::timeout(
+                    Duration::from_millis(REMOTE_CANCEL_DELIVERY_TIMEOUT_MS),
+                    cancel_token.cancel_query(NoTls),
+                )
+                .await;
+            }
+            Err(RemoteAwaitError::Interrupted)
+        }
     }
+}
+
+async fn postgres_interrupt_signal() {
+    loop {
+        if postgres_query_cancel_pending() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(POSTGRES_INTERRUPT_POLL_MS)).await;
+    }
+}
+
+unsafe extern "C" {
+    fn dlsym(
+        handle: *mut std::ffi::c_void,
+        symbol: *const std::ffi::c_char,
+    ) -> *mut std::ffi::c_void;
+}
+
+fn postgres_sig_atomic_flag(symbol_name: &'static [u8]) -> i32 {
+    // SAFETY: symbol_name is a static NUL-terminated PostgreSQL global name and
+    // dlsym with a null handle searches the current backend process image.
+    let ptr = unsafe { dlsym(std::ptr::null_mut(), symbol_name.as_ptr().cast()) };
+    if ptr.is_null() {
+        return 0;
+    }
+    // SAFETY: callers pass PostgreSQL sig_atomic_t-compatible globals; the
+    // non-null pointer is backend-local and this performs one read only.
+    unsafe { *(ptr.cast::<std::ffi::c_int>()) }
+}
+
+fn postgres_query_cancel_pending() -> bool {
+    postgres_sig_atomic_flag(b"InterruptPending\0") != 0
+        && postgres_sig_atomic_flag(b"QueryCancelPending\0") != 0
 }
 
 fn connect_timeout() -> Duration {
@@ -93,6 +148,7 @@ async fn configure_remote_statement_timeout(
     let timeout = super::options::remote_statement_timeout_ms().to_string();
     match await_remote(
         call_timeout(),
+        Some(client.cancel_token()),
         client.query_one(
             "SELECT set_config('statement_timeout', $1, false)",
             &[&timeout],
@@ -107,6 +163,9 @@ async fn configure_remote_statement_timeout(
         Err(RemoteAwaitError::TimedOut) => Err(format!(
             "{error_prefix}: participant statement-timeout setup timed out"
         )),
+        Err(RemoteAwaitError::Interrupted) => Err(format!(
+            "{error_prefix}: participant statement-timeout setup interrupted"
+        )),
     }
 }
 
@@ -116,11 +175,20 @@ async fn lifecycle_query(
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, String> {
-    match await_remote(call_timeout(), client.query(sql, params)).await {
+    match await_remote(
+        call_timeout(),
+        Some(client.cancel_token()),
+        client.query(sql, params),
+    )
+    .await
+    {
         Ok(rows) => Ok(rows),
         Err(RemoteAwaitError::Remote(error)) => Err(remote_error(context, error)),
         Err(RemoteAwaitError::TimedOut) => Err(format!(
             "EC_BUILD_INCOMPLETE: remote {context} timed out"
+        )),
+        Err(RemoteAwaitError::Interrupted) => Err(format!(
+            "EC_BUILD_INCOMPLETE: remote {context} interrupted"
         )),
     }
 }
@@ -131,11 +199,20 @@ async fn lifecycle_query_one(
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Row, String> {
-    match await_remote(call_timeout(), client.query_one(sql, params)).await {
+    match await_remote(
+        call_timeout(),
+        Some(client.cancel_token()),
+        client.query_one(sql, params),
+    )
+    .await
+    {
         Ok(row) => Ok(row),
         Err(RemoteAwaitError::Remote(error)) => Err(remote_error(context, error)),
         Err(RemoteAwaitError::TimedOut) => Err(format!(
             "EC_BUILD_INCOMPLETE: remote {context} timed out"
+        )),
+        Err(RemoteAwaitError::Interrupted) => Err(format!(
+            "EC_BUILD_INCOMPLETE: remote {context} interrupted"
         )),
     }
 }
@@ -145,11 +222,20 @@ async fn physical_query(
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, DistannExpandError> {
-    match await_remote(call_timeout(), client.query(sql, params)).await {
+    match await_remote(
+        call_timeout(),
+        Some(client.cancel_token()),
+        client.query(sql, params),
+    )
+    .await
+    {
         Ok(rows) => Ok(rows),
         Err(RemoteAwaitError::Remote(error)) => Err(classify_physical_read_error(error)),
         Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::Internal(
             "physical generation RPC timed out".to_owned(),
+        )),
+        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::Internal(
+            "physical generation RPC interrupted".to_owned(),
         )),
     }
 }
@@ -168,7 +254,13 @@ async fn scan_query(
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, DistannExpandError> {
-    match await_remote(call_timeout(), client.query(sql, params)).await {
+    match await_remote(
+        call_timeout(),
+        Some(client.cancel_token()),
+        client.query(sql, params),
+    )
+    .await
+    {
         Ok(rows) => Ok(rows),
         Err(RemoteAwaitError::Remote(error)) => {
             let code = error.code().map(|state| state.code().to_owned());
@@ -184,6 +276,9 @@ async fn scan_query(
         Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::Internal(format!(
             "ec_distann remote {context} timed out"
         ))),
+        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::Internal(format!(
+            "ec_distann remote {context} interrupted"
+        ))),
     }
 }
 
@@ -192,13 +287,17 @@ async fn open_remote_connection(
     error_prefix: &str,
 ) -> Result<(Client, tokio::task::JoinHandle<()>), String> {
     let config = parse_remote_config(conninfo, error_prefix)?;
-    let (client, connection) = match await_remote(connect_timeout(), config.connect(NoTls)).await {
+    let (client, connection) =
+        match await_remote(connect_timeout(), None, config.connect(NoTls)).await {
         Ok(connection) => connection,
         Err(RemoteAwaitError::Remote(error)) => {
             return Err(format!("{error_prefix}: could not connect to participant: {error}"));
         }
         Err(RemoteAwaitError::TimedOut) => {
             return Err(format!("{error_prefix}: participant connection timed out"));
+        }
+        Err(RemoteAwaitError::Interrupted) => {
+            return Err(format!("{error_prefix}: participant connection interrupted"));
         }
     };
     let task = tokio::spawn(async move {
@@ -217,6 +316,7 @@ async fn configure_scan_identity(
 ) -> Result<(), String> {
     match await_remote(
         call_timeout(),
+        Some(client.cancel_token()),
         client.query(SESSION_SETUP_SQL, &[&identity.0, &identity.1, &identity.2]),
     )
     .await
@@ -233,6 +333,9 @@ async fn configure_scan_identity(
         }
         Err(RemoteAwaitError::TimedOut) => {
             Err("ec_distann remote transport session setup timed out".to_owned())
+        }
+        Err(RemoteAwaitError::Interrupted) => {
+            Err("ec_distann remote transport session setup interrupted".to_owned())
         }
     }
 }
@@ -853,6 +956,12 @@ struct PooledConnection {
     applied_statement_timeout_ms: u64,
 }
 
+impl Drop for PooledConnection {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
 struct DistannTransportState {
     runtime: tokio::runtime::Runtime,
     connections: HashMap<String, PooledConnection>,
@@ -861,6 +970,15 @@ struct DistannTransportState {
 thread_local! {
     static DISTANN_TRANSPORT_STATE: RefCell<Option<DistannTransportState>> =
         const { RefCell::new(None) };
+    static DISTANN_TRANSPORT_INTERRUPT_OBSERVED: Cell<bool> = const { Cell::new(false) };
+}
+
+fn mark_transport_interrupt_observed() {
+    DISTANN_TRANSPORT_INTERRUPT_OBSERVED.with(|observed| observed.set(true));
+}
+
+fn take_transport_interrupt_observed() -> bool {
+    DISTANN_TRANSPORT_INTERRUPT_OBSERVED.with(|observed| observed.replace(false))
 }
 
 impl DistannTransportState {
@@ -890,14 +1008,25 @@ where
     // RefCell borrow: otherwise a cancellation can permanently leak RefMut and
     // poison every later transport call in this backend.
     maybe_check_for_interrupts();
+    let _ = take_transport_interrupt_observed();
     let result = DISTANN_TRANSPORT_STATE.with(|cell| {
         let mut state = cell.borrow_mut();
         if state.is_none() {
             *state = Some(DistannTransportState::new()?);
         }
-        f(state
+        let state = state
             .as_mut()
-            .expect("ec_distann transport state initialized"))
+            .expect("ec_distann transport state initialized");
+        let result = f(state);
+        if take_transport_interrupt_observed() {
+            // A query cancel can arrive while the current-thread runtime is
+            // parked. The async poll returns normally so this RefMut unwinds;
+            // discard every pooled connection before the outer interrupt
+            // boundary raises, guaranteeing no in-flight protocol state is
+            // reused by the next command in this backend.
+            state.connections.clear();
+        }
+        result
     });
     maybe_check_for_interrupts();
     result
@@ -1577,6 +1706,7 @@ mod tests {
             .expect("test runtime");
         let outcome = runtime.block_on(await_remote(
             Duration::from_millis(1),
+            None,
             std::future::pending::<Result<(), ()>>(),
         ));
         assert!(matches!(outcome, Err(RemoteAwaitError::TimedOut)));
@@ -1590,6 +1720,7 @@ mod tests {
             .expect("test runtime");
         let outcome = runtime.block_on(await_remote(
             Duration::from_secs(1),
+            None,
             std::future::ready(Err::<(), _>("remote")),
         ));
         assert!(matches!(

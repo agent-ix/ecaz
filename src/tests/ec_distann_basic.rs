@@ -8155,7 +8155,7 @@ fn test_ec_distann_remote_transport_cancel_then_reuse() {
     );
     Spi::run("SET ec_distann.remote_connect_timeout_ms = 1000")
         .expect("connect timeout should set");
-    Spi::run("SET ec_distann.remote_statement_timeout_ms = 5000")
+    Spi::run("SET ec_distann.remote_statement_timeout_ms = 10000")
         .expect("statement timeout should set");
     crate::am::ec_distann::remote_timeout_probe_for_test(&conninfo, 0.0)
         .expect("initial probe should establish the pooled session");
@@ -8173,18 +8173,81 @@ fn test_ec_distann_remote_transport_cancel_then_reuse() {
         assert!(cancelled, "pg_test backend should accept cancellation");
     });
 
+    let started = std::time::Instant::now();
     let error = expect_pg_error_rolled_back(|| {
-        crate::am::ec_distann::remote_timeout_probe_for_test(&conninfo, 0.5)
-            .expect("remote sleep completes before the outer interrupt boundary");
+        crate::am::ec_distann::remote_timeout_probe_for_test(&conninfo, 5.0)
+            .expect("local cancellation must escape the remote await");
     });
+    let elapsed = started.elapsed();
     canceller.join().expect("canceller thread should finish");
     assert!(
         error.contains("canceling statement due to user request"),
         "unexpected cancellation error: {error}"
     );
+    assert!(
+        elapsed < std::time::Duration::from_secs(1),
+        "local cancellation was not prompt: {elapsed:?}"
+    );
 
     crate::am::ec_distann::remote_timeout_probe_for_test(&conninfo, 0.0)
         .expect("same backend must reuse transport state after cancellation");
+}
+
+#[pg_test]
+fn test_ec_distann_remote_transport_cancel_mid_connect_then_reuse() {
+    let listener = std::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+        .expect("blackhole listener should bind");
+    let port = listener
+        .local_addr()
+        .expect("blackhole listener address")
+        .port();
+    let (release_tx, release_rx) = std::sync::mpsc::sync_channel::<()>(0);
+    let acceptor = std::thread::spawn(move || {
+        let (_socket, _) = listener.accept().expect("blackhole should accept");
+        let _ = release_rx.recv_timeout(std::time::Duration::from_secs(2));
+    });
+
+    Spi::run("SET ec_distann.remote_connect_timeout_ms = 10000")
+        .expect("connect timeout should set");
+    Spi::run("SET ec_distann.remote_statement_timeout_ms = 10000")
+        .expect("statement timeout should set");
+    let backend_pid = unsafe { pg_sys::MyProcPid };
+    let cancel_conninfo = current_pg_test_loopback_conninfo();
+    let canceller = std::thread::spawn(move || {
+        let mut client = postgres::Client::connect(&cancel_conninfo, postgres::NoTls)
+            .expect("canceller should connect to the pg_test instance");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let cancelled = client
+            .query_one("SELECT pg_cancel_backend($1)", &[&backend_pid])
+            .expect("pg_cancel_backend should execute")
+            .get::<_, bool>(0);
+        assert!(cancelled, "pg_test backend should accept cancellation");
+    });
+    let blackhole = format!("host=127.0.0.1 port={port} dbname=postgres");
+
+    let started = std::time::Instant::now();
+    let error = expect_pg_error_rolled_back(|| {
+        crate::am::ec_distann::remote_timeout_probe_for_test(&blackhole, 0.0)
+            .expect("local cancellation must escape connection establishment");
+    });
+    let elapsed = started.elapsed();
+    canceller.join().expect("canceller thread should finish");
+    release_tx.send(()).ok();
+    acceptor.join().expect("blackhole acceptor should finish");
+    assert!(
+        error.contains("canceling statement due to user request"),
+        "unexpected cancellation error: {error}"
+    );
+    assert!(
+        elapsed < std::time::Duration::from_secs(1),
+        "mid-connect cancellation was not prompt: {elapsed:?}"
+    );
+
+    crate::am::ec_distann::remote_timeout_probe_for_test(
+        &current_pg_test_loopback_conninfo(),
+        0.0,
+    )
+    .expect("same backend must reconnect after mid-connect cancellation");
 }
 
 #[pg_test]
