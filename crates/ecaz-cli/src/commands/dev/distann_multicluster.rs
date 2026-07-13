@@ -57,6 +57,10 @@ pub struct LocalMultinodePg18Args {
     /// Query iterations per latency arm in physical benchmark mode.
     #[arg(long, default_value_t = 5)]
     pub benchmark_iterations: u32,
+    /// Untimed queries on each latency worker before physical benchmark
+    /// measurement. This warms backend-local head and transport caches.
+    #[arg(long, default_value_t = 0)]
+    pub benchmark_warmup_iterations: u32,
     /// First TCP port; node k listens on base_port + (k - 1).
     #[arg(long, default_value_t = 39710)]
     pub base_port: u16,
@@ -794,6 +798,8 @@ async fn run_physical_benchmarks(
             "32".into(),
             "--iterations".into(),
             args.benchmark_iterations.to_string(),
+            "--warmup-iterations".into(),
+            args.benchmark_warmup_iterations.to_string(),
             "--concurrency".into(),
             "1".into(),
             "--force-index".into(),
@@ -805,7 +811,7 @@ async fn run_physical_benchmarks(
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} head_index_cap={} arm={arm} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm",
+            "physical_benchmark_latency scale={scale} head_index_cap={} arm={arm} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -813,6 +819,7 @@ async fn run_physical_benchmarks(
             benchmark_ms(&row[6])?,
             benchmark_ms(&row[7])?,
             benchmark_ms(&row[8])?,
+            args.benchmark_warmup_iterations,
         ));
     }
 

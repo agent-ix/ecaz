@@ -50,6 +50,11 @@ pub struct LatencyArgs {
     /// Total number of queries to run per sweep value.
     #[arg(long, default_value_t = 1000)]
     pub iterations: usize,
+    /// Untimed queries to run on each worker connection before measurement.
+    /// Use this to populate backend-local caches without contaminating latency
+    /// samples; zero preserves the historical behavior.
+    #[arg(long, default_value_t = 0)]
+    pub warmup_iterations: usize,
     /// Sweep values for the profile's tuning axis. Accepts `--sweep 100,200`
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
@@ -209,6 +214,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             Arc::clone(&queries),
             args.concurrency,
             args.iterations,
+            args.warmup_iterations,
             profile.encode_scan_query,
             args.force_index,
             args.rerank_width,
@@ -295,6 +301,7 @@ async fn run_sweep_point(
     queries: Arc<Vec<Vec<f32>>>,
     concurrency: usize,
     iterations: usize,
+    warmup_iterations: usize,
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
@@ -346,6 +353,7 @@ async fn run_sweep_point(
                 queries,
                 counter,
                 iterations,
+                warmup_iterations,
                 encode_scan_query,
                 force_index,
                 rerank_width,
@@ -396,6 +404,7 @@ async fn worker(
     queries: Arc<Vec<Vec<f32>>>,
     counter: Arc<AtomicUsize>,
     iterations: usize,
+    warmup_iterations: usize,
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
@@ -432,6 +441,17 @@ async fn worker(
     if force_index {
         client.batch_execute("SET enable_seqscan = off").await?;
     }
+    let stmt = client.prepare(&sql).await?;
+    let k_i64 = k as i64;
+    for idx in 0..warmup_iterations {
+        let q = &queries[idx % queries.len()];
+        if encode_scan_query {
+            client.query(&stmt, &[q, &bits, &seed, &k_i64]).await?;
+        } else {
+            client.query(&stmt, &[q, &k_i64]).await?;
+        }
+    }
+    // Timed-run counters exclude warmup work.
     if task87_candidate_batch_counters {
         super::reset_block_kernel_counters(&client).await?;
     }
@@ -455,9 +475,6 @@ async fn worker(
     } else {
         None
     };
-    let stmt = client.prepare(&sql).await?;
-    let k_i64 = k as i64;
-
     let mut durations = Vec::new();
     let query_result: Result<()> = loop {
         let idx = counter.fetch_add(1, Ordering::Relaxed);

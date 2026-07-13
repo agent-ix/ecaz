@@ -505,6 +505,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     benchmark_iterations: Option<u32>,
     #[serde(default)]
+    benchmark_warmup_iterations: Option<u32>,
+    #[serde(default)]
     base_port: Option<u16>,
     #[serde(default)]
     rows: Option<usize>,
@@ -3672,6 +3674,13 @@ fn expand_distann_local_multinode(
         "--benchmark-iterations",
         step.benchmark_iterations.map(|v| v.to_string()).as_deref(),
     );
+    push_opt_arg(
+        &mut args,
+        "--benchmark-warmup-iterations",
+        step.benchmark_warmup_iterations
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
     push_opt_u16(&mut args, "--base-port", step.base_port);
     push_opt_arg(
         &mut args,
@@ -4899,6 +4908,7 @@ mod tests {
             "nodes": 3,
             "head_index_cap": 256,
             "physical_benchmark": true,
+            "benchmark_warmup_iterations": 7,
             "corpus_prefix": "ec_real_10k"
           }]
         }"#;
@@ -4911,6 +4921,9 @@ mod tests {
         assert!(command
             .windows(2)
             .any(|window| window == ["--head-index-cap", "256"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--benchmark-warmup-iterations", "7"]));
     }
 
     #[test]
