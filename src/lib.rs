@@ -855,6 +855,16 @@ BEGIN
     END LOOP;
 END
 $distann_endpoint_privileges$;
+
+CREATE TRIGGER ec_distann_build_gate_registration_changed
+AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE
+ON @extschema@.ec_distann_build_registration
+FOR EACH STATEMENT
+EXECUTE FUNCTION @extschema@.ec_distann_build_gate_registration_changed();
+
+ALTER TABLE @extschema@.ec_distann_build_registration
+    ENABLE ALWAYS TRIGGER ec_distann_build_gate_registration_changed;
+REVOKE ALL ON FUNCTION ec_distann_build_gate_registration_changed() FROM PUBLIC;
 "#,
     name = "distann_internal_privileges",
     finalize,

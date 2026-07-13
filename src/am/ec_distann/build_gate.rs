@@ -13,6 +13,7 @@ use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use pgrx::datum::Uuid;
+use pgrx::prelude::{AllocatedByPostgres, PgHeapTuple, PgTrigger, PgTriggerError};
 use pgrx::{pg_extern, pg_guard, pg_sys, FromDatum, Spi};
 
 const SOURCE_GATE: i32 = 1;
@@ -28,6 +29,10 @@ thread_local! {
     /// while resolving/calling it, but never suppress the next installed hook.
     static INSIDE_GATE_LOOKUP: Cell<bool> = const { Cell::new(false) };
     static GATE_FUNCTION_OID: Cell<pg_sys::Oid> = const { Cell::new(pg_sys::InvalidOid) };
+    /// Backend-local steady-state fast path. The registration-table trigger
+    /// publishes a transactional relcache invalidation on every mutation, so
+    /// a committed first/last active gate clears this bit in every backend.
+    static NO_ACTIVE_GATE: Cell<bool> = const { Cell::new(false) };
     static GLOBAL_UTILITY_LOCK_DEPTH: Cell<u32> = const { Cell::new(0) };
 }
 
@@ -176,6 +181,31 @@ unsafe extern "C-unwind" fn invalidate_gate_function_oid(
     GATE_FUNCTION_OID.with(|cached| cached.set(pg_sys::InvalidOid));
 }
 
+#[pg_guard]
+unsafe extern "C-unwind" fn invalidate_no_active_gate_cache(
+    _arg: pg_sys::Datum,
+    _relation_oid: pg_sys::Oid,
+) {
+    // Clearing on every relcache event is deliberately conservative. DDL is
+    // much rarer than DML, and this avoids retaining a relation OID across
+    // DROP EXTENSION / CREATE EXTENSION cycles.
+    NO_ACTIVE_GATE.with(|cached| cached.set(false));
+}
+
+/// Publish registration-table mutations through PostgreSQL's transactional
+/// relcache invalidation channel. The local cache is cleared immediately for
+/// same-transaction visibility; other backends receive the invalidation when
+/// the mutating transaction commits.
+#[pgrx::pg_trigger]
+fn ec_distann_build_gate_registration_changed<'a>(
+    trigger: &'a PgTrigger<'a>,
+) -> Result<Option<PgHeapTuple<'a, AllocatedByPostgres>>, PgTriggerError> {
+    let relation_oid = trigger.relid()?;
+    NO_ACTIVE_GATE.with(|cached| cached.set(false));
+    unsafe { pg_sys::CacheInvalidateRelcacheByRelid(relation_oid) };
+    Ok(None)
+}
+
 fn extension_is_installed() -> bool {
     unsafe { pg_sys::get_extension_oid(c"ecaz".as_ptr(), true) != pg_sys::InvalidOid }
 }
@@ -233,18 +263,7 @@ fn release_global_utility_lock_if_acquired(previous_depth: u32) {
     }
 }
 
-fn invoke_gate_mask(relation_oid: pg_sys::Oid) -> i32 {
-    // A shared-preloaded library is present in every database, including
-    // databases where CREATE EXTENSION has not run (or has been dropped).
-    // There cannot be a durable gate without the extension catalogs, and
-    // ordinary DML in those databases must remain usable.
-    if !extension_is_installed() {
-        return 0;
-    }
-    // The helper OID is backend-cached and syscache-invalidated. The remaining
-    // call performs one bounded probe of the partial source/control gate
-    // indexes. A backend-local negative cache would be incorrect because a
-    // different backend can commit the first durable registration at any time.
+fn invoke_gate_mask_uncached(relation_oid: pg_sys::Oid) -> i32 {
     let Some(_guard) = LookupGuard::enter() else {
         return 0;
     };
@@ -258,6 +277,40 @@ fn invoke_gate_mask(relation_oid: pg_sys::Oid) -> i32 {
     };
     unsafe { i32::from_datum(datum, false) }
         .unwrap_or_else(|| pgrx::error!("EC_BUILD_STATE: durable build gate helper returned NULL"))
+}
+
+fn invoke_gate_mask(relation_oid: pg_sys::Oid) -> i32 {
+    // A shared-preloaded library is present in every database, including
+    // databases where CREATE EXTENSION has not run (or has been dropped).
+    // There cannot be a durable gate without the extension catalogs, and
+    // ordinary DML in those databases must remain usable.
+    if !extension_is_installed() {
+        return 0;
+    }
+    if NO_ACTIVE_GATE.with(Cell::get) {
+        return 0;
+    }
+
+    // Establish the database-wide negative before probing a particular result
+    // relation. The registration-table statement trigger clears this cache in
+    // the mutating backend immediately and broadcasts a relcache invalidation
+    // transactionally, so a different backend cannot commit the first durable
+    // registration while this negative remains usable. Begin-build also holds
+    // the conflicting source relation lock before inserting the registration,
+    // closing the statement/invalidation boundary for source DML.
+    if relation_oid != pg_sys::InvalidOid {
+        let any_mask = invoke_gate_mask_uncached(pg_sys::InvalidOid);
+        if any_mask & SOURCE_GATE == 0 {
+            NO_ACTIVE_GATE.with(|cached| cached.set(true));
+            return 0;
+        }
+    }
+
+    let mask = invoke_gate_mask_uncached(relation_oid);
+    if relation_oid == pg_sys::InvalidOid && mask & SOURCE_GATE == 0 {
+        NO_ACTIVE_GATE.with(|cached| cached.set(true));
+    }
+    mask
 }
 
 fn relation_gate_mask(relation_oid: pg_sys::Oid) -> i32 {
@@ -672,6 +725,10 @@ pub(crate) unsafe fn register_build_gate_hooks() {
             pg_sys::CacheRegisterSyscacheCallback(
                 pg_sys::SysCacheIdentifier::PROCOID as core::ffi::c_int,
                 Some(invalidate_gate_function_oid),
+                pg_sys::Datum::from(0_usize),
+            );
+            pg_sys::CacheRegisterRelcacheCallback(
+                Some(invalidate_no_active_gate_cache),
                 pg_sys::Datum::from(0_usize),
             );
             PREVIOUS_EXECUTOR_START_HOOK = pg_sys::ExecutorStart_hook;
