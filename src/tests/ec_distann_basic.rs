@@ -2653,6 +2653,54 @@ fn test_distann_multi_epoch_publish() {
     let first = "45454545-4545-4545-8545-454545454545";
     let second = "46464646-4646-4646-8646-464646464646";
     prepare_epoch(&mut client, 7, first);
+
+    // Recovery must lock and revalidate the durable registration before any
+    // participant publish. Simulate same-epoch catalog misuse, prove that T4a
+    // fails before creating an active pointer, then restore the valid state so
+    // the ordinary crash-window and replay coverage can proceed.
+    client
+        .batch_execute(&format!(
+            "UPDATE ec_distann_build_registration SET state = 'Ready'
+               WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                 AND build_id = '{first}'::uuid AND state = 'Decided'"
+        ))
+        .expect("registration skew should be injected");
+    let skew = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_epoch_publish('ec_distann_me_idx'::regclass, '{first}'::uuid)"
+        ))
+        .expect_err("registration skew must fail recovery");
+    assert!(
+        skew.as_db_error()
+            .map(|error| {
+                error.message().contains("EC_EPOCH_STATE")
+                    && error.message().contains(
+                        "publish decision is Pending but registration is Ready",
+                    )
+            })
+            .unwrap_or(false),
+        "registration skew must be classified before publication: {skew}"
+    );
+    assert_eq!(
+        client
+            .query_one(
+                "SELECT count(*) FROM ec_distann_active_epoch
+                  WHERE index_oid = 'ec_distann_me_idx'::regclass::oid",
+                &[],
+            )
+            .expect("active pointer absence should remain observable")
+            .get::<_, i64>(0),
+        0,
+        "registration skew must not activate the successor",
+    );
+    client
+        .batch_execute(&format!(
+            "UPDATE ec_distann_build_registration SET state = 'Decided'
+               WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                 AND build_id = '{first}'::uuid AND state = 'Ready'"
+        ))
+        .expect("registration state should be restored");
+
     client
         .batch_execute("SET ec_distann.debug_fail_recover_after_publish_ack = on")
         .expect("T4a crash-window fault should enable");

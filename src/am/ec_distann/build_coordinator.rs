@@ -3025,6 +3025,47 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
             );
         }
 
+        // Lock and revalidate the registration before any participant RPC.
+        // A new T4a recovery consumes Pending + Decided; an exact replay after
+        // the atomic pointer/decision/registration transaction consumes only
+        // Activated|Applied + Published.  Any other pair is durable state skew,
+        // not an idempotent replay (FR-082:243-244).
+        let registration = extension_relation_name("ec_distann_build_registration")?;
+        let registration_state = Spi::connect_mut(|client| -> Result<Option<String>, String> {
+            client
+                .update(
+                    &format!(
+                        "SELECT state FROM {registration}
+                          WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                            AND build_id = $3::uuid
+                          FOR UPDATE"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|_| "EC_EPOCH_STATE: registration lookup failed".to_owned())?
+                .map(|row| {
+                    row["state"]
+                        .value::<String>()
+                        .map_err(|_| "EC_EPOCH_STATE: registration state decode failed".to_owned())?
+                        .ok_or_else(|| "EC_EPOCH_STATE: registration state is NULL".to_owned())
+                })
+                .next()
+                .transpose()
+        })?;
+        match (decision_state.as_str(), registration_state.as_deref()) {
+            ("Pending", Some("Decided"))
+            | ("Activated" | "Applied", Some("Published")) => {}
+            (_, Some(registration_state)) => {
+                return Err(format!(
+                    "EC_EPOCH_STATE: publish decision is {decision_state} but registration is {registration_state}"
+                ));
+            }
+            (_, None) => {
+                return Err("EC_EPOCH_STATE: build registration is absent during recovery".to_owned());
+            }
+        }
+
         // Read the active pointer under the control lock.
         let active_table = extension_relation_name("ec_distann_active_epoch")?;
         let active_build = Spi::connect_mut(|client| -> Result<Option<Uuid>, String> {
@@ -3176,7 +3217,6 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
         // to clear the gate. A first epoch records Applied immediately; a
         // successor CAS-swaps from its predecessor, records Activated, and opens
         // one Pending disposition per predecessor binding (T4b retires them).
-        let registration = extension_relation_name("ec_distann_build_registration")?;
         let disposition = extension_relation_name("ec_distann_predecessor_disposition")?;
         Spi::connect_mut(|client| -> Result<(), String> {
             match &predecessor_build_id {
@@ -3205,7 +3245,7 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                         .map_err(|error| {
                             format!("EC_EPOCH_STATE: active pointer insert failed: {error}")
                         })?;
-                    client
+                    let transitioned = client
                         .update(
                             &format!(
                                 "UPDATE {decision_table}
@@ -3213,12 +3253,20 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                                         activated_at = clock_timestamp(),
                                         applied_at = clock_timestamp()
                                   WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                                    AND build_id = $3::uuid AND decision_state = 'Pending'"
+                                    AND build_id = $3::uuid AND decision_state = 'Pending'
+                                  RETURNING 1"
                             ),
                             None,
                             &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
                         )
-                        .map_err(|_| "EC_EPOCH_STATE: decision Applied transition failed".to_owned())?;
+                        .map_err(|_| "EC_EPOCH_STATE: decision Applied transition failed".to_owned())?
+                        .len();
+                    if transitioned != 1 {
+                        return Err(
+                            "EC_EPOCH_STATE: publish decision was not Pending at the Applied transition"
+                                .to_owned(),
+                        );
+                    }
                 }
                 Some(predecessor) => {
                     let swapped = client
@@ -3253,19 +3301,27 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                                 .to_owned(),
                         );
                     }
-                    client
+                    let transitioned = client
                         .update(
                             &format!(
                                 "UPDATE {decision_table}
                                     SET decision_state = 'Activated',
                                         activated_at = clock_timestamp()
                                   WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                                    AND build_id = $3::uuid AND decision_state = 'Pending'"
+                                    AND build_id = $3::uuid AND decision_state = 'Pending'
+                                  RETURNING 1"
                             ),
                             None,
                             &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
                         )
-                        .map_err(|_| "EC_EPOCH_STATE: decision Activated transition failed".to_owned())?;
+                        .map_err(|_| "EC_EPOCH_STATE: decision Activated transition failed".to_owned())?
+                        .len();
+                    if transitioned != 1 {
+                        return Err(
+                            "EC_EPOCH_STATE: publish decision was not Pending at the Activated transition"
+                                .to_owned(),
+                        );
+                    }
                     // Open one Pending disposition per predecessor participant,
                     // pulling predecessor identity from the decision and
                     // participant identity from the predecessor's bindings.
@@ -3303,17 +3359,25 @@ fn ec_distann_recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                         })?;
                 }
             }
-            client
+            let transitioned = client
                 .update(
                     &format!(
                         "UPDATE {registration} SET state = 'Published'
                           WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                            AND build_id = $3::uuid AND state = 'Decided'"
+                            AND build_id = $3::uuid AND state = 'Decided'
+                          RETURNING 1"
                     ),
                     None,
                     &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
                 )
-                .map_err(|_| "EC_EPOCH_STATE: registration Published transition failed".to_owned())?;
+                .map_err(|_| "EC_EPOCH_STATE: registration Published transition failed".to_owned())?
+                .len();
+            if transitioned != 1 {
+                return Err(
+                    "EC_EPOCH_STATE: registration was not Decided at the Published transition"
+                        .to_owned(),
+                );
+            }
             Ok(())
         })?;
 
