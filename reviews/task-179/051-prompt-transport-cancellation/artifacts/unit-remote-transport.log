@@ -1,0 +1,23 @@
+Script started on 2026-07-13 02:52:28-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 50.19s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-9ac09d4715e441d2)
+
+running 8 tests
+test am::ec_distann::remote_transport::tests::conninfo_parse_error_is_redacted ... ok
+test am::ec_distann::remote_transport::tests::missing_coverage_is_an_error ... ok
+test am::ec_distann::remote_transport::tests::parsed_remote_config_has_nonzero_connect_timeout ... ok
+test am::ec_distann::remote_transport::tests::reassembles_interleaved_request_across_owners ... ok
+test am::ec_distann::remote_transport::tests::wrong_response_count_is_an_error ... ok
+test am::ec_distann::remote_transport::tests::remote_await_preserves_remote_error ... ok
+test am::ec_distann::remote_transport::tests::remote_await_enforces_client_deadline ... ok
+test am::ec_distann::remote_transport::tests::owner_futures_are_driven_concurrently ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2500 filtered out; finished in 0.10s
+
+
+Script done on 2026-07-13 02:53:15-07:00 [COMMAND_EXIT_CODE="0"]
