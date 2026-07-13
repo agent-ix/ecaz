@@ -1,0 +1,77 @@
+Script started on 2026-07-13 05:37:37-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 48.84s
+     Running unittests src/main.rs (target/debug/deps/ecaz-35b6ba101cd4e391)
+
+running 55 tests
+test cli::tests::cli_parses_fault_prepare_command ... ok
+test cli::tests::cli_parses_pg_upgrade_smoke_command ... ok
+test cli::tests::cli_parses_corpus_fetch_command ... ok
+test cli::tests::cli_parses_fault_provider_restart_command ... ok
+test cli::tests::cli_parses_spire_multicluster_connection_reset_mid_batch_fault_command ... ok
+test cli::tests::cli_parses_fault_io_smoke_with_prepared_fixture ... ok
+test cli::tests::cli_parses_spire_multicluster_epoch_mismatch_fault_command ... ok
+test cli::tests::cli_parses_fault_provider_restore_command ... ok
+test cli::tests::cli_parses_fault_provider_env_command ... ok
+test cli::tests::cli_parses_log_file_override ... ok
+test cli::tests::cli_parses_spire_multicluster_customscan_read_command ... ok
+test cli::tests::cli_parses_spire_multicluster_fault_command ... ok
+test cli::tests::cli_parses_explicit_connection_overrides ... ok
+test commands::bench::recall::tests::load_sources_tsv_file_parses_ids_and_vectors ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_drop_in_flight_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_reindex_in_flight_command ... ok
+test commands::bench::suite::tests::parses_comparator_table_and_summary_rows ... ok
+test cli::tests::cli_parses_spire_multicluster_fingerprint_mismatch_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_smoke_command ... ok
+test cli::tests::cli_parses_spire_multicluster_insert_read_after_customscan_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_create_missing_descriptor_command ... ok
+test cli::tests::cli_parses_spire_multicluster_transport_overlap_command ... ok
+test cli::tests::cli_parses_spire_multicluster_local_cancel_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_remote_statement_timeout_fault_command ... ok
+test cli::tests::cli_parses_spire_multicluster_local_statement_timeout_fault_command ... ok
+test commands::bench::suite::tests::parses_cross_am_result_table_for_thresholds ... ok
+test commands::bench::suite::tests::parses_distann_shard_build_notice ... ok
+test commands::bench::suite::tests::parses_ec_diskann_build_timing_rows ... ok
+test commands::bench::suite::tests::parses_ec_ivf_build_timing_rows ... ok
+test commands::bench::suite::tests::parses_explain_planner_cost_rows ... ok
+test cli::tests::cli_parses_spire_multicluster_remote_oom_fault_command ... ok
+test commands::bench::suite::tests::parses_legacy_dry_run_alias ... ok
+test commands::bench::suite::tests::parses_explain_planner_cost_rows_from_psql_aligned_output ... ok
+test cli::tests::cli_parses_spire_multicluster_remote_backend_termination_fault_command ... ok
+test commands::bench::suite::tests::parses_loader_build_memory_rows ... ok
+test commands::bench::suite::tests::parses_fetch_prepare_suite_config ... ok
+test commands::bench::suite::tests::parses_loader_timing_rows ... ok
+test commands::bench::suite::tests::parses_minimal_suite_config ... ok
+test cli::tests::cli_parses_spire_multicluster_missing_remote_index_fault_command ... ok
+test commands::bench::suite::tests::parses_parallel_workers_from_loader_timing_artifact ... ok
+test commands::bench::suite::tests::parses_recall_result_table ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_reindex_before_fanout_command ... ok
+test commands::bench::suite::tests::parses_storage_rows_with_raw_byte_fields ... ok
+test commands::bench::suite::tests::parses_nested_run_command ... ok
+test cli::tests::cli_parses_spire_pipeline_remote_tuple_transport ... ok
+test commands::corpus::render_spire_registrations::tests::parses_identity_shape_emitted_by_distributed_remote_identity_query ... ok
+test commands::dev::spire_multicluster::tests::parses_bench_production_read_variant ... ok
+test commands::bench::suite::tests::parses_task92_offpath_calibration_config ... ok
+test commands::bench::suite::tests::parses_task92_quant_axis_smoke_config ... ok
+test commands::stress::ivf_vacuum_scale::tests::parses_proc_status_kb ... ok
+test tsv::tests::iter_rows_parses_valid_file ... ok
+test cli::tests::cli_parses_fault_smoke_dry_run_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_drop_before_fanout_command ... ok
+test cli::tests::cli_parses_spire_multicluster_lifecycle_create_new_descriptor_command ... ok
+test cli::tests::cli_parses_spire_multicluster_version_skew_fault_command ... ok
+
+test result: ok. 55 passed; 0 failed; 0 ignored; 0 measured; 378 filtered out; finished in 0.02s
+
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 43.79s
+     Running unittests src/main.rs (target/debug/deps/ecaz-35b6ba101cd4e391)
+
+running 1 test
+test commands::bench::suite::tests::expands_chunked_load_without_corpus_query_paths ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 432 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-13 05:39:05-07:00 [COMMAND_EXIT_CODE="0"]
