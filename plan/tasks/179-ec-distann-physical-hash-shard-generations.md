@@ -1,25 +1,27 @@
 # Task 179: ec_distann Physical Hash-Shard Generations, Handoff, and Publish
 
-Status: in progress (2026-07-10; format/control, transactional-generation
-storage, and authenticated-registry checkpoints landed; streamed handoff is
-next). Depends
-on: Task 163's ADR-085 D8 / FR-077-CON-4 streamed-stitch closeout and the revised FR-075..FR-083 /
-NFR-014/NFR-016..020 contracts. Build from the current
-`task-165-ec-distann-m3` implementation line after preserving its replicated
-control evidence.
+Status: done (2026-07-13). Packet 059's outside review accepted Task 163 D8,
+Task 179 AC-13's physical 10k/50k/100k matrix, and the aggregate architecture.
+Packet 060 closes the conditional recovery-state remediation, aggregate PG18
+validation, and task-metadata reconciliation. Task 172's broader performance
+program remains open; Task 167's physical DML adaptation is now unblocked.
+
+The completed task depends on the accepted Task 163 ADR-085 D8 /
+FR-077-CON-4 streamed-stitch evidence and the revised FR-075..FR-083 /
+NFR-014/NFR-016..020 contracts. It preserves the replicated control evidence
+from the Task 165 implementation line without promoting it as physical proof.
 
 Task numbers 173–178 are already reserved by the parallel Task 173 BatANN spec
 and B0–B4 implementation plan. Task 179 is therefore the first available task
 number for this corrective physical-storage lane.
 
-Owner: coder (to be assigned). One coder, one branch. Keep each checkpoint in
+Owner: coder. One coder, one branch. Keep each checkpoint in
 its owning task packet; the prerequisite D8 spill change is reviewed under
 Task 163, not hidden inside this task.
 
-Priority: P0. Blocks Task 172's real multinode benchmark gate. BatANN Task 174
-(the local beam-state refactor) may proceed independently, but BatANN Tasks
-175–178 must not claim multinode or benchmark completion until this task's
-physical fixture is implementation-ready.
+Priority: P0, delivered. The physical fixture and accepted Task 179 matrix no
+longer block Task 172 or BatANN multinode work. BatANN reconciliation remains
+owned by Tasks 173–178 rather than this task's closeout.
 
 ## Why
 
@@ -44,9 +46,9 @@ commit-only and recoverable, scans register one manifest/fingerprint locally,
 and the three-instance fixture proves exact/disjoint topology before Task 172
 measures anything.
 
-The implementation-ready checkpoint unblocks Task 172. Task 179 itself remains
-open until Task 172 supplies the required 10k/50k/100k A/B recall, latency, and
-storage evidence and Task 179 cites that immutable packet for closeout.
+The implementation-ready checkpoint unblocked Task 172. Task 179's required
+10k/50k/100k A/B recall, latency, and storage evidence subsequently landed in
+Task 172 packets 002–003 and was accepted by the packet 059 outside review.
 
 ## Normative authority
 
@@ -481,28 +483,29 @@ generation relations and row-schema descriptors.
 
 ## Checkpoints and review packets
 
-Use narrow code commits followed by separate request commits:
+The implementation landed as narrow code commits followed by separate request
+commits. The original nine-packet forecast expanded into these reviewed groups:
 
-1. Task 163 next packet — D8 `BufFile` shard-output spill and bounded-cursor
-   proof (prerequisite; not a Task 179 packet).
-2. `reviews/task-179/002-format-and-control/` — reloption/control metadata,
-   wire/descriptor/manifest/fingerprint codecs, TC-050 fixtures.
-3. `reviews/task-179/003-generation-storage/` — catalogs, hidden relation
-   lifecycle, transactional batch model, DROP/OID-reuse tests.
-4. `reviews/task-179/004-node-registry/` — configured participant identity,
-   authenticated compatibility/canonical-locator registration, revision
-   serialization, unregister/replacement, and private build-binding schema.
-5. `reviews/task-179/005-streamed-handoff/` — source-row capture, owner streams,
-   begin/stage/seal/abort, replay/boundary/error tests.
-6. `reviews/task-179/006-publication-and-retention/` — build gate, decision
-   boundary, recovery, active pointer, scan registry/retire fault matrix.
-7. `reviews/task-179/007-generation-read-path/` — expansion, frozen-row
-   materialization, quals, retained old/new reads, legacy parity.
-8. `reviews/task-179/008-physical-three-instance-fixture/` — suite-driven
-   physical setup, topology results, TC-040/TC-042 implementation-ready verdict.
-9. `reviews/task-179/009-closeout/` — reviewer response plus immutable Task 172
-   10k/50k/100k A/B evidence citation and the deferred `DROP EXTENSION` cleanup
-   drill; only this packet may mark Task 179 done.
+1. Task 163 packets 003–005 — D8 `BufFile` spill, bounded cursors, scale memory,
+   and recall neutrality (the prerequisite, outside accepted in packet 059).
+2. Task 179 packets 001–006 — specification, frozen formats, transactional
+   generation storage, registry, streamed handoff, and lifecycle schemas.
+3. Packets 007–018 — durable build gate, coordinator endpoints, committed
+   decision/recovery boundaries, crash windows, and lock-order remediation.
+4. Packets 019–030 — scan-token RAII, physical reads, retirement/reclaim,
+   multi-owner handoff/publication, remote serving, and bounded head state.
+5. Packets 031–038 — real three-instance fixture, suite support, lifecycle
+   recovery, epoch caching, bounded transport, and head-cap evidence.
+6. Packets 039–046 — endpoint security, cancellation safety, parallel fanout,
+   honest warmup, fanout A/B, and system-column rejection.
+7. Packets 047–054 — legacy-seed/direct-reader A/Bs, prompt cancellation,
+   physical publish fault windows, and `DROP EXTENSION` cleanup.
+8. Packets 055–058 — utility/build-gate correctness, raw suite results, DML
+   overhead A/B, and the transactionally invalidated inactive-gate fast path.
+9. Packet 059 — sole aggregate outside closeout; AC-1 and AC-13 accepted and
+   aggregate accepted with three mechanical conditions.
+10. Packet 060 — rows-affected/state-pair remediation, aggregate PG18 evidence,
+    and final housekeeping; this packet records the done transition.
 
 Each measurement packet needs its suite config, manifest, results JSONL, and
 only cited logs. Do not commit corpus TSVs, PostgreSQL operational logs, tunnel
@@ -556,8 +559,9 @@ requires it or the user asks.
     control; no old row is promoted to a physical gate result.
 12. Distributed-control DML fails closed until Task 167's physical adaptation;
     legacy single-node DML remains regression-clean.
-13. Task 172 produces and an outside reviewer accepts 10k/50k/100k A/B recall,
-    latency, and storage evidence before Task 179 is marked complete.
+13. Task 172 produced and packet 059's outside reviewer accepted 10k/50k/100k
+    A/B recall, latency, and storage evidence before Task 179 was marked
+    complete.
 
 ## Non-goals
 
@@ -584,10 +588,11 @@ Before BatANN Task 175 starts, rebase that batch onto this spec revision and:
 
 - Specs: FR-075..FR-083; NFR-014, NFR-016..NFR-020; TC-040/042/044/050.
 - ADR-085 D1/D6/D8/D10/D11.
-- Task 163 open feedback:
-  `reviews/task-163/002-m1-closure-sweep/feedback/2026-07-09-03-reviewer.md`.
-- Task 172 corrective review:
-  `reviews/task-172/001-real-multinode-benchmark/feedback/2026-07-10-03-reviewer.md`.
+- Task 163 D8 closeout: `reviews/task-163/005-d8-scale-memory/`.
+- Task 172 Task-179-specific acceptance: packets 002–003 under
+  `reviews/task-172/`.
+- Aggregate outside decision:
+  `reviews/task-179/059-closeout/feedback/2026-07-13-01-reviewer.md`.
 - Current implementation seams: `src/am/ec_distann/{ambuild,shard_build,page,
   tuple,reader,epoch,epoch_manifest,roster,expand,remote_endpoint,
   remote_transport,routine,custom_scan}.rs` and
