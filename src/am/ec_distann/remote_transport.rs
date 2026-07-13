@@ -56,9 +56,7 @@ async fn await_remote<T, E>(
     timeout: Duration,
     future: impl Future<Output = Result<T, E>>,
 ) -> Result<T, RemoteAwaitError<E>> {
-    maybe_check_for_interrupts();
     let result = tokio::time::timeout(timeout, future).await;
-    maybe_check_for_interrupts();
     match result {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(RemoteAwaitError::Remote(error)),
@@ -733,7 +731,12 @@ fn with_transport_state<T, E>(
 where
     E: From<String>,
 {
-    DISTANN_TRANSPORT_STATE.with(|cell| {
+    // CHECK_FOR_INTERRUPTS may ereport(ERROR), whose PostgreSQL longjmp skips
+    // Rust destructors. Keep both interrupt boundaries entirely outside the
+    // RefCell borrow: otherwise a cancellation can permanently leak RefMut and
+    // poison every later transport call in this backend.
+    maybe_check_for_interrupts();
+    let result = DISTANN_TRANSPORT_STATE.with(|cell| {
         let mut state = cell.borrow_mut();
         if state.is_none() {
             *state = Some(DistannTransportState::new()?);
@@ -741,7 +744,9 @@ where
         f(state
             .as_mut()
             .expect("ec_distann transport state initialized"))
-    })
+    });
+    maybe_check_for_interrupts();
+    result
 }
 
 #[cfg(any(test, feature = "pg_test"))]

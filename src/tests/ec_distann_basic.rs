@@ -7929,6 +7929,47 @@ fn test_ec_distann_remote_transport_statement_timeout() {
 }
 
 #[pg_test]
+fn test_ec_distann_remote_transport_cancel_then_reuse() {
+    let conninfo = format!(
+        "{} application_name=ecaz_distann_cancel_reuse_{}",
+        current_pg_test_loopback_conninfo(),
+        unsafe { pg_sys::MyProcPid }
+    );
+    Spi::run("SET ec_distann.remote_connect_timeout_ms = 1000")
+        .expect("connect timeout should set");
+    Spi::run("SET ec_distann.remote_statement_timeout_ms = 5000")
+        .expect("statement timeout should set");
+    crate::am::ec_distann::remote_timeout_probe_for_test(&conninfo, 0.0)
+        .expect("initial probe should establish the pooled session");
+
+    let backend_pid = unsafe { pg_sys::MyProcPid };
+    let cancel_conninfo = current_pg_test_loopback_conninfo();
+    let canceller = std::thread::spawn(move || {
+        let mut client = postgres::Client::connect(&cancel_conninfo, postgres::NoTls)
+            .expect("canceller should connect to the pg_test instance");
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let cancelled = client
+            .query_one("SELECT pg_cancel_backend($1)", &[&backend_pid])
+            .expect("pg_cancel_backend should execute")
+            .get::<_, bool>(0);
+        assert!(cancelled, "pg_test backend should accept cancellation");
+    });
+
+    let error = expect_pg_error_rolled_back(|| {
+        crate::am::ec_distann::remote_timeout_probe_for_test(&conninfo, 0.5)
+            .expect("remote sleep completes before the outer interrupt boundary");
+    });
+    canceller.join().expect("canceller thread should finish");
+    assert!(
+        error.contains("canceling statement due to user request"),
+        "unexpected cancellation error: {error}"
+    );
+
+    crate::am::ec_distann::remote_timeout_probe_for_test(&conninfo, 0.0)
+        .expect("same backend must reuse transport state after cancellation");
+}
+
+#[pg_test]
 fn test_ec_distann_expand_nodes_rejects_nonowned_placement() {
     // FR-079-AC-3 case (b): a vec_id not owned by this node under the epoch
     // placement is a placement error, never a silent miss. Configure a 2-node
