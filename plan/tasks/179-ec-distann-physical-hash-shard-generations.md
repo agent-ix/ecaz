@@ -3,8 +3,10 @@
 Status: done (2026-07-13). Packet 059's outside review accepted Task 163 D8,
 Task 179 AC-13's physical 10k/50k/100k matrix, and the aggregate architecture.
 Packet 060 closes the conditional recovery-state remediation, aggregate PG18
-validation, and task-metadata reconciliation. Task 172's broader performance
-program remains open; Task 167's physical DML adaptation is now unblocked.
+validation, and task-metadata reconciliation. Packet 061 records the
+reviewer's post-closeout safety/resource hardening and follow-on dispositions.
+Task 172's broader performance program remains open; Task 167's physical DML
+adaptation is now unblocked.
 
 The completed task depends on the accepted Task 163 ADR-085 D8 /
 FR-077-CON-4 streamed-stitch evidence and the revised FR-075..FR-083 /
@@ -506,6 +508,8 @@ commits. The original nine-packet forecast expanded into these reviewed groups:
    aggregate accepted with three mechanical conditions.
 10. Packet 060 — rows-affected/state-pair remediation, aggregate PG18 evidence,
     and final housekeeping; this packet records the done transition.
+11. Packet 061 — post-closeout interrupt, transaction-fence, and CustomScan
+    cleanup hardening plus explicit disposition of the reviewer's follow-ons.
 
 Each measurement packet needs its suite config, manifest, results JSONL, and
 only cited logs. Do not commit corpus TSVs, PostgreSQL operational logs, tunnel
