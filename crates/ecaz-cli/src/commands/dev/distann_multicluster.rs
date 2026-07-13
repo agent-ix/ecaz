@@ -264,7 +264,15 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
 
     let result = match mode {
         FixtureMode::Physical => {
-            drive_physical_fixture(args, &psql, &socket_dir, &nodes, log_dir.as_path()).await
+            drive_physical_fixture(
+                args,
+                &pg_ctl,
+                &psql,
+                &socket_dir,
+                &nodes,
+                log_dir.as_path(),
+            )
+            .await
         }
         FixtureMode::ReplicatedServingControl => {
             drive_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path()).await
@@ -865,6 +873,7 @@ async fn run_physical_benchmarks(
 
 async fn drive_physical_fixture(
     args: &LocalMultinodePg18Args,
+    pg_ctl: &Path,
     psql: &Path,
     socket_dir: &Path,
     nodes: &[Node],
@@ -958,11 +967,32 @@ async fn drive_physical_fixture(
             "SELECT ec_distann_decide_epoch_publish('public.dm_idx'::regclass, '{build_id}'::uuid)"
         ))
         .await?;
-    coordinator
-        .batch_execute(&format!(
-            "SELECT ec_distann_recover_epoch_publish('public.dm_idx'::regclass, '{build_id}'::uuid)"
-        ))
-        .await?;
+    let publish_fault_lines = if !args.skip_fault_drills
+        && !args.physical_benchmark
+        && !args.coordinator_outside_roster
+        && owners.len() >= 3
+    {
+        physical_publish_fault_drills(
+            &coordinator,
+            pg_ctl,
+            psql,
+            socket_dir,
+            nodes,
+            owners,
+            build_id,
+        )
+        .await?
+    } else {
+        coordinator
+            .batch_execute(&format!(
+                "SELECT ec_distann_recover_epoch_publish('public.dm_idx'::regclass, '{build_id}'::uuid)"
+            ))
+            .await?;
+        Vec::new()
+    };
+    for line in &publish_fault_lines {
+        crate::ecaz_println!("[distann-multicluster] {line}");
+    }
     let physical_publish_ms = physical_started.elapsed().as_millis();
     let fingerprint = coordinator
         .query_one(
@@ -1064,6 +1094,13 @@ async fn drive_physical_fixture(
             .split_once('|')
             .ok_or_else(|| color_eyre::eyre::eyre!("remote owner sample is malformed"))?;
         if source_id.len() != 36
+            || !source_id.bytes().enumerate().all(|(index, byte)| {
+                if matches!(index, 8 | 13 | 18 | 23) {
+                    byte == b'-'
+                } else {
+                    byte.is_ascii_hexdigit()
+                }
+            })
             || !vector.starts_with('{')
             || !vector.ends_with('}')
             || !vector.bytes().all(|byte| {
@@ -1084,6 +1121,7 @@ async fn drive_physical_fixture(
         // and benchmark queries.
         let owner_query = format!(
             "SELECT source_id FROM dm
+              WHERE source_id = '{source_id}'::uuid
               ORDER BY embedding <#> '{vector}'::real[] LIMIT 1"
         );
         let owner_plan = coordinator
@@ -1103,18 +1141,20 @@ async fn drive_physical_fixture(
                 owner_plan
             );
         }
-        let owner_served = coordinator
+        let materialized_source_id = coordinator
             .query_one(
                 &format!("SELECT source_id::text FROM ({owner_query}) q"),
                 &[],
             )
             .await?
-            .get::<_, String>(0)
-            == source_id;
+            .get::<_, String>(0);
+        let owner_served = materialized_source_id == source_id;
         crate::ecaz_println!(
-            "[distann-multicluster] physical_remote_owner node={} custom_scan=true pass={}",
+            "[distann-multicluster] physical_remote_owner node={} custom_scan=true pass={} expected_source_id={} materialized_source_id={}",
             node.node_id,
-            owner_served
+            owner_served,
+            source_id,
+            materialized_source_id
         );
         if !owner_served {
             bail!(
@@ -1177,6 +1217,9 @@ async fn drive_physical_fixture(
         "[distann-multicluster] physical_serving pass=true rows={served} owners={} source_rows={source_count}\n",
         owners.len()
     ));
+    for line in &publish_fault_lines {
+        summary.push_str(&format!("[distann-multicluster] {line}\n"));
+    }
     for line in &benchmark_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
@@ -1192,6 +1235,195 @@ async fn drive_physical_fixture(
         summary_path.display()
     );
     Ok(())
+}
+
+async fn physical_publish_fault_drills(
+    coordinator: &tokio_postgres::Client,
+    pg_ctl: &Path,
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    owners: &[Node],
+    build_id: &str,
+) -> Result<Vec<String>> {
+    let recover_sql = format!(
+        "SELECT ec_distann_recover_epoch_publish('public.dm_idx'::regclass, '{build_id}'::uuid)"
+    );
+    coordinator
+        .batch_execute("SET ec_distann.debug_fail_recover_after_publish_ack = on")
+        .await?;
+
+    // Real partial-ack window: local publication remains transactional on the
+    // coordinator, owner 2 commits its remote acknowledgement, and the last
+    // owner crashes before it can acknowledge. The coordinator must retain the
+    // durable Pending/Decided decision with no active pointer.
+    let unavailable = owners
+        .last()
+        .ok_or_else(|| color_eyre::eyre::eyre!("physical fault drill has no owner"))?;
+    let mut stop = Command::new(pg_ctl);
+    stop.arg("-w")
+        .arg("-D")
+        .arg(&unavailable.data_dir)
+        .arg("-m")
+        .arg("immediate")
+        .arg("stop")
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    run_status(stop)
+        .await
+        .wrap_err("crashing the last physical owner for the publish drill")?;
+
+    let down_error = coordinator.batch_execute(&recover_sql).await.err();
+    let (decision, registration, active_count) =
+        physical_publish_coordinator_state(coordinator, build_id).await?;
+    let local_state = physical_generation_state(psql, socket_dir, &owners[0], build_id).await?;
+    let acked_state = physical_generation_state(psql, socket_dir, &owners[1], build_id).await?;
+    let participant_down_pass = down_error.is_some()
+        && decision == "Pending"
+        && registration == "Decided"
+        && active_count == 0
+        && local_state == "Ready"
+        && acked_state == "Published";
+    let mut lines = vec![format!(
+        "physical_publish_fault participant_down_partial pass={participant_down_pass} decision={decision} registration={registration} active_count={active_count} local_state={local_state} remote_acked_state={acked_state} unavailable_node={}",
+        unavailable.node_id
+    )];
+    if !participant_down_pass {
+        bail!(
+            "physical participant-down publish drill failed: {}",
+            lines.last().expect("fault line")
+        );
+    }
+
+    restart_physical_node(pg_ctl, socket_dir, unavailable, nodes).await?;
+
+    // With every owner reachable, the debug hook fails after all participant
+    // acknowledgements but before the coordinator active-pointer swap. Remote
+    // acknowledgements persist; the local publish rolls back with T4a.
+    let injected_error = coordinator.batch_execute(&recover_sql).await.err();
+    let (decision, registration, active_count) =
+        physical_publish_coordinator_state(coordinator, build_id).await?;
+    let mut states = Vec::with_capacity(owners.len());
+    for owner in owners {
+        states.push(physical_generation_state(psql, socket_dir, owner, build_id).await?);
+    }
+    let post_ack_pass = injected_error
+        .as_ref()
+        .and_then(tokio_postgres::Error::as_db_error)
+        .is_some_and(|error| error.message().contains("EC_FAULT_INJECTED"))
+        && decision == "Pending"
+        && registration == "Decided"
+        && active_count == 0
+        && states.first().is_some_and(|state| state == "Ready")
+        && states.iter().skip(1).all(|state| state == "Published");
+    lines.push(format!(
+        "physical_publish_fault post_ack_pre_pointer pass={post_ack_pass} decision={decision} registration={registration} active_count={active_count} owner_states={}",
+        states.join(",")
+    ));
+    if !post_ack_pass {
+        bail!(
+            "physical post-ack/pre-pointer publish drill failed: {}",
+            lines.last().expect("fault line")
+        );
+    }
+
+    coordinator
+        .batch_execute("SET ec_distann.debug_fail_recover_after_publish_ack = off")
+        .await?;
+    coordinator.batch_execute(&recover_sql).await?;
+    let (decision, registration, active_count) =
+        physical_publish_coordinator_state(coordinator, build_id).await?;
+    let mut recovered_states = Vec::with_capacity(owners.len());
+    for owner in owners {
+        recovered_states.push(physical_generation_state(psql, socket_dir, owner, build_id).await?);
+    }
+    let recovery_pass = decision == "Applied"
+        && registration == "Published"
+        && active_count == 1
+        && recovered_states.iter().all(|state| state == "Published");
+    lines.push(format!(
+        "physical_publish_fault idempotent_recovery pass={recovery_pass} decision={decision} registration={registration} active_count={active_count} owner_states={}",
+        recovered_states.join(",")
+    ));
+    if !recovery_pass {
+        bail!(
+            "physical idempotent publish recovery failed: {}",
+            lines.last().expect("fault line")
+        );
+    }
+    Ok(lines)
+}
+
+async fn physical_publish_coordinator_state(
+    coordinator: &tokio_postgres::Client,
+    build_id: &str,
+) -> Result<(String, String, i64)> {
+    let row = coordinator
+        .query_one(
+            "SELECT
+                 COALESCE((SELECT decision_state FROM ec_distann_publish_decision
+                            WHERE build_id = $1::text::uuid), 'Missing'),
+                 COALESCE((SELECT state FROM ec_distann_build_registration
+                            WHERE build_id = $1::text::uuid), 'Missing'),
+                 (SELECT count(*) FROM ec_distann_active_epoch
+                   WHERE build_id = $1::text::uuid)",
+            &[&build_id],
+        )
+        .await?;
+    Ok((row.get(0), row.get(1), row.get(2)))
+}
+
+async fn physical_generation_state(
+    psql: &Path,
+    socket_dir: &Path,
+    node: &Node,
+    build_id: &str,
+) -> Result<String> {
+    let state = capture_psql(
+        psql,
+        socket_dir,
+        node.port,
+        &format!(
+            "SELECT state FROM ec_distann_generation
+              WHERE index_oid = 'public.dm_idx'::regclass::oid
+                AND build_id = '{build_id}'::uuid"
+        ),
+    )
+    .await?;
+    Ok(state.trim().to_owned())
+}
+
+async fn restart_physical_node(
+    pg_ctl: &Path,
+    socket_dir: &Path,
+    node: &Node,
+    nodes: &[Node],
+) -> Result<()> {
+    let mut restart = Command::new(pg_ctl);
+    restart
+        .arg("-w")
+        .arg("-D")
+        .arg(&node.data_dir)
+        .arg("-l")
+        .arg(&node.log_file)
+        .arg("-o")
+        .arg(format!(
+            "-p {} -c listen_addresses=127.0.0.1 -c unix_socket_directories='' \
+             -c shared_preload_libraries=ecaz",
+            node.port
+        ))
+        .arg("start")
+        .stdout(Stdio::null())
+        .stderr(Stdio::inherit());
+    for target in nodes {
+        restart.env(
+            format!("EC_SPIRE_REMOTE_CONNINFO_DISTANN_NODE_{}", target.node_id),
+            conninfo(socket_dir, target.port),
+        );
+    }
+    run_status(restart)
+        .await
+        .wrap_err_with(|| format!("restarting physical owner {}", node.node_id))
 }
 
 async fn drive_fixture(

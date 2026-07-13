@@ -4579,6 +4579,9 @@ mod tests {
     fn distann_physical_topology_and_gate_are_structured() {
         let raw = "[distann-multicluster] physical_topology phase=published node=2 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=65536 row_bytes=16384 directory_bytes=16384 control_bytes=8192\n\
 [distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=3 source_rows=90\n\
+[distann-multicluster] physical_publish_fault participant_down_partial pass=true decision=Pending registration=Decided active_count=0 local_state=Ready remote_acked_state=Published unavailable_node=3\n\
+[distann-multicluster] physical_publish_fault post_ack_pre_pointer pass=true decision=Pending registration=Decided active_count=0 owner_states=Ready,Published,Published\n\
+[distann-multicluster] physical_publish_fault idempotent_recovery pass=true decision=Applied registration=Published active_count=1 owner_states=Published,Published,Published\n\
 [distann-multicluster] physical_benchmark_recall scale=10k arm=physical seed_strategy=persisted_head queries=10 trials=100 recall=1.0000 mean_ms=10727.91\n\
 [distann-multicluster] physical_benchmark_latency scale=10k arm=physical seed_strategy=persisted_head count=5 mean_ms=10744.10 p50_ms=10664.70 p95_ms=11065.20 p99_ms=11125.80 max_ms=11141.00 concurrency=1 cache=warm\n";
         let rows = parse_distann_multinode_rows(raw);
@@ -4592,6 +4595,17 @@ mod tests {
                 && values.get("drill").map(String::as_str) == Some("physical_topology_gate")
                 && values.get("pass").map(String::as_str) == Some("true")
         }));
+        for drill in [
+            "physical_publish_fault_participant_down_partial",
+            "physical_publish_fault_post_ack_pre_pointer",
+            "physical_publish_fault_idempotent_recovery",
+        ] {
+            assert!(rows.iter().any(|(metric, values)| {
+                metric == "drill_outcome"
+                    && values.get("drill").map(String::as_str) == Some(drill)
+                    && values.get("pass").map(String::as_str) == Some("true")
+            }));
+        }
         assert!(rows.iter().any(|(metric, values)| {
             metric == "physical_benchmark_recall"
                 && values.get("arm").map(String::as_str) == Some("physical")
