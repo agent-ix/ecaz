@@ -91,35 +91,32 @@ async fn await_remote<T, E>(
 
 async fn postgres_interrupt_signal() {
     loop {
-        if postgres_query_cancel_pending() {
+        if postgres_interrupt_pending() {
             return;
         }
         tokio::time::sleep(Duration::from_millis(POSTGRES_INTERRUPT_POLL_MS)).await;
     }
 }
 
-unsafe extern "C" {
-    fn dlsym(
-        handle: *mut std::ffi::c_void,
-        symbol: *const std::ffi::c_char,
-    ) -> *mut std::ffi::c_void;
+fn interrupt_flags_request_stop(
+    interrupt_pending: pg_sys::sig_atomic_t,
+    query_cancel_pending: pg_sys::sig_atomic_t,
+    proc_die_pending: pg_sys::sig_atomic_t,
+) -> bool {
+    proc_die_pending != 0 || (interrupt_pending != 0 && query_cancel_pending != 0)
 }
 
-fn postgres_sig_atomic_flag(symbol_name: &'static [u8]) -> i32 {
-    // SAFETY: symbol_name is a static NUL-terminated PostgreSQL global name and
-    // dlsym with a null handle searches the current backend process image.
-    let ptr = unsafe { dlsym(std::ptr::null_mut(), symbol_name.as_ptr().cast()) };
-    if ptr.is_null() {
-        return 0;
+fn postgres_interrupt_pending() -> bool {
+    // SAFETY: PostgreSQL signal handlers mutate these backend-process globals.
+    // Volatile reads preserve the signal-observation semantics without relying
+    // on platform-specific dynamic-symbol lookup.
+    unsafe {
+        interrupt_flags_request_stop(
+            std::ptr::read_volatile(&raw const pg_sys::InterruptPending),
+            std::ptr::read_volatile(&raw const pg_sys::QueryCancelPending),
+            std::ptr::read_volatile(&raw const pg_sys::ProcDiePending),
+        )
     }
-    // SAFETY: callers pass PostgreSQL sig_atomic_t-compatible globals; the
-    // non-null pointer is backend-local and this performs one read only.
-    unsafe { *(ptr.cast::<std::ffi::c_int>()) }
-}
-
-fn postgres_query_cancel_pending() -> bool {
-    postgres_sig_atomic_flag(b"InterruptPending\0") != 0
-        && postgres_sig_atomic_flag(b"QueryCancelPending\0") != 0
 }
 
 fn connect_timeout() -> Duration {
@@ -1697,6 +1694,15 @@ fn finalize_request_order(
 mod tests {
     use super::*;
     use crate::am::ec_distann::placement::{placement_hash, DISTANN_PLACEMENT_HASH_V1};
+
+    #[test]
+    fn interrupt_poll_accepts_cancel_and_backend_termination() {
+        assert!(!interrupt_flags_request_stop(0, 0, 0));
+        assert!(!interrupt_flags_request_stop(1, 0, 0));
+        assert!(!interrupt_flags_request_stop(0, 1, 0));
+        assert!(interrupt_flags_request_stop(1, 1, 0));
+        assert!(interrupt_flags_request_stop(0, 0, 1));
+    }
 
     #[test]
     fn remote_await_enforces_client_deadline() {

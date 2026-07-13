@@ -1812,16 +1812,19 @@ pub(crate) fn with_scan_registration_fence<R>(
 }
 
 fn remove_xact_fence_reference(id: u64) {
-    XACT_FENCE_REFERENCES.with(|references| {
+    let entry = XACT_FENCE_REFERENCES.with(|references| {
         let mut references = references.borrow_mut();
-        if let Some(position) = references.iter().position(|entry| entry.id == id) {
-            let entry = references.remove(position);
-            let released = unsafe {
-                pg_sys::LockRelease(&entry.tag, pg_sys::ExclusiveLock as pg_sys::LOCKMODE, true)
-            };
-            drop_after_confirmed_lock_release(entry.reference, released);
-        }
+        references
+            .iter()
+            .position(|entry| entry.id == id)
+            .map(|position| references.remove(position))
     });
+    let Some(entry) = entry else {
+        return;
+    };
+    let released =
+        unsafe { pg_sys::LockRelease(&entry.tag, pg_sys::ExclusiveLock as pg_sys::LOCKMODE, true) };
+    drop_after_confirmed_lock_release(entry.reference, released);
 }
 
 /// Takes the logical index's transaction-exclusive retirement fence. The

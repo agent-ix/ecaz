@@ -33,6 +33,10 @@ static mut PREVIOUS_SET_REL_PATHLIST_HOOK: pg_sys::set_rel_pathlist_hook_type = 
 static mut CUSTOM_SCAN_REGISTERED: bool = false;
 static mut REL_PATHLIST_HOOK_INSTALLED: bool = false;
 
+#[cfg(any(test, feature = "pg_test"))]
+static EXEC_STATE_CONTEXT_CLEANUPS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 static mut CUSTOM_PATH_METHODS: pg_sys::CustomPathMethods = pg_sys::CustomPathMethods {
     CustomName: CUSTOM_SCAN_NAME.as_ptr(),
     PlanCustomPath: Some(plan_custom_path),
@@ -557,6 +561,10 @@ enum CustomScanOutputRow {
 #[repr(C)]
 struct DistannCustomScanExecState {
     custom_scan_state: pg_sys::CustomScanState,
+    /// Runs when the executor query context resets, including ERROR/abort paths
+    /// where PostgreSQL does not call EndCustomScan.
+    cleanup_callback: pg_sys::MemoryContextCallback,
+    cleanup_registered: bool,
     index_oid: pg_sys::Oid,
     top_k: usize,
     /// The ORDER BY query expression, initialized once in BeginCustomScan and
@@ -603,6 +611,8 @@ fn default_exec_state() -> DistannCustomScanExecState {
         // SAFETY: CustomScanState is initialized field-by-field by the executor
         // after this wrapper is allocated.
         custom_scan_state: unsafe { std::mem::zeroed() },
+        cleanup_callback: pg_sys::MemoryContextCallback::default(),
+        cleanup_registered: false,
         index_oid: pg_sys::InvalidOid,
         top_k: 0,
         query_expr_state: ptr::null_mut(),
@@ -622,6 +632,56 @@ fn default_exec_state() -> DistannCustomScanExecState {
         proven_outputs: 0,
         deepen_cap: 0,
     }
+}
+
+unsafe extern "C-unwind" fn drop_custom_scan_exec_state(arg: *mut c_void) {
+    if !arg.is_null() {
+        #[cfg(any(test, feature = "pg_test"))]
+        EXEC_STATE_CONTEXT_CLEANUPS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        ptr::drop_in_place(arg.cast::<DistannCustomScanExecState>());
+    }
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn reset_exec_state_context_cleanups_for_test() {
+    EXEC_STATE_CONTEXT_CLEANUPS.store(0, std::sync::atomic::Ordering::SeqCst);
+}
+
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) fn exec_state_context_cleanups_for_test() -> u64 {
+    EXEC_STATE_CONTEXT_CLEANUPS.load(std::sync::atomic::Ordering::SeqCst)
+}
+
+unsafe fn register_exec_state_cleanup(
+    state: *mut DistannCustomScanExecState,
+    estate: *mut pg_sys::EState,
+) {
+    if (*state).cleanup_registered {
+        return;
+    }
+    if estate.is_null() || (*estate).es_query_cxt.is_null() {
+        pgrx::error!("EcDistannDistributedScan missing executor query memory context");
+    }
+    (*state).cleanup_callback = pg_sys::MemoryContextCallback {
+        func: Some(drop_custom_scan_exec_state),
+        arg: state.cast(),
+        next: ptr::null_mut(),
+    };
+    (*state).cleanup_registered = true;
+    pg_sys::MemoryContextRegisterResetCallback(
+        (*estate).es_query_cxt,
+        &raw mut (*state).cleanup_callback,
+    );
+}
+
+fn release_custom_scan_resources(state: &mut DistannCustomScanExecState) {
+    drop(std::mem::take(&mut state.payload_attnums));
+    drop(std::mem::take(&mut state.payload_columns));
+    drop(std::mem::take(&mut state.payload_send_functions));
+    drop(std::mem::take(&mut state.payload_inputs));
+    drop(std::mem::take(&mut state.outputs));
+    drop(std::mem::take(&mut state.query));
+    drop(state.physical_generation.take());
 }
 
 /// # Safety
@@ -653,9 +713,10 @@ unsafe fn exec_state_mut<'a>(
 #[pg_guard]
 unsafe extern "C-unwind" fn begin_custom_scan(
     node: *mut pg_sys::CustomScanState,
-    _estate: *mut pg_sys::EState,
+    estate: *mut pg_sys::EState,
     _eflags: core::ffi::c_int,
 ) {
+    register_exec_state_cleanup(node.cast::<DistannCustomScanExecState>(), estate);
     let custom_scan = (*node).ss.ps.plan.cast::<pg_sys::CustomScan>();
     if custom_scan.is_null() {
         pgrx::error!("EcDistannDistributedScan BeginCustomScan missing plan");
@@ -1362,13 +1423,14 @@ unsafe extern "C-unwind" fn rescan_custom_scan(node: *mut pg_sys::CustomScanStat
 }
 
 /// # Safety
-/// Called at most once for the state allocated by create_custom_scan_state.
+/// Called at most once during normal executor shutdown. Rust ownership is
+/// ultimately destroyed by the query-context callback so ERROR/abort paths are
+/// covered too; this path releases the potentially large resources eagerly.
 #[pg_guard]
 unsafe extern "C-unwind" fn end_custom_scan(node: *mut pg_sys::CustomScanState) {
     if node.is_null() {
         return;
     }
     let state = node.cast::<DistannCustomScanExecState>();
-    ptr::drop_in_place(state);
-    pg_sys::pfree(state.cast());
+    release_custom_scan_resources(&mut *state);
 }

@@ -94,6 +94,12 @@ uint64_t SPI_processed = 0;
 void *SPI_tuptable = NULL;
 int NBuffers = 0;
 int NLocBuffer = 0;
+/* Signal globals are inert in standalone Rust tests; PostgreSQL owns them in
+ * the extension process. They let pg_sys direct bindings resolve without
+ * falling back to platform-specific dlsym lookups. */
+volatile int InterruptPending = 0;
+volatile int QueryCancelPending = 0;
+volatile int ProcDiePending = 0;
 
 static __thread ErrorData tqvector_current_error = {0};
 static __thread bool tqvector_current_error_active = false;
@@ -310,6 +316,12 @@ void *palloc(size_t size) {
 
 void pfree(void *pointer) {
     free(pointer);
+}
+
+void MemoryContextRegisterResetCallback(MemoryContext context, void *callback) {
+    (void)context;
+    (void)callback;
+    tqvector_backend_only("MemoryContextRegisterResetCallback");
 }
 
 MemoryContext AllocSetContextCreateInternal(

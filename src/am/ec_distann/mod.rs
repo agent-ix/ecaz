@@ -18,6 +18,10 @@ mod coordinator_abandonment;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::build_coordinator::build_session_lock_count_for_test;
 #[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::custom_scan::{
+    exec_state_context_cleanups_for_test, reset_exec_state_context_cleanups_for_test,
+};
+#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::ambuild::read_metadata_from_index;
 pub(crate) use self::ambuild::{
     build_physical_graph_workspace, capture_physical_source_rows,

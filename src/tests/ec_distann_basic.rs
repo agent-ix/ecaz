@@ -306,7 +306,8 @@ fn test_distann_control_metadata_and_fail_closed() {
     drop(index_relation);
 
     Spi::run("SET enable_seqscan = off").unwrap();
-    let scan_error = expect_pg_error(|| {
+    crate::am::ec_distann::reset_exec_state_context_cleanups_for_test();
+    let scan_error = expect_pg_error_rolled_back(|| {
         Spi::get_one::<i64>(
             "SELECT 1 FROM ec_distann_control
              ORDER BY embedding <#> ARRAY[1.0,0.0,0.0,0.0]::real[] LIMIT 1",
@@ -317,6 +318,11 @@ fn test_distann_control_metadata_and_fail_closed() {
         scan_error.contains("EC_GENERATION_MISSING")
             && scan_error.contains("logical index has no active epoch"),
         "unexpected direct-scan error: {scan_error}"
+    );
+    assert_eq!(
+        crate::am::ec_distann::exec_state_context_cleanups_for_test(),
+        1,
+        "query-context rollback must destroy the CustomScan Rust state",
     );
     Spi::run("RESET enable_seqscan").unwrap();
 
