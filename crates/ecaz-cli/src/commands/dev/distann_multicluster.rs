@@ -1187,6 +1187,19 @@ async fn drive_physical_fixture(
     for line in &benchmark_lines {
         crate::ecaz_println!("[distann-multicluster] {line}");
     }
+    if args.drop_extension_cleanup_drill {
+        let unpublished_build_id = "72727272-7272-4272-8272-727272727272";
+        coordinator
+            .batch_execute(&format!(
+                "SELECT ec_distann_begin_epoch_build('public.dm_idx'::regclass, 2, '{unpublished_build_id}'::uuid)"
+            ))
+            .await?;
+        coordinator
+            .batch_execute(&format!(
+                "SELECT ec_distann_build_epoch('public.dm_idx'::regclass, 2, '{unpublished_build_id}'::uuid)"
+            ))
+            .await?;
+    }
     drop(coordinator);
     connection_task.abort();
     let drop_extension_lines = if args.drop_extension_cleanup_drill {
@@ -1269,10 +1282,28 @@ async fn physical_drop_extension_cleanup_drill(
         .await?
         .trim()
         .parse::<i64>()?;
-        if hidden_before < 3 {
+        let states_before = capture_psql(
+            psql,
+            socket_dir,
+            node.port,
+            "SELECT
+                 count(*) FILTER (WHERE state = 'Ready')::text || '|' ||
+                 count(*) FILTER (WHERE state = 'Published')::text
+               FROM ec_distann_generation
+              WHERE index_oid = 'public.dm_idx'::regclass::oid",
+        )
+        .await?;
+        let state_counts = states_before
+            .trim()
+            .split('|')
+            .map(str::parse::<i64>)
+            .collect::<Result<Vec<_>, _>>()?;
+        let ready_before = state_counts.first().copied().unwrap_or(0);
+        let published_before = state_counts.get(1).copied().unwrap_or(0);
+        if hidden_before < 6 || ready_before < 1 || published_before < 1 {
             bail!(
-                "physical DROP EXTENSION drill found only {hidden_before} hidden relations on node {}",
-                node.node_id
+                "physical DROP EXTENSION drill precondition failed on node {}: hidden={hidden_before} Ready={ready_before} Published={published_before}",
+                node.node_id,
             );
         }
         run_psql_file(
@@ -1304,7 +1335,7 @@ async fn physical_drop_extension_cleanup_drill(
             );
         }
         lines.push(format!(
-            "physical_drop_extension_cleanup pass=true node={} hidden_before={hidden_before} hidden_after=0 extension_after=0 post_drop_dml_rows=1",
+            "physical_drop_extension_cleanup pass=true node={} ready_before={ready_before} published_before={published_before} hidden_before={hidden_before} hidden_after=0 extension_after=0 post_drop_dml_rows=1",
             node.node_id
         ));
     }

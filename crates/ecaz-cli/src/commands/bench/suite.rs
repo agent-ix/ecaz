@@ -4951,7 +4951,7 @@ mod tests {
 
     #[test]
     fn distann_drop_extension_cleanup_is_structured() {
-        let raw = "[distann-multicluster] physical_drop_extension_cleanup pass=true node=2 hidden_before=4 hidden_after=0 extension_after=0 post_drop_dml_rows=1\n";
+        let raw = "[distann-multicluster] physical_drop_extension_cleanup pass=true node=2 ready_before=1 published_before=1 hidden_before=8 hidden_after=0 extension_after=0 post_drop_dml_rows=1\n";
         let rows = parse_distann_multinode_rows(raw);
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0, "drill_outcome");
