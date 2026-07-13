@@ -154,6 +154,14 @@ async fn physical_query(
     }
 }
 
+async fn join_owner_futures<I, F>(futures: I) -> Vec<F::Output>
+where
+    I: IntoIterator<Item = F>,
+    F: Future,
+{
+    futures_util::future::join_all(futures).await
+}
+
 async fn scan_query(
     client: &Client,
     context: &str,
@@ -269,118 +277,191 @@ fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
     format!("EC_BUILD_INCOMPLETE: remote {context} failed: {detail}")
 }
 
-pub(crate) fn remote_physical_expand_nodes(
-    conninfo: &str,
-    index_regclass: &str,
-    epoch_fingerprint: &[u8],
-    query: &[f32],
-    vec_ids: &[u64],
-    code_threshold: Option<f32>,
-) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
-    let vec_ids = vec_ids
-        .iter()
-        .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
-        .collect::<Vec<_>>();
-    with_transport_state::<_, DistannExpandError>(|state| {
-        let DistannTransportState {
-            runtime,
-            connections,
-        } = state;
-        runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo)
-                .await
-                .map_err(DistannExpandError::Internal)?;
-            let rows = physical_query(
-                client,
-                    "SELECT vec_id, exact_dist, is_tombstone,
-                            neighbor_vec_ids, neighbor_code_dists
-                       FROM ec_distann_expand_nodes(
-                           $1::text::regclass, $2::bytea, $3::real[],
-                           $4::bigint[], $5::real)",
-                    &[
-                        &index_regclass,
-                        &epoch_fingerprint,
-                        &query,
-                        &vec_ids,
-                        &code_threshold,
-                    ],
-                )
-                .await?;
-            rows.into_iter()
-                .map(|row| {
-                    let vec_id: i64 = row.try_get(0).map_err(row_err)?;
-                    let exact_dist: Option<f32> = row.try_get(1).map_err(row_err)?;
-                    let is_tombstone: bool = row.try_get(2).map_err(row_err)?;
-                    let neighbor_vec_ids: Vec<i64> = row.try_get(3).map_err(row_err)?;
-                    let neighbor_code_dists: Vec<f32> = row.try_get(4).map_err(row_err)?;
-                    Ok(DistannExpandedNode {
-                        vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
-                        exact_dist,
-                        is_tombstone,
-                        heap_tid: ItemPointer::INVALID,
-                        neighbor_vec_ids: neighbor_vec_ids
-                            .into_iter()
-                            .map(|id| u64::from_le_bytes(id.to_le_bytes()))
-                            .collect(),
-                        neighbor_code_dists,
-                    })
-                })
-                .collect()
-        })
-    })
+pub(crate) struct DistannPhysicalExpandRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) query: &'a [f32],
+    pub(crate) vec_ids: &'a [u64],
+    pub(crate) code_threshold: Option<f32>,
 }
 
-pub(crate) fn remote_physical_materialize_payloads(
-    conninfo: &str,
-    index_regclass: &str,
-    epoch_fingerprint: &[u8],
-    vec_ids: &[u64],
-    projection_attnums: &[i16],
-    expected_schema_fingerprint: &[u8],
-) -> Result<Vec<DistannMaterializedRow>, DistannExpandError> {
-    let vec_ids = vec_ids
+pub(crate) fn remote_physical_expand_batch(
+    requests: &[DistannPhysicalExpandRequest<'_>],
+) -> Vec<Result<Vec<DistannExpandedNode>, DistannExpandError>> {
+    if requests.is_empty() {
+        return Vec::new();
+    }
+    let wire_ids = requests
         .iter()
-        .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+        .map(|request| {
+            request
+                .vec_ids
+                .iter()
+                .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
-    with_transport_state::<_, DistannExpandError>(|state| {
+    let conn_keys = requests
+        .iter()
+        .map(|request| format!("lifecycle\u{1}{}", request.conninfo))
+        .collect::<Vec<_>>();
+    let outcome = with_transport_state::<_, DistannExpandError>(|state| {
         let DistannTransportState {
             runtime,
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo)
-                .await
-                .map_err(DistannExpandError::Internal)?;
-            let rows = physical_query(
-                client,
-                    "SELECT vec_id, is_tombstone, tuple_payload_missing,
-                            payload_nulls, payload_values
-                       FROM ec_distann_materialize_row_payloads(
-                           $1::text::regclass, $2::bytea, $3::bigint[],
-                           $4::smallint[], $5::bytea)",
-                    &[
-                        &index_regclass,
-                        &epoch_fingerprint,
-                        &vec_ids,
-                        &projection_attnums,
-                        &expected_schema_fingerprint,
-                    ],
+            // Match the logical transport: connection establishment and budget
+            // refresh are outside the hot fan-out, then all owner RPCs are
+            // driven together so one hop costs max(remote RTT), not their sum.
+            for request in requests {
+                lifecycle_client(connections, request.conninfo)
+                    .await
+                    .map_err(DistannExpandError::Internal)?;
+            }
+            let futures = requests.iter().enumerate().map(|(index, request)| {
+                run_one_physical_expand(
+                    &connections[&conn_keys[index]].client,
+                    request,
+                    &wire_ids[index],
                 )
-                .await?;
-            rows.into_iter()
-                .map(|row| {
-                    let vec_id: i64 = row.try_get(0).map_err(row_err)?;
-                    Ok(DistannMaterializedRow {
-                        vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
-                        is_tombstone: row.try_get(1).map_err(row_err)?,
-                        tuple_payload_missing: row.try_get(2).map_err(row_err)?,
-                        payload_nulls: row.try_get(3).map_err(row_err)?,
-                        payload_values: row.try_get(4).map_err(row_err)?,
-                    })
-                })
-                .collect()
+            });
+            Ok(join_owner_futures(futures).await)
         })
-    })
+    });
+    outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect())
+}
+
+async fn run_one_physical_expand(
+    client: &Client,
+    request: &DistannPhysicalExpandRequest<'_>,
+    wire_ids: &[i64],
+) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+    let rows = physical_query(
+        client,
+        "SELECT vec_id, exact_dist, is_tombstone,
+                neighbor_vec_ids, neighbor_code_dists
+           FROM ec_distann_expand_nodes(
+               $1::text::regclass, $2::bytea, $3::real[],
+               $4::bigint[], $5::real)",
+        &[
+            &request.index_regclass,
+            &request.epoch_fingerprint,
+            &request.query,
+            &wire_ids,
+            &request.code_threshold,
+        ],
+    )
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+            let exact_dist: Option<f32> = row.try_get(1).map_err(row_err)?;
+            let is_tombstone: bool = row.try_get(2).map_err(row_err)?;
+            let neighbor_vec_ids: Vec<i64> = row.try_get(3).map_err(row_err)?;
+            let neighbor_code_dists: Vec<f32> = row.try_get(4).map_err(row_err)?;
+            Ok(DistannExpandedNode {
+                vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
+                exact_dist,
+                is_tombstone,
+                heap_tid: ItemPointer::INVALID,
+                neighbor_vec_ids: neighbor_vec_ids
+                    .into_iter()
+                    .map(|id| u64::from_le_bytes(id.to_le_bytes()))
+                    .collect(),
+                neighbor_code_dists,
+            })
+        })
+        .collect()
+}
+
+pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) vec_ids: &'a [u64],
+    pub(crate) projection_attnums: &'a [i16],
+    pub(crate) expected_schema_fingerprint: &'a [u8],
+}
+
+pub(crate) fn remote_physical_materialize_batch(
+    requests: &[DistannPhysicalMaterializeRequest<'_>],
+) -> Vec<Result<Vec<DistannMaterializedRow>, DistannExpandError>> {
+    if requests.is_empty() {
+        return Vec::new();
+    }
+    let wire_ids = requests
+        .iter()
+        .map(|request| {
+            request
+                .vec_ids
+                .iter()
+                .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let conn_keys = requests
+        .iter()
+        .map(|request| format!("lifecycle\u{1}{}", request.conninfo))
+        .collect::<Vec<_>>();
+    let outcome = with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            for request in requests {
+                lifecycle_client(connections, request.conninfo)
+                    .await
+                    .map_err(DistannExpandError::Internal)?;
+            }
+            let futures = requests.iter().enumerate().map(|(index, request)| {
+                run_one_physical_materialize(
+                    &connections[&conn_keys[index]].client,
+                    request,
+                    &wire_ids[index],
+                )
+            });
+            Ok(join_owner_futures(futures).await)
+        })
+    });
+    outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect())
+}
+
+async fn run_one_physical_materialize(
+    client: &Client,
+    request: &DistannPhysicalMaterializeRequest<'_>,
+    wire_ids: &[i64],
+) -> Result<Vec<DistannMaterializedRow>, DistannExpandError> {
+    let rows = physical_query(
+        client,
+        "SELECT vec_id, is_tombstone, tuple_payload_missing,
+                payload_nulls, payload_values
+           FROM ec_distann_materialize_row_payloads(
+               $1::text::regclass, $2::bytea, $3::bigint[],
+               $4::smallint[], $5::bytea)",
+        &[
+            &request.index_regclass,
+            &request.epoch_fingerprint,
+            &wire_ids,
+            &request.projection_attnums,
+            &request.expected_schema_fingerprint,
+        ],
+    )
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+            Ok(DistannMaterializedRow {
+                vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
+                is_tombstone: row.try_get(1).map_err(row_err)?,
+                tuple_payload_missing: row.try_get(2).map_err(row_err)?,
+                payload_nulls: row.try_get(3).map_err(row_err)?,
+                payload_values: row.try_get(4).map_err(row_err)?,
+            })
+        })
+        .collect()
 }
 
 fn classify_physical_read_error(error: tokio_postgres::Error) -> DistannExpandError {
@@ -1445,6 +1526,22 @@ mod tests {
             outcome,
             Err(RemoteAwaitError::Remote("remote"))
         ));
+    }
+
+    #[test]
+    fn owner_futures_are_driven_concurrently() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("test runtime");
+        let started = std::time::Instant::now();
+        runtime.block_on(join_owner_futures((0..3).map(|_| async {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        })));
+        assert!(
+            started.elapsed() < Duration::from_millis(230),
+            "three owner futures ran serially instead of concurrently"
+        );
     }
 
     #[test]

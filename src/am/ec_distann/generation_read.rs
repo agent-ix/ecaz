@@ -1058,6 +1058,7 @@ impl PhysicalGenerationScan {
             self.descriptor.placement_hash_version,
         );
         let mut payloads = HashMap::with_capacity(remote_ids.len());
+        let mut remote_work = Vec::new();
         for (ordinal, bucket) in buckets.iter().enumerate() {
             if bucket.is_empty() {
                 continue;
@@ -1072,19 +1073,30 @@ impl PhysicalGenerationScan {
                 );
             }
             let ids = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
-            let route = &self.routes[ordinal];
-            let response = super::remote_transport::remote_physical_materialize_payloads(
-                route
-                    .conninfo
-                    .as_deref()
-                    .expect("remote route has conninfo"),
-                &route.remote_index_regclass,
-                &self.fingerprint,
-                &ids,
-                &projection_attnums,
-                &schema_fingerprint,
-            )
-            .map_err(|error| error.to_string())?;
+            remote_work.push((ordinal, ids));
+        }
+        let requests = remote_work
+            .iter()
+            .map(|(ordinal, ids)| {
+                let route = &self.routes[*ordinal];
+                let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                    format!(
+                        "EC_NODE_DESCRIPTOR: physical owner {ordinal} route has no connection descriptor"
+                    )
+                })?;
+                Ok(super::remote_transport::DistannPhysicalMaterializeRequest {
+                    conninfo,
+                    index_regclass: &route.remote_index_regclass,
+                    epoch_fingerprint: &self.fingerprint,
+                    vec_ids: ids,
+                    projection_attnums: &projection_attnums,
+                    expected_schema_fingerprint: &schema_fingerprint,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        let responses = super::remote_transport::remote_physical_materialize_batch(&requests);
+        for ((ordinal, ids), response) in remote_work.into_iter().zip(responses) {
+            let response = response.map_err(|error| error.to_string())?;
             if response.len() != ids.len() {
                 return Err(format!(
                     "EC_INTERNAL: physical owner {ordinal} returned {} payloads for {} rows",
@@ -1098,7 +1110,12 @@ impl PhysicalGenerationScan {
                         "EC_INTERNAL: physical owner {ordinal} did not preserve payload order"
                     ));
                 }
-                if payload.is_tombstone || payload.tuple_payload_missing {
+                if payload.tuple_payload_missing {
+                    return Err(format!(
+                        "EC_GENERATION_MISSING: physical owner {ordinal} has no row-tier payload for vec_id {requested}"
+                    ));
+                }
+                if payload.is_tombstone {
                     continue;
                 }
                 payloads.insert(
@@ -1135,49 +1152,54 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
             self.descriptor.placement_hash_version,
         );
         let mut ordered = (0..vec_ids.len()).map(|_| None).collect::<Vec<_>>();
+        let mut remote_work = Vec::new();
         for (ordinal, bucket) in buckets.iter().enumerate() {
             if bucket.is_empty() {
                 continue;
             }
             let owned = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
-            let response = if Some(ordinal) == self.local_ordinal {
-                self.local
+            if Some(ordinal) == self.local_ordinal {
+                let response = self
+                    .local
                     .as_mut()
                     .ok_or_else(|| {
                         DistannExpandError::Internal(
                             "local owner route has no generation reader".to_owned(),
                         )
                     })?
-                    .expand_nodes(&owned, code_threshold)?
+                    .expand_nodes(&owned, code_threshold)?;
+                place_physical_owner_responses(ordinal, bucket, response, &mut ordered)?;
             } else {
-                let route = &self.routes[ordinal];
-                super::remote_transport::remote_physical_expand_nodes(
-                    route
-                        .conninfo
-                        .as_deref()
-                        .expect("remote route has conninfo"),
-                    &route.remote_index_regclass,
-                    self.fingerprint,
-                    self.query,
-                    &owned,
+                remote_work.push((ordinal, owned));
+            }
+        }
+        let requests = remote_work
+            .iter()
+            .map(|(ordinal, owned)| {
+                let route = &self.routes[*ordinal];
+                let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                    DistannExpandError::Internal(format!(
+                        "EC_NODE_DESCRIPTOR: physical owner {ordinal} route has no connection descriptor"
+                    ))
+                })?;
+                Ok(super::remote_transport::DistannPhysicalExpandRequest {
+                    conninfo,
+                    index_regclass: &route.remote_index_regclass,
+                    epoch_fingerprint: self.fingerprint,
+                    query: self.query,
+                    vec_ids: owned,
                     code_threshold,
-                )?
-            };
-            if response.len() != bucket.len() {
-                return Err(DistannExpandError::Internal(format!(
-                    "physical owner {ordinal} returned {} rows for {} requests",
-                    response.len(),
-                    bucket.len()
-                )));
-            }
-            for ((request_index, requested_id), node) in bucket.iter().zip(response) {
-                if node.vec_id != *requested_id {
-                    return Err(DistannExpandError::Internal(format!(
-                        "physical owner {ordinal} did not preserve request order"
-                    )));
-                }
-                ordered[*request_index] = Some(node);
-            }
+                })
+            })
+            .collect::<Result<Vec<_>, DistannExpandError>>()?;
+        let responses = super::remote_transport::remote_physical_expand_batch(&requests);
+        for ((ordinal, _), response) in remote_work.into_iter().zip(responses) {
+            place_physical_owner_responses(
+                ordinal,
+                &buckets[ordinal],
+                response?,
+                &mut ordered,
+            )?;
         }
         ordered
             .into_iter()
@@ -1190,6 +1212,30 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
             })
             .collect()
     }
+}
+
+fn place_physical_owner_responses(
+    ordinal: usize,
+    bucket: &[(usize, u64)],
+    response: Vec<DistannExpandedNode>,
+    ordered: &mut [Option<DistannExpandedNode>],
+) -> Result<(), DistannExpandError> {
+    if response.len() != bucket.len() {
+        return Err(DistannExpandError::Internal(format!(
+            "physical owner {ordinal} returned {} rows for {} requests",
+            response.len(),
+            bucket.len()
+        )));
+    }
+    for ((request_index, requested_id), node) in bucket.iter().zip(response) {
+        if node.vec_id != *requested_id {
+            return Err(DistannExpandError::Internal(format!(
+                "physical owner {ordinal} did not preserve request order"
+            )));
+        }
+        ordered[*request_index] = Some(node);
+    }
+    Ok(())
 }
 
 struct GenerationExpander<'a> {
