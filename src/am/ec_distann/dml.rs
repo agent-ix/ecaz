@@ -19,11 +19,14 @@
 use std::ffi::c_void;
 use std::ptr::NonNull;
 
-use pgrx::{pg_extern, pg_sys};
+#[cfg(feature = "pg_test")]
+use pgrx::pg_extern;
+use pgrx::pg_sys;
 
 use crate::storage::buffer_guard::LockedBufferGuard;
 use crate::storage::page::ItemPointer;
 use crate::storage::relation::RelationHandle;
+#[cfg(feature = "pg_test")]
 use crate::storage::relation_guard::IndexRelationGuard;
 use crate::storage::wal;
 
@@ -123,6 +126,7 @@ pub(super) unsafe fn tombstone_dead_records(
 /// on `index_regclass` (the write-endpoint operation, in-transaction so pg_test
 /// can exercise it — VACUUM/ambulkdelete cannot run in a txn). Returns the count
 /// newly tombstoned.
+#[cfg(feature = "pg_test")]
 #[pg_extern]
 fn ec_distann_debug_tombstone(index_regclass: pg_sys::Oid, vec_ids: Vec<i64>) -> i64 {
     let ids: Vec<u64> = vec_ids.iter().map(|&v| v as u64).collect();

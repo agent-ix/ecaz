@@ -187,6 +187,7 @@ fn ec_distann_epoch_status(
 /// Debug/test helper: set the in-flight retention count directly so the retention
 /// gate (AC-3) and override (AC-6) can be drilled deterministically before the
 /// per-scan increment/decrement wiring lands.
+#[cfg(feature = "pg_test")]
 #[pg_extern(volatile)]
 fn ec_distann_debug_set_in_flight(index_regclass: pg_sys::Oid, count: i64) {
     let count = u32::try_from(count)

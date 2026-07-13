@@ -7794,46 +7794,187 @@ fn test_ec_distann_expand_nodes_single_node_matches_local() {
 
 #[pg_test]
 fn test_distann_remote_endpoint_acl_class() {
-    const ROLE: &str = "ec_distann_unprivileged_remote_reader";
-    Spi::run(&format!("CREATE ROLE {ROLE} NOLOGIN")).expect("test role should create");
+    let role = format!("ec_distann_unprivileged_{}", unsafe { pg_sys::MyProcPid });
+    let mut client =
+        postgres::Client::connect(&current_pg_test_loopback_conninfo(), postgres::NoTls)
+            .expect("loopback connection should open");
+    client
+        .batch_execute(&format!("DROP ROLE IF EXISTS {role}; CREATE ROLE {role} NOLOGIN"))
+        .expect("test role should create outside the pg_test transaction");
 
-    let (endpoint_count, exposed_count) = Spi::get_two::<i64, i64>(&format!(
-        "SELECT count(*)::bigint,
-                count(*) FILTER (
-                    WHERE has_function_privilege('{ROLE}', proc.oid, 'EXECUTE')
-                       OR NOT proc.prosecdef
-                       OR NOT EXISTS (
-                           SELECT 1 FROM unnest(proc.proconfig) setting
-                            WHERE setting = format(
-                                'search_path=pg_catalog, %s, pg_temp',
-                                quote_ident(namespace.nspname)
+    let endpoints = client
+        .query(
+            "SELECT proc.oid::regprocedure::text AS identity,
+                    namespace.nspname,
+                    proc.prosecdef,
+                    EXISTS (
+                        SELECT 1 FROM unnest(proc.proconfig) setting
+                         WHERE setting = format(
+                             'search_path=pg_catalog, %s, pg_temp',
+                             quote_ident(namespace.nspname)
+                         )
+                    ) AS safe_search_path,
+                    (
+                        SELECT count(*)
+                          FROM unnest(proc.proargtypes)
+                               AS argument(type_oid)
+                          JOIN pg_type type ON type.oid = argument.type_oid
+                         WHERE type.typelem = 0
+                           AND argument.type_oid NOT IN (
+                               'oid'::regtype,
+                               'regclass'::regtype,
+                               'uuid'::regtype,
+                               'bytea'::regtype,
+                               'text'::regtype,
+                               'boolean'::regtype,
+                               'smallint'::regtype,
+                               'integer'::regtype,
+                               'bigint'::regtype,
+                               'real'::regtype,
+                               'double precision'::regtype
+                           )
+                    ) AS unsupported_argument_count,
+                    format(
+                        'SELECT %I.%I(%s)',
+                        namespace.nspname,
+                        proc.proname,
+                        COALESCE((
+                            SELECT string_agg(
+                                CASE
+                                    WHEN type.typelem <> 0 THEN format(
+                                        '''{}''::%s', format_type(argument.type_oid, NULL)
+                                    )
+                                    WHEN argument.type_oid = 'regclass'::regtype THEN
+                                        '0::oid::regclass'
+                                    WHEN argument.type_oid = 'uuid'::regtype THEN
+                                        '''00000000-0000-4000-8000-000000000000''::uuid'
+                                    WHEN argument.type_oid = 'bytea'::regtype THEN
+                                        '''\\x''::bytea'
+                                    WHEN argument.type_oid = 'text'::regtype THEN
+                                        '''x''::text'
+                                    WHEN argument.type_oid = 'boolean'::regtype THEN
+                                        'false'
+                                    ELSE format(
+                                        '0::%s', format_type(argument.type_oid, NULL)
+                                    )
+                                END,
+                                ', ' ORDER BY argument.ordinality
                             )
-                       )
-                )::bigint
-           FROM pg_proc proc
-           JOIN pg_namespace namespace ON namespace.oid = proc.pronamespace
-           JOIN pg_extension extension ON extension.extnamespace = namespace.oid
-          WHERE extension.extname = 'ecaz'
-            AND proc.proname IN (
-                'ec_distann_expand_nodes',
-                'ec_distann_expand_physical_nodes',
-                'ec_distann_materialize_rows',
-                'ec_distann_materialize_row_payloads',
-                'ec_distann_materialize_physical_row_payloads',
-                'ec_distann_apply_record_writes'
-            )"
-    ))
-    .expect("endpoint privilege audit should run");
-    assert_eq!(
-        endpoint_count,
-        Some(8),
-        "audit must cover every current overload"
+                              FROM unnest(proc.proargtypes)
+                                   WITH ORDINALITY AS argument(type_oid, ordinality)
+                              JOIN pg_type type ON type.oid = argument.type_oid
+                        ), '')
+                    ) AS call_sql
+               FROM pg_proc proc
+               JOIN pg_namespace namespace ON namespace.oid = proc.pronamespace
+               JOIN pg_depend dependency
+                 ON dependency.classid = 'pg_proc'::regclass
+                AND dependency.objid = proc.oid
+                AND dependency.deptype = 'e'
+               JOIN pg_extension extension ON extension.oid = dependency.refobjid
+              WHERE extension.extname = 'ecaz'
+                AND proc.prokind = 'f'
+                AND proc.proname LIKE 'ec_distann\\_%' ESCAPE '\\'
+                AND proc.proname NOT IN (
+                    'ec_distann_handler',
+                    'ec_distann_owning_node',
+                    'ec_distann_epoch_status'
+                )
+              ORDER BY identity",
+            &[],
+        )
+        .expect("installed endpoint inventory should query");
+    assert!(
+        endpoints.len() >= 40,
+        "class audit unexpectedly found only {} protected functions",
+        endpoints.len()
     );
-    assert_eq!(
-        exposed_count,
-        Some(0),
-        "remote read/write endpoints must be SECURITY DEFINER with a fixed safe search_path and no PUBLIC execute"
+    let extension_schema = endpoints
+        .first()
+        .expect("protected endpoint class must not be empty")
+        .get::<_, String>(1);
+    client
+        .batch_execute(&format!(
+            "GRANT USAGE ON SCHEMA {extension_schema} TO {role}; SET ROLE {role}"
+        ))
+        .expect("unprivileged caller should receive schema usage and assume role");
+
+    for endpoint in &endpoints {
+        let identity = endpoint.get::<_, String>(0);
+        assert!(
+            endpoint.get::<_, bool>(2),
+            "{identity} must be SECURITY DEFINER"
+        );
+        assert!(
+            endpoint.get::<_, bool>(3),
+            "{identity} must pin its search_path"
+        );
+        assert_eq!(
+            endpoint.get::<_, i64>(4),
+            0,
+            "{identity} needs a non-NULL inert argument fixture"
+        );
+        let call_sql = endpoint.get::<_, String>(5);
+        let error = client
+            .simple_query(&call_sql)
+            .expect_err("every protected endpoint call must be denied");
+        let db_error = error
+            .as_db_error()
+            .unwrap_or_else(|| panic!("{identity} returned a non-database error: {error}"));
+        assert_eq!(
+            db_error.code(),
+            &postgres::error::SqlState::INSUFFICIENT_PRIVILEGE,
+            "{identity} returned the wrong SQLSTATE: {db_error}"
+        );
+        assert!(
+            db_error.message().contains("permission denied for function"),
+            "{identity} was denied before the function ACL: {db_error}"
+        );
+    }
+
+    client
+        .batch_execute(&format!(
+            "RESET ROLE;
+             REVOKE USAGE ON SCHEMA {extension_schema} FROM {role};
+             DROP ROLE {role}"
+        ))
+        .expect("test role should clean up");
+}
+
+#[pg_test]
+fn test_ec_distann_fold_delta_requires_read_committed() {
+    let mut client =
+        postgres::Client::connect(&current_pg_test_loopback_conninfo(), postgres::NoTls)
+            .expect("loopback connection should open");
+    let extension_schema = client
+        .query_one(
+            "SELECT quote_ident(namespace.nspname)
+               FROM pg_extension extension
+               JOIN pg_namespace namespace ON namespace.oid = extension.extnamespace
+              WHERE extension.extname = 'ecaz'",
+            &[],
+        )
+        .expect("extension schema should resolve")
+        .get::<_, String>(0);
+    client
+        .batch_execute(&format!(
+            "SET search_path = {extension_schema}, public;
+             BEGIN ISOLATION LEVEL REPEATABLE READ"
+        ))
+        .expect("repeatable-read probe should begin");
+    let error = client
+        .batch_execute("SELECT ec_distann_fold_delta_into_graph(0::oid)")
+        .expect_err("fold maintenance must reject stronger isolation before relation access");
+    assert!(
+        error
+            .as_db_error()
+            .map(|db_error| db_error.message().contains("EC_TRANSACTION_ISOLATION"))
+            .unwrap_or(false),
+        "isolation failure must precede relation access: {error}"
     );
+    client
+        .batch_execute("ROLLBACK")
+        .expect("repeatable-read probe should roll back");
 }
 
 #[pg_test]

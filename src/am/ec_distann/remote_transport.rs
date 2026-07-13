@@ -19,8 +19,11 @@ use std::future::Future;
 use std::ptr::NonNull;
 use std::time::Duration;
 
+#[cfg(feature = "pg_test")]
 use pgrx::iter::TableIterator;
-use pgrx::{name, pg_extern, pg_sys};
+#[cfg(feature = "pg_test")]
+use pgrx::{name, pg_extern};
+use pgrx::pg_sys;
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{Client, NoTls, Row};
 
@@ -1135,6 +1138,7 @@ async fn run_one_materialize(
 /// This exists so TC-040/041 can assert 2-node top-k is identical to the
 /// single-node build without the CustomScan row-materialization layer (which
 /// returns remote heap rows to SQL and is a separable integration).
+#[cfg(feature = "pg_test")]
 #[pg_extern]
 #[allow(clippy::type_complexity)]
 fn ec_distann_debug_expand_search(

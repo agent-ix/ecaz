@@ -473,6 +473,7 @@ fn ec_distann_fold_delta_into_graph(index_regclass: pg_sys::Oid) -> i64 {
 }
 
 fn fold_delta_into_graph_impl(index_oid: pg_sys::Oid) -> Result<i64, String> {
+    super::lifecycle_guard::require_read_committed("ec_distann_fold_delta_into_graph")?;
     let guard = IndexRelationGuard::open(
         index_oid,
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,

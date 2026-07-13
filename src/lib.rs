@@ -802,6 +802,59 @@ REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
 REVOKE ALL ON FUNCTION ec_distann_materialize_row_payloads(
     regclass, bytea, bigint[], smallint[], bytea
 ) FROM PUBLIC;
+
+-- Class-wide closure: every extension-owned ec_distann SQL function is an
+-- internal/operator endpoint unless it is one of the deliberately public,
+-- non-privileged surfaces below. Deriving the set from extension dependencies
+-- makes newly-added siblings fail closed without another signature checklist.
+DO $distann_endpoint_privileges$
+DECLARE
+    endpoint record;
+BEGIN
+    FOR endpoint IN
+        SELECT namespace.nspname,
+               proc.proname,
+               pg_catalog.pg_get_function_identity_arguments(proc.oid) AS identity_arguments
+          FROM pg_catalog.pg_proc proc
+          JOIN pg_catalog.pg_namespace namespace
+            ON namespace.oid = proc.pronamespace
+          JOIN pg_catalog.pg_depend dependency
+            ON dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+           AND dependency.objid = proc.oid
+           AND dependency.deptype = 'e'
+          JOIN pg_catalog.pg_extension extension
+            ON extension.oid = dependency.refobjid
+         WHERE extension.extname = 'ecaz'
+           AND proc.prokind = 'f'
+           AND proc.proname LIKE 'ec_distann\_%' ESCAPE '\'
+           AND proc.proname NOT IN (
+               'ec_distann_handler',
+               'ec_distann_owning_node',
+               'ec_distann_epoch_status'
+           )
+    LOOP
+        EXECUTE pg_catalog.format(
+            'ALTER FUNCTION %I.%I(%s) SECURITY DEFINER',
+            endpoint.nspname,
+            endpoint.proname,
+            endpoint.identity_arguments
+        );
+        EXECUTE pg_catalog.format(
+            'ALTER FUNCTION %I.%I(%s) SET search_path TO pg_catalog, %I, pg_temp',
+            endpoint.nspname,
+            endpoint.proname,
+            endpoint.identity_arguments,
+            endpoint.nspname
+        );
+        EXECUTE pg_catalog.format(
+            'REVOKE ALL ON FUNCTION %I.%I(%s) FROM PUBLIC',
+            endpoint.nspname,
+            endpoint.proname,
+            endpoint.identity_arguments
+        );
+    END LOOP;
+END
+$distann_endpoint_privileges$;
 "#,
     name = "distann_internal_privileges",
     finalize,

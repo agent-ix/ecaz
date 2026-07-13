@@ -63,7 +63,10 @@ only incremental distributed insert is the final milestone.
   merged into results with same-statement visibility; the buffer SHALL be
   drained by the next epoch build. The interim posture is not a terminal
   state: the program closes only with incremental insert landed or an
-  explicit operator descope.
+  explicit operator descope. Any SQL maintenance endpoint that folds the
+  interim buffer into the graph SHALL reject an isolation level other than
+  READ COMMITTED before relation access or mutation and SHALL belong to the
+  protected FR-079 endpoint class.
 - **Remote write endpoint**: data nodes SHALL expose a write counterpart to
   FR-079 (`ec_distann_apply_record_writes`: new-record append **with its
   co-placed source-row payload in the epoch row tier**, tombstone set, back-edge
