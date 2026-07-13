@@ -7,6 +7,7 @@
 
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
+use std::ptr;
 use std::sync::Arc;
 
 use pgrx::datum::Uuid;
@@ -14,7 +15,8 @@ use pgrx::iter::TableIterator;
 use pgrx::{default, name, pg_extern, pg_sys, PgRelation, Spi};
 
 use crate::storage::page::ItemPointer;
-use crate::storage::relation_guard::HeapRelationGuard;
+use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
+use crate::storage::scan_guard::IndexScanGuard;
 use crate::storage::slot_guard::TupleTableSlotGuard;
 
 use super::expand_error::DistannExpandError;
@@ -34,6 +36,138 @@ use super::tuple::DistannNodeTuple;
 struct ActiveGenerationIdentity {
     build_id: Uuid,
     fingerprint: [u8; 34],
+}
+
+fn graph_slot_attr(
+    slot: &TupleTableSlotGuard<'_>,
+    attnum: i32,
+    label: &str,
+) -> Result<pg_sys::Datum, DistannExpandError> {
+    let mut is_null = false;
+    let datum = unsafe { pg_sys::slot_getattr(slot.as_ptr(), attnum, &mut is_null) };
+    if is_null {
+        return Err(DistannExpandError::GenerationMissing(format!(
+            "physical graph {label} is NULL"
+        )));
+    }
+    Ok(datum)
+}
+
+fn graph_node_from_slot(
+    slot: &TupleTableSlotGuard<'_>,
+    graph_degree: u16,
+    code_len: usize,
+) -> Result<DistannNodeTuple, DistannExpandError> {
+    let stored_id = unsafe { pg_sys::DatumGetInt64(graph_slot_attr(slot, 1, "vec_id")?) };
+    let record = unsafe {
+        crate::am::common::detoast::DetoastedVarlena::packed_from_datum(graph_slot_attr(
+            slot, 2, "record",
+        )?)
+    }
+    .ok_or_else(|| {
+        DistannExpandError::GenerationMissing(
+            "physical graph record could not be detoasted".to_owned(),
+        )
+    })?;
+    let row_tid_datum = graph_slot_attr(slot, 3, "row TID")?;
+    let row_tid_ptr = row_tid_datum.cast_mut_ptr::<pg_sys::ItemPointerData>();
+    if row_tid_ptr.is_null() {
+        return Err(DistannExpandError::GenerationMissing(
+            "physical graph row TID pointer is NULL".to_owned(),
+        ));
+    }
+    let row_tid = unsafe { ptr::read_unaligned(row_tid_ptr) };
+    let node = DistannNodeTuple::decode_physical_v1(record.as_bytes(), graph_degree, code_len)
+        .map_err(DistannExpandError::GenerationMissing)?;
+    let (block, offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
+    if node.vec_id != u64::from_le_bytes(stored_id.to_le_bytes())
+        || node.heap_tid
+            != (ItemPointer {
+                block_number: block,
+                offset_number: offset,
+            })
+    {
+        return Err(DistannExpandError::GenerationMissing(
+            "physical graph row identity/locator mismatch".to_owned(),
+        ));
+    }
+    Ok(node)
+}
+
+/// Read immutable graph tuples through the generation's unique `vec_id`
+/// directory. This keeps hop expansion out of SPI: no per-hop connection,
+/// relation-name SQL formatting, parse/plan, or SPI tuple copy is required.
+fn lookup_graph_nodes<F>(
+    graph_relation: &HeapRelationGuard,
+    directory_relation: &IndexRelationGuard,
+    snapshot: pg_sys::Snapshot,
+    vec_ids: &[u64],
+    graph_degree: u16,
+    code_len: usize,
+    missing: F,
+) -> Result<HashMap<u64, DistannNodeTuple>, DistannExpandError>
+where
+    F: Fn(u64) -> DistannExpandError,
+{
+    if snapshot.is_null() {
+        return Err(DistannExpandError::Internal(
+            "physical graph lookup has no active snapshot".to_owned(),
+        ));
+    }
+    let scan = unsafe {
+        IndexScanGuard::begin_from_raw(
+            graph_relation.as_ptr(),
+            directory_relation.as_ptr(),
+            snapshot,
+            1,
+            0,
+        )
+    }
+    .ok_or_else(|| {
+        DistannExpandError::Internal("could not begin physical graph index scan".to_owned())
+    })?;
+    let slot = TupleTableSlotGuard::create_for_heap_guard(graph_relation).ok_or_else(|| {
+        DistannExpandError::Internal("could not allocate physical graph scan slot".to_owned())
+    })?;
+    let mut records = HashMap::with_capacity(vec_ids.len());
+    for vec_id in vec_ids {
+        if records.contains_key(vec_id) {
+            continue;
+        }
+        let stored_id = i64::from_le_bytes(vec_id.to_le_bytes());
+        let mut scan_key =
+            unsafe { std::mem::MaybeUninit::<pg_sys::ScanKeyData>::zeroed().assume_init() };
+        unsafe {
+            pg_sys::ScanKeyInit(
+                &mut scan_key,
+                1,
+                pg_sys::BTEqualStrategyNumber as pg_sys::StrategyNumber,
+                pg_sys::Oid::from(pg_sys::F_INT8EQ),
+                pg_sys::Datum::from(stored_id),
+            );
+            pg_sys::index_rescan(scan.as_ptr(), &mut scan_key, 1, ptr::null_mut(), 0);
+            pg_sys::ExecClearTuple(slot.as_ptr());
+        }
+        let found = unsafe {
+            pg_sys::index_getnext_slot(
+                scan.as_ptr(),
+                pg_sys::ScanDirection::ForwardScanDirection,
+                slot.as_ptr(),
+            )
+        };
+        if !found {
+            return Err(missing(*vec_id));
+        }
+        let node = graph_node_from_slot(&slot, graph_degree, code_len)?;
+        if node.vec_id != *vec_id {
+            return Err(DistannExpandError::GenerationMissing(format!(
+                "physical graph directory returned vec_id {:#018x} for requested {vec_id:#018x}",
+                node.vec_id
+            )));
+        }
+        records.insert(node.vec_id, node);
+    }
+    Ok(records)
 }
 
 #[cfg(test)]
@@ -230,7 +364,9 @@ struct RetainedGenerationScan {
     descriptor: DistannGenerationDescriptor,
     generation: GenerationCatalogRow,
     row_relation: HeapRelationGuard,
-    _graph_relation: HeapRelationGuard,
+    graph_relation: HeapRelationGuard,
+    directory_relation: IndexRelationGuard,
+    #[cfg(feature = "distann-legacy-seed-benchmark")]
     graph_relation_name: String,
     source_attnum: i32,
 }
@@ -302,6 +438,14 @@ impl RetainedGenerationScan {
                     "retained graph-store relation is absent".to_owned(),
                 )
             })?;
+        let Some(directory_relation) =
+            IndexRelationGuard::try_access_share(generation.directory_relid)
+        else {
+            return Err(DistannExpandError::GenerationMissing(
+                "retained graph directory is absent".to_owned(),
+            ));
+        };
+        #[cfg(feature = "distann-legacy-seed-benchmark")]
         let graph_relation_name =
             super::handoff::qualified_relation_name(generation.graph_store_relid)
                 .map_err(DistannExpandError::GenerationMissing)?;
@@ -309,7 +453,9 @@ impl RetainedGenerationScan {
             descriptor,
             generation,
             row_relation,
-            _graph_relation: graph_relation,
+            graph_relation,
+            directory_relation,
+            #[cfg(feature = "distann-legacy-seed-benchmark")]
             graph_relation_name,
             source_attnum,
         })
@@ -449,7 +595,8 @@ impl RetainedGenerationScan {
         let mut expander = GenerationExpander {
             generation: &self.generation,
             descriptor: &self.descriptor,
-            graph_relation_name: &self.graph_relation_name,
+            graph_relation: &self.graph_relation,
+            directory_relation: &self.directory_relation,
             row_relation: &self.row_relation,
             slot: &slot,
             snapshot,
@@ -471,85 +618,20 @@ impl RetainedGenerationScan {
         let code_len = binding
             .code_len(usize::from(self.descriptor.dimensions))
             .map_err(DistannExpandError::Internal)?;
-        let requested = vec_ids
-            .iter()
-            .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
-            .collect::<Vec<_>>();
-        let records = Spi::connect(|client| {
-            client
-                .select(
-                    &format!(
-                        "SELECT vec_id, graph_record, row_tid FROM {}
-                          WHERE vec_id = ANY($1::bigint[])",
-                        self.graph_relation_name
-                    ),
-                    None,
-                    &[requested.as_slice().into()],
-                )
-                .map_err(|error| {
-                    DistannExpandError::GenerationMissing(format!(
-                        "physical materialize graph lookup failed: {error}"
-                    ))
-                })?
-                .map(|row| {
-                    let stored_id = row["vec_id"]
-                        .value::<i64>()
-                        .map_err(|error| {
-                            DistannExpandError::GenerationMissing(format!(
-                                "physical graph vec_id decode failed: {error}"
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            DistannExpandError::GenerationMissing(
-                                "physical graph vec_id is NULL".to_owned(),
-                            )
-                        })?;
-                    let bytes = row["graph_record"]
-                        .value::<Vec<u8>>()
-                        .map_err(|error| {
-                            DistannExpandError::GenerationMissing(format!(
-                                "physical graph record decode failed: {error}"
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            DistannExpandError::GenerationMissing(
-                                "physical graph record is NULL".to_owned(),
-                            )
-                        })?;
-                    let row_tid = row["row_tid"]
-                        .value::<pg_sys::ItemPointerData>()
-                        .map_err(|error| {
-                            DistannExpandError::GenerationMissing(format!(
-                                "physical graph row TID decode failed: {error}"
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            DistannExpandError::GenerationMissing(
-                                "physical graph row TID is NULL".to_owned(),
-                            )
-                        })?;
-                    let node = DistannNodeTuple::decode_physical_v1(
-                        &bytes,
-                        self.descriptor.graph_degree,
-                        code_len,
-                    )
-                    .map_err(DistannExpandError::GenerationMissing)?;
-                    let (block, offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
-                    if node.vec_id != u64::from_le_bytes(stored_id.to_le_bytes())
-                        || node.heap_tid
-                            != (ItemPointer {
-                                block_number: block,
-                                offset_number: offset,
-                            })
-                    {
-                        return Err(DistannExpandError::GenerationMissing(
-                            "physical graph row identity/locator mismatch".to_owned(),
-                        ));
-                    }
-                    Ok((node.vec_id, node))
-                })
-                .collect::<Result<HashMap<_, _>, DistannExpandError>>()
-        })?;
+        let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+        let records = lookup_graph_nodes(
+            &self.graph_relation,
+            &self.directory_relation,
+            snapshot,
+            vec_ids,
+            self.descriptor.graph_degree,
+            code_len,
+            |vec_id| {
+                DistannExpandError::OwnedRecordMissing(format!(
+                    "retained physical generation lacks owned vec_id {vec_id:#018x}"
+                ))
+            },
+        )?;
         vec_ids
             .iter()
             .map(|vec_id| {
@@ -842,8 +924,8 @@ pub(crate) struct PhysicalGenerationScan {
     descriptor: DistannGenerationDescriptor,
     generation: Option<GenerationCatalogRow>,
     row_relation: Option<HeapRelationGuard>,
-    _graph_relation: Option<HeapRelationGuard>,
-    graph_relation_name: Option<String>,
+    graph_relation: Option<HeapRelationGuard>,
+    directory_relation: Option<IndexRelationGuard>,
     fingerprint: [u8; 34],
     routes: Vec<PhysicalOwnerRoute>,
     #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
@@ -1009,7 +1091,7 @@ impl PhysicalGenerationScan {
         )?;
         let generation =
             generation_catalog::lookup_generation(index_oid, logical_index_uuid, active.build_id)?;
-        let (row_relation, graph_relation, graph_relation_name) = match generation.as_ref() {
+        let (row_relation, graph_relation, directory_relation) = match generation.as_ref() {
             Some(generation) => {
                 if generation.state != "Published" {
                     return Err(format!(
@@ -1041,8 +1123,12 @@ impl PhysicalGenerationScan {
                     .ok_or_else(|| {
                         "EC_GENERATION_MISSING: graph-store relation is absent".to_owned()
                     })?;
-                let name = super::handoff::qualified_relation_name(generation.graph_store_relid)?;
-                (Some(row), Some(graph), Some(name))
+                let Some(directory) =
+                    IndexRelationGuard::try_access_share(generation.directory_relid)
+                else {
+                    return Err("EC_GENERATION_MISSING: graph directory is absent".to_owned());
+                };
+                (Some(row), Some(graph), Some(directory))
             }
             None => {
                 if routes.iter().any(|route| route.is_local) {
@@ -1059,8 +1145,8 @@ impl PhysicalGenerationScan {
             descriptor,
             generation,
             row_relation,
-            _graph_relation: graph_relation,
-            graph_relation_name,
+            graph_relation,
+            directory_relation,
             fingerprint: active.fingerprint,
             routes,
             #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
@@ -1120,25 +1206,31 @@ impl PhysicalGenerationScan {
 
         let local_expander = match (
             self.generation.as_ref(),
-            self.graph_relation_name.as_deref(),
             self.row_relation.as_ref(),
+            self.graph_relation.as_ref(),
+            self.directory_relation.as_ref(),
             slot.as_ref(),
         ) {
-            (Some(generation), Some(graph_relation_name), Some(row_relation), Some(slot)) => {
-                Some(GenerationExpander {
-                    generation,
-                    descriptor: &self.descriptor,
-                    graph_relation_name,
-                    row_relation,
-                    slot,
-                    snapshot,
-                    source_attnum,
-                    query,
-                    prepared: &prepared,
-                    code_len,
-                })
-            }
-            (None, None, None, None) => None,
+            (
+                Some(generation),
+                Some(row_relation),
+                Some(graph_relation),
+                Some(directory_relation),
+                Some(slot),
+            ) => Some(GenerationExpander {
+                generation,
+                descriptor: &self.descriptor,
+                graph_relation,
+                directory_relation,
+                row_relation,
+                slot,
+                snapshot,
+                source_attnum,
+                query,
+                prepared: &prepared,
+                code_len,
+            }),
+            (None, None, None, None, None) => None,
             _ => return Err("EC_INTERNAL: incomplete local generation reader".to_owned()),
         };
         let mut expander = PhysicalMultiOwnerExpander {
@@ -1415,7 +1507,8 @@ fn place_physical_owner_responses(
 struct GenerationExpander<'a> {
     generation: &'a GenerationCatalogRow,
     descriptor: &'a DistannGenerationDescriptor,
-    graph_relation_name: &'a str,
+    graph_relation: &'a HeapRelationGuard,
+    directory_relation: &'a IndexRelationGuard,
     row_relation: &'a HeapRelationGuard,
     slot: &'a TupleTableSlotGuard<'a>,
     snapshot: pg_sys::Snapshot,
@@ -1474,63 +1567,20 @@ impl DistannNodeExpander for GenerationExpander<'_> {
         vec_ids: &[u64],
         _code_threshold: Option<f32>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
-        let requested = vec_ids
-            .iter()
-            .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
-            .collect::<Vec<_>>();
-        let records = Spi::connect(|client| {
-            client
-                .select(
-                    &format!(
-                        "SELECT vec_id, graph_record, row_tid FROM {}
-                          WHERE vec_id = ANY($1::bigint[])",
-                        self.graph_relation_name
-                    ),
-                    None,
-                    &[requested.as_slice().into()],
-                )
-                .map_err(|error| format!("EC_GENERATION_MISSING: graph lookup failed: {error}"))?
-                .map(|row| {
-                    let stored_id = row["vec_id"]
-                        .value::<i64>()
-                        .map_err(|_| {
-                            "EC_GENERATION_MISSING: graph vec_id decode failed".to_owned()
-                        })?
-                        .ok_or_else(|| "EC_GENERATION_MISSING: graph vec_id is NULL".to_owned())?;
-                    let graph_record = row["graph_record"]
-                        .value::<Vec<u8>>()
-                        .map_err(|_| {
-                            "EC_GENERATION_MISSING: graph record decode failed".to_owned()
-                        })?
-                        .ok_or_else(|| "EC_GENERATION_MISSING: graph record is NULL".to_owned())?;
-                    let row_tid = row["row_tid"]
-                        .value::<pg_sys::ItemPointerData>()
-                        .map_err(|_| {
-                            "EC_GENERATION_MISSING: graph row TID decode failed".to_owned()
-                        })?
-                        .ok_or_else(|| "EC_GENERATION_MISSING: graph row TID is NULL".to_owned())?;
-                    let node = DistannNodeTuple::decode_physical_v1(
-                        &graph_record,
-                        self.descriptor.graph_degree,
-                        self.code_len,
-                    )?;
-                    let (block, offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
-                    if node.vec_id != u64::from_le_bytes(stored_id.to_le_bytes())
-                        || node.heap_tid
-                            != (ItemPointer {
-                                block_number: block,
-                                offset_number: offset,
-                            })
-                    {
-                        return Err(
-                            "EC_GENERATION_MISSING: graph row identity/locator mismatch".to_owned()
-                        );
-                    }
-                    Ok((node.vec_id, node))
-                })
-                .collect::<Result<HashMap<_, _>, String>>()
-        })
-        .map_err(DistannExpandError::Internal)?;
+        let records = lookup_graph_nodes(
+            self.graph_relation,
+            self.directory_relation,
+            self.snapshot,
+            vec_ids,
+            self.descriptor.graph_degree,
+            self.code_len,
+            |vec_id| {
+                DistannExpandError::Internal(format!(
+                    "EC_RECORD_MISSING: physical generation {} lacks vec_id {vec_id:#018x}",
+                    self.generation.epoch
+                ))
+            },
+        )?;
 
         vec_ids
             .iter()
