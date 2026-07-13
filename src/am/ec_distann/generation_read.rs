@@ -22,6 +22,8 @@ use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
 use super::quantizer::{DistannCodecBinding, DistannPreparedQuery};
 use super::routine::DistannHitCollection;
+#[cfg(feature = "distann-legacy-seed-benchmark")]
+use super::scan::DistannSeedCandidate;
 use super::scan::{
     distann_orchestrated_search, DistannExpandedNode, DistannNodeExpander,
     DistannOrchestrationParams, DistannScanHit,
@@ -339,6 +341,81 @@ impl RetainedGenerationScan {
             }
         }
         Ok(())
+    }
+
+    #[cfg(feature = "distann-legacy-seed-benchmark")]
+    fn seed_candidates(
+        &self,
+        query: &[f32],
+        limit: usize,
+    ) -> Result<Vec<DistannSeedCandidate>, DistannExpandError> {
+        self.validate_request(query, &[])?;
+        if limit == 0 {
+            return Ok(Vec::new());
+        }
+        let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)
+            .map_err(DistannExpandError::Internal)?;
+        let code_len = binding
+            .code_len(usize::from(self.descriptor.dimensions))
+            .map_err(DistannExpandError::Internal)?;
+        let prepared =
+            DistannPreparedQuery::prepare_artifact(&self.descriptor.codec_artifact, query)
+                .map_err(DistannExpandError::Internal)?;
+        let mut candidates = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT graph_record FROM {} ORDER BY vec_id",
+                        self.graph_relation_name
+                    ),
+                    None,
+                    &[],
+                )
+                .map_err(|error| {
+                    DistannExpandError::GenerationMissing(format!(
+                        "physical seed scan failed: {error}"
+                    ))
+                })?
+                .map(|row| {
+                    let bytes = row["graph_record"]
+                        .value::<Vec<u8>>()
+                        .map_err(|error| {
+                            DistannExpandError::GenerationMissing(format!(
+                                "physical seed graph record decode failed: {error}"
+                            ))
+                        })?
+                        .ok_or_else(|| {
+                            DistannExpandError::GenerationMissing(
+                                "physical seed graph record is NULL".to_owned(),
+                            )
+                        })?;
+                    let node = DistannNodeTuple::decode_physical_v1(
+                        &bytes,
+                        self.descriptor.graph_degree,
+                        code_len,
+                    )
+                    .map_err(DistannExpandError::GenerationMissing)?;
+                    let owner = super::placement::owning_node(
+                        node.vec_id,
+                        self.descriptor.roster.len(),
+                        self.descriptor.placement_hash_version,
+                    );
+                    if owner != self.generation.owner_ordinal as usize {
+                        return Err(DistannExpandError::Placement(format!(
+                            "stored vec_id {:#018x} belongs to roster ordinal {owner}, not {}",
+                            node.vec_id, self.generation.owner_ordinal
+                        )));
+                    }
+                    Ok(DistannSeedCandidate {
+                        vec_id: node.vec_id,
+                        dist: prepared.score_dist(&node.search_code),
+                    })
+                })
+                .collect::<Result<Vec<_>, DistannExpandError>>()
+        })?;
+        candidates.sort_unstable_by(|left, right| left.dist.total_cmp(&right.dist));
+        candidates.truncate(limit);
+        Ok(candidates)
     }
 
     fn expand(
@@ -688,6 +765,44 @@ fn ec_distann_expand_physical_nodes(
     TableIterator::new(rows.into_iter())
 }
 
+/// Task 179 benchmark-only control endpoint. This is absent from normal
+/// production builds; the opt-in feature restores the removed owner-wide O(N)
+/// seed scan so persisted-head seeding can be measured on otherwise-current
+/// code.
+#[cfg(feature = "distann-legacy-seed-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_seed_candidates_benchmark(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    query: Vec<f32>,
+    limit: i32,
+) -> TableIterator<'static, (name!(vec_id, i64), name!(code_dist, f32))> {
+    let limit = usize::try_from(limit)
+        .ok()
+        .filter(|limit| (1..=4096).contains(limit))
+        .unwrap_or_else(|| pgrx::error!("physical seed limit must be in 1..=4096"));
+    let rows = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .and_then(|store| store.seed_candidates(&query, limit))
+        .map(|seeds| {
+            seeds
+                .into_iter()
+                .map(|seed| (i64::from_le_bytes(seed.vec_id.to_le_bytes()), seed.dist))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_else(|error| error.raise());
+    TableIterator::new(rows.into_iter())
+}
+
+/// Records the compiled physical seed strategy in benchmark provenance.
+#[pg_extern(immutable, parallel_safe)]
+fn ec_distann_physical_seed_strategy() -> &'static str {
+    if cfg!(feature = "distann-legacy-seed-benchmark") {
+        "owner_scan"
+    } else {
+        "persisted_head"
+    }
+}
+
 /// FR-079 physical-generation payload overload.  Projection identity is by
 /// attnum and the owner resolves each binary send function from its frozen
 /// row-tier schema; callers cannot select SQL function names.
@@ -722,6 +837,8 @@ fn ec_distann_materialize_physical_row_payloads(
 }
 
 pub(crate) struct PhysicalGenerationScan {
+    #[cfg(feature = "distann-legacy-seed-benchmark")]
+    index_oid: pg_sys::Oid,
     descriptor: DistannGenerationDescriptor,
     generation: Option<GenerationCatalogRow>,
     row_relation: Option<HeapRelationGuard>,
@@ -729,6 +846,7 @@ pub(crate) struct PhysicalGenerationScan {
     graph_relation_name: Option<String>,
     fingerprint: [u8; 34],
     routes: Vec<PhysicalOwnerRoute>,
+    #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
     head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
     _scan_token: ScanTokenGuard,
 }
@@ -825,57 +943,64 @@ impl PhysicalGenerationScan {
             );
         }
 
-        let (descriptor, descriptor_digest, head_index) =
-            if let Some(cached) = cached_physical_epoch(index_oid, logical_index_uuid, &active) {
-                (cached.descriptor, cached.descriptor_digest, cached.head_index)
-            } else {
-                let candidate = super::build_coordinator::load_build_candidate(
+        let (descriptor, descriptor_digest, head_index) = if let Some(cached) =
+            cached_physical_epoch(index_oid, logical_index_uuid, &active)
+        {
+            (
+                cached.descriptor,
+                cached.descriptor_digest,
+                cached.head_index,
+            )
+        } else {
+            let candidate = super::build_coordinator::load_build_candidate(
+                index_oid,
+                logical_index_uuid,
+                active.build_id,
+            )?
+            .ok_or_else(|| "EC_GENERATION_MISSING: active build candidate is absent".to_owned())?;
+            let descriptor = DistannGenerationDescriptor::decode(&candidate.generation_descriptor)?;
+            let descriptor_digest = descriptor.digest()?;
+            if descriptor_digest != candidate.generation_descriptor_digest
+                || descriptor.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes()
+            {
+                return Err(
+                    "EC_GENERATION_DESCRIPTOR: active generation descriptor identity mismatch"
+                        .to_owned(),
+                );
+            }
+            #[cfg(feature = "distann-legacy-seed-benchmark")]
+            let head_index = None;
+            #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
+            let head_index = {
+                let (head_sample, manifest_build_options) = super::head_sample::load_head_sample(
                     index_oid,
                     logical_index_uuid,
                     active.build_id,
-                )?
-                .ok_or_else(|| {
-                    "EC_GENERATION_MISSING: active build candidate is absent".to_owned()
-                })?;
-                let descriptor =
-                    DistannGenerationDescriptor::decode(&candidate.generation_descriptor)?;
-                let descriptor_digest = descriptor.digest()?;
-                if descriptor_digest != candidate.generation_descriptor_digest
-                    || descriptor.coordinator_logical_index_uuid
-                        != *logical_index_uuid.as_bytes()
-                {
-                    return Err(
-                        "EC_GENERATION_DESCRIPTOR: active generation descriptor identity mismatch"
-                            .to_owned(),
-                    );
-                }
-                let (head_sample, manifest_build_options) =
-                    super::head_sample::load_head_sample(
-                        index_oid,
-                        logical_index_uuid,
-                        active.build_id,
-                        &active.fingerprint,
-                    )?;
+                    &active.fingerprint,
+                )?;
                 let exact_options = manifest_build_options.options;
-                let head_index = super::head_sample::DistannPhysicalHeadIndex::build(
+                super::head_sample::DistannPhysicalHeadIndex::build(
                     head_sample,
                     usize::from(manifest_build_options.graph_degree),
                     usize::from(exact_options.build_list_size),
                     exact_options.alpha,
                     exact_options.seed,
                 )?
-                .map(Arc::new);
-                cache_physical_epoch(CachedPhysicalEpoch {
-                    index_oid,
-                    logical_index_uuid,
-                    build_id: active.build_id,
-                    fingerprint: active.fingerprint,
-                    descriptor: descriptor.clone(),
-                    descriptor_digest,
-                    head_index: head_index.clone(),
-                });
-                (descriptor, descriptor_digest, head_index)
+                .map(Arc::new)
             };
+            cache_physical_epoch(CachedPhysicalEpoch {
+                index_oid,
+                logical_index_uuid,
+                build_id: active.build_id,
+                fingerprint: active.fingerprint,
+                descriptor: descriptor.clone(),
+                descriptor_digest,
+                head_index: head_index.clone(),
+            });
+            (descriptor, descriptor_digest, head_index)
+        };
+        #[cfg(feature = "distann-legacy-seed-benchmark")]
+        let _ = &head_index;
         let routes = physical_owner_routes(
             index_oid,
             logical_index_uuid,
@@ -929,6 +1054,8 @@ impl PhysicalGenerationScan {
             }
         };
         Ok(Self {
+            #[cfg(feature = "distann-legacy-seed-benchmark")]
+            index_oid,
             descriptor,
             generation,
             row_relation,
@@ -936,6 +1063,7 @@ impl PhysicalGenerationScan {
             graph_relation_name,
             fingerprint: active.fingerprint,
             routes,
+            #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
             head_index,
             _scan_token: scan_token,
         })
@@ -974,6 +1102,9 @@ impl PhysicalGenerationScan {
             .transpose()?;
 
         let seed_limit = (super::options::current_beam_width() * 2).max(32);
+        #[cfg(feature = "distann-legacy-seed-benchmark")]
+        let all_seeds = self.legacy_seed_candidates(query, seed_limit)?;
+        #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
         let all_seeds = self
             .head_index
             .as_ref()
@@ -1034,6 +1165,49 @@ impl PhysicalGenerationScan {
             counters,
             multi_node: self.routes.len() > 1,
         })
+    }
+
+    #[cfg(feature = "distann-legacy-seed-benchmark")]
+    fn legacy_seed_candidates(
+        &self,
+        query: &[f32],
+        seed_limit: usize,
+    ) -> Result<Vec<DistannSeedCandidate>, String> {
+        let mut seeds = if self.generation.is_some() {
+            RetainedGenerationScan::open(self.index_oid, &self.fingerprint)
+                .and_then(|store| store.seed_candidates(query, seed_limit))
+                .map_err(|error| error.to_string())?
+        } else {
+            Vec::new()
+        };
+        let seed_limit_i32 = i32::try_from(seed_limit)
+            .map_err(|_| "EC_BAD_INPUT: seed limit exceeds integer".to_owned())?;
+        let requests = self
+            .routes
+            .iter()
+            .filter(|route| !route.is_local)
+            .map(|route| {
+                let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                    format!(
+                        "EC_NODE_DESCRIPTOR: physical owner {} route has no connection descriptor",
+                        route.roster_ordinal
+                    )
+                })?;
+                Ok(super::remote_transport::DistannPhysicalSeedRequest {
+                    conninfo,
+                    index_regclass: &route.remote_index_regclass,
+                    epoch_fingerprint: &self.fingerprint,
+                    query,
+                    limit: seed_limit_i32,
+                })
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        for response in super::remote_transport::remote_physical_seed_batch(&requests) {
+            seeds.extend(response.map_err(|error| error.to_string())?);
+        }
+        seeds.sort_unstable_by(|left, right| left.dist.total_cmp(&right.dist));
+        seeds.truncate(seed_limit);
+        Ok(seeds)
     }
 
     pub(crate) fn materialize_remote_payloads(

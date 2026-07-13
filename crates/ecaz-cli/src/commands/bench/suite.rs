@@ -4579,8 +4579,8 @@ mod tests {
     fn distann_physical_topology_and_gate_are_structured() {
         let raw = "[distann-multicluster] physical_topology phase=published node=2 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=65536 row_bytes=16384 directory_bytes=16384 control_bytes=8192\n\
 [distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=3 source_rows=90\n\
-[distann-multicluster] physical_benchmark_recall scale=10k arm=physical queries=10 trials=100 recall=1.0000 mean_ms=10727.91\n\
-[distann-multicluster] physical_benchmark_latency scale=10k arm=physical count=5 mean_ms=10744.10 p50_ms=10664.70 p95_ms=11065.20 p99_ms=11125.80 max_ms=11141.00 concurrency=1 cache=warm\n";
+[distann-multicluster] physical_benchmark_recall scale=10k arm=physical seed_strategy=persisted_head queries=10 trials=100 recall=1.0000 mean_ms=10727.91\n\
+[distann-multicluster] physical_benchmark_latency scale=10k arm=physical seed_strategy=persisted_head count=5 mean_ms=10744.10 p50_ms=10664.70 p95_ms=11065.20 p99_ms=11125.80 max_ms=11141.00 concurrency=1 cache=warm\n";
         let rows = parse_distann_multinode_rows(raw);
         let topology = rows
             .iter()
@@ -4595,10 +4595,12 @@ mod tests {
         assert!(rows.iter().any(|(metric, values)| {
             metric == "physical_benchmark_recall"
                 && values.get("arm").map(String::as_str) == Some("physical")
+                && values.get("seed_strategy").map(String::as_str) == Some("persisted_head")
                 && values.get("recall").map(String::as_str) == Some("1.0000")
         }));
         assert!(rows.iter().any(|(metric, values)| {
             metric == "physical_benchmark_latency"
+                && values.get("seed_strategy").map(String::as_str) == Some("persisted_head")
                 && values.get("p95_ms").map(String::as_str) == Some("11065.20")
         }));
     }

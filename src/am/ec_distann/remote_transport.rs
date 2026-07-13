@@ -277,6 +277,76 @@ fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
     format!("EC_BUILD_INCOMPLETE: remote {context} failed: {detail}")
 }
 
+#[cfg(feature = "distann-legacy-seed-benchmark")]
+pub(crate) struct DistannPhysicalSeedRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) query: &'a [f32],
+    pub(crate) limit: i32,
+}
+
+#[cfg(feature = "distann-legacy-seed-benchmark")]
+pub(crate) fn remote_physical_seed_batch(
+    requests: &[DistannPhysicalSeedRequest<'_>],
+) -> Vec<Result<Vec<DistannSeedCandidate>, DistannExpandError>> {
+    if requests.is_empty() {
+        return Vec::new();
+    }
+    let conn_keys = requests
+        .iter()
+        .map(|request| format!("lifecycle\u{1}{}", request.conninfo))
+        .collect::<Vec<_>>();
+    let outcome = with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            for request in requests {
+                lifecycle_client(connections, request.conninfo)
+                    .await
+                    .map_err(DistannExpandError::Internal)?;
+            }
+            let futures = requests.iter().enumerate().map(|(index, request)| {
+                run_one_physical_seed(&connections[&conn_keys[index]].client, request)
+            });
+            Ok(join_owner_futures(futures).await)
+        })
+    });
+    outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect())
+}
+
+#[cfg(feature = "distann-legacy-seed-benchmark")]
+async fn run_one_physical_seed(
+    client: &Client,
+    request: &DistannPhysicalSeedRequest<'_>,
+) -> Result<Vec<DistannSeedCandidate>, DistannExpandError> {
+    let rows = physical_query(
+        client,
+        "SELECT vec_id, code_dist
+           FROM ec_distann_physical_seed_candidates_benchmark(
+               $1::text::regclass, $2::bytea, $3::real[], $4::integer)",
+        &[
+            &request.index_regclass,
+            &request.epoch_fingerprint,
+            &request.query,
+            &request.limit,
+        ],
+    )
+    .await?;
+    rows.into_iter()
+        .map(|row| {
+            let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+            let dist: f32 = row.try_get(1).map_err(row_err)?;
+            Ok(DistannSeedCandidate {
+                vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
+                dist,
+            })
+        })
+        .collect()
+}
+
 pub(crate) struct DistannPhysicalExpandRequest<'a> {
     pub(crate) conninfo: &'a str,
     pub(crate) index_regclass: &'a str,

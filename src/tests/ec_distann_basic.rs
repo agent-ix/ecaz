@@ -3335,6 +3335,18 @@ fn test_distann_three_owner_physical_handoff() {
     client
         .batch_execute(&format!("SET search_path = {extension_schema}, public"))
         .expect("search_path should set");
+    let seed_strategy = client
+        .query_one("SELECT ec_distann_physical_seed_strategy()", &[])
+        .expect("compiled physical seed strategy should be inspectable")
+        .get::<_, String>(0);
+    assert_eq!(
+        seed_strategy,
+        if cfg!(feature = "distann-legacy-seed-benchmark") {
+            "owner_scan"
+        } else {
+            "persisted_head"
+        }
+    );
     client
         .execute(
             "SELECT ec_distann_test_set_conninfo_secret($1::text, $2::text)",

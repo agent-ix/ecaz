@@ -719,6 +719,10 @@ async fn run_physical_benchmarks(
         ))
         .await?;
     let single_build_ms = single_started.elapsed().as_millis();
+    let physical_seed_strategy = coordinator
+        .query_one("SELECT ec_distann_physical_seed_strategy()", &[])
+        .await?
+        .get::<_, String>(0);
 
     let staged_dir = args
         .staged_dir
@@ -747,6 +751,11 @@ async fn run_physical_benchmarks(
         args.head_index_cap
     )];
     for (arm, prefix) in [("physical", &physical_prefix), ("single", &single_prefix)] {
+        let seed_strategy = if arm == "physical" {
+            physical_seed_strategy.as_str()
+        } else {
+            "single_index"
+        };
         let recall_log = log_dir.join(format!("{arm}-recall.log"));
         let mut recall_args = common.clone();
         recall_args.extend([
@@ -779,7 +788,7 @@ async fn run_physical_benchmarks(
         let recall_value = row[3].parse::<f64>()?;
         let mean_ms = benchmark_ms(&row[11])?;
         lines.push(format!(
-            "physical_benchmark_recall scale={scale} head_index_cap={} arm={arm} queries={} trials={} recall={recall_value:.4} mean_ms={mean_ms:.2}",
+            "physical_benchmark_recall scale={scale} head_index_cap={} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={recall_value:.4} mean_ms={mean_ms:.2}",
             args.head_index_cap, row[1], row[2]
         ));
 
@@ -811,7 +820,7 @@ async fn run_physical_benchmarks(
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} head_index_cap={} arm={arm} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
+            "physical_benchmark_latency scale={scale} head_index_cap={} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
