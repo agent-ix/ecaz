@@ -521,6 +521,10 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     head_index_cap: Option<u32>,
     #[serde(default)]
+    beam_width: Option<u32>,
+    #[serde(default)]
+    hop_rounds: Option<u32>,
+    #[serde(default)]
     queries: Option<u32>,
     #[serde(default)]
     top_k: Option<u32>,
@@ -2946,6 +2950,24 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step
+                    .beam_width
+                    .is_some_and(|value| !(1..=64).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set beam_width in 1..=64",
+                        step.name
+                    )
+                }
+                if step
+                    .hop_rounds
+                    .is_some_and(|value| !(1..=256).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set hop_rounds in 1..=256",
+                        step.name
+                    )
+                }
                 if step.benchmark_iterations == Some(0) {
                     bail!(
                         "distann-local-multinode step {:?} must set benchmark_iterations >= 1",
@@ -3778,6 +3800,16 @@ fn expand_distann_local_multinode(
         &mut args,
         "--head-index-cap",
         step.head_index_cap.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--beam-width",
+        step.beam_width.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--hop-rounds",
+        step.hop_rounds.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -5026,6 +5058,8 @@ psql header noise\n\
             "name": "cap-256",
             "nodes": 3,
             "head_index_cap": 256,
+            "beam_width": 16,
+            "hop_rounds": 25,
             "physical_benchmark": true,
             "benchmark_warmup_iterations": 7,
             "drop_extension_cleanup_drill": true,
@@ -5041,6 +5075,12 @@ psql header noise\n\
         assert!(command
             .windows(2)
             .any(|window| window == ["--head-index-cap", "256"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--beam-width", "16"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--hop-rounds", "25"]));
         assert!(command
             .windows(2)
             .any(|window| window == ["--benchmark-warmup-iterations", "7"]));
@@ -5072,6 +5112,21 @@ psql header noise\n\
         .expect("step parses");
 
         assert!(step.validate().is_err());
+    }
+
+    #[test]
+    fn distann_local_multinode_rejects_out_of_range_search_shape() {
+        for field in [r#""beam_width": 65"#, r#""hop_rounds": 257"#] {
+            let step: SuiteStep = serde_json::from_str(&format!(
+                r#"{{
+                  "kind": "distann-local-multinode",
+                  "name": "invalid-search-shape",
+                  {field}
+                }}"#
+            ))
+            .expect("step parses");
+            assert!(step.validate().is_err());
+        }
     }
 
     #[test]

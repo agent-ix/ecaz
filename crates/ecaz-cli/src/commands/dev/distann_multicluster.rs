@@ -77,6 +77,13 @@ pub struct LocalMultinodePg18Args {
     /// sensitivity matrices can vary the cap through `ecaz bench suite`.
     #[arg(long, default_value_t = 4096)]
     pub head_index_cap: u32,
+    /// Session beam width applied to both physical and single benchmark arms.
+    #[arg(long)]
+    pub beam_width: Option<u32>,
+    /// Session hop-round cap applied to both benchmark arms. Together with
+    /// beam_width this makes fixed-product BW/H A/B runs suite-addressable.
+    #[arg(long)]
+    pub hop_rounds: Option<u32>,
     /// Query count for the recall comparison.
     #[arg(long, default_value_t = 50)]
     pub queries: u32,
@@ -152,6 +159,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if !(16..=1_048_576).contains(&args.head_index_cap) {
         bail!("--head-index-cap must be in 16..=1048576");
+    }
+    if args.beam_width.is_some_and(|value| !(1..=64).contains(&value)) {
+        bail!("--beam-width must be in 1..=64");
+    }
+    if args.hop_rounds.is_some_and(|value| !(1..=256).contains(&value)) {
+        bail!("--hop-rounds must be in 1..=256");
     }
     let instance_count = args.nodes + u32::from(args.coordinator_outside_roster);
     let repo_root = repo_root()?;
@@ -692,6 +705,8 @@ async fn run_physical_benchmarks(
     build_ms: u128,
     publish_ms: u128,
 ) -> Result<Vec<String>> {
+    let beam_width = args.beam_width.unwrap_or(4);
+    let hop_rounds = args.hop_rounds.unwrap_or(100);
     let corpus_prefix = args
         .corpus_prefix
         .as_deref()
@@ -760,8 +775,8 @@ async fn run_physical_benchmarks(
         "postgres".to_owned(),
     ];
     let mut lines = vec![format!(
-        "physical_benchmark_build scale={scale} head_index_cap={} physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
-        args.head_index_cap
+        "physical_benchmark_build scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+        args.head_index_cap,
     )];
     for (arm, prefix) in [("physical", &physical_prefix), ("single", &single_prefix)] {
         let seed_strategy = if arm == "physical" {
@@ -789,6 +804,10 @@ async fn run_physical_benchmarks(
             truth_cache.display().to_string(),
             "--log-output".into(),
             recall_log.display().to_string(),
+            "--session-guc".into(),
+            format!("ec_distann.beam_width={beam_width}"),
+            "--session-guc".into(),
+            format!("ec_distann.hop_rounds={hop_rounds}"),
         ]);
         if arm == "physical" {
             recall_args.extend([
@@ -801,7 +820,7 @@ async fn run_physical_benchmarks(
         let recall_value = row[3].parse::<f64>()?;
         let mean_ms = benchmark_ms(&row[11])?;
         lines.push(format!(
-            "physical_benchmark_recall scale={scale} head_index_cap={} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={recall_value:.4} mean_ms={mean_ms:.2}",
+            "physical_benchmark_recall scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={recall_value:.4} mean_ms={mean_ms:.2}",
             args.head_index_cap, row[1], row[2]
         ));
 
@@ -829,11 +848,15 @@ async fn run_physical_benchmarks(
             "warm".into(),
             "--log-output".into(),
             latency_log.display().to_string(),
+            "--session-guc".into(),
+            format!("ec_distann.beam_width={beam_width}"),
+            "--session-guc".into(),
+            format!("ec_distann.hop_rounds={hop_rounds}"),
         ]);
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} head_index_cap={} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
+            "physical_benchmark_latency scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -859,19 +882,25 @@ async fn run_physical_benchmarks(
         .iter()
         .map(|row| row.graph_bytes + row.row_bytes + row.directory_bytes + row.control_bytes)
         .sum::<i64>();
+    let control_index_bytes = published.iter().map(|row| row.control_bytes).sum::<i64>();
     let single_index_bytes = sizes.get::<_, i64>(0);
     let single_source_bytes = sizes.get::<_, i64>(1);
     let coordinator_source_bytes = sizes.get::<_, i64>(2);
+    let remote_owners = if args.coordinator_outside_roster {
+        nodes.len()
+    } else {
+        nodes.len().saturating_sub(1)
+    };
     lines.push(format!(
-        "physical_benchmark_storage scale={scale} head_index_cap={} owners={} physical_generation_bytes={physical_generation_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
+        "physical_benchmark_storage scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} owners={} physical_generation_bytes={physical_generation_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
         args.head_index_cap, published.len()
     ));
     lines.push(format!(
-        "physical_benchmark_engagement scale={scale} head_index_cap={} remote_owners={} materialize_probes={} pass={}",
+        "physical_benchmark_engagement scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} remote_owners={} materialize_probes={} pass={}",
         args.head_index_cap,
-        nodes.len().saturating_sub(1),
-        nodes.len().saturating_sub(1),
-        nodes.len() > 1
+        remote_owners,
+        remote_owners,
+        remote_owners > 0
     ));
     Ok(lines)
 }
