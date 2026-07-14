@@ -394,16 +394,12 @@ fn resolve_owned_rows(
         return Ok(Vec::new());
     }
 
-    let directory = read_directory_from_relation(
-        handle,
-        metadata.directory_head,
-        metadata.node_count as usize,
-    )
-    .map_err(DistannExpandError::Internal)?;
+    let cached = cached_index_entry(index_oid.into(), handle, &metadata)
+        .map_err(DistannExpandError::Internal)?;
     let mut rows = Vec::with_capacity(vec_ids.len());
     for &vec_id in vec_ids {
         // Owned-but-absent is EC_RECORD_MISSING (never a silent skip).
-        let record_tid = directory_lookup(&directory, vec_id as u64).ok_or_else(|| {
+        let record_tid = directory_lookup(&cached.directory, vec_id as u64).ok_or_else(|| {
             DistannExpandError::OwnedRecordMissing(format!(
                 "ec_distann materialize: owned vec_id {:#018x} is not in the directory",
                 vec_id as u64

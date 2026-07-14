@@ -741,7 +741,9 @@ fn replay_registration(
                 None,
                 &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
             )
-            .map_err(|_| "EC_BUILD_STATE: registration replay lookup failed".to_owned())?
+            .map_err(|error| {
+                format!("EC_BUILD_STATE: registration replay lookup failed: {error}")
+            })?
             .map(|row| {
                 let stored_epoch = row["epoch"]
                     .value::<i64>()
@@ -1399,7 +1401,9 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
                     None,
                     &[index_oid.into(), logical_index_uuid.into()],
                 )
-                .map_err(|_| "EC_BUILD_INCOMPLETE: active pointer lookup failed".to_owned())?
+                .map_err(|error| {
+                    format!("EC_BUILD_INCOMPLETE: active pointer lookup failed: {error}")
+                })?
                 .map(|row| {
                     row["epoch_fingerprint"]
                         .value::<Vec<u8>>()
@@ -1534,7 +1538,9 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
                             encoded.to_vec().into(),
                         ],
                     )
-                    .map_err(|_| "EC_BUILD_INCOMPLETE: stage batch dispatch failed".to_owned())?
+                    .map_err(|error| {
+                        format!("EC_BUILD_INCOMPLETE: stage batch dispatch failed: {error}")
+                    })?
                     .next()
                     .ok_or_else(|| "EC_BUILD_INCOMPLETE: stage batch returned no row".to_owned())?;
                 let accepted = row["accepted_record_count"]
@@ -1697,7 +1703,9 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
                         candidate_digest.to_vec().into(),
                     ],
                 )
-                .map_err(|_| "EC_BUILD_INCOMPLETE: build candidate insert failed".to_owned())?;
+                .map_err(|error| {
+                    format!("EC_BUILD_INCOMPLETE: build candidate insert failed: {error}")
+                })?;
             super::head_sample::persist_head_sample(
                 client,
                 index_oid,
@@ -1705,17 +1713,27 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
                 build_id,
                 &head_sample,
             )?;
-            client
+            let transitioned = client
                 .update(
                     &format!(
                         "UPDATE {registration} SET state = 'Ready'
                           WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
-                            AND build_id = $3::uuid AND state = 'Registered'"
+                            AND build_id = $3::uuid AND state = 'Registered'
+                          RETURNING 1"
                     ),
                     None,
                     &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
                 )
-                .map_err(|_| "EC_BUILD_INCOMPLETE: registration Ready transition failed".to_owned())?;
+                .map_err(|error| {
+                    format!("EC_BUILD_INCOMPLETE: registration Ready transition failed: {error}")
+                })?
+                .len();
+            if transitioned != 1 {
+                return Err(
+                    "EC_BUILD_INCOMPLETE: registration was not Registered at the Ready transition"
+                        .to_owned(),
+                );
+            }
             Ok(())
         })?;
 

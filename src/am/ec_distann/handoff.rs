@@ -521,10 +521,9 @@ fn insert_prepared_entries(
     })?;
     let graph_degree = u16::try_from(shape.graph_degree)
         .map_err(|_| "EC_HANDOFF_FORMAT: graph degree exceeds u16".to_owned())?;
-    let graph_sql = format!(
-        "INSERT INTO {graph_relation} (vec_id, graph_record, row_tid)
-         VALUES ($1::bigint, $2::bytea, $3::tid)"
-    );
+    let mut graph_vec_ids = Vec::with_capacity(entries.len());
+    let mut graph_records = Vec::with_capacity(entries.len());
+    let mut graph_row_tids = Vec::with_capacity(entries.len());
     for entry in entries {
         let mut writer = unsafe {
             TupleSlotWriter::from_raw_slot(slot.as_ptr(), "ec_distann row-tier handoff")?
@@ -554,17 +553,46 @@ fn insert_prepared_entries(
         let graph_record = entry
             .node
             .encode_physical_v1(graph_degree, shape.code_stride)?;
-        let vec_id = i64::from_le_bytes(entry.node.vec_id.to_le_bytes());
-        Spi::connect_mut(|client| {
-            client
-                .update(
-                    &graph_sql,
-                    None,
-                    &[vec_id.into(), graph_record.into(), row_tid.into()],
-                )
-                .map_err(|error| format!("EC_BATCH_CONFLICT: graph insert failed: {error}"))?;
-            Ok::<(), String>(())
-        })?;
+        graph_vec_ids.push(i64::from_le_bytes(entry.node.vec_id.to_le_bytes()));
+        graph_records.push(graph_record);
+        graph_row_tids.push(row_tid);
+    }
+    if graph_vec_ids.is_empty() {
+        return Ok(());
+    }
+    let expected = i64::try_from(graph_vec_ids.len())
+        .map_err(|_| "EC_BATCH_CONFLICT: graph insert batch is too large".to_owned())?;
+    let inserted = Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "WITH inserted AS (
+                         INSERT INTO {graph_relation} (vec_id, graph_record, row_tid)
+                         SELECT vec_id, graph_record, row_tid
+                           FROM unnest($1::bigint[], $2::bytea[], $3::tid[])
+                                AS batch(vec_id, graph_record, row_tid)
+                         RETURNING 1
+                     ) SELECT count(*)::bigint AS inserted_count FROM inserted"
+                ),
+                None,
+                &[
+                    graph_vec_ids.into(),
+                    graph_records.into(),
+                    graph_row_tids.into(),
+                ],
+            )
+            .map_err(|error| format!("EC_BATCH_CONFLICT: graph batch insert failed: {error}"))?
+            .next()
+            .ok_or_else(|| "EC_BATCH_CONFLICT: graph batch insert returned no count".to_owned())?
+            ["inserted_count"]
+            .value::<i64>()
+            .map_err(|error| format!("EC_BATCH_CONFLICT: graph insert count decode failed: {error}"))?
+            .ok_or_else(|| "EC_BATCH_CONFLICT: graph insert count is NULL".to_owned())
+    })?;
+    if inserted != expected {
+        return Err(format!(
+            "EC_BATCH_CONFLICT: graph batch inserted {inserted} rows, expected {expected}"
+        ));
     }
     Ok(())
 }
