@@ -747,10 +747,24 @@ async fn run_physical_benchmarks(
         ))
         .await?;
     let single_build_ms = single_started.elapsed().as_millis();
-    let physical_seed_strategy = coordinator
-        .query_one("SELECT ec_distann_physical_seed_strategy()", &[])
+    let has_seed_strategy_provenance = coordinator
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_physical_seed_strategy()') IS NOT NULL",
+            &[],
+        )
         .await?
-        .get::<_, String>(0);
+        .get::<_, bool>(0);
+    let physical_seed_strategy = if has_seed_strategy_provenance {
+        coordinator
+            .query_one("SELECT ec_distann_physical_seed_strategy()", &[])
+            .await?
+            .get::<_, String>(0)
+    } else {
+        // Historical physical-generation commits predate the provenance-only
+        // SQL helper. Keep those suite-runnable without assigning a strategy
+        // label that the installed extension cannot attest itself.
+        "pre-provenance".to_owned()
+    };
 
     let staged_dir = args
         .staged_dir
