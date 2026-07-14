@@ -28,11 +28,16 @@ the fixture:
 The real-corpus dimension now comes from the staged manifest instead of the
 synthetic `--dim` default.
 
-Focused validation is in `artifacts/validation.log`. A release 10k development
+Focused validation and provenance are in `artifacts/validation.log` and
+`artifacts/manifest.md`. A release 10k development
 probe (not promoted as evidence) established that the standard prepared query
 uses the physical CustomScan: recall@10 was 1.0000 on both arms, with mean query
 time 10727.91 ms physical versus 1043.92 ms single-instance. The scale matrix
 will run only after this checkpoint is committed and pushed.
+
+The manifest also records that this early probe did not capture explicit
+aggregate control-index bytes or heap-versus-TOAST accounting. It is therefore
+not NFR-018 closeout evidence; those fields require a suite-driven recapture.
 
 Review focus:
 
@@ -41,4 +46,3 @@ Review focus:
 - table-output parsing for recall and latency;
 - physical cluster storage accounting; and
 - suite expected-artifact and normalized-row coverage.
-
