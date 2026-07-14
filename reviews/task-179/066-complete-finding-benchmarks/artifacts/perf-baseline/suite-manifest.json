@@ -1,0 +1,347 @@
+{
+  "suite": "task179-performance-baseline-10k-50k-100k",
+  "schema_version": 1,
+  "config": "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline-suite.json",
+  "config_sha256": "6e95c2e0c61ad79a91629b5f5b61f0a3a1e060f5cf31ee3f7a994c570bcf2c3d",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784009421211,
+  "runner_git_commit": "45f9f0f980d9548083aa965659df4de7089b6e18",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "perf-baseline-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/10k",
+        "--run-dir",
+        "target/task179-complete-perf-baseline",
+        "--log-file",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40620",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "complete-findings",
+        "perf-baseline",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/10k/distann-local-multinode.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/10k/distann-multinode-summary.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/10k/physical-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/10k/physical-latency.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/10k/single-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/10k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784009421212,
+      "finished_at_unix_ms": 1784009611522,
+      "duration_ms": 203703,
+      "exit_code": 0
+    },
+    {
+      "name": "perf-baseline-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/50k",
+        "--run-dir",
+        "target/task179-complete-perf-baseline",
+        "--log-file",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40620",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "complete-findings",
+        "perf-baseline",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/50k/distann-local-multinode.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/50k/distann-multinode-summary.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/50k/physical-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/50k/physical-latency.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/50k/single-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/50k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784009611522,
+      "finished_at_unix_ms": 1784010499292,
+      "duration_ms": 946998,
+      "exit_code": 0
+    },
+    {
+      "name": "perf-baseline-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/100k",
+        "--run-dir",
+        "target/task179-complete-perf-baseline",
+        "--log-file",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40620",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "complete-findings",
+        "perf-baseline",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/100k/distann-local-multinode.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/100k/distann-multinode-summary.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/100k/physical-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/100k/physical-latency.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/100k/single-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/perf-baseline/100k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784010499293,
+      "finished_at_unix_ms": 1784012349010,
+      "duration_ms": 1975919,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "perf-baseline-10k-topology",
+      "step": "perf-baseline-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "perf-baseline-10k-recall",
+      "step": "perf-baseline-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall 1 Gte 0.9 -> true"
+    },
+    {
+      "name": "perf-baseline-10k-remote",
+      "step": "perf-baseline-10k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    },
+    {
+      "name": "perf-baseline-50k-topology",
+      "step": "perf-baseline-50k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "perf-baseline-50k-recall",
+      "step": "perf-baseline-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.98,
+      "passed": true,
+      "message": "recall 0.98 Gte 0.9 -> true"
+    },
+    {
+      "name": "perf-baseline-50k-remote",
+      "step": "perf-baseline-50k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    },
+    {
+      "name": "perf-baseline-100k-topology",
+      "step": "perf-baseline-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "perf-baseline-100k-recall",
+      "step": "perf-baseline-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.95,
+      "passed": true,
+      "message": "recall 0.95 Gte 0.9 -> true"
+    },
+    {
+      "name": "perf-baseline-100k-remote",
+      "step": "perf-baseline-100k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    }
+  ]
+}

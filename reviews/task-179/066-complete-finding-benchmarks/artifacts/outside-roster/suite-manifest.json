@@ -1,0 +1,350 @@
+{
+  "suite": "task179-outside-roster-10k-50k-100k",
+  "schema_version": 1,
+  "config": "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster-suite.json",
+  "config_sha256": "551641383cfa629e20b94bd8b7135848955439237c9fbd152c4c94db787ff483",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784020358461,
+  "runner_git_commit": "45f9f0f980d9548083aa965659df4de7089b6e18",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "outside-roster-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/10k",
+        "--run-dir",
+        "target/task179-complete-outside-roster",
+        "--log-file",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--coordinator-outside-roster",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40650",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "complete-findings",
+        "outside-roster",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/10k/distann-local-multinode.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/10k/distann-multinode-summary.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/10k/physical-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/10k/physical-latency.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/10k/single-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/10k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784020358461,
+      "finished_at_unix_ms": 1784020533238,
+      "duration_ms": 188332,
+      "exit_code": 0
+    },
+    {
+      "name": "outside-roster-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/50k",
+        "--run-dir",
+        "target/task179-complete-outside-roster",
+        "--log-file",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--coordinator-outside-roster",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40650",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "complete-findings",
+        "outside-roster",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/50k/distann-local-multinode.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/50k/distann-multinode-summary.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/50k/physical-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/50k/physical-latency.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/50k/single-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/50k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784020533238,
+      "finished_at_unix_ms": 1784021404029,
+      "duration_ms": 930533,
+      "exit_code": 0
+    },
+    {
+      "name": "outside-roster-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/100k",
+        "--run-dir",
+        "target/task179-complete-outside-roster",
+        "--log-file",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--coordinator-outside-roster",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40650",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "complete-findings",
+        "outside-roster",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/100k/distann-local-multinode.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/100k/distann-multinode-summary.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/100k/physical-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/100k/physical-latency.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/100k/single-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/outside-roster/100k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784021404029,
+      "finished_at_unix_ms": 1784023234557,
+      "duration_ms": 1954097,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "outside-roster-10k-topology",
+      "step": "outside-roster-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "outside-roster-10k-recall",
+      "step": "outside-roster-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall 1 Gte 0.9 -> true"
+    },
+    {
+      "name": "outside-roster-10k-remote",
+      "step": "outside-roster-10k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 3.0,
+      "actual": 3.0,
+      "passed": true,
+      "message": "remote_owners 3 Gte 3 -> true"
+    },
+    {
+      "name": "outside-roster-50k-topology",
+      "step": "outside-roster-50k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "outside-roster-50k-recall",
+      "step": "outside-roster-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.98,
+      "passed": true,
+      "message": "recall 0.98 Gte 0.9 -> true"
+    },
+    {
+      "name": "outside-roster-50k-remote",
+      "step": "outside-roster-50k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 3.0,
+      "actual": 3.0,
+      "passed": true,
+      "message": "remote_owners 3 Gte 3 -> true"
+    },
+    {
+      "name": "outside-roster-100k-topology",
+      "step": "outside-roster-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "outside-roster-100k-recall",
+      "step": "outside-roster-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.95,
+      "passed": true,
+      "message": "recall 0.95 Gte 0.9 -> true"
+    },
+    {
+      "name": "outside-roster-100k-remote",
+      "step": "outside-roster-100k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 3.0,
+      "actual": 3.0,
+      "passed": true,
+      "message": "remote_owners 3 Gte 3 -> true"
+    }
+  ]
+}
