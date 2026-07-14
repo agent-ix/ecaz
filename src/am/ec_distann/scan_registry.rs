@@ -13,6 +13,8 @@ use std::panic::AssertUnwindSafe;
 use std::ptr;
 
 use pgrx::datum::Uuid;
+#[cfg(feature = "pg_test")]
+use pgrx::pg_extern;
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
 const REGISTRY_MAGIC: u64 = 0x4543_4453_5250_3031; // "ECDSRP01"
@@ -1912,6 +1914,74 @@ pub(crate) fn acquire_retirement_fence_xact(
         },
     );
     Ok(())
+}
+
+#[cfg(feature = "pg_test")]
+fn test_fingerprint(bytes: Vec<u8>) -> [u8; 34] {
+    bytes.try_into().unwrap_or_else(|bytes: Vec<u8>| {
+        pgrx::error!(
+            "scan-registry test fingerprint is {} bytes, expected 34",
+            bytes.len()
+        )
+    })
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern(volatile, strict)]
+fn ec_distann_test_scan_registry_register(
+    logical_index_uuid: Uuid,
+    epoch_fingerprint: Vec<u8>,
+    scan_token: Uuid,
+) -> String {
+    let fingerprint = test_fingerprint(epoch_fingerprint);
+    with_scan_registration_fence(
+        unsafe { pg_sys::MyDatabaseId },
+        *logical_index_uuid.as_bytes(),
+        || register_scan_token(logical_index_uuid, fingerprint, scan_token),
+    )
+    .and_then(|outcome| outcome)
+    .map(|outcome| match outcome {
+        RegisterOutcome::Registered => "Registered".to_owned(),
+        RegisterOutcome::AlreadyRegistered => "AlreadyRegistered".to_owned(),
+    })
+    .unwrap_or_else(|error| pgrx::error!("{}", error.stable_message()))
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern(volatile, strict)]
+fn ec_distann_test_scan_registry_release(
+    logical_index_uuid: Uuid,
+    epoch_fingerprint: Vec<u8>,
+    scan_token: Uuid,
+) -> bool {
+    release_scan_token(
+        logical_index_uuid,
+        test_fingerprint(epoch_fingerprint),
+        scan_token,
+    )
+    .unwrap_or_else(|error| pgrx::error!("{}", error.stable_message()))
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern(volatile, strict)]
+fn ec_distann_test_scan_registry_count(
+    logical_index_uuid: Uuid,
+    epoch_fingerprint: Vec<u8>,
+) -> i64 {
+    i64::from(
+        live_token_count_for_fingerprint(logical_index_uuid, test_fingerprint(epoch_fingerprint))
+            .unwrap_or_else(|error| pgrx::error!("{}", error.stable_message())),
+    )
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern(volatile, strict)]
+fn ec_distann_test_scan_registry_acquire_retirement(logical_index_uuid: Uuid) {
+    acquire_retirement_fence_xact(
+        unsafe { pg_sys::MyDatabaseId },
+        *logical_index_uuid.as_bytes(),
+    )
+    .unwrap_or_else(|error| pgrx::error!("{}", error.stable_message()));
 }
 
 #[cfg(test)]

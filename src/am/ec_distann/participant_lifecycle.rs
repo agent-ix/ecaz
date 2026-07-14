@@ -10,12 +10,11 @@ use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
 use pgrx::{name, pg_extern, pg_sys, PgRelation, Spi};
 
-use super::canonical_wire::{
-    domain_digest, fixed_digest, is_rfc4122_v4_uuid, CanonicalEncoder,
-};
+use super::canonical_wire::{domain_digest, fixed_digest, is_rfc4122_v4_uuid, CanonicalEncoder};
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::{encode_roster, roster_digest, DistannGenerationDescriptor};
 use super::generation_store::{drop_generation_relations, open_control_index, GenerationRelations};
+use super::lifecycle_state::{require_exact_transition, GenerationState};
 use super::lifecycle_wire::{
     DistannCancelPublishAuditV1, DistannRetireDecisionV1, DistannSuccessorActivationV1,
 };
@@ -207,7 +206,7 @@ fn ec_distann_publish_generation(
         let descriptor = decode_generation_descriptor(&row)?;
         local_ready_receipt(&row, &descriptor, &manifest, logical_index_uuid)?;
 
-        if row.state == "Published" {
+        if row.state == GenerationState::Published {
             let generation = generation_catalog::extension_relation_name("ec_distann_generation")?;
             let exact = Spi::get_one_with_args::<bool>(
                 &format!(
@@ -234,7 +233,7 @@ fn ec_distann_publish_generation(
             }
             return Err("EC_EPOCH_STATE: conflicting publication replay".to_owned());
         }
-        if row.state != "Ready" {
+        if row.state != GenerationState::Ready {
             return Err(format!(
                 "EC_EPOCH_STATE: generation state {} cannot transition to Published",
                 row.state
@@ -274,9 +273,12 @@ fn ec_distann_publish_generation(
                 .map(|table| table.len())
                 .map_err(|error| format!("EC_EPOCH_STATE: publication transition failed: {error}"))
         })?;
-        if updated != 1 {
-            return Err("EC_EPOCH_STATE: publication target changed concurrently".to_owned());
-        }
+        require_exact_transition(
+            GenerationState::Ready,
+            GenerationState::Published,
+            updated,
+            "generation",
+        )?;
         Ok(fingerprint.as_bytes().to_vec())
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"))
@@ -323,9 +325,8 @@ fn ec_distann_epoch_generation_status(
         )?;
         let generation = generation_catalog::extension_relation_name("ec_distann_generation")?;
         let reclaim = generation_catalog::extension_relation_name("ec_distann_generation_reclaim")?;
-        let cancelled_reclaim = generation_catalog::extension_relation_name(
-            "ec_distann_cancelled_generation_reclaim",
-        )?;
+        let cancelled_reclaim =
+            generation_catalog::extension_relation_name("ec_distann_cancelled_generation_reclaim")?;
         let sql = format!(
             "SELECT epoch, state, build_spec_digest, generation_descriptor_digest,
                     epoch_fingerprint, manifest_digest, record_count, row_count,
@@ -497,7 +498,7 @@ fn ec_distann_mark_epoch_retired(
                     .to_owned(),
             );
         }
-        if row.state == "Retired" {
+        if row.state == GenerationState::Retired {
             if persisted.2.as_deref() == Some(successor_activation.as_slice())
                 && persisted.3.as_deref() == Some(supplied_digest.as_slice())
             {
@@ -505,7 +506,7 @@ fn ec_distann_mark_epoch_retired(
             }
             return Err("EC_EPOCH_STATE: conflicting successor activation replay".to_owned());
         }
-        if row.state != "Published" {
+        if row.state != GenerationState::Published {
             return Err(format!(
                 "EC_EPOCH_STATE: generation state {} cannot transition to Retired",
                 row.state
@@ -539,10 +540,12 @@ fn ec_distann_mark_epoch_retired(
                 .map(|table| table.len())
                 .map_err(|error| format!("EC_EPOCH_STATE: retirement mark failed: {error}"))
         })?;
-        if updated != 1 {
-            return Err("EC_EPOCH_STATE: retirement predecessor changed concurrently".to_owned());
-        }
-        Ok(())
+        require_exact_transition(
+            GenerationState::Published,
+            GenerationState::Retired,
+            updated,
+            "generation",
+        )
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"));
 }
@@ -675,7 +678,7 @@ fn ec_distann_apply_epoch_retire(
             build_id,
         )?
         .ok_or_else(|| "EC_GENERATION_MISSING: retire target does not exist".to_owned())?;
-        if row.state != "Retired" {
+        if row.state != GenerationState::Retired {
             return Err(format!(
                 "EC_EPOCH_STATE: generation state {} cannot be reclaimed",
                 row.state
@@ -869,9 +872,7 @@ fn ec_distann_reclaim_cancelled_generation(
     cancellation_audit_digest: Vec<u8>,
 ) {
     (|| -> Result<(), String> {
-        super::lifecycle_guard::require_read_committed(
-            "ec_distann_reclaim_cancelled_generation",
-        )?;
+        super::lifecycle_guard::require_read_committed("ec_distann_reclaim_cancelled_generation")?;
         let supplied_digest = fixed_digest(
             cancellation_audit_digest,
             "EC_PUBLISH_CANCEL",
@@ -894,9 +895,8 @@ fn ec_distann_reclaim_cancelled_generation(
             );
         }
 
-        let tombstone = generation_catalog::extension_relation_name(
-            "ec_distann_cancelled_generation_reclaim",
-        )?;
+        let tombstone =
+            generation_catalog::extension_relation_name("ec_distann_cancelled_generation_reclaim")?;
         let replay = Spi::connect_mut(|client| {
             client
                 .update(
@@ -921,9 +921,7 @@ fn ec_distann_reclaim_cancelled_generation(
                             .map_err(|_| {
                                 format!("EC_PUBLISH_CANCEL: tombstone {field} decode failed")
                             })?
-                            .ok_or_else(|| {
-                                format!("EC_PUBLISH_CANCEL: tombstone {field} is NULL")
-                            })
+                            .ok_or_else(|| format!("EC_PUBLISH_CANCEL: tombstone {field} is NULL"))
                     };
                     Ok::<_, String>((
                         row["epoch"]
@@ -963,24 +961,25 @@ fn ec_distann_reclaim_cancelled_generation(
         .ok_or_else(|| {
             "EC_GENERATION_MISSING: cancelled generation and tombstone are absent".to_owned()
         })?;
-        if !matches!(row.state.as_str(), "Ready" | "Published") {
+        if !matches!(
+            row.state,
+            GenerationState::Ready | GenerationState::Published
+        ) {
             return Err(format!(
                 "EC_PUBLISH_CANCEL: generation state {} cannot be cancellation-reclaimed",
                 row.state
             ));
         }
         let descriptor = decode_generation_descriptor(&row)?;
-        if descriptor.coordinator_logical_index_uuid
-            != audit.coordinator_logical_index_uuid
+        if descriptor.coordinator_logical_index_uuid != audit.coordinator_logical_index_uuid
             || row.epoch != audit.epoch
         {
             return Err(
                 "EC_PUBLISH_CANCEL: cancellation audit generation identity mismatch".to_owned(),
             );
         }
-        if row.state == "Published" {
-            let generation =
-                generation_catalog::extension_relation_name("ec_distann_generation")?;
+        if row.state == GenerationState::Published {
+            let generation = generation_catalog::extension_relation_name("ec_distann_generation")?;
             let persisted = Spi::connect(|client| {
                 client
                     .select(
@@ -1080,7 +1079,7 @@ fn ec_distann_reclaim_cancelled_generation(
                         epoch.into(),
                         audit.epoch_fingerprint.to_vec().into(),
                         audit.manifest_digest.to_vec().into(),
-                        row.state.clone().into(),
+                        row.state.as_str().into(),
                         row.build_spec_digest.to_vec().into(),
                         row.generation_descriptor_digest.to_vec().into(),
                         i64::try_from(ready_receipt.owned_record_count)
@@ -1089,9 +1088,7 @@ fn ec_distann_reclaim_cancelled_generation(
                             })?
                             .into(),
                         i64::try_from(ready_receipt.row_count)
-                            .map_err(|_| {
-                                "EC_PUBLISH_CANCEL: row count exceeds bigint".to_owned()
-                            })?
+                            .map_err(|_| "EC_PUBLISH_CANCEL: row count exceeds bigint".to_owned())?
                             .into(),
                         cancellation_audit.clone().into(),
                         supplied_digest.to_vec().into(),

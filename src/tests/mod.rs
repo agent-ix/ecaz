@@ -2565,6 +2565,8 @@
 
     include!("ec_ivf.rs");
 
+    include!("ec_distann_scan_registry.rs");
+    include!("ec_distann_physical_lifecycle.rs");
     include!("ec_distann_basic.rs");
     include!("ec_distann_registry_concurrency.rs");
     include!("ec_distann_registry_security.rs");

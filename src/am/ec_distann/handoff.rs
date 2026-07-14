@@ -28,11 +28,12 @@ use super::handoff_wire::{
     DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannOwnerStreamHasher,
 };
 use super::identity::vec_id_from_source_identity;
-use super::quote_ident;
+use super::lifecycle_state::GenerationState;
 use super::manifest_v2::{
     DistannReadyReceipt, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
 };
 use super::placement::owning_node;
+use super::quote_ident;
 use super::row_schema::resolve_relation_schema;
 use super::tuple::DistannNodeTuple;
 
@@ -573,7 +574,9 @@ fn insert_prepared_entries(
             .ok_or_else(|| "EC_BATCH_CONFLICT: graph batch insert returned no count".to_owned())?
             ["inserted_count"]
             .value::<i64>()
-            .map_err(|error| format!("EC_BATCH_CONFLICT: graph insert count decode failed: {error}"))?
+            .map_err(|error| {
+                format!("EC_BATCH_CONFLICT: graph insert count decode failed: {error}")
+            })?
             .ok_or_else(|| "EC_BATCH_CONFLICT: graph insert count is NULL".to_owned())
     })?;
     if inserted != expected {
@@ -946,9 +949,8 @@ fn diagnose_physical_generation(
     graph_relation: &str,
     row_count: u64,
 ) -> Result<PhysicalTopologySummary, String> {
-    let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation).ok_or_else(|| {
-        "EC_GENERATION_MISSING: could not allocate topology row slot".to_owned()
-    })?;
+    let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation)
+        .ok_or_else(|| "EC_GENERATION_MISSING: could not allocate topology row slot".to_owned())?;
     let mut row_io = unsafe { row_attribute_io(row_relation.as_ptr())? };
     let mut owned_vec_id_hasher = Sha256::new();
     owned_vec_id_hasher.update(OWNED_VEC_IDS_DOMAIN);
@@ -1153,14 +1155,17 @@ fn build_topology_row(
     Ok((
         i32::try_from(generation.node_id)
             .map_err(|_| "EC_BUILD_INCOMPLETE: node id exceeds integer".to_owned())?,
-        generation.state.clone(),
+        generation.state.to_string(),
         to_i64(summary.record_count, "record_count")?,
         to_i64(row_count, "row_count")?,
         summary.owned_vec_id_digest.to_vec(),
         summary.graph_digest.to_vec(),
         summary.row_tier_digest.to_vec(),
         to_i64(summary.non_owned_live_count, "non_owned_live_count")?,
-        to_i64(summary.non_owned_tombstone_count, "non_owned_tombstone_count")?,
+        to_i64(
+            summary.non_owned_tombstone_count,
+            "non_owned_tombstone_count",
+        )?,
         to_i64(summary.orphan_record_count, "orphan_record_count")?,
         to_i64(summary.orphan_row_count, "orphan_row_count")?,
         to_i64(graph_bytes, "graph_bytes")?,
@@ -1220,10 +1225,17 @@ fn ec_distann_generation_topology(
         else {
             return Ok(Vec::new());
         };
-        if !matches!(generation.state.as_str(), "Building" | "Ready") {
+        if !matches!(
+            generation.state,
+            GenerationState::Building | GenerationState::Ready
+        ) {
             return Ok(Vec::new());
         }
-        Ok(vec![build_topology_row(index_oid, &generation, control_owner)?])
+        Ok(vec![build_topology_row(
+            index_oid,
+            &generation,
+            control_owner,
+        )?])
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"));
     TableIterator::new(rows.into_iter())
@@ -1262,10 +1274,7 @@ fn ec_distann_epoch_topology(
     ),
 > {
     let rows = (|| -> Result<Vec<DistannTopologyRow>, String> {
-        if epoch_fingerprint.len() != 34
-            || epoch_fingerprint[0] != 2
-            || epoch_fingerprint[1] != 0
-        {
+        if epoch_fingerprint.len() != 34 || epoch_fingerprint[0] != 2 || epoch_fingerprint[1] != 0 {
             return Err(
                 "EC_EPOCH_FINGERPRINT_VERSION: unsupported epoch fingerprint version".to_owned(),
             );
@@ -1298,13 +1307,20 @@ fn ec_distann_epoch_topology(
             );
         };
         let generation = retained.generation;
-        if !matches!(generation.state.as_str(), "Published" | "Retired") {
+        if !matches!(
+            generation.state,
+            GenerationState::Published | GenerationState::Retired
+        ) {
             return Err(
                 "EC_GENERATION_MISSING: epoch generation is not Published or retained Retired"
                     .to_owned(),
             );
         }
-        Ok(vec![build_topology_row(index_oid, &generation, control_owner)?])
+        Ok(vec![build_topology_row(
+            index_oid,
+            &generation,
+            control_owner,
+        )?])
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"));
     TableIterator::new(rows.into_iter())
@@ -1372,7 +1388,7 @@ fn ec_distann_stage_epoch_batch(
                 "EC_BATCH_CONFLICT: acknowledged batch identity differs from replay".to_owned(),
             );
         }
-        if generation.state != "Building" {
+        if generation.state != GenerationState::Building {
             return Err(format!(
                 "EC_BUILD_STATE: cannot stage an unacknowledged batch in state {}",
                 generation.state
@@ -1558,7 +1574,10 @@ fn ec_distann_seal_epoch_handoff(
         {
             return Err("EC_BUILD_INCOMPLETE: seal expectation differs from begin".to_owned());
         }
-        if matches!(generation.state.as_str(), "Ready" | "Published" | "Retired") {
+        if matches!(
+            generation.state,
+            GenerationState::Ready | GenerationState::Published | GenerationState::Retired
+        ) {
             return generation
                 .ready_receipt
                 .map(|receipt| receipt.to_vec())
@@ -1566,7 +1585,7 @@ fn ec_distann_seal_epoch_handoff(
                     "EC_BUILD_STATE: non-Building generation has no Ready receipt".to_owned()
                 });
         }
-        if generation.state != "Building" {
+        if generation.state != GenerationState::Building {
             return Err(format!(
                 "EC_BUILD_STATE: cannot seal generation state {}",
                 generation.state

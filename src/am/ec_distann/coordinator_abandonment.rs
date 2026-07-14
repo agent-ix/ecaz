@@ -5,6 +5,9 @@ use pgrx::{pg_extern, pg_sys, PgRelation, Spi};
 
 use super::generation_catalog::extension_relation_name;
 use super::generation_store::open_control_index;
+use super::lifecycle_state::{
+    require_exact_transition, require_transition, PredecessorDisposition, PublishDecisionState,
+};
 use super::lifecycle_wire::DistannAbandonBindingAuditV1;
 
 fn required_bytes<const N: usize>(
@@ -23,7 +26,7 @@ struct AbandonTarget {
     successor_epoch: i64,
     successor_fingerprint: [u8; 34],
     successor_activation_digest: [u8; 32],
-    successor_state: String,
+    successor_state: PublishDecisionState,
     predecessor_build_id: Uuid,
     predecessor_epoch: i64,
     predecessor_fingerprint: [u8; 34],
@@ -32,7 +35,7 @@ struct AbandonTarget {
     endpoint_identity: String,
     remote_index_regclass: String,
     participant_logical_index_uuid: Uuid,
-    disposition: String,
+    disposition: PredecessorDisposition,
     abandon_audit: Option<Vec<u8>>,
 }
 
@@ -65,7 +68,7 @@ fn decode_target(row: pgrx::spi::SpiHeapTupleData<'_>) -> Result<AbandonTarget, 
         successor_epoch: i64_value("successor_epoch")?,
         successor_fingerprint: required_bytes(&row, "successor_fingerprint")?,
         successor_activation_digest: required_bytes(&row, "successor_activation_digest")?,
-        successor_state: text("decision_state")?,
+        successor_state: PublishDecisionState::parse(&text("decision_state")?)?,
         predecessor_build_id: uuid("predecessor_build_id")?,
         predecessor_epoch: i64_value("predecessor_epoch")?,
         predecessor_fingerprint: required_bytes(&row, "predecessor_epoch_fingerprint")?,
@@ -74,7 +77,7 @@ fn decode_target(row: pgrx::spi::SpiHeapTupleData<'_>) -> Result<AbandonTarget, 
         endpoint_identity: text("endpoint_identity")?,
         remote_index_regclass: text("remote_index_regclass")?,
         participant_logical_index_uuid: uuid("participant_logical_index_uuid")?,
-        disposition: text("disposition")?,
+        disposition: PredecessorDisposition::parse(&text("disposition")?)?,
         abandon_audit: row["abandon_audit"]
             .value::<Vec<u8>>()
             .map_err(|_| "EC_PREDECESSOR_ABANDON: existing audit decode failed".to_owned())?,
@@ -185,7 +188,7 @@ fn ec_distann_abandon_predecessor_binding(
                     "EC_PREDECESSOR_ABANDON: predecessor binding does not exist".to_owned()
                 })
         })?;
-        if row.disposition == "Abandoned" {
+        if row.disposition == PredecessorDisposition::Abandoned {
             let existing = row
                 .abandon_audit
                 .as_deref()
@@ -199,10 +202,10 @@ fn ec_distann_abandon_predecessor_binding(
             }
             return Err("EC_PREDECESSOR_ABANDON: conflicting abandonment replay".to_owned());
         }
-        if row.disposition != "Pending" {
+        if row.disposition != PredecessorDisposition::Pending {
             return Err("EC_PREDECESSOR_ABANDON: binding is already Retired".to_owned());
         }
-        if row.successor_state != "Activated" {
+        if row.successor_state != PublishDecisionState::Activated {
             return Err("EC_PREDECESSOR_ABANDON: successor decision is not Activated".to_owned());
         }
         let (caller_name, decision_time_unix_micros) = caller_and_time()?;
@@ -262,9 +265,17 @@ fn ec_distann_abandon_predecessor_binding(
                 .map(|rows| rows.len())
                 .map_err(|error| format!("EC_PREDECESSOR_ABANDON: binding update failed: {error}"))
         })?;
-        if updated != 1 {
-            return Err("EC_PREDECESSOR_ABANDON: binding changed concurrently".to_owned());
-        }
+        require_exact_transition(
+            PredecessorDisposition::Pending,
+            PredecessorDisposition::Abandoned,
+            updated,
+            "predecessor disposition",
+        )?;
+        require_transition(
+            PublishDecisionState::Activated,
+            PublishDecisionState::Applied,
+            "publish decision",
+        )?;
         Spi::connect_mut(|client| {
             client
                 .update(

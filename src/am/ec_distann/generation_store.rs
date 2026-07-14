@@ -21,12 +21,11 @@ use crate::storage::relation::{
 use crate::storage::relation_guard::IndexRelationGuard;
 
 use super::ambuild::read_metadata_from_index_handle;
-use super::canonical_wire::{
-    domain_digest, fixed_digest, is_rfc4122_v4_uuid, CanonicalEncoder,
-};
+use super::canonical_wire::{domain_digest, fixed_digest, is_rfc4122_v4_uuid, CanonicalEncoder};
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
 use super::handoff_wire::{owner_stream_digest, DistannHandoffShape, DistannOwnerStreamHasher};
+use super::lifecycle_state::GenerationState;
 use super::page::{DistannMetadataPage, INDEX_FORMAT_V5_DISTANN_CONTROL};
 use super::quote_ident;
 use super::roster_digest as canonical_roster_digest;
@@ -566,7 +565,10 @@ fn validate_replay(
             "EC_BUILD_ID_CONFLICT: build id was reused with different immutable inputs".to_owned(),
         );
     }
-    if !matches!(row.state.as_str(), "Building" | "Ready") {
+    if !matches!(
+        row.state,
+        GenerationState::Building | GenerationState::Ready
+    ) {
         return Err(format!(
             "EC_BUILD_STATE: begin cannot replay generation state {}",
             row.state
@@ -595,7 +597,7 @@ type BeginResult = (
 
 fn begin_result(row: &GenerationCatalogRow) -> BeginResult {
     (
-        row.state.clone(),
+        row.state.to_string(),
         i64::try_from(row.next_batch_seq).expect("catalog sequence fits bigint"),
         i64::try_from(row.cumulative_record_count).expect("catalog count fits bigint"),
         row.cumulative_owner_digest.to_vec(),
@@ -776,7 +778,7 @@ fn ec_distann_begin_epoch_handoff(
             epoch,
             owner_ordinal,
             node_id,
-            state: "Building".to_owned(),
+            state: GenerationState::Building,
             build_spec_digest,
             roster_digest: provided_roster_digest,
             generation_descriptor: generation_descriptor.clone(),
@@ -825,8 +827,10 @@ fn ec_distann_abort_epoch_handoff(index_regclass: PgRelation, build_id: Uuid) {
         // ShareRowExclusiveLock before inserting its decision. Together with
         // the generation-row lock above, that makes this check and the final
         // guarded delete one serialized abort-vs-decision boundary.
-        if matches!(row.state.as_str(), "Published" | "Retired")
-            || generation_catalog::has_publish_decision(index_oid, logical_index_uuid, build_id)?
+        if matches!(
+            row.state,
+            GenerationState::Published | GenerationState::Retired
+        ) || generation_catalog::has_publish_decision(index_oid, logical_index_uuid, build_id)?
         {
             return Err(
                 "EC_BUILD_STATE: abort refuses a published/decision-referenced generation"

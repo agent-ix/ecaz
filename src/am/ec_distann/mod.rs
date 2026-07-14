@@ -53,6 +53,7 @@ mod identity;
 mod insert;
 mod lifecycle_wire;
 mod lifecycle_guard;
+mod lifecycle_state;
 mod manifest_v2;
 mod node_registry;
 mod options;
@@ -75,7 +76,6 @@ pub(crate) use self::scan_registry::{
     register_scan_token as register_scan_token_for_test,
     release_scan_token as release_scan_token_for_test, RegisterOutcome as ScanRegisterOutcome,
     RegistryError as ScanRegistryError, ScanTokenGuard as ScanTokenGuardForTest,
-    with_scan_registration_fence as with_scan_fence_for_test,
 };
 pub(crate) mod scan;
 mod shard_build;

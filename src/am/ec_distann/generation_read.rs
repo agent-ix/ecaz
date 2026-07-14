@@ -191,9 +191,8 @@ mod cache_tests {
         PHYSICAL_EPOCH_CACHE.with(|cache| cache.borrow_mut().clear());
         let index_oid = pg_sys::Oid::from(42_u32);
         let logical_index_uuid = Uuid::from_bytes([0x44; 16]);
-        let descriptor = Arc::new(
-            super::super::generation_descriptor::sample_generation_descriptor(),
-        );
+        let descriptor =
+            Arc::new(super::super::generation_descriptor::sample_generation_descriptor());
         let descriptor_digest = descriptor.digest().unwrap();
         let insert = |active: &ActiveGenerationIdentity| {
             cache_physical_epoch(CachedPhysicalEpoch {
@@ -234,8 +233,14 @@ mod cache_tests {
         assert_eq!(reused_digest, digest);
         assert!(Arc::ptr_eq(&installed, &reused));
         assert_eq!(
-            reused.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
-            query.iter().map(|value| value.to_bits()).collect::<Vec<_>>()
+            reused
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>(),
+            query
+                .iter()
+                .map(|value| value.to_bits())
+                .collect::<Vec<_>>()
         );
 
         let mut wrong = digest;
@@ -385,9 +390,9 @@ fn cached_retained_epoch(
     }
     RETAINED_EPOCH_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        let position = cache.iter().position(|entry| {
-            entry.index_oid == index_oid && entry.fingerprint == *fingerprint
-        })?;
+        let position = cache
+            .iter()
+            .position(|entry| entry.index_oid == index_oid && entry.fingerprint == *fingerprint)?;
         let entry = cache.remove(position)?;
         cache.push_back(entry.clone());
         Some(entry)
@@ -1115,8 +1120,8 @@ fn ec_distann_expand_physical_nodes_cached(
         name!(neighbor_code_dists, Vec<f32>),
     ),
 > {
-    let (query, query_digest) = resolve_cached_physical_query(query, query_digest)
-        .unwrap_or_else(|error| error.raise());
+    let (query, query_digest) =
+        resolve_cached_physical_query(query, query_digest).unwrap_or_else(|error| error.raise());
     let rows = expand_physical_nodes_impl(
         index_regclass.oid(),
         &epoch_fingerprint,
@@ -1375,7 +1380,7 @@ impl PhysicalGenerationScan {
             generation_catalog::lookup_generation(index_oid, logical_index_uuid, active.build_id)?;
         let (row_relation, graph_relation, directory_relation) = match generation.as_ref() {
             Some(generation) => {
-                if generation.state != "Published" {
+                if generation.state != super::lifecycle_state::GenerationState::Published {
                     return Err(format!(
                         "EC_GENERATION_MISSING: active generation is {} rather than Published",
                         generation.state
@@ -1746,12 +1751,7 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
         let responses = super::remote_transport::remote_physical_expand_batch(&requests);
         for ((ordinal, _), response) in remote_work.into_iter().zip(responses) {
-            place_physical_owner_responses(
-                ordinal,
-                &buckets[ordinal],
-                response?,
-                &mut ordered,
-            )?;
+            place_physical_owner_responses(ordinal, &buckets[ordinal], response?, &mut ordered)?;
         }
         ordered
             .into_iter()

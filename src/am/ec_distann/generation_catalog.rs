@@ -8,6 +8,7 @@ use pgrx::datum::Uuid;
 use pgrx::{pg_extern, pg_sys, Spi};
 
 use super::handoff_wire::DISTANN_OWNER_STREAM_HASH_STATE_BYTES;
+use super::lifecycle_state::{require_exact_transition, GenerationState};
 use super::manifest_v2::DISTANN_READY_RECEIPT_BYTES;
 use super::quote_ident;
 
@@ -112,7 +113,7 @@ pub(crate) struct GenerationCatalogRow {
     pub(crate) epoch: u64,
     pub(crate) owner_ordinal: u32,
     pub(crate) node_id: u32,
-    pub(crate) state: String,
+    pub(crate) state: GenerationState,
     pub(crate) build_spec_digest: [u8; 32],
     pub(crate) roster_digest: [u8; 32],
     pub(crate) generation_descriptor: Vec<u8>,
@@ -224,15 +225,12 @@ fn decode_generation_row(
             .map_err(|_| "ec_distann generation owner ordinal is negative".to_owned())?,
         node_id: u32::try_from(required_i32(&row, "node_id")?)
             .map_err(|_| "ec_distann generation node id is negative".to_owned())?,
-        state: required_string(&row, "state")?,
+        state: GenerationState::parse(&required_string(&row, "state")?)?,
         build_spec_digest: fixed_bytes::<32>(
             required_bytes(&row, "build_spec_digest")?,
             "build_spec_digest",
         )?,
-        roster_digest: fixed_bytes::<32>(
-            required_bytes(&row, "roster_digest")?,
-            "roster_digest",
-        )?,
+        roster_digest: fixed_bytes::<32>(required_bytes(&row, "roster_digest")?, "roster_digest")?,
         generation_descriptor: required_bytes(&row, "generation_descriptor")?,
         generation_descriptor_digest: fixed_bytes::<32>(
             required_bytes(&row, "generation_descriptor_digest")?,
@@ -418,7 +416,7 @@ pub(crate) fn insert_generation(
                     epoch.into(),
                     owner_ordinal.into(),
                     node_id.into(),
-                    row.state.clone().into(),
+                    row.state.as_str().into(),
                     row.build_spec_digest.to_vec().into(),
                     row.roster_digest.to_vec().into(),
                     row.generation_descriptor.clone().into(),
@@ -741,10 +739,12 @@ pub(crate) fn mark_generation_ready(
             .map_err(|error| format!("ec_distann Ready transition failed: {error}"))
             .map(|table| table.len())
     })?;
-    if updated != 1 {
-        return Err("EC_BUILD_STATE: generation changed before its Ready transition".to_owned());
-    }
-    Ok(())
+    require_exact_transition(
+        GenerationState::Building,
+        GenerationState::Ready,
+        updated,
+        "generation",
+    )
 }
 
 pub(crate) fn generation_relations_for_index(
