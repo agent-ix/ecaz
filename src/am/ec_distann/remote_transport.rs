@@ -14,7 +14,7 @@
 //! pass; M2's gate substrate is loopback multi-instance.
 
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ptr::NonNull;
 use std::time::Duration;
@@ -25,7 +25,7 @@ use pgrx::iter::TableIterator;
 use pgrx::{name, pg_extern};
 use pgrx::pg_sys;
 use tokio_postgres::types::ToSql;
-use tokio_postgres::{Client, NoTls, Row};
+use tokio_postgres::{Client, NoTls, Row, Statement};
 
 use crate::storage::page::ItemPointer;
 use crate::storage::relation::index_heap_relation_oid_handle;
@@ -216,13 +216,13 @@ async fn lifecycle_query_one(
 
 async fn physical_query(
     client: &Client,
-    sql: &str,
+    statement: &Statement,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, DistannExpandError> {
     match await_remote(
         call_timeout(),
         Some(client.cancel_token()),
-        client.query(sql, params),
+        client.query(statement, params),
     )
     .await
     {
@@ -235,6 +235,56 @@ async fn physical_query(
             "physical generation RPC interrupted".to_owned(),
         )),
     }
+}
+
+async fn prepare_physical_statement(
+    client: &Client,
+    sql: &'static str,
+) -> Result<Statement, DistannExpandError> {
+    match await_remote(
+        call_timeout(),
+        Some(client.cancel_token()),
+        client.prepare(sql),
+    )
+    .await
+    {
+        Ok(statement) => Ok(statement),
+        Err(RemoteAwaitError::Remote(error)) => Err(classify_physical_read_error(error)),
+        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::Internal(
+            "physical generation statement preparation timed out".to_owned(),
+        )),
+        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::Internal(
+            "physical generation statement preparation interrupted".to_owned(),
+        )),
+    }
+}
+
+async fn ensure_physical_statements(
+    connections: &mut HashMap<String, PooledConnection>,
+    conn_keys: &[String],
+    sql: &'static str,
+) -> Result<(), DistannExpandError> {
+    let mut seen = HashSet::with_capacity(conn_keys.len());
+    let stale = conn_keys
+        .iter()
+        .filter(|key| seen.insert((*key).clone()))
+        .filter(|key| !connections[*key].prepared_statements.contains_key(sql))
+        .cloned()
+        .collect::<Vec<_>>();
+    let prepared = join_owner_futures(
+        stale
+            .iter()
+            .map(|key| prepare_physical_statement(&connections[key].client, sql)),
+    )
+    .await;
+    for (key, statement) in stale.into_iter().zip(prepared) {
+        connections
+            .get_mut(&key)
+            .expect("pooled connection disappeared during statement preparation")
+            .prepared_statements
+            .insert(sql, statement?);
+    }
+    Ok(())
 }
 
 async fn join_owner_futures<I, F>(futures: I) -> Vec<F::Output>
@@ -337,36 +387,128 @@ async fn configure_scan_identity(
     }
 }
 
-async fn lifecycle_client<'a>(
-    connections: &'a mut HashMap<String, PooledConnection>,
-    conninfo: &str,
-) -> Result<&'a Client, String> {
-    let key = format!("lifecycle\u{1}{conninfo}");
-    let needs_connect = connections
-        .get(&key)
-        .map(|pooled| pooled.task.is_finished())
-        .unwrap_or(true);
-    if needs_connect {
-        let (client, task) = open_remote_connection(conninfo, "EC_BUILD_INCOMPLETE").await?;
+async fn ensure_pooled_connections(
+    connections: &mut HashMap<String, PooledConnection>,
+    specs: &[(String, &str)],
+    error_prefix: &str,
+) -> Result<(), String> {
+    let mut seen = HashSet::with_capacity(specs.len());
+    let missing = specs
+        .iter()
+        .filter(|(key, _)| seen.insert(key.clone()))
+        .filter(|(key, _)| {
+            connections
+                .get(key)
+                .map(|pooled| pooled.task.is_finished())
+                .unwrap_or(true)
+        })
+        .map(|(key, conninfo)| (key.clone(), *conninfo))
+        .collect::<Vec<_>>();
+    let opened = join_owner_futures(
+        missing
+            .iter()
+            .map(|(_, conninfo)| open_remote_connection(conninfo, error_prefix)),
+    )
+    .await;
+    for ((key, _), opened) in missing.into_iter().zip(opened) {
+        let (client, task) = opened?;
         connections.insert(
-            key.clone(),
+            key,
             PooledConnection {
                 client,
                 task,
                 applied_identity: None,
                 applied_statement_timeout_ms: super::options::remote_statement_timeout_ms(),
+                prepared_statements: HashMap::new(),
+                physical_query_digest: None,
             },
         );
     }
+
     let desired_timeout = super::options::remote_statement_timeout_ms();
-    let pooled = connections
-        .get_mut(&key)
-        .expect("lifecycle connection just ensured");
-    if pooled.applied_statement_timeout_ms != desired_timeout {
-        configure_remote_statement_timeout(&pooled.client, "EC_BUILD_INCOMPLETE").await?;
-        pooled.applied_statement_timeout_ms = desired_timeout;
+    let mut seen = HashSet::with_capacity(specs.len());
+    let stale = specs
+        .iter()
+        .filter(|(key, _)| {
+            seen.insert(key.clone())
+                && connections[key].applied_statement_timeout_ms != desired_timeout
+        })
+        .map(|(key, _)| key.clone())
+        .collect::<Vec<_>>();
+    let refreshed = join_owner_futures(stale.iter().map(|key| {
+        configure_remote_statement_timeout(&connections[key].client, error_prefix)
+    }))
+    .await;
+    for result in refreshed {
+        result?;
     }
-    Ok(&pooled.client)
+    for key in stale {
+        connections
+            .get_mut(&key)
+            .expect("pooled connection disappeared during timeout refresh")
+            .applied_statement_timeout_ms = desired_timeout;
+    }
+    Ok(())
+}
+
+async fn ensure_scan_sessions(
+    connections: &mut HashMap<String, PooledConnection>,
+    sessions: &[(String, &str, (String, String, String))],
+) -> Result<(), String> {
+    let specs = sessions
+        .iter()
+        .map(|(key, conninfo, _)| (key.clone(), *conninfo))
+        .collect::<Vec<_>>();
+    ensure_pooled_connections(connections, &specs, "ec_distann remote transport").await?;
+
+    let mut identities = HashMap::with_capacity(sessions.len());
+    for (key, _, identity) in sessions {
+        if let Some(previous) = identities.insert(key.clone(), identity.clone()) {
+            if previous != *identity {
+                return Err(
+                    "ec_distann remote transport assigned conflicting identities to one session"
+                        .to_owned(),
+                );
+            }
+        }
+    }
+    let stale = identities
+        .iter()
+        .filter(|(key, identity)| connections[*key].applied_identity.as_ref() != Some(*identity))
+        .map(|(key, identity)| (key.clone(), identity.clone()))
+        .collect::<Vec<_>>();
+    let configured = join_owner_futures(stale.iter().map(|(key, identity)| {
+        configure_scan_identity(&connections[key].client, identity)
+    }))
+    .await;
+    for result in configured {
+        result?;
+    }
+    for (key, identity) in stale {
+        connections
+            .get_mut(&key)
+            .expect("pooled connection disappeared during identity setup")
+            .applied_identity = Some(identity);
+    }
+    Ok(())
+}
+
+async fn lifecycle_client<'a>(
+    connections: &'a mut HashMap<String, PooledConnection>,
+    conninfo: &str,
+) -> Result<&'a Client, String> {
+    let key = lifecycle_connection_key(conninfo);
+    ensure_pooled_connections(
+        connections,
+        &[(key.clone(), conninfo)],
+        "EC_BUILD_INCOMPLETE",
+    )
+    .await?;
+    Ok(&connections[&key].client)
+}
+
+fn lifecycle_connection_key(conninfo: &str) -> String {
+    format!("lifecycle\u{1}{conninfo}")
 }
 
 fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
@@ -387,6 +529,23 @@ pub(crate) struct DistannPhysicalSeedRequest<'a> {
 }
 
 #[cfg(feature = "distann-legacy-seed-benchmark")]
+const PHYSICAL_SEED_SQL: &str = "SELECT vec_id, code_dist
+   FROM ec_distann_physical_seed_candidates_benchmark(
+       $1::text::regclass, $2::bytea, $3::real[], $4::integer)";
+
+const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
+        neighbor_vec_ids, neighbor_code_dists
+   FROM ec_distann_expand_nodes(
+       $1::text::regclass, $2::bytea, $3::real[],
+       $4::bytea, $5::bigint[], $6::real)";
+
+const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
+        payload_nulls, payload_values
+   FROM ec_distann_materialize_row_payloads(
+       $1::text::regclass, $2::bytea, $3::bigint[],
+       $4::smallint[], $5::bytea)";
+
+#[cfg(feature = "distann-legacy-seed-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
     requests: &[DistannPhysicalSeedRequest<'_>],
 ) -> Vec<Result<Vec<DistannSeedCandidate>, DistannExpandError>> {
@@ -395,7 +554,7 @@ pub(crate) fn remote_physical_seed_batch(
     }
     let conn_keys = requests
         .iter()
-        .map(|request| format!("lifecycle\u{1}{}", request.conninfo))
+        .map(|request| lifecycle_connection_key(request.conninfo))
         .collect::<Vec<_>>();
     let outcome = with_transport_state::<_, DistannExpandError>(|state| {
         let DistannTransportState {
@@ -403,13 +562,22 @@ pub(crate) fn remote_physical_seed_batch(
             connections,
         } = state;
         runtime.block_on(async {
-            for request in requests {
-                lifecycle_client(connections, request.conninfo)
-                    .await
-                    .map_err(DistannExpandError::Internal)?;
-            }
+            let specs = requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
+                .collect::<Vec<_>>();
+            ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            ensure_physical_statements(connections, &conn_keys, PHYSICAL_SEED_SQL).await?;
             let futures = requests.iter().enumerate().map(|(index, request)| {
-                run_one_physical_seed(&connections[&conn_keys[index]].client, request)
+                let pooled = &connections[&conn_keys[index]];
+                run_one_physical_seed(
+                    &pooled.client,
+                    &pooled.prepared_statements[PHYSICAL_SEED_SQL],
+                    request,
+                )
             });
             Ok(join_owner_futures(futures).await)
         })
@@ -420,13 +588,12 @@ pub(crate) fn remote_physical_seed_batch(
 #[cfg(feature = "distann-legacy-seed-benchmark")]
 async fn run_one_physical_seed(
     client: &Client,
+    statement: &Statement,
     request: &DistannPhysicalSeedRequest<'_>,
 ) -> Result<Vec<DistannSeedCandidate>, DistannExpandError> {
     let rows = physical_query(
         client,
-        "SELECT vec_id, code_dist
-           FROM ec_distann_physical_seed_candidates_benchmark(
-               $1::text::regclass, $2::bytea, $3::real[], $4::integer)",
+        statement,
         &[
             &request.index_regclass,
             &request.epoch_fingerprint,
@@ -452,6 +619,7 @@ pub(crate) struct DistannPhysicalExpandRequest<'a> {
     pub(crate) index_regclass: &'a str,
     pub(crate) epoch_fingerprint: &'a [u8],
     pub(crate) query: &'a [f32],
+    pub(crate) query_digest: &'a [u8; 32],
     pub(crate) vec_ids: &'a [u64],
     pub(crate) code_threshold: Option<f32>,
 }
@@ -474,7 +642,7 @@ pub(crate) fn remote_physical_expand_batch(
         .collect::<Vec<_>>();
     let conn_keys = requests
         .iter()
-        .map(|request| format!("lifecycle\u{1}{}", request.conninfo))
+        .map(|request| lifecycle_connection_key(request.conninfo))
         .collect::<Vec<_>>();
     let outcome = with_transport_state::<_, DistannExpandError>(|state| {
         let DistannTransportState {
@@ -485,19 +653,48 @@ pub(crate) fn remote_physical_expand_batch(
             // Match the logical transport: connection establishment and budget
             // refresh are outside the hot fan-out, then all owner RPCs are
             // driven together so one hop costs max(remote RTT), not their sum.
-            for request in requests {
-                lifecycle_client(connections, request.conninfo)
-                    .await
-                    .map_err(DistannExpandError::Internal)?;
-            }
+            let specs = requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
+                .collect::<Vec<_>>();
+            ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            ensure_physical_statements(connections, &conn_keys, PHYSICAL_EXPAND_SQL).await?;
+            let wire_queries = requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| {
+                    if connections[&conn_keys[index]].physical_query_digest
+                        == Some(*request.query_digest)
+                    {
+                        &[][..]
+                    } else {
+                        request.query
+                    }
+                })
+                .collect::<Vec<_>>();
             let futures = requests.iter().enumerate().map(|(index, request)| {
+                let pooled = &connections[&conn_keys[index]];
                 run_one_physical_expand(
-                    &connections[&conn_keys[index]].client,
+                    &pooled.client,
+                    &pooled.prepared_statements[PHYSICAL_EXPAND_SQL],
                     request,
+                    wire_queries[index],
                     &wire_ids[index],
                 )
             });
-            Ok(join_owner_futures(futures).await)
+            let results = join_owner_futures(futures).await;
+            for (index, result) in results.iter().enumerate() {
+                if result.is_ok() {
+                    connections
+                        .get_mut(&conn_keys[index])
+                        .expect("physical owner connection disappeared after expansion")
+                        .physical_query_digest = Some(*requests[index].query_digest);
+                }
+            }
+            Ok(results)
         })
     });
     outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect())
@@ -505,20 +702,19 @@ pub(crate) fn remote_physical_expand_batch(
 
 async fn run_one_physical_expand(
     client: &Client,
+    statement: &Statement,
     request: &DistannPhysicalExpandRequest<'_>,
+    wire_query: &[f32],
     wire_ids: &[i64],
 ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
     let rows = physical_query(
         client,
-        "SELECT vec_id, exact_dist, is_tombstone,
-                neighbor_vec_ids, neighbor_code_dists
-           FROM ec_distann_expand_nodes(
-               $1::text::regclass, $2::bytea, $3::real[],
-               $4::bigint[], $5::real)",
+        statement,
         &[
             &request.index_regclass,
             &request.epoch_fingerprint,
-            &request.query,
+            &wire_query,
+            &request.query_digest.as_slice(),
             &wire_ids,
             &request.code_threshold,
         ],
@@ -573,7 +769,7 @@ pub(crate) fn remote_physical_materialize_batch(
         .collect::<Vec<_>>();
     let conn_keys = requests
         .iter()
-        .map(|request| format!("lifecycle\u{1}{}", request.conninfo))
+        .map(|request| lifecycle_connection_key(request.conninfo))
         .collect::<Vec<_>>();
     let outcome = with_transport_state::<_, DistannExpandError>(|state| {
         let DistannTransportState {
@@ -581,14 +777,20 @@ pub(crate) fn remote_physical_materialize_batch(
             connections,
         } = state;
         runtime.block_on(async {
-            for request in requests {
-                lifecycle_client(connections, request.conninfo)
-                    .await
-                    .map_err(DistannExpandError::Internal)?;
-            }
+            let specs = requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
+                .collect::<Vec<_>>();
+            ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            ensure_physical_statements(connections, &conn_keys, PHYSICAL_MATERIALIZE_SQL).await?;
             let futures = requests.iter().enumerate().map(|(index, request)| {
+                let pooled = &connections[&conn_keys[index]];
                 run_one_physical_materialize(
-                    &connections[&conn_keys[index]].client,
+                    &pooled.client,
+                    &pooled.prepared_statements[PHYSICAL_MATERIALIZE_SQL],
                     request,
                     &wire_ids[index],
                 )
@@ -601,16 +803,13 @@ pub(crate) fn remote_physical_materialize_batch(
 
 async fn run_one_physical_materialize(
     client: &Client,
+    statement: &Statement,
     request: &DistannPhysicalMaterializeRequest<'_>,
     wire_ids: &[i64],
 ) -> Result<Vec<DistannMaterializedRow>, DistannExpandError> {
     let rows = physical_query(
         client,
-        "SELECT vec_id, is_tombstone, tuple_payload_missing,
-                payload_nulls, payload_values
-           FROM ec_distann_materialize_row_payloads(
-               $1::text::regclass, $2::bytea, $3::bigint[],
-               $4::smallint[], $5::bytea)",
+        statement,
         &[
             &request.index_regclass,
             &request.epoch_fingerprint,
@@ -951,6 +1150,12 @@ struct PooledConnection {
     /// changes are refreshed before the next RPC instead of leaving a warm
     /// session under its old budget.
     applied_statement_timeout_ms: u64,
+    /// Server-prepared physical RPC statements, retained with the pooled
+    /// session so hot hop rounds do not repeat parse/describe work.
+    prepared_statements: HashMap<&'static str, Statement>,
+    /// Last physical query vector installed in this owner backend. Matching
+    /// hop rounds send only the digest.
+    physical_query_digest: Option<[u8; 32]>,
 }
 
 impl Drop for PooledConnection {
@@ -1108,57 +1313,24 @@ pub(super) fn remote_expand_batch(
             connections,
         } = state;
         runtime.block_on(async {
-            // Ensure every connection AND its session identity first — sequential
-            // and off the per-hop hot path. 006-P3: applying set_config here
-            // (once per (roster,node,epoch)) instead of before every expand
-            // removes a round-trip per owner per hop and avoids racing session
-            // GUCs against concurrent expands on a shared loopback connection.
-            for (index, request) in requests.iter().enumerate() {
-                let conn_key = &conn_keys[index];
-                let needs_connect = connections
-                    .get(conn_key)
-                    .map(|pooled| pooled.task.is_finished())
-                    .unwrap_or(true);
-                if needs_connect {
-                    let (client, task) = open_remote_connection(
+            // Establish cold owner sessions and apply their distinct identities
+            // concurrently. Warm sessions skip both operations.
+            let sessions = requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| {
+                    (
+                        conn_keys[index].clone(),
                         request.conninfo,
-                        "ec_distann remote transport",
+                        (
+                            request.roster_spec.to_owned(),
+                            node_id_strs[index].clone(),
+                            epoch_strs[index].clone(),
+                        ),
                     )
-                    .await?;
-                    connections.insert(
-                        conn_key.clone(),
-                        PooledConnection {
-                            client,
-                            task,
-                            applied_identity: None,
-                            applied_statement_timeout_ms:
-                                super::options::remote_statement_timeout_ms(),
-                        },
-                    );
-                }
-
-                let identity = (
-                    request.roster_spec.to_owned(),
-                    node_id_strs[index].clone(),
-                    epoch_strs[index].clone(),
-                );
-                let pooled = connections
-                    .get_mut(conn_key)
-                    .expect("connection just ensured");
-                let desired_timeout = super::options::remote_statement_timeout_ms();
-                if pooled.applied_statement_timeout_ms != desired_timeout {
-                    configure_remote_statement_timeout(
-                        &pooled.client,
-                        "ec_distann remote transport",
-                    )
-                    .await?;
-                    pooled.applied_statement_timeout_ms = desired_timeout;
-                }
-                if pooled.applied_identity.as_ref() != Some(&identity) {
-                    configure_scan_identity(&pooled.client, &identity).await?;
-                    pooled.applied_identity = Some(identity);
-                }
-            }
+                })
+                .collect::<Vec<_>>();
+            ensure_scan_sessions(connections, &sessions).await?;
 
             // Fire all owners concurrently and await the whole set (expand only —
             // the session identity is already applied above).
@@ -1299,54 +1471,22 @@ pub(super) fn remote_materialize_row_payloads_batch(
             connections,
         } = state;
         runtime.block_on(async {
-            // Ensure every connection AND its session identity first (same 006-P3
-            // pooled-identity path as the expand batch).
-            for (index, request) in requests.iter().enumerate() {
-                let conn_key = &conn_keys[index];
-                let needs_connect = connections
-                    .get(conn_key)
-                    .map(|pooled| pooled.task.is_finished())
-                    .unwrap_or(true);
-                if needs_connect {
-                    let (client, task) = open_remote_connection(
+            let sessions = requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| {
+                    (
+                        conn_keys[index].clone(),
                         request.conninfo,
-                        "ec_distann remote transport",
+                        (
+                            request.roster_spec.to_owned(),
+                            node_id_strs[index].clone(),
+                            epoch_strs[index].clone(),
+                        ),
                     )
-                    .await?;
-                    connections.insert(
-                        conn_key.clone(),
-                        PooledConnection {
-                            client,
-                            task,
-                            applied_identity: None,
-                            applied_statement_timeout_ms:
-                                super::options::remote_statement_timeout_ms(),
-                        },
-                    );
-                }
-
-                let identity = (
-                    request.roster_spec.to_owned(),
-                    node_id_strs[index].clone(),
-                    epoch_strs[index].clone(),
-                );
-                let pooled = connections
-                    .get_mut(conn_key)
-                    .expect("connection just ensured");
-                let desired_timeout = super::options::remote_statement_timeout_ms();
-                if pooled.applied_statement_timeout_ms != desired_timeout {
-                    configure_remote_statement_timeout(
-                        &pooled.client,
-                        "ec_distann remote transport",
-                    )
-                    .await?;
-                    pooled.applied_statement_timeout_ms = desired_timeout;
-                }
-                if pooled.applied_identity.as_ref() != Some(&identity) {
-                    configure_scan_identity(&pooled.client, &identity).await?;
-                    pooled.applied_identity = Some(identity);
-                }
-            }
+                })
+                .collect::<Vec<_>>();
+            ensure_scan_sessions(connections, &sessions).await?;
 
             let futures = requests.iter().enumerate().map(|(index, request)| {
                 let client = &connections[&conn_keys[index]].client;

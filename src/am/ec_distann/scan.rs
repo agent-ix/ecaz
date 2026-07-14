@@ -22,7 +22,8 @@
 //! convergence early-exit stops when the best unvisited code distance
 //! cannot improve the current kth exact distance.
 
-use std::collections::HashSet;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashSet};
 
 use crate::storage::page::ItemPointer;
 
@@ -92,6 +93,32 @@ pub(crate) struct DistannScanHit {
     pub(crate) exact_dist: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BeamCandidate {
+    dist: f32,
+    vec_id: u64,
+}
+
+impl Eq for BeamCandidate {}
+
+impl Ord for BeamCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // BinaryHeap is a max-heap. Reverse the total distance order so the
+        // best (smallest) code distance is popped first, with a stable vec-id
+        // tie-break that makes equal-distance traversal deterministic.
+        other
+            .dist
+            .total_cmp(&self.dist)
+            .then_with(|| other.vec_id.cmp(&self.vec_id))
+    }
+}
+
+impl PartialOrd for BeamCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// Eager FR-081 orchestration: runs to completion at rescan; `amgettuple`
 /// is a cursor over the returned hits (ADR-056 pattern).
 pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
@@ -108,13 +135,15 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
 
     // Beam pool ordered by code distance; `enqueued` dedupes by vec_id
     // (FR-081: visited-set dedupe is by vec_id, expansion at most once).
-    let mut beam: Vec<(f32, u64)> = Vec::with_capacity(
-        seeds.len() + params.beam_width * params.hop_rounds * 8,
-    );
-    let mut enqueued: HashSet<u64> = HashSet::with_capacity(beam.capacity());
+    let beam_capacity = seeds.len() + params.beam_width * params.hop_rounds * 8;
+    let mut beam = BinaryHeap::with_capacity(beam_capacity);
+    let mut enqueued: HashSet<u64> = HashSet::with_capacity(beam_capacity);
     for seed in seeds {
         if enqueued.insert(seed.vec_id) {
-            beam.push((seed.dist, seed.vec_id));
+            beam.push(BeamCandidate {
+                dist: seed.dist,
+                vec_id: seed.vec_id,
+            });
         }
     }
     let mut expanded: HashSet<u64> = HashSet::new();
@@ -122,18 +151,19 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
 
     let mut batch: Vec<u64> = Vec::with_capacity(params.beam_width);
     for _ in 0..params.hop_rounds {
-        // Best BW unvisited candidates by code distance.
-        beam.sort_unstable_by(|left, right| left.0.total_cmp(&right.0));
+        // Pop the best BW unvisited candidates by code distance. Maintaining
+        // the heap avoids re-sorting the entire accumulated frontier on every
+        // hop round.
         batch.clear();
         let mut best_unvisited_dist = None;
-        for (dist, vec_id) in beam.iter() {
-            if expanded.contains(vec_id) {
+        while let Some(candidate) = beam.pop() {
+            if expanded.contains(&candidate.vec_id) {
                 continue;
             }
             if best_unvisited_dist.is_none() {
-                best_unvisited_dist = Some(*dist);
+                best_unvisited_dist = Some(candidate.dist);
             }
-            batch.push(*vec_id);
+            batch.push(candidate.vec_id);
             if batch.len() >= params.beam_width {
                 break;
             }
@@ -208,7 +238,10 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
                 .zip(response.neighbor_code_dists.iter())
             {
                 if enqueued.insert(*neighbor_vec_id) {
-                    beam.push((*code_dist, *neighbor_vec_id));
+                    beam.push(BeamCandidate {
+                        dist: *code_dist,
+                        vec_id: *neighbor_vec_id,
+                    });
                 }
             }
         }

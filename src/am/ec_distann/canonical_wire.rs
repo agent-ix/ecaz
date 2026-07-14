@@ -15,6 +15,53 @@ pub(crate) fn domain_digest(domain: &[u8], canonical: &[u8]) -> [u8; 32] {
     hasher.finalize().into()
 }
 
+pub(crate) fn fixed_bytes<const N: usize>(
+    bytes: Vec<u8>,
+    code: &str,
+    field: &str,
+) -> Result<[u8; N], String> {
+    bytes.try_into().map_err(|bytes: Vec<u8>| {
+        format!(
+            "{code}: {field} is {} bytes, expected {N}",
+            bytes.len()
+        )
+    })
+}
+
+pub(crate) fn fixed_digest(
+    bytes: Vec<u8>,
+    code: &str,
+    field: &str,
+) -> Result<[u8; 32], String> {
+    fixed_bytes(bytes, code, field)
+}
+
+pub(crate) fn validate_null_bitmap(
+    bitmap: &[u8],
+    attribute_count: usize,
+    code: &str,
+    field: &str,
+) -> Result<usize, String> {
+    let expected_bytes = attribute_count.div_ceil(8);
+    if bitmap.len() != expected_bytes {
+        return Err(format!(
+            "{code}: {field} is {} bytes, expected {expected_bytes}",
+            bitmap.len()
+        ));
+    }
+    if attribute_count % 8 != 0 && !bitmap.is_empty() {
+        let used = attribute_count % 8;
+        let padding_mask = !((1_u8 << used) - 1);
+        if bitmap.last().copied().unwrap_or(0) & padding_mask != 0 {
+            return Err(format!("{code}: {field} padding bits are non-zero"));
+        }
+    }
+    let null_count = (0..attribute_count)
+        .filter(|attribute| bitmap[attribute / 8] & (1 << (attribute % 8)) != 0)
+        .count();
+    Ok(attribute_count - null_count)
+}
+
 pub(crate) fn is_rfc4122_v4_uuid(value: &[u8; 16]) -> bool {
     value != &[0; 16] && value[6] & 0xf0 == 0x40 && value[8] & 0xc0 == 0x80
 }

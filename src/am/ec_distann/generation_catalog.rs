@@ -9,6 +9,7 @@ use pgrx::{pg_extern, pg_sys, Spi};
 
 use super::handoff_wire::DISTANN_OWNER_STREAM_HASH_STATE_BYTES;
 use super::manifest_v2::DISTANN_READY_RECEIPT_BYTES;
+use super::quote_ident;
 
 const GENERATION_SELECT_COLUMNS: &str = "epoch, owner_ordinal, node_id, state,
     build_spec_digest, roster_digest, generation_descriptor,
@@ -16,10 +17,6 @@ const GENERATION_SELECT_COLUMNS: &str = "epoch, owner_ordinal, node_id, state,
     row_tier_relid, graph_store_relid, directory_relid, next_batch_seq,
     cumulative_record_count, cumulative_owner_digest, last_vec_id_le,
     owner_stream_sha256_state, ready_receipt";
-
-fn quote_ident(identifier: &str) -> String {
-    format!("\"{}\"", identifier.replace('"', "\"\""))
-}
 
 pub(crate) fn extension_relation_name(relation_name: &str) -> Result<String, String> {
     let extension_oid = unsafe { pg_sys::get_extension_oid(c"ecaz".as_ptr(), false) };
@@ -210,10 +207,6 @@ fn fixed_bytes<const N: usize>(bytes: Vec<u8>, name: &str) -> Result<[u8; N], St
     })
 }
 
-fn fixed_digest(bytes: Vec<u8>, name: &str) -> Result<[u8; 32], String> {
-    fixed_bytes(bytes, name)
-}
-
 fn optional_fixed_bytes<const N: usize>(
     bytes: Option<Vec<u8>>,
     name: &str,
@@ -232,19 +225,22 @@ fn decode_generation_row(
         node_id: u32::try_from(required_i32(&row, "node_id")?)
             .map_err(|_| "ec_distann generation node id is negative".to_owned())?,
         state: required_string(&row, "state")?,
-        build_spec_digest: fixed_digest(
+        build_spec_digest: fixed_bytes::<32>(
             required_bytes(&row, "build_spec_digest")?,
             "build_spec_digest",
         )?,
-        roster_digest: fixed_digest(required_bytes(&row, "roster_digest")?, "roster_digest")?,
+        roster_digest: fixed_bytes::<32>(
+            required_bytes(&row, "roster_digest")?,
+            "roster_digest",
+        )?,
         generation_descriptor: required_bytes(&row, "generation_descriptor")?,
-        generation_descriptor_digest: fixed_digest(
+        generation_descriptor_digest: fixed_bytes::<32>(
             required_bytes(&row, "generation_descriptor_digest")?,
             "generation_descriptor_digest",
         )?,
         expected_owner_count: u64::try_from(required_i64(&row, "expected_owner_count")?)
             .map_err(|_| "ec_distann expected owner count is negative".to_owned())?,
-        expected_owner_digest: fixed_digest(
+        expected_owner_digest: fixed_bytes::<32>(
             required_bytes(&row, "expected_owner_digest")?,
             "expected_owner_digest",
         )?,
@@ -255,7 +251,7 @@ fn decode_generation_row(
             .map_err(|_| "ec_distann next batch sequence is negative".to_owned())?,
         cumulative_record_count: u64::try_from(required_i64(&row, "cumulative_record_count")?)
             .map_err(|_| "ec_distann cumulative record count is negative".to_owned())?,
-        cumulative_owner_digest: fixed_digest(
+        cumulative_owner_digest: fixed_bytes::<32>(
             required_bytes(&row, "cumulative_owner_digest")?,
             "cumulative_owner_digest",
         )?,
@@ -451,14 +447,14 @@ fn decode_generation_batch_row(
     Ok(GenerationBatchCatalogRow {
         batch_seq: u64::try_from(required_i64(&row, "batch_seq")?)
             .map_err(|_| "ec_distann batch sequence is negative".to_owned())?,
-        batch_digest: fixed_digest(required_bytes(&row, "batch_digest")?, "batch_digest")?,
+        batch_digest: fixed_bytes::<32>(required_bytes(&row, "batch_digest")?, "batch_digest")?,
         encoded_bytes: u64::try_from(required_i64(&row, "encoded_bytes")?)
             .map_err(|_| "ec_distann encoded batch length is negative".to_owned())?,
         accepted_record_count: u64::try_from(required_i64(&row, "accepted_record_count")?)
             .map_err(|_| "ec_distann accepted record count is negative".to_owned())?,
         cumulative_record_count: u64::try_from(required_i64(&row, "cumulative_record_count")?)
             .map_err(|_| "ec_distann cumulative record count is negative".to_owned())?,
-        cumulative_owner_digest: fixed_digest(
+        cumulative_owner_digest: fixed_bytes::<32>(
             required_bytes(&row, "cumulative_owner_digest")?,
             "cumulative_owner_digest",
         )?,

@@ -62,6 +62,33 @@ pub struct DistannHandoffShape {
 }
 
 impl DistannHandoffShape {
+    pub(crate) fn new(
+        code_stride: usize,
+        graph_degree: usize,
+        non_dropped_attribute_count: usize,
+    ) -> Result<Self, String> {
+        let shape = Self {
+            code_stride,
+            graph_degree,
+            non_dropped_attribute_count,
+        };
+        shape.validate()?;
+        Ok(shape)
+    }
+
+    pub(crate) fn from_descriptor(
+        descriptor: &super::generation_descriptor::DistannGenerationDescriptor,
+    ) -> Result<Self, String> {
+        let binding = super::quantizer::DistannCodecBinding::from_artifact(
+            &descriptor.codec_artifact,
+        )?;
+        Self::new(
+            binding.code_len(usize::from(descriptor.dimensions))?,
+            usize::from(descriptor.graph_degree),
+            descriptor.row_schema.non_dropped_count(),
+        )
+    }
+
     fn validate(self) -> Result<(), String> {
         if self.code_stride == 0 || self.graph_degree == 0 || self.graph_degree > u16::MAX as usize
         {
@@ -133,24 +160,12 @@ impl DistannHandoffEntry {
                 self.neighbor_codes.len()
             ));
         }
-        if self.row_null_bitmap.len() != shape.null_bitmap_bytes() {
-            return Err(format!(
-                "EC_HANDOFF_FORMAT: NULL bitmap is {} bytes, expected {}",
-                self.row_null_bitmap.len(),
-                shape.null_bitmap_bytes()
-            ));
-        }
-        if shape.non_dropped_attribute_count % 8 != 0 && !self.row_null_bitmap.is_empty() {
-            let used = shape.non_dropped_attribute_count % 8;
-            let padding_mask = !((1_u8 << used) - 1);
-            if self.row_null_bitmap.last().copied().unwrap_or(0) & padding_mask != 0 {
-                return Err("EC_HANDOFF_FORMAT: NULL bitmap padding bits are non-zero".to_owned());
-            }
-        }
-        let null_count = (0..shape.non_dropped_attribute_count)
-            .filter(|attribute| self.row_null_bitmap[attribute / 8] & (1 << (attribute % 8)) != 0)
-            .count();
-        let expected_values = shape.non_dropped_attribute_count - null_count;
+        let expected_values = super::canonical_wire::validate_null_bitmap(
+            &self.row_null_bitmap,
+            shape.non_dropped_attribute_count,
+            "EC_HANDOFF_FORMAT",
+            "NULL bitmap",
+        )?;
         if self.row_values.len() != expected_values {
             return Err(format!(
                 "EC_HANDOFF_FORMAT: row has {} binary values, expected {expected_values}",

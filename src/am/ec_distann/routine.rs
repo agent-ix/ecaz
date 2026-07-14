@@ -14,6 +14,7 @@ use super::{
     ambuild, cost,
     expand::LocalNodeExpander,
     head_cache, options,
+    quote_ident,
     quantizer::{self, DistannPreparedQuery},
     scan::{
         distann_orchestrated_search, DistannOrchestrationParams, DistannScanCounters,
@@ -698,10 +699,6 @@ pub(super) unsafe fn distann_index_relname(index_relation: pg_sys::Relation) -> 
 
 /// Minimal SQL identifier quoting (double quotes, embedded `"` doubled) so a
 /// schema/relation with mixed case or reserved words resolves via regclass.
-fn quote_ident(ident: &str) -> String {
-    format!("\"{}\"", ident.replace('"', "\"\""))
-}
-
 pub(crate) fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
     // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd
     // metadata that remains valid until it is released at the end of this block.

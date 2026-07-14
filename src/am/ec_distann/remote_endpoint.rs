@@ -30,6 +30,7 @@ use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::slot_guard::TupleTableSlotGuard;
 
 use super::ambuild::read_metadata_from_index_handle;
+use super::quote_ident;
 use super::epoch::{
     compute_epoch_fingerprint, fingerprint_from_bytes, fingerprints_match,
     DISTANN_EPOCH_FINGERPRINT_V1,
@@ -659,10 +660,6 @@ pub(crate) fn build_payload_sql(
 }
 
 /// Double-quote-escape a heap column identifier for safe interpolation.
-fn quote_ident(ident: &str) -> String {
-    format!("\"{}\"", ident.replace('"', "\"\""))
-}
-
 /// A binary send function name supplied by the coordinator must be a plain SQL
 /// identifier, optionally schema-qualified (`pg_catalog.int8send`). Reject
 /// anything else so the projection SQL cannot be used as an injection vector.

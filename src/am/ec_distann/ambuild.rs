@@ -911,11 +911,11 @@ pub(crate) fn build_physical_graph_workspace(
         )?
     };
     let code_len = binding.code_len(usize::from(dimensions))?;
-    let shape = DistannHandoffShape {
-        code_stride: code_len,
+    let shape = DistannHandoffShape::new(
+        code_len,
         graph_degree,
-        non_dropped_attribute_count: capture.non_dropped_attribute_count,
-    };
+        capture.non_dropped_attribute_count,
+    )?;
     // This is intentionally before Vamana construction and before any remote
     // begin. Only one spooled payload is materialized at a time.
     capture.preflight_handoff_entries(shape)?;

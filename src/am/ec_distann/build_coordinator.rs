@@ -8,7 +8,9 @@ use pgrx::{name, pg_extern, pg_sys, PgRelation, Spi};
 
 use crate::storage::relation::index_heap_relation_oid_handle;
 
-use super::canonical_wire::{domain_digest, is_rfc4122_v4_uuid, CanonicalEncoder};
+use super::canonical_wire::{
+    domain_digest, fixed_digest, is_rfc4122_v4_uuid, CanonicalEncoder,
+};
 use super::generation_catalog::extension_relation_name;
 use super::generation_descriptor::{
     validate_roster, DistannBuildOptions, DistannBuildSpec, DistannGenerationDescriptor,
@@ -444,15 +446,6 @@ struct DesiredParticipant {
     is_local: bool,
 }
 
-fn fixed_digest(bytes: Vec<u8>, field: &str) -> Result<[u8; 32], String> {
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        format!(
-            "EC_BUILD_STATE: {field} is {} bytes, expected 32",
-            bytes.len()
-        )
-    })
-}
-
 fn lock_registry_revision(index_oid: pg_sys::Oid, logical_index_uuid: Uuid) -> Result<u64, String> {
     let catalog = extension_relation_name("ec_distann_registry_state")?;
     Spi::connect_mut(|client| {
@@ -539,6 +532,7 @@ fn desired_participants(
                             .ok_or_else(|| {
                                 "EC_BUILD_STATE: compatibility digest is NULL".to_owned()
                             })?,
+                        "EC_BUILD_STATE",
                         "compatibility digest",
                     )?,
                     is_local: row["is_local"]
@@ -776,6 +770,7 @@ fn replay_registration(
                             .value::<Vec<u8>>()
                             .map_err(|_| "EC_BUILD_STATE: roster digest decode failed".to_owned())?
                             .ok_or_else(|| "EC_BUILD_STATE: roster digest is NULL".to_owned())?,
+                        "EC_BUILD_STATE",
                         "roster digest",
                     )?,
                     row_schema_fingerprint: fixed_digest(
@@ -787,6 +782,7 @@ fn replay_registration(
                             .ok_or_else(|| {
                                 "EC_BUILD_STATE: row schema fingerprint is NULL".to_owned()
                             })?,
+                        "EC_BUILD_STATE",
                         "row schema fingerprint",
                     )?,
                     registration_digest: fixed_digest(
@@ -798,6 +794,7 @@ fn replay_registration(
                             .ok_or_else(|| {
                                 "EC_BUILD_STATE: registration digest is NULL".to_owned()
                             })?,
+                        "EC_BUILD_STATE",
                         "registration digest",
                     )?,
                 })
@@ -878,6 +875,7 @@ fn replay_registration(
                             .ok_or_else(|| {
                                 "EC_BUILD_STATE: compatibility digest is NULL".to_owned()
                             })?,
+                        "EC_BUILD_STATE",
                         "compatibility digest",
                     )?,
                     is_local: row["is_local"]
@@ -1361,6 +1359,13 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         };
         let head_sample = workspace.head_sample(build_options.head_index_cap as usize)?;
         let head_sample_digest = head_sample.digest()?;
+        let head_graph = super::head_sample::DistannPersistedHeadGraph::build(
+            &head_sample,
+            usize::from(metadata.graph_degree_r),
+            usize::from(build_options.build_list_size),
+            build_options.alpha,
+            build_options.seed,
+        )?;
 
         let codec_artifact = workspace.codec_artifact().clone();
         let dimensions = to_u16(i32::from(codec_artifact.dimensions()), "dimensions")?;
@@ -1712,6 +1717,7 @@ fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
                 logical_index_uuid,
                 build_id,
                 &head_sample,
+                &head_graph,
             )?;
             let transitioned = client
                 .update(

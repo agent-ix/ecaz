@@ -21,12 +21,14 @@ use crate::storage::relation::{
 use crate::storage::relation_guard::IndexRelationGuard;
 
 use super::ambuild::read_metadata_from_index_handle;
-use super::canonical_wire::{domain_digest, is_rfc4122_v4_uuid, CanonicalEncoder};
+use super::canonical_wire::{
+    domain_digest, fixed_digest, is_rfc4122_v4_uuid, CanonicalEncoder,
+};
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
 use super::handoff_wire::{owner_stream_digest, DistannHandoffShape, DistannOwnerStreamHasher};
 use super::page::{DistannMetadataPage, INDEX_FORMAT_V5_DISTANN_CONTROL};
-use super::quantizer::DistannCodecBinding;
+use super::quote_ident;
 use super::roster_digest as canonical_roster_digest;
 use super::row_schema::{resolve_relation_schema, ResolvedRowSchema};
 
@@ -68,12 +70,6 @@ pub(crate) struct GenerationRelations {
     pub(crate) row_tier_relid: pg_sys::Oid,
     pub(crate) graph_store_relid: pg_sys::Oid,
     pub(crate) directory_relid: pg_sys::Oid,
-}
-
-fn fixed_digest(bytes: Vec<u8>, category: &str, field: &str) -> Result<[u8; 32], String> {
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        format!("{category}: {field} is {} bytes, expected 32", bytes.len())
-    })
 }
 
 fn relation_exists(relation_oid: pg_sys::Oid) -> bool {
@@ -299,10 +295,6 @@ fn validate_descriptor_for_control(
             .map_err(|_| "EC_NODE_DESCRIPTOR: owner ordinal exceeds u32".to_owned())?,
         node_id,
     ))
-}
-
-fn quote_ident(identifier: &str) -> String {
-    format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
 fn cstring_owned(pointer: *mut std::ffi::c_char, context: &str) -> Result<String, String> {
@@ -770,12 +762,7 @@ fn ec_distann_begin_epoch_handoff(
             return Ok(existing);
         }
 
-        let binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
-        let shape = DistannHandoffShape {
-            code_stride: binding.code_len(usize::from(descriptor.dimensions))?,
-            graph_degree: usize::from(descriptor.graph_degree),
-            non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
-        };
+        let shape = DistannHandoffShape::from_descriptor(&descriptor)?;
         let initial_owner_hasher = DistannOwnerStreamHasher::new();
         let initial_owner_digest = owner_stream_digest(&[], shape)?;
         if initial_owner_hasher.digest() != initial_owner_digest {

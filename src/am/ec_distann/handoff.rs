@@ -18,7 +18,7 @@ use crate::storage::relation::relation_namespace_owner_persistence_handle;
 use crate::storage::relation_guard::HeapRelationGuard;
 use crate::storage::slot_guard::TupleTableSlotGuard;
 
-use super::canonical_wire::is_rfc4122_v4_uuid;
+use super::canonical_wire::{fixed_digest, is_rfc4122_v4_uuid};
 use super::generation_catalog::{self, GenerationBatchCatalogRow, GenerationCatalogRow};
 use super::generation_descriptor::{
     roster_digest, DistannGenerationDescriptor, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
@@ -28,11 +28,11 @@ use super::handoff_wire::{
     DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannOwnerStreamHasher,
 };
 use super::identity::vec_id_from_source_identity;
+use super::quote_ident;
 use super::manifest_v2::{
     DistannReadyReceipt, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
 };
 use super::placement::owning_node;
-use super::quantizer::DistannCodecBinding;
 use super::row_schema::resolve_relation_schema;
 use super::tuple::DistannNodeTuple;
 
@@ -91,15 +91,6 @@ pub(crate) fn with_restricted_type_io_owner<R>(
     .execute()
 }
 
-fn fixed_digest(bytes: Vec<u8>, field: &str) -> Result<[u8; 32], String> {
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        format!(
-            "EC_HANDOFF_DIGEST: {field} is {} bytes, expected 32",
-            bytes.len()
-        )
-    })
-}
-
 fn stage_result(row: &GenerationBatchCatalogRow) -> Result<StageResult, String> {
     Ok((
         i64::try_from(row.accepted_record_count)
@@ -109,10 +100,6 @@ fn stage_result(row: &GenerationBatchCatalogRow) -> Result<StageResult, String> 
         })?,
         row.cumulative_owner_digest.to_vec(),
     ))
-}
-
-fn quote_ident(identifier: &str) -> String {
-    format!("\"{}\"", identifier.replace('"', "\"\""))
 }
 
 fn owned_cstring(pointer: *mut std::ffi::c_char, field: &str) -> Result<String, String> {
@@ -1120,12 +1107,7 @@ fn build_topology_row(
                 .to_owned(),
         );
     }
-    let binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
-    let shape = DistannHandoffShape {
-        code_stride: binding.code_len(usize::from(descriptor.dimensions))?,
-        graph_degree: usize::from(descriptor.graph_degree),
-        non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
-    };
+    let shape = DistannHandoffShape::from_descriptor(&descriptor)?;
     // Hold AccessShareLock on each physical relation so a concurrent retirement
     // reclaim (which drops them under AccessExclusiveLock) cannot delete storage
     // mid-inspection.
@@ -1350,7 +1332,7 @@ fn ec_distann_stage_epoch_batch(
         }
         let batch_seq = u64::try_from(batch_seq)
             .map_err(|_| "EC_BATCH_SEQUENCE: batch sequence is negative".to_owned())?;
-        let supplied_digest = fixed_digest(batch_digest, "batch digest")?;
+        let supplied_digest = fixed_digest(batch_digest, "EC_HANDOFF_DIGEST", "batch digest")?;
         let verified_digest = DistannHandoffBatch::verified_digest(&encoded_batch)?;
         if supplied_digest != verified_digest {
             return Err(
@@ -1412,12 +1394,7 @@ fn ec_distann_stage_epoch_batch(
                     .to_owned(),
             );
         }
-        let binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
-        let shape = DistannHandoffShape {
-            code_stride: binding.code_len(usize::from(descriptor.dimensions))?,
-            graph_degree: usize::from(descriptor.graph_degree),
-            non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
-        };
+        let shape = DistannHandoffShape::from_descriptor(&descriptor)?;
         let batch = DistannHandoffBatch::decode(&encoded_batch, shape)?;
         if batch.digest(shape)? != supplied_digest
             || batch.build_id != *build_id.as_bytes()
@@ -1555,7 +1532,11 @@ fn ec_distann_seal_epoch_handoff(
         }
         let expected_owner_count = u64::try_from(expected_owner_count)
             .map_err(|_| "EC_BUILD_INCOMPLETE: expected owner count is negative".to_owned())?;
-        let expected_owner_digest = fixed_digest(expected_owner_digest, "expected owner digest")?;
+        let expected_owner_digest = fixed_digest(
+            expected_owner_digest,
+            "EC_HANDOFF_DIGEST",
+            "expected owner digest",
+        )?;
         let index_oid = index_regclass.oid();
         let (_control_guard, control_handle, _metadata, logical_index_uuid) = open_control_index(
             index_oid,
@@ -1624,12 +1605,7 @@ fn ec_distann_seal_epoch_handoff(
                     .to_owned(),
             );
         }
-        let binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
-        let shape = DistannHandoffShape {
-            code_stride: binding.code_len(usize::from(descriptor.dimensions))?,
-            graph_degree: usize::from(descriptor.graph_degree),
-            non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
-        };
+        let shape = DistannHandoffShape::from_descriptor(&descriptor)?;
         let row_relation = HeapRelationGuard::try_open(
             generation.row_tier_relid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,

@@ -324,6 +324,19 @@ fn test_distann_control_metadata_and_fail_closed() {
         1,
         "query-context rollback must destroy the CustomScan Rust state",
     );
+    Spi::run("SET enable_customscan = off").unwrap();
+    let amgettuple_error = expect_pg_error_rolled_back(|| {
+        Spi::get_one::<i64>(
+            "SELECT 1 FROM ec_distann_control
+             ORDER BY embedding <#> ARRAY[1.0,0.0,0.0,0.0]::real[] LIMIT 1",
+        )
+        .expect("raw index scan of a control index must fail before returning");
+    });
+    assert!(
+        amgettuple_error.contains("EC_DISTANN_CONTROL_SCAN"),
+        "unexpected raw-index backstop error: {amgettuple_error}"
+    );
+    Spi::run("RESET enable_customscan").unwrap();
     Spi::run("RESET enable_seqscan").unwrap();
 
     let insert_error = expect_pg_error(|| {

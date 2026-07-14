@@ -12,7 +12,7 @@ use std::ptr::NonNull;
 #[cfg(not(test))]
 use pgrx::pg_sys;
 
-use super::canonical_wire::{CanonicalDecoder, CanonicalEncoder};
+use super::canonical_wire::{validate_null_bitmap, CanonicalDecoder, CanonicalEncoder};
 use super::handoff_wire::{DistannHandoffEntry, DistannHandoffShape, DISTANN_HANDOFF_MAX_BYTES};
 
 const SOURCE_PAYLOAD_SPOOL_VERSION: u16 = 1;
@@ -31,26 +31,12 @@ impl FrozenSourcePayload {
         if non_dropped_attribute_count > u16::MAX as usize {
             return Err("EC_SCHEMA_UNSUPPORTED: frozen row has too many attributes".to_owned());
         }
-        let expected_bitmap_bytes = non_dropped_attribute_count.div_ceil(8);
-        if self.row_null_bitmap.len() != expected_bitmap_bytes {
-            return Err(format!(
-                "EC_SOURCE_SNAPSHOT: frozen row NULL bitmap is {} bytes, expected {expected_bitmap_bytes}",
-                self.row_null_bitmap.len()
-            ));
-        }
-        if non_dropped_attribute_count % 8 != 0 && !self.row_null_bitmap.is_empty() {
-            let used = non_dropped_attribute_count % 8;
-            let padding_mask = !((1_u8 << used) - 1);
-            if self.row_null_bitmap.last().copied().unwrap_or(0) & padding_mask != 0 {
-                return Err(
-                    "EC_SOURCE_SNAPSHOT: frozen row NULL bitmap padding is non-zero".to_owned(),
-                );
-            }
-        }
-        let null_count = (0..non_dropped_attribute_count)
-            .filter(|attribute| self.row_null_bitmap[attribute / 8] & (1 << (attribute % 8)) != 0)
-            .count();
-        let expected_values = non_dropped_attribute_count - null_count;
+        let expected_values = validate_null_bitmap(
+            &self.row_null_bitmap,
+            non_dropped_attribute_count,
+            "EC_SOURCE_SNAPSHOT",
+            "frozen row NULL bitmap",
+        )?;
         if self.row_values.len() != expected_values {
             return Err(format!(
                 "EC_SOURCE_SNAPSHOT: frozen row has {} values, expected {expected_values}",

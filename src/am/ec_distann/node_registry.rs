@@ -9,7 +9,7 @@
 use pgrx::datum::Uuid;
 use pgrx::{pg_extern, pg_sys, PgRelation, Spi};
 
-use super::canonical_wire::is_rfc4122_v4_uuid;
+use super::canonical_wire::{fixed_digest, is_rfc4122_v4_uuid};
 use super::generation_catalog::extension_relation_name;
 use super::generation_descriptor::{
     validate_endpoint_identity, validate_roster, DistannRosterEntry,
@@ -114,15 +114,6 @@ fn parse_uuid_text(value: &str) -> Result<Uuid, String> {
         return Err("EC_NODE_DESCRIPTOR: remote control returned a non-v4 logical UUID".to_owned());
     }
     Ok(Uuid::from_bytes(bytes))
-}
-
-fn fixed_digest(bytes: Vec<u8>, source: &str) -> Result<[u8; 32], String> {
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        format!(
-            "EC_NODE_DESCRIPTOR: {source} compatibility digest is {} bytes, expected 32",
-            bytes.len()
-        )
-    })
 }
 
 fn lock_registry_state(index_oid: pg_sys::Oid, logical_index_uuid: Uuid) -> Result<i64, String> {
@@ -246,7 +237,8 @@ fn local_control_identity(
                             .ok_or_else(|| {
                                 "EC_NODE_DESCRIPTOR: local compatibility digest is NULL".to_owned()
                             })?,
-                        "local",
+                        "EC_NODE_DESCRIPTOR",
+                        "local compatibility digest",
                     )?,
                     endpoint_identity: required_string("endpoint_identity")?,
                     canonical_index_regclass: required_string("canonical_index_regclass")?,
@@ -313,7 +305,8 @@ fn remote_control_identity(
             row.try_get::<_, Vec<u8>>(3).map_err(|_| {
                 "EC_NODE_DESCRIPTOR: remote compatibility digest decode failed".to_owned()
             })?,
-            "remote",
+            "EC_NODE_DESCRIPTOR",
+            "remote compatibility digest",
         )?,
         endpoint_identity,
         canonical_index_regclass,

@@ -5,11 +5,10 @@
 //! node-local exact rerank (D11), searched by a coordinator loop of
 //! head-index descent (FR-080) plus batched hop rounds (FR-081).
 //!
-//! This module currently carries the M0 single-node slice (Task 162): the
-//! AM callback surface, reloptions/GUCs, and the metadata page. The graph
-//! record format, monolithic build, head index, and local hop-round loop
-//! land in the following Task 162 slices; sharding and the remote path are
-//! M1+ (Tasks 163+).
+//! The module now includes the physical distributed-generation lifecycle:
+//! coordinator control indexes, immutable participant generations, persisted
+//! head seeding, pooled owner fan-out, epoch pinning, and remote row payload
+//! materialization (Tasks 162–179).
 
 mod ambuild;
 mod build_gate;
@@ -82,6 +81,10 @@ pub(crate) mod scan;
 mod shard_build;
 mod source_spool;
 pub mod tuple;
+
+pub(crate) fn quote_ident(identifier: &str) -> String {
+    format!("\"{}\"", identifier.replace('"', "\"\""))
+}
 
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::generation_catalog::extension_relation_name as catalog_relation_name;

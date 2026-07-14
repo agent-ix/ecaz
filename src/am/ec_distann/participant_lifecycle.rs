@@ -10,7 +10,9 @@ use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
 use pgrx::{name, pg_extern, pg_sys, PgRelation, Spi};
 
-use super::canonical_wire::{domain_digest, is_rfc4122_v4_uuid, CanonicalEncoder};
+use super::canonical_wire::{
+    domain_digest, fixed_digest, is_rfc4122_v4_uuid, CanonicalEncoder,
+};
 use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::{encode_roster, roster_digest, DistannGenerationDescriptor};
 use super::generation_store::{drop_generation_relations, open_control_index, GenerationRelations};
@@ -39,12 +41,6 @@ type GenerationStatusRow = (
     Option<Vec<u8>>,
     Option<Vec<u8>>,
 );
-
-fn fixed_digest(bytes: Vec<u8>, field: &str, code: &str) -> Result<[u8; 32], String> {
-    bytes
-        .try_into()
-        .map_err(|bytes: Vec<u8>| format!("{code}: {field} is {} bytes, expected 32", bytes.len()))
-}
 
 fn validate_build_id(build_id: Uuid) -> Result<(), String> {
     if !is_rfc4122_v4_uuid(build_id.as_bytes()) {
@@ -188,7 +184,7 @@ fn ec_distann_publish_generation(
         super::lifecycle_guard::require_read_committed("ec_distann_publish_epoch")?;
         validate_build_id(build_id)?;
         let manifest_digest =
-            fixed_digest(manifest_digest, "manifest digest", "EC_PUBLISH_DIGEST")?;
+            fixed_digest(manifest_digest, "EC_PUBLISH_DIGEST", "manifest digest")?;
         let manifest = decode_manifest(&epoch_manifest, manifest_digest)?;
         if manifest.build_id != *build_id.as_bytes() {
             return Err(
@@ -431,8 +427,8 @@ fn ec_distann_mark_epoch_retired(
         super::lifecycle_guard::require_read_committed("ec_distann_mark_epoch_retired")?;
         let supplied_digest = fixed_digest(
             successor_activation_digest,
-            "successor activation digest",
             "EC_PUBLISH_DIGEST",
+            "successor activation digest",
         )?;
         let activation = decode_activation(&successor_activation, supplied_digest)?;
         let predecessor = activation
@@ -640,8 +636,8 @@ fn ec_distann_apply_epoch_retire(
         super::lifecycle_guard::require_read_committed("ec_distann_apply_epoch_retire")?;
         let supplied_digest = fixed_digest(
             retire_decision_digest,
-            "retire decision digest",
             "EC_PUBLISH_DIGEST",
+            "retire decision digest",
         )?;
         let decision = decode_retire_decision(&retire_decision, supplied_digest)?;
         let build_id = Uuid::from_bytes(decision.target_build_id);
@@ -878,8 +874,8 @@ fn ec_distann_reclaim_cancelled_generation(
         )?;
         let supplied_digest = fixed_digest(
             cancellation_audit_digest,
-            "cancellation audit digest",
             "EC_PUBLISH_CANCEL",
+            "cancellation audit digest",
         )?;
         let audit = DistannCancelPublishAuditV1::decode(&cancellation_audit)?;
         if audit.digest()? != supplied_digest {

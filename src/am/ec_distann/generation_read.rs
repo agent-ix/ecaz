@@ -191,7 +191,9 @@ mod cache_tests {
         PHYSICAL_EPOCH_CACHE.with(|cache| cache.borrow_mut().clear());
         let index_oid = pg_sys::Oid::from(42_u32);
         let logical_index_uuid = Uuid::from_bytes([0x44; 16]);
-        let descriptor = super::super::generation_descriptor::sample_generation_descriptor();
+        let descriptor = Arc::new(
+            super::super::generation_descriptor::sample_generation_descriptor(),
+        );
         let descriptor_digest = descriptor.digest().unwrap();
         let insert = |active: &ActiveGenerationIdentity| {
             cache_physical_epoch(CachedPhysicalEpoch {
@@ -199,7 +201,7 @@ mod cache_tests {
                 logical_index_uuid,
                 build_id: active.build_id,
                 fingerprint: active.fingerprint,
-                descriptor: descriptor.clone(),
+                descriptor: Arc::clone(&descriptor),
                 descriptor_digest,
                 head_index: None,
             });
@@ -209,12 +211,38 @@ mod cache_tests {
         let third = identity(0x33);
         insert(&first);
         insert(&second);
-        assert!(cached_physical_epoch(index_oid, logical_index_uuid, &first).is_some());
+        let cached = cached_physical_epoch(index_oid, logical_index_uuid, &first).unwrap();
+        assert!(Arc::ptr_eq(&cached.descriptor, &descriptor));
         insert(&third);
         assert!(cached_physical_epoch(index_oid, logical_index_uuid, &second).is_none());
         assert!(cached_physical_epoch(index_oid, logical_index_uuid, &first).is_some());
         assert!(cached_physical_epoch(index_oid, logical_index_uuid, &third).is_some());
         PHYSICAL_EPOCH_CACHE.with(|cache| cache.borrow_mut().clear());
+    }
+
+    #[test]
+    fn physical_query_cache_requires_matching_digest_and_reuses_arc() {
+        PHYSICAL_QUERY_CACHE.with(|cache| *cache.borrow_mut() = None);
+        let query = vec![1.25, -0.0, f32::from_bits(0x7fc0_0001)];
+        let digest = physical_query_digest(&query).unwrap();
+        let (installed, installed_digest) =
+            resolve_cached_physical_query(query.clone(), digest.to_vec())
+                .expect("full query installs cache");
+        let (reused, reused_digest) = resolve_cached_physical_query(Vec::new(), digest.to_vec())
+            .expect("matching digest reuses cache");
+        assert_eq!(installed_digest, digest);
+        assert_eq!(reused_digest, digest);
+        assert!(Arc::ptr_eq(&installed, &reused));
+        assert_eq!(
+            reused.iter().map(|value| value.to_bits()).collect::<Vec<_>>(),
+            query.iter().map(|value| value.to_bits()).collect::<Vec<_>>()
+        );
+
+        let mut wrong = digest;
+        wrong[0] ^= 0xff;
+        assert!(resolve_cached_physical_query(Vec::new(), wrong.to_vec()).is_err());
+        assert!(resolve_cached_physical_query(query, wrong.to_vec()).is_err());
+        PHYSICAL_QUERY_CACHE.with(|cache| *cache.borrow_mut() = None);
     }
 }
 
@@ -226,7 +254,7 @@ struct CachedPhysicalEpoch {
     logical_index_uuid: Uuid,
     build_id: Uuid,
     fingerprint: [u8; 34],
-    descriptor: DistannGenerationDescriptor,
+    descriptor: Arc<DistannGenerationDescriptor>,
     descriptor_digest: [u8; 32],
     head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
 }
@@ -275,6 +303,172 @@ fn cache_physical_epoch(entry: CachedPhysicalEpoch) {
         }
         cache.push_back(entry);
     });
+}
+
+const RETAINED_EPOCH_CACHE_CAPACITY: usize = 4;
+
+#[derive(Clone)]
+struct CachedRetainedEpoch {
+    index_oid: pg_sys::Oid,
+    fingerprint: [u8; 34],
+    descriptor: Arc<DistannGenerationDescriptor>,
+    generation: GenerationCatalogRow,
+    source_attnum: i32,
+    code_len: usize,
+}
+
+thread_local! {
+    static RETAINED_EPOCH_CACHE: RefCell<VecDeque<CachedRetainedEpoch>> =
+        const { RefCell::new(VecDeque::new()) };
+}
+
+const PHYSICAL_PREPARED_QUERY_CACHE_CAPACITY: usize = 4;
+
+struct CachedPhysicalPreparedQuery {
+    index_oid: pg_sys::Oid,
+    fingerprint: [u8; 34],
+    query_digest: [u8; 32],
+    prepared: Arc<DistannPreparedQuery>,
+}
+
+thread_local! {
+    static PHYSICAL_PREPARED_QUERY_CACHE: RefCell<VecDeque<CachedPhysicalPreparedQuery>> =
+        const { RefCell::new(VecDeque::new()) };
+}
+
+fn prepared_physical_query(
+    index_oid: pg_sys::Oid,
+    fingerprint: [u8; 34],
+    query_digest: [u8; 32],
+    descriptor: &DistannGenerationDescriptor,
+    query: &[f32],
+) -> Result<Arc<DistannPreparedQuery>, DistannExpandError> {
+    if let Some(prepared) = PHYSICAL_PREPARED_QUERY_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let position = cache.iter().position(|entry| {
+            entry.index_oid == index_oid
+                && entry.fingerprint == fingerprint
+                && entry.query_digest == query_digest
+        })?;
+        let entry = cache.remove(position)?;
+        let prepared = Arc::clone(&entry.prepared);
+        cache.push_back(entry);
+        Some(prepared)
+    }) {
+        return Ok(prepared);
+    }
+    let prepared = Arc::new(
+        DistannPreparedQuery::prepare_artifact(&descriptor.codec_artifact, query)
+            .map_err(DistannExpandError::Internal)?,
+    );
+    PHYSICAL_PREPARED_QUERY_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        while cache.len() >= PHYSICAL_PREPARED_QUERY_CACHE_CAPACITY {
+            cache.pop_front();
+        }
+        cache.push_back(CachedPhysicalPreparedQuery {
+            index_oid,
+            fingerprint,
+            query_digest,
+            prepared: Arc::clone(&prepared),
+        });
+    });
+    Ok(prepared)
+}
+
+fn cached_retained_epoch(
+    index_oid: pg_sys::Oid,
+    fingerprint: &[u8; 34],
+) -> Option<CachedRetainedEpoch> {
+    if !super::options::physical_epoch_cache_enabled() {
+        return None;
+    }
+    RETAINED_EPOCH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let position = cache.iter().position(|entry| {
+            entry.index_oid == index_oid && entry.fingerprint == *fingerprint
+        })?;
+        let entry = cache.remove(position)?;
+        cache.push_back(entry.clone());
+        Some(entry)
+    })
+}
+
+fn cache_retained_epoch(entry: CachedRetainedEpoch) {
+    if !super::options::physical_epoch_cache_enabled() {
+        return;
+    }
+    RETAINED_EPOCH_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        cache.retain(|candidate| {
+            candidate.index_oid != entry.index_oid || candidate.fingerprint != entry.fingerprint
+        });
+        while cache.len() >= RETAINED_EPOCH_CACHE_CAPACITY {
+            cache.pop_front();
+        }
+        cache.push_back(entry);
+    });
+}
+
+const PHYSICAL_QUERY_DIGEST_DOMAIN: &[u8] = b"ecaz/ec_distann/physical_query/v1\0";
+
+thread_local! {
+    static PHYSICAL_QUERY_CACHE: RefCell<Option<([u8; 32], Arc<[f32]>)>> =
+        const { RefCell::new(None) };
+}
+
+pub(crate) fn physical_query_digest(query: &[f32]) -> Result<[u8; 32], String> {
+    let dimensions = u32::try_from(query.len())
+        .map_err(|_| "physical query dimension exceeds u32".to_owned())?;
+    let mut encoder = super::canonical_wire::CanonicalEncoder::with_capacity(
+        4_usize.saturating_add(query.len().saturating_mul(4)),
+    );
+    encoder.put_u32(dimensions);
+    for value in query {
+        encoder.put_f32(*value);
+    }
+    Ok(super::canonical_wire::domain_digest(
+        PHYSICAL_QUERY_DIGEST_DOMAIN,
+        &encoder.finish()?,
+    ))
+}
+
+fn resolve_cached_physical_query(
+    supplied_query: Vec<f32>,
+    supplied_digest: Vec<u8>,
+) -> Result<(Arc<[f32]>, [u8; 32]), DistannExpandError> {
+    let digest: [u8; 32] = supplied_digest.try_into().map_err(|bytes: Vec<u8>| {
+        DistannExpandError::BadInput(format!(
+            "physical query digest must be 32 bytes, got {}",
+            bytes.len()
+        ))
+    })?;
+    if !supplied_query.is_empty() {
+        let query = supplied_query;
+        let computed = physical_query_digest(&query).map_err(DistannExpandError::BadInput)?;
+        if computed != digest {
+            return Err(DistannExpandError::BadInput(
+                "physical query digest does not match supplied query".to_owned(),
+            ));
+        }
+        let query = Arc::<[f32]>::from(query);
+        PHYSICAL_QUERY_CACHE.with(|cache| {
+            *cache.borrow_mut() = Some((digest, Arc::clone(&query)));
+        });
+        return Ok((query, digest));
+    }
+    PHYSICAL_QUERY_CACHE.with(|cache| {
+        cache
+            .borrow()
+            .as_ref()
+            .filter(|(cached_digest, _)| *cached_digest == digest)
+            .map(|(_, query)| (Arc::clone(query), digest))
+            .ok_or_else(|| {
+                DistannExpandError::BadInput(
+                    "physical query cache miss; resend the query vector".to_owned(),
+                )
+            })
+    })
 }
 
 #[derive(Debug)]
@@ -361,7 +555,9 @@ fn physical_owner_routes(
 /// only makes the generation unreachable to new coordinator scans, while
 /// reclaim waits for registered readers to drain.
 struct RetainedGenerationScan {
-    descriptor: DistannGenerationDescriptor,
+    index_oid: pg_sys::Oid,
+    fingerprint: [u8; 34],
+    descriptor: Arc<DistannGenerationDescriptor>,
     generation: GenerationCatalogRow,
     row_relation: HeapRelationGuard,
     graph_relation: HeapRelationGuard,
@@ -369,6 +565,7 @@ struct RetainedGenerationScan {
     #[cfg(feature = "distann-legacy-seed-benchmark")]
     graph_relation_name: String,
     source_attnum: i32,
+    code_len: usize,
 }
 
 impl RetainedGenerationScan {
@@ -384,48 +581,76 @@ impl RetainedGenerationScan {
                 "physical epoch fingerprint is not canonical v2".to_owned(),
             ));
         }
-        let (control, _handle, _metadata, logical_index_uuid) =
-            super::generation_store::open_control_index(
+        let cached = if let Some(cached) = cached_retained_epoch(index_oid, &fingerprint) {
+            cached
+        } else {
+            let (control, _handle, _metadata, logical_index_uuid) =
+                super::generation_store::open_control_index(
+                    index_oid,
+                    pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                    "physical generation endpoint",
+                )
+                .map_err(DistannExpandError::GenerationMissing)?;
+            let source_attnum = super::routine::indexed_ecvector_attnum(control.as_ptr())
+                .map_err(DistannExpandError::BadInput)?;
+            let retained = generation_catalog::lookup_retained_generation_by_fingerprint(
                 index_oid,
-                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
-                "physical generation endpoint",
+                logical_index_uuid,
+                &fingerprint,
             )
-            .map_err(DistannExpandError::GenerationMissing)?;
-        let source_attnum = super::routine::indexed_ecvector_attnum(control.as_ptr())
-            .map_err(DistannExpandError::BadInput)?;
-        let retained = generation_catalog::lookup_retained_generation_by_fingerprint(
-            index_oid,
-            logical_index_uuid,
-            &fingerprint,
-        )
-        .map_err(DistannExpandError::GenerationMissing)?
-        .ok_or_else(|| {
-            DistannExpandError::GenerationMissing(
-                "requested physical generation is not retained on this participant".to_owned(),
-            )
-        })?;
-        let generation = retained.generation;
-        let descriptor = DistannGenerationDescriptor::decode(&generation.generation_descriptor)
-            .map_err(DistannExpandError::GenerationMissing)?;
-        let roster_entry = descriptor
-            .roster
-            .get(generation.owner_ordinal as usize)
+            .map_err(DistannExpandError::GenerationMissing)?
             .ok_or_else(|| {
                 DistannExpandError::GenerationMissing(
-                    "generation owner ordinal is outside its immutable roster".to_owned(),
+                    "requested physical generation is not retained on this participant".to_owned(),
                 )
             })?;
-        if descriptor
-            .digest()
-            .map_err(DistannExpandError::GenerationMissing)?
-            != generation.generation_descriptor_digest
-            || roster_entry.logical_index_uuid != *logical_index_uuid.as_bytes()
-            || roster_entry.node_id != generation.node_id
-        {
-            return Err(DistannExpandError::GenerationMissing(
-                "retained generation descriptor/participant identity mismatch".to_owned(),
-            ));
-        }
+            let generation = retained.generation;
+            let descriptor = Arc::new(
+                DistannGenerationDescriptor::decode(&generation.generation_descriptor)
+                    .map_err(DistannExpandError::GenerationMissing)?,
+            );
+            let roster_entry = descriptor
+                .roster
+                .get(generation.owner_ordinal as usize)
+                .ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(
+                        "generation owner ordinal is outside its immutable roster".to_owned(),
+                    )
+                })?;
+            if descriptor
+                .digest()
+                .map_err(DistannExpandError::GenerationMissing)?
+                != generation.generation_descriptor_digest
+                || roster_entry.logical_index_uuid != *logical_index_uuid.as_bytes()
+                || roster_entry.node_id != generation.node_id
+            {
+                return Err(DistannExpandError::GenerationMissing(
+                    "retained generation descriptor/participant identity mismatch".to_owned(),
+                ));
+            }
+            let binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)
+                .map_err(DistannExpandError::GenerationMissing)?;
+            let code_len = binding
+                .code_len(usize::from(descriptor.dimensions))
+                .map_err(DistannExpandError::GenerationMissing)?;
+            let cached = CachedRetainedEpoch {
+                index_oid,
+                fingerprint,
+                descriptor,
+                generation,
+                source_attnum,
+                code_len,
+            };
+            cache_retained_epoch(cached.clone());
+            cached
+        };
+        let CachedRetainedEpoch {
+            descriptor,
+            generation,
+            source_attnum,
+            code_len,
+            ..
+        } = cached;
         let row_relation = HeapRelationGuard::try_access_share(generation.row_tier_relid)
             .ok_or_else(|| {
                 DistannExpandError::GenerationMissing(
@@ -450,6 +675,8 @@ impl RetainedGenerationScan {
             super::handoff::qualified_relation_name(generation.graph_store_relid)
                 .map_err(DistannExpandError::GenerationMissing)?;
         Ok(Self {
+            index_oid,
+            fingerprint,
             descriptor,
             generation,
             row_relation,
@@ -458,6 +685,7 @@ impl RetainedGenerationScan {
             #[cfg(feature = "distann-legacy-seed-benchmark")]
             graph_relation_name,
             source_attnum,
+            code_len,
         })
     }
 
@@ -499,14 +727,14 @@ impl RetainedGenerationScan {
         if limit == 0 {
             return Ok(Vec::new());
         }
-        let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)
-            .map_err(DistannExpandError::Internal)?;
-        let code_len = binding
-            .code_len(usize::from(self.descriptor.dimensions))
-            .map_err(DistannExpandError::Internal)?;
-        let prepared =
-            DistannPreparedQuery::prepare_artifact(&self.descriptor.codec_artifact, query)
-                .map_err(DistannExpandError::Internal)?;
+        let query_digest = physical_query_digest(query).map_err(DistannExpandError::Internal)?;
+        let prepared = prepared_physical_query(
+            self.index_oid,
+            self.fingerprint,
+            query_digest,
+            &self.descriptor,
+            query,
+        )?;
         let mut candidates = Spi::connect(|client| {
             client
                 .select(
@@ -538,7 +766,7 @@ impl RetainedGenerationScan {
                     let node = DistannNodeTuple::decode_physical_v1(
                         &bytes,
                         self.descriptor.graph_degree,
-                        code_len,
+                        self.code_len,
                     )
                     .map_err(DistannExpandError::GenerationMissing)?;
                     let owner = super::placement::owning_node(
@@ -567,6 +795,7 @@ impl RetainedGenerationScan {
     fn expand(
         &self,
         query: &[f32],
+        query_digest: [u8; 32],
         vec_ids: &[u64],
         code_threshold: Option<f32>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
@@ -580,14 +809,13 @@ impl RetainedGenerationScan {
                 "physical generation endpoint has no active snapshot".to_owned(),
             ));
         }
-        let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)
-            .map_err(DistannExpandError::Internal)?;
-        let code_len = binding
-            .code_len(usize::from(self.descriptor.dimensions))
-            .map_err(DistannExpandError::Internal)?;
-        let prepared =
-            DistannPreparedQuery::prepare_artifact(&self.descriptor.codec_artifact, query)
-                .map_err(DistannExpandError::Internal)?;
+        let prepared = prepared_physical_query(
+            self.index_oid,
+            self.fingerprint,
+            query_digest,
+            &self.descriptor,
+            query,
+        )?;
         let slot =
             TupleTableSlotGuard::single_for_heap_guard(&self.row_relation).ok_or_else(|| {
                 DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
@@ -603,7 +831,7 @@ impl RetainedGenerationScan {
             source_attnum: self.source_attnum,
             query,
             prepared: &prepared,
-            code_len,
+            code_len: self.code_len,
         };
         expander.expand_nodes(vec_ids, code_threshold)
     }
@@ -613,11 +841,6 @@ impl RetainedGenerationScan {
         if vec_ids.is_empty() {
             return Ok(Vec::new());
         }
-        let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)
-            .map_err(DistannExpandError::Internal)?;
-        let code_len = binding
-            .code_len(usize::from(self.descriptor.dimensions))
-            .map_err(DistannExpandError::Internal)?;
         let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
         let records = lookup_graph_nodes(
             &self.graph_relation,
@@ -625,7 +848,7 @@ impl RetainedGenerationScan {
             snapshot,
             vec_ids,
             self.descriptor.graph_degree,
-            code_len,
+            self.code_len,
             |vec_id| {
                 DistannExpandError::OwnedRecordMissing(format!(
                     "retained physical generation lacks owned vec_id {vec_id:#018x}"
@@ -798,6 +1021,39 @@ impl RetainedGenerationScan {
 type PhysicalExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
 type PhysicalPayloadRow = (i64, bool, bool, Vec<bool>, Vec<Vec<u8>>);
 
+fn expand_physical_nodes_impl(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    query: &[f32],
+    query_digest: [u8; 32],
+    vec_ids: &[i64],
+    code_threshold: Option<f32>,
+) -> Result<Vec<PhysicalExpandRow>, DistannExpandError> {
+    let ids = vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    RetainedGenerationScan::open(index_oid, epoch_fingerprint)?
+        .expand(query, query_digest, &ids, code_threshold)
+        .map(|expanded| {
+            expanded
+                .into_iter()
+                .map(|node| {
+                    (
+                        i64::from_le_bytes(node.vec_id.to_le_bytes()),
+                        node.exact_dist,
+                        node.is_tombstone,
+                        node.neighbor_vec_ids
+                            .into_iter()
+                            .map(|id| i64::from_le_bytes(id.to_le_bytes()))
+                            .collect(),
+                        node.neighbor_code_dists,
+                    )
+                })
+                .collect()
+        })
+}
+
 /// FR-079 physical-generation overload.  The `regclass` argument separates it
 /// from the legacy metadata-page endpoint whose first SQL argument is `oid`.
 #[pg_extern(volatile, parallel_restricted)]
@@ -818,32 +1074,58 @@ fn ec_distann_expand_physical_nodes(
         name!(neighbor_code_dists, Vec<f32>),
     ),
 > {
-    let ids = vec_ids
-        .iter()
-        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
-        .collect::<Vec<_>>();
-    let rows: Vec<PhysicalExpandRow> = (|| {
-        RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)?
-            .expand(&query, &ids, code_threshold)
-            .map(|expanded| {
-                expanded
-                    .into_iter()
-                    .map(|node| {
-                        (
-                            i64::from_le_bytes(node.vec_id.to_le_bytes()),
-                            node.exact_dist,
-                            node.is_tombstone,
-                            node.neighbor_vec_ids
-                                .into_iter()
-                                .map(|id| i64::from_le_bytes(id.to_le_bytes()))
-                                .collect(),
-                            node.neighbor_code_dists,
-                        )
-                    })
-                    .collect()
-            })
-    })()
-    .unwrap_or_else(|error: DistannExpandError| error.raise());
+    let query_digest = physical_query_digest(&query)
+        .map_err(DistannExpandError::BadInput)
+        .unwrap_or_else(|error| error.raise());
+    let rows = expand_physical_nodes_impl(
+        index_regclass.oid(),
+        &epoch_fingerprint,
+        &query,
+        query_digest,
+        &vec_ids,
+        code_threshold,
+    )
+    .unwrap_or_else(|error| error.raise());
+    TableIterator::new(rows.into_iter())
+}
+
+/// Pooled-transport overload. The first hop on a session supplies `query`;
+/// later hops send only its digest and reuse the backend-local immutable
+/// vector, avoiding one real[] serialization per owner per hop.
+#[pg_extern(
+    name = "ec_distann_expand_physical_nodes",
+    volatile,
+    parallel_restricted
+)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_expand_physical_nodes_cached(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    query: Vec<f32>,
+    query_digest: Vec<u8>,
+    vec_ids: Vec<i64>,
+    code_threshold: default!(Option<f32>, "NULL"),
+) -> TableIterator<
+    'static,
+    (
+        name!(vec_id, i64),
+        name!(exact_dist, Option<f32>),
+        name!(is_tombstone, bool),
+        name!(neighbor_vec_ids, Vec<i64>),
+        name!(neighbor_code_dists, Vec<f32>),
+    ),
+> {
+    let (query, query_digest) = resolve_cached_physical_query(query, query_digest)
+        .unwrap_or_else(|error| error.raise());
+    let rows = expand_physical_nodes_impl(
+        index_regclass.oid(),
+        &epoch_fingerprint,
+        &query,
+        query_digest,
+        &vec_ids,
+        code_threshold,
+    )
+    .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
 }
 
@@ -921,7 +1203,7 @@ fn ec_distann_materialize_physical_row_payloads(
 pub(crate) struct PhysicalGenerationScan {
     #[cfg(feature = "distann-legacy-seed-benchmark")]
     index_oid: pg_sys::Oid,
-    descriptor: DistannGenerationDescriptor,
+    descriptor: Arc<DistannGenerationDescriptor>,
     generation: Option<GenerationCatalogRow>,
     row_relation: Option<HeapRelationGuard>,
     graph_relation: Option<HeapRelationGuard>,
@@ -1040,7 +1322,9 @@ impl PhysicalGenerationScan {
                 active.build_id,
             )?
             .ok_or_else(|| "EC_GENERATION_MISSING: active build candidate is absent".to_owned())?;
-            let descriptor = DistannGenerationDescriptor::decode(&candidate.generation_descriptor)?;
+            let descriptor = Arc::new(DistannGenerationDescriptor::decode(
+                &candidate.generation_descriptor,
+            )?);
             let descriptor_digest = descriptor.digest()?;
             if descriptor_digest != candidate.generation_descriptor_digest
                 || descriptor.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes()
@@ -1054,19 +1338,17 @@ impl PhysicalGenerationScan {
             let head_index = None;
             #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
             let head_index = {
-                let (head_sample, manifest_build_options) = super::head_sample::load_head_sample(
-                    index_oid,
-                    logical_index_uuid,
-                    active.build_id,
-                    &active.fingerprint,
-                )?;
-                let exact_options = manifest_build_options.options;
-                super::head_sample::DistannPhysicalHeadIndex::build(
+                let (head_sample, head_graph, manifest_build_options) =
+                    super::head_sample::load_head_sample(
+                        index_oid,
+                        logical_index_uuid,
+                        active.build_id,
+                        &active.fingerprint,
+                    )?;
+                super::head_sample::DistannPhysicalHeadIndex::load(
                     head_sample,
+                    head_graph,
                     usize::from(manifest_build_options.graph_degree),
-                    usize::from(exact_options.build_list_size),
-                    exact_options.alpha,
-                    exact_options.seed,
                 )?
                 .map(Arc::new)
             };
@@ -1075,7 +1357,7 @@ impl PhysicalGenerationScan {
                 logical_index_uuid,
                 build_id: active.build_id,
                 fingerprint: active.fingerprint,
-                descriptor: descriptor.clone(),
+                descriptor: Arc::clone(&descriptor),
                 descriptor_digest,
                 head_index: head_index.clone(),
             });
@@ -1177,6 +1459,7 @@ impl PhysicalGenerationScan {
         let code_len = binding.code_len(usize::from(self.descriptor.dimensions))?;
         let prepared =
             DistannPreparedQuery::prepare_artifact(&self.descriptor.codec_artifact, query)?;
+        let query_digest = physical_query_digest(query)?;
         let slot = self
             .row_relation
             .as_ref()
@@ -1243,6 +1526,7 @@ impl PhysicalGenerationScan {
             routes: &self.routes,
             fingerprint: &self.fingerprint,
             query,
+            query_digest: &query_digest,
         };
         let params = DistannOrchestrationParams {
             beam_width: super::options::current_beam_width(),
@@ -1404,6 +1688,7 @@ struct PhysicalMultiOwnerExpander<'a> {
     routes: &'a [PhysicalOwnerRoute],
     fingerprint: &'a [u8; 34],
     query: &'a [f32],
+    query_digest: &'a [u8; 32],
 }
 
 impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
@@ -1453,6 +1738,7 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
                     index_regclass: &route.remote_index_regclass,
                     epoch_fingerprint: self.fingerprint,
                     query: self.query,
+                    query_digest: self.query_digest,
                     vec_ids: owned,
                     code_threshold,
                 })

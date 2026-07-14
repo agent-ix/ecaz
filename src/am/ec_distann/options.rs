@@ -178,6 +178,8 @@ impl DistannSourceIdentityProvider {
         }
     }
 
+    // Kept as the canonical inverse of parse_reloption for diagnostics and
+    // future reloptions introspection; the current SQL path only parses.
     #[allow(dead_code)]
     pub(super) fn reloption_name(self) -> &'static str {
         match self {
