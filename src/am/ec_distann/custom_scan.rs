@@ -638,7 +638,16 @@ unsafe extern "C-unwind" fn drop_custom_scan_exec_state(arg: *mut c_void) {
     if !arg.is_null() {
         #[cfg(any(test, feature = "pg_test"))]
         EXEC_STATE_CONTEXT_CLEANUPS.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        ptr::drop_in_place(arg.cast::<DistannCustomScanExecState>());
+        // ERROR cleanup reaches this callback after ResourceOwner/xact cleanup.
+        // Contain every Rust unwind: unwinding through PostgreSQL's memory
+        // context reset machinery is undefined and can mask the original ERROR.
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| unsafe {
+            let state = &mut *arg.cast::<DistannCustomScanExecState>();
+            if let Some(scan) = state.physical_generation.as_mut() {
+                scan.disarm_after_resource_owner_release();
+            }
+            ptr::drop_in_place(state);
+        }));
     }
 }
 

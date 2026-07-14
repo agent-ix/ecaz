@@ -194,6 +194,10 @@ pub(crate) unsafe fn register_build_gate_hooks() {
     unsafe { build_gate::register_build_gate_hooks() }
 }
 
+pub(crate) unsafe fn register_generation_cache_invalidation() {
+    unsafe { generation_read::register_generation_cache_invalidation() }
+}
+
 /// Legacy v4 graph/page surfaces must never interpret a v5 logical control root
 /// as an empty local graph.  Physical-generation callers resolve storage by
 /// fingerprint through the generation catalog instead.

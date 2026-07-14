@@ -718,6 +718,35 @@ async fn run_physical_benchmarks(
         bail!("physical benchmark corpus prefix is not a SQL identifier");
     }
     let scale = corpus_prefix.strip_prefix("ec_real_").unwrap_or(corpus_prefix);
+    let coordinator_provenance = coordinator
+        .query_one("SELECT ecaz_build_git_sha(), ecaz_build_profile()", &[])
+        .await
+        .wrap_err("querying installed coordinator extension provenance")?;
+    let expected_sha = coordinator_provenance.get::<_, String>(0);
+    let expected_profile = coordinator_provenance.get::<_, String>(1);
+    let mut provenance_ports = std::collections::BTreeSet::from([coordinator_port]);
+    provenance_ports.extend(nodes.iter().map(|node| node.port));
+    for port in provenance_ports.iter().copied().filter(|port| *port != coordinator_port) {
+        let (client, connection) = tokio_postgres::connect(
+            &format!("host=127.0.0.1 port={port} dbname=postgres user=postgres"),
+            tokio_postgres::NoTls,
+        )
+        .await
+        .wrap_err_with(|| format!("connecting to node on port {port} for provenance"))?;
+        let task = tokio::spawn(async move { connection.await });
+        let row = client
+            .query_one("SELECT ecaz_build_git_sha(), ecaz_build_profile()", &[])
+            .await
+            .wrap_err_with(|| format!("querying installed extension provenance on port {port}"))?;
+        let sha = row.get::<_, String>(0);
+        let profile = row.get::<_, String>(1);
+        task.abort();
+        if sha != expected_sha || profile != expected_profile {
+            bail!(
+                "installed extension provenance mismatch on port {port}: expected {expected_sha}/{expected_profile}, got {sha}/{profile}"
+            );
+        }
+    }
     let physical_prefix = format!("task179_physical_{scale}");
     let single_prefix = format!("task179_single_{scale}");
     let physical_corpus = format!("{physical_prefix}_corpus");
@@ -788,10 +817,16 @@ async fn run_physical_benchmarks(
         "--user".to_owned(),
         "postgres".to_owned(),
     ];
-    let mut lines = vec![format!(
-        "physical_benchmark_build scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
-        args.head_index_cap,
-    )];
+    let mut lines = vec![
+        format!(
+            "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true",
+            provenance_ports.len()
+        ),
+        format!(
+            "physical_benchmark_build scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            args.head_index_cap,
+        ),
+    ];
     for (arm, prefix) in [("physical", &physical_prefix), ("single", &single_prefix)] {
         let seed_strategy = if arm == "physical" {
             physical_seed_strategy.as_str()

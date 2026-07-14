@@ -410,8 +410,23 @@ async fn ensure_pooled_connections(
             .map(|(_, conninfo)| open_remote_connection(conninfo, error_prefix)),
     )
     .await;
+    let mut ready = Vec::with_capacity(opened.len());
+    let mut first_error = None;
     for ((key, _), opened) in missing.into_iter().zip(opened) {
-        let (client, task) = opened?;
+        match opened {
+            Ok((client, task)) => ready.push((key, client, task)),
+            Err(error) if first_error.is_none() => first_error = Some(error),
+            Err(_) => {}
+        }
+    }
+    if let Some(error) = first_error {
+        for (_, client, task) in ready {
+            task.abort();
+            drop(client);
+        }
+        return Err(error);
+    }
+    for (key, client, task) in ready {
         connections.insert(
             key,
             PooledConnection {
@@ -933,9 +948,11 @@ pub(crate) fn remote_stage_epoch_batch(
                 cumulative_record_count: u64::try_from(cumulative).map_err(|_| {
                     "EC_BUILD_INCOMPLETE: remote cumulative count is negative".to_owned()
                 })?,
-                cumulative_owner_digest: cumulative_digest.try_into().map_err(|_| {
-                    "EC_BUILD_INCOMPLETE: remote cumulative digest is not 32 bytes".to_owned()
-                })?,
+                cumulative_owner_digest: super::canonical_wire::fixed_digest(
+                    cumulative_digest,
+                    "EC_BUILD_INCOMPLETE",
+                    "remote cumulative digest",
+                )?,
             })
         })
     })

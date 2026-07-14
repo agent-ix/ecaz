@@ -496,6 +496,10 @@ struct DistannLocalMultinodeStep {
     run_dir: Option<PathBuf>,
     #[serde(default)]
     log_file: Option<PathBuf>,
+    /// Keep only the compact summary as durable evidence. Raw fixture and
+    /// per-arm logs may be pruned after results.jsonl has been materialized.
+    #[serde(default)]
+    compact_artifacts: bool,
     #[serde(default)]
     pg: Option<u16>,
     #[serde(default)]
@@ -2231,6 +2235,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_recall".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_provenance ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_provenance".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_latency ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_latency".into(), values));
@@ -3139,6 +3147,13 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::DistannLocalMultinode(step) => {
+                if step.compact_artifacts {
+                    return step
+                        .artifact_dir
+                        .iter()
+                        .map(|dir| dir.join("distann-multinode-summary.log"))
+                        .collect();
+                }
                 let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
                 if let Some(dir) = &step.artifact_dir {
                     artifacts.push(dir.join("distann-multinode-summary.log"));
@@ -4709,6 +4724,29 @@ psql header noise\n\
     }
 
     #[test]
+    fn distann_physical_provenance_is_structured() {
+        let raw = "[distann-multicluster] physical_benchmark_provenance scale=10k extension_git_sha=0123456789abcdef extension_build_profile=release nodes=3 unanimous=true\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "physical_benchmark_provenance");
+        assert_eq!(
+            rows[0].1.get("extension_git_sha").map(String::as_str),
+            Some("0123456789abcdef")
+        );
+        assert_eq!(
+            rows[0]
+                .1
+                .get("extension_build_profile")
+                .map(String::as_str),
+            Some("release")
+        );
+        assert_eq!(
+            rows[0].1.get("unanimous").map(String::as_str),
+            Some("true")
+        );
+    }
+
+    #[test]
     fn distann_physical_topology_and_gate_are_structured() {
         let raw = "[distann-multicluster] physical_topology phase=published node=2 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=65536 row_bytes=16384 directory_bytes=16384 control_bytes=8192\n\
 [distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=3 source_rows=90\n\
@@ -5061,6 +5099,8 @@ psql header noise\n\
             "beam_width": 16,
             "hop_rounds": 25,
             "physical_benchmark": true,
+            "compact_artifacts": true,
+            "artifact_dir": "artifacts/cap-256",
             "benchmark_warmup_iterations": 7,
             "drop_extension_cleanup_drill": true,
             "corpus_prefix": "ec_real_10k"
@@ -5085,6 +5125,12 @@ psql header noise\n\
             .windows(2)
             .any(|window| window == ["--benchmark-warmup-iterations", "7"]));
         assert!(command.contains(&"--drop-extension-cleanup-drill".into()));
+        assert_eq!(
+            config.steps[0].expected_artifacts(),
+            vec![PathBuf::from(
+                "artifacts/cap-256/distann-multinode-summary.log"
+            )]
+        );
     }
 
     #[test]

@@ -1503,6 +1503,12 @@ pub(crate) struct ScanTokenGuard {
 }
 
 impl ScanTokenGuard {
+    /// Transaction/subtransaction cleanup has already released this token.
+    /// Memory-context cleanup must not release it a second time.
+    pub(crate) fn disarm_after_transaction_cleanup(&mut self) {
+        self.active = false;
+    }
+
     pub(crate) fn register(
         logical_index_uuid: Uuid,
         epoch_fingerprint: [u8; 34],

@@ -6,7 +6,8 @@ use pgrx::{pg_extern, pg_sys, PgRelation, Spi};
 use super::generation_catalog::extension_relation_name;
 use super::generation_store::open_control_index;
 use super::lifecycle_state::{
-    require_exact_transition, require_transition, PredecessorDisposition, PublishDecisionState,
+    require_exact_transition_classified, require_transition, PredecessorDisposition,
+    PublishDecisionState,
 };
 use super::lifecycle_wire::DistannAbandonBindingAuditV1;
 
@@ -265,11 +266,12 @@ fn ec_distann_abandon_predecessor_binding(
                 .map(|rows| rows.len())
                 .map_err(|error| format!("EC_PREDECESSOR_ABANDON: binding update failed: {error}"))
         })?;
-        require_exact_transition(
+        require_exact_transition_classified(
             PredecessorDisposition::Pending,
             PredecessorDisposition::Abandoned,
             updated,
             "predecessor disposition",
+            "EC_PREDECESSOR_ABANDON",
         )?;
         require_transition(
             PublishDecisionState::Activated,

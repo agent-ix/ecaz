@@ -83,6 +83,7 @@ pub unsafe extern "C-unwind" fn _PG_init() {
         am::register_custom_scan();
         am::register_dml_frontdoor_planner_hook();
         am::ec_distann::register_build_gate_hooks();
+        am::ec_distann::register_generation_cache_invalidation();
     }
     #[cfg(feature = "pg18")]
     // SAFETY: PG18 hook/stat registrations are process-local initialization

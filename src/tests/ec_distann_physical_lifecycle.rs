@@ -2204,6 +2204,32 @@ fn test_distann_multi_epoch_publish() {
         "11111111-1111-4111-8111-111111111111",
         "Published physical graph search must materialize the frozen row-tier winner"
     );
+    let mid_scan_error = client
+        .batch_execute(
+            "SELECT 1 / CASE
+                        WHEN source_id = '11111111-1111-4111-8111-111111111111'::uuid THEN 0
+                        ELSE 1
+                      END
+               FROM ec_distann_me_source
+              ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
+              LIMIT 1",
+        )
+        .expect_err("projection ERROR after a physical CustomScan row must abort cleanly");
+    assert!(
+        mid_scan_error
+            .as_db_error()
+            .map(|error| error.message().contains("division by zero"))
+            .unwrap_or(false),
+        "mid-scan failure must preserve the original PostgreSQL ERROR: {mid_scan_error}"
+    );
+    assert_eq!(
+        client
+            .query_one("SELECT 1::bigint", &[])
+            .expect("backend must remain usable after physical scan ERROR")
+            .get::<_, i64>(0),
+        1,
+        "query-context cleanup must not double-close physical relations"
+    );
     assert_eq!(
         scalar(
             &mut client,
@@ -2313,6 +2339,26 @@ fn test_distann_multi_epoch_publish() {
         .get::<_, Vec<u8>>(2)
         .try_into()
         .expect("epoch fingerprint must be 34 bytes");
+    let fingerprint_hex = hex::encode(predecessor_fingerprint);
+    client
+        .batch_execute(&format!(
+            "SELECT count(*)
+               FROM ec_distann_expand_physical_nodes(
+                    'ec_distann_me_idx'::regclass,
+                    decode('{fingerprint_hex}', 'hex'),
+                    ARRAY[1.0, 0.0, 0.0, 0.0]::real[],
+                    ARRAY[]::bigint[], NULL
+               )"
+        ))
+        .expect("retained generation endpoint should prime its backend cache");
+    assert_eq!(
+        scalar(
+            &mut client,
+            "SELECT ec_distann_debug_retained_epoch_cache_len()::text"
+        ),
+        "1",
+        "the retained predecessor must be cached before reclaim"
+    );
 
     // PostgreSQL ERROR bypasses Rust Drop. The transaction/subtransaction
     // callback must release the exact token when the failed statement's
@@ -2343,7 +2389,6 @@ fn test_distann_multi_epoch_publish() {
         predecessor_fingerprint,
     )
     .expect("retained predecessor scan should pin");
-    let fingerprint_hex = hex::encode(predecessor_fingerprint);
     let retention_error = client
         .batch_execute(&format!(
             "SELECT ec_distann_retire_epoch(
@@ -2421,6 +2466,14 @@ fn test_distann_multi_epoch_publish() {
              )"
         ))
         .expect("retire recovery should reclaim the local predecessor");
+    assert_eq!(
+        scalar(
+            &mut client,
+            "SELECT ec_distann_debug_retained_epoch_cache_len()::text"
+        ),
+        "0",
+        "relcache invalidation from physical reclaim must evict the retained epoch"
+    );
     assert_eq!(
         scalar(
             &mut client,

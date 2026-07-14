@@ -21,7 +21,37 @@ fn main() {
         None => "unknown".to_string(),
     };
     println!("cargo:rustc-env=ECAZ_GIT_SHA={stamp}");
-    println!("cargo:rerun-if-changed=../../.git/HEAD");
-    println!("cargo:rerun-if-changed=../../.git/index");
+    emit_git_rerun_paths();
     println!("cargo:rerun-if-changed=build.rs");
+}
+
+fn emit_git_rerun_paths() {
+    let git_path = |name: &str| {
+        std::process::Command::new("git")
+            .args(["rev-parse", "--git-path", name])
+            .output()
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned())
+            .filter(|path| !path.is_empty())
+    };
+    for name in ["HEAD", "index", "packed-refs"] {
+        if let Some(path) = git_path(name) {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
+    let symbolic = std::process::Command::new("git")
+        .args(["symbolic-ref", "-q", "HEAD"])
+        .output()
+        .ok()
+        .filter(|out| out.status.success())
+        .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_owned());
+    if let Some(reference) = symbolic
+        .as_deref()
+        .filter(|reference| !reference.is_empty())
+    {
+        if let Some(path) = git_path(reference) {
+            println!("cargo:rerun-if-changed={path}");
+        }
+    }
 }

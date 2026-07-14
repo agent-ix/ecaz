@@ -34,6 +34,7 @@ use crate::am::ec_diskann::{decode_heap_tid, ecvector_datum_to_vec};
 
 use super::ambuild::{overwrite_metadata_page_handle, read_metadata_from_index_handle};
 use super::expand_error::DistannExpandError;
+use super::head_cache::cached_index_entry;
 use super::identity::vec_id_from_local_heap_tid;
 use super::options::{self, DistannSourceIdentityProvider};
 use super::reader::{
@@ -191,15 +192,15 @@ pub(super) unsafe fn tombstone_by_vec_ids(
             "ec_distann tombstone: index has no directory".to_owned(),
         ));
     }
-    let directory =
-        read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)
-            .map_err(DistannExpandError::Internal)?;
+    let index_oid = (*index_relation).rd_id;
+    let cached = cached_index_entry(index_oid.into(), handle, &metadata)
+        .map_err(DistannExpandError::Internal)?;
 
     let mut removed = 0_u64;
     for &vec_id in vec_ids {
         // Owned-but-absent is the EC_RECORD_MISSING contract case; the reads and
         // flag write below are internal/storage faults if they fail.
-        let record_tid = directory_lookup(&directory, vec_id).ok_or_else(|| {
+        let record_tid = directory_lookup(&cached.directory, vec_id).ok_or_else(|| {
             DistannExpandError::OwnedRecordMissing(format!(
                 "ec_distann tombstone: vec_id {vec_id:#018x} is not in the directory"
             ))

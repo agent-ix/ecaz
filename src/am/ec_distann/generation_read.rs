@@ -8,6 +8,7 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::ptr;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use pgrx::datum::Uuid;
@@ -269,6 +270,62 @@ thread_local! {
         const { RefCell::new(VecDeque::new()) };
 }
 
+static GENERATION_CACHE_INVALIDATION_REGISTERED: AtomicBool = AtomicBool::new(false);
+
+#[pgrx::pg_guard]
+unsafe extern "C-unwind" fn invalidate_generation_caches(
+    _arg: pg_sys::Datum,
+    relation_oid: pg_sys::Oid,
+) {
+    let mut removed = Vec::new();
+    RETAINED_EPOCH_CACHE.with(|cache| {
+        let Ok(mut cache) = cache.try_borrow_mut() else {
+            return;
+        };
+        cache.retain(|entry| {
+            let generation_relation = entry.generation.row_tier_relid == relation_oid
+                || entry.generation.graph_store_relid == relation_oid
+                || entry.generation.directory_relid == relation_oid;
+            let matches = relation_oid == pg_sys::InvalidOid
+                || entry.index_oid == relation_oid
+                || generation_relation;
+            if matches {
+                removed.push((entry.index_oid, entry.fingerprint));
+            }
+            !matches
+        });
+    });
+    PHYSICAL_PREPARED_QUERY_CACHE.with(|cache| {
+        let Ok(mut cache) = cache.try_borrow_mut() else {
+            return;
+        };
+        cache.retain(|entry| {
+            relation_oid != pg_sys::InvalidOid
+                && entry.index_oid != relation_oid
+                && !removed.iter().any(|(index_oid, fingerprint)| {
+                    entry.index_oid == *index_oid && entry.fingerprint == *fingerprint
+                })
+        });
+    });
+}
+
+pub(crate) unsafe fn register_generation_cache_invalidation() {
+    if !GENERATION_CACHE_INVALIDATION_REGISTERED.swap(true, Ordering::Relaxed) {
+        unsafe {
+            pg_sys::CacheRegisterRelcacheCallback(
+                Some(invalidate_generation_caches),
+                pg_sys::Datum::from(0_usize),
+            );
+        }
+    }
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern]
+fn ec_distann_debug_retained_epoch_cache_len() -> i64 {
+    RETAINED_EPOCH_CACHE.with(|cache| cache.borrow().len() as i64)
+}
+
 fn cached_physical_epoch(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
@@ -442,12 +499,12 @@ fn resolve_cached_physical_query(
     supplied_query: Vec<f32>,
     supplied_digest: Vec<u8>,
 ) -> Result<(Arc<[f32]>, [u8; 32]), DistannExpandError> {
-    let digest: [u8; 32] = supplied_digest.try_into().map_err(|bytes: Vec<u8>| {
-        DistannExpandError::BadInput(format!(
-            "physical query digest must be 32 bytes, got {}",
-            bytes.len()
-        ))
-    })?;
+    let digest = super::canonical_wire::fixed_digest(
+        supplied_digest,
+        "EC_QUERY_DIGEST",
+        "physical query digest",
+    )
+    .map_err(DistannExpandError::BadInput)?;
     if !supplied_query.is_empty() {
         let query = supplied_query;
         let computed = physical_query_digest(&query).map_err(DistannExpandError::BadInput)?;
@@ -1269,6 +1326,23 @@ fn active_generation_identity(
 }
 
 impl PhysicalGenerationScan {
+    /// ResourceOwner and xact callbacks run before the executor query context
+    /// reset on ERROR. PostgreSQL already closed these relations and released
+    /// the tracked scan token, so the later memory-context callback must only
+    /// forget the Rust guards rather than invoke their Drop implementations.
+    pub(crate) fn disarm_after_resource_owner_release(&mut self) {
+        self._scan_token.disarm_after_transaction_cleanup();
+        if let Some(relation) = self.row_relation.take() {
+            std::mem::forget(relation);
+        }
+        if let Some(relation) = self.graph_relation.take() {
+            std::mem::forget(relation);
+        }
+        if let Some(relation) = self.directory_relation.take() {
+            std::mem::forget(relation);
+        }
+    }
+
     pub(crate) fn open(index_oid: pg_sys::Oid) -> Result<Self, String> {
         match Self::open_once(index_oid) {
             Err(error) if error.starts_with("EC_EPOCH_MISMATCH:") => Self::open_once(index_oid),

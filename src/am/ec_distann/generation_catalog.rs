@@ -8,7 +8,7 @@ use pgrx::datum::Uuid;
 use pgrx::{pg_extern, pg_sys, Spi};
 
 use super::handoff_wire::DISTANN_OWNER_STREAM_HASH_STATE_BYTES;
-use super::lifecycle_state::{require_exact_transition, GenerationState};
+use super::lifecycle_state::{require_exact_transition_classified, GenerationState};
 use super::manifest_v2::DISTANN_READY_RECEIPT_BYTES;
 use super::quote_ident;
 
@@ -739,11 +739,12 @@ pub(crate) fn mark_generation_ready(
             .map_err(|error| format!("ec_distann Ready transition failed: {error}"))
             .map(|table| table.len())
     })?;
-    require_exact_transition(
+    require_exact_transition_classified(
         GenerationState::Building,
         GenerationState::Ready,
         updated,
         "generation",
+        "EC_BUILD_STATE",
     )
 }
 

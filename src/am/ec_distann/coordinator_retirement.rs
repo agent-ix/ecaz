@@ -11,6 +11,7 @@ use super::canonical_wire::{CanonicalDecoder, CanonicalEncoder};
 use super::generation_catalog::extension_relation_name;
 use super::generation_descriptor::{decode_roster, encode_roster};
 use super::generation_store::open_control_index;
+use super::lifecycle_state::{require_exact_transition, RetireDecisionState};
 use super::lifecycle_wire::{
     DistannAbandonedBinding, DistannAbandonedBindingSetV1, DistannRetireDecisionV1,
 };
@@ -451,7 +452,7 @@ struct RecoveryDecision {
     build_id: Uuid,
     decision: Vec<u8>,
     digest: Vec<u8>,
-    state: String,
+    state: RetireDecisionState,
     xmin: u32,
 }
 
@@ -507,10 +508,10 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                             .value::<Vec<u8>>()
                             .map_err(|_| "EC_EPOCH_STATE: retire digest decode failed".to_owned())?
                             .ok_or_else(|| "EC_EPOCH_STATE: retire digest is NULL".to_owned())?,
-                        state: row["decision_state"]
+                        state: RetireDecisionState::parse(&row["decision_state"]
                             .value::<String>()
                             .map_err(|_| "EC_EPOCH_STATE: retire state decode failed".to_owned())?
-                            .ok_or_else(|| "EC_EPOCH_STATE: retire state is NULL".to_owned())?,
+                            .ok_or_else(|| "EC_EPOCH_STATE: retire state is NULL".to_owned())?)?,
                         xmin: row["decision_xmin"]
                             .value::<String>()
                             .map_err(|_| {
@@ -541,7 +542,7 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                     .to_owned(),
             );
         }
-        if stored.state == "Applied" {
+        if stored.state == RetireDecisionState::Applied {
             return Ok(());
         }
         let decoded = DistannRetireDecisionV1::decode(&stored.decision)?;
@@ -667,11 +668,13 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                 .update(
                     &format!(
                         "UPDATE {retire}
-                            SET decision_state = 'Applied', applied_at = clock_timestamp()
+                            SET decision_state = '{applied}', applied_at = clock_timestamp()
                           WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                             AND epoch_fingerprint = $3::bytea
-                            AND decision_state = 'Pending'
-                          RETURNING 1"
+                            AND decision_state = '{pending}'
+                          RETURNING 1",
+                        applied = RetireDecisionState::Applied.as_str(),
+                        pending = RetireDecisionState::Pending.as_str(),
                     ),
                     None,
                     &[
@@ -683,9 +686,12 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                 .map(|rows| rows.len())
                 .map_err(|error| format!("EC_EPOCH_STATE: retire apply update failed: {error}"))
         })?;
-        if updated != 1 {
-            return Err("EC_EPOCH_STATE: retire decision changed concurrently".to_owned());
-        }
+        require_exact_transition(
+            RetireDecisionState::Pending,
+            RetireDecisionState::Applied,
+            updated,
+            "retire decision",
+        )?;
         Ok(())
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"));

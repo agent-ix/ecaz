@@ -1,4 +1,4 @@
-//! Typed authorities for the four persisted DistANN lifecycle state machines.
+//! Typed authorities for the persisted DistANN lifecycle state machines.
 //!
 //! Catalog CHECK constraints protect stored spelling. These enums protect the
 //! Rust side from distributing transition legality across endpoint-specific
@@ -103,6 +103,14 @@ lifecycle_state! {
     }
 }
 
+lifecycle_state! {
+    RetireDecisionState { Pending, Applied }
+    transitions {
+        Pending => [Applied],
+        Applied => []
+    }
+}
+
 pub(crate) fn require_transition<S: LifecycleState>(
     from: S,
     to: S,
@@ -126,6 +134,22 @@ pub(crate) fn require_exact_transition<S: LifecycleState>(
     if changed_rows != 1 {
         return Err(format!(
             "EC_EPOCH_STATE: {context} transition {from} -> {to} changed {changed_rows} rows, expected 1"
+        ));
+    }
+    Ok(())
+}
+
+pub(crate) fn require_exact_transition_classified<S: LifecycleState>(
+    from: S,
+    to: S,
+    changed_rows: usize,
+    context: &str,
+    error_code: &str,
+) -> Result<(), String> {
+    require_transition(from, to, context)?;
+    if changed_rows != 1 {
+        return Err(format!(
+            "{error_code}: {context} transition {from} -> {to} changed {changed_rows} rows, expected 1"
         ));
     }
     Ok(())
