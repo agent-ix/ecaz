@@ -2255,7 +2255,13 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                 rows.push(("physical_benchmark_recall".into(), values));
             }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_provenance ") {
-            if let Some(values) = parse_space_key_values(rest.trim()) {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                if let Some(unanimous) = values.get("unanimous").map(|value| value == "true") {
+                    values.insert(
+                        "unanimous_numeric".into(),
+                        if unanimous { "1" } else { "0" }.into(),
+                    );
+                }
                 rows.push(("physical_benchmark_provenance".into(), values));
             }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_latency ") {
@@ -2275,7 +2281,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                 rows.push(("physical_benchmark_build".into(), values));
             }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_engagement ") {
-            if let Some(values) = parse_space_key_values(rest.trim()) {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                if let Some(pass) = values.get("pass").map(|value| value == "true") {
+                    values.insert("pass_numeric".into(), if pass { "1" } else { "0" }.into());
+                }
                 rows.push(("physical_benchmark_engagement".into(), values));
             }
         } else if let Some(pass_idx) = body.find(" pass=") {
@@ -4898,6 +4907,10 @@ psql header noise\n\
             Some("release")
         );
         assert_eq!(rows[0].1.get("unanimous").map(String::as_str), Some("true"));
+        assert_eq!(
+            rows[0].1.get("unanimous_numeric").map(String::as_str),
+            Some("1")
+        );
     }
 
     #[test]

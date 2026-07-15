@@ -1,0 +1,172 @@
+{
+  "suite": "task180-attribution-surface-pg18-smoke",
+  "schema_version": 1,
+  "config": "reviews/task-180/002-100k-attribution-screen/artifacts/implementation-smoke-suite.json",
+  "config_sha256": "b6ed2c5fccf903479b4a850eac7d4a52f68285fc6cc1dac6fc798ca936be9dd2",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784091458160,
+  "runner_git_commit": "174da94efc82d1f0ea4d11751eb8a834f4d8c29f-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "surface-smoke-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-180/002-100k-attribution-screen/artifacts/implementation-smoke/10k",
+        "--run-dir",
+        "target/task180-implementation-smoke",
+        "--log-file",
+        "reviews/task-180/002-100k-attribution-screen/artifacts/implementation-smoke/10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "2",
+        "--benchmark-warmup-iterations",
+        "1",
+        "--base-port",
+        "40910",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "persisted:persisted_head:32:32:rabitq",
+        "--benchmark-seed-variant",
+        "exact-sample:head_sample_exact:32:32:rabitq",
+        "--benchmark-seed-variant",
+        "owner-oracle:owner_scan:32:32:rabitq",
+        "--benchmark-seed-variant",
+        "exact-neighbor:persisted_head:32:32:exact_neighbor",
+        "--queries",
+        "2",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task180",
+        "implementation-smoke",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-180/002-100k-attribution-screen/artifacts/implementation-smoke/10k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784091058412,
+      "finished_at_unix_ms": 1784091238052,
+      "duration_ms": 180134,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "topology",
+      "step": "surface-smoke-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "provenance",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_provenance",
+      "field": "unanimous_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "unanimous_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "persisted-row",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "persisted"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "distinct_recall 1 Gte 0 -> true"
+    },
+    {
+      "name": "exact-sample-row",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "exact-sample"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "distinct_recall 1 Gte 0 -> true"
+    },
+    {
+      "name": "owner-row",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "owner-oracle"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "distinct_recall 1 Gte 0 -> true"
+    },
+    {
+      "name": "exact-neighbor-row",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "exact-neighbor"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 0.95,
+      "passed": true,
+      "message": "distinct_recall 0.95 Gte 0 -> true"
+    }
+  ]
+}

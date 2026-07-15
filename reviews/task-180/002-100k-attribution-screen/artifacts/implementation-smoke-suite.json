@@ -1,0 +1,115 @@
+{
+  "name": "task180-attribution-surface-pg18-smoke",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-180/002-100k-attribution-screen/artifacts/implementation-smoke",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [
+    {
+      "name": "topology",
+      "step": "surface-smoke-10k",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "provenance",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_provenance",
+      "field": "unanimous_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "persisted-row",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "persisted", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0
+    },
+    {
+      "name": "exact-sample-row",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "exact-sample", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0
+    },
+    {
+      "name": "owner-row",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "owner-oracle", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0
+    },
+    {
+      "name": "exact-neighbor-row",
+      "step": "surface-smoke-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "exact-neighbor", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0
+    }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "surface-smoke-10k",
+      "tags": ["task180", "implementation-smoke", "ec_real_10k"],
+      "artifact_dir": "${artifact_dir}/10k",
+      "run_dir": "target/task180-implementation-smoke",
+      "nodes": 3,
+      "base_port": 40910,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 2,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 2,
+      "benchmark_warmup_iterations": 1,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        {
+          "name": "persisted",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "exact-sample",
+          "seed_strategy": "head_sample_exact",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "owner-oracle",
+          "seed_strategy": "owner_scan",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "exact-neighbor",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "exact_neighbor"
+        }
+      ],
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}
