@@ -60,7 +60,25 @@ fired. `hierarchy-100k-suite.json` preregisters a geometry-partitioned 16,384
 entry second level with at most 256 first-level representatives scored, 16
 regions opened, 512 second-level landmarks scored, and 32 seeds returned.
 
-Hierarchy results will be appended after the active suite completes.
+The suite completed successfully:
 
-Corpus/query TSVs, truth caches, node PostgreSQL logs, duplicate full fixture
+| Arm | Distinct recall@10 (95% CI) | Warm p50 / p95 | Cache estimate |
+| --- | ---: | ---: | ---: |
+| bounded two-level hierarchy | 0.9145 (0.9014-0.9260) | 98.10 / 108.90 ms | 103,584,578 B |
+| exact 16,384-entry membership | 0.9440 (0.9330-0.9533) | 46.70 / 53.70 ms | 103,584,578 B |
+
+The geometry hierarchy regresses 0.0480 absolute recall versus the 4,096-entry
+training policy and is 2.5x slower at p50. Even exact scoring of all 16,384
+geometry landmarks trails training landmarks by 0.0185 while using four times
+the head cache. The hierarchy is rejected. Training landmarks with exact
+bounded scoring are the Phase 5 candidate.
+
+The hierarchy construction/publish times were 1,019,444 / 1,145,816 ms. The
+head uses 101,122,048 sample bytes plus 2,462,530 graph/state bytes. Total
+physical-generation storage was 2,496,626,688 bytes. Exact/disjoint topology,
+remote engagement, and unanimous release provenance all passed.
+
+`hierarchy-100k/results.jsonl`, its suite manifest, compact summary, per-arm
+logs, `hierarchy-report.md`, and `hierarchy-status.log` are the cited durable
+sources. Corpus/query TSVs, truth caches, node PostgreSQL logs, duplicate full fixture
 logs, and stopped run directories are not committed.

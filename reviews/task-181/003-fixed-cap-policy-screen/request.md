@@ -20,5 +20,10 @@ is recall-flat at 0.9270; graph landmarks regress to 0.9160.
 
 Because no fixed policy reached 0.9900, the required bounded-hierarchy suite
 was triggered with explicit first-level, opened-region, second-level-score,
-and returned-seed caps. This request and manifest will be updated with that
-result before Task 181's final selection.
+and returned-seed caps. It regressed to 0.9145 recall at 98.1 ms p50; even
+exact scoring of all 16,384 geometry landmarks reached only 0.9440 at 46.7 ms.
+
+The hierarchy is rejected. The frozen full-scale candidate is the 4,096-entry
+disjoint-training landmark set with exact bounded scoring: at most 4,096
+landmarks scored and 32 seeds returned, with BW4/H100 and RaBitQ traversal
+unchanged.
