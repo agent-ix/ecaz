@@ -212,4 +212,3 @@ remain banned from commits.
 - FR-081: distributed hop-round orchestration.
 - NFR-017: distinct-recall and matched-latency release gate.
 - NFR-018: physical storage accounting.
-

@@ -175,4 +175,3 @@ committed.
 - NFR-017: distinct-recall and matched-latency release gate.
 - NFR-018 through NFR-020: storage, bounded work, and failure semantics.
 - NFR-007: benchmark provenance.
-
