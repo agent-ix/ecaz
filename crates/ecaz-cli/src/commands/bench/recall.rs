@@ -28,6 +28,7 @@ use ndarray::Array2;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{BufRead, BufReader, ErrorKind};
 use std::path::{Path, PathBuf};
@@ -249,6 +250,9 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         "recall_worst",
         "ndcg@k",
         "mean q-time",
+        "distinct_recall@k",
+        "distinct_recall_ci95_low",
+        "distinct_recall_ci95_high",
     ]);
     let mut prediction_rows = Vec::new();
 
@@ -326,6 +330,7 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         bar.finish_and_clear();
 
         let recall = recall_summary_at_k(&truth.ids, &pred, args.k);
+        let distinct_recall = distinct_recall_summary_at_k(&truth.ids, &pred, args.k);
         let ndcg = if let Some((corpus_ids, corpus)) = &corpus_for_ndcg {
             ndcg_at_k_from_sources(&truth.scores, &pred, corpus_ids, corpus, &queries, args.k)
         } else {
@@ -348,6 +353,9 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
             Cell::new(format!("{:.4}", recall.worst)),
             Cell::new(format!("{:.4}", ndcg)),
             Cell::new(format!("{:.2} ms", mean_ms)),
+            Cell::new(format!("{:.4}", distinct_recall.recall)),
+            Cell::new(format!("{:.4}", distinct_recall.ci95_low)),
+            Cell::new(format!("{:.4}", distinct_recall.ci95_high)),
         ]);
         prediction_rows.push(PredictionSweep {
             sweep_axis: profile.sweep_axis_label().to_string(),
@@ -981,6 +989,62 @@ pub fn recall_summary_at_k(truth: &[Vec<i64>], pred: &[Vec<i64>], k: usize) -> R
     }
 }
 
+/// NFR-017 distinct recall: duplicate predicted IDs contribute at most one
+/// hit per query. The denominator remains `queries * k`, so short result rows
+/// and duplicates both count as misses rather than shrinking the gate.
+pub fn distinct_recall_summary_at_k(
+    truth: &[Vec<i64>],
+    pred: &[Vec<i64>],
+    k: usize,
+) -> RecallSummary {
+    if truth.is_empty() || k == 0 {
+        return RecallSummary {
+            recall: 0.0,
+            ci95_low: 0.0,
+            ci95_high: 0.0,
+            p10: 0.0,
+            p50: 0.0,
+            p90: 0.0,
+            worst: 0.0,
+            queries: truth.len(),
+            hits: 0,
+            trials: 0,
+        };
+    }
+    let mut hits = 0usize;
+    let mut per_query = Vec::with_capacity(truth.len());
+    for (idx, truth_row) in truth.iter().enumerate() {
+        let truth_ids = truth_row.iter().take(k).copied().collect::<HashSet<_>>();
+        let mut predicted_ids = HashSet::with_capacity(k);
+        let query_hits = pred
+            .get(idx)
+            .into_iter()
+            .flat_map(|row| row.iter().take(k))
+            .filter(|id| predicted_ids.insert(**id) && truth_ids.contains(id))
+            .count();
+        hits += query_hits;
+        per_query.push(query_hits as f64 / k as f64);
+    }
+    let trials = truth.len() * k;
+    let (ci95_low, ci95_high) = wilson_interval(hits, trials);
+    RecallSummary {
+        recall: hits as f64 / trials as f64,
+        ci95_low,
+        ci95_high,
+        p10: percentile(&per_query, 0.10),
+        p50: percentile(&per_query, 0.50),
+        p90: percentile(&per_query, 0.90),
+        worst: per_query
+            .iter()
+            .copied()
+            .min_by(|left, right| left.total_cmp(right))
+            .unwrap_or(0.0),
+        queries: truth.len(),
+        hits,
+        trials,
+    }
+}
+
 fn wilson_interval(successes: usize, trials: usize) -> (f64, f64) {
     if trials == 0 {
         return (0.0, 0.0);
@@ -1312,6 +1376,22 @@ mod tests {
         assert!((summary.recall - 0.5).abs() < 1e-9);
         assert!((summary.p50 - 0.5).abs() < 1e-9, "{summary:?}");
         assert!((summary.worst - 0.0).abs() < 1e-9, "{summary:?}");
+    }
+
+    #[test]
+    fn distinct_recall_counts_duplicate_predictions_once() {
+        let truth = vec![vec![1, 2]];
+        let pred = vec![vec![1, 1]];
+
+        let membership = recall_summary_at_k(&truth, &pred, 2);
+        let distinct = distinct_recall_summary_at_k(&truth, &pred, 2);
+
+        assert_eq!(membership.hits, 2);
+        assert_eq!(distinct.hits, 1);
+        assert!((membership.recall - 1.0).abs() < 1e-9);
+        assert!((distinct.recall - 0.5).abs() < 1e-9);
+        assert!(distinct.ci95_low < distinct.recall);
+        assert!(distinct.ci95_high > distinct.recall);
     }
 
     // --- ndcg_at_k ---

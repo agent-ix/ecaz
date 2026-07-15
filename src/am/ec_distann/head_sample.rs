@@ -336,18 +336,12 @@ pub(crate) fn load_head_sample(
     let candidate = extension_relation_name("ec_distann_build_candidate")?;
     let state = extension_relation_name("ec_distann_generation_head_state")?;
     let rows = extension_relation_name("ec_distann_generation_head_sample")?;
-    let (
-        manifest_bytes,
-        dimensions,
-        sample_count,
-        stored_digest,
-        graph_entry,
-        stored_graph_digest,
-    ) = Spi::connect(|client| {
-        client
-            .select(
-                &format!(
-                    "SELECT candidate.epoch_manifest, state.dimensions,
+    let (manifest_bytes, dimensions, sample_count, stored_digest, graph_entry, stored_graph_digest) =
+        Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT candidate.epoch_manifest, state.dimensions,
                             state.sample_count, state.head_sample_digest,
                             state.head_graph_entry, state.head_graph_digest
                        FROM {candidate} candidate
@@ -356,43 +350,43 @@ pub(crate) fn load_head_sample(
                         AND candidate.logical_index_uuid = $2::uuid
                         AND candidate.build_id = $3::uuid
                         AND candidate.epoch_fingerprint = $4::bytea"
-                ),
-                None,
-                &[
-                    index_oid.into(),
-                    logical_index_uuid.into(),
-                    build_id.into(),
-                    expected_fingerprint.to_vec().into(),
-                ],
-            )
-            .map_err(|error| format!("EC_HEAD_SAMPLE: state lookup failed: {error}"))?
-            .map(|row| {
-                Ok((
-                    row["epoch_manifest"]
-                        .value::<Vec<u8>>()?
-                        .ok_or("manifest NULL")?,
-                    row["dimensions"].value::<i32>()?.ok_or("dimensions NULL")?,
-                    row["sample_count"]
-                        .value::<i32>()?
-                        .ok_or("sample count NULL")?,
-                    row["head_sample_digest"]
-                        .value::<Vec<u8>>()?
-                        .ok_or("digest NULL")?,
-                    row["head_graph_entry"]
-                        .value::<i32>()?
-                        .ok_or("graph entry NULL")?,
-                    row["head_graph_digest"]
-                        .value::<Vec<u8>>()?
-                        .ok_or("graph digest NULL")?,
-                ))
-            })
-            .next()
-            .transpose()
-            .map_err(|error: Box<dyn std::error::Error + Send + Sync>| {
-                format!("EC_HEAD_SAMPLE: state decode failed: {error}")
-            })?
-            .ok_or_else(|| "EC_HEAD_SAMPLE: exact persisted head state is missing".to_owned())
-    })?;
+                    ),
+                    None,
+                    &[
+                        index_oid.into(),
+                        logical_index_uuid.into(),
+                        build_id.into(),
+                        expected_fingerprint.to_vec().into(),
+                    ],
+                )
+                .map_err(|error| format!("EC_HEAD_SAMPLE: state lookup failed: {error}"))?
+                .map(|row| {
+                    Ok((
+                        row["epoch_manifest"]
+                            .value::<Vec<u8>>()?
+                            .ok_or("manifest NULL")?,
+                        row["dimensions"].value::<i32>()?.ok_or("dimensions NULL")?,
+                        row["sample_count"]
+                            .value::<i32>()?
+                            .ok_or("sample count NULL")?,
+                        row["head_sample_digest"]
+                            .value::<Vec<u8>>()?
+                            .ok_or("digest NULL")?,
+                        row["head_graph_entry"]
+                            .value::<i32>()?
+                            .ok_or("graph entry NULL")?,
+                        row["head_graph_digest"]
+                            .value::<Vec<u8>>()?
+                            .ok_or("graph digest NULL")?,
+                    ))
+                })
+                .next()
+                .transpose()
+                .map_err(|error: Box<dyn std::error::Error + Send + Sync>| {
+                    format!("EC_HEAD_SAMPLE: state decode failed: {error}")
+                })?
+                .ok_or_else(|| "EC_HEAD_SAMPLE: exact persisted head state is missing".to_owned())
+        })?;
     let manifest = DistannEpochManifestV2::decode(&manifest_bytes)?;
     if manifest.fingerprint()?.as_bytes() != expected_fingerprint {
         return Err("EC_HEAD_SAMPLE: candidate manifest fingerprint mismatch".to_owned());
@@ -521,25 +515,13 @@ impl DistannPhysicalHeadIndex {
     pub(crate) fn search(
         &self,
         query: &[f32],
-        limit: usize,
+        search_width: usize,
+        seed_count: usize,
     ) -> Vec<super::scan::DistannSeedCandidate> {
-        if limit >= self.vectors.len() {
-            let mut seeds = self
-                .vectors
-                .iter()
-                .enumerate()
-                .map(|(node, vector)| super::scan::DistannSeedCandidate {
-                    vec_id: self.vec_ids[node],
-                    dist: -crate::am::ec_diskann::source_inner_product(query, vector),
-                })
-                .collect::<Vec<_>>();
-            seeds.sort_unstable_by(|left, right| left.dist.total_cmp(&right.dist));
-            return seeds;
-        }
-        crate::am::greedy_search(
+        let mut seeds = crate::am::greedy_search(
             &self.graph,
             self.entry,
-            limit.min(self.vectors.len()),
+            search_width.max(1).min(self.vectors.len()),
             |node| {
                 -crate::am::ec_diskann::source_inner_product(query, &self.vectors[node as usize])
             },
@@ -550,7 +532,36 @@ impl DistannPhysicalHeadIndex {
             vec_id: self.vec_ids[candidate.node as usize],
             dist: candidate.distance,
         })
-        .collect()
+        .collect::<Vec<_>>();
+        seeds.truncate(seed_count.min(seeds.len()));
+        seeds
+    }
+
+    pub(crate) fn search_exact(
+        &self,
+        query: &[f32],
+        seed_count: usize,
+    ) -> Vec<super::scan::DistannSeedCandidate> {
+        let mut seeds = self
+            .vectors
+            .iter()
+            .enumerate()
+            .map(|(node, vector)| super::scan::DistannSeedCandidate {
+                vec_id: self.vec_ids[node],
+                dist: -crate::am::ec_diskann::source_inner_product(query, vector),
+            })
+            .collect::<Vec<_>>();
+        seeds.sort_unstable_by(|left, right| {
+            left.dist
+                .total_cmp(&right.dist)
+                .then_with(|| left.vec_id.cmp(&right.vec_id))
+        });
+        seeds.truncate(seed_count.min(seeds.len()));
+        seeds
+    }
+
+    pub(crate) fn sample_count(&self) -> usize {
+        self.vectors.len()
     }
 }
 
@@ -593,9 +604,15 @@ mod tests {
         let index = DistannPhysicalHeadIndex::load(sample, first, 2)
             .unwrap()
             .unwrap();
-        let seeds = index.search(&[1.0, 0.0], 2);
+        let seeds = index.search(&[1.0, 0.0], 2, 2);
         assert!(!seeds.is_empty());
         assert!(seeds.len() <= 2);
+        assert_eq!(index.sample_count(), 4);
+
+        let exact = index.search_exact(&[1.0, 0.0], 2);
+        assert_eq!(exact.len(), 2);
+        assert_eq!(exact[0].vec_id, 10);
+        assert!(exact[0].dist <= exact[1].dist);
     }
 
     #[test]

@@ -1,0 +1,150 @@
+{
+  "name": "task180-100k-bounded-head-attribution-screen-a",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-180/002-100k-attribution-screen/artifacts/screen-a",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [
+    {
+      "name": "100k-topology",
+      "step": "screen-a-100k",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "100k-provenance",
+      "step": "screen-a-100k",
+      "metric": "physical_benchmark_provenance",
+      "field": "unanimous_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "production-row",
+      "step": "screen-a-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "persisted-w32-s32", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "owner-oracle-row",
+      "step": "screen-a-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "owner-oracle", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "exact-sample-row",
+      "step": "screen-a-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "exact-sample-s32", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "width-64-row",
+      "step": "screen-a-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "persisted-w64-s32", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "width-128-row",
+      "step": "screen-a-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "persisted-w128-s32", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "width-256-row",
+      "step": "screen-a-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "persisted-w256-s32", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "screen-a-100k",
+      "tags": ["task180", "phase1", "screen-a", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/100k",
+      "run_dir": "target/task180-screen-a",
+      "nodes": 3,
+      "base_port": 40920,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        {
+          "name": "persisted-w32-s32",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "owner-oracle",
+          "seed_strategy": "owner_scan",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "exact-sample-s32",
+          "seed_strategy": "head_sample_exact",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "persisted-w64-s32",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 64,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "persisted-w128-s32",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 128,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "persisted-w256-s32",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 256,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}

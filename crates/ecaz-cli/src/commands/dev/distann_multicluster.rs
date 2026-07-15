@@ -7,6 +7,7 @@
 
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, Context, Result};
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -84,6 +85,25 @@ pub struct LocalMultinodePg18Args {
     /// beam_width this makes fixed-product BW/H A/B runs suite-addressable.
     #[arg(long)]
     pub hop_rounds: Option<u32>,
+    /// Task 180 benchmark-only physical seed mode. Requires an extension build
+    /// with `distann-head-attribution-benchmark` when set.
+    #[arg(long)]
+    pub seed_strategy: Option<String>,
+    /// Task 180 benchmark-only approximate head-search width, independent of
+    /// the distributed beam width.
+    #[arg(long)]
+    pub head_search_width: Option<u32>,
+    /// Task 180 benchmark-only number of head candidates returned as seeds.
+    #[arg(long)]
+    pub head_seed_count: Option<u32>,
+    /// Task 180 benchmark-only traversal scoring mode.
+    #[arg(long)]
+    pub neighbor_score_mode: Option<String>,
+    /// Task 180 benchmark-only seed variants evaluated against one immutable
+    /// physical generation. Repeat as
+    /// NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE.
+    #[arg(long = "benchmark-seed-variant")]
+    pub benchmark_seed_variants: Vec<String>,
     /// Query count for the recall comparison.
     #[arg(long, default_value_t = 50)]
     pub queries: u32,
@@ -160,11 +180,63 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if !(16..=1_048_576).contains(&args.head_index_cap) {
         bail!("--head-index-cap must be in 16..=1048576");
     }
-    if args.beam_width.is_some_and(|value| !(1..=64).contains(&value)) {
+    if args
+        .beam_width
+        .is_some_and(|value| !(1..=64).contains(&value))
+    {
         bail!("--beam-width must be in 1..=64");
     }
-    if args.hop_rounds.is_some_and(|value| !(1..=256).contains(&value)) {
+    if args
+        .hop_rounds
+        .is_some_and(|value| !(1..=256).contains(&value))
+    {
         bail!("--hop-rounds must be in 1..=256");
+    }
+    if let Some(strategy) = args.seed_strategy.as_deref() {
+        if !matches!(
+            strategy,
+            "persisted_head" | "head_sample_exact" | "owner_scan"
+        ) {
+            bail!("--seed-strategy must be persisted_head, head_sample_exact, or owner_scan");
+        }
+        if !args.physical_benchmark {
+            bail!("--seed-strategy requires --physical-benchmark");
+        }
+    }
+    if args
+        .head_search_width
+        .is_some_and(|value| !(1..=4096).contains(&value))
+    {
+        bail!("--head-search-width must be in 1..=4096");
+    }
+    if args
+        .head_seed_count
+        .is_some_and(|value| !(1..=4096).contains(&value))
+    {
+        bail!("--head-seed-count must be in 1..=4096");
+    }
+    if let Some(mode) = args.neighbor_score_mode.as_deref() {
+        if !matches!(mode, "rabitq" | "exact_neighbor") {
+            bail!("--neighbor-score-mode must be rabitq or exact_neighbor");
+        }
+        if !args.physical_benchmark {
+            bail!("--neighbor-score-mode requires --physical-benchmark");
+        }
+    }
+    if !args.benchmark_seed_variants.is_empty() {
+        if !args.physical_benchmark {
+            bail!("--benchmark-seed-variant requires --physical-benchmark");
+        }
+        if args.seed_strategy.is_some()
+            || args.head_search_width.is_some()
+            || args.head_seed_count.is_some()
+            || args.neighbor_score_mode.is_some()
+        {
+            bail!(
+                "--benchmark-seed-variant cannot be combined with singular seed or neighbor-score controls"
+            );
+        }
+        parse_benchmark_seed_variants(&args.benchmark_seed_variants)?;
     }
     let instance_count = args.nodes + u32::from(args.coordinator_outside_roster);
     let repo_root = repo_root()?;
@@ -282,15 +354,8 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
 
     let result = match mode {
         FixtureMode::Physical => {
-            drive_physical_fixture(
-                args,
-                &pg_ctl,
-                &psql,
-                &socket_dir,
-                &nodes,
-                log_dir.as_path(),
-            )
-            .await
+            drive_physical_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path())
+                .await
         }
         FixtureMode::ReplicatedServingControl => {
             drive_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path()).await
@@ -667,7 +732,11 @@ fn benchmark_table_row(raw: &str) -> Result<Vec<String>> {
                 .map(ToOwned::to_owned)
                 .collect::<Vec<_>>()
         })
-        .find(|cells| cells.first().is_some_and(|cell| cell.parse::<u32>().is_ok()))
+        .find(|cells| {
+            cells
+                .first()
+                .is_some_and(|cell| cell.parse::<u32>().is_ok())
+        })
         .ok_or_else(|| color_eyre::eyre::eyre!("benchmark output has no data row"))
 }
 
@@ -695,6 +764,76 @@ async fn run_physical_bench_child(args: Vec<String>) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+#[derive(Clone, Debug)]
+struct BenchmarkSeedVariant {
+    name: String,
+    strategy: String,
+    head_search_width: u32,
+    head_seed_count: u32,
+    neighbor_score_mode: String,
+}
+
+fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedVariant>> {
+    let mut names = std::collections::BTreeSet::new();
+    values
+        .iter()
+        .map(|value| {
+            let fields = value.split(':').collect::<Vec<_>>();
+            if fields.len() != 5 {
+                bail!(
+                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE, got {value:?}"
+                );
+            }
+            let name = fields[0];
+            if name.is_empty()
+                || !name
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+            {
+                bail!("benchmark seed variant name must be an ASCII identifier, got {name:?}");
+            }
+            if !names.insert(name.to_owned()) {
+                bail!("duplicate benchmark seed variant name {name:?}");
+            }
+            let strategy = fields[1];
+            if !matches!(
+                strategy,
+                "persisted_head" | "head_sample_exact" | "owner_scan"
+            ) {
+                bail!(
+                    "benchmark seed variant mode must be persisted_head, head_sample_exact, or owner_scan, got {strategy:?}"
+                );
+            }
+            let head_search_width = fields[2]
+                .parse::<u32>()
+                .wrap_err_with(|| format!("parsing search width in benchmark seed variant {value:?}"))?;
+            let head_seed_count = fields[3]
+                .parse::<u32>()
+                .wrap_err_with(|| format!("parsing seed count in benchmark seed variant {value:?}"))?;
+            if !(1..=4096).contains(&head_search_width)
+                || !(1..=4096).contains(&head_seed_count)
+            {
+                bail!(
+                    "benchmark seed variant widths must be in 1..=4096, got {value:?}"
+                );
+            }
+            let neighbor_score_mode = fields[4];
+            if !matches!(neighbor_score_mode, "rabitq" | "exact_neighbor") {
+                bail!(
+                    "benchmark seed variant neighbor score mode must be rabitq or exact_neighbor, got {neighbor_score_mode:?}"
+                );
+            }
+            Ok(BenchmarkSeedVariant {
+                name: name.to_owned(),
+                strategy: strategy.to_owned(),
+                head_search_width,
+                head_seed_count,
+                neighbor_score_mode: neighbor_score_mode.to_owned(),
+            })
+        })
+        .collect()
+}
+
 async fn run_physical_benchmarks(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
@@ -707,6 +846,29 @@ async fn run_physical_benchmarks(
 ) -> Result<Vec<String>> {
     let beam_width = args.beam_width.unwrap_or(4);
     let hop_rounds = args.hop_rounds.unwrap_or(100);
+    let production_head_width = (beam_width * 2).max(32);
+    let explicit_seed_controls = args.seed_strategy.is_some()
+        || args.head_search_width.is_some()
+        || args.head_seed_count.is_some()
+        || args.neighbor_score_mode.is_some()
+        || !args.benchmark_seed_variants.is_empty();
+    let seed_variants = if args.benchmark_seed_variants.is_empty() {
+        vec![BenchmarkSeedVariant {
+            name: "production".to_owned(),
+            strategy: args
+                .seed_strategy
+                .clone()
+                .unwrap_or_else(|| "persisted_head".to_owned()),
+            head_search_width: args.head_search_width.unwrap_or(production_head_width),
+            head_seed_count: args.head_seed_count.unwrap_or(production_head_width),
+            neighbor_score_mode: args
+                .neighbor_score_mode
+                .clone()
+                .unwrap_or_else(|| "rabitq".to_owned()),
+        }]
+    } else {
+        parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
+    };
     let corpus_prefix = args
         .corpus_prefix
         .as_deref()
@@ -717,7 +879,9 @@ async fn run_physical_benchmarks(
     {
         bail!("physical benchmark corpus prefix is not a SQL identifier");
     }
-    let scale = corpus_prefix.strip_prefix("ec_real_").unwrap_or(corpus_prefix);
+    let scale = corpus_prefix
+        .strip_prefix("ec_real_")
+        .unwrap_or(corpus_prefix);
     let coordinator_provenance = coordinator
         .query_one("SELECT ecaz_build_git_sha(), ecaz_build_profile()", &[])
         .await
@@ -726,7 +890,11 @@ async fn run_physical_benchmarks(
     let expected_profile = coordinator_provenance.get::<_, String>(1);
     let mut provenance_ports = std::collections::BTreeSet::from([coordinator_port]);
     provenance_ports.extend(nodes.iter().map(|node| node.port));
-    for port in provenance_ports.iter().copied().filter(|port| *port != coordinator_port) {
+    for port in provenance_ports
+        .iter()
+        .copied()
+        .filter(|port| *port != coordinator_port)
+    {
         let (client, connection) = tokio_postgres::connect(
             &format!("host=127.0.0.1 port={port} dbname=postgres user=postgres"),
             tokio_postgres::NoTls,
@@ -783,25 +951,26 @@ async fn run_physical_benchmarks(
         )
         .await?
         .get::<_, bool>(0);
-    let physical_seed_strategy = if has_seed_strategy_provenance {
-        coordinator
-            .query_one("SELECT ec_distann_physical_seed_strategy()", &[])
-            .await?
-            .get::<_, String>(0)
-    } else {
-        // Historical physical-generation commits predate the provenance-only
-        // SQL helper. Keep those suite-runnable without assigning a strategy
-        // label that the installed extension cannot attest itself.
-        "pre-provenance".to_owned()
-    };
+    let has_neighbor_score_provenance = coordinator
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_physical_neighbor_score_mode()') IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if explicit_seed_controls && (!has_seed_strategy_provenance || !has_neighbor_score_provenance) {
+        bail!("Task 180 controls require extension seed and neighbor-score provenance helpers");
+    }
 
     let staged_dir = args
         .staged_dir
         .clone()
         .unwrap_or(repo_root()?.join("data/staged-current"));
-    let truth_corpus = std::fs::canonicalize(
-        staged_dir.join(format!("{corpus_prefix}_corpus.tsv")),
-    )?;
+    let truth_corpus =
+        std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_corpus.tsv")))?;
+    let truth_queries =
+        std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_queries.tsv")))?;
+    let query_sha256 = hex::encode(Sha256::digest(std::fs::read(&truth_queries)?));
     let truth_cache = nodes[0]
         .data_dir
         .parent()
@@ -817,29 +986,112 @@ async fn run_physical_benchmarks(
         "--user".to_owned(),
         "postgres".to_owned(),
     ];
-    let mut lines = vec![
-        format!(
-            "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true",
-            provenance_ports.len()
-        ),
-        format!(
-            "physical_benchmark_build scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
-            args.head_index_cap,
-        ),
-    ];
-    for (arm, prefix) in [("physical", &physical_prefix), ("single", &single_prefix)] {
-        let seed_strategy = if arm == "physical" {
-            physical_seed_strategy.as_str()
+    let mut lines = vec![format!(
+        "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true",
+        provenance_ports.len()
+    )];
+    let mut benchmark_arms = Vec::with_capacity(seed_variants.len() + 1);
+    for variant in &seed_variants {
+        if explicit_seed_controls {
+            coordinator
+                .batch_execute(&format!(
+                    "SET ec_distann.benchmark_seed_mode = '{}';\n\
+                     SET ec_distann.benchmark_head_search_width = {};\n\
+                     SET ec_distann.benchmark_head_seed_count = {};\n\
+                     SET ec_distann.benchmark_exact_neighbor = {};",
+                    variant.strategy.replace('\'', "''"),
+                    variant.head_search_width,
+                    variant.head_seed_count,
+                    if variant.neighbor_score_mode == "exact_neighbor" {
+                        "on"
+                    } else {
+                        "off"
+                    },
+                ))
+                .await
+                .wrap_err("configuring Task 180 benchmark seed controls")?;
+        }
+        let attested_strategy = if has_seed_strategy_provenance {
+            coordinator
+                .query_one("SELECT ec_distann_physical_seed_strategy()", &[])
+                .await?
+                .get::<_, String>(0)
         } else {
-            "single_index"
+            // Historical physical-generation commits predate the provenance
+            // helper. Keep production benchmark configs runnable without
+            // assigning a strategy label the extension cannot attest.
+            "pre-provenance".to_owned()
         };
-        let recall_log = log_dir.join(format!("{arm}-recall.log"));
+        if explicit_seed_controls && attested_strategy != variant.strategy {
+            bail!(
+                "physical seed strategy attestation mismatch for variant {}: requested {}, got {}",
+                variant.name,
+                variant.strategy,
+                attested_strategy
+            );
+        }
+        let attested_neighbor_score = if has_neighbor_score_provenance {
+            coordinator
+                .query_one("SELECT ec_distann_physical_neighbor_score_mode()", &[])
+                .await?
+                .get::<_, String>(0)
+        } else {
+            "rabitq".to_owned()
+        };
+        if explicit_seed_controls && attested_neighbor_score != variant.neighbor_score_mode {
+            bail!(
+                "physical neighbor-score attestation mismatch for variant {}: requested {}, got {}",
+                variant.name,
+                variant.neighbor_score_mode,
+                attested_neighbor_score
+            );
+        }
+        benchmark_arms.push((
+            "physical",
+            physical_prefix.as_str(),
+            variant.name.as_str(),
+            attested_strategy,
+            variant.head_search_width,
+            variant.head_seed_count,
+            attested_neighbor_score,
+        ));
+        lines.push(format!(
+            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            variant.name,
+            variant.strategy,
+            args.head_index_cap,
+            variant.head_search_width,
+            variant.head_seed_count,
+            variant.neighbor_score_mode,
+        ));
+    }
+    benchmark_arms.push((
+        "single",
+        single_prefix.as_str(),
+        "single",
+        "single_index".to_owned(),
+        production_head_width,
+        production_head_width,
+        "rabitq".to_owned(),
+    ));
+
+    for (
+        arm,
+        prefix,
+        variant,
+        seed_strategy,
+        head_search_width,
+        head_seed_count,
+        neighbor_score_mode,
+    ) in benchmark_arms
+    {
+        let recall_log = log_dir.join(format!("{arm}-{variant}-recall.log"));
         let mut recall_args = common.clone();
         recall_args.extend([
             "bench".into(),
             "recall".into(),
             "--prefix".into(),
-            prefix.clone(),
+            prefix.to_owned(),
             "--profile".into(),
             "ec_distann".into(),
             "--k".into(),
@@ -863,23 +1115,45 @@ async fn run_physical_benchmarks(
                 "--truth-corpus-file".into(),
                 truth_corpus.display().to_string(),
             ]);
+            if explicit_seed_controls {
+                recall_args.extend([
+                    "--session-guc".into(),
+                    format!("ec_distann.benchmark_seed_mode={seed_strategy}"),
+                    "--session-guc".into(),
+                    format!("ec_distann.benchmark_head_search_width={head_search_width}"),
+                    "--session-guc".into(),
+                    format!("ec_distann.benchmark_head_seed_count={head_seed_count}"),
+                    "--session-guc".into(),
+                    format!(
+                        "ec_distann.benchmark_exact_neighbor={}",
+                        if neighbor_score_mode == "exact_neighbor" {
+                            "on"
+                        } else {
+                            "off"
+                        }
+                    ),
+                ]);
+            }
         }
         let recall = run_physical_bench_child(recall_args).await?;
         let row = benchmark_table_row(&recall)?;
-        let recall_value = row[3].parse::<f64>()?;
+        let membership_recall = row[3].parse::<f64>()?;
+        let distinct_recall = row[12].parse::<f64>()?;
+        let distinct_recall_ci95_low = row[13].parse::<f64>()?;
+        let distinct_recall_ci95_high = row[14].parse::<f64>()?;
         let mean_ms = benchmark_ms(&row[11])?;
         lines.push(format!(
-            "physical_benchmark_recall scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={recall_value:.4} mean_ms={mean_ms:.2}",
+            "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={neighbor_score_mode} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
             args.head_index_cap, row[1], row[2]
         ));
 
-        let latency_log = log_dir.join(format!("{arm}-latency.log"));
+        let latency_log = log_dir.join(format!("{arm}-{variant}-latency.log"));
         let mut latency_args = common.clone();
         latency_args.extend([
             "bench".into(),
             "latency".into(),
             "--prefix".into(),
-            prefix.clone(),
+            prefix.to_owned(),
             "--profile".into(),
             "ec_distann".into(),
             "--k".into(),
@@ -902,10 +1176,29 @@ async fn run_physical_benchmarks(
             "--session-guc".into(),
             format!("ec_distann.hop_rounds={hop_rounds}"),
         ]);
+        if arm == "physical" && explicit_seed_controls {
+            latency_args.extend([
+                "--session-guc".into(),
+                format!("ec_distann.benchmark_seed_mode={seed_strategy}"),
+                "--session-guc".into(),
+                format!("ec_distann.benchmark_head_search_width={head_search_width}"),
+                "--session-guc".into(),
+                format!("ec_distann.benchmark_head_seed_count={head_seed_count}"),
+                "--session-guc".into(),
+                format!(
+                    "ec_distann.benchmark_exact_neighbor={}",
+                    if neighbor_score_mode == "exact_neighbor" {
+                        "on"
+                    } else {
+                        "off"
+                    }
+                ),
+            ]);
+        }
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={neighbor_score_mode} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -935,22 +1228,64 @@ async fn run_physical_benchmarks(
     let single_index_bytes = sizes.get::<_, i64>(0);
     let single_source_bytes = sizes.get::<_, i64>(1);
     let coordinator_source_bytes = sizes.get::<_, i64>(2);
+    let head = coordinator
+        .query_one(
+            "SELECT state.sample_count::bigint,
+                    COALESCE((SELECT sum(pg_column_size(sample.vector) + pg_column_size(sample.vec_id))::bigint
+                                FROM ec_distann_generation_head_sample sample
+                               WHERE sample.index_oid = state.index_oid
+                                 AND sample.logical_index_uuid = state.logical_index_uuid
+                                 AND sample.build_id = state.build_id), 0),
+                    COALESCE((SELECT sum(pg_column_size(sample.neighbors))::bigint
+                                FROM ec_distann_generation_head_sample sample
+                               WHERE sample.index_oid = state.index_oid
+                                 AND sample.logical_index_uuid = state.logical_index_uuid
+                                 AND sample.build_id = state.build_id), 0),
+                    pg_column_size(state)::bigint
+               FROM ec_distann_active_epoch active
+               JOIN ec_distann_generation_head_state state
+                 USING (index_oid, logical_index_uuid, build_id)
+              WHERE active.index_oid = 'dm_idx'::regclass",
+            &[],
+        )
+        .await
+        .wrap_err("measuring persisted coordinator head")?;
+    let head_sample_count = head.get::<_, i64>(0);
+    let head_sample_bytes = head.get::<_, i64>(1);
+    let head_graph_bytes = head.get::<_, i64>(2) + head.get::<_, i64>(3);
+    let head_cache_estimated_bytes = head_sample_bytes + head_graph_bytes;
     let remote_owners = if args.coordinator_outside_roster {
         nodes.len()
     } else {
         nodes.len().saturating_sub(1)
     };
-    lines.push(format!(
-        "physical_benchmark_storage scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} owners={} physical_generation_bytes={physical_generation_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
-        args.head_index_cap, published.len()
-    ));
-    lines.push(format!(
-        "physical_benchmark_engagement scale={scale} head_index_cap={} beam_width={beam_width} hop_rounds={hop_rounds} remote_owners={} materialize_probes={} pass={}",
-        args.head_index_cap,
-        remote_owners,
-        remote_owners,
-        remote_owners > 0
-    ));
+    for variant in &seed_variants {
+        let shared = format!(
+            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={}",
+            variant.name,
+            variant.strategy,
+            args.head_index_cap,
+            variant.head_search_width,
+            variant.head_seed_count,
+            variant.neighbor_score_mode,
+        );
+        lines.push(format!(
+            "physical_benchmark_storage scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true owners={} physical_generation_bytes={physical_generation_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
+            published.len()
+        ));
+        lines.push(format!(
+            "physical_benchmark_head scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true sample_count={head_sample_count} head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} head_cache_estimated_bytes={head_cache_estimated_bytes}"
+        ));
+        lines.push(format!(
+            "physical_benchmark_engagement scale={scale} {shared} remote_owners={remote_owners} materialize_probes={remote_owners} pass={}",
+            remote_owners > 0
+        ));
+    }
+    for line in &mut lines {
+        line.push_str(&format!(
+            " corpus_prefix={corpus_prefix} query_sha256={query_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}"
+        ));
+    }
     Ok(lines)
 }
 

@@ -484,6 +484,15 @@ struct SpireLocalMultinodeStep {
 /// exercises cross-process serving. The historical replicated-serving control
 /// has a separate explicit dev subcommand and is not topology evidence.
 #[derive(Debug, Deserialize)]
+struct DistannBenchmarkSeedVariant {
+    name: String,
+    seed_strategy: String,
+    head_search_width: u32,
+    head_seed_count: u32,
+    neighbor_score_mode: String,
+}
+
+#[derive(Debug, Deserialize)]
 struct DistannLocalMultinodeStep {
     name: String,
     #[serde(default)]
@@ -528,6 +537,19 @@ struct DistannLocalMultinodeStep {
     beam_width: Option<u32>,
     #[serde(default)]
     hop_rounds: Option<u32>,
+    #[serde(default)]
+    seed_strategy: Option<String>,
+    #[serde(default)]
+    head_search_width: Option<u32>,
+    #[serde(default)]
+    head_seed_count: Option<u32>,
+    #[serde(default)]
+    neighbor_score_mode: Option<String>,
+    /// Seed-search arms measured against one immutable physical generation.
+    /// This avoids rebuilding identical 100k storage for every attribution
+    /// setting while preserving one result row per named arm.
+    #[serde(default)]
+    benchmark_seed_variants: Vec<DistannBenchmarkSeedVariant>,
     #[serde(default)]
     queries: Option<u32>,
     #[serde(default)]
@@ -2151,10 +2173,7 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
             rows.push(("ec_ivf_build_timing".into(), values));
         } else if let Some(values) = parse_ec_diskann_build_timing_line(line) {
             rows.push(("ec_diskann_build_timing".into(), values));
-        } else if let Some(rest) = line
-            .trim_start()
-            .strip_prefix("[loader] build_memory ")
-        {
+        } else if let Some(rest) = line.trim_start().strip_prefix("[loader] build_memory ") {
             if let Some(values) = parse_space_key_values(rest) {
                 rows.push(("build_memory".into(), values));
             }
@@ -2246,6 +2265,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_storage ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_storage".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_head ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_head".into(), values));
             }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_build ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
@@ -2975,6 +2998,116 @@ impl SuiteStep {
                         "distann-local-multinode step {:?} must set hop_rounds in 1..=256",
                         step.name
                     )
+                }
+                if let Some(strategy) = step.seed_strategy.as_deref() {
+                    if !matches!(
+                        strategy,
+                        "persisted_head" | "head_sample_exact" | "owner_scan"
+                    ) {
+                        bail!(
+                            "distann-local-multinode step {:?} seed_strategy must be persisted_head, head_sample_exact, or owner_scan",
+                            step.name
+                        )
+                    }
+                    if !step.physical_benchmark {
+                        bail!(
+                            "distann-local-multinode step {:?} seed_strategy requires physical_benchmark",
+                            step.name
+                        )
+                    }
+                }
+                if step
+                    .head_search_width
+                    .is_some_and(|value| !(1..=4096).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set head_search_width in 1..=4096",
+                        step.name
+                    )
+                }
+                if step
+                    .head_seed_count
+                    .is_some_and(|value| !(1..=4096).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set head_seed_count in 1..=4096",
+                        step.name
+                    )
+                }
+                if let Some(mode) = step.neighbor_score_mode.as_deref() {
+                    if !matches!(mode, "rabitq" | "exact_neighbor") {
+                        bail!(
+                            "distann-local-multinode step {:?} neighbor_score_mode must be rabitq or exact_neighbor",
+                            step.name
+                        )
+                    }
+                    if !step.physical_benchmark {
+                        bail!(
+                            "distann-local-multinode step {:?} neighbor_score_mode requires physical_benchmark",
+                            step.name
+                        )
+                    }
+                }
+                if !step.benchmark_seed_variants.is_empty() {
+                    if !step.physical_benchmark {
+                        bail!(
+                            "distann-local-multinode step {:?} benchmark_seed_variants requires physical_benchmark",
+                            step.name
+                        )
+                    }
+                    if step.seed_strategy.is_some()
+                        || step.head_search_width.is_some()
+                        || step.head_seed_count.is_some()
+                        || step.neighbor_score_mode.is_some()
+                    {
+                        bail!(
+                            "distann-local-multinode step {:?} benchmark_seed_variants cannot be combined with singular seed controls",
+                            step.name
+                        )
+                    }
+                    let mut variant_names = std::collections::BTreeSet::new();
+                    for variant in &step.benchmark_seed_variants {
+                        if variant.name.is_empty()
+                            || !variant.name.bytes().all(|byte| {
+                                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+                            })
+                            || !variant_names.insert(variant.name.as_str())
+                        {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant names must be unique ASCII identifiers",
+                                step.name
+                            )
+                        }
+                        if !matches!(
+                            variant.seed_strategy.as_str(),
+                            "persisted_head" | "head_sample_exact" | "owner_scan"
+                        ) {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} has an invalid strategy",
+                                step.name,
+                                variant.name
+                            )
+                        }
+                        if !(1..=4096).contains(&variant.head_search_width)
+                            || !(1..=4096).contains(&variant.head_seed_count)
+                        {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} widths must be in 1..=4096",
+                                step.name,
+                                variant.name
+                            )
+                        }
+                        if !matches!(
+                            variant.neighbor_score_mode.as_str(),
+                            "rabitq" | "exact_neighbor"
+                        ) {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} has an invalid neighbor score mode",
+                                step.name,
+                                variant.name
+                            )
+                        }
+                    }
                 }
                 if step.benchmark_iterations == Some(0) {
                     bail!(
@@ -3826,6 +3959,36 @@ fn expand_distann_local_multinode(
         "--hop-rounds",
         step.hop_rounds.map(|v| v.to_string()).as_deref(),
     );
+    push_opt_arg(&mut args, "--seed-strategy", step.seed_strategy.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--head-search-width",
+        step.head_search_width.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--head-seed-count",
+        step.head_seed_count.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--neighbor-score-mode",
+        step.neighbor_score_mode.as_deref(),
+    );
+    for variant in &step.benchmark_seed_variants {
+        push_arg(
+            &mut args,
+            "--benchmark-seed-variant",
+            &format!(
+                "{}:{}:{}:{}:{}",
+                variant.name,
+                variant.seed_strategy,
+                variant.head_search_width,
+                variant.head_seed_count,
+                variant.neighbor_score_mode
+            ),
+        );
+    }
     push_opt_arg(
         &mut args,
         "--queries",
@@ -4635,10 +4798,7 @@ psql header noise\n\
         let rows = parse_raw_result_rows(raw);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].0, "dml_gate_latency");
-        assert_eq!(
-            rows[0].1.get("lane").map(String::as_str),
-            Some("control")
-        );
+        assert_eq!(rows[0].1.get("lane").map(String::as_str), Some("control"));
         assert_eq!(
             rows[1].1.get("us_per_statement").map(String::as_str),
             Some("17.750")
@@ -4734,16 +4894,10 @@ psql header noise\n\
             Some("0123456789abcdef")
         );
         assert_eq!(
-            rows[0]
-                .1
-                .get("extension_build_profile")
-                .map(String::as_str),
+            rows[0].1.get("extension_build_profile").map(String::as_str),
             Some("release")
         );
-        assert_eq!(
-            rows[0].1.get("unanimous").map(String::as_str),
-            Some("true")
-        );
+        assert_eq!(rows[0].1.get("unanimous").map(String::as_str), Some("true"));
     }
 
     #[test]
@@ -4754,13 +4908,17 @@ psql header noise\n\
 [distann-multicluster] physical_publish_fault post_ack_pre_pointer pass=true decision=Pending registration=Decided active_count=0 owner_states=Ready,Published,Published\n\
 [distann-multicluster] physical_publish_fault idempotent_recovery pass=true decision=Applied registration=Published active_count=1 owner_states=Published,Published,Published\n\
 [distann-multicluster] physical_benchmark_recall scale=10k arm=physical seed_strategy=persisted_head queries=10 trials=100 recall=1.0000 mean_ms=10727.91\n\
-[distann-multicluster] physical_benchmark_latency scale=10k arm=physical seed_strategy=persisted_head count=5 mean_ms=10744.10 p50_ms=10664.70 p95_ms=11065.20 p99_ms=11125.80 max_ms=11141.00 concurrency=1 cache=warm\n";
+[distann-multicluster] physical_benchmark_latency scale=10k arm=physical seed_strategy=persisted_head count=5 mean_ms=10744.10 p50_ms=10664.70 p95_ms=11065.20 p99_ms=11125.80 max_ms=11141.00 concurrency=1 cache=warm\n\
+[distann-multicluster] physical_benchmark_head scale=10k head_index_cap=4096 head_search_width=32 head_seed_count=32 seed_strategy=persisted_head neighbor_score_mode=rabitq sample_count=4096 head_sample_bytes=25231360 head_graph_bytes=540672 head_cache_estimated_bytes=25772032\n";
         let rows = parse_distann_multinode_rows(raw);
         let topology = rows
             .iter()
             .find(|(metric, _)| metric == "physical_topology")
             .expect("topology row");
-        assert_eq!(topology.1.get("topology_ok").map(String::as_str), Some("true"));
+        assert_eq!(
+            topology.1.get("topology_ok").map(String::as_str),
+            Some("true")
+        );
         assert!(rows.iter().any(|(metric, values)| {
             metric == "drill_outcome"
                 && values.get("drill").map(String::as_str) == Some("physical_topology_gate")
@@ -4787,6 +4945,11 @@ psql header noise\n\
             metric == "physical_benchmark_latency"
                 && values.get("seed_strategy").map(String::as_str) == Some("persisted_head")
                 && values.get("p95_ms").map(String::as_str) == Some("11065.20")
+        }));
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "physical_benchmark_head"
+                && values.get("sample_count").map(String::as_str) == Some("4096")
+                && values.get("head_search_width").map(String::as_str) == Some("32")
         }));
     }
 
@@ -5098,6 +5261,9 @@ psql header noise\n\
             "head_index_cap": 256,
             "beam_width": 16,
             "hop_rounds": 25,
+            "seed_strategy": "head_sample_exact",
+            "head_search_width": 128,
+            "head_seed_count": 64,
             "physical_benchmark": true,
             "compact_artifacts": true,
             "artifact_dir": "artifacts/cap-256",
@@ -5123,6 +5289,15 @@ psql header noise\n\
             .any(|window| window == ["--hop-rounds", "25"]));
         assert!(command
             .windows(2)
+            .any(|window| window == ["--seed-strategy", "head_sample_exact"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--head-search-width", "128"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--head-seed-count", "64"]));
+        assert!(command
+            .windows(2)
             .any(|window| window == ["--benchmark-warmup-iterations", "7"]));
         assert!(command.contains(&"--drop-extension-cleanup-drill".into()));
         assert_eq!(
@@ -5131,6 +5306,56 @@ psql header noise\n\
                 "artifacts/cap-256/distann-multinode-summary.log"
             )]
         );
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_seed_variants_on_one_fixture() {
+        let raw = r#"{
+          "name": "distann-seed-screen",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "screen-100k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_100k",
+            "benchmark_seed_variants": [
+              {
+                "name": "persisted-w32-s32",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq"
+              },
+              {
+                "name": "owner-oracle",
+                "seed_strategy": "owner_scan",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq"
+              }
+            ]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--benchmark-seed-variant",
+                    "persisted-w32-s32:persisted_head:32:32:rabitq",
+                ]
+        }));
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--benchmark-seed-variant",
+                    "owner-oracle:owner_scan:32:32:rabitq",
+                ]
+        }));
     }
 
     #[test]
@@ -5162,7 +5387,13 @@ psql header noise\n\
 
     #[test]
     fn distann_local_multinode_rejects_out_of_range_search_shape() {
-        for field in [r#""beam_width": 65"#, r#""hop_rounds": 257"#] {
+        for field in [
+            r#""beam_width": 65"#,
+            r#""hop_rounds": 257"#,
+            r#""head_search_width": 4097"#,
+            r#""head_seed_count": 0"#,
+            r#""seed_strategy": "unknown""#,
+        ] {
             let step: SuiteStep = serde_json::from_str(&format!(
                 r#"{{
                   "kind": "distann-local-multinode",
@@ -6864,10 +7095,7 @@ psql header noise\n\
         );
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].0, "build_memory");
-        assert_eq!(
-            rows[0].1.get("index").map(String::as_str),
-            Some("d8_idx")
-        );
+        assert_eq!(rows[0].1.get("index").map(String::as_str), Some("d8_idx"));
         assert_eq!(
             rows[0].1.get("hwm_peak_kb").map(String::as_str),
             Some("950")

@@ -25,7 +25,7 @@ use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
 use super::quantizer::{DistannCodecBinding, DistannPreparedQuery};
 use super::routine::DistannHitCollection;
-#[cfg(feature = "distann-legacy-seed-benchmark")]
+#[cfg(feature = "distann-head-attribution-benchmark")]
 use super::scan::DistannSeedCandidate;
 use super::scan::{
     distann_orchestrated_search, DistannExpandedNode, DistannNodeExpander,
@@ -624,7 +624,7 @@ struct RetainedGenerationScan {
     row_relation: HeapRelationGuard,
     graph_relation: HeapRelationGuard,
     directory_relation: IndexRelationGuard,
-    #[cfg(feature = "distann-legacy-seed-benchmark")]
+    #[cfg(feature = "distann-head-attribution-benchmark")]
     graph_relation_name: String,
     source_attnum: i32,
     code_len: usize,
@@ -732,7 +732,7 @@ impl RetainedGenerationScan {
                 "retained graph directory is absent".to_owned(),
             ));
         };
-        #[cfg(feature = "distann-legacy-seed-benchmark")]
+        #[cfg(feature = "distann-head-attribution-benchmark")]
         let graph_relation_name =
             super::handoff::qualified_relation_name(generation.graph_store_relid)
                 .map_err(DistannExpandError::GenerationMissing)?;
@@ -744,7 +744,7 @@ impl RetainedGenerationScan {
             row_relation,
             graph_relation,
             directory_relation,
-            #[cfg(feature = "distann-legacy-seed-benchmark")]
+            #[cfg(feature = "distann-head-attribution-benchmark")]
             graph_relation_name,
             source_attnum,
             code_len,
@@ -779,7 +779,7 @@ impl RetainedGenerationScan {
         Ok(())
     }
 
-    #[cfg(feature = "distann-legacy-seed-benchmark")]
+    #[cfg(feature = "distann-head-attribution-benchmark")]
     fn seed_candidates(
         &self,
         query: &[f32],
@@ -1195,7 +1195,7 @@ fn ec_distann_expand_physical_nodes_cached(
 /// production builds; the opt-in feature restores the removed owner-wide O(N)
 /// seed scan so persisted-head seeding can be measured on otherwise-current
 /// code.
-#[cfg(feature = "distann-legacy-seed-benchmark")]
+#[cfg(feature = "distann-head-attribution-benchmark")]
 #[pg_extern(volatile, parallel_restricted)]
 fn ec_distann_physical_seed_candidates_benchmark(
     index_regclass: PgRelation,
@@ -1220,12 +1220,22 @@ fn ec_distann_physical_seed_candidates_benchmark(
 }
 
 /// Records the compiled physical seed strategy in benchmark provenance.
-#[pg_extern(immutable, parallel_safe)]
-fn ec_distann_physical_seed_strategy() -> &'static str {
-    if cfg!(feature = "distann-legacy-seed-benchmark") {
-        "owner_scan"
+#[pg_extern(stable, parallel_safe)]
+fn ec_distann_physical_seed_strategy() -> String {
+    super::options::current_physical_seed_mode()
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
+        .as_str()
+        .to_owned()
+}
+
+/// Records the active physical neighbor-scoring strategy in benchmark
+/// provenance. Production builds can only attest the persisted RaBitQ path.
+#[pg_extern(stable, parallel_safe)]
+fn ec_distann_physical_neighbor_score_mode() -> &'static str {
+    if super::options::benchmark_exact_neighbor() {
+        "exact_neighbor"
     } else {
-        "persisted_head"
+        "rabitq"
     }
 }
 
@@ -1263,7 +1273,7 @@ fn ec_distann_materialize_physical_row_payloads(
 }
 
 pub(crate) struct PhysicalGenerationScan {
-    #[cfg(feature = "distann-legacy-seed-benchmark")]
+    #[cfg(feature = "distann-head-attribution-benchmark")]
     index_oid: pg_sys::Oid,
     descriptor: Arc<DistannGenerationDescriptor>,
     generation: Option<GenerationCatalogRow>,
@@ -1272,7 +1282,6 @@ pub(crate) struct PhysicalGenerationScan {
     directory_relation: Option<IndexRelationGuard>,
     fingerprint: [u8; 34],
     routes: Vec<PhysicalOwnerRoute>,
-    #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
     head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
     _scan_token: ScanTokenGuard,
 }
@@ -1413,9 +1422,6 @@ impl PhysicalGenerationScan {
                         .to_owned(),
                 );
             }
-            #[cfg(feature = "distann-legacy-seed-benchmark")]
-            let head_index = None;
-            #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
             let head_index = {
                 let (head_sample, head_graph, manifest_build_options) =
                     super::head_sample::load_head_sample(
@@ -1442,8 +1448,6 @@ impl PhysicalGenerationScan {
             });
             (descriptor, descriptor_digest, head_index)
         };
-        #[cfg(feature = "distann-legacy-seed-benchmark")]
-        let _ = &head_index;
         let routes = physical_owner_routes(
             index_oid,
             logical_index_uuid,
@@ -1501,7 +1505,7 @@ impl PhysicalGenerationScan {
             }
         };
         Ok(Self {
-            #[cfg(feature = "distann-legacy-seed-benchmark")]
+            #[cfg(feature = "distann-head-attribution-benchmark")]
             index_oid,
             descriptor,
             generation,
@@ -1510,7 +1514,6 @@ impl PhysicalGenerationScan {
             directory_relation,
             fingerprint: active.fingerprint,
             routes,
-            #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
             head_index,
             _scan_token: scan_token,
         })
@@ -1549,15 +1552,34 @@ impl PhysicalGenerationScan {
             })
             .transpose()?;
 
-        let seed_limit = (super::options::current_beam_width() * 2).max(32);
-        #[cfg(feature = "distann-legacy-seed-benchmark")]
-        let all_seeds = self.legacy_seed_candidates(query, seed_limit)?;
-        #[cfg(not(feature = "distann-legacy-seed-benchmark"))]
-        let all_seeds = self
-            .head_index
-            .as_ref()
-            .map(|head| head.search(query, seed_limit))
-            .unwrap_or_default();
+        let production_seed_count = (super::options::current_beam_width() * 2).max(32);
+        let search_width = super::options::current_head_search_width(production_seed_count);
+        let seed_count = super::options::current_head_seed_count(production_seed_count);
+        let seed_mode = super::options::current_physical_seed_mode()?;
+        let all_seeds = match seed_mode {
+            super::options::PhysicalSeedMode::PersistedHead => self
+                .head_index
+                .as_ref()
+                .map(|head| head.search(query, search_width, seed_count))
+                .unwrap_or_default(),
+            super::options::PhysicalSeedMode::HeadSampleExact => self
+                .head_index
+                .as_ref()
+                .map(|head| head.search_exact(query, seed_count))
+                .unwrap_or_default(),
+            super::options::PhysicalSeedMode::OwnerScan => {
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                {
+                    self.owner_scan_seed_candidates(query, seed_count)?
+                }
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                {
+                    return Err(
+                        "EC_BAD_INPUT: owner_scan is unavailable in production builds".to_owned(),
+                    );
+                }
+            }
+        };
         if all_seeds.is_empty() {
             return Ok(DistannHitCollection {
                 hits: Vec::new(),
@@ -1622,8 +1644,8 @@ impl PhysicalGenerationScan {
         })
     }
 
-    #[cfg(feature = "distann-legacy-seed-benchmark")]
-    fn legacy_seed_candidates(
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    fn owner_scan_seed_candidates(
         &self,
         query: &[f32],
         seed_limit: usize,
@@ -1770,8 +1792,8 @@ struct PhysicalMultiOwnerExpander<'a> {
     query_digest: &'a [u8; 32],
 }
 
-impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
-    fn expand_nodes(
+impl PhysicalMultiOwnerExpander<'_> {
+    fn expand_nodes_raw(
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
@@ -1837,6 +1859,59 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
                 })
             })
             .collect()
+    }
+}
+
+impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
+    fn expand_nodes(
+        &mut self,
+        vec_ids: &[u64],
+        code_threshold: Option<f32>,
+    ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+        let mut expanded = self.expand_nodes_raw(vec_ids, code_threshold)?;
+        if !super::options::benchmark_exact_neighbor() {
+            return Ok(expanded);
+        }
+
+        // Benchmark-only fixed-seed traversal oracle: fetch the exact source
+        // distance already returned for every referenced neighbor, then
+        // substitute only the traversal scores. The seed set, BW/H budget,
+        // graph, and adjacency remain identical to the RaBitQ arm. Work stays
+        // bounded by this expansion's requested nodes times graph degree.
+        let neighbor_ids = expanded
+            .iter()
+            .flat_map(|node| node.neighbor_vec_ids.iter().copied())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect::<Vec<_>>();
+        let exact_neighbors = self.expand_nodes_raw(&neighbor_ids, None)?;
+        let exact_distances = exact_neighbors
+            .into_iter()
+            .map(|node| {
+                node.exact_dist
+                    .map(|distance| (node.vec_id, distance))
+                    .ok_or_else(|| {
+                        DistannExpandError::Internal(format!(
+                            "exact-neighbor oracle found tombstoned vec_id {:#018x}",
+                            node.vec_id
+                        ))
+                    })
+            })
+            .collect::<Result<HashMap<_, _>, _>>()?;
+        for node in &mut expanded {
+            node.neighbor_code_dists = node
+                .neighbor_vec_ids
+                .iter()
+                .map(|vec_id| {
+                    exact_distances.get(vec_id).copied().ok_or_else(|| {
+                        DistannExpandError::Internal(format!(
+                            "exact-neighbor oracle did not resolve vec_id {vec_id:#018x}"
+                        ))
+                    })
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+        }
+        Ok(expanded)
     }
 }
 

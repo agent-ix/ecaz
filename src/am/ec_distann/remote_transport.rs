@@ -21,9 +21,9 @@ use std::time::Duration;
 
 #[cfg(feature = "pg_test")]
 use pgrx::iter::TableIterator;
+use pgrx::pg_sys;
 #[cfg(feature = "pg_test")]
 use pgrx::{name, pg_extern};
-use pgrx::pg_sys;
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{Client, NoTls, Row, Statement};
 
@@ -130,10 +130,13 @@ fn call_timeout() -> Duration {
     Duration::from_millis(super::options::remote_statement_timeout_ms().saturating_add(5_000))
 }
 
-fn parse_remote_config(conninfo: &str, error_prefix: &str) -> Result<tokio_postgres::Config, String> {
-    let mut config = conninfo
-        .parse::<tokio_postgres::Config>()
-        .map_err(|_| format!("{error_prefix}: could not parse participant connection descriptor"))?;
+fn parse_remote_config(
+    conninfo: &str,
+    error_prefix: &str,
+) -> Result<tokio_postgres::Config, String> {
+    let mut config = conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
+        format!("{error_prefix}: could not parse participant connection descriptor")
+    })?;
     config.connect_timeout(connect_timeout());
     Ok(config)
 }
@@ -181,12 +184,12 @@ async fn lifecycle_query(
     {
         Ok(rows) => Ok(rows),
         Err(RemoteAwaitError::Remote(error)) => Err(remote_error(context, error)),
-        Err(RemoteAwaitError::TimedOut) => Err(format!(
-            "EC_BUILD_INCOMPLETE: remote {context} timed out"
-        )),
-        Err(RemoteAwaitError::Interrupted) => Err(format!(
-            "EC_BUILD_INCOMPLETE: remote {context} interrupted"
-        )),
+        Err(RemoteAwaitError::TimedOut) => {
+            Err(format!("EC_BUILD_INCOMPLETE: remote {context} timed out"))
+        }
+        Err(RemoteAwaitError::Interrupted) => {
+            Err(format!("EC_BUILD_INCOMPLETE: remote {context} interrupted"))
+        }
     }
 }
 
@@ -205,12 +208,12 @@ async fn lifecycle_query_one(
     {
         Ok(row) => Ok(row),
         Err(RemoteAwaitError::Remote(error)) => Err(remote_error(context, error)),
-        Err(RemoteAwaitError::TimedOut) => Err(format!(
-            "EC_BUILD_INCOMPLETE: remote {context} timed out"
-        )),
-        Err(RemoteAwaitError::Interrupted) => Err(format!(
-            "EC_BUILD_INCOMPLETE: remote {context} interrupted"
-        )),
+        Err(RemoteAwaitError::TimedOut) => {
+            Err(format!("EC_BUILD_INCOMPLETE: remote {context} timed out"))
+        }
+        Err(RemoteAwaitError::Interrupted) => {
+            Err(format!("EC_BUILD_INCOMPLETE: remote {context} interrupted"))
+        }
     }
 }
 
@@ -336,17 +339,21 @@ async fn open_remote_connection(
     let config = parse_remote_config(conninfo, error_prefix)?;
     let (client, connection) =
         match await_remote(connect_timeout(), None, config.connect(NoTls)).await {
-        Ok(connection) => connection,
-        Err(RemoteAwaitError::Remote(error)) => {
-            return Err(format!("{error_prefix}: could not connect to participant: {error}"));
-        }
-        Err(RemoteAwaitError::TimedOut) => {
-            return Err(format!("{error_prefix}: participant connection timed out"));
-        }
-        Err(RemoteAwaitError::Interrupted) => {
-            return Err(format!("{error_prefix}: participant connection interrupted"));
-        }
-    };
+            Ok(connection) => connection,
+            Err(RemoteAwaitError::Remote(error)) => {
+                return Err(format!(
+                    "{error_prefix}: could not connect to participant: {error}"
+                ));
+            }
+            Err(RemoteAwaitError::TimedOut) => {
+                return Err(format!("{error_prefix}: participant connection timed out"));
+            }
+            Err(RemoteAwaitError::Interrupted) => {
+                return Err(format!(
+                    "{error_prefix}: participant connection interrupted"
+                ));
+            }
+        };
     let task = tokio::spawn(async move {
         let _ = connection.await;
     });
@@ -450,9 +457,11 @@ async fn ensure_pooled_connections(
         })
         .map(|(key, _)| key.clone())
         .collect::<Vec<_>>();
-    let refreshed = join_owner_futures(stale.iter().map(|key| {
-        configure_remote_statement_timeout(&connections[key].client, error_prefix)
-    }))
+    let refreshed = join_owner_futures(
+        stale
+            .iter()
+            .map(|key| configure_remote_statement_timeout(&connections[key].client, error_prefix)),
+    )
     .await;
     for result in refreshed {
         result?;
@@ -492,9 +501,11 @@ async fn ensure_scan_sessions(
         .filter(|(key, identity)| connections[*key].applied_identity.as_ref() != Some(*identity))
         .map(|(key, identity)| (key.clone(), identity.clone()))
         .collect::<Vec<_>>();
-    let configured = join_owner_futures(stale.iter().map(|(key, identity)| {
-        configure_scan_identity(&connections[key].client, identity)
-    }))
+    let configured = join_owner_futures(
+        stale
+            .iter()
+            .map(|(key, identity)| configure_scan_identity(&connections[key].client, identity)),
+    )
     .await;
     for result in configured {
         result?;
@@ -534,7 +545,7 @@ fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
     format!("EC_BUILD_INCOMPLETE: remote {context} failed: {detail}")
 }
 
-#[cfg(feature = "distann-legacy-seed-benchmark")]
+#[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) struct DistannPhysicalSeedRequest<'a> {
     pub(crate) conninfo: &'a str,
     pub(crate) index_regclass: &'a str,
@@ -543,7 +554,7 @@ pub(crate) struct DistannPhysicalSeedRequest<'a> {
     pub(crate) limit: i32,
 }
 
-#[cfg(feature = "distann-legacy-seed-benchmark")]
+#[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_SEED_SQL: &str = "SELECT vec_id, code_dist
    FROM ec_distann_physical_seed_candidates_benchmark(
        $1::text::regclass, $2::bytea, $3::real[], $4::integer)";
@@ -560,7 +571,7 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
        $1::text::regclass, $2::bytea, $3::bigint[],
        $4::smallint[], $5::bytea)";
 
-#[cfg(feature = "distann-legacy-seed-benchmark")]
+#[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
     requests: &[DistannPhysicalSeedRequest<'_>],
 ) -> Vec<Result<Vec<DistannSeedCandidate>, DistannExpandError>> {
@@ -600,7 +611,7 @@ pub(crate) fn remote_physical_seed_batch(
     outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect())
 }
 
-#[cfg(feature = "distann-legacy-seed-benchmark")]
+#[cfg(feature = "distann-head-attribution-benchmark")]
 async fn run_one_physical_seed(
     client: &Client,
     statement: &Statement,
@@ -884,23 +895,23 @@ pub(crate) fn remote_begin_epoch_handoff(request: RemoteHandoffBegin<'_>) -> Res
             lifecycle_query(
                 client,
                 "handoff begin",
-                    "SELECT state FROM ec_distann_begin_epoch_handoff(
+                "SELECT state FROM ec_distann_begin_epoch_handoff(
                          $1::text::regclass, $2::bigint, $3::text::uuid,
                          $4::bytea, $5::bytea, $6::bytea, $7::bytea,
                          $8::bigint, $9::bytea)",
-                    &[
-                        &request.index_regclass,
-                        &request.epoch,
-                        &request.build_id,
-                        &request.build_spec_digest,
-                        &request.roster_digest,
-                        &request.descriptor,
-                        &request.descriptor_digest,
-                        &request.expected_count,
-                        &request.expected_owner_digest,
-                    ],
-                )
-                .await?;
+                &[
+                    &request.index_regclass,
+                    &request.epoch,
+                    &request.build_id,
+                    &request.build_spec_digest,
+                    &request.roster_digest,
+                    &request.descriptor,
+                    &request.descriptor_digest,
+                    &request.expected_count,
+                    &request.expected_owner_digest,
+                ],
+            )
+            .await?;
             Ok(())
         })
     })
@@ -924,14 +935,14 @@ pub(crate) fn remote_stage_epoch_batch(
             let row = lifecycle_query_one(
                 client,
                 "handoff stage",
-                    "SELECT accepted_record_count, cumulative_record_count,
+                "SELECT accepted_record_count, cumulative_record_count,
                             cumulative_owner_digest
                        FROM ec_distann_stage_epoch_batch(
                            $1::text::regclass, $2::text::uuid, $3::bigint,
                            $4::bytea, $5::bytea)",
-                    &[&index_regclass, &build_id, &sequence, &digest, &encoded],
-                )
-                .await?;
+                &[&index_regclass, &build_id, &sequence, &digest, &encoded],
+            )
+            .await?;
             let accepted: i64 = row
                 .try_get(0)
                 .map_err(|error| remote_error("stage row", error))?;
@@ -975,17 +986,17 @@ pub(crate) fn remote_seal_epoch_handoff(
             let row = lifecycle_query_one(
                 client,
                 "handoff seal",
-                    "SELECT ec_distann_seal_epoch_handoff(
+                "SELECT ec_distann_seal_epoch_handoff(
                          $1::text::regclass, $2::text::uuid, $3::bigint,
                          $4::bytea)",
-                    &[
-                        &index_regclass,
-                        &build_id,
-                        &expected_count,
-                        &expected_owner_digest,
-                    ],
-                )
-                .await?;
+                &[
+                    &index_regclass,
+                    &build_id,
+                    &expected_count,
+                    &expected_owner_digest,
+                ],
+            )
+            .await?;
             row.try_get(0)
                 .map_err(|error| remote_error("seal row", error))
         })
@@ -1007,11 +1018,11 @@ pub(crate) fn remote_abort_epoch_handoff(
             lifecycle_query(
                 client,
                 "handoff abort",
-                    "SELECT ec_distann_abort_epoch_handoff(
+                "SELECT ec_distann_abort_epoch_handoff(
                          $1::text::regclass, $2::text::uuid)",
-                    &[&index_regclass, &build_id],
-                )
-                .await?;
+                &[&index_regclass, &build_id],
+            )
+            .await?;
             Ok(())
         })
     })
@@ -1034,17 +1045,17 @@ pub(crate) fn remote_publish_epoch(
             let row = lifecycle_query_one(
                 client,
                 "epoch publish",
-                    "SELECT ec_distann_publish_epoch(
+                "SELECT ec_distann_publish_epoch(
                          $1::text::regclass, $2::text::uuid, $3::bytea,
                          $4::bytea)",
-                    &[
-                        &index_regclass,
-                        &build_id,
-                        &epoch_manifest,
-                        &manifest_digest,
-                    ],
-                )
-                .await?;
+                &[
+                    &index_regclass,
+                    &build_id,
+                    &epoch_manifest,
+                    &manifest_digest,
+                ],
+            )
+            .await?;
             row.try_get(0)
                 .map_err(|error| remote_error("publish row", error))
         })
@@ -1067,11 +1078,11 @@ pub(crate) fn remote_mark_epoch_retired(
             lifecycle_query(
                 client,
                 "predecessor retirement",
-                    "SELECT ec_distann_mark_epoch_retired(
+                "SELECT ec_distann_mark_epoch_retired(
                          $1::text::regclass, $2::bytea, $3::bytea)",
-                    &[&index_regclass, &successor_activation, &activation_digest],
-                )
-                .await?;
+                &[&index_regclass, &successor_activation, &activation_digest],
+            )
+            .await?;
             Ok(())
         })
     })
@@ -1093,11 +1104,11 @@ pub(crate) fn remote_apply_epoch_retire(
             lifecycle_query(
                 client,
                 "epoch retire apply",
-                    "SELECT ec_distann_apply_epoch_retire(
+                "SELECT ec_distann_apply_epoch_retire(
                          $1::text::regclass, $2::bytea, $3::bytea)",
-                    &[&index_regclass, &retire_decision, &retire_decision_digest],
-                )
-                .await?;
+                &[&index_regclass, &retire_decision, &retire_decision_digest],
+            )
+            .await?;
             Ok(())
         })
     })
@@ -1119,15 +1130,15 @@ pub(crate) fn remote_reclaim_cancelled_generation(
             lifecycle_query(
                 client,
                 "cancelled generation reclaim",
-                    "SELECT ec_distann_reclaim_cancelled_generation(
+                "SELECT ec_distann_reclaim_cancelled_generation(
                          $1::text::regclass, $2::bytea, $3::bytea)",
-                    &[
-                        &index_regclass,
-                        &cancellation_audit,
-                        &cancellation_audit_digest,
-                    ],
-                )
-                .await?;
+                &[
+                    &index_regclass,
+                    &cancellation_audit,
+                    &cancellation_audit_digest,
+                ],
+            )
+            .await?;
             Ok(())
         })
     })
@@ -1380,16 +1391,16 @@ async fn run_one_remote(
     let rows = scan_query(
         client,
         "expand call",
-            EXPAND_SQL,
-            &[
-                &request.index_regclass,
-                &request.epoch_fingerprint,
-                &request.query,
-                &vec_ids_i64,
-                &request.code_threshold,
-            ],
-        )
-        .await?;
+        EXPAND_SQL,
+        &[
+            &request.index_regclass,
+            &request.epoch_fingerprint,
+            &request.query,
+            &vec_ids_i64,
+            &request.code_threshold,
+        ],
+    )
+    .await?;
 
     rows.into_iter()
         .map(|row| {
@@ -1532,16 +1543,16 @@ async fn run_one_materialize(
     let rows = scan_query(
         client,
         "row-payload call",
-            MATERIALIZE_ROW_PAYLOADS_SQL,
-            &[
-                &request.index_regclass,
-                &request.epoch_fingerprint,
-                &vec_ids_i64,
-                &payload_columns,
-                &send_functions,
-            ],
-        )
-        .await?;
+        MATERIALIZE_ROW_PAYLOADS_SQL,
+        &[
+            &request.index_regclass,
+            &request.epoch_fingerprint,
+            &vec_ids_i64,
+            &payload_columns,
+            &send_functions,
+        ],
+    )
+    .await?;
 
     rows.into_iter()
         .map(|row| {
@@ -1886,10 +1897,7 @@ mod tests {
             None,
             std::future::ready(Err::<(), _>("remote")),
         ));
-        assert!(matches!(
-            outcome,
-            Err(RemoteAwaitError::Remote("remote"))
-        ));
+        assert!(matches!(outcome, Err(RemoteAwaitError::Remote("remote"))));
     }
 
     #[test]
@@ -1910,12 +1918,13 @@ mod tests {
 
     #[test]
     fn parsed_remote_config_has_nonzero_connect_timeout() {
-        let config = parse_remote_config(
-            "host=127.0.0.1 port=5432 dbname=postgres",
-            "test transport",
-        )
-        .expect("conninfo should parse");
-        assert_eq!(config.get_connect_timeout().copied(), Some(connect_timeout()));
+        let config =
+            parse_remote_config("host=127.0.0.1 port=5432 dbname=postgres", "test transport")
+                .expect("conninfo should parse");
+        assert_eq!(
+            config.get_connect_timeout().copied(),
+            Some(connect_timeout())
+        );
         assert!(!connect_timeout().is_zero());
     }
 
@@ -1927,7 +1936,10 @@ mod tests {
         )
         .expect_err("invalid port must fail parsing");
         for forbidden in ["/secret", "private", "do_not_expose"] {
-            assert!(!error.contains(forbidden), "error leaked {forbidden}: {error}");
+            assert!(
+                !error.contains(forbidden),
+                "error leaked {forbidden}: {error}"
+            );
         }
     }
 

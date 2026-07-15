@@ -1,3 +1,5 @@
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use std::ffi::CString;
 use std::mem::{offset_of, size_of};
 use std::ptr;
 
@@ -35,6 +37,16 @@ static ECDISTANN_TOP_K_GUC: GucSetting<i32> = GucSetting::<i32>::new(ECDISTANN_D
 
 static ECDISTANN_SCAN_PROFILE_NOTICE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_SEED_MODE_GUC: GucSetting<Option<CString>> =
+    GucSetting::<Option<CString>>::new(None);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_HEAD_SEARCH_WIDTH_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_HEAD_SEED_COUNT_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_EXACT_NEIGHBOR_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+const ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH: i32 = 4096;
 const ECDISTANN_DEFAULT_REMOTE_CONNECT_TIMEOUT_MS: i32 = 5_000;
 const ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS: i32 = 120_000;
 const ECDISTANN_MAX_REMOTE_TIMEOUT_MS: i32 = 3_600_000;
@@ -231,6 +243,15 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_exact_neighbor",
+        c"Task 180 benchmark-only exact neighbor scoring oracle.",
+        c"When enabled, the physical coordinator replaces persisted RaBitQ neighbor-code distances with exact source-vector distances for the same bounded seed and traversal requests. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_EXACT_NEIGHBOR_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.hop_rounds",
         c"FR-081 hop-round budget (H) for ec_distann scans.",
@@ -264,6 +285,37 @@ pub(super) fn register_gucs() {
         c"Cache validated immutable physical epoch descriptors and head graphs per backend.",
         c"Avoids rebuilding the bounded Vamana head graph and revalidating immutable candidate bytes on every scan open. The cache is bounded and keyed by control OID, logical UUID, build id, and fingerprint. Disable only for A/B measurement or diagnosis.",
         &ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_string_guc(
+        c"ec_distann.benchmark_seed_mode",
+        c"Task 180 benchmark-only physical seed attribution mode.",
+        c"Accepted values are persisted_head, head_sample_exact, and owner_scan. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_SEED_MODE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_int_guc(
+        c"ec_distann.benchmark_head_search_width",
+        c"Task 180 benchmark-only approximate head-search width.",
+        c"Zero preserves the production width derived from beam_width; positive values decouple approximate head search from the distributed beam.",
+        &ECDISTANN_BENCHMARK_HEAD_SEARCH_WIDTH_GUC,
+        0,
+        ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_int_guc(
+        c"ec_distann.benchmark_head_seed_count",
+        c"Task 180 benchmark-only returned head-seed count.",
+        c"Zero preserves the production count derived from beam_width; positive values decouple returned seeds from approximate head-search width.",
+        &ECDISTANN_BENCHMARK_HEAD_SEED_COUNT_GUC,
+        0,
+        ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -361,6 +413,92 @@ pub(super) fn scan_profile_notice_enabled() -> bool {
 
 pub(super) fn physical_epoch_cache_enabled() -> bool {
     ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC.get()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum PhysicalSeedMode {
+    PersistedHead,
+    HeadSampleExact,
+    OwnerScan,
+}
+
+impl PhysicalSeedMode {
+    pub(super) const fn as_str(self) -> &'static str {
+        match self {
+            Self::PersistedHead => "persisted_head",
+            Self::HeadSampleExact => "head_sample_exact",
+            Self::OwnerScan => "owner_scan",
+        }
+    }
+}
+
+pub(super) fn current_physical_seed_mode() -> Result<PhysicalSeedMode, String> {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        let configured = ECDISTANN_BENCHMARK_SEED_MODE_GUC
+            .get()
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let configured = configured.trim();
+        if configured.is_empty() {
+            return Ok(if cfg!(feature = "distann-legacy-seed-benchmark") {
+                PhysicalSeedMode::OwnerScan
+            } else {
+                PhysicalSeedMode::PersistedHead
+            });
+        }
+        return match configured {
+            "persisted_head" => Ok(PhysicalSeedMode::PersistedHead),
+            "head_sample_exact" => Ok(PhysicalSeedMode::HeadSampleExact),
+            "owner_scan" => Ok(PhysicalSeedMode::OwnerScan),
+            other => Err(format!(
+                "EC_BAD_INPUT: ec_distann.benchmark_seed_mode must be persisted_head, head_sample_exact, or owner_scan; got {other:?}"
+            )),
+        };
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    {
+        Ok(PhysicalSeedMode::PersistedHead)
+    }
+}
+
+pub(super) fn current_head_search_width(production_default: usize) -> usize {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return usize::try_from(ECDISTANN_BENCHMARK_HEAD_SEARCH_WIDTH_GUC.get())
+            .ok()
+            .filter(|value| *value > 0)
+            .unwrap_or(production_default);
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    {
+        production_default
+    }
+}
+
+pub(super) fn current_head_seed_count(production_default: usize) -> usize {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return usize::try_from(ECDISTANN_BENCHMARK_HEAD_SEED_COUNT_GUC.get())
+            .ok()
+            .filter(|value| *value > 0)
+            .unwrap_or(production_default);
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    {
+        production_default
+    }
+}
+
+pub(super) fn benchmark_exact_neighbor() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_EXACT_NEIGHBOR_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    {
+        false
+    }
 }
 
 pub(super) fn remote_connect_timeout_ms() -> u64 {
