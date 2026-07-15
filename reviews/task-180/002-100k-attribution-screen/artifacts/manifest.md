@@ -62,7 +62,13 @@ for the production/owner/exact-sample and width axes.
 ### `screen-c-caps-suite.json`
 
 - Command: `target/release/ecaz bench suite run --config reviews/task-180/002-100k-attribution-screen/artifacts/screen-c-caps-suite.json`
-- Status: audit and dry-run expansion pass; execution pending.
+- Timestamps: cap 8192, 2026-07-14 23:56 through 2026-07-15 00:29 PDT;
+  cap 16384, 2026-07-15 00:31-01:11 PDT.
+- Status: both selected steps succeeded with no failures/missing/stale artifacts
+  and all step-local topology, provenance, and recall-row thresholds passing.
+  To stay within the host's disk capacity, the same checked-in suite was run
+  one `--only` step at a time with separate manifests/results; each stopped
+  regenerable run directory was removed before the next step.
 - Registered matrix: exact-sample cap 8192 and cap 16384 as separate physical
   builds, holding 32 returned seeds, BW4/H100, graph degree 32, corpus, codec,
   queries, and topology fixed. This branch is required because exact cap-4096
@@ -146,6 +152,33 @@ for the production/owner/exact-sample and width axes.
   duplicate full fixture log were pruned.
 - `seed-count-install.log`: clean release install from branch head
   `53b62bbea...` with `pg18 pg_test distann-head-attribution-benchmark`.
+- `screen-c-caps/{suite-manifest-cap8192.json,results-cap8192.jsonl}` and
+  `screen-c-caps/{suite-manifest.json,results.jsonl}`: immutable normalized
+  evidence for the two selected cap steps. Each manifest reports one succeeded
+  and one deliberately skipped step because of the disk-safe `--only` split.
+  Both use the same config SHA, query SHA, release extension SHA, and physical
+  topology.
+
+  | Exact-sample cap | Distinct recall@10 (95% CI) | Warm p50 / p95 | Head sample / graph / cache | Physical / publish |
+  | ---: | ---: | ---: | ---: | ---: |
+  | 4096 | 0.9275 (0.9153-0.9381) | 42.20 / 55.20 ms | 25,280,512 / 614,055 / 25,894,567 B | 863,543 / 990,021 ms |
+  | 8192 | 0.9250 (0.9126-0.9357) | 43.50 / 55.70 ms | 50,561,024 / 1,230,461 / 51,791,485 B | 907,186 / 1,033,853 ms |
+  | 16384 | 0.9440 (0.9330-0.9533) | 45.20 / 59.30 ms | 101,122,048 / 2,468,745 / 103,590,793 B | 1,019,494 / 1,149,168 ms |
+
+  Cap 8192 is a negative recall/latency result. Cap 16384 has the highest
+  nominal recall, but its interval overlaps the cap-4096 width-64 seed cells
+  and it has worse latency plus four times the head bytes. Under the registered
+  recall/overlapping-CI/p50/head-byte order, Phase 2 therefore selects persisted
+  cap 4096 / width 64 / 64 returned seeds (same-run recall 0.9280, p50 40.20
+  ms), not cap 16384.
+- `screen-c-cap{8192,16384}-{report.md,status.log,suite.log}` and each cap
+  directory's compact summary plus cited recall/latency tables: reports,
+  completion evidence, runner transcripts, and raw measurement tables. Node
+  PostgreSQL logs, duplicate full fixture logs, and run directories were pruned.
+
+The exact-neighbor arm was not run: the selected bounded seeding result 0.9280
+is 0.0690 below the same-run owner oracle 0.9970, so Task 180's within-0.0050
+trigger is false.
 
 Corpus TSVs, truth cache, run directories, node logs, and per-arm regenerable
 logs are intentionally excluded from the packet.

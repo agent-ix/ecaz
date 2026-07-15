@@ -101,7 +101,16 @@ at branch head `53b62bbea...`. Returned seed counts 32/64/128 all measured
 distinct recall 0.9280 with identical 0.9158-0.9385 confidence intervals. Warm
 p50 was 40.30/40.20/41.40 ms respectively. The 128-seed invariant passed, so
 the equality is not silent truncation. Seed count is not the cap-4096 limiter;
-the required exact-sample cap-growth suite is now running.
+the required exact-sample cap-growth suite is complete.
+
+Cap 8192 measured recall 0.9250 (CI 0.9126-0.9357), p50 43.5 ms, and
+51,791,485 cached-head bytes. Cap 16384 measured recall 0.9440 (CI
+0.9330-0.9533), p50 45.2 ms, and 103,590,793 cached-head bytes. Both passed
+topology, provenance, and remote engagement. The cap-16384 interval overlaps
+the cap-4096 width-64 seed cells, so the registered tie-break chooses the lower
+p50 and lower-head-byte cap-4096 / persisted width-64 / 64-seed cell (recall
+0.9280, p50 40.2 ms) for Phase 2. The exact-neighbor trigger is false because
+0.9280 is 0.0690 below owner recall 0.9970, not within 0.0050.
 
 ## Requested review focus
 
@@ -123,6 +132,6 @@ the required exact-sample cap-growth suite is now running.
 
 ## Next action while review is open
 
-Complete the registered cap-growth suite. The exact-neighbor arm remains
-conditional on the best bounded result landing within 0.0050 of the same-run
-owner oracle while below 0.9990.
+Run the Phase 2 10k/50k/100k confirmation matrix with exactly production
+persisted width 32 / seeds 32, owner-scan oracle, and selected bounded persisted
+width 64 / seeds 64 against one immutable cap-4096 generation per scale.
