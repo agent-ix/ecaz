@@ -1,6 +1,8 @@
 //! FR-080 canonical persisted coordinator head sample.
 
-use std::collections::VecDeque;
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, VecDeque};
 
 use pgrx::datum::Uuid;
 use pgrx::{pg_sys, Spi};
@@ -242,6 +244,246 @@ pub(crate) fn build_head_sample(
     let sample = DistannHeadSample {
         dimensions,
         entries,
+    };
+    sample.validate(cap)?;
+    Ok(sample)
+}
+
+/// Deterministic, query-independent geometric region used by Task 181 both to
+/// select landmarks and to report evaluation-query coverage.  Twelve fixed
+/// sparse random hyperplanes give 4096 bounded regions without fitting state
+/// to either the training or evaluation queries.
+pub(crate) fn benchmark_geometry_region(vector: &[f32]) -> u16 {
+    fn mix(mut value: u64) -> u64 {
+        value = value.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        value = (value ^ (value >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        value = (value ^ (value >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        value ^ (value >> 31)
+    }
+    if vector.is_empty() {
+        return 0;
+    }
+    let mut signature = 0_u16;
+    for plane in 0..12_u64 {
+        let mut projection = 0.0_f32;
+        for sample in 0..32_u64 {
+            let random = mix(0x7461_736b_3138_3100 ^ (plane << 32) ^ sample);
+            let coordinate = (random as usize) % vector.len();
+            let sign = if random & (1 << 63) == 0 { -1.0 } else { 1.0 };
+            projection += sign * vector[coordinate];
+        }
+        if projection >= 0.0 {
+            signature |= 1 << plane;
+        }
+    }
+    signature
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn geometry_landmark_nodes(vec_ids: &[u64], vectors: &[Vec<f32>], cap: usize) -> Vec<usize> {
+    let mut regions = BTreeMap::<u16, Vec<usize>>::new();
+    for (node, vector) in vectors.iter().enumerate() {
+        regions
+            .entry(benchmark_geometry_region(vector))
+            .or_default()
+            .push(node);
+    }
+    for nodes in regions.values_mut() {
+        nodes.sort_unstable_by_key(|node| vec_ids[*node]);
+    }
+    let mut selected = Vec::with_capacity(cap.min(vec_ids.len()));
+    let mut depth = 0;
+    while selected.len() < cap.min(vec_ids.len()) {
+        let before = selected.len();
+        for nodes in regions.values() {
+            if let Some(node) = nodes.get(depth) {
+                selected.push(*node);
+                if selected.len() == cap.min(vec_ids.len()) {
+                    break;
+                }
+            }
+        }
+        if selected.len() == before {
+            break;
+        }
+        depth += 1;
+    }
+    selected
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn graph_landmark_nodes(
+    graph: &crate::am::VamanaGraph,
+    medoid: u32,
+    vec_ids: &[u64],
+    cap: usize,
+) -> Result<Vec<usize>, String> {
+    let medoid = medoid as usize;
+    if medoid >= vec_ids.len() {
+        return Err("EC_HEAD_SAMPLE: medoid is outside the graph".to_owned());
+    }
+    let mut seed_order = (0..vec_ids.len()).collect::<Vec<_>>();
+    seed_order.sort_unstable_by_key(|node| vec_ids[*node]);
+    seed_order.retain(|node| *node != medoid);
+    seed_order.insert(0, medoid);
+    let mut visited = vec![false; vec_ids.len()];
+    let mut order = Vec::with_capacity(vec_ids.len());
+    for seed in seed_order {
+        if visited[seed] {
+            continue;
+        }
+        visited[seed] = true;
+        let mut queue = VecDeque::from([seed]);
+        while let Some(node) = queue.pop_front() {
+            order.push(node);
+            for neighbor in &graph.neighbors[node] {
+                let neighbor = *neighbor as usize;
+                if neighbor >= visited.len() {
+                    return Err("EC_HEAD_SAMPLE: graph neighbor is outside the graph".to_owned());
+                }
+                if !visited[neighbor] {
+                    visited[neighbor] = true;
+                    queue.push_back(neighbor);
+                }
+            }
+        }
+    }
+    let count = cap.min(order.len());
+    Ok((0..count)
+        .map(|slot| order[slot * order.len() / count])
+        .collect())
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn load_training_queries(path: &str, dimensions: usize) -> Result<Vec<Vec<f32>>, String> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|error| format!("EC_HEAD_SAMPLE: cannot read training queries: {error}"))?;
+    let mut queries = Vec::with_capacity(200);
+    // Evaluation is the immutable first 200 rows used by Tasks 180/181.  The
+    // next 200 rows are the declared disjoint training slice.
+    for (line_index, line) in contents.lines().enumerate().skip(200).take(200) {
+        let (_, encoded) = line.split_once('\t').ok_or_else(|| {
+            format!("EC_HEAD_SAMPLE: malformed training TSV row {}", line_index + 1)
+        })?;
+        let vector: Vec<f32> = serde_json::from_str(encoded).map_err(|error| {
+            format!(
+                "EC_HEAD_SAMPLE: invalid training vector at row {}: {error}",
+                line_index + 1
+            )
+        })?;
+        if vector.len() != dimensions || vector.iter().any(|value| !value.is_finite()) {
+            return Err(format!(
+                "EC_HEAD_SAMPLE: training vector at row {} has invalid shape/value",
+                line_index + 1
+            ));
+        }
+        queries.push(vector);
+    }
+    if queries.len() != 200 {
+        return Err(format!(
+            "EC_HEAD_SAMPLE: training slice requires 200 rows, found {}",
+            queries.len()
+        ));
+    }
+    Ok(queries)
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_benchmark_head_sample(
+    policy: super::options::BenchmarkHeadPolicy,
+    graph: &crate::am::VamanaGraph,
+    medoid: u32,
+    cap: usize,
+    dimensions: u16,
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    codec_artifact: &super::generation_descriptor::DistannCodecArtifact,
+    training_query_path: Option<&str>,
+) -> Result<DistannHeadSample, String> {
+    if policy == super::options::BenchmarkHeadPolicy::CurrentSample {
+        return build_head_sample(graph, medoid, cap, dimensions, vec_ids, vectors);
+    }
+    if vec_ids.len() != vectors.len() || vec_ids.len() != codes.len() {
+        return Err("EC_HEAD_SAMPLE: policy input cardinality mismatch".to_owned());
+    }
+    let sample_cap = cap.min(vec_ids.len());
+    let selected = match policy {
+        super::options::BenchmarkHeadPolicy::CurrentSample => unreachable!(),
+        super::options::BenchmarkHeadPolicy::GeometryLandmarks => {
+            geometry_landmark_nodes(vec_ids, vectors, sample_cap)
+        }
+        super::options::BenchmarkHeadPolicy::GraphLandmarks => {
+            graph_landmark_nodes(graph, medoid, vec_ids, sample_cap)?
+        }
+        super::options::BenchmarkHeadPolicy::TrainingLandmarks => {
+            let path = training_query_path.ok_or_else(|| {
+                "EC_HEAD_SAMPLE: training_landmarks requires benchmark_training_query_path"
+                    .to_owned()
+            })?;
+            let queries = load_training_queries(path, usize::from(dimensions))?;
+            let mut frequency = HashMap::<usize, (u32, usize)>::new();
+            for query in &queries {
+                let prepared = super::quantizer::DistannPreparedQuery::prepare_artifact(
+                    codec_artifact,
+                    query,
+                )?;
+                let mut ranked = codes
+                    .iter()
+                    .enumerate()
+                    .map(|(node, code)| (prepared.score_dist(code), vec_ids[node], node))
+                    .collect::<Vec<_>>();
+                let keep = 32.min(ranked.len());
+                if keep < ranked.len() {
+                    ranked.select_nth_unstable_by(keep, |left, right| {
+                        left.0.total_cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+                    });
+                    ranked.truncate(keep);
+                }
+                ranked.sort_unstable_by(|left, right| {
+                    left.0.total_cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+                });
+                for (rank, (_, _, node)) in ranked.into_iter().enumerate() {
+                    let entry = frequency.entry(node).or_insert((0, rank));
+                    entry.0 += 1;
+                    entry.1 = entry.1.min(rank);
+                }
+            }
+            let mut ranked = frequency.into_iter().collect::<Vec<_>>();
+            ranked.sort_unstable_by(|(left_node, left), (right_node, right)| {
+                right
+                    .0
+                    .cmp(&left.0)
+                    .then_with(|| left.1.cmp(&right.1))
+                    .then_with(|| vec_ids[*left_node].cmp(&vec_ids[*right_node]))
+            });
+            let mut selected = ranked
+                .into_iter()
+                .map(|(node, _)| node)
+                .take(sample_cap)
+                .collect::<Vec<_>>();
+            let mut seen = selected.iter().copied().collect::<HashSet<_>>();
+            for node in geometry_landmark_nodes(vec_ids, vectors, sample_cap) {
+                if selected.len() == sample_cap {
+                    break;
+                }
+                if seen.insert(node) {
+                    selected.push(node);
+                }
+            }
+            selected
+        }
+    };
+    let sample = DistannHeadSample {
+        dimensions,
+        entries: selected
+            .into_iter()
+            .map(|node| DistannHeadSampleEntry {
+                vec_id: vec_ids[node],
+                vector: vectors[node].clone(),
+            })
+            .collect(),
     };
     sample.validate(cap)?;
     Ok(sample)
@@ -607,8 +849,71 @@ impl DistannPhysicalHeadIndex {
         seeds
     }
 
+    /// Task 181 pre-registered two-level bounded hierarchy: score at most one
+    /// representative for each of 256 deterministic geometric regions, open
+    /// at most 16 regions, score at most 512 second-level landmarks, and return
+    /// the requested bounded seed prefix.
+    pub(crate) fn search_hierarchy(
+        &self,
+        query: &[f32],
+        seed_count: usize,
+    ) -> Vec<super::scan::DistannSeedCandidate> {
+        let mut regions = BTreeMap::<u8, Vec<usize>>::new();
+        for (node, vector) in self.vectors.iter().enumerate() {
+            regions
+                .entry((benchmark_geometry_region(vector) >> 4) as u8)
+                .or_default()
+                .push(node);
+        }
+        let mut first_level = regions
+            .iter()
+            .filter_map(|(region, nodes)| {
+                nodes.first().map(|node| {
+                    (
+                        -crate::am::ec_diskann::source_inner_product(query, &self.vectors[*node]),
+                        *region,
+                    )
+                })
+            })
+            .collect::<Vec<_>>();
+        first_level.sort_unstable_by(|left, right| {
+            left.0.total_cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+        });
+        first_level.truncate(16);
+        let mut second_level = Vec::with_capacity(512);
+        for (_, region) in first_level {
+            for node in regions.get(&region).into_iter().flatten() {
+                if second_level.len() == 512 {
+                    break;
+                }
+                second_level.push(super::scan::DistannSeedCandidate {
+                    vec_id: self.vec_ids[*node],
+                    dist: -crate::am::ec_diskann::source_inner_product(
+                        query,
+                        &self.vectors[*node],
+                    ),
+                });
+            }
+            if second_level.len() == 512 {
+                break;
+            }
+        }
+        second_level.sort_unstable_by(|left, right| {
+            left.dist
+                .total_cmp(&right.dist)
+                .then_with(|| left.vec_id.cmp(&right.vec_id))
+        });
+        second_level.truncate(seed_count.min(second_level.len()));
+        second_level
+    }
+
     pub(crate) fn sample_count(&self) -> usize {
         self.vectors.len()
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) fn contains_vec_id(&self, vec_id: u64) -> bool {
+        self.vec_ids.contains(&vec_id)
     }
 }
 
@@ -676,6 +981,36 @@ mod tests {
         assert!(seeds.len() > 1);
         assert!(seeds.len() <= 4);
         assert_eq!(seeds[0].vec_id, 10);
+
+        let hierarchical = index.search_hierarchy(&[1.0, 0.0], 4);
+        assert!(!hierarchical.is_empty());
+        assert!(hierarchical.len() <= 4);
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn benchmark_landmark_policies_are_deterministic_and_bounded() {
+        let vec_ids = (0_u64..16).map(|value| value + 100).collect::<Vec<_>>();
+        let vectors = (0..16)
+            .map(|value| vec![value as f32 / 16.0, 1.0 - value as f32 / 16.0])
+            .collect::<Vec<_>>();
+        let graph = crate::am::VamanaGraph {
+            neighbors: (0..16)
+                .map(|node| vec![((node + 1) % 16) as u32])
+                .collect(),
+            max_degree: 1,
+        };
+
+        let geometry = geometry_landmark_nodes(&vec_ids, &vectors, 8);
+        assert_eq!(geometry, geometry_landmark_nodes(&vec_ids, &vectors, 8));
+        assert_eq!(geometry.len(), 8);
+        let graph_landmarks = graph_landmark_nodes(&graph, 0, &vec_ids, 8).unwrap();
+        assert_eq!(
+            graph_landmarks,
+            graph_landmark_nodes(&graph, 0, &vec_ids, 8).unwrap()
+        );
+        assert_eq!(graph_landmarks.len(), 8);
+        assert_eq!(graph_landmarks.iter().copied().collect::<HashSet<_>>().len(), 8);
     }
 
     #[test]

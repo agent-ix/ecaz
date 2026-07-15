@@ -129,14 +129,37 @@ impl PhysicalGraphWorkspace {
             .iter()
             .map(|row| row.source_vector.clone())
             .collect::<Vec<_>>();
-        super::head_sample::build_head_sample(
-            &self.graph,
-            self.medoid,
-            head_index_cap,
-            self.capture.dimensions,
-            &self.vec_ids,
-            &vectors,
-        )
+        let policy = super::options::current_benchmark_head_policy()?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            return super::head_sample::build_benchmark_head_sample(
+                policy,
+                &self.graph,
+                self.medoid,
+                head_index_cap,
+                self.capture.dimensions,
+                &self.vec_ids,
+                &vectors,
+                &self.codes,
+                &self.codec_artifact,
+                super::options::benchmark_training_query_path().as_deref(),
+            );
+        }
+        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+        {
+            debug_assert_eq!(
+                policy,
+                super::options::BenchmarkHeadPolicy::CurrentSample
+            );
+            super::head_sample::build_head_sample(
+                &self.graph,
+                self.medoid,
+                head_index_cap,
+                self.capture.dimensions,
+                &self.vec_ids,
+                &vectors,
+            )
+        }
     }
 
     fn entry_for_node(&mut self, node: usize) -> Result<DistannHandoffEntry, String> {

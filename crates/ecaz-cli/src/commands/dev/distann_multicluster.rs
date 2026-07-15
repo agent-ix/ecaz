@@ -99,6 +99,13 @@ pub struct LocalMultinodePg18Args {
     /// Task 180 benchmark-only traversal scoring mode.
     #[arg(long)]
     pub neighbor_score_mode: Option<String>,
+    /// Task 181 benchmark-only deterministic landmark construction policy.
+    #[arg(long)]
+    pub head_policy: Option<String>,
+    /// Server-readable TSV containing at least 400 held-out queries. Rows
+    /// 201-400 are the disjoint Task 181 training slice.
+    #[arg(long)]
+    pub training_query_path: Option<PathBuf>,
     /// Task 180 benchmark-only seed variants evaluated against one immutable
     /// physical generation. Repeat as
     /// NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE.
@@ -195,9 +202,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if let Some(strategy) = args.seed_strategy.as_deref() {
         if !matches!(
             strategy,
-            "persisted_head" | "head_sample_exact" | "owner_scan"
+            "persisted_head" | "head_sample_exact" | "head_hierarchy" | "owner_scan"
         ) {
-            bail!("--seed-strategy must be persisted_head, head_sample_exact, or owner_scan");
+            bail!("--seed-strategy must be persisted_head, head_sample_exact, head_hierarchy, or owner_scan");
         }
         if !args.physical_benchmark {
             bail!("--seed-strategy requires --physical-benchmark");
@@ -222,6 +229,26 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         if !args.physical_benchmark {
             bail!("--neighbor-score-mode requires --physical-benchmark");
         }
+    }
+    if let Some(policy) = args.head_policy.as_deref() {
+        if !matches!(
+            policy,
+            "current_sample"
+                | "geometry_landmarks"
+                | "graph_landmarks"
+                | "training_landmarks"
+        ) {
+            bail!("--head-policy must be current_sample, geometry_landmarks, graph_landmarks, or training_landmarks");
+        }
+        if !args.physical_benchmark {
+            bail!("--head-policy requires --physical-benchmark");
+        }
+        if policy == "training_landmarks" && args.training_query_path.is_none() {
+            bail!("--head-policy training_landmarks requires --training-query-path");
+        }
+    }
+    if args.training_query_path.is_some() && args.head_policy.as_deref() != Some("training_landmarks") {
+        bail!("--training-query-path requires --head-policy training_landmarks");
     }
     if !args.benchmark_seed_variants.is_empty() {
         if !args.physical_benchmark {
@@ -798,10 +825,10 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
             let strategy = fields[1];
             if !matches!(
                 strategy,
-                "persisted_head" | "head_sample_exact" | "owner_scan"
+                "persisted_head" | "head_sample_exact" | "head_hierarchy" | "owner_scan"
             ) {
                 bail!(
-                    "benchmark seed variant mode must be persisted_head, head_sample_exact, or owner_scan, got {strategy:?}"
+                    "benchmark seed variant mode must be persisted_head, head_sample_exact, head_hierarchy, or owner_scan, got {strategy:?}"
                 );
             }
             let head_search_width = fields[2]
@@ -888,6 +915,30 @@ async fn run_physical_benchmarks(
         .wrap_err("querying installed coordinator extension provenance")?;
     let expected_sha = coordinator_provenance.get::<_, String>(0);
     let expected_profile = coordinator_provenance.get::<_, String>(1);
+    let head_policy = args.head_policy.as_deref().unwrap_or("current_sample");
+    let has_head_policy_provenance = coordinator
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_physical_head_policy()') IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if args.head_policy.is_some() && !has_head_policy_provenance {
+        bail!("Task 181 head policy requires extension head-policy provenance helper");
+    }
+    let attested_head_policy = if has_head_policy_provenance {
+        coordinator
+            .query_one("SELECT ec_distann_physical_head_policy()", &[])
+            .await?
+            .get::<_, String>(0)
+    } else {
+        "current_sample".to_owned()
+    };
+    if attested_head_policy != head_policy {
+        bail!(
+            "physical head-policy attestation mismatch: requested {head_policy}, got {attested_head_policy}"
+        );
+    }
     let mut provenance_ports = std::collections::BTreeSet::from([coordinator_port]);
     provenance_ports.extend(nodes.iter().map(|node| node.port));
     for port in provenance_ports
@@ -990,6 +1041,65 @@ async fn run_physical_benchmarks(
         "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true",
         provenance_ports.len()
     )];
+    let training_provenance = if let Some(path) = args.training_query_path.as_deref() {
+        let bytes = std::fs::read(std::fs::canonicalize(path)?)?;
+        let contents = String::from_utf8(bytes.clone())?;
+        let slice = contents
+            .lines()
+            .skip(200)
+            .take(200)
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!(
+            "training_prefix=rows_201_400 training_queries=200 training_file_sha256={} training_slice_sha256={}",
+            hex::encode(Sha256::digest(bytes)),
+            hex::encode(Sha256::digest(slice.as_bytes()))
+        )
+    } else {
+        "training_prefix=none training_queries=0 training_file_sha256=none training_slice_sha256=none".to_owned()
+    };
+    lines.push(format!(
+        "physical_benchmark_landmark scale={scale} head_policy={attested_head_policy} evaluation_prefix=rows_1_200 evaluation_queries={} evaluation_query_sha256={query_sha256} {training_provenance} deterministic=true sample_cap={} construction_ms={build_ms}",
+        args.queries,
+        args.head_index_cap,
+    ));
+    if args.head_policy.is_some() {
+        let coverage = coordinator
+            .query_one(
+                &format!(
+                    "WITH coverage AS (
+                         SELECT q.id, c.* FROM {physical_queries} q
+                         CROSS JOIN LATERAL ec_distann_physical_seed_coverage_benchmark(
+                             'dm_idx'::regclass, q.source, 32, 32) c
+                         ORDER BY q.id LIMIT 200
+                     ), regions AS (
+                         SELECT query_region, count(*) AS queries,
+                                count(*) FILTER (WHERE zero_owner_represented) AS zero_queries
+                         FROM coverage GROUP BY query_region
+                     )
+                     SELECT jsonb_build_object(
+                         'queries', (SELECT count(*) FROM coverage),
+                         'owner_membership_rate', (SELECT sum(owner_in_head)::double precision / NULLIF(sum(owner_seed_count), 0) FROM coverage),
+                         'bounded_overlap_rate', (SELECT sum(bounded_owner_overlap)::double precision / NULLIF(sum(owner_seed_count), 0) FROM coverage),
+                         'exact_overlap_rate', (SELECT sum(exact_owner_overlap)::double precision / NULLIF(sum(owner_seed_count), 0) FROM coverage),
+                         'zero_fraction', (SELECT count(*) FILTER (WHERE zero_owner_represented)::double precision / NULLIF(count(*), 0) FROM coverage),
+                         'mean_best_score_gap', (SELECT avg(best_score_gap) FROM coverage),
+                         'p50_best_score_gap', (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY best_score_gap) FROM coverage),
+                         'p95_best_score_gap', (SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY best_score_gap) FROM coverage),
+                         'represented_query_regions', (SELECT count(*) FROM regions),
+                         'region_histogram', (SELECT jsonb_object_agg(query_region, jsonb_build_object('queries', queries, 'zero', zero_queries)) FROM regions)
+                     )::text"
+                ),
+                &[],
+            )
+            .await
+            .wrap_err("collecting Task 181 seed coverage diagnostics")?
+            .get::<_, String>(0);
+        lines.push(format!(
+            "physical_benchmark_coverage scale={scale} head_policy={attested_head_policy} coverage_json={}",
+            coverage.replace(' ', "")
+        ));
+    }
     let mut benchmark_arms = Vec::with_capacity(seed_variants.len() + 1);
     for variant in &seed_variants {
         if explicit_seed_controls {
@@ -1346,6 +1456,25 @@ async fn drive_physical_fixture(
     }
     let physical_started = Instant::now();
     let build_id = "71717171-7171-4171-8171-717171717171";
+    if let Some(policy) = args.head_policy.as_deref() {
+        let training = match args.training_query_path.as_deref() {
+            Some(path) => format!(
+                "SET ec_distann.benchmark_training_query_path = '{}';",
+                std::fs::canonicalize(path)?
+                    .display()
+                    .to_string()
+                    .replace('\'', "''")
+            ),
+            None => "RESET ec_distann.benchmark_training_query_path;".to_owned(),
+        };
+        coordinator
+            .batch_execute(&format!(
+                "SET ec_distann.benchmark_head_policy = '{}'; {training}",
+                policy.replace('\'', "''")
+            ))
+            .await
+            .wrap_err("configuring Task 181 benchmark head builder")?;
+    }
     coordinator
         .batch_execute(&format!(
             "SELECT ec_distann_begin_epoch_build('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"

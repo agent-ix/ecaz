@@ -46,6 +46,12 @@ static ECDISTANN_BENCHMARK_HEAD_SEARCH_WIDTH_GUC: GucSetting<i32> = GucSetting::
 static ECDISTANN_BENCHMARK_HEAD_SEED_COUNT_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_EXACT_NEIGHBOR_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_HEAD_POLICY_GUC: GucSetting<Option<CString>> =
+    GucSetting::<Option<CString>>::new(None);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_TRAINING_QUERY_PATH_GUC: GucSetting<Option<CString>> =
+    GucSetting::<Option<CString>>::new(None);
 const ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH: i32 = 4096;
 const ECDISTANN_DEFAULT_REMOTE_CONNECT_TIMEOUT_MS: i32 = 5_000;
 const ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS: i32 = 120_000;
@@ -244,6 +250,24 @@ pub(super) fn register_gucs() {
         GucFlags::default(),
     );
     #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_string_guc(
+        c"ec_distann.benchmark_head_policy",
+        c"Task 181 benchmark-only head landmark builder.",
+        c"Accepted values are current_sample, geometry_landmarks, graph_landmarks, and training_landmarks. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_HEAD_POLICY_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_string_guc(
+        c"ec_distann.benchmark_training_query_path",
+        c"Task 181 benchmark-only disjoint training-query TSV path.",
+        c"training_landmarks reads this server-local TSV. The file must contain id and JSON-array vector columns and must not be the evaluation slice. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_TRAINING_QUERY_PATH_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
     GucRegistry::define_bool_guc(
         c"ec_distann.benchmark_exact_neighbor",
         c"Task 180 benchmark-only exact neighbor scoring oracle.",
@@ -292,7 +316,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_string_guc(
         c"ec_distann.benchmark_seed_mode",
         c"Task 180 benchmark-only physical seed attribution mode.",
-        c"Accepted values are persisted_head, head_sample_exact, and owner_scan. This GUC is absent from normal production builds.",
+        c"Accepted values are persisted_head, head_sample_exact, head_hierarchy, and owner_scan. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_SEED_MODE_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -419,6 +443,7 @@ pub(super) fn physical_epoch_cache_enabled() -> bool {
 pub(super) enum PhysicalSeedMode {
     PersistedHead,
     HeadSampleExact,
+    HeadHierarchy,
     OwnerScan,
 }
 
@@ -427,6 +452,7 @@ impl PhysicalSeedMode {
         match self {
             Self::PersistedHead => "persisted_head",
             Self::HeadSampleExact => "head_sample_exact",
+            Self::HeadHierarchy => "head_hierarchy",
             Self::OwnerScan => "owner_scan",
         }
     }
@@ -450,9 +476,10 @@ pub(super) fn current_physical_seed_mode() -> Result<PhysicalSeedMode, String> {
         return match configured {
             "persisted_head" => Ok(PhysicalSeedMode::PersistedHead),
             "head_sample_exact" => Ok(PhysicalSeedMode::HeadSampleExact),
+            "head_hierarchy" => Ok(PhysicalSeedMode::HeadHierarchy),
             "owner_scan" => Ok(PhysicalSeedMode::OwnerScan),
             other => Err(format!(
-                "EC_BAD_INPUT: ec_distann.benchmark_seed_mode must be persisted_head, head_sample_exact, or owner_scan; got {other:?}"
+                "EC_BAD_INPUT: ec_distann.benchmark_seed_mode must be persisted_head, head_sample_exact, head_hierarchy, or owner_scan; got {other:?}"
             )),
         };
     }
@@ -487,6 +514,62 @@ pub(super) fn current_head_seed_count(production_default: usize) -> usize {
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     {
         production_default
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BenchmarkHeadPolicy {
+    CurrentSample,
+    GeometryLandmarks,
+    GraphLandmarks,
+    TrainingLandmarks,
+}
+
+impl BenchmarkHeadPolicy {
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::CurrentSample => "current_sample",
+            Self::GeometryLandmarks => "geometry_landmarks",
+            Self::GraphLandmarks => "graph_landmarks",
+            Self::TrainingLandmarks => "training_landmarks",
+        }
+    }
+}
+
+pub(crate) fn current_benchmark_head_policy() -> Result<BenchmarkHeadPolicy, String> {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        let configured = ECDISTANN_BENCHMARK_HEAD_POLICY_GUC
+            .get()
+            .map(|value| value.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        return match configured.trim() {
+            "" | "current_sample" => Ok(BenchmarkHeadPolicy::CurrentSample),
+            "geometry_landmarks" => Ok(BenchmarkHeadPolicy::GeometryLandmarks),
+            "graph_landmarks" => Ok(BenchmarkHeadPolicy::GraphLandmarks),
+            "training_landmarks" => Ok(BenchmarkHeadPolicy::TrainingLandmarks),
+            other => Err(format!(
+                "EC_BAD_INPUT: ec_distann.benchmark_head_policy has unsupported value {other:?}"
+            )),
+        };
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    {
+        Ok(BenchmarkHeadPolicy::CurrentSample)
+    }
+}
+
+pub(crate) fn benchmark_training_query_path() -> Option<String> {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_TRAINING_QUERY_PATH_GUC
+            .get()
+            .map(|value| value.to_string_lossy().trim().to_owned())
+            .filter(|value| !value.is_empty());
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    {
+        None
     }
 }
 

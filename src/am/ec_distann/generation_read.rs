@@ -1219,10 +1219,102 @@ fn ec_distann_physical_seed_candidates_benchmark(
     TableIterator::new(rows.into_iter())
 }
 
+/// Task 181 compact per-query loss decomposition.  This compares three seed
+/// sets on one immutable generation: persisted bounded-head search, exact
+/// scoring of the same landmark membership, and the full-owner RaBitQ oracle.
+/// It is absent from production builds and never participates in result
+/// selection.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_physical_seed_coverage_benchmark(
+    index_regclass: PgRelation,
+    query: Vec<f32>,
+    search_width: i32,
+    seed_count: i32,
+) -> TableIterator<
+    'static,
+    (
+        name!(query_region, i32),
+        name!(owner_seed_count, i32),
+        name!(owner_in_head, i32),
+        name!(bounded_owner_overlap, i32),
+        name!(exact_owner_overlap, i32),
+        name!(zero_owner_represented, bool),
+        name!(first_owner_head_rank, i32),
+        name!(best_score_gap, f32),
+        name!(owner_best_dist, f32),
+        name!(head_best_dist, f32),
+    ),
+> {
+    let search_width = usize::try_from(search_width)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("head search width must be in 1..=4096"));
+    let seed_count = usize::try_from(seed_count)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("head seed count must be in 1..=4096"));
+    let scan = PhysicalGenerationScan::open(index_regclass.oid())
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let head = scan
+        .head_index
+        .as_ref()
+        .unwrap_or_else(|| pgrx::error!("EC_HEAD_SAMPLE: active generation has no head"));
+    let owner = scan
+        .owner_scan_seed_candidates(&query, seed_count)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let bounded = head.search(&query, search_width, seed_count);
+    let exact = head.search_exact(&query, seed_count);
+    let owner_ids = owner.iter().map(|seed| seed.vec_id).collect::<std::collections::HashSet<_>>();
+    let owner_in_head = owner
+        .iter()
+        .filter(|seed| head.contains_vec_id(seed.vec_id))
+        .count();
+    let bounded_overlap = bounded
+        .iter()
+        .filter(|seed| owner_ids.contains(&seed.vec_id))
+        .count();
+    let exact_overlap = exact
+        .iter()
+        .filter(|seed| owner_ids.contains(&seed.vec_id))
+        .count();
+    let first_rank = owner
+        .iter()
+        .position(|seed| head.contains_vec_id(seed.vec_id))
+        .map(|rank| rank + 1)
+        .unwrap_or(0);
+    let owner_best = owner.first().map(|seed| seed.dist).unwrap_or(f32::INFINITY);
+    let head_best = exact.first().map(|seed| seed.dist).unwrap_or(f32::INFINITY);
+    let row = (
+        i32::from(super::head_sample::benchmark_geometry_region(&query)),
+        i32::try_from(owner.len()).unwrap_or(i32::MAX),
+        i32::try_from(owner_in_head).unwrap_or(i32::MAX),
+        i32::try_from(bounded_overlap).unwrap_or(i32::MAX),
+        i32::try_from(exact_overlap).unwrap_or(i32::MAX),
+        owner_in_head == 0,
+        i32::try_from(first_rank).unwrap_or(i32::MAX),
+        head_best - owner_best,
+        owner_best,
+        head_best,
+    );
+    TableIterator::once(row)
+}
+
 /// Records the compiled physical seed strategy in benchmark provenance.
 #[pg_extern(stable, parallel_safe)]
 fn ec_distann_physical_seed_strategy() -> String {
     super::options::current_physical_seed_mode()
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
+        .as_str()
+        .to_owned()
+}
+
+/// Records the benchmark-only construction policy used for a Task 181 build.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(stable, parallel_safe)]
+fn ec_distann_physical_head_policy() -> String {
+    super::options::current_benchmark_head_policy()
         .unwrap_or_else(|error| pgrx::error!("{error}"))
         .as_str()
         .to_owned()
@@ -1566,6 +1658,11 @@ impl PhysicalGenerationScan {
                 .head_index
                 .as_ref()
                 .map(|head| head.search_exact(query, seed_count))
+                .unwrap_or_default(),
+            super::options::PhysicalSeedMode::HeadHierarchy => self
+                .head_index
+                .as_ref()
+                .map(|head| head.search_hierarchy(query, seed_count))
                 .unwrap_or_default(),
             super::options::PhysicalSeedMode::OwnerScan => {
                 #[cfg(feature = "distann-head-attribution-benchmark")]

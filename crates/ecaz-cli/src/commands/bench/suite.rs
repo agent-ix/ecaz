@@ -545,6 +545,10 @@ struct DistannLocalMultinodeStep {
     head_seed_count: Option<u32>,
     #[serde(default)]
     neighbor_score_mode: Option<String>,
+    #[serde(default)]
+    head_policy: Option<String>,
+    #[serde(default)]
+    training_query_path: Option<PathBuf>,
     /// Seed-search arms measured against one immutable physical generation.
     /// This avoids rebuilding identical 100k storage for every attribution
     /// setting while preserving one result row per named arm.
@@ -2280,6 +2284,14 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_build".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_landmark ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_landmark".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_coverage ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_coverage".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_engagement ") {
             if let Some(mut values) = parse_space_key_values(rest.trim()) {
                 if let Some(pass) = values.get("pass").map(|value| value == "true") {
@@ -3011,10 +3023,10 @@ impl SuiteStep {
                 if let Some(strategy) = step.seed_strategy.as_deref() {
                     if !matches!(
                         strategy,
-                        "persisted_head" | "head_sample_exact" | "owner_scan"
+                        "persisted_head" | "head_sample_exact" | "head_hierarchy" | "owner_scan"
                     ) {
                         bail!(
-                            "distann-local-multinode step {:?} seed_strategy must be persisted_head, head_sample_exact, or owner_scan",
+                            "distann-local-multinode step {:?} seed_strategy must be persisted_head, head_sample_exact, head_hierarchy, or owner_scan",
                             step.name
                         )
                     }
@@ -3057,6 +3069,35 @@ impl SuiteStep {
                         )
                     }
                 }
+                if let Some(policy) = step.head_policy.as_deref() {
+                    if !matches!(
+                        policy,
+                        "current_sample"
+                            | "geometry_landmarks"
+                            | "graph_landmarks"
+                            | "training_landmarks"
+                    ) {
+                        bail!(
+                            "distann-local-multinode step {:?} has invalid head_policy {:?}",
+                            step.name,
+                            policy
+                        )
+                    }
+                    if policy == "training_landmarks" && step.training_query_path.is_none() {
+                        bail!(
+                            "distann-local-multinode step {:?} training_landmarks requires training_query_path",
+                            step.name
+                        )
+                    }
+                }
+                if step.training_query_path.is_some()
+                    && step.head_policy.as_deref() != Some("training_landmarks")
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} training_query_path requires training_landmarks",
+                        step.name
+                    )
+                }
                 if !step.benchmark_seed_variants.is_empty() {
                     if !step.physical_benchmark {
                         bail!(
@@ -3089,7 +3130,7 @@ impl SuiteStep {
                         }
                         if !matches!(
                             variant.seed_strategy.as_str(),
-                            "persisted_head" | "head_sample_exact" | "owner_scan"
+                            "persisted_head" | "head_sample_exact" | "head_hierarchy" | "owner_scan"
                         ) {
                             bail!(
                                 "distann-local-multinode step {:?} benchmark seed variant {:?} has an invalid strategy",
@@ -3983,6 +4024,12 @@ fn expand_distann_local_multinode(
         &mut args,
         "--neighbor-score-mode",
         step.neighbor_score_mode.as_deref(),
+    );
+    push_opt_arg(&mut args, "--head-policy", step.head_policy.as_deref());
+    push_opt_path(
+        &mut args,
+        "--training-query-path",
+        step.training_query_path.as_deref(),
     );
     for variant in &step.benchmark_seed_variants {
         push_arg(
