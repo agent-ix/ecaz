@@ -47,5 +47,8 @@ of truth.
 
 ## Next action while review is open
 
-Audit/dry-run the checked-in suite, then execute each scale separately with
-disk-safe run-directory cleanup and append decision-grade artifacts/results.
+The 10k step passed topology/provenance/remote engagement. Production and the
+selected bounded arm both measured recall 0.9990; bounded warm p50/p95/p99 were
+33.50/39.10/42.80 ms. The owner oracle measured recall 0.9995 and p50 252.00
+ms. Continue with 50k, then 100k, using disk-safe run-directory cleanup and
+append decision-grade artifacts/results.
