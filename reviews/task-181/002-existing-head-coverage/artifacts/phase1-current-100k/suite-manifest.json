@@ -1,0 +1,172 @@
+{
+  "suite": "task181-phase1-current-head-coverage-100k",
+  "schema_version": 1,
+  "config": "reviews/task-181/002-existing-head-coverage/artifacts/phase1-current-100k-suite.json",
+  "config_sha256": "89533161b6f55129393cec29105d2a69ac5dee28ef3db51955c81834a769d6f4",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784145532308,
+  "runner_git_commit": "e75dfc14bbf0c1ff406a7dc1795f7e1c2f4514d8",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "phase1-current-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-181/002-existing-head-coverage/artifacts/phase1-current-100k/100k",
+        "--run-dir",
+        "target/task181-phase1-current-100k",
+        "--log-file",
+        "reviews/task-181/002-existing-head-coverage/artifacts/phase1-current-100k/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "10",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "41020",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--head-policy",
+        "current_sample",
+        "--benchmark-seed-variant",
+        "production:persisted_head:32:32:rabitq",
+        "--benchmark-seed-variant",
+        "exact-membership:head_sample_exact:32:32:rabitq",
+        "--benchmark-seed-variant",
+        "owner-oracle:owner_scan:32:32:rabitq",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task181",
+        "phase1",
+        "current_sample",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-181/002-existing-head-coverage/artifacts/phase1-current-100k/100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784145532309,
+      "finished_at_unix_ms": 1784148551916,
+      "duration_ms": 3035964,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "topology",
+      "step": "phase1-current-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "provenance",
+      "step": "phase1-current-100k",
+      "metric": "physical_benchmark_provenance",
+      "field": "unanimous_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "unanimous_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "landmark-provenance",
+      "step": "phase1-current-100k",
+      "metric": "physical_benchmark_landmark",
+      "filters": {
+        "head_policy": "current_sample"
+      },
+      "field": "evaluation_queries",
+      "op": "eq",
+      "expected": 200.0,
+      "actual": 200.0,
+      "passed": true,
+      "message": "evaluation_queries 200 Eq 200 -> true"
+    },
+    {
+      "name": "production-row",
+      "step": "phase1-current-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "production"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.8,
+      "actual": 0.9275,
+      "passed": true,
+      "message": "distinct_recall 0.9275 Gte 0.8 -> true"
+    },
+    {
+      "name": "exact-row",
+      "step": "phase1-current-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "exact-membership"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.8,
+      "actual": 0.9275,
+      "passed": true,
+      "message": "distinct_recall 0.9275 Gte 0.8 -> true"
+    },
+    {
+      "name": "owner-row",
+      "step": "phase1-current-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "owner-oracle"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.8,
+      "actual": 0.997,
+      "passed": true,
+      "message": "distinct_recall 0.997 Gte 0.8 -> true"
+    }
+  ]
+}
