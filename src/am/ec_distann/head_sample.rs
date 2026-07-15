@@ -518,6 +518,53 @@ impl DistannPhysicalHeadIndex {
         search_width: usize,
         seed_count: usize,
     ) -> Vec<super::scan::DistannSeedCandidate> {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if seed_count > search_width {
+            use std::cell::RefCell;
+
+            // The Vamana frontier contains at most `search_width` entries, but
+            // the attribution sweep intentionally varies returned seed count
+            // independently. Retain every candidate the bounded search already
+            // scored so a larger seed request does not silently collapse back
+            // to the frontier width. This does not expand extra graph nodes or
+            // perform an exact sample scan; head work remains bounded by the
+            // persisted sample and the configured search width.
+            let scored = RefCell::new(vec![None; self.vectors.len()]);
+            let result = crate::am::greedy_search(
+                &self.graph,
+                self.entry,
+                search_width.max(1).min(self.vectors.len()),
+                |node| {
+                    let dist = -crate::am::ec_diskann::source_inner_product(
+                        query,
+                        &self.vectors[node as usize],
+                    );
+                    scored.borrow_mut()[node as usize] = Some(dist);
+                    dist
+                },
+            );
+            let mut seeds = scored
+                .into_inner()
+                .into_iter()
+                .enumerate()
+                .filter_map(|(node, dist)| {
+                    dist.map(|dist| super::scan::DistannSeedCandidate {
+                        vec_id: self.vec_ids[node],
+                        dist,
+                    })
+                })
+                .collect::<Vec<_>>();
+            seeds.sort_unstable_by(|left, right| {
+                left.dist
+                    .total_cmp(&right.dist)
+                    .then_with(|| left.vec_id.cmp(&right.vec_id))
+            });
+            seeds.truncate(seed_count.min(seeds.len()));
+
+            debug_assert!(result.frontier.len() <= search_width.max(1));
+            return seeds;
+        }
+
         let mut seeds = crate::am::greedy_search(
             &self.graph,
             self.entry,
@@ -613,6 +660,22 @@ mod tests {
         assert_eq!(exact.len(), 2);
         assert_eq!(exact[0].vec_id, 10);
         assert!(exact[0].dist <= exact[1].dist);
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn benchmark_search_can_return_more_seeds_than_frontier_width() {
+        let sample = sample();
+        let graph = DistannPersistedHeadGraph::build(&sample, 2, 4, 1.2, 17).unwrap();
+        let index = DistannPhysicalHeadIndex::load(sample, graph, 2)
+            .unwrap()
+            .unwrap();
+
+        let seeds = index.search(&[1.0, 0.0], 1, 4);
+
+        assert!(seeds.len() > 1);
+        assert!(seeds.len() <= 4);
+        assert_eq!(seeds[0].vec_id, 10);
     }
 
     #[test]
