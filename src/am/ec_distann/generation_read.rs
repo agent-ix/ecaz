@@ -1580,6 +1580,15 @@ impl PhysicalGenerationScan {
                 }
             }
         };
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if all_seeds.len() < seed_count {
+            return Err(format!(
+                "EC_INVARIANT: benchmark seed mode {} requested {} seeds but returned only {}",
+                seed_mode.as_str(),
+                seed_count,
+                all_seeds.len()
+            ));
+        }
         if all_seeds.is_empty() {
             return Ok(DistannHitCollection {
                 hits: Vec::new(),
