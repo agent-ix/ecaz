@@ -1,7 +1,7 @@
 # Task 180 packet 003 artifact manifest
 
-This manifest covers the Phase 2 10k/50k/100k confirmation and final NFR-017
-decision. Measurements are pending.
+This manifest covers the completed Phase 2 10k/50k/100k confirmation and final
+NFR-017 decision. The selected bounded candidate is a NO-GO.
 
 ## Provenance and fixed shape
 
@@ -26,8 +26,9 @@ decision. Measurements are pending.
 - Disk-safe execution order: `confirm-10k`, prune stopped run directory;
   `confirm-50k`, prune; `confirm-100k`, prune. Each selected step gets its own
   suite manifest/results/report/status and all use the same checked-in config.
-- Status: audit and dry-run expansion pass; 10k/50k succeeded; 100k pending. Durable
-  outputs: `confirmation-audit.log` and `confirmation-dry-run.log`.
+- Status: audit and dry-run expansion pass; 10k/50k/100k all succeeded with no
+  failed, missing, or stale selected artifacts. Durable outputs:
+  `confirmation-audit.log` and `confirmation-dry-run.log`.
 
 ## 10k confirmation
 
@@ -80,5 +81,48 @@ Durable sources mirror the 10k set under the `50k` paths plus
 fixture log, and stopped run directory were pruned. Checksums are appended in
 `checksums.sha256`.
 
+## 100k confirmation
+
+- Timestamp: 2026-07-15 01:50-02:32 PDT.
+- Status: one succeeded selected step, no failures/missing/stale artifacts; all
+  five step-local integrity thresholds pass.
+- Query SHA-256: `a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782`.
+- Topology: ready/published owner rows 33195/33432/33373 = 100,000 exactly;
+  zero non-owned rows/orphans; two remote materialization probes pass.
+
+| Variant | Distinct recall@10 (95% CI) | Warm p50 / p95 / p99 | Head cache |
+| --- | ---: | ---: | ---: |
+| production width32/seeds32 | 0.9275 (0.9153-0.9381) | 40.30 / 54.10 / 56.60 ms | 25,894,567 B |
+| owner oracle | 0.9970 (0.9935-0.9986) | 2445.20 / 2490.30 / 2503.80 ms | shared |
+| bounded width64/seeds64 | 0.9280 (0.9158-0.9385) | 40.90 / 52.20 / 54.20 ms | shared |
+
+The bounded candidate fails the 0.9990 recall floor and the 37.6 ms p50 ceiling
+at 100k. Its p95/p50 ratio is 1.276 and passes the 3x tail bound. Physical
+generation / control / coordinator source / same-run single index bytes are
+2,496,659,456 / 24,576 / 1,666,326,528 / 854,810,624. The shared physical
+build / publication times were 854,506 / 981,215 ms.
+
+Durable sources mirror the earlier scales under the `100k` paths plus
+`confirmation-100k-{report.md,status.log,suite.log}`. Node logs, duplicate full
+fixture log, and the stopped 8.9 GB run directory were pruned. Checksums are in
+`checksums.sha256`.
+
+## Final decision
+
+| Pre-registered gate | Result | Status |
+| --- | --- | --- |
+| bounded and no O(N) owner scan | persisted cap4096 width64/seeds64 | pass |
+| distinct recall >= 0.9990 at 10k/50k/100k | 0.9990 / 0.9540 / 0.9280 | **fail** |
+| 100k warm p50 <= 37.6 ms | 40.90 ms | **fail** |
+| 100k p95 <= 3x own p50 | 52.20 ms <= 122.70 ms | pass |
+| topology/provenance/remote engagement | pass at all three scales | pass |
+| storage and head accounting | present at all three scales | pass |
+
+Verdict: **NO-GO**. Width64/seeds64 is statistically indistinguishable from
+production at 100k (overlapping Wilson intervals), slightly worse at 50k, and
+does not recover the quality gap to the owner oracle. No Task 180 production
+default or query-path change should be promoted; the benchmark-only attribution
+surfaces remain isolated behind their diagnostic feature.
+
 Corpus TSVs, truth caches, node PostgreSQL logs, duplicate full fixture logs,
-and regenerable run directories will not be committed.
+and regenerable run directories are not committed.

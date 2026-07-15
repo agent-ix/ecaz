@@ -9,3 +9,8 @@ cf4db5c5b47e7b9bdb2db5c3136cc6cc53ecb883cb51ecbf639e42b926b9363d  reviews/task-1
 53b23bd51ae788fd3d6147c257a1382fbcc51b080e1fe47c0eab5e63580f6d33  reviews/task-180/003-full-scale-decision/artifacts/confirmation/50k/distann-multinode-summary.log
 dca1de4c96e08aca12b0dd7eea82d3287687449339c958b87f462bb882638938  reviews/task-180/003-full-scale-decision/artifacts/confirmation-50k-report.md
 b0a6a80834e4e3581fffe03af52702a90ad3f58f318b652c2e3856aa9cf98f22  reviews/task-180/003-full-scale-decision/artifacts/confirmation-50k-status.log
+a8306a16ac47f829e5d3831e151eb2c4eb19eeb394f5f22e015d64c0dbe0a43a  reviews/task-180/003-full-scale-decision/artifacts/confirmation/suite-manifest-100k.json
+df8c737060191bec1d9081dca269ccf28bc771c473e80e19b16fab1103d7394f  reviews/task-180/003-full-scale-decision/artifacts/confirmation/results-100k.jsonl
+6fd0221ca8f694a165c58eb992cc1eff86dc4446f2ebd0d064090978f33d8ed3  reviews/task-180/003-full-scale-decision/artifacts/confirmation/100k/distann-multinode-summary.log
+5faba61141e4edcff2d14042297e6a839e5d8c52a2b5e7644befae7ec68bd2eb  reviews/task-180/003-full-scale-decision/artifacts/confirmation-100k-report.md
+51dff8585c0f9fdeb903c74a2b12936df7840ed83dc12b674276d655f68aaffc  reviews/task-180/003-full-scale-decision/artifacts/confirmation-100k-status.log

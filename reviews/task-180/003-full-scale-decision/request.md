@@ -8,8 +8,7 @@ date: 2026-07-15
 
 # Review request: full-scale bounded-head confirmation
 
-Please review the registered Phase 2 matrix and, once measurements land, the
-Task 180 GO/NO-GO decision.
+Please review the completed Phase 2 matrix and Task 180 NO-GO decision.
 
 ## Pre-registered selection
 
@@ -45,13 +44,26 @@ of truth.
 4. Check the final NFR-017 verdict against recall >=0.9990 at every scale,
    100k p50 <=37.6 ms, and p95 <=3x its own p50.
 
-## Next action while review is open
+## Completed result
 
-The 10k step passed topology/provenance/remote engagement. Production and the
-selected bounded arm both measured recall 0.9990; bounded warm p50/p95/p99 were
-33.50/39.10/42.80 ms. The owner oracle measured recall 0.9995 and p50 252.00
-ms. The 50k step also passed topology/provenance/engagement, but is a quality
-NO-GO: production recall/p50 were 0.9545/41.20 ms and bounded recall/p50 were
-0.9540/43.20 ms; owner recall was 0.9970. Continue with the required 100k
-confirmation, using disk-safe run-directory cleanup, then issue the final
-reviewed verdict.
+All three scales passed exact/disjoint topology, release-SHA unanimity, remote
+engagement, storage accounting, and suite integrity checks. The selected
+bounded arm measured:
+
+| Scale | Distinct recall@10 (95% CI) | Warm p50 / p95 |
+| --- | ---: | ---: |
+| 10k | 0.9990 (0.9964-0.9997) | 33.50 / 39.10 ms |
+| 50k | 0.9540 (0.9439-0.9623) | 43.20 / 53.10 ms |
+| 100k | 0.9280 (0.9158-0.9385) | 40.90 / 52.20 ms |
+
+At 100k, unchanged production was 0.9275 recall / 40.30 ms p50, while the
+diagnostic O(N) owner oracle was 0.9970 / 2445.20 ms. Width64/seeds64 therefore
+does not recover recall and is not a latency improvement.
+
+## Decision for review
+
+The candidate is a **NO-GO**: it fails recall >=0.9990 at 50k and 100k and
+fails the 100k p50 <=37.6 ms gate. It passes the 3x tail gate (52.20 / 40.90 =
+1.276), boundedness, topology, provenance, engagement, storage, and head
+reporting. Please confirm that the packet supports leaving production defaults
+unchanged and closing Task 180 as a measured negative result.

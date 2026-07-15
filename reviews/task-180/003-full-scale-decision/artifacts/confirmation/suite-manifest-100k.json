@@ -1,0 +1,188 @@
+{
+  "suite": "task180-bounded-head-full-scale-confirmation",
+  "schema_version": 1,
+  "config": "reviews/task-180/003-full-scale-decision/artifacts/confirmation-suite.json",
+  "config_sha256": "fa08183aa5930e405e61909c9df4c947ee4dd77b4b4cd7450a87bc12f588d04a",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784105451392,
+  "runner_git_commit": "29c5920308e9d8fb477c6297922c9d67b086eb9a",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "confirm-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task180",
+        "phase2",
+        "confirmation",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-180/003-full-scale-decision/artifacts/confirmation/10k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "confirm-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task180",
+        "phase2",
+        "confirmation",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-180/003-full-scale-decision/artifacts/confirmation/50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "confirm-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-180/003-full-scale-decision/artifacts/confirmation/100k",
+        "--run-dir",
+        "target/task180-confirm-100k",
+        "--log-file",
+        "reviews/task-180/003-full-scale-decision/artifacts/confirmation/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40980",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "production-w32-s32:persisted_head:32:32:rabitq",
+        "--benchmark-seed-variant",
+        "owner-oracle:owner_scan:32:32:rabitq",
+        "--benchmark-seed-variant",
+        "bounded-w64-s64:persisted_head:64:64:rabitq",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task180",
+        "phase2",
+        "confirmation",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-180/003-full-scale-decision/artifacts/confirmation/100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784105451392,
+      "finished_at_unix_ms": 1784107927294,
+      "duration_ms": 2484150,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "100k-topology",
+      "step": "confirm-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "100k-provenance",
+      "step": "confirm-100k",
+      "metric": "physical_benchmark_provenance",
+      "field": "unanimous_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "unanimous_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "100k-production-row",
+      "step": "confirm-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "production-w32-s32"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.8,
+      "actual": 0.9275,
+      "passed": true,
+      "message": "distinct_recall 0.9275 Gte 0.8 -> true"
+    },
+    {
+      "name": "100k-owner-row",
+      "step": "confirm-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "owner-oracle"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.8,
+      "actual": 0.997,
+      "passed": true,
+      "message": "distinct_recall 0.997 Gte 0.8 -> true"
+    },
+    {
+      "name": "100k-bounded-row",
+      "step": "confirm-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "bounded-w64-s64"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.8,
+      "actual": 0.928,
+      "passed": true,
+      "message": "distinct_recall 0.928 Gte 0.8 -> true"
+    }
+  ]
+}
