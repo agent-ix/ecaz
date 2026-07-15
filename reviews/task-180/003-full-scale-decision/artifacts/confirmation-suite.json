@@ -1,0 +1,280 @@
+{
+  "name": "task180-bounded-head-full-scale-confirmation",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-180/003-full-scale-decision/artifacts/confirmation",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [
+    {
+      "name": "10k-topology",
+      "step": "confirm-10k",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "10k-provenance",
+      "step": "confirm-10k",
+      "metric": "physical_benchmark_provenance",
+      "field": "unanimous_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "10k-production-row",
+      "step": "confirm-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "production-w32-s32", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "10k-owner-row",
+      "step": "confirm-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "owner-oracle", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "10k-bounded-row",
+      "step": "confirm-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "bounded-w64-s64", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "50k-topology",
+      "step": "confirm-50k",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "50k-provenance",
+      "step": "confirm-50k",
+      "metric": "physical_benchmark_provenance",
+      "field": "unanimous_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "50k-production-row",
+      "step": "confirm-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "production-w32-s32", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "50k-owner-row",
+      "step": "confirm-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "owner-oracle", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "50k-bounded-row",
+      "step": "confirm-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "bounded-w64-s64", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "100k-topology",
+      "step": "confirm-100k",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "100k-provenance",
+      "step": "confirm-100k",
+      "metric": "physical_benchmark_provenance",
+      "field": "unanimous_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "100k-production-row",
+      "step": "confirm-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "production-w32-s32", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "100k-owner-row",
+      "step": "confirm-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "owner-oracle", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    },
+    {
+      "name": "100k-bounded-row",
+      "step": "confirm-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": { "variant": "bounded-w64-s64", "arm": "physical" },
+      "field": "distinct_recall",
+      "op": "gte",
+      "value": 0.8
+    }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "confirm-10k",
+      "tags": ["task180", "phase2", "confirmation", "ec_real_10k"],
+      "artifact_dir": "${artifact_dir}/10k",
+      "run_dir": "target/task180-confirm-10k",
+      "nodes": 3,
+      "base_port": 40960,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        {
+          "name": "production-w32-s32",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "owner-oracle",
+          "seed_strategy": "owner_scan",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "bounded-w64-s64",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 64,
+          "head_seed_count": 64,
+          "neighbor_score_mode": "rabitq"
+        }
+      ],
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "confirm-50k",
+      "tags": ["task180", "phase2", "confirmation", "ec_real_50k"],
+      "artifact_dir": "${artifact_dir}/50k",
+      "run_dir": "target/task180-confirm-50k",
+      "nodes": 3,
+      "base_port": 40970,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        {
+          "name": "production-w32-s32",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "owner-oracle",
+          "seed_strategy": "owner_scan",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "bounded-w64-s64",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 64,
+          "head_seed_count": 64,
+          "neighbor_score_mode": "rabitq"
+        }
+      ],
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "confirm-100k",
+      "tags": ["task180", "phase2", "confirmation", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/100k",
+      "run_dir": "target/task180-confirm-100k",
+      "nodes": 3,
+      "base_port": 40980,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        {
+          "name": "production-w32-s32",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "owner-oracle",
+          "seed_strategy": "owner_scan",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        },
+        {
+          "name": "bounded-w64-s64",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 64,
+          "head_seed_count": 64,
+          "neighbor_score_mode": "rabitq"
+        }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}
