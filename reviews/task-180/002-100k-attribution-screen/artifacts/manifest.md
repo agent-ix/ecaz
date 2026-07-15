@@ -48,12 +48,16 @@ for the production/owner/exact-sample and width axes.
 ### `screen-b-seeds-suite.json`
 
 - Command: `target/release/ecaz bench suite run --config reviews/task-180/002-100k-attribution-screen/artifacts/screen-b-seeds-suite.json`
-- Status: audit and dry-run expansion pass; execution pending installation of
-  extension SHA `2dbd78450`.
+- Timestamp: 2026-07-14 23:18-23:50 PDT.
+- Status: succeeded in 1,885,299 ms; one completed step, no failures, missing
+  artifacts, or stale artifacts; all five thresholds pass.
 - Registered matrix: cap 4096, selected width 64, returned seed counts 32/64/128
   against one immutable 100k build. The feature-only implementation retains
   additional candidates already scored by the width-64 search for the
   128-seed arm and errors if the requested count is not actually returned.
+- Installed extension SHA/profile: `53b62bbea7ce4be1bd8053daf504801f09b36352`
+  / `release`, unanimous across all three nodes. The extension code change is
+  `2dbd78450...`; the later branch-head commit contains review evidence only.
 
 ### `screen-c-caps-suite.json`
 
@@ -121,6 +125,27 @@ for the production/owner/exact-sample and width axes.
   screen checksums will be appended after those suites complete.
 - `screen-a/100k/physical-*-{recall,latency}.log`: cited per-arm raw measurement
   tables. Node PostgreSQL logs and the duplicate full fixture log were pruned.
+- `screen-b-seeds/suite-manifest.json`, `screen-b-seeds/results.jsonl`, and
+  `screen-b-seeds/100k/distann-multinode-summary.log`: immutable normalized and
+  compact raw evidence for the returned-seed axis:
+
+  | Returned seeds at width 64 | Distinct recall@10 (95% CI) | Warm p50 | Warm p95 |
+  | ---: | ---: | ---: | ---: |
+  | 32 | 0.9280 (0.9158-0.9385) | 40.30 ms | 52.60 ms |
+  | 64 | 0.9280 (0.9158-0.9385) | 40.20 ms | 52.20 ms |
+  | 128 | 0.9280 (0.9158-0.9385) | 41.40 ms | 53.60 ms |
+
+  The 128-seed arm completed under the new returned-count invariant, proving
+  that the flat result is not silent truncation to width 64. All three recall
+  intervals are identical; seed count is not the cap-4096 limiter. The
+  within-axis latency tie-break would choose 64 seeds, but all cells remain far
+  below the 0.9990 quality gate and above the 37.6 ms p50 anchor.
+- `screen-b-seeds-report.md`, `screen-b-seeds-status.log`, and
+  `screen-b-seeds/100k/physical-*-{recall,latency}.log`: generated report,
+  completion status, and cited per-arm raw tables. Node PostgreSQL logs and the
+  duplicate full fixture log were pruned.
+- `seed-count-install.log`: clean release install from branch head
+  `53b62bbea...` with `pg18 pg_test distann-head-attribution-benchmark`.
 
 Corpus TSVs, truth cache, run directories, node logs, and per-arm regenerable
 logs are intentionally excluded from the packet.

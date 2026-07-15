@@ -96,6 +96,13 @@ The checked-in `screen-b-seeds-suite.json` and `screen-c-caps-suite.json` both
 pass audit and dry-run expansion. They preserve BW4/H100, graph degree 32,
 RaBitQ neighbor scoring, query identity, and the three-owner physical topology.
 
+Screen B has now completed under unanimous clean-release extension provenance
+at branch head `53b62bbea...`. Returned seed counts 32/64/128 all measured
+distinct recall 0.9280 with identical 0.9158-0.9385 confidence intervals. Warm
+p50 was 40.30/40.20/41.40 ms respectively. The 128-seed invariant passed, so
+the equality is not silent truncation. Seed count is not the cap-4096 limiter;
+the required exact-sample cap-growth suite is now running.
+
 ## Requested review focus
 
 1. Confirm normal builds cannot select owner-scan, exact-sample, independent
@@ -116,7 +123,6 @@ RaBitQ neighbor scoring, query identity, and the three-owner physical topology.
 
 ## Next action while review is open
 
-Install release extension SHA `2dbd78450...`, then run the registered seed-count
-and cap-growth suites. The exact-neighbor arm remains conditional on the best
-bounded result landing within 0.0050 of the same-run owner oracle while below
-0.9990.
+Complete the registered cap-growth suite. The exact-neighbor arm remains
+conditional on the best bounded result landing within 0.0050 of the same-run
+owner oracle while below 0.9990.

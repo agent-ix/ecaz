@@ -4,3 +4,10 @@ c2febf40337fed87f0ae049b0863f003807e3cc5f8ad80037b190fc3317ef59e  reviews/task-1
 ceb91f9e1c9f6f89a013461b8d8d161ecbf2fea8e1e1d7a22153b728fb94567c  reviews/task-180/002-100k-attribution-screen/artifacts/screen-a/100k/distann-multinode-summary.log
 146343cd41fb20f8c74c75647386fce03768a4e0709b0ff87e428ee2c6e80138  reviews/task-180/002-100k-attribution-screen/artifacts/screen-a-report.md
 2831453dd697378111ef158aedb4dfdd5f803cdc9c45b1835c034cf201c8367c  reviews/task-180/002-100k-attribution-screen/artifacts/screen-a-status.log
+3d89e96fe7869bb442942f4eb70958257401c11026849b39c429f36cdff8abfc  reviews/task-180/002-100k-attribution-screen/artifacts/screen-b-seeds-suite.json
+b104312cf7ec86628963d06b0501c050e12863f7c41e4eb013bc0d9204155788  reviews/task-180/002-100k-attribution-screen/artifacts/screen-b-seeds/suite-manifest.json
+93a2d04e19ecc760107bb684f4a9dc1920084011d22530e6f1c6c5b6f03af842  reviews/task-180/002-100k-attribution-screen/artifacts/screen-b-seeds/results.jsonl
+245ac7652d16d02117dfcf84450aec957439d3aa7bbd81757551e54c6f50d892  reviews/task-180/002-100k-attribution-screen/artifacts/screen-b-seeds/100k/distann-multinode-summary.log
+cffaa516d701bf3063c767e0a606009796d7f36975452d9176a1d5b6a7b315e2  reviews/task-180/002-100k-attribution-screen/artifacts/screen-b-seeds-report.md
+d1c7242b4177449be1cabb1e79d255a140dd8697959579b027f2fa7c55f0f8da  reviews/task-180/002-100k-attribution-screen/artifacts/screen-b-seeds-status.log
+8015698677b7a5569ec67924e06c5bb01b9ab90beeaf9ca0ce7115c5bd75b59c  reviews/task-180/002-100k-attribution-screen/artifacts/seed-count-install.log
