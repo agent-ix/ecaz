@@ -26,7 +26,7 @@ decision. Measurements are pending.
 - Disk-safe execution order: `confirm-10k`, prune stopped run directory;
   `confirm-50k`, prune; `confirm-100k`, prune. Each selected step gets its own
   suite manifest/results/report/status and all use the same checked-in config.
-- Status: audit and dry-run expansion pass; 10k succeeded; 50k/100k pending. Durable
+- Status: audit and dry-run expansion pass; 10k/50k succeeded; 100k pending. Durable
   outputs: `confirmation-audit.log` and `confirmation-dry-run.log`.
 
 ## 10k confirmation
@@ -54,6 +54,31 @@ the cited per-arm recall/latency tables, `confirmation-10k-report.md`,
 `confirmation-10k-status.log`, and `confirmation-10k-suite.log`. Node logs,
 duplicate full fixture log, and stopped run directory were pruned. Checksums are
 in `checksums.sha256`.
+
+## 50k confirmation
+
+- Timestamp: 2026-07-15 01:25-01:45 PDT.
+- Status: one succeeded selected step, no failures/missing/stale artifacts; all
+  five step-local thresholds pass.
+- Query SHA-256: `95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3`.
+- Topology: ready/published owner rows 16637/16756/16607 = 50,000 exactly;
+  zero non-owned rows/orphans; two remote materialization probes pass.
+
+| Variant | Distinct recall@10 (95% CI) | Warm p50 / p95 / p99 | Head cache |
+| --- | ---: | ---: | ---: |
+| production width32/seeds32 | 0.9545 (0.9445-0.9628) | 41.20 / 51.40 / 54.90 ms | 25,814,193 B |
+| owner oracle | 0.9970 (0.9935-0.9986) | 1201.80 / 1284.20 / 1330.80 ms | shared |
+| bounded width64/seeds64 | 0.9540 (0.9439-0.9623) | 43.20 / 53.10 / 57.10 ms | shared |
+
+The bounded candidate fails the 0.9990 recall floor at 50k and does not improve
+production recall or latency. Its p95/p50 ratio is 1.229. Physical generation /
+control / coordinator source / same-run single index bytes are 1,242,734,592 /
+24,576 / 833,208,320 / 444,186,624.
+
+Durable sources mirror the 10k set under the `50k` paths plus
+`confirmation-50k-{report.md,status.log,suite.log}`. Node logs, duplicate full
+fixture log, and stopped run directory were pruned. Checksums are appended in
+`checksums.sha256`.
 
 Corpus TSVs, truth caches, node PostgreSQL logs, duplicate full fixture logs,
 and regenerable run directories will not be committed.

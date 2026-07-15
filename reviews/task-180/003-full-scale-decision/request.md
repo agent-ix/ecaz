@@ -50,5 +50,8 @@ of truth.
 The 10k step passed topology/provenance/remote engagement. Production and the
 selected bounded arm both measured recall 0.9990; bounded warm p50/p95/p99 were
 33.50/39.10/42.80 ms. The owner oracle measured recall 0.9995 and p50 252.00
-ms. Continue with 50k, then 100k, using disk-safe run-directory cleanup and
-append decision-grade artifacts/results.
+ms. The 50k step also passed topology/provenance/engagement, but is a quality
+NO-GO: production recall/p50 were 0.9545/41.20 ms and bounded recall/p50 were
+0.9540/43.20 ms; owner recall was 0.9970. Continue with the required 100k
+confirmation, using disk-safe run-directory cleanup, then issue the final
+reviewed verdict.
