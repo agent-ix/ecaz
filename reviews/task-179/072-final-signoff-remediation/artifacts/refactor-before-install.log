@@ -1,0 +1,77 @@
+Script started on 2026-07-14 11:31:25-07:00 [<not executed on terminal>]
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg18[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--release" "--features" "pg18" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+   Compiling zmij v1.0.23
+   Compiling cc v1.2.67
+   Compiling winnow v1.0.4
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling tinyvec v1.12.0
+   Compiling mio v1.2.2
+   Compiling socket2 v0.6.5
+   Compiling rustls v0.23.42
+   Compiling uuid v1.23.5
+   Compiling rand v0.8.7
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling tokio v1.52.3
+   Compiling unicode-normalization v0.1.25
+   Compiling serde_json v1.0.150
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling stringprep v0.1.5
+   Compiling ring v0.17.14
+   Compiling cee-scape v0.2.0
+   Compiling postgres-protocol v0.6.12
+   Compiling cargo_toml v0.22.3
+   Compiling postgres-types v0.2.14
+   Compiling pgrx-pg-config v0.17.0
+   Compiling pgrx-bindgen v0.17.0
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-refactor-before)
+   Compiling pgrx-pg-sys v0.17.0
+   Compiling tokio-util v0.7.18
+   Compiling tokio-postgres v0.7.18
+   Compiling postgres v0.19.14
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling pgrx v0.17.0
+    Finished `release` profile [optimized] target(s) in 5m 19s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m298[0m[39m SQL entities: [36m[1m0[0m[39m schemas ([36m[1m0[0m[39m unique), [36m[1m295[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m2[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m1[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg18[39m
+   Compiling cc v1.2.67
+   Compiling zmij v1.0.23
+   Compiling winnow v1.0.4
+   Compiling toml_writer v1.1.2+spec-1.1.0
+   Compiling tinyvec v1.12.0
+   Compiling socket2 v0.6.5
+   Compiling mio v1.2.2
+   Compiling rustls v0.23.42
+   Compiling uuid v1.23.5
+   Compiling rand v0.8.7
+   Compiling toml_parser v1.1.2+spec-1.1.0
+   Compiling unicode-normalization v0.1.25
+   Compiling tokio v1.52.3
+   Compiling serde_json v1.0.150
+   Compiling toml v0.9.12+spec-1.1.0
+   Compiling stringprep v0.1.5
+   Compiling postgres-protocol v0.6.12
+   Compiling ring v0.17.14
+   Compiling cee-scape v0.2.0
+   Compiling postgres-types v0.2.14
+   Compiling cargo_toml v0.22.3
+   Compiling pgrx-pg-config v0.17.0
+   Compiling pgrx-bindgen v0.17.0
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-refactor-before)
+   Compiling pgrx-pg-sys v0.17.0
+   Compiling tokio-util v0.7.18
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-postgres v0.7.18
+   Compiling postgres v0.19.14
+   Compiling tokio-rustls v0.26.4
+   Compiling pgrx v0.17.0
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 41s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+
+Script done on 2026-07-14 11:38:28-07:00 [COMMAND_EXIT_CODE="0"]

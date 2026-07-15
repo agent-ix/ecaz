@@ -1,0 +1,290 @@
+{
+  "suite": "task179-final-signoff-exact-ab-10k-50k-100k",
+  "schema_version": 1,
+  "config": "reviews/task-179/072-final-signoff-remediation/artifacts/exact-ab-suite.json",
+  "config_sha256": "1d97469f90529fa399c700fdbc66b1a5abadfda7e5175b7eba2db06b5d307565",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784057739550,
+  "runner_git_commit": "45491d1052ef0369a9f418b055b462663cf5612c",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "exact-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/072-final-signoff-remediation/artifacts/refactor-after/10k",
+        "--run-dir",
+        "target/task179-final-signoff-exact-ab",
+        "--log-file",
+        "reviews/task-179/072-final-signoff-remediation/artifacts/refactor-after/10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40720",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "final-signoff",
+        "exact-ab",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/072-final-signoff-remediation/artifacts/refactor-after/10k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784057739550,
+      "finished_at_unix_ms": 1784057916948,
+      "duration_ms": 177601,
+      "exit_code": 0
+    },
+    {
+      "name": "exact-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/072-final-signoff-remediation/artifacts/refactor-after/50k",
+        "--run-dir",
+        "target/task179-final-signoff-exact-ab",
+        "--log-file",
+        "reviews/task-179/072-final-signoff-remediation/artifacts/refactor-after/50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40720",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "final-signoff",
+        "exact-ab",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/072-final-signoff-remediation/artifacts/refactor-after/50k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784057916948,
+      "finished_at_unix_ms": 1784058791028,
+      "duration_ms": 875104,
+      "exit_code": 0
+    },
+    {
+      "name": "exact-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/072-final-signoff-remediation/artifacts/refactor-after/100k",
+        "--run-dir",
+        "target/task179-final-signoff-exact-ab",
+        "--log-file",
+        "reviews/task-179/072-final-signoff-remediation/artifacts/refactor-after/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40720",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "final-signoff",
+        "exact-ab",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/072-final-signoff-remediation/artifacts/refactor-after/100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784058791029,
+      "finished_at_unix_ms": 1784060642455,
+      "duration_ms": 1853730,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "10k-topology",
+      "step": "exact-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "10k-recall",
+      "step": "exact-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall 1 Gte 0.9 -> true"
+    },
+    {
+      "name": "50k-topology",
+      "step": "exact-50k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "50k-recall",
+      "step": "exact-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.98,
+      "passed": true,
+      "message": "recall 0.98 Gte 0.9 -> true"
+    },
+    {
+      "name": "100k-topology",
+      "step": "exact-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "100k-recall",
+      "step": "exact-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.95,
+      "passed": true,
+      "message": "recall 0.95 Gte 0.9 -> true"
+    }
+  ]
+}
