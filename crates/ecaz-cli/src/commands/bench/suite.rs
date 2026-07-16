@@ -548,6 +548,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     head_policy: Option<String>,
     #[serde(default)]
+    production_head_policy: Option<String>,
+    #[serde(default)]
     training_query_path: Option<PathBuf>,
     /// Seed-search arms measured against one immutable physical generation.
     /// This avoids rebuilding identical 100k storage for every attribution
@@ -2280,6 +2282,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_head".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_head_policy ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_head_policy".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_build ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_build".into(), values));
@@ -3090,11 +3096,41 @@ impl SuiteStep {
                         )
                     }
                 }
-                if step.training_query_path.is_some()
-                    && step.head_policy.as_deref() != Some("training_landmarks")
-                {
+                if let Some(policy) = step.production_head_policy.as_deref() {
+                    if !matches!(policy, "current_sample_graph" | "training_landmarks_exact") {
+                        bail!(
+                            "distann-local-multinode step {:?} has invalid production_head_policy {:?}",
+                            step.name,
+                            policy
+                        )
+                    }
+                    if policy == "training_landmarks_exact" {
+                        if step.training_query_path.is_none() {
+                            bail!(
+                                "distann-local-multinode step {:?} training_landmarks_exact requires training_query_path",
+                                step.name
+                            )
+                        }
+                        if step.head_index_cap.unwrap_or(4096) != 4096 {
+                            bail!(
+                                "distann-local-multinode step {:?} training_landmarks_exact requires head_index_cap 4096",
+                                step.name
+                            )
+                        }
+                    }
+                }
+                if step.head_policy.is_some() && step.production_head_policy.is_some() {
                     bail!(
-                        "distann-local-multinode step {:?} training_query_path requires training_landmarks",
+                        "distann-local-multinode step {:?} cannot combine head_policy and production_head_policy",
+                        step.name
+                    )
+                }
+                let training_path_expected = step.head_policy.as_deref()
+                    == Some("training_landmarks")
+                    || step.production_head_policy.as_deref() == Some("training_landmarks_exact");
+                if step.training_query_path.is_some() != training_path_expected {
+                    bail!(
+                        "distann-local-multinode step {:?} training_query_path is required exactly for a training head policy",
                         step.name
                     )
                 }
@@ -3130,7 +3166,10 @@ impl SuiteStep {
                         }
                         if !matches!(
                             variant.seed_strategy.as_str(),
-                            "persisted_head" | "head_sample_exact" | "head_hierarchy" | "owner_scan"
+                            "persisted_head"
+                                | "head_sample_exact"
+                                | "head_hierarchy"
+                                | "owner_scan"
                         ) {
                             bail!(
                                 "distann-local-multinode step {:?} benchmark seed variant {:?} has an invalid strategy",
@@ -4026,6 +4065,11 @@ fn expand_distann_local_multinode(
         step.neighbor_score_mode.as_deref(),
     );
     push_opt_arg(&mut args, "--head-policy", step.head_policy.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--production-head-policy",
+        step.production_head_policy.as_deref(),
+    );
     push_opt_path(
         &mut args,
         "--training-query-path",
@@ -4969,7 +5013,8 @@ psql header noise\n\
 [distann-multicluster] physical_publish_fault idempotent_recovery pass=true decision=Applied registration=Published active_count=1 owner_states=Published,Published,Published\n\
 [distann-multicluster] physical_benchmark_recall scale=10k arm=physical seed_strategy=persisted_head queries=10 trials=100 recall=1.0000 mean_ms=10727.91\n\
 [distann-multicluster] physical_benchmark_latency scale=10k arm=physical seed_strategy=persisted_head count=5 mean_ms=10744.10 p50_ms=10664.70 p95_ms=11065.20 p99_ms=11125.80 max_ms=11141.00 concurrency=1 cache=warm\n\
-[distann-multicluster] physical_benchmark_head scale=10k head_index_cap=4096 head_search_width=32 head_seed_count=32 seed_strategy=persisted_head neighbor_score_mode=rabitq sample_count=4096 head_sample_bytes=25231360 head_graph_bytes=540672 head_cache_estimated_bytes=25772032\n";
+[distann-multicluster] physical_benchmark_head scale=10k head_index_cap=4096 head_search_width=32 head_seed_count=32 seed_strategy=persisted_head neighbor_score_mode=rabitq sample_count=4096 head_sample_bytes=25231360 head_graph_bytes=540672 head_cache_estimated_bytes=25772032\n\
+[distann-multicluster] physical_benchmark_head_policy scale=10k policy=training_landmarks_exact scoring_mode=exact_landmark_scan training_queries=200 training_query_digest=aaaa head_index_cap=4096 returned_seed_count=32 sample_count=4096 head_sample_digest=bbbb\n";
         let rows = parse_distann_multinode_rows(raw);
         let topology = rows
             .iter()
@@ -5010,6 +5055,12 @@ psql header noise\n\
             metric == "physical_benchmark_head"
                 && values.get("sample_count").map(String::as_str) == Some("4096")
                 && values.get("head_search_width").map(String::as_str) == Some("32")
+        }));
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "physical_benchmark_head_policy"
+                && values.get("policy").map(String::as_str) == Some("training_landmarks_exact")
+                && values.get("scoring_mode").map(String::as_str) == Some("exact_landmark_scan")
+                && values.get("training_queries").map(String::as_str) == Some("200")
         }));
     }
 
@@ -5416,6 +5467,36 @@ psql header noise\n\
                     "owner-oracle:owner_scan:32:32:rabitq",
                 ]
         }));
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_production_trained_head() {
+        let raw = r#"{
+          "name": "distann-production-head",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "trained-100k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_100k",
+            "head_index_cap": 4096,
+            "production_head_policy": "training_landmarks_exact",
+            "training_query_path": "/staged/ec_real_100k_queries.tsv"
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .windows(2)
+            .any(|window| { window == ["--production-head-policy", "training_landmarks_exact"] }));
+        assert!(command.windows(2).any(|window| {
+            window == ["--training-query-path", "/staged/ec_real_100k_queries.tsv"]
+        }));
+        assert!(!command.iter().any(|argument| argument == "--head-policy"));
     }
 
     #[test]

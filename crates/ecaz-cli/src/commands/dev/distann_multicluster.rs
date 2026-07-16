@@ -102,6 +102,10 @@ pub struct LocalMultinodePg18Args {
     /// Task 181 benchmark-only deterministic landmark construction policy.
     #[arg(long)]
     pub head_policy: Option<String>,
+    /// Task 182 production generation policy. Unlike `--head-policy`, this
+    /// drives immutable generation metadata and requires no benchmark feature.
+    #[arg(long)]
+    pub production_head_policy: Option<String>,
     /// Server-readable TSV containing at least 400 held-out queries. Rows
     /// 201-400 are the disjoint Task 181 training slice.
     #[arg(long)]
@@ -233,10 +237,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if let Some(policy) = args.head_policy.as_deref() {
         if !matches!(
             policy,
-            "current_sample"
-                | "geometry_landmarks"
-                | "graph_landmarks"
-                | "training_landmarks"
+            "current_sample" | "geometry_landmarks" | "graph_landmarks" | "training_landmarks"
         ) {
             bail!("--head-policy must be current_sample, geometry_landmarks, graph_landmarks, or training_landmarks");
         }
@@ -247,8 +248,35 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             bail!("--head-policy training_landmarks requires --training-query-path");
         }
     }
-    if args.training_query_path.is_some() && args.head_policy.as_deref() != Some("training_landmarks") {
-        bail!("--training-query-path requires --head-policy training_landmarks");
+    if let Some(policy) = args.production_head_policy.as_deref() {
+        if !matches!(policy, "current_sample_graph" | "training_landmarks_exact") {
+            bail!(
+                "--production-head-policy must be current_sample_graph or training_landmarks_exact"
+            );
+        }
+        if mode != FixtureMode::Physical {
+            bail!("--production-head-policy requires the physical fixture");
+        }
+        if policy == "training_landmarks_exact" {
+            if args.training_query_path.is_none() {
+                bail!(
+                    "--production-head-policy training_landmarks_exact requires --training-query-path"
+                );
+            }
+            if args.head_index_cap != 4096 {
+                bail!("training_landmarks_exact requires --head-index-cap 4096");
+            }
+        }
+    }
+    if args.head_policy.is_some() && args.production_head_policy.is_some() {
+        bail!("--head-policy and --production-head-policy are mutually exclusive");
+    }
+    let training_path_expected = args.head_policy.as_deref() == Some("training_landmarks")
+        || args.production_head_policy.as_deref() == Some("training_landmarks_exact");
+    if args.training_query_path.is_some() != training_path_expected {
+        bail!(
+            "--training-query-path is required exactly for training_landmarks or training_landmarks_exact"
+        );
     }
     if !args.benchmark_seed_variants.is_empty() {
         if !args.physical_benchmark {
@@ -915,7 +943,45 @@ async fn run_physical_benchmarks(
         .wrap_err("querying installed coordinator extension provenance")?;
     let expected_sha = coordinator_provenance.get::<_, String>(0);
     let expected_profile = coordinator_provenance.get::<_, String>(1);
-    let head_policy = args.head_policy.as_deref().unwrap_or("current_sample");
+    let requested_head_policy = args
+        .production_head_policy
+        .as_deref()
+        .or(args.head_policy.as_deref())
+        .unwrap_or("current_sample");
+    let production_head_attestation = if let Some(production_policy) =
+        args.production_head_policy.as_deref()
+    {
+        let policy = coordinator
+            .query_one(
+                "SELECT head_policy, scoring_mode, training_query_count,
+                        encode(training_query_digest, 'hex'), head_index_cap,
+                        returned_seed_count, sample_count,
+                        encode(head_sample_digest, 'hex')
+                   FROM ec_distann_active_head_policy('dm_idx'::regclass)",
+                &[],
+            )
+            .await
+            .wrap_err("attesting Task 182 active production head policy")?;
+        let attested_policy = policy.get::<_, String>(0);
+        if attested_policy != production_policy {
+            bail!(
+                "production head-policy attestation mismatch: requested {production_policy}, got {attested_policy}"
+            );
+        }
+        Some(format!(
+            "physical_benchmark_head_policy scale={scale} policy={} scoring_mode={} training_queries={} training_query_digest={} head_index_cap={} returned_seed_count={} sample_count={} head_sample_digest={}",
+            attested_policy,
+            policy.get::<_, String>(1),
+            policy.get::<_, i32>(2),
+            policy.get::<_, String>(3),
+            policy.get::<_, i32>(4),
+            policy.get::<_, i32>(5),
+            policy.get::<_, i32>(6),
+            policy.get::<_, String>(7),
+        ))
+    } else {
+        None
+    };
     let has_head_policy_provenance = coordinator
         .query_one(
             "SELECT to_regprocedure('ec_distann_physical_head_policy()') IS NOT NULL",
@@ -926,7 +992,7 @@ async fn run_physical_benchmarks(
     if args.head_policy.is_some() && !has_head_policy_provenance {
         bail!("Task 181 head policy requires extension head-policy provenance helper");
     }
-    let attested_head_policy = if has_head_policy_provenance {
+    let benchmark_head_policy = if has_head_policy_provenance {
         coordinator
             .query_one("SELECT ec_distann_physical_head_policy()", &[])
             .await?
@@ -934,11 +1000,15 @@ async fn run_physical_benchmarks(
     } else {
         "current_sample".to_owned()
     };
-    if attested_head_policy != head_policy {
+    if args.production_head_policy.is_none() && benchmark_head_policy != requested_head_policy {
         bail!(
-            "physical head-policy attestation mismatch: requested {head_policy}, got {attested_head_policy}"
+            "physical head-policy attestation mismatch: requested {requested_head_policy}, got {benchmark_head_policy}"
         );
     }
+    let attested_head_policy = args
+        .production_head_policy
+        .clone()
+        .unwrap_or(benchmark_head_policy);
     let mut provenance_ports = std::collections::BTreeSet::from([coordinator_port]);
     provenance_ports.extend(nodes.iter().map(|node| node.port));
     for port in provenance_ports
@@ -1041,6 +1111,9 @@ async fn run_physical_benchmarks(
         "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true",
         provenance_ports.len()
     )];
+    if let Some(attestation) = production_head_attestation {
+        lines.push(attestation);
+    }
     let training_provenance = if let Some(path) = args.training_query_path.as_deref() {
         let bytes = std::fs::read(std::fs::canonicalize(path)?)?;
         let contents = String::from_utf8(bytes.clone())?;
@@ -1454,6 +1527,31 @@ async fn drive_physical_fixture(
             .await
             .wrap_err_with(|| format!("registering physical node {}", node.node_id))?;
     }
+    if args.production_head_policy.as_deref() == Some("training_landmarks_exact") {
+        let training_path = std::fs::canonicalize(
+            args.training_query_path
+                .as_deref()
+                .expect("validated trained policy has a query path"),
+        )?;
+        let training_path = training_path.display().to_string().replace('\'', "''");
+        coordinator
+            .batch_execute(&format!(
+                "CREATE TEMP TABLE ec_distann_training_stage (
+                     load_ordinal bigserial, source_id bigint, vec text
+                 );
+                 COPY ec_distann_training_stage (source_id, vec)
+                   FROM '{training_path}' WITH (FORMAT text, DELIMITER E'\\t');
+                 CREATE TEMP TABLE ec_distann_training_queries AS
+                 SELECT (load_ordinal - 200)::bigint AS training_ordinal,
+                        translate(vec, '[]', '{{}}')::real[] AS vector
+                   FROM ec_distann_training_stage
+                  WHERE load_ordinal BETWEEN 201 AND 400
+                  ORDER BY load_ordinal;
+                 DROP TABLE ec_distann_training_stage;"
+            ))
+            .await
+            .wrap_err("staging Task 182 production training relation")?;
+    }
     let physical_started = Instant::now();
     let build_id = "71717171-7171-4171-8171-717171717171";
     if let Some(policy) = args.head_policy.as_deref() {
@@ -1480,11 +1578,17 @@ async fn drive_physical_fixture(
             "SELECT ec_distann_begin_epoch_build('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"
         ))
         .await?;
-    coordinator
-        .batch_execute(&format!(
-            "SELECT ec_distann_build_epoch('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"
-        ))
-        .await?;
+    let build_sql = if args.production_head_policy.as_deref() == Some("training_landmarks_exact") {
+        format!(
+            "SELECT ec_distann_build_epoch_with_training(
+                 'public.dm_idx'::regclass, 1, '{build_id}'::uuid,
+                 'ec_distann_training_queries'::regclass);
+             DROP TABLE ec_distann_training_queries;"
+        )
+    } else {
+        format!("SELECT ec_distann_build_epoch('public.dm_idx'::regclass, 1, '{build_id}'::uuid)")
+    };
+    coordinator.batch_execute(&build_sql).await?;
     let physical_build_ms = physical_started.elapsed().as_millis();
 
     let ready_selector =
