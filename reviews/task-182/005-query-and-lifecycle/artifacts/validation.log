@@ -1,0 +1,22 @@
+Task 182 query/lifecycle suite validation
+date: 2026-07-16 America/Los_Angeles
+head: d9411c692
+
+PASS
+command: cargo check -p ecaz-cli
+result: Finished dev profile. One unrelated pre-existing dead-code warning: LoadedDistributedPlacementConfig.path.
+
+PASS
+command: cargo test -p ecaz-cli commands::bench::suite::tests::distann_local_multinode_expands_production_trained_head -- --exact
+result: 1 passed; 0 failed; 438 filtered out.
+
+PASS
+command: cargo test -p ecaz-cli commands::bench::suite::tests::distann_physical_topology_and_gate_are_structured -- --exact
+result: 1 passed; 0 failed; 438 filtered out. The structured parser retains training_landmarks_exact policy/scoring/count attestation.
+
+PASS
+command: git diff --check
+result: no whitespace errors.
+
+Database lifecycle validation for the endpoint and active-generation read path
+is recorded in reviews/task-182/004-builder-and-format/artifacts/validation.log.
