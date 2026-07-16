@@ -1,9 +1,8 @@
 # Task 182: ec_distann Bounded-Head Production Implementation
 
-Status: proposed but **gated / non-startable** (2026-07-15). Starts only after
-Task 181 records an outside-reviewed GO naming one frozen candidate that passes
-its 10k/50k/100k gate. Depends on Tasks 179, 180, and 181. Feeds Task 172's
-distributed product gate. Priority: conditional P1.
+Status: **won't pursue** (2026-07-15). Task 181 closed NO-GO: no bounded
+candidate passed its 10k/50k/100k recall and latency entry gate. No production
+implementation was started. Depends on Tasks 179, 180, and 181.
 
 ## Why
 

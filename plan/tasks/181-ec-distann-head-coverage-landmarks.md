@@ -1,9 +1,10 @@
 # Task 181: ec_distann Head-Coverage and Landmark Selection Benchmark
 
-Status: proposed (2026-07-15). Depends on Task 180's reviewed NO-GO and the
-completed Task 179 physical hash-shard lane. Feeds conditional Task 182 and
-Task 172's distributed performance gate. Priority: P1 measurement-first
-quality follow-up.
+Status: completed — NO-GO (2026-07-15). The best bounded candidate reached
+0.9990 / 0.9685 / 0.9625 distinct recall at 10k/50k/100k and 39.8 ms 100k
+warm p50, failing the 0.9990 quality floor at 50k/100k and the 37.6 ms latency
+ceiling. No candidate advances to Task 182. Depends on Task 180's reviewed
+NO-GO and the completed Task 179 physical hash-shard lane.
 
 ## Why
 
