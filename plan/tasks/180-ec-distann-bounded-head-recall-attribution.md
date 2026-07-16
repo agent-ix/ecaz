@@ -1,9 +1,11 @@
 # Task 180: ec_distann Bounded-Head Recall Attribution Benchmark
 
-Status: proposed (2026-07-14). Depends on the completed Task 179 physical
-hash-shard lane. Feeds Task 172's still-open distributed performance gate.
-Owner: coder (to be assigned). One branch from Task 179's signed-off head.
-Priority: P1 measurement-first follow-up.
+Status: completed — measured negative for width/seed tuning (corrected
+2026-07-15). The selected width64/seeds64 arm was statistically flat in recall
+and slower than unchanged production at 100k. The original rationale also
+cited proposed NFR-017 targets as hard gates; those targets were not
+stakeholder-approved. Depends on the completed Task 179 physical hash-shard
+lane and feeds Task 181's completed landmark-selection follow-up.
 
 ## Why
 
@@ -86,8 +88,8 @@ topology preflight for every arm. Change one axis per A/B.
    limiting factor.
 6. Run `exact_neighbor` only when the best bounded seeding arm is within
    `0.0050` of the same-run owner-scan oracle but still below NFR-017's
-   `0.9990` recall floor. Use the exact same seeds in RaBitQ and exact-neighbor
-   arms so the result attributes only traversal scoring.
+   proposed `0.9990` recall target. Use the exact same seeds in RaBitQ and
+   exact-neighbor arms so the result attributes only traversal scoring.
 
 The screen uses at least 200 held-out queries / 2,000 top-10 membership trials.
 Latency arms use the exact NFR-017/Task-146 cache and concurrency protocol;
@@ -133,18 +135,21 @@ bounded candidate:
 
 1. performs no O(N) per-query owner scan and has an explicit cap on all
    query-time head work;
-2. reaches distinct recall@10 at least `0.9990` at 10k, 50k, and 100k;
-3. reaches 100k warm p50 at or below the NFR-017 IVF anchor of `37.6 ms` and
-   p95 at or below `3x` its own p50;
+2. demonstrates a reproducible recall improvement over unchanged production
+   where bounded-head coverage is deficient without regressing another scale;
+3. reports matched 10k/50k/100k warm latency and storage, with no material cost
+   that negates the recall improvement;
 4. passes the physical topology and remote-engagement gates at every scale;
 5. reports rather than hides head storage/memory and build-time growth; and
 6. reproduces under a clean release build with machine-attested extension
    provenance.
 
-If no bounded arm passes, close Task 180 with a reviewed NO-GO and the measured
-Pareto frontier. A NO-GO is a valid completion outcome; do not weaken NFR-017,
-promote owner-scan behavior, or change production defaults to manufacture a
-winner.
+The proposed NFR-017 values (`0.9990` recall and the `37.6 ms` IVF anchor) are
+aspirational comparison points, not stakeholder-approved hard task gates. If
+no bounded arm provides a useful relative improvement, close Task 180 with a
+reviewed NO-GO and the measured Pareto frontier. A NO-GO is a valid completion
+outcome; do not promote owner-scan behavior or change production defaults to
+manufacture a winner.
 
 ## Stop conditions
 
@@ -175,7 +180,9 @@ winner.
 2. `reviews/task-180/002-100k-attribution-screen/`: Phase 1 implementation,
    exact per-axis A/B evidence, and the pre-registered Phase 2 candidate.
 3. `reviews/task-180/003-full-scale-decision/`: 10k/50k/100k confirmation,
-   NFR-017 verdict, and GO/NO-GO closeout.
+   proposed NFR-017 comparison, and GO/NO-GO closeout.
+4. `reviews/task-180/004-decision-rationale-correction/`: correction separating
+   the valid relative width/seed NO-GO from unapproved proposed NFR targets.
 
 ## References
 

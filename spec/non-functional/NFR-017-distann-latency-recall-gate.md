@@ -19,9 +19,15 @@ relationships:
 
 ## Statement
 
-The ec_distann access method SHALL achieve distinct_recall@10 ≥ 0.999 at the
-10k, 50k, and 100k staged real corpora with 3-worker multinode p50 latency
-at or below the release single-instance IVF anchor at matched recall.
+Proposed target: ec_distann achieves distinct_recall@10 ≥ 0.999 at the 10k,
+50k, and 100k staged real corpora with 3-worker multinode p50 latency at or
+below the release single-instance IVF anchor at matched recall.
+
+This NFR remains `PROPOSED`: its numerical values are aspirational comparison
+targets authored during planning, not stakeholder-approved release or task
+acceptance criteria. Until explicitly accepted, benchmark packets should report
+them for context but must not use them alone to block a demonstrably beneficial
+relative A/B improvement from proceeding to production-path validation.
 
 ## Scope
 

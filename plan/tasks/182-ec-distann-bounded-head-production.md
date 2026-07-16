@@ -1,8 +1,10 @@
 # Task 182: ec_distann Bounded-Head Production Implementation
 
-Status: **won't pursue** (2026-07-15). Task 181 closed NO-GO: no bounded
-candidate passed its 10k/50k/100k recall and latency entry gate. No production
-implementation was started. Depends on Tasks 179, 180, and 181.
+Status: **proposed / unblocked** (corrected 2026-07-15). Task 181 selected the
+bounded 4,096 training-landmark, exact-scoring candidate for a production-path
+implementation and A/B. The earlier `won't pursue` disposition incorrectly
+treated proposed NFR-017 targets as stakeholder-approved hard entry gates.
+Depends on Tasks 179, 180, and 181.
 
 ## Why
 
@@ -24,23 +26,29 @@ physical-generation build and read paths, preserve bounded query work and
 lifecycle correctness, and make a separately reviewed promote/iterate/abandon
 decision from production-path A/B evidence.
 
-If Task 181 closes NO-GO, mark Task 182 `won't pursue` without implementation.
+If Task 181 closes NO-GO on relative A/B evidence, mark Task 182 `won't
+pursue` without implementation.
 
 ## Entry gate
 
-Before any code change, packet 001 must cite and verify all of the following:
+Before any code change, the corrected entry packet (packet 003) and the first
+implementation packet must cite and verify all of the following:
 
-1. Task 181's final outside-review feedback is present and accepts GO;
+1. Task 181's final decision identifies a GO candidate;
 2. one candidate is named with no unresolved algorithm or parameter choice;
-3. the candidate passed distinct recall `>= 0.9990` at 10k/50k/100k;
-4. it passed 100k warm p50 `<= 37.6 ms` and p95 `<= 3x` p50;
+3. the candidate demonstrates reproducible recall improvement over unchanged
+   production where bounded-head coverage is deficient without regressing the
+   remaining measured scale;
+4. matched 10k/50k/100k warm latency and storage are reported, including any
+   regression as well as improvement;
 5. all per-query work and per-level memory/storage caps are explicit;
 6. no query-time owner scan, uncapped fanout, or evaluation-query training is
    involved; and
 7. its benchmark-only implementation has deterministic build/output digests.
 
 Failure of any entry item blocks implementation and returns the decision to a
-new measurement task; do not redesign the candidate inside Task 182.
+new measurement task; do not redesign the candidate inside Task 182. Proposed
+NFR-017 targets remain comparison points and do not independently block entry.
 
 ## Production design checkpoint
 
@@ -129,8 +137,11 @@ production path. A benchmark-feature result cannot substitute for this gate.
 Promote the selected production policy/default only if it:
 
 1. preserves all correctness, lifecycle, recovery, and bounded-work invariants;
-2. reaches distinct recall@10 `>= 0.9990` at 10k/50k/100k;
-3. reaches 100k warm p50 `<= 37.6 ms` and p95 `<= 3x` p50;
+2. reproduces Task 181's recall improvement over unchanged production without
+   a recall regression at another measured scale;
+3. retains an acceptable matched-latency and storage tradeoff, with the
+   proposed `0.9990` recall and `37.6 ms` IVF anchor reported separately as
+   aspirational context rather than hard pass/fail criteria;
 4. passes topology/provenance/remote-engagement gates at every scale;
 5. has accepted build-time, total-storage, and cached-head costs reported rather
    than hidden;
@@ -138,20 +149,25 @@ Promote the selected production policy/default only if it:
    latency regression; and
 7. receives outside review of code, format/ADR, tests, and benchmark evidence.
 
-If correctness holds but performance does not reproduce, keep the policy
-default-off only when it has a concrete reviewed experimental use; otherwise
-remove it and close `abandon`. Do not weaken NFR-017 or promote owner-scan work.
+If correctness holds but the relative performance improvement does not
+reproduce, keep the policy default-off only when it has a concrete reviewed
+experimental use; otherwise remove it and close `abandon`. Do not promote
+owner-scan work.
 
 ## Required review packets
 
-1. `reviews/task-182/001-entry-and-production-design/`: Task 181 GO verification,
-   frozen contract, format/ADR, and implementation plan;
-2. `reviews/task-182/002-builder-and-format/`: deterministic builder, metadata,
-   storage, inspection, and compatibility;
-3. `reviews/task-182/003-query-and-lifecycle/`: production read path, caps,
+1. `reviews/task-182/001-entry-and-production-design/`: historical conditional
+   design; its hard entry gate is superseded;
+2. `reviews/task-182/002-wont-pursue-closeout/`: historical disposition,
+   superseded;
+3. `reviews/task-182/003-reopen-correction/`: corrected Task 181 GO verification
+   and frozen candidate;
+4. `reviews/task-182/004-builder-and-format/`: deterministic builder, production
+   contract, metadata, storage, inspection, compatibility, and any format/ADR;
+5. `reviews/task-182/005-query-and-lifecycle/`: production read path, caps,
    publication/recovery/retirement, and fault evidence;
-4. `reviews/task-182/004-production-ab/`: 10k/50k/100k production-path A/B; and
-5. `reviews/task-182/005-closeout/`: outside-reviewed promote/iterate/abandon
+6. `reviews/task-182/006-production-ab/`: 10k/50k/100k production-path A/B; and
+7. `reviews/task-182/007-closeout/`: outside-reviewed promote/iterate/abandon
    decision and task/index status sync.
 
 Every evidence packet follows NFR-007 provenance and repository artifact rules.

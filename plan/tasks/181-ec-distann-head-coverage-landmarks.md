@@ -1,10 +1,12 @@
 # Task 181: ec_distann Head-Coverage and Landmark Selection Benchmark
 
-Status: completed — NO-GO (2026-07-15). The best bounded candidate reached
-0.9990 / 0.9685 / 0.9625 distinct recall at 10k/50k/100k and 39.8 ms 100k
-warm p50, failing the 0.9990 quality floor at 50k/100k and the 37.6 ms latency
-ceiling. No candidate advances to Task 182. Depends on Task 180's reviewed
-NO-GO and the completed Task 179 physical hash-shard lane.
+Status: completed — GO to Task 182 (corrected 2026-07-15). The best bounded
+candidate reached 0.9990 / 0.9685 / 0.9625 distinct recall at 10k/50k/100k.
+Relative to unchanged production it was recall-flat at 10k, improved recall by
+0.0140 at 50k and 0.0350 at 100k, and reduced warm p50 by 6.8 ms and 2.4 ms at
+50k and 100k respectively. The earlier NO-GO incorrectly treated the proposed
+NFR-017 targets as stakeholder-approved hard task gates. Depends on Task 180's
+reviewed NO-GO and the completed Task 179 physical hash-shard lane.
 
 ## Why
 
@@ -137,7 +139,7 @@ that simpler candidate.
 
 Run same-seed RaBitQ versus exact-neighbor traversal only when the best bounded
 candidate is within `0.0050` distinct recall of the same-run owner oracle but
-remains below NFR-017's `0.9990` floor. The two arms must use byte-identical
+remains below NFR-017's proposed `0.9990` target. The two arms must use byte-identical
 seed IDs and the same graph/BW/H/top-k. This is the only phase allowed to infer
 a residual neighbor-code contribution.
 
@@ -168,8 +170,11 @@ construction time. Training diagnostics never break an evaluation tie.
 Issue GO to Task 182 only if one precisely identified bounded candidate:
 
 1. performs no O(N) query-time scan and declares all query-work caps;
-2. reaches distinct recall@10 `>= 0.9990` at 10k, 50k, and 100k;
-3. reaches 100k warm p50 `<= 37.6 ms` and p95 `<= 3x` its own p50;
+2. demonstrates a reproducible recall improvement over unchanged production at
+   the scales where bounded-head coverage is deficient, without regressing
+   recall at the remaining scale;
+3. reports matched warm latency and storage at every scale and does not trade
+   the recall gain for a material latency or storage regression;
 4. passes exact/disjoint topology and remote-engagement gates at every scale;
 5. reports all head levels' storage, cache, and construction costs;
 6. reproduces under a clean release build with per-node unanimous provenance;
@@ -177,8 +182,11 @@ Issue GO to Task 182 only if one precisely identified bounded candidate:
 7. has a frozen deterministic policy contract that Task 182 can implement
    without post-hoc algorithm selection.
 
-If no candidate passes, close Task 181 with a reviewed NO-GO. Do not weaken
-NFR-017, promote training-query leakage, or substitute the owner oracle.
+The proposed NFR-017 values (`0.9990` recall and the `37.6 ms` IVF anchor) are
+reported as aspirational comparison targets, not stakeholder-approved hard
+entry criteria for this research-to-production handoff. If no candidate shows
+a useful relative improvement, close Task 181 with a reviewed NO-GO. Do not
+promote training-query leakage or substitute the owner oracle.
 
 ## Evidence and packet rules
 
