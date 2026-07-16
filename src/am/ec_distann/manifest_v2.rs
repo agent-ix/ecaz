@@ -27,7 +27,7 @@ pub const DISTANN_SOURCE_SNAPSHOT_VERSION: u16 = 1;
 pub const DISTANN_READY_RECEIPT_VERSION: u16 = 1;
 pub const DISTANN_EPOCH_MANIFEST_VERSION: u16 = 2;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION: u16 = 1;
-pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION: u16 = 1;
+pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION: u16 = 2;
 pub const DISTANN_READY_RECEIPT_STATE: u8 = 1;
 pub const DISTANN_EPOCH_FINGERPRINT_BYTES: usize = 34;
 pub const DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET: usize = 0;
@@ -37,13 +37,14 @@ pub const DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET: usize = 0;
 pub const DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET: usize = 0;
 pub const DISTANN_READY_RECEIPT_BYTES: usize = 303;
 pub const DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES: usize = 31;
-pub const DISTANN_MANIFEST_BUILD_OPTIONS_BYTES: usize = 30;
+pub const DISTANN_MANIFEST_BUILD_OPTIONS_BYTES: usize = 73;
 
 const SOURCE_SNAPSHOT_DOMAIN: &[u8] = b"ec_distann_source_snapshot_v1\0";
 const READY_RECEIPT_DOMAIN: &[u8] = b"ec_distann_ready_receipt_v1\0";
 const EPOCH_MANIFEST_DOMAIN: &[u8] = b"ec_distann_epoch_manifest_v2\0";
 const DIGEST_BYTES: usize = 32;
-const BUILD_OPTIONS_BYTES: usize = 26;
+const BUILD_OPTIONS_V1_BYTES: usize = 26;
+const MANIFEST_BUILD_OPTIONS_V1_VERSION: u16 = 1;
 const MAX_SNAPSHOT_XIDS: usize = 1_000_000;
 
 fn validate_parent_fingerprint(parent: &[u8]) -> Result<(), String> {
@@ -369,26 +370,39 @@ impl DistannManifestBuildOptions {
             );
         }
         let options = self.options.encode()?;
-        debug_assert_eq!(options.len(), BUILD_OPTIONS_BYTES);
-        let mut encoder = CanonicalEncoder::with_capacity(4 + options.len());
-        encoder.put_u16(DISTANN_MANIFEST_BUILD_OPTIONS_VERSION);
+        let legacy = options.len() == BUILD_OPTIONS_V1_BYTES;
+        let mut encoder = CanonicalEncoder::with_capacity(8 + options.len());
+        encoder.put_u16(if legacy {
+            MANIFEST_BUILD_OPTIONS_V1_VERSION
+        } else {
+            DISTANN_MANIFEST_BUILD_OPTIONS_VERSION
+        });
         encoder.put_u16(self.graph_degree);
-        encoder.put_fixed(&options);
+        if legacy {
+            encoder.put_fixed(&options);
+        } else {
+            encoder.put_len_prefixed(&options)?;
+        }
         encoder.finish()
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
         let mut decoder = CanonicalDecoder::new(input, "manifest build options")?;
         let version = decoder.get_u16("manifest build options version")?;
-        if version != DISTANN_MANIFEST_BUILD_OPTIONS_VERSION {
-            return Err(format!(
-                "EC_EPOCH_MANIFEST: unsupported build options version {version}"
-            ));
-        }
         let graph_degree = decoder.get_u16("graph degree")?;
-        let options = DistannBuildOptions::decode(
-            decoder.get_bytes(BUILD_OPTIONS_BYTES, "canonical build options")?,
-        )?;
+        let options = match version {
+            MANIFEST_BUILD_OPTIONS_V1_VERSION => DistannBuildOptions::decode(
+                decoder.get_bytes(BUILD_OPTIONS_V1_BYTES, "canonical build options")?,
+            )?,
+            DISTANN_MANIFEST_BUILD_OPTIONS_VERSION => {
+                DistannBuildOptions::decode(decoder.get_len_prefixed("canonical build options")?)?
+            }
+            _ => {
+                return Err(format!(
+                    "EC_EPOCH_MANIFEST: unsupported build options version {version}"
+                ))
+            }
+        };
         decoder.finish("manifest build options")?;
         let value = Self {
             graph_degree,
@@ -827,6 +841,10 @@ pub(crate) fn sample_manifest_v2() -> DistannEpochManifestV2 {
                 closure_epsilon: 0.3,
                 head_index_cap: 4096,
                 build_shards: 0,
+                head_policy:
+                    crate::am::ec_distann::generation_descriptor::DistannHeadPolicy::CurrentSampleGraph,
+                training_query_count: 0,
+                training_query_digest: [0; 32],
             },
         },
         row_schema_fingerprint: [0x66; DIGEST_BYTES],
@@ -938,6 +956,38 @@ mod tests {
         let mut invalid_uuid = manifest;
         invalid_uuid.build_id = [0xAB; 16];
         assert!(invalid_uuid.encode().is_err());
+    }
+
+    #[test]
+    fn manifest_build_options_preserve_legacy_bytes_and_round_trip_trained_policy() {
+        let legacy = sample_manifest_v2().build_options;
+        let legacy_bytes = legacy.encode().unwrap();
+        assert_eq!(legacy_bytes.len(), 30);
+        assert_eq!(
+            u16::from_le_bytes(legacy_bytes[0..2].try_into().unwrap()),
+            MANIFEST_BUILD_OPTIONS_V1_VERSION
+        );
+        assert_eq!(
+            DistannManifestBuildOptions::decode(&legacy_bytes).unwrap(),
+            legacy
+        );
+
+        let mut trained = legacy;
+        trained.options.head_policy =
+            super::super::generation_descriptor::DistannHeadPolicy::TrainingLandmarksExact;
+        trained.options.training_query_count =
+            super::super::generation_descriptor::DISTANN_TRAINING_QUERY_COUNT;
+        trained.options.training_query_digest = [0x7a; 32];
+        let trained_bytes = trained.encode().unwrap();
+        assert_eq!(trained_bytes.len(), DISTANN_MANIFEST_BUILD_OPTIONS_BYTES);
+        assert_eq!(
+            u16::from_le_bytes(trained_bytes[0..2].try_into().unwrap()),
+            DISTANN_MANIFEST_BUILD_OPTIONS_VERSION
+        );
+        assert_eq!(
+            DistannManifestBuildOptions::decode(&trained_bytes).unwrap(),
+            trained
+        );
     }
 
     #[test]
@@ -1091,6 +1141,10 @@ mod tests {
                 closure_epsilon: 0.3,
                 head_index_cap: 4096,
                 build_shards: 0,
+                head_policy:
+                    crate::am::ec_distann::generation_descriptor::DistannHeadPolicy::CurrentSampleGraph,
+                training_query_count: 0,
+                training_query_digest: [0; 32],
             },
             expected_global_count: 10,
             expected_global_graph_digest: [2; 32],

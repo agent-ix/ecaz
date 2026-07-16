@@ -122,6 +122,7 @@ impl PhysicalGraphWorkspace {
     pub(crate) fn head_sample(
         &self,
         head_index_cap: usize,
+        training: Option<&super::head_sample::DistannTrainingQuerySet>,
     ) -> Result<super::head_sample::DistannHeadSample, String> {
         let vectors = self
             .capture
@@ -129,6 +130,17 @@ impl PhysicalGraphWorkspace {
             .iter()
             .map(|row| row.source_vector.clone())
             .collect::<Vec<_>>();
+        if let Some(training) = training {
+            return super::head_sample::build_training_head_sample(
+                training,
+                head_index_cap,
+                self.capture.dimensions,
+                &self.vec_ids,
+                &vectors,
+                &self.codes,
+                &self.codec_artifact,
+            );
+        }
         let policy = super::options::current_benchmark_head_policy()?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         {
@@ -147,10 +159,7 @@ impl PhysicalGraphWorkspace {
         }
         #[cfg(not(feature = "distann-head-attribution-benchmark"))]
         {
-            debug_assert_eq!(
-                policy,
-                super::options::BenchmarkHeadPolicy::CurrentSample
-            );
+            debug_assert_eq!(policy, super::options::BenchmarkHeadPolicy::CurrentSample);
             super::head_sample::build_head_sample(
                 &self.graph,
                 self.medoid,
@@ -934,11 +943,8 @@ pub(crate) fn build_physical_graph_workspace(
         )?
     };
     let code_len = binding.code_len(usize::from(dimensions))?;
-    let shape = DistannHandoffShape::new(
-        code_len,
-        graph_degree,
-        capture.non_dropped_attribute_count,
-    )?;
+    let shape =
+        DistannHandoffShape::new(code_len, graph_degree, capture.non_dropped_attribute_count)?;
     // This is intentionally before Vamana construction and before any remote
     // begin. Only one spooled payload is materialized at a time.
     capture.preflight_handoff_entries(shape)?;
@@ -998,14 +1004,14 @@ pub(crate) fn build_physical_graph_workspace(
                 crate::am::approximate_medoid(node_count, DISTANN_MEDOID_SAMPLE_CAP, seed, dist);
             (
                 crate::am::build_vamana_graph_with_stats(
-                node_count,
-                medoid,
-                graph_degree,
-                build_list_size,
-                options.alpha,
-                seed,
-                dist,
-            )
+                    node_count,
+                    medoid,
+                    graph_degree,
+                    build_list_size,
+                    options.alpha,
+                    seed,
+                    dist,
+                )
                 .0,
                 medoid,
             )

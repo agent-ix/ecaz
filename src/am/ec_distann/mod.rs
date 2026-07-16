@@ -92,7 +92,7 @@ pub(crate) use self::generation_catalog::extension_relation_name as catalog_rela
 pub(crate) use self::coordinator_retirement::ensure_fingerprint_not_retiring as ensure_fingerprint_not_retiring_for_test;
 pub use self::generation_descriptor::{
     roster_digest, DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
-    DistannGenerationDescriptor, DistannOwnerExpectation, DistannRosterEntry,
+    DistannGenerationDescriptor, DistannHeadPolicy, DistannOwnerExpectation, DistannRosterEntry,
     DISTANN_BUILD_SPEC_VERSION, DISTANN_BUILD_SPEC_VERSION_OFFSET, DISTANN_CODEC_ARTIFACT_VERSION,
     DISTANN_CODEC_ARTIFACT_VERSION_OFFSET, DISTANN_GENERATION_DESCRIPTOR_COORDINATOR_UUID_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_DIMENSIONS_OFFSET,

@@ -20,7 +20,7 @@ use super::canonical_wire::{domain_digest, fixed_digest, is_rfc4122_v4_uuid, Can
 use super::generation_catalog::extension_relation_name;
 use super::generation_descriptor::{
     validate_roster, DistannBuildOptions, DistannBuildSpec, DistannGenerationDescriptor,
-    DistannRosterEntry,
+    DistannHeadPolicy, DistannRosterEntry,
 };
 use super::generation_store::{control_compatibility_digest, open_control_index};
 use super::handoff_router::{DistannHandoffRouteIdentity, DistannStageAck};

@@ -109,7 +109,7 @@ The version-2 canonical epoch manifest SHALL contain these fields in this order:
 | graph_record_version | u16 | FR-076 persisted graph-record format |
 | handoff_wire_version | u16 | FR-076 handoff version |
 | codec_parameters | length-prefixed bytes | canonical version-1 codec kind and shape subrecord defined below |
-| build_options | length-prefixed bytes | canonical version-1 graph/build options subrecord defined below |
+| build_options | length-prefixed bytes | canonical version-1 legacy or version-2 trained-head graph/build options subrecord defined below |
 | row_schema_fingerprint | byte[32] | FR-078 schema identity |
 | head_sample_digest | byte[32] | canonical coordinator head-sample identity |
 | global_record_count | u64 | exact source vec_id cardinality |
@@ -134,6 +134,14 @@ FR-077 auto-shard meaning. The subrecord is exactly 30 bytes.
 After its version and graph-degree prefix, its remaining 26 bytes are exactly
 the FR-078 canonical build-options bytes used inside the build specification;
 the manifest does not define a second interpretation.
+
+For a trained generation the subrecord SHALL instead contain
+`options_version u16 = 2`, `graph_degree u16`, a length-prefixed FR-078
+version-2 build-options record, including policy, training count, and training
+digest. Legacy version-1 subrecords remain exactly 30 bytes and preserve
+current-sample/Vamana semantics. The manifest fingerprint therefore binds both
+head selection and query-time scoring semantics without reinterpreting an old
+epoch.
 
 Every array in the manifest SHALL begin with an unsigned little-endian `u32`
 element count. Each participant receipt SHALL then be encoded as one

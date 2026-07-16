@@ -99,7 +99,13 @@ Build `ec_distann` as a fifth access method:
   outcome (2026-07-12, `reviews/task-179/038-head-cap-sensitivity/`): retain
   4096.** Physical recall for C=64/256/4096 was 0.995/0.995/1.000 at 10k,
   0.975/0.980/0.980 at 50k, and 0.920/0.945/0.950 at 100k; all topology and
-  remote-engagement gates passed.
+  remote-engagement gates passed. **Task 182 amendment (2026-07-16):** retain C
+  = 4096 but permit an explicit generation policy
+  `training_landmarks_exact`. It selects the persisted cap from 200 ordered,
+  digest-bound, disjoint training queries and exact-scores the bounded persisted
+  landmarks. The original BFS/Vamana policy remains the default and legacy
+  interpretation. The trained policy is generation metadata, never a query GUC
+  or filesystem dependency, and remains default-off pending production A/B.
 - **D4 — BatANN baton passing rejected for now** (operator decision:
   orchestrator-pull only). Reopen trigger: M2 measurement showing hop-round
   RTT ≥ 50% of multinode p50 at gate-relevant BW/H.

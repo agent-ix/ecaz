@@ -1,8 +1,7 @@
 //! FR-080 canonical persisted coordinator head sample.
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
-use std::collections::{HashMap, HashSet};
 use std::collections::{BTreeMap, VecDeque};
+use std::collections::{HashMap, HashSet};
 
 use pgrx::datum::Uuid;
 use pgrx::{pg_sys, Spi};
@@ -13,8 +12,10 @@ use super::manifest_v2::DistannEpochManifestV2;
 
 const HEAD_SAMPLE_DOMAIN: &[u8] = b"ec_distann_head_sample_v1\0";
 const HEAD_GRAPH_DOMAIN: &[u8] = b"ec_distann_head_graph_v1\0";
+const TRAINING_QUERY_DOMAIN: &[u8] = b"ec_distann_head_training_queries_v1\0";
 const HEAD_SAMPLE_VERSION: u16 = 1;
 const HEAD_GRAPH_SEED_WRAP: u64 = 0x6469_7374_5f74_6721;
+pub(crate) const TRAINED_HEAD_SEED_COUNT: usize = 32;
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DistannHeadSampleEntry {
@@ -26,6 +27,56 @@ pub(crate) struct DistannHeadSampleEntry {
 pub(crate) struct DistannHeadSample {
     pub(crate) dimensions: u16,
     pub(crate) entries: Vec<DistannHeadSampleEntry>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DistannTrainingQuerySet {
+    pub(crate) queries: Vec<Vec<f32>>,
+    pub(crate) digest: [u8; 32],
+}
+
+impl DistannTrainingQuerySet {
+    pub(crate) fn from_ordered_rows(
+        rows: Vec<(i64, Vec<f32>)>,
+        dimensions: usize,
+    ) -> Result<Self, String> {
+        if rows.len() != super::generation_descriptor::DISTANN_TRAINING_QUERY_COUNT as usize {
+            return Err(format!(
+                "EC_HEAD_TRAINING: expected {} training queries, found {}",
+                super::generation_descriptor::DISTANN_TRAINING_QUERY_COUNT,
+                rows.len()
+            ));
+        }
+        let mut previous = None;
+        let mut hasher = Sha256::new();
+        hasher.update(TRAINING_QUERY_DOMAIN);
+        hasher.update((rows.len() as u32).to_le_bytes());
+        hasher.update((dimensions as u32).to_le_bytes());
+        let mut queries = Vec::with_capacity(rows.len());
+        for (ordinal, vector) in rows {
+            if previous.is_some_and(|value| ordinal <= value) {
+                return Err(
+                    "EC_HEAD_TRAINING: training ordinals must be strictly ascending".to_owned(),
+                );
+            }
+            if vector.len() != dimensions || vector.iter().any(|value| !value.is_finite()) {
+                return Err(format!(
+                    "EC_HEAD_TRAINING: training ordinal {ordinal} has invalid shape/value"
+                ));
+            }
+            previous = Some(ordinal);
+            hasher.update(ordinal.to_le_bytes());
+            for value in &vector {
+                hasher.update(value.to_le_bytes());
+            }
+            queries.push(vector);
+        }
+        let digest = hasher.finalize().into();
+        if digest == [0; 32] {
+            return Err("EC_HEAD_TRAINING: canonical digest is zero".to_owned());
+        }
+        Ok(Self { queries, digest })
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -279,7 +330,6 @@ pub(crate) fn benchmark_geometry_region(vector: &[f32]) -> u16 {
     signature
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 fn geometry_landmark_nodes(vec_ids: &[u64], vectors: &[Vec<f32>], cap: usize) -> Vec<usize> {
     let mut regions = BTreeMap::<u16, Vec<usize>>::new();
     for (node, vector) in vectors.iter().enumerate() {
@@ -363,7 +413,10 @@ fn load_training_queries(path: &str, dimensions: usize) -> Result<Vec<Vec<f32>>,
     // next 200 rows are the declared disjoint training slice.
     for (line_index, line) in contents.lines().enumerate().skip(200).take(200) {
         let (_, encoded) = line.split_once('\t').ok_or_else(|| {
-            format!("EC_HEAD_SAMPLE: malformed training TSV row {}", line_index + 1)
+            format!(
+                "EC_HEAD_SAMPLE: malformed training TSV row {}",
+                line_index + 1
+            )
         })?;
         let vector: Vec<f32> = serde_json::from_str(encoded).map_err(|error| {
             format!(
@@ -386,6 +439,104 @@ fn load_training_queries(path: &str, dimensions: usize) -> Result<Vec<Vec<f32>>,
         ));
     }
     Ok(queries)
+}
+
+fn training_landmark_nodes(
+    queries: &[Vec<f32>],
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    codec_artifact: &super::generation_descriptor::DistannCodecArtifact,
+    sample_cap: usize,
+) -> Result<Vec<usize>, String> {
+    let mut frequency = HashMap::<usize, (u32, usize)>::new();
+    for query in queries {
+        let prepared =
+            super::quantizer::DistannPreparedQuery::prepare_artifact(codec_artifact, query)?;
+        let mut ranked = codes
+            .iter()
+            .enumerate()
+            .map(|(node, code)| (prepared.score_dist(code), vec_ids[node], node))
+            .collect::<Vec<_>>();
+        let keep = 32.min(ranked.len());
+        if keep < ranked.len() {
+            ranked.select_nth_unstable_by(keep, |left, right| {
+                left.0
+                    .total_cmp(&right.0)
+                    .then_with(|| left.1.cmp(&right.1))
+            });
+            ranked.truncate(keep);
+        }
+        ranked.sort_unstable_by(|left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        for (rank, (_, _, node)) in ranked.into_iter().enumerate() {
+            let entry = frequency.entry(node).or_insert((0, rank));
+            entry.0 += 1;
+            entry.1 = entry.1.min(rank);
+        }
+    }
+    let mut ranked = frequency.into_iter().collect::<Vec<_>>();
+    ranked.sort_unstable_by(|(left_node, left), (right_node, right)| {
+        right
+            .0
+            .cmp(&left.0)
+            .then_with(|| left.1.cmp(&right.1))
+            .then_with(|| vec_ids[*left_node].cmp(&vec_ids[*right_node]))
+    });
+    let mut selected = ranked
+        .into_iter()
+        .map(|(node, _)| node)
+        .take(sample_cap)
+        .collect::<Vec<_>>();
+    let mut seen = selected.iter().copied().collect::<HashSet<_>>();
+    for node in geometry_landmark_nodes(vec_ids, vectors, sample_cap) {
+        if selected.len() == sample_cap {
+            break;
+        }
+        if seen.insert(node) {
+            selected.push(node);
+        }
+    }
+    Ok(selected)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn build_training_head_sample(
+    training: &DistannTrainingQuerySet,
+    cap: usize,
+    dimensions: u16,
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    codec_artifact: &super::generation_descriptor::DistannCodecArtifact,
+) -> Result<DistannHeadSample, String> {
+    if vec_ids.len() != vectors.len() || vec_ids.len() != codes.len() {
+        return Err("EC_HEAD_SAMPLE: policy input cardinality mismatch".to_owned());
+    }
+    let sample_cap = cap.min(vec_ids.len());
+    let selected = training_landmark_nodes(
+        &training.queries,
+        vec_ids,
+        vectors,
+        codes,
+        codec_artifact,
+        sample_cap,
+    )?;
+    let sample = DistannHeadSample {
+        dimensions,
+        entries: selected
+            .into_iter()
+            .map(|node| DistannHeadSampleEntry {
+                vec_id: vec_ids[node],
+                vector: vectors[node].clone(),
+            })
+            .collect(),
+    };
+    sample.validate(cap)?;
+    Ok(sample)
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -423,56 +574,14 @@ pub(crate) fn build_benchmark_head_sample(
                     .to_owned()
             })?;
             let queries = load_training_queries(path, usize::from(dimensions))?;
-            let mut frequency = HashMap::<usize, (u32, usize)>::new();
-            for query in &queries {
-                let prepared = super::quantizer::DistannPreparedQuery::prepare_artifact(
-                    codec_artifact,
-                    query,
-                )?;
-                let mut ranked = codes
-                    .iter()
-                    .enumerate()
-                    .map(|(node, code)| (prepared.score_dist(code), vec_ids[node], node))
-                    .collect::<Vec<_>>();
-                let keep = 32.min(ranked.len());
-                if keep < ranked.len() {
-                    ranked.select_nth_unstable_by(keep, |left, right| {
-                        left.0.total_cmp(&right.0).then_with(|| left.1.cmp(&right.1))
-                    });
-                    ranked.truncate(keep);
-                }
-                ranked.sort_unstable_by(|left, right| {
-                    left.0.total_cmp(&right.0).then_with(|| left.1.cmp(&right.1))
-                });
-                for (rank, (_, _, node)) in ranked.into_iter().enumerate() {
-                    let entry = frequency.entry(node).or_insert((0, rank));
-                    entry.0 += 1;
-                    entry.1 = entry.1.min(rank);
-                }
-            }
-            let mut ranked = frequency.into_iter().collect::<Vec<_>>();
-            ranked.sort_unstable_by(|(left_node, left), (right_node, right)| {
-                right
-                    .0
-                    .cmp(&left.0)
-                    .then_with(|| left.1.cmp(&right.1))
-                    .then_with(|| vec_ids[*left_node].cmp(&vec_ids[*right_node]))
-            });
-            let mut selected = ranked
-                .into_iter()
-                .map(|(node, _)| node)
-                .take(sample_cap)
-                .collect::<Vec<_>>();
-            let mut seen = selected.iter().copied().collect::<HashSet<_>>();
-            for node in geometry_landmark_nodes(vec_ids, vectors, sample_cap) {
-                if selected.len() == sample_cap {
-                    break;
-                }
-                if seen.insert(node) {
-                    selected.push(node);
-                }
-            }
-            selected
+            training_landmark_nodes(
+                &queries,
+                vec_ids,
+                vectors,
+                codes,
+                codec_artifact,
+                sample_cap,
+            )?
         }
     };
     let sample = DistannHeadSample {
@@ -496,6 +605,7 @@ pub(crate) fn persist_head_sample(
     build_id: Uuid,
     sample: &DistannHeadSample,
     graph: &DistannPersistedHeadGraph,
+    build_options: super::generation_descriptor::DistannBuildOptions,
 ) -> Result<(), String> {
     graph.validate(sample.entries.len(), usize::MAX)?;
     let digest = sample.digest()?;
@@ -508,9 +618,11 @@ pub(crate) fn persist_head_sample(
                 "INSERT INTO {state} (
                      index_oid, logical_index_uuid, build_id, dimensions,
                      sample_count, head_sample_digest,
+                     head_policy, training_query_count, training_query_digest,
                      head_graph_entry, head_graph_digest
                  ) VALUES ($1::oid, $2::uuid, $3::uuid, $4::integer,
-                           $5::integer, $6::bytea, $7::integer, $8::bytea)"
+                           $5::integer, $6::bytea, $7::smallint, $8::integer,
+                           $9::bytea, $10::integer, $11::bytea)"
             ),
             None,
             &[
@@ -522,6 +634,11 @@ pub(crate) fn persist_head_sample(
                     .map_err(|_| "EC_HEAD_SAMPLE: sample count exceeds integer".to_owned())?
                     .into(),
                 digest.to_vec().into(),
+                i16::from(build_options.head_policy as u8).into(),
+                i32::try_from(build_options.training_query_count)
+                    .map_err(|_| "EC_HEAD_SAMPLE: training query count exceeds integer".to_owned())?
+                    .into(),
+                build_options.training_query_digest.to_vec().into(),
                 i32::try_from(graph.entry)
                     .map_err(|_| "EC_HEAD_SAMPLE: graph entry exceeds integer".to_owned())?
                     .into(),
@@ -578,13 +695,24 @@ pub(crate) fn load_head_sample(
     let candidate = extension_relation_name("ec_distann_build_candidate")?;
     let state = extension_relation_name("ec_distann_generation_head_state")?;
     let rows = extension_relation_name("ec_distann_generation_head_sample")?;
-    let (manifest_bytes, dimensions, sample_count, stored_digest, graph_entry, stored_graph_digest) =
-        Spi::connect(|client| {
-            client
-                .select(
-                    &format!(
-                        "SELECT candidate.epoch_manifest, state.dimensions,
+    let (
+        manifest_bytes,
+        dimensions,
+        sample_count,
+        stored_digest,
+        stored_policy,
+        stored_training_count,
+        stored_training_digest,
+        graph_entry,
+        stored_graph_digest,
+    ) = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT candidate.epoch_manifest, state.dimensions,
                             state.sample_count, state.head_sample_digest,
+                            state.head_policy, state.training_query_count,
+                            state.training_query_digest,
                             state.head_graph_entry, state.head_graph_digest
                        FROM {candidate} candidate
                        JOIN {state} state USING (index_oid, logical_index_uuid, build_id)
@@ -592,43 +720,52 @@ pub(crate) fn load_head_sample(
                         AND candidate.logical_index_uuid = $2::uuid
                         AND candidate.build_id = $3::uuid
                         AND candidate.epoch_fingerprint = $4::bytea"
-                    ),
-                    None,
-                    &[
-                        index_oid.into(),
-                        logical_index_uuid.into(),
-                        build_id.into(),
-                        expected_fingerprint.to_vec().into(),
-                    ],
-                )
-                .map_err(|error| format!("EC_HEAD_SAMPLE: state lookup failed: {error}"))?
-                .map(|row| {
-                    Ok((
-                        row["epoch_manifest"]
-                            .value::<Vec<u8>>()?
-                            .ok_or("manifest NULL")?,
-                        row["dimensions"].value::<i32>()?.ok_or("dimensions NULL")?,
-                        row["sample_count"]
-                            .value::<i32>()?
-                            .ok_or("sample count NULL")?,
-                        row["head_sample_digest"]
-                            .value::<Vec<u8>>()?
-                            .ok_or("digest NULL")?,
-                        row["head_graph_entry"]
-                            .value::<i32>()?
-                            .ok_or("graph entry NULL")?,
-                        row["head_graph_digest"]
-                            .value::<Vec<u8>>()?
-                            .ok_or("graph digest NULL")?,
-                    ))
-                })
-                .next()
-                .transpose()
-                .map_err(|error: Box<dyn std::error::Error + Send + Sync>| {
-                    format!("EC_HEAD_SAMPLE: state decode failed: {error}")
-                })?
-                .ok_or_else(|| "EC_HEAD_SAMPLE: exact persisted head state is missing".to_owned())
-        })?;
+                ),
+                None,
+                &[
+                    index_oid.into(),
+                    logical_index_uuid.into(),
+                    build_id.into(),
+                    expected_fingerprint.to_vec().into(),
+                ],
+            )
+            .map_err(|error| format!("EC_HEAD_SAMPLE: state lookup failed: {error}"))?
+            .map(|row| {
+                Ok((
+                    row["epoch_manifest"]
+                        .value::<Vec<u8>>()?
+                        .ok_or("manifest NULL")?,
+                    row["dimensions"].value::<i32>()?.ok_or("dimensions NULL")?,
+                    row["sample_count"]
+                        .value::<i32>()?
+                        .ok_or("sample count NULL")?,
+                    row["head_sample_digest"]
+                        .value::<Vec<u8>>()?
+                        .ok_or("digest NULL")?,
+                    row["head_policy"]
+                        .value::<i16>()?
+                        .ok_or("head policy NULL")?,
+                    row["training_query_count"]
+                        .value::<i32>()?
+                        .ok_or("training query count NULL")?,
+                    row["training_query_digest"]
+                        .value::<Vec<u8>>()?
+                        .ok_or("training query digest NULL")?,
+                    row["head_graph_entry"]
+                        .value::<i32>()?
+                        .ok_or("graph entry NULL")?,
+                    row["head_graph_digest"]
+                        .value::<Vec<u8>>()?
+                        .ok_or("graph digest NULL")?,
+                ))
+            })
+            .next()
+            .transpose()
+            .map_err(|error: Box<dyn std::error::Error + Send + Sync>| {
+                format!("EC_HEAD_SAMPLE: state decode failed: {error}")
+            })?
+            .ok_or_else(|| "EC_HEAD_SAMPLE: exact persisted head state is missing".to_owned())
+    })?;
     let manifest = DistannEpochManifestV2::decode(&manifest_bytes)?;
     if manifest.fingerprint()?.as_bytes() != expected_fingerprint {
         return Err("EC_HEAD_SAMPLE: candidate manifest fingerprint mismatch".to_owned());
@@ -641,6 +778,13 @@ pub(crate) fn load_head_sample(
     let stored_digest: [u8; 32] = stored_digest
         .try_into()
         .map_err(|_| "EC_HEAD_SAMPLE: stored digest is not 32 bytes".to_owned())?;
+    let stored_policy = u8::try_from(stored_policy)
+        .map_err(|_| "EC_HEAD_SAMPLE: stored head policy is invalid".to_owned())?;
+    let stored_training_count = u32::try_from(stored_training_count)
+        .map_err(|_| "EC_HEAD_SAMPLE: stored training query count is invalid".to_owned())?;
+    let stored_training_digest: [u8; 32] = stored_training_digest
+        .try_into()
+        .map_err(|_| "EC_HEAD_SAMPLE: stored training query digest is not 32 bytes".to_owned())?;
     let graph_entry = u32::try_from(graph_entry)
         .map_err(|_| "EC_HEAD_SAMPLE: stored graph entry is invalid".to_owned())?;
     let stored_graph_digest: [u8; 32] = stored_graph_digest
@@ -648,6 +792,12 @@ pub(crate) fn load_head_sample(
         .map_err(|_| "EC_HEAD_SAMPLE: stored graph digest is not 32 bytes".to_owned())?;
     if sample_count > cap || stored_digest != manifest.head_sample_digest {
         return Err("EC_HEAD_SAMPLE: state exceeds cap or disagrees with manifest".to_owned());
+    }
+    if stored_policy != manifest.build_options.options.head_policy as u8
+        || stored_training_count != manifest.build_options.options.training_query_count
+        || stored_training_digest != manifest.build_options.options.training_query_digest
+    {
+        return Err("EC_HEAD_SAMPLE: stored head policy/input disagrees with manifest".to_owned());
     }
     if (manifest.global_record_count == 0) != (sample_count == 0) {
         return Err("EC_HEAD_SAMPLE: empty/nonempty state disagrees with manifest".to_owned());
@@ -724,6 +874,7 @@ pub(crate) struct DistannPhysicalHeadIndex {
     entry: u32,
     vec_ids: Vec<u64>,
     vectors: Vec<Vec<f32>>,
+    policy: super::generation_descriptor::DistannHeadPolicy,
 }
 
 impl DistannPhysicalHeadIndex {
@@ -731,6 +882,7 @@ impl DistannPhysicalHeadIndex {
         sample: DistannHeadSample,
         persisted: DistannPersistedHeadGraph,
         graph_degree: usize,
+        policy: super::generation_descriptor::DistannHeadPolicy,
     ) -> Result<Option<Self>, String> {
         if sample.entries.is_empty() {
             persisted.validate(0, graph_degree)?;
@@ -751,7 +903,28 @@ impl DistannPhysicalHeadIndex {
             entry: persisted.entry,
             vec_ids,
             vectors,
+            policy,
         }))
+    }
+
+    pub(crate) fn search_configured(
+        &self,
+        query: &[f32],
+        search_width: usize,
+        seed_count: usize,
+    ) -> Vec<super::scan::DistannSeedCandidate> {
+        match self.policy {
+            super::generation_descriptor::DistannHeadPolicy::CurrentSampleGraph => {
+                self.search(query, search_width, seed_count)
+            }
+            super::generation_descriptor::DistannHeadPolicy::TrainingLandmarksExact => {
+                self.search_exact(query, TRAINED_HEAD_SEED_COUNT.min(seed_count))
+            }
+        }
+    }
+
+    pub(crate) const fn policy(&self) -> super::generation_descriptor::DistannHeadPolicy {
+        self.policy
     }
 
     pub(crate) fn search(
@@ -877,7 +1050,9 @@ impl DistannPhysicalHeadIndex {
             })
             .collect::<Vec<_>>();
         first_level.sort_unstable_by(|left, right| {
-            left.0.total_cmp(&right.0).then_with(|| left.1.cmp(&right.1))
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
         });
         first_level.truncate(16);
         let mut second_level = Vec::with_capacity(512);
@@ -888,10 +1063,7 @@ impl DistannPhysicalHeadIndex {
                 }
                 second_level.push(super::scan::DistannSeedCandidate {
                     vec_id: self.vec_ids[*node],
-                    dist: -crate::am::ec_diskann::source_inner_product(
-                        query,
-                        &self.vectors[*node],
-                    ),
+                    dist: -crate::am::ec_diskann::source_inner_product(query, &self.vectors[*node]),
                 });
             }
             if second_level.len() == 512 {
@@ -920,6 +1092,7 @@ impl DistannPhysicalHeadIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::am::ec_distann::generation_descriptor::DistannHeadPolicy;
 
     fn sample() -> DistannHeadSample {
         DistannHeadSample {
@@ -953,9 +1126,10 @@ mod tests {
         assert_eq!(first, second);
         assert_eq!(first.digest().unwrap(), second.digest().unwrap());
 
-        let index = DistannPhysicalHeadIndex::load(sample, first, 2)
-            .unwrap()
-            .unwrap();
+        let index =
+            DistannPhysicalHeadIndex::load(sample, first, 2, DistannHeadPolicy::CurrentSampleGraph)
+                .unwrap()
+                .unwrap();
         let seeds = index.search(&[1.0, 0.0], 2, 2);
         assert!(!seeds.is_empty());
         assert!(seeds.len() <= 2);
@@ -972,9 +1146,10 @@ mod tests {
     fn benchmark_search_can_return_more_seeds_than_frontier_width() {
         let sample = sample();
         let graph = DistannPersistedHeadGraph::build(&sample, 2, 4, 1.2, 17).unwrap();
-        let index = DistannPhysicalHeadIndex::load(sample, graph, 2)
-            .unwrap()
-            .unwrap();
+        let index =
+            DistannPhysicalHeadIndex::load(sample, graph, 2, DistannHeadPolicy::CurrentSampleGraph)
+                .unwrap()
+                .unwrap();
 
         let seeds = index.search(&[1.0, 0.0], 1, 4);
 
@@ -995,9 +1170,7 @@ mod tests {
             .map(|value| vec![value as f32 / 16.0, 1.0 - value as f32 / 16.0])
             .collect::<Vec<_>>();
         let graph = crate::am::VamanaGraph {
-            neighbors: (0..16)
-                .map(|node| vec![((node + 1) % 16) as u32])
-                .collect(),
+            neighbors: (0..16).map(|node| vec![((node + 1) % 16) as u32]).collect(),
             max_degree: 1,
         };
 
@@ -1010,7 +1183,14 @@ mod tests {
             graph_landmark_nodes(&graph, 0, &vec_ids, 8).unwrap()
         );
         assert_eq!(graph_landmarks.len(), 8);
-        assert_eq!(graph_landmarks.iter().copied().collect::<HashSet<_>>().len(), 8);
+        assert_eq!(
+            graph_landmarks
+                .iter()
+                .copied()
+                .collect::<HashSet<_>>()
+                .len(),
+            8
+        );
     }
 
     #[test]
@@ -1020,6 +1200,44 @@ mod tests {
             entry: 0,
             neighbors: vec![vec![4], vec![], vec![], vec![]],
         };
-        assert!(DistannPhysicalHeadIndex::load(sample, graph, 2).is_err());
+        assert!(DistannPhysicalHeadIndex::load(
+            sample,
+            graph,
+            2,
+            DistannHeadPolicy::CurrentSampleGraph,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn training_query_set_digest_and_exact_policy_are_deterministic() {
+        let rows = (0..super::super::generation_descriptor::DISTANN_TRAINING_QUERY_COUNT)
+            .map(|ordinal| (i64::from(ordinal), vec![ordinal as f32, 1.0]))
+            .collect::<Vec<_>>();
+        let first = DistannTrainingQuerySet::from_ordered_rows(rows.clone(), 2).unwrap();
+        let second = DistannTrainingQuerySet::from_ordered_rows(rows, 2).unwrap();
+        assert_eq!(first, second);
+        assert_ne!(first.digest, [0; 32]);
+
+        let mut duplicates = (0..super::super::generation_descriptor::DISTANN_TRAINING_QUERY_COUNT)
+            .map(|ordinal| (i64::from(ordinal), vec![ordinal as f32, 1.0]))
+            .collect::<Vec<_>>();
+        duplicates[1].0 = duplicates[0].0;
+        assert!(DistannTrainingQuerySet::from_ordered_rows(duplicates, 2).is_err());
+
+        let sample = sample();
+        let graph = DistannPersistedHeadGraph::build(&sample, 2, 4, 1.2, 17).unwrap();
+        let index = DistannPhysicalHeadIndex::load(
+            sample,
+            graph,
+            2,
+            DistannHeadPolicy::TrainingLandmarksExact,
+        )
+        .unwrap()
+        .unwrap();
+        let configured = index.search_configured(&[1.0, 0.0], 1, 2);
+        assert_eq!(configured.len(), 2);
+        assert_eq!(configured[0].vec_id, 10);
+        assert_eq!(index.policy(), DistannHeadPolicy::TrainingLandmarksExact);
     }
 }

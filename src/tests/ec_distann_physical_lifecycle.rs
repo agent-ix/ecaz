@@ -1998,6 +1998,215 @@ fn test_distann_same_xact_recovery_rejected() {
 }
 
 #[pg_test]
+fn test_distann_trained_head_build_replay_publish_and_inspection() {
+    let conninfo = current_pg_test_loopback_conninfo();
+    let mut client = postgres::Client::connect(&conninfo, postgres::NoTls)
+        .expect("trained-head loopback connection should open");
+    let extension_schema = client
+        .query_one(
+            "SELECT pg_catalog.quote_ident(n.nspname)
+               FROM pg_catalog.pg_extension e
+               JOIN pg_catalog.pg_namespace n ON n.oid = e.extnamespace
+              WHERE e.extname = 'ecaz'",
+            &[],
+        )
+        .expect("extension schema should resolve")
+        .get::<_, String>(0);
+    client
+        .batch_execute(&format!("SET search_path = {extension_schema}, public"))
+        .expect("search_path should set");
+    client
+        .batch_execute(
+            "DROP TABLE IF EXISTS ec_distann_th_source CASCADE;
+             DROP TABLE IF EXISTS ec_distann_th_training;
+             CREATE TABLE ec_distann_th_source (
+                 source_id uuid NOT NULL,
+                 embedding ecvector(4) NOT NULL
+             );
+             INSERT INTO ec_distann_th_source
+             SELECT (
+                        substr(md5(g::text), 1, 8) || '-' ||
+                        substr(md5(g::text), 9, 4) || '-4' ||
+                        substr(md5(g::text), 14, 3) || '-8' ||
+                        substr(md5(g::text), 18, 3) || '-' ||
+                        substr(md5(g::text), 21, 12)
+                    )::uuid,
+                    encode_to_ecvector(
+                        ARRAY[g::real, (g % 7)::real, (g % 5)::real, 1.0], 4, 42
+                    )
+               FROM generate_series(1, 64) AS g;
+             CREATE TABLE ec_distann_th_training (
+                 training_ordinal bigint NOT NULL,
+                 vector real[] NOT NULL
+             );
+             INSERT INTO ec_distann_th_training
+             SELECT g::bigint,
+                    ARRAY[g::real / 200.0::real,
+                          (g % 11)::real,
+                          (g % 5)::real,
+                          1.0::real]
+               FROM generate_series(1, 200) AS g;
+             CREATE INDEX ec_distann_th_idx ON ec_distann_th_source
+                 USING ec_distann (embedding ecvector_distann_ip_ops)
+                 INCLUDE (source_id)
+                 WITH (distributed_control = true, source_identity = 'include',
+                       graph_degree = 4, neighbor_code_format = 'rabitq');
+             SELECT ec_distann_configure_participant_identity(
+                 'ec_distann_th_idx'::regclass, 'trained-head/node-17'
+             );
+             INSERT INTO ec_distann_node_descriptor (
+                 index_oid, logical_index_uuid, roster_ordinal, node_id,
+                 endpoint_identity, conninfo_secret_name, remote_index_regclass,
+                 participant_logical_index_uuid, compatibility_digest, is_local
+             )
+             SELECT 'ec_distann_th_idx'::regclass::oid, logical_index_uuid, 0, 17,
+                    'trained-head/node-17', 'DISTANN_TRAINED_HEAD', canonical_index_regclass,
+                    logical_index_uuid, compatibility_digest, true
+               FROM ec_distann_control_identity('ec_distann_th_idx'::regclass)",
+        )
+        .expect("trained-head fixture should create");
+
+    let first_build = "67676767-6767-4767-8767-676767676767";
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 'ec_distann_th_idx'::regclass, 7, '{first_build}'::uuid)"
+        ))
+        .expect("trained-head build should register");
+    let first_candidate = client
+        .query_one(
+            &format!(
+                "SELECT ec_distann_build_epoch_with_training(
+                     'ec_distann_th_idx'::regclass, 7, '{first_build}'::uuid,
+                     'ec_distann_th_training'::regclass)"
+            ),
+            &[],
+        )
+        .expect("trained-head build should reach Ready")
+        .get::<_, Vec<u8>>(0);
+    let replay_candidate = client
+        .query_one(
+            &format!(
+                "SELECT ec_distann_build_epoch_with_training(
+                     'ec_distann_th_idx'::regclass, 7, '{first_build}'::uuid,
+                     'ec_distann_th_training'::regclass)"
+            ),
+            &[],
+        )
+        .expect("identical trained-head replay should succeed")
+        .get::<_, Vec<u8>>(0);
+    assert_eq!(replay_candidate, first_candidate);
+
+    client
+        .batch_execute(
+            "UPDATE ec_distann_th_training
+                SET vector = ARRAY[9.0::real, 9.0::real, 9.0::real, 9.0::real]
+              WHERE training_ordinal = 1",
+        )
+        .expect("training mutation should commit");
+    let mismatch = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_build_epoch_with_training(
+                 'ec_distann_th_idx'::regclass, 7, '{first_build}'::uuid,
+                 'ec_distann_th_training'::regclass)"
+        ))
+        .expect_err("changed training input must not replay an immutable candidate");
+    assert!(
+        mismatch
+            .as_db_error()
+            .map(|error| error.message().contains("EC_BUILD_ID_CONFLICT"))
+            .unwrap_or(false),
+        "training mismatch must be classified: {mismatch}"
+    );
+    client
+        .batch_execute(
+            "UPDATE ec_distann_th_training
+                SET vector = ARRAY[1.0::real / 200.0::real,
+                                   1.0::real, 1.0::real, 1.0::real]
+              WHERE training_ordinal = 1",
+        )
+        .expect("training input should restore");
+
+    for statement in [
+        format!(
+            "SELECT ec_distann_decide_epoch_publish(
+                 'ec_distann_th_idx'::regclass, '{first_build}'::uuid)"
+        ),
+        format!(
+            "SELECT ec_distann_recover_epoch_publish(
+                 'ec_distann_th_idx'::regclass, '{first_build}'::uuid)"
+        ),
+    ] {
+        client
+            .batch_execute(&statement)
+            .unwrap_or_else(|error| panic!("trained-head publication failed: {error}"));
+    }
+    let policy = client
+        .query_one(
+            "SELECT head_policy, scoring_mode, training_query_count,
+                    octet_length(training_query_digest), head_index_cap,
+                    returned_seed_count, sample_count,
+                    octet_length(head_sample_digest)
+               FROM ec_distann_active_head_policy('ec_distann_th_idx'::regclass)",
+            &[],
+        )
+        .expect("active trained-head policy should be inspectable");
+    assert_eq!(policy.get::<_, String>(0), "training_landmarks_exact");
+    assert_eq!(policy.get::<_, String>(1), "exact_landmark_scan");
+    assert_eq!(policy.get::<_, i32>(2), 200);
+    assert_eq!(policy.get::<_, i32>(3), 32);
+    assert_eq!(policy.get::<_, i32>(4), 4096);
+    assert_eq!(policy.get::<_, i32>(5), 32);
+    assert_eq!(policy.get::<_, i32>(6), 64);
+    assert_eq!(policy.get::<_, i32>(7), 32);
+    let first_head_digest = client
+        .query_one(
+            &format!(
+                "SELECT head_sample_digest
+                   FROM ec_distann_generation_head_state
+                  WHERE index_oid = 'ec_distann_th_idx'::regclass::oid
+                    AND build_id = '{first_build}'::uuid"
+            ),
+            &[],
+        )
+        .expect("first trained head should persist")
+        .get::<_, Vec<u8>>(0);
+
+    let second_build = "68686868-6868-4868-8868-686868686868";
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 'ec_distann_th_idx'::regclass, 8, '{second_build}'::uuid);
+             SELECT ec_distann_build_epoch_with_training(
+                 'ec_distann_th_idx'::regclass, 8, '{second_build}'::uuid,
+                 'ec_distann_th_training'::regclass);"
+        ))
+        .expect("repeated trained-head build should reach Ready");
+    let second_head_digest = client
+        .query_one(
+            &format!(
+                "SELECT head_sample_digest
+                   FROM ec_distann_generation_head_state
+                  WHERE index_oid = 'ec_distann_th_idx'::regclass::oid
+                    AND build_id = '{second_build}'::uuid"
+            ),
+            &[],
+        )
+        .expect("second trained head should persist")
+        .get::<_, Vec<u8>>(0);
+    assert_eq!(second_head_digest, first_head_digest);
+
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_abort_epoch_build(
+                 'ec_distann_th_idx'::regclass, '{second_build}'::uuid);
+             DROP TABLE ec_distann_th_source CASCADE;
+             DROP TABLE ec_distann_th_training;"
+        ))
+        .expect("trained-head fixture should clean up");
+}
+
+#[pg_test]
 fn test_distann_multi_epoch_publish() {
     const SECRET_KEY: &str = "EC_SPIRE_REMOTE_CONNINFO_DISTANN_MULTI_EPOCH";
     let _env_lock = env_var_test_lock();
@@ -5409,6 +5618,9 @@ fn create_distann_participant_lifecycle_fixture(
                 closure_epsilon: 0.3,
                 head_index_cap: 4096,
                 build_shards: 1,
+                head_policy: crate::am::ec_distann::DistannHeadPolicy::CurrentSampleGraph,
+                training_query_count: 0,
+                training_query_digest: [0; 32],
             },
         },
         row_schema_fingerprint: descriptor.row_schema.fingerprint().unwrap(),

@@ -7,7 +7,89 @@ use super::*;
 
 #[pg_extern(volatile, strict)]
 fn ec_distann_build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid) -> Vec<u8> {
-    build_epoch(index_regclass, epoch, build_id)
+    build_epoch(index_regclass, epoch, build_id, None)
+}
+
+#[pg_extern(volatile, strict)]
+fn ec_distann_build_epoch_with_training(
+    index_regclass: PgRelation,
+    epoch: i64,
+    build_id: Uuid,
+    training_relation: PgRelation,
+) -> Vec<u8> {
+    let training_relation_oid = training_relation.oid();
+    let result = build_epoch(index_regclass, epoch, build_id, Some(training_relation_oid));
+    drop(training_relation);
+    result
+}
+
+fn load_training_query_set(
+    relation_oid: pg_sys::Oid,
+    dimensions: usize,
+) -> Result<super::super::head_sample::DistannTrainingQuerySet, String> {
+    let relation = super::super::handoff::qualified_relation_name(relation_oid)?;
+    let rows = Spi::connect(|client| {
+        let valid_shape = client
+            .select(
+                "SELECT count(*) = 2
+                        AND count(*) FILTER (
+                            WHERE attname = 'training_ordinal'
+                              AND atttypid = 'bigint'::regtype) = 1
+                        AND count(*) FILTER (
+                            WHERE attname = 'vector'
+                              AND atttypid = 'real[]'::regtype) = 1 AS valid
+                   FROM pg_catalog.pg_attribute
+                  WHERE attrelid = $1::oid AND attnum > 0 AND NOT attisdropped",
+                None,
+                &[relation_oid.into()],
+            )
+            .map_err(|error| {
+                format!("EC_HEAD_TRAINING: training relation shape lookup failed: {error}")
+            })?
+            .map(|row| {
+                row["valid"]
+                    .value::<bool>()
+                    .map_err(|error| {
+                        format!("EC_HEAD_TRAINING: training relation shape decode failed: {error}")
+                    })
+                    .map(|value| value.unwrap_or(false))
+            })
+            .next()
+            .transpose()?
+            .unwrap_or(false);
+        if !valid_shape {
+            return Err(
+                "EC_HEAD_TRAINING: relation must contain exactly training_ordinal bigint and vector real[]"
+                    .to_owned(),
+            );
+        }
+        client
+            .select(
+                &format!(
+                    "SELECT training_ordinal, vector FROM {relation} ORDER BY training_ordinal"
+                ),
+                None,
+                &[],
+            )
+            .map_err(|error| format!("EC_HEAD_TRAINING: training relation read failed: {error}"))?
+            .map(|row| {
+                let ordinal = row["training_ordinal"]
+                    .value::<i64>()
+                    .map_err(|error| {
+                        format!("EC_HEAD_TRAINING: training ordinal decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_HEAD_TRAINING: training ordinal is NULL".to_owned())?;
+                let vector = row["vector"]
+                    .value::<Vec<f32>>()
+                    .map_err(|error| {
+                        format!("EC_HEAD_TRAINING: training vector decode failed: {error}")
+                    })?
+                    .ok_or_else(|| "EC_HEAD_TRAINING: training vector is NULL".to_owned())?;
+                Ok((ordinal, vector))
+            })
+            .collect::<Result<Vec<_>, String>>()
+    })?;
+    super::super::head_sample::DistannTrainingQuerySet::from_ordered_rows(rows, dimensions)
 }
 
 fn capture_source_snapshot() -> Result<DistannSourceSnapshot, String> {
@@ -90,7 +172,12 @@ fn capture_source_snapshot() -> Result<DistannSourceSnapshot, String> {
 /// begin/stage/seal, then atomically persists the immutable build candidate and
 /// transitions the registration to Ready. This slice supports a single local
 /// participant; multi-owner remote transport is a later slice.
-pub(super) fn build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid) -> Vec<u8> {
+pub(super) fn build_epoch(
+    index_regclass: PgRelation,
+    epoch: i64,
+    build_id: Uuid,
+    training_relation_oid: Option<pg_sys::Oid>,
+) -> Vec<u8> {
     (|| -> Result<Vec<u8>, String> {
         super::super::lifecycle_guard::require_read_committed("ec_distann_build_epoch")?;
         super::super::build_gate::require_shared_preload()?;
@@ -159,6 +246,39 @@ pub(super) fn build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         if let Some(existing_candidate) =
             load_build_candidate(index_oid, logical_index_uuid, build_id)?
         {
+            let manifest = DistannEpochManifestV2::decode(&existing_candidate.epoch_manifest)?;
+            match training_relation_oid {
+                Some(training_relation_oid) => {
+                    let descriptor = DistannGenerationDescriptor::decode(
+                        &existing_candidate.generation_descriptor,
+                    )?;
+                    let training = load_training_query_set(
+                        training_relation_oid,
+                        usize::from(descriptor.dimensions),
+                    )?;
+                    if manifest.build_options.options.head_policy
+                        != DistannHeadPolicy::TrainingLandmarksExact
+                        || manifest.build_options.options.training_query_count
+                            != training.queries.len() as u32
+                        || manifest.build_options.options.training_query_digest != training.digest
+                    {
+                        return Err(
+                            "EC_BUILD_ID_CONFLICT: training head policy/input differs from immutable candidate"
+                                .to_owned(),
+                        );
+                    }
+                }
+                None => {
+                    if manifest.build_options.options.head_policy
+                        != DistannHeadPolicy::CurrentSampleGraph
+                    {
+                        return Err(
+                            "EC_BUILD_ID_CONFLICT: current-head replay targets a trained-head candidate"
+                                .to_owned(),
+                        );
+                    }
+                }
+            }
             if requires_source_lock {
                 source_lock.retain();
             } else {
@@ -211,6 +331,14 @@ pub(super) fn build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
         }?;
         let mut workspace =
             super::super::build_physical_graph_workspace(index_relation.as_ptr(), capture)?;
+        let training = training_relation_oid
+            .map(|relation_oid| {
+                load_training_query_set(
+                    relation_oid,
+                    usize::from(workspace.codec_artifact().dimensions()),
+                )
+            })
+            .transpose()?;
 
         // Counting/digest pass before the first participant begin.
         let expectations =
@@ -231,8 +359,22 @@ pub(super) fn build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
             closure_epsilon: options.closure_epsilon,
             head_index_cap: to_u32(options.head_index_cap, "head_index_cap")?,
             build_shards: to_u32(options.build_shards, "build_shards")?,
+            head_policy: if training.is_some() {
+                DistannHeadPolicy::TrainingLandmarksExact
+            } else {
+                DistannHeadPolicy::CurrentSampleGraph
+            },
+            training_query_count: training
+                .as_ref()
+                .map(|set| set.queries.len() as u32)
+                .unwrap_or(0),
+            training_query_digest: training.as_ref().map(|set| set.digest).unwrap_or([0; 32]),
         };
-        let head_sample = workspace.head_sample(build_options.head_index_cap as usize)?;
+        build_options.encode()?;
+        let head_sample = workspace.head_sample(
+            build_options.head_index_cap as usize,
+            training.as_ref(),
+        )?;
         let head_sample_digest = head_sample.digest()?;
         let head_graph = super::super::head_sample::DistannPersistedHeadGraph::build(
             &head_sample,
@@ -593,6 +735,7 @@ pub(super) fn build_epoch(index_regclass: PgRelation, epoch: i64, build_id: Uuid
                 build_id,
                 &head_sample,
                 &head_graph,
+                build_options,
             )?;
             let transitioned = client
                 .update(

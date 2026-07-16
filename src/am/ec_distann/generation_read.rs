@@ -1266,7 +1266,10 @@ fn ec_distann_physical_seed_coverage_benchmark(
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     let bounded = head.search(&query, search_width, seed_count);
     let exact = head.search_exact(&query, seed_count);
-    let owner_ids = owner.iter().map(|seed| seed.vec_id).collect::<std::collections::HashSet<_>>();
+    let owner_ids = owner
+        .iter()
+        .map(|seed| seed.vec_id)
+        .collect::<std::collections::HashSet<_>>();
     let owner_in_head = owner
         .iter()
         .filter(|seed| head.contains_vec_id(seed.vec_id))
@@ -1318,6 +1321,137 @@ fn ec_distann_physical_head_policy() -> String {
         .unwrap_or_else(|error| pgrx::error!("{error}"))
         .as_str()
         .to_owned()
+}
+
+/// Attests the immutable production head policy bound to the active generation.
+#[pg_extern(stable, strict)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_active_head_policy(
+    index_regclass: PgRelation,
+) -> TableIterator<
+    'static,
+    (
+        name!(head_policy, String),
+        name!(scoring_mode, String),
+        name!(training_query_count, i32),
+        name!(training_query_digest, Vec<u8>),
+        name!(head_index_cap, i32),
+        name!(returned_seed_count, i32),
+        name!(sample_count, i32),
+        name!(head_sample_digest, Vec<u8>),
+    ),
+> {
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    let result = (|| -> Result<_, String> {
+        let (control, _handle, _metadata, logical_index_uuid) =
+            super::generation_store::open_control_index(
+                index_oid,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                "ec_distann_active_head_policy",
+            )?;
+        drop(control);
+        let active = generation_catalog::extension_relation_name("ec_distann_active_epoch")?;
+        let candidate = generation_catalog::extension_relation_name("ec_distann_build_candidate")?;
+        let state =
+            generation_catalog::extension_relation_name("ec_distann_generation_head_state")?;
+        let (
+            manifest_bytes,
+            state_policy,
+            state_training_count,
+            state_training_digest,
+            sample_count,
+            sample_digest,
+        ) = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT candidate.epoch_manifest, state.head_policy,
+                                state.training_query_count, state.training_query_digest,
+                                state.sample_count,
+                                state.head_sample_digest
+                           FROM {active} active
+                           JOIN {candidate} candidate
+                             USING (index_oid, logical_index_uuid, build_id)
+                           JOIN {state} state
+                             USING (index_oid, logical_index_uuid, build_id)
+                          WHERE active.index_oid = $1::oid
+                            AND active.logical_index_uuid = $2::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into()],
+                )
+                .map_err(|error| format!("EC_HEAD_SAMPLE: active policy lookup failed: {error}"))?
+                .map(|row| {
+                    Ok((
+                        row["epoch_manifest"]
+                            .value::<Vec<u8>>()?
+                            .ok_or("manifest NULL")?,
+                        row["head_policy"]
+                            .value::<i16>()?
+                            .ok_or("head policy NULL")?,
+                        row["training_query_count"]
+                            .value::<i32>()?
+                            .ok_or("training query count NULL")?,
+                        row["training_query_digest"]
+                            .value::<Vec<u8>>()?
+                            .ok_or("training query digest NULL")?,
+                        row["sample_count"]
+                            .value::<i32>()?
+                            .ok_or("sample count NULL")?,
+                        row["head_sample_digest"]
+                            .value::<Vec<u8>>()?
+                            .ok_or("head sample digest NULL")?,
+                    ))
+                })
+                .next()
+                .transpose()
+                .map_err(|error: Box<dyn std::error::Error + Send + Sync>| {
+                    format!("EC_HEAD_SAMPLE: active policy decode failed: {error}")
+                })?
+                .ok_or_else(|| "EC_GENERATION_MISSING: active head policy is absent".to_owned())
+        })?;
+        let manifest = super::manifest_v2::DistannEpochManifestV2::decode(&manifest_bytes)?;
+        if sample_digest.as_slice() != manifest.head_sample_digest.as_slice() {
+            return Err("EC_HEAD_SAMPLE: active sample digest disagrees with manifest".to_owned());
+        }
+        let options = manifest.build_options.options;
+        if state_policy != options.head_policy as i16
+            || state_training_count != options.training_query_count as i32
+            || state_training_digest.as_slice() != options.training_query_digest.as_slice()
+        {
+            return Err(
+                "EC_HEAD_SAMPLE: active head policy metadata disagrees with manifest".to_owned(),
+            );
+        }
+        let returned_seed_count = super::head_sample::TRAINED_HEAD_SEED_COUNT.min(
+            usize::try_from(sample_count)
+                .map_err(|_| "EC_HEAD_SAMPLE: active sample count is negative".to_owned())?,
+        );
+        let scoring_mode = match options.head_policy {
+            super::generation_descriptor::DistannHeadPolicy::CurrentSampleGraph => {
+                "persisted_head_graph"
+            }
+            super::generation_descriptor::DistannHeadPolicy::TrainingLandmarksExact => {
+                "exact_landmark_scan"
+            }
+        };
+        Ok((
+            options.head_policy.as_str().to_owned(),
+            scoring_mode.to_owned(),
+            i32::try_from(options.training_query_count)
+                .map_err(|_| "EC_HEAD_SAMPLE: training count exceeds integer".to_owned())?,
+            options.training_query_digest.to_vec(),
+            i32::try_from(options.head_index_cap)
+                .map_err(|_| "EC_HEAD_SAMPLE: head cap exceeds integer".to_owned())?,
+            i32::try_from(returned_seed_count)
+                .expect("trained head seed count fits integer"),
+            sample_count,
+            sample_digest,
+        ))
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    TableIterator::once(result)
 }
 
 /// Records the active physical neighbor-scoring strategy in benchmark
@@ -1526,6 +1660,7 @@ impl PhysicalGenerationScan {
                     head_sample,
                     head_graph,
                     usize::from(manifest_build_options.graph_degree),
+                    manifest_build_options.options.head_policy,
                 )?
                 .map(Arc::new)
             };
@@ -1652,7 +1787,7 @@ impl PhysicalGenerationScan {
             super::options::PhysicalSeedMode::PersistedHead => self
                 .head_index
                 .as_ref()
-                .map(|head| head.search(query, search_width, seed_count))
+                .map(|head| head.search_configured(query, search_width, seed_count))
                 .unwrap_or_default(),
             super::options::PhysicalSeedMode::HeadSampleExact => self
                 .head_index

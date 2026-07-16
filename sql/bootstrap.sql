@@ -550,10 +550,20 @@ CREATE TABLE ec_distann_generation_head_state (
     dimensions integer NOT NULL CHECK (dimensions > 0 AND dimensions <= 65535),
     sample_count integer NOT NULL CHECK (sample_count >= 0),
     head_sample_digest bytea NOT NULL CHECK (octet_length(head_sample_digest) = 32),
+    head_policy smallint NOT NULL CHECK (head_policy IN (0, 1)),
+    training_query_count integer NOT NULL CHECK (training_query_count >= 0),
+    training_query_digest bytea NOT NULL CHECK (octet_length(training_query_digest) = 32),
     head_graph_entry integer NOT NULL CHECK (head_graph_entry >= 0),
     head_graph_digest bytea NOT NULL CHECK (octet_length(head_graph_digest) = 32),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    CHECK (
+        (head_policy = 0 AND training_query_count = 0
+            AND training_query_digest = decode(repeat('00', 32), 'hex'))
+        OR
+        (head_policy = 1 AND training_query_count = 200
+            AND training_query_digest <> decode(repeat('00', 32), 'hex'))
+    ),
     FOREIGN KEY (index_oid, logical_index_uuid, build_id)
         REFERENCES ec_distann_build_candidate (index_oid, logical_index_uuid, build_id)
         ON DELETE CASCADE

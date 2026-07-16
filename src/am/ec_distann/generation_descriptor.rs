@@ -56,6 +56,37 @@ const DISTANN_FORMAT_V1_MAX_CLOSURE_EPSILON: f32 = 1.0;
 const DISTANN_FORMAT_V1_MIN_HEAD_INDEX_CAP: u32 = 16;
 const DISTANN_FORMAT_V1_MAX_HEAD_INDEX_CAP: u32 = 1_048_576;
 const DISTANN_FORMAT_V1_MAX_BUILD_SHARDS: u32 = 4096;
+const DISTANN_BUILD_OPTIONS_V1_BYTES: usize = 26;
+const DISTANN_BUILD_OPTIONS_V2_VERSION: u16 = 2;
+const DISTANN_BUILD_OPTIONS_V2_BYTES: usize = 65;
+pub const DISTANN_TRAINING_QUERY_COUNT: u32 = 200;
+pub const DISTANN_TRAINED_HEAD_INDEX_CAP: u32 = 4096;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum DistannHeadPolicy {
+    CurrentSampleGraph = 0,
+    TrainingLandmarksExact = 1,
+}
+
+impl DistannHeadPolicy {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::CurrentSampleGraph => "current_sample_graph",
+            Self::TrainingLandmarksExact => "training_landmarks_exact",
+        }
+    }
+
+    fn decode(value: u8) -> Result<Self, String> {
+        match value {
+            0 => Ok(Self::CurrentSampleGraph),
+            1 => Ok(Self::TrainingLandmarksExact),
+            other => Err(format!(
+                "EC_GENERATION_DESCRIPTOR: unsupported head policy {other}"
+            )),
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DistannRosterEntry {
@@ -550,6 +581,9 @@ pub struct DistannBuildOptions {
     pub closure_epsilon: f32,
     pub head_index_cap: u32,
     pub build_shards: u32,
+    pub head_policy: DistannHeadPolicy,
+    pub training_query_count: u32,
+    pub training_query_digest: [u8; 32],
 }
 
 impl DistannBuildOptions {
@@ -569,18 +603,79 @@ impl DistannBuildOptions {
         {
             return Err("EC_GENERATION_DESCRIPTOR: invalid canonical build options".to_owned());
         }
-        let mut encoder = CanonicalEncoder::with_capacity(26);
+        match self.head_policy {
+            DistannHeadPolicy::CurrentSampleGraph => {
+                if self.training_query_count != 0 || self.training_query_digest != [0; 32] {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: current head policy cannot bind training input"
+                            .to_owned(),
+                    );
+                }
+            }
+            DistannHeadPolicy::TrainingLandmarksExact => {
+                if self.head_index_cap != DISTANN_TRAINED_HEAD_INDEX_CAP
+                    || self.training_query_count != DISTANN_TRAINING_QUERY_COUNT
+                    || self.training_query_digest == [0; 32]
+                {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: trained head policy requires cap 4096 and 200 digest-bound training queries"
+                            .to_owned(),
+                    );
+                }
+            }
+        }
+        let mut encoder = CanonicalEncoder::with_capacity(match self.head_policy {
+            DistannHeadPolicy::CurrentSampleGraph => DISTANN_BUILD_OPTIONS_V1_BYTES,
+            DistannHeadPolicy::TrainingLandmarksExact => DISTANN_BUILD_OPTIONS_V2_BYTES,
+        });
+        if self.head_policy == DistannHeadPolicy::TrainingLandmarksExact {
+            encoder.put_u16(DISTANN_BUILD_OPTIONS_V2_VERSION);
+        }
         encoder.put_u16(self.build_list_size);
         encoder.put_f32(self.alpha);
         encoder.put_u64(self.seed);
         encoder.put_f32(self.closure_epsilon);
         encoder.put_u32(self.head_index_cap);
         encoder.put_u32(self.build_shards);
+        if self.head_policy == DistannHeadPolicy::TrainingLandmarksExact {
+            encoder.put_u8(self.head_policy as u8);
+            encoder.put_u32(self.training_query_count);
+            encoder.put_fixed(&self.training_query_digest);
+        }
         encoder.finish()
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
+        if input.len() == DISTANN_BUILD_OPTIONS_V1_BYTES {
+            let mut decoder = CanonicalDecoder::new(input, "build options v1")?;
+            let options = Self {
+                build_list_size: decoder.get_u16("build list size")?,
+                alpha: decoder.get_f32("alpha")?,
+                seed: decoder.get_u64("seed")?,
+                closure_epsilon: decoder.get_f32("closure epsilon")?,
+                head_index_cap: decoder.get_u32("head index cap")?,
+                build_shards: decoder.get_u32("build shards")?,
+                head_policy: DistannHeadPolicy::CurrentSampleGraph,
+                training_query_count: 0,
+                training_query_digest: [0; 32],
+            };
+            decoder.finish("build options v1")?;
+            options.encode()?;
+            return Ok(options);
+        }
+        if input.len() != DISTANN_BUILD_OPTIONS_V2_BYTES {
+            return Err(format!(
+                "EC_GENERATION_DESCRIPTOR: build options are {} bytes, expected {DISTANN_BUILD_OPTIONS_V1_BYTES} or {DISTANN_BUILD_OPTIONS_V2_BYTES}",
+                input.len()
+            ));
+        }
         let mut decoder = CanonicalDecoder::new(input, "build options")?;
+        let version = decoder.get_u16("build options version")?;
+        if version != DISTANN_BUILD_OPTIONS_V2_VERSION {
+            return Err(format!(
+                "EC_GENERATION_DESCRIPTOR: unsupported build options version {version}"
+            ));
+        }
         let options = Self {
             build_list_size: decoder.get_u16("build list size")?,
             alpha: decoder.get_f32("alpha")?,
@@ -588,6 +683,9 @@ impl DistannBuildOptions {
             closure_epsilon: decoder.get_f32("closure epsilon")?,
             head_index_cap: decoder.get_u32("head index cap")?,
             build_shards: decoder.get_u32("build shards")?,
+            head_policy: DistannHeadPolicy::decode(decoder.get_u8("head policy")?)?,
+            training_query_count: decoder.get_u32("training query count")?,
+            training_query_digest: decoder.get_fixed("training query digest")?,
         };
         decoder.finish("build options")?;
         options.encode()?;
@@ -891,6 +989,9 @@ mod tests {
                 closure_epsilon: 0.3,
                 head_index_cap: 4096,
                 build_shards: 4,
+                head_policy: DistannHeadPolicy::CurrentSampleGraph,
+                training_query_count: 0,
+                training_query_digest: [0; 32],
             },
             expected_global_count: 10,
             expected_global_graph_digest: [2; 32],
@@ -937,5 +1038,49 @@ mod tests {
         negative_zero.build_options.build_list_size = 10;
         negative_zero.build_options.closure_epsilon = -0.0;
         assert!(negative_zero.encode().is_err());
+    }
+
+    #[test]
+    fn build_options_preserve_v1_and_bind_trained_head_inputs() {
+        let current = DistannBuildOptions {
+            build_list_size: 100,
+            alpha: 1.2,
+            seed: 42,
+            closure_epsilon: 0.3,
+            head_index_cap: 4096,
+            build_shards: 0,
+            head_policy: DistannHeadPolicy::CurrentSampleGraph,
+            training_query_count: 0,
+            training_query_digest: [0; 32],
+        };
+        let current_bytes = current.encode().unwrap();
+        assert_eq!(current_bytes.len(), DISTANN_BUILD_OPTIONS_V1_BYTES);
+        assert_eq!(
+            DistannBuildOptions::decode(&current_bytes).unwrap(),
+            current
+        );
+
+        let trained = DistannBuildOptions {
+            head_policy: DistannHeadPolicy::TrainingLandmarksExact,
+            training_query_count: DISTANN_TRAINING_QUERY_COUNT,
+            training_query_digest: [0x7a; 32],
+            ..current
+        };
+        let trained_bytes = trained.encode().unwrap();
+        assert_eq!(trained_bytes.len(), DISTANN_BUILD_OPTIONS_V2_BYTES);
+        assert_eq!(
+            DistannBuildOptions::decode(&trained_bytes).unwrap(),
+            trained
+        );
+
+        let mut wrong_count = trained;
+        wrong_count.training_query_count -= 1;
+        assert!(wrong_count.encode().is_err());
+        let mut wrong_cap = trained;
+        wrong_cap.head_index_cap -= 1;
+        assert!(wrong_cap.encode().is_err());
+        let mut unsupported = trained_bytes;
+        unsupported[2 + DISTANN_BUILD_OPTIONS_V1_BYTES] = 9;
+        assert!(DistannBuildOptions::decode(&unsupported).is_err());
     }
 }

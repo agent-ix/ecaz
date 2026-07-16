@@ -717,7 +717,7 @@ order:
 | parent_fingerprint | length-prefixed bytes | empty or one retained FR-082 fingerprint |
 | source_snapshot_digest | byte[32] | FR-082 canonical snapshot identity |
 | generation_descriptor_digest | byte[32] | descriptor above, binding roster/formats/codec/schema |
-| build_options | length-prefixed bytes | `build_list_size u16`, IEEE-754 `alpha f32_le`, `seed u64`, IEEE-754 `closure_epsilon f32_le`, `head_index_cap u32`, and `build_shards u32`; zero build_shards means FR-077 auto selection; negative-zero closure epsilon is non-canonical and rejected |
+| build_options | length-prefixed bytes | Legacy 26-byte options retain `build_list_size u16`, IEEE-754 `alpha f32_le`, `seed u64`, IEEE-754 `closure_epsilon f32_le`, `head_index_cap u32`, and `build_shards u32`. Task 182 version 2 prefixes `options_version u16 = 2` and appends `head_policy u8`, `training_query_count u32`, and `training_query_digest byte[32]`; zero build_shards means FR-077 auto selection; negative-zero closure epsilon is non-canonical and rejected |
 | expected_global_count | u64 | exact source vec_id count |
 | expected_global_graph_digest | byte[32] | canonical stitched graph content |
 | expected_global_row_tier_digest | byte[32] | canonical source row payload content |
@@ -730,6 +730,11 @@ The frozen version-1 validity domain is: graph degree `4..=256`, build-list size
 bounds, not references to mutable reloption constants. Later reloption tuning
 SHALL NOT make existing version-1 bytes invalid or broaden what an older
 version-1 decoder accepts.
+
+Version-2 trained-head options require policy `training_landmarks_exact`, query
+count 200, and a nonzero canonical digest. Legacy 26-byte options decode as
+`current_sample_graph`, count zero, and a zero no-training digest; they re-encode
+byte-identically. Policy/input mismatches and unknown versions fail closed.
 
 The build-specification digest SHALL be
 `SHA-256("ec_distann_build_spec_v1\0" || canonical_build_specification)`.

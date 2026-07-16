@@ -969,6 +969,10 @@ mod tests {
                 closure_epsilon: 0.3,
                 head_index_cap: 4096,
                 build_shards: 0,
+                head_policy:
+                    crate::am::ec_distann::generation_descriptor::DistannHeadPolicy::CurrentSampleGraph,
+                training_query_count: 0,
+                training_query_digest: [0; 32],
             },
             expected_global_count: manifest.global_record_count,
             expected_global_graph_digest: manifest.global_graph_digest,

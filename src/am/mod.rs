@@ -66,7 +66,7 @@ pub use self::ec_distann::{
     DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildOptions, DistannBuildSpec,
     DistannCancelPublishAuditV1,
     DistannCodecArtifact, DistannEpochFingerprint, DistannEpochManifestV2,
-    DistannGenerationDescriptor,
+    DistannGenerationDescriptor, DistannHeadPolicy,
     DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape,
     DistannManifestBuildOptions, DistannManifestCodecParameters, DistannOwnerExpectation,
     DistannPublishedEpochIdentity, DistannReadyReceipt, DistannRetireDecisionV1,
