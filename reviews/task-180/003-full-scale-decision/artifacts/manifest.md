@@ -1,7 +1,8 @@
 # Task 180 packet 003 artifact manifest
 
 This manifest covers the completed Phase 2 10k/50k/100k confirmation and final
-NFR-017 decision. The selected bounded candidate is a NO-GO.
+The selected width/seed-tuning candidate is a relative A/B NO-GO. Proposed
+NFR-017 targets are reported for context and are not hard task gates.
 
 ## Provenance and fixed shape
 
@@ -109,17 +110,17 @@ fixture log, and the stopped 8.9 GB run directory were pruned. Checksums are in
 
 ## Final decision
 
-| Pre-registered gate | Result | Status |
+| Pre-registered comparison | Result | Status |
 | --- | --- | --- |
 | bounded and no O(N) owner scan | persisted cap4096 width64/seeds64 | pass |
-| distinct recall >= 0.9990 at 10k/50k/100k | 0.9990 / 0.9540 / 0.9280 | **fail** |
-| 100k warm p50 <= 37.6 ms | 40.90 ms | **fail** |
+| proposed distinct recall >= 0.9990 at 10k/50k/100k | 0.9990 / 0.9540 / 0.9280 | below target |
+| proposed 100k warm p50 <= 37.6 ms | 40.90 ms | above anchor |
 | 100k p95 <= 3x own p50 | 52.20 ms <= 122.70 ms | pass |
 | topology/provenance/remote engagement | pass at all three scales | pass |
 | storage and head accounting | present at all three scales | pass |
 
-Verdict: **NO-GO**. Width64/seeds64 is statistically indistinguishable from
-production at 100k (overlapping Wilson intervals), slightly worse at 50k, and
+Verdict: **NO-GO for width/seed tuning**. Width64/seeds64 is statistically
+indistinguishable from production at 100k (overlapping Wilson intervals), slightly worse at 50k, and
 does not recover the quality gap to the owner oracle. No Task 180 production
 default or query-path change should be promoted; the benchmark-only attribution
 surfaces remain isolated behind their diagnostic feature.

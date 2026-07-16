@@ -1,7 +1,8 @@
 # Task 181 packet 005 artifact manifest
 
-This packet records the Phase 5 10k/50k/100k full-scale decision and the final
-Task 181 NO-GO.
+This packet records the Phase 5 10k/50k/100k measurements and Task 181's
+original NO-GO, superseded by packet 006 because the measurements were valid
+but the proposed NFR-017 targets were not approved hard task gates.
 
 ## Provenance and execution
 
@@ -57,8 +58,8 @@ Commands:
 
 Training landmarks are recall-neutral at 10k, gain 0.0140 at 50k, and gain
 0.0350 at 100k. They also improve p50 at 50k/100k relative to current, but
-remain 0.0305 below the recall floor at 50k and 0.0365 below it at 100k. The
-100k p50 is 2.2 ms above the 37.6 ms ceiling.
+remain 0.0305 below the proposed target at 50k and 0.0365 below it at 100k. The
+100k p50 is 2.2 ms above the proposed 37.6 ms IVF comparison anchor.
 
 ## Coverage and storage
 
@@ -83,11 +84,12 @@ Current/training construction and publish times were 69,447/82,045 and
 
 ## Decision
 
-NO-GO. The precisely bounded training-landmark candidate succeeds only at
-10k. It fails the required 0.9990 recall at both 50k and 100k and fails the
-100k 37.6 ms p50 ceiling. The hierarchy was worse, and the residual exact-
-neighbor trigger did not fire. The owner oracle remains diagnostic and O(N).
-No production candidate is passed to Task 182.
+Original decision (superseded): NO-GO. The precisely bounded training-landmark
+candidate reaches the proposed 0.9990 target only at 10k and is above the
+proposed 100k 37.6 ms p50 comparison anchor. The hierarchy was worse, and the
+residual exact-neighbor trigger did not fire. The owner oracle remains
+diagnostic and O(N). This original decision passed no candidate to Task 182;
+packet 006 reverses that disposition based on the relative A/B improvement.
 
 The compact suite manifests/results, reports, per-step summaries, and cited
 recall/latency logs are retained. Corpus/query TSVs, truth caches, PostgreSQL

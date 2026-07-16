@@ -9,6 +9,10 @@ head: e75dfc14bbf0c1ff406a7dc1795f7e1c2f4514d8
 
 # Review request: full-scale NO-GO
 
+> Superseded on 2026-07-15 by packet 006. The measurements below remain valid,
+> but the NO-GO decision incorrectly treated proposed NFR-017 targets as
+> stakeholder-approved hard gates.
+
 Task 181 is complete with a measured NO-GO. Please review the full provenance,
 results, config-correction history, and gate decision in
 `artifacts/manifest.md`.

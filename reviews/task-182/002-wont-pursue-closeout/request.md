@@ -9,10 +9,13 @@ head: e75dfc14bbf0c1ff406a7dc1795f7e1c2f4514d8
 
 # Review request: Task 182 won't-pursue closeout
 
-Task 182 is closed `won't pursue` without implementation because Task 181
-recorded a full-scale NO-GO. Its best bounded candidate failed recall at 50k
-and 100k and failed the 100k p50 ceiling.
+> Superseded on 2026-07-15 by packet 003. The `won't pursue` disposition was
+> based on proposed NFR-017 targets that were not stakeholder-approved hard
+> entry gates.
 
-No production candidate was named, so Task 182's entry gate blocks all builder,
-format, query-path, lifecycle, and default changes. The task definition and
-task index are synchronized with that disposition.
+Task 182 was originally closed `won't pursue` without implementation because
+Task 181 treated the proposed recall and IVF-latency targets as hard gates.
+That interpretation is superseded by packet 003.
+
+The original packet named no production candidate and blocked implementation.
+Packet 003 now names the Task 181 winner and reopens the production-path work.

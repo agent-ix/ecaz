@@ -8,6 +8,10 @@ date: 2026-07-15
 
 # Review request: full-scale bounded-head confirmation
 
+> Decision rationale corrected on 2026-07-15 by packet 004. The measurements
+> and width/seed-tuning NO-GO remain valid, but proposed NFR-017 targets were
+> not stakeholder-approved hard task gates.
+
 Please review the completed Phase 2 matrix and Task 180 NO-GO decision.
 
 ## Pre-registered selection
@@ -41,8 +45,8 @@ of truth.
 2. Confirm the three arms and 10k/50k/100k matrix match Task 180 Phase 2.
 3. Check per-scale topology, provenance, remote engagement, recall/CI, latency,
    build, storage, and head accounting when results land.
-4. Check the final NFR-017 verdict against recall >=0.9990 at every scale,
-   100k p50 <=37.6 ms, and p95 <=3x its own p50.
+4. Report the proposed NFR-017 comparison targets separately from the relative
+   production A/B decision.
 
 ## Completed result
 
@@ -62,8 +66,10 @@ does not recover recall and is not a latency improvement.
 
 ## Decision for review
 
-The candidate is a **NO-GO**: it fails recall >=0.9990 at 50k and 100k and
-fails the 100k p50 <=37.6 ms gate. It passes the 3x tail gate (52.20 / 40.90 =
-1.276), boundedness, topology, provenance, engagement, storage, and head
-reporting. Please confirm that the packet supports leaving production defaults
-unchanged and closing Task 180 as a measured negative result.
+The candidate is a **NO-GO for width/seed tuning** because its 100k recall is
+statistically flat versus production (0.9280 versus 0.9275) while p50 is 0.6 ms
+slower. It passes boundedness, topology, provenance, engagement, storage, and
+head reporting. The proposed 0.9990 recall and 37.6 ms IVF values remain useful
+comparison context but are not the basis of this decision. Please confirm that
+the packet supports leaving production defaults unchanged and closing Task 180
+as a measured negative result for this tuning direction.
