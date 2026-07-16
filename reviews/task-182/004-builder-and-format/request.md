@@ -4,14 +4,14 @@ packet: 004-builder-and-format
 role: coder
 status: open
 date: 2026-07-16
-head: 1556b875e
+head: 43b3ace1a
 ---
 
 # Review request: trained-head production contract
 
-Task 182 is in progress. This checkpoint freezes how the Task 181 benchmark
-winner enters the production generation contract before builder/read-path code
-lands.
+Task 182 is in progress. This checkpoint implements the frozen production
+builder, format, compatibility, exact-head read selection, and inspection
+contract for the Task 181 winner. The policy remains explicit and default-off.
 
 ## Selected candidate
 
@@ -48,7 +48,7 @@ selected head digest are epoch artifacts.
 
 ## Metadata and compatibility
 
-Versioned build options will add:
+Versioned build options add:
 
 - `head_policy`: `current_sample_graph` or `training_landmarks_exact`;
 - `training_query_count`; and
@@ -104,6 +104,23 @@ creates the new policy. Promotion/default decisions wait for the production
 10k/50k/100k A/B. Proposed NFR-017 targets remain informational rather than
 hard gates.
 
-No tests or benchmarks were run for this design-only checkpoint. Implementation
-and focused format/builder validation will be added to this packet before its
-code checkpoint is complete.
+## Implemented checkpoint
+
+Commit `43b3ace1a` adds the explicit trained builder endpoint, canonical
+training-relation digest, byte-compatible legacy options plus trained V2
+options, manifest/head-state policy binding, the 0.1.1-to-0.1.2 catalog and
+function upgrade surface, exact configured head scoring, and active-generation
+inspection with catalog-versus-manifest cross-checks. The production endpoint
+rejects a trained build unless the frozen cap is exactly 4,096 and the input is
+exactly 200 valid rows.
+
+The focused PG18 lifecycle test builds the policy twice from the same source
+and training relation and obtains the same selected-head digest; exact replay
+returns the immutable candidate, changed training input fails with
+`EC_BUILD_ID_CONFLICT`, publication succeeds, and inspection attests policy,
+scoring mode, count/digests, cap, seed bound, and sample count. Existing
+benchmark-feature code also compiles after the production extraction. See
+`artifacts/validation.log`.
+
+No benchmark result is claimed in this packet. Task 182 packet 006 still owns
+the required production 10k/50k/100k A/B before any promotion decision.
