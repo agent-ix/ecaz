@@ -1,6 +1,6 @@
 # Task 182: ec_distann Bounded-Head Production Implementation
 
-Status: **proposed / unblocked** (corrected 2026-07-15). Task 181 selected the
+Status: **in progress** (2026-07-16; unblocked 2026-07-15). Task 181 selected the
 bounded 4,096 training-landmark, exact-scoring candidate for a production-path
 implementation and A/B. The earlier `won't pursue` disposition incorrectly
 treated proposed NFR-017 targets as stakeholder-approved hard entry gates.
