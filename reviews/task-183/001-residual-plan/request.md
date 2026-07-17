@@ -3,15 +3,15 @@ task: 183
 packet: 001-residual-plan
 role: coder
 status: open
-date: 2026-07-16
-head: 07a16b86e235a380d539d55be0a26fbfbc2e6e8c
+date: 2026-07-17
+head: 973f4dc3db57650c3a6f8d41818880f146e87896
 ---
 
 # Review request: residual recall and latency plan
 
 Task 183 is the measurement-first follow-up after Task 182's production-path
-landmark A/B. It does not start experiments until Task 182 freezes the actual
-production baseline.
+landmark A/B. Task 182 is now complete, and this packet freezes its immutable
+production baseline before experiments begin.
 
 The plan separates four uncertainties:
 
@@ -28,6 +28,15 @@ O(N), and all production changes/defaults remain out of scope.
 
 The decision uses the complete relative recall/latency/storage/build Pareto
 result against Task 182. Proposed NFR-017 values are reported only as context.
+
+The inherited baseline is production `training_landmarks_exact`: cap 4,096,
+exact scoring of all persisted landmarks, at most 32 returned seeds, BW4/H100,
+graph degree 32, RaBitQ neighbor traversal, and exact final rerank. It uses the
+same staged corpora, rows 201--400 as disjoint training queries, and rows
+1--200 as held-out evaluation queries. Task 182 measured distinct recall
+0.9990 / 0.9685 / 0.9625 and warm p50 38.5 / 39.3 / 41.4 ms at
+10k/50k/100k. Its owner oracle measured 0.9995 / 0.9970 / 0.9970 recall but
+remains O(N) and non-selectable.
 
 Please review the phase ordering, same-seed contract, training/evaluation
 separation, bounded routing caps, per-change A/B attribution, and handoff

@@ -1,6 +1,6 @@
 # Task 183: ec_distann Residual Recall and Latency Optimization
 
-Status: proposed / unblocked (2026-07-16). Task 182 recorded its
+Status: **active — Phase 1 codec attribution** (2026-07-17). Task 182 recorded its
 production-path 10k/50k/100k A/B and promoted the explicit trained policy as
 this task's frozen bounded-head baseline. Priority: P1 measurement-first
 follow-up.
