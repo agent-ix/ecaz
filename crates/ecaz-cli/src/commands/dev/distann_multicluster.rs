@@ -889,6 +889,32 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
         .collect()
 }
 
+fn register_same_seed_digest(
+    digests: &mut std::collections::HashMap<(String, u32, u32), (String, String)>,
+    variant: &BenchmarkSeedVariant,
+    seed_id_digest: &str,
+) -> Result<Option<String>> {
+    let key = (
+        variant.strategy.clone(),
+        variant.head_search_width,
+        variant.head_seed_count,
+    );
+    if let Some((prior_variant, prior_digest)) = digests.get(&key) {
+        if prior_digest != seed_id_digest {
+            bail!(
+                "same-seed attribution failed: variants {} and {} selected different seed IDs ({} != {})",
+                prior_variant,
+                variant.name,
+                prior_digest,
+                seed_id_digest
+            );
+        }
+        return Ok(Some(prior_variant.clone()));
+    }
+    digests.insert(key, (variant.name.clone(), seed_id_digest.to_owned()));
+    Ok(None)
+}
+
 async fn run_physical_benchmarks(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
@@ -1079,8 +1105,26 @@ async fn run_physical_benchmarks(
         )
         .await?
         .get::<_, bool>(0);
+    let has_seed_id_digest = coordinator
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_physical_seed_id_digest(regclass,real[])') IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
     if explicit_seed_controls && (!has_seed_strategy_provenance || !has_neighbor_score_provenance) {
         bail!("Task 180 controls require extension seed and neighbor-score provenance helpers");
+    }
+    let requires_same_seed_attribution = seed_variants.iter().enumerate().any(|(index, left)| {
+        seed_variants.iter().skip(index + 1).any(|right| {
+            left.strategy == right.strategy
+                && left.head_search_width == right.head_search_width
+                && left.head_seed_count == right.head_seed_count
+                && left.neighbor_score_mode != right.neighbor_score_mode
+        })
+    });
+    if requires_same_seed_attribution && !has_seed_id_digest {
+        bail!("same-seed neighbor-score attribution requires extension seed-ID digest helper");
     }
 
     let staged_dir = args
@@ -1174,6 +1218,8 @@ async fn run_physical_benchmarks(
         ));
     }
     let mut benchmark_arms = Vec::with_capacity(seed_variants.len() + 1);
+    let mut same_seed_digests =
+        std::collections::HashMap::<(String, u32, u32), (String, String)>::new();
     for variant in &seed_variants {
         if explicit_seed_controls {
             coordinator
@@ -1228,6 +1274,64 @@ async fn run_physical_benchmarks(
                 variant.neighbor_score_mode,
                 attested_neighbor_score
             );
+        }
+        if has_seed_id_digest {
+            let digest_rows = coordinator
+                .query(
+                    &format!(
+                        "SELECT q.id::text,
+                                encode(ec_distann_physical_seed_id_digest(
+                                    'dm_idx'::regclass, q.source), 'hex')
+                           FROM {physical_queries} q
+                          ORDER BY q.id
+                          LIMIT {}",
+                        args.queries
+                    ),
+                    &[],
+                )
+                .await
+                .wrap_err_with(|| {
+                    format!("collecting seed-ID digest for variant {}", variant.name)
+                })?;
+            if digest_rows.len() != args.queries as usize {
+                bail!(
+                    "seed-ID digest variant {} expected {} queries, found {}",
+                    variant.name,
+                    args.queries,
+                    digest_rows.len()
+                );
+            }
+            let mut hasher = Sha256::new();
+            hasher.update(b"ec_distann_seed_id_matrix_v1\0");
+            hasher.update(args.queries.to_le_bytes());
+            for row in digest_rows {
+                let query_id = row.get::<_, String>(0);
+                let seed_digest = row.get::<_, String>(1);
+                let seed_digest =
+                    hex::decode(&seed_digest).wrap_err("decoding extension seed-ID digest")?;
+                hasher.update(
+                    u32::try_from(query_id.len())
+                        .wrap_err("query ID length exceeds u32")?
+                        .to_le_bytes(),
+                );
+                hasher.update(query_id.as_bytes());
+                hasher.update(seed_digest);
+            }
+            let seed_id_digest = hex::encode(hasher.finalize());
+            let compared_with =
+                register_same_seed_digest(&mut same_seed_digests, variant, &seed_id_digest)?
+                    .unwrap_or_else(|| "none".to_owned());
+            lines.push(format!(
+                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} neighbor_score_mode={} queries={} seed_id_digest={} compared_with={} same_seed=true",
+                variant.name,
+                variant.strategy,
+                variant.head_search_width,
+                variant.head_seed_count,
+                variant.neighbor_score_mode,
+                args.queries,
+                seed_id_digest,
+                compared_with,
+            ));
         }
         benchmark_arms.push((
             "physical",
@@ -3818,5 +3922,52 @@ async fn capture_psql_allow_error(psql: &Path, socket_dir: &Path, port: u16, sql
             combined
         }
         Err(error) => format!("psql spawn error: {error}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn seed_variant(name: &str, neighbor_score_mode: &str) -> BenchmarkSeedVariant {
+        BenchmarkSeedVariant {
+            name: name.to_owned(),
+            strategy: "persisted_head".to_owned(),
+            head_search_width: 32,
+            head_seed_count: 32,
+            neighbor_score_mode: neighbor_score_mode.to_owned(),
+        }
+    }
+
+    #[test]
+    fn same_seed_digest_accepts_equal_neighbor_score_arms() {
+        let mut digests = std::collections::HashMap::new();
+        assert_eq!(
+            register_same_seed_digest(&mut digests, &seed_variant("rabitq", "rabitq"), "aaaa")
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            register_same_seed_digest(
+                &mut digests,
+                &seed_variant("exact", "exact_neighbor"),
+                "aaaa"
+            )
+            .unwrap(),
+            Some("rabitq".to_owned())
+        );
+    }
+
+    #[test]
+    fn same_seed_digest_rejects_different_neighbor_score_arms() {
+        let mut digests = std::collections::HashMap::new();
+        register_same_seed_digest(&mut digests, &seed_variant("rabitq", "rabitq"), "aaaa").unwrap();
+        let error = register_same_seed_digest(
+            &mut digests,
+            &seed_variant("exact", "exact_neighbor"),
+            "bbbb",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("selected different seed IDs"));
     }
 }

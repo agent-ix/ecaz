@@ -14,6 +14,8 @@ use std::sync::Arc;
 use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
 use pgrx::{default, name, pg_extern, pg_sys, PgRelation, Spi};
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use sha2::{Digest, Sha256};
 
 use crate::storage::page::ItemPointer;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
@@ -25,11 +27,9 @@ use super::generation_catalog::{self, GenerationCatalogRow};
 use super::generation_descriptor::DistannGenerationDescriptor;
 use super::quantizer::{DistannCodecBinding, DistannPreparedQuery};
 use super::routine::DistannHitCollection;
-#[cfg(feature = "distann-head-attribution-benchmark")]
-use super::scan::DistannSeedCandidate;
 use super::scan::{
     distann_orchestrated_search, DistannExpandedNode, DistannNodeExpander,
-    DistannOrchestrationParams, DistannScanHit,
+    DistannOrchestrationParams, DistannScanHit, DistannSeedCandidate,
 };
 use super::scan_registry::ScanTokenGuard;
 use super::tuple::DistannNodeTuple;
@@ -1304,6 +1304,34 @@ fn ec_distann_physical_seed_coverage_benchmark(
     TableIterator::once(row)
 }
 
+/// Task 183 same-seed attribution helper. The digest covers the ordered seed
+/// IDs selected by the exact production seed-selection path under the active
+/// benchmark controls. Neighbor scoring is intentionally absent from the
+/// digest domain, so the suite can prove that RaBitQ and exact-neighbor arms
+/// differ only after seed selection.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, strict, parallel_restricted)]
+fn ec_distann_physical_seed_id_digest(index_regclass: PgRelation, query: Vec<f32>) -> Vec<u8> {
+    const DOMAIN: &[u8] = b"ec_distann_seed_ids_v1\0";
+
+    let scan = PhysicalGenerationScan::open(index_regclass.oid())
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let seeds = scan
+        .select_seed_candidates(&query)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let mut hasher = Sha256::new();
+    hasher.update(DOMAIN);
+    hasher.update(
+        u32::try_from(seeds.len())
+            .expect("benchmark seed count is bounded by 4096")
+            .to_le_bytes(),
+    );
+    for seed in seeds {
+        hasher.update(seed.vec_id.to_le_bytes());
+    }
+    hasher.finalize().to_vec()
+}
+
 /// Records the compiled physical seed strategy in benchmark provenance.
 #[pg_extern(stable, parallel_safe)]
 fn ec_distann_physical_seed_strategy() -> String {
@@ -1444,8 +1472,7 @@ fn ec_distann_active_head_policy(
             options.training_query_digest.to_vec(),
             i32::try_from(options.head_index_cap)
                 .map_err(|_| "EC_HEAD_SAMPLE: head cap exceeds integer".to_owned())?,
-            i32::try_from(returned_seed_count)
-                .expect("trained head seed count fits integer"),
+            i32::try_from(returned_seed_count).expect("trained head seed count fits integer"),
             sample_count,
             sample_digest,
         ))
@@ -1779,48 +1806,7 @@ impl PhysicalGenerationScan {
             })
             .transpose()?;
 
-        let production_seed_count = (super::options::current_beam_width() * 2).max(32);
-        let search_width = super::options::current_head_search_width(production_seed_count);
-        let seed_count = super::options::current_head_seed_count(production_seed_count);
-        let seed_mode = super::options::current_physical_seed_mode()?;
-        let all_seeds = match seed_mode {
-            super::options::PhysicalSeedMode::PersistedHead => self
-                .head_index
-                .as_ref()
-                .map(|head| head.search_configured(query, search_width, seed_count))
-                .unwrap_or_default(),
-            super::options::PhysicalSeedMode::HeadSampleExact => self
-                .head_index
-                .as_ref()
-                .map(|head| head.search_exact(query, seed_count))
-                .unwrap_or_default(),
-            super::options::PhysicalSeedMode::HeadHierarchy => self
-                .head_index
-                .as_ref()
-                .map(|head| head.search_hierarchy(query, seed_count))
-                .unwrap_or_default(),
-            super::options::PhysicalSeedMode::OwnerScan => {
-                #[cfg(feature = "distann-head-attribution-benchmark")]
-                {
-                    self.owner_scan_seed_candidates(query, seed_count)?
-                }
-                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
-                {
-                    return Err(
-                        "EC_BAD_INPUT: owner_scan is unavailable in production builds".to_owned(),
-                    );
-                }
-            }
-        };
-        #[cfg(feature = "distann-head-attribution-benchmark")]
-        if all_seeds.len() < seed_count {
-            return Err(format!(
-                "EC_INVARIANT: benchmark seed mode {} requested {} seeds but returned only {}",
-                seed_mode.as_str(),
-                seed_count,
-                all_seeds.len()
-            ));
-        }
+        let all_seeds = self.select_seed_candidates(query)?;
         if all_seeds.is_empty() {
             return Ok(DistannHitCollection {
                 hits: Vec::new(),
@@ -1883,6 +1869,59 @@ impl PhysicalGenerationScan {
             counters,
             multi_node: self.routes.len() > 1,
         })
+    }
+
+    fn select_seed_candidates(&self, query: &[f32]) -> Result<Vec<DistannSeedCandidate>, String> {
+        if query.len() != usize::from(self.descriptor.dimensions) {
+            return Err(format!(
+                "EC_SCHEMA_MISMATCH: query has {} dimensions, generation requires {}",
+                query.len(),
+                self.descriptor.dimensions
+            ));
+        }
+        let production_seed_count = (super::options::current_beam_width() * 2).max(32);
+        let search_width = super::options::current_head_search_width(production_seed_count);
+        let seed_count = super::options::current_head_seed_count(production_seed_count);
+        let seed_mode = super::options::current_physical_seed_mode()?;
+        let seeds = match seed_mode {
+            super::options::PhysicalSeedMode::PersistedHead => self
+                .head_index
+                .as_ref()
+                .map(|head| head.search_configured(query, search_width, seed_count))
+                .unwrap_or_default(),
+            super::options::PhysicalSeedMode::HeadSampleExact => self
+                .head_index
+                .as_ref()
+                .map(|head| head.search_exact(query, seed_count))
+                .unwrap_or_default(),
+            super::options::PhysicalSeedMode::HeadHierarchy => self
+                .head_index
+                .as_ref()
+                .map(|head| head.search_hierarchy(query, seed_count))
+                .unwrap_or_default(),
+            super::options::PhysicalSeedMode::OwnerScan => {
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                {
+                    self.owner_scan_seed_candidates(query, seed_count)?
+                }
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                {
+                    return Err(
+                        "EC_BAD_INPUT: owner_scan is unavailable in production builds".to_owned(),
+                    );
+                }
+            }
+        };
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if seeds.len() < seed_count {
+            return Err(format!(
+                "EC_INVARIANT: benchmark seed mode {} requested {} seeds but returned only {}",
+                seed_mode.as_str(),
+                seed_count,
+                seeds.len()
+            ));
+        }
+        Ok(seeds)
     }
 
     #[cfg(feature = "distann-head-attribution-benchmark")]
