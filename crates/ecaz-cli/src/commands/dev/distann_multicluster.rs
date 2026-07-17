@@ -237,15 +237,20 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if let Some(policy) = args.head_policy.as_deref() {
         if !matches!(
             policy,
-            "current_sample" | "geometry_landmarks" | "graph_landmarks" | "training_landmarks"
+            "current_sample"
+                | "geometry_landmarks"
+                | "graph_landmarks"
+                | "training_landmarks"
+                | "training_region_balanced"
+                | "training_query_facility"
         ) {
-            bail!("--head-policy must be current_sample, geometry_landmarks, graph_landmarks, or training_landmarks");
+            bail!("--head-policy must be current_sample, geometry_landmarks, graph_landmarks, training_landmarks, training_region_balanced, or training_query_facility");
         }
         if !args.physical_benchmark {
             bail!("--head-policy requires --physical-benchmark");
         }
-        if policy == "training_landmarks" && args.training_query_path.is_none() {
-            bail!("--head-policy training_landmarks requires --training-query-path");
+        if policy.starts_with("training_") && args.training_query_path.is_none() {
+            bail!("--head-policy training policies require --training-query-path");
         }
     }
     if let Some(policy) = args.production_head_policy.as_deref() {
@@ -271,11 +276,14 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.head_policy.is_some() && args.production_head_policy.is_some() {
         bail!("--head-policy and --production-head-policy are mutually exclusive");
     }
-    let training_path_expected = args.head_policy.as_deref() == Some("training_landmarks")
+    let training_path_expected = args
+        .head_policy
+        .as_deref()
+        .is_some_and(|policy| policy.starts_with("training_"))
         || args.production_head_policy.as_deref() == Some("training_landmarks_exact");
     if args.training_query_path.is_some() != training_path_expected {
         bail!(
-            "--training-query-path is required exactly for training_landmarks or training_landmarks_exact"
+            "--training-query-path is required exactly for a training benchmark or production head policy"
         );
     }
     if !args.benchmark_seed_variants.is_empty() {
@@ -1522,6 +1530,7 @@ async fn run_physical_benchmarks(
     let head = coordinator
         .query_one(
             "SELECT state.sample_count::bigint,
+                    encode(state.head_sample_digest, 'hex'),
                     COALESCE((SELECT sum(pg_column_size(sample.vector) + pg_column_size(sample.vec_id))::bigint
                                 FROM ec_distann_generation_head_sample sample
                                WHERE sample.index_oid = state.index_oid
@@ -1542,8 +1551,9 @@ async fn run_physical_benchmarks(
         .await
         .wrap_err("measuring persisted coordinator head")?;
     let head_sample_count = head.get::<_, i64>(0);
-    let head_sample_bytes = head.get::<_, i64>(1);
-    let head_graph_bytes = head.get::<_, i64>(2) + head.get::<_, i64>(3);
+    let head_sample_digest = head.get::<_, String>(1);
+    let head_sample_bytes = head.get::<_, i64>(2);
+    let head_graph_bytes = head.get::<_, i64>(3) + head.get::<_, i64>(4);
     let head_cache_estimated_bytes = head_sample_bytes + head_graph_bytes;
     let remote_owners = if args.coordinator_outside_roster {
         nodes.len()
@@ -1565,7 +1575,7 @@ async fn run_physical_benchmarks(
             published.len()
         ));
         lines.push(format!(
-            "physical_benchmark_head scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true sample_count={head_sample_count} head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} head_cache_estimated_bytes={head_cache_estimated_bytes}"
+            "physical_benchmark_head scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true sample_count={head_sample_count} head_sample_digest={head_sample_digest} head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} head_cache_estimated_bytes={head_cache_estimated_bytes}"
         ));
         lines.push(format!(
             "physical_benchmark_engagement scale={scale} {shared} remote_owners={remote_owners} materialize_probes={remote_owners} pass={}",

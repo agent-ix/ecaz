@@ -441,15 +441,20 @@ fn load_training_queries(path: &str, dimensions: usize) -> Result<Vec<Vec<f32>>,
     Ok(queries)
 }
 
-fn training_landmark_nodes(
+#[derive(Debug, Clone)]
+struct TrainingCandidateRanking {
+    per_query: Vec<Vec<usize>>,
+    frequency: HashMap<usize, (u32, usize)>,
+}
+
+fn rank_training_candidates(
     queries: &[Vec<f32>],
     vec_ids: &[u64],
-    vectors: &[Vec<f32>],
     codes: &[Vec<u8>],
     codec_artifact: &super::generation_descriptor::DistannCodecArtifact,
-    sample_cap: usize,
-) -> Result<Vec<usize>, String> {
+) -> Result<TrainingCandidateRanking, String> {
     let mut frequency = HashMap::<usize, (u32, usize)>::new();
+    let mut per_query = Vec::with_capacity(queries.len());
     for query in queries {
         let prepared =
             super::quantizer::DistannPreparedQuery::prepare_artifact(codec_artifact, query)?;
@@ -472,13 +477,47 @@ fn training_landmark_nodes(
                 .total_cmp(&right.0)
                 .then_with(|| left.1.cmp(&right.1))
         });
-        for (rank, (_, _, node)) in ranked.into_iter().enumerate() {
+        let nodes = ranked
+            .into_iter()
+            .map(|(_, _, node)| node)
+            .collect::<Vec<_>>();
+        for (rank, node) in nodes.iter().copied().enumerate() {
             let entry = frequency.entry(node).or_insert((0, rank));
             entry.0 += 1;
             entry.1 = entry.1.min(rank);
         }
+        per_query.push(nodes);
     }
-    let mut ranked = frequency.into_iter().collect::<Vec<_>>();
+    Ok(TrainingCandidateRanking {
+        per_query,
+        frequency,
+    })
+}
+
+fn fill_with_geometry(
+    selected: &mut Vec<usize>,
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    sample_cap: usize,
+) {
+    let mut seen = selected.iter().copied().collect::<HashSet<_>>();
+    for node in geometry_landmark_nodes(vec_ids, vectors, sample_cap) {
+        if selected.len() == sample_cap {
+            break;
+        }
+        if seen.insert(node) {
+            selected.push(node);
+        }
+    }
+}
+
+fn frequency_landmark_nodes(
+    ranking: TrainingCandidateRanking,
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    sample_cap: usize,
+) -> Vec<usize> {
+    let mut ranked = ranking.frequency.into_iter().collect::<Vec<_>>();
     ranked.sort_unstable_by(|(left_node, left), (right_node, right)| {
         right
             .0
@@ -491,16 +530,97 @@ fn training_landmark_nodes(
         .map(|(node, _)| node)
         .take(sample_cap)
         .collect::<Vec<_>>();
-    let mut seen = selected.iter().copied().collect::<HashSet<_>>();
-    for node in geometry_landmark_nodes(vec_ids, vectors, sample_cap) {
-        if selected.len() == sample_cap {
+    fill_with_geometry(&mut selected, vec_ids, vectors, sample_cap);
+    selected
+}
+
+fn training_landmark_nodes(
+    queries: &[Vec<f32>],
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    codec_artifact: &super::generation_descriptor::DistannCodecArtifact,
+    sample_cap: usize,
+) -> Result<Vec<usize>, String> {
+    let ranking = rank_training_candidates(queries, vec_ids, codes, codec_artifact)?;
+    Ok(frequency_landmark_nodes(
+        ranking, vec_ids, vectors, sample_cap,
+    ))
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn training_region_balanced_nodes(
+    ranking: TrainingCandidateRanking,
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    sample_cap: usize,
+) -> Vec<usize> {
+    let mut regions = BTreeMap::<u16, Vec<usize>>::new();
+    for node in ranking.frequency.keys().copied() {
+        regions
+            .entry(benchmark_geometry_region(&vectors[node]))
+            .or_default()
+            .push(node);
+    }
+    for nodes in regions.values_mut() {
+        nodes.sort_unstable_by(|left, right| {
+            let left_stats = ranking.frequency[left];
+            let right_stats = ranking.frequency[right];
+            right_stats
+                .0
+                .cmp(&left_stats.0)
+                .then_with(|| left_stats.1.cmp(&right_stats.1))
+                .then_with(|| vec_ids[*left].cmp(&vec_ids[*right]))
+        });
+    }
+    let mut selected = Vec::with_capacity(sample_cap);
+    let mut depth = 0;
+    while selected.len() < sample_cap {
+        let before = selected.len();
+        for nodes in regions.values() {
+            if let Some(node) = nodes.get(depth) {
+                selected.push(*node);
+                if selected.len() == sample_cap {
+                    break;
+                }
+            }
+        }
+        if selected.len() == before {
             break;
         }
-        if seen.insert(node) {
-            selected.push(node);
+        depth += 1;
+    }
+    fill_with_geometry(&mut selected, vec_ids, vectors, sample_cap);
+    selected
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn training_query_facility_nodes(
+    ranking: TrainingCandidateRanking,
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    sample_cap: usize,
+) -> Vec<usize> {
+    let mut selected = Vec::with_capacity(sample_cap);
+    let mut seen = HashSet::with_capacity(sample_cap);
+    let query_count = ranking.per_query.len();
+    let max_rank = ranking.per_query.iter().map(Vec::len).max().unwrap_or(0);
+    for rank in 0..max_rank {
+        let start = (97 * rank) % query_count.max(1);
+        for offset in 0..query_count {
+            let query = (start + offset) % query_count;
+            if let Some(node) = ranking.per_query[query].get(rank) {
+                if seen.insert(*node) {
+                    selected.push(*node);
+                    if selected.len() == sample_cap {
+                        return selected;
+                    }
+                }
+            }
         }
     }
-    Ok(selected)
+    fill_with_geometry(&mut selected, vec_ids, vectors, sample_cap);
+    selected
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -568,20 +688,26 @@ pub(crate) fn build_benchmark_head_sample(
         super::options::BenchmarkHeadPolicy::GraphLandmarks => {
             graph_landmark_nodes(graph, medoid, vec_ids, sample_cap)?
         }
-        super::options::BenchmarkHeadPolicy::TrainingLandmarks => {
+        super::options::BenchmarkHeadPolicy::TrainingLandmarks
+        | super::options::BenchmarkHeadPolicy::TrainingRegionBalanced
+        | super::options::BenchmarkHeadPolicy::TrainingQueryFacility => {
             let path = training_query_path.ok_or_else(|| {
-                "EC_HEAD_SAMPLE: training_landmarks requires benchmark_training_query_path"
-                    .to_owned()
+                "EC_HEAD_SAMPLE: training policy requires benchmark_training_query_path".to_owned()
             })?;
             let queries = load_training_queries(path, usize::from(dimensions))?;
-            training_landmark_nodes(
-                &queries,
-                vec_ids,
-                vectors,
-                codes,
-                codec_artifact,
-                sample_cap,
-            )?
+            let ranking = rank_training_candidates(&queries, vec_ids, codes, codec_artifact)?;
+            match policy {
+                super::options::BenchmarkHeadPolicy::TrainingLandmarks => {
+                    frequency_landmark_nodes(ranking, vec_ids, vectors, sample_cap)
+                }
+                super::options::BenchmarkHeadPolicy::TrainingRegionBalanced => {
+                    training_region_balanced_nodes(ranking, vec_ids, vectors, sample_cap)
+                }
+                super::options::BenchmarkHeadPolicy::TrainingQueryFacility => {
+                    training_query_facility_nodes(ranking, vec_ids, vectors, sample_cap)
+                }
+                _ => unreachable!(),
+            }
         }
     };
     let sample = DistannHeadSample {
@@ -1191,6 +1317,30 @@ mod tests {
                 .len(),
             8
         );
+
+        let ranking = TrainingCandidateRanking {
+            per_query: vec![
+                vec![0, 1, 2, 3],
+                vec![4, 5, 6, 7],
+                vec![8, 9, 10, 11],
+                vec![12, 13, 14, 15],
+            ],
+            frequency: (0..16).map(|node| (node, (1, node % 4))).collect(),
+        };
+        let region = training_region_balanced_nodes(ranking.clone(), &vec_ids, &vectors, 8);
+        assert_eq!(
+            region,
+            training_region_balanced_nodes(ranking.clone(), &vec_ids, &vectors, 8)
+        );
+        let facility = training_query_facility_nodes(ranking.clone(), &vec_ids, &vectors, 8);
+        assert_eq!(
+            facility,
+            training_query_facility_nodes(ranking, &vec_ids, &vectors, 8)
+        );
+        for selected in [region, facility] {
+            assert_eq!(selected.len(), 8);
+            assert_eq!(selected.iter().copied().collect::<HashSet<_>>().len(), 8);
+        }
     }
 
     #[test]

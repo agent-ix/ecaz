@@ -253,7 +253,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_string_guc(
         c"ec_distann.benchmark_head_policy",
         c"Task 181 benchmark-only head landmark builder.",
-        c"Accepted values are current_sample, geometry_landmarks, graph_landmarks, and training_landmarks. This GUC is absent from normal production builds.",
+        c"Accepted values are current_sample, geometry_landmarks, graph_landmarks, training_landmarks, training_region_balanced, and training_query_facility. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_HEAD_POLICY_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -262,7 +262,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_string_guc(
         c"ec_distann.benchmark_training_query_path",
         c"Task 181 benchmark-only disjoint training-query TSV path.",
-        c"training_landmarks reads this server-local TSV. The file must contain id and JSON-array vector columns and must not be the evaluation slice. This GUC is absent from normal production builds.",
+        c"Training landmark policies read this server-local TSV. The file must contain id and JSON-array vector columns and must not be the evaluation slice. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_TRAINING_QUERY_PATH_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -523,6 +523,8 @@ pub(crate) enum BenchmarkHeadPolicy {
     GeometryLandmarks,
     GraphLandmarks,
     TrainingLandmarks,
+    TrainingRegionBalanced,
+    TrainingQueryFacility,
 }
 
 impl BenchmarkHeadPolicy {
@@ -532,6 +534,8 @@ impl BenchmarkHeadPolicy {
             Self::GeometryLandmarks => "geometry_landmarks",
             Self::GraphLandmarks => "graph_landmarks",
             Self::TrainingLandmarks => "training_landmarks",
+            Self::TrainingRegionBalanced => "training_region_balanced",
+            Self::TrainingQueryFacility => "training_query_facility",
         }
     }
 }
@@ -548,6 +552,8 @@ pub(crate) fn current_benchmark_head_policy() -> Result<BenchmarkHeadPolicy, Str
             "geometry_landmarks" => Ok(BenchmarkHeadPolicy::GeometryLandmarks),
             "graph_landmarks" => Ok(BenchmarkHeadPolicy::GraphLandmarks),
             "training_landmarks" => Ok(BenchmarkHeadPolicy::TrainingLandmarks),
+            "training_region_balanced" => Ok(BenchmarkHeadPolicy::TrainingRegionBalanced),
+            "training_query_facility" => Ok(BenchmarkHeadPolicy::TrainingQueryFacility),
             other => Err(format!(
                 "EC_BAD_INPUT: ec_distann.benchmark_head_policy has unsupported value {other:?}"
             )),

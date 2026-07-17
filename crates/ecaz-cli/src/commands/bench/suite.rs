@@ -3082,6 +3082,8 @@ impl SuiteStep {
                             | "geometry_landmarks"
                             | "graph_landmarks"
                             | "training_landmarks"
+                            | "training_region_balanced"
+                            | "training_query_facility"
                     ) {
                         bail!(
                             "distann-local-multinode step {:?} has invalid head_policy {:?}",
@@ -3089,9 +3091,9 @@ impl SuiteStep {
                             policy
                         )
                     }
-                    if policy == "training_landmarks" && step.training_query_path.is_none() {
+                    if policy.starts_with("training_") && step.training_query_path.is_none() {
                         bail!(
-                            "distann-local-multinode step {:?} training_landmarks requires training_query_path",
+                            "distann-local-multinode step {:?} training head policy requires training_query_path",
                             step.name
                         )
                     }
@@ -3125,8 +3127,10 @@ impl SuiteStep {
                         step.name
                     )
                 }
-                let training_path_expected = step.head_policy.as_deref()
-                    == Some("training_landmarks")
+                let training_path_expected = step
+                    .head_policy
+                    .as_deref()
+                    .is_some_and(|policy| policy.starts_with("training_"))
                     || step.production_head_policy.as_deref() == Some("training_landmarks_exact");
                 if step.training_query_path.is_some() != training_path_expected {
                     bail!(
@@ -5497,6 +5501,38 @@ psql header noise\n\
             window == ["--training-query-path", "/staged/ec_real_100k_queries.tsv"]
         }));
         assert!(!command.iter().any(|argument| argument == "--head-policy"));
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_task183_training_policies() {
+        for policy in ["training_region_balanced", "training_query_facility"] {
+            let raw = format!(
+                r#"{{
+                  "name": "distann-task183-head",
+                  "schema_version": 1,
+                  "steps": [{{
+                    "kind": "distann-local-multinode",
+                    "name": "{policy}-100k",
+                    "physical_benchmark": true,
+                    "corpus_prefix": "ec_real_100k",
+                    "head_index_cap": 4096,
+                    "head_policy": "{policy}",
+                    "training_query_path": "/staged/ec_real_100k_queries.tsv"
+                  }}]
+                }}"#
+            );
+            let config: SuiteConfig = serde_json::from_str(&raw).expect("suite parses");
+            validate_config(&config).expect("suite validates");
+            let command = config.steps[0]
+                .expand(&config.defaults, &conn())
+                .expect("step expands");
+            assert!(command
+                .windows(2)
+                .any(|window| { window == ["--head-policy", policy] }));
+            assert!(command.windows(2).any(|window| {
+                window == ["--training-query-path", "/staged/ec_real_100k_queries.tsv"]
+            }));
+        }
     }
 
     #[test]
