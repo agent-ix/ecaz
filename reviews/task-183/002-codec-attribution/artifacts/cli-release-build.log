@@ -1,0 +1,20 @@
+Script started on 2026-07-17 13:53:02-07:00 [<not executed on terminal>]
+   Compiling flate2 v1.1.9
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall/crates/ecaz-cli)
+   Compiling parquet v55.2.0
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 10m 08s
+
+Script done on 2026-07-17 14:02:43-07:00 [COMMAND_EXIT_CODE="0"]
