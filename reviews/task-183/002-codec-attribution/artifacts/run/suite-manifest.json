@@ -3,9 +3,9 @@
   "schema_version": 1,
   "config": "reviews/task-183/002-codec-attribution/artifacts/codec-attribution-suite.json",
   "config_sha256": "2a04870350df772bd77007e6e5c0b5511fae8f14e5e235e014a0411b773ec27f",
-  "dry_run": true,
-  "generated_at_unix_ms": 1784320996928,
-  "runner_git_commit": "8769d57834170dcdc586fa8ac85b99e50b656bd8",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784323264875,
+  "runner_git_commit": "04cad857e236a8f7d4092b6274f3e488a8609e68-dirty",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -78,7 +78,11 @@
       "expected_artifacts": [
         "reviews/task-183/002-codec-attribution/artifacts/run/trained-codec-100k/distann-multinode-summary.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1784323264875,
+      "finished_at_unix_ms": 1784326376778,
+      "duration_ms": 3264447,
+      "exit_code": 0
     }
   ]
 }

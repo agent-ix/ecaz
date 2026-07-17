@@ -1,6 +1,9 @@
 # Task 183: ec_distann Residual Recall and Latency Optimization
 
-Status: **active — Phase 1 codec attribution** (2026-07-17). Task 182 recorded its
+Status: **active — Phase 2 fixed-budget coverage** (2026-07-17). Phase 1 proved
+byte-identical trained seeds and measured exact-neighbor traversal at 0.9605
+recall / 113.1 ms p50 versus RaBitQ at 0.9625 / 43.8 ms, so codec replacement
+is a NO-GO and fixed-cap entry coverage is next. Task 182 recorded its
 production-path 10k/50k/100k A/B and promoted the explicit trained policy as
 this task's frozen bounded-head baseline. Priority: P1 measurement-first
 follow-up.
