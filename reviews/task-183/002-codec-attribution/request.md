@@ -40,3 +40,10 @@ unit tests, and the checked-in suite dry run pass. The dry run expands exactly
 one physical-generation step and the three pre-registered variants above; the
 packet-local logs and generated suite manifest are recorded in
 `artifacts/manifest.md`.
+
+The first release invocation stopped before generation construction because
+the fixture's 100k bulk load raced its own autovacuum and the production build
+gate correctly returned `EC_BUILD_BUSY`. The fixture now disables autovacuum
+for the fresh source and TOAST tables and performs explicit `ANALYZE` before
+the build. This setup remediation is committed separately at `04cad857e`; it
+does not alter the index, build gate, measured algorithms, or work budgets.

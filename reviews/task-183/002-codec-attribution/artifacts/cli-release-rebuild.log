@@ -1,0 +1,18 @@
+Script started on 2026-07-17 14:10:22-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall/crates/ecaz-cli)
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 9m 51s
+
+Script done on 2026-07-17 14:19:47-07:00 [COMMAND_EXIT_CODE="0"]
