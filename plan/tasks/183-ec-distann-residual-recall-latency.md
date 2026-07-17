@@ -1,19 +1,20 @@
 # Task 183: ec_distann Residual Recall and Latency Optimization
 
-Status: proposed (2026-07-16). Begins only after Task 182 records its
-production-path 10k/50k/100k A/B and freezes the resulting bounded-head
-baseline. Priority: P1 measurement-first follow-up.
+Status: proposed / unblocked (2026-07-16). Task 182 recorded its
+production-path 10k/50k/100k A/B and promoted the explicit trained policy as
+this task's frozen bounded-head baseline. Priority: P1 measurement-first
+follow-up.
 
 ## Why
 
-Task 181 showed that deterministic, disjoint-training landmark selection is a
-real improvement over the production sampled head:
+Task 182 showed that deterministic, disjoint-training landmark selection is a
+real improvement on the normal production path:
 
 | Scale | Production recall | Trained-landmark recall | Recall delta | Production p50 | Trained-landmark p50 |
 | --- | ---: | ---: | ---: | ---: | ---: |
-| 10k | 0.9990 | 0.9990 | 0.0000 | 33.0 ms | 34.1 ms |
-| 50k | 0.9545 | 0.9685 | +0.0140 | 42.6 ms | 35.8 ms |
-| 100k | 0.9275 | 0.9625 | +0.0350 | 42.2 ms | 39.8 ms |
+| 10k | 0.9990 | 0.9990 | 0.0000 | 34.2 ms | 38.5 ms |
+| 50k | 0.9545 | 0.9685 | +0.0140 | 44.1 ms | 39.3 ms |
+| 100k | 0.9275 | 0.9625 | +0.0350 | 40.7 ms | 41.4 ms |
 
 The same-generation owner oracle reached 0.9970 at 50k and 100k using the same
 graph, BW4/H100, and RaBitQ neighbor scoring, but required an O(N) scan. At
@@ -22,9 +23,9 @@ reduced queries with zero represented owner seeds from 0.435 to 0.015. This
 identifies better bounded entry coverage as the primary remaining recall
 direction while leaving a measurable residual traversal/codec uncertainty.
 
-Task 182 owns productionizing and validating the first trained 4,096-landmark
-exact-scoring head. This task starts from Task 182's measured production result;
-it does not assume the benchmark-only Task 181 result reproduced.
+Task 182 productionized and validated the first trained 4,096-landmark
+exact-scoring head. This task starts from Task 182's measured production result,
+including its explicit training relation and persisted policy/count/digests.
 
 ## Goal
 

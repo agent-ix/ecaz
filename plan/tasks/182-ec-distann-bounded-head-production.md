@@ -1,10 +1,14 @@
 # Task 182: ec_distann Bounded-Head Production Implementation
 
-Status: **in progress** (2026-07-16; unblocked 2026-07-15). Task 181 selected the
-bounded 4,096 training-landmark, exact-scoring candidate for a production-path
-implementation and A/B. The earlier `won't pursue` disposition incorrectly
-treated proposed NFR-017 targets as stakeholder-approved hard entry gates.
-Depends on Tasks 179, 180, and 181.
+Status: **completed — PROMOTE explicit trained policy** (2026-07-16). The
+bounded 4,096 training-landmark, exact-scoring policy is implemented and
+attested on the normal production build/read path. Production A/B reproduced
+Task 181's recall: neutral at 10k, +0.0140 at 50k, and +0.0350 at 100k, with
+acceptable matched latency and effectively unchanged storage/build cost.
+Legacy/current builds remain byte-compatible and the default because trained
+builds require an explicit disjoint training relation. The owner oracle remains
+diagnostic. Task 183 owns residual recall and latency work. Depends on Tasks
+179, 180, and 181.
 
 ## Why
 
@@ -183,7 +187,9 @@ committed.
 
 ## References
 
-- Task 181 final decision packet (required entry evidence; not yet available).
+- Task 181 final decision packet: `reviews/task-181/006-decision-correction/`.
+- Task 182 production A/B: `reviews/task-182/006-production-ab/`.
+- Task 182 closeout: `reviews/task-182/007-closeout/`.
 - Task 180 packets 002/003: bounded-head attribution and NO-GO.
 - Task 179 physical-generation lifecycle closeout.
 - FR-078 through FR-081: placement, physical reads, head, and orchestration.
