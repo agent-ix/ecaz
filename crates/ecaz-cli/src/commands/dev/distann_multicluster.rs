@@ -627,6 +627,9 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
         DROP TABLE IF EXISTS dm_queries;
         CREATE TABLE dm (
             id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({})
+        ) WITH (
+            autovacuum_enabled = false,
+            toast.autovacuum_enabled = false
         );",
         physical_dim
     );
@@ -686,6 +689,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     Ok(format!(
         "{prefix}
          {load}
+         ANALYZE dm;
          CREATE INDEX dm_idx ON dm USING ec_distann
              (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
              WITH (distributed_control = true, source_identity = 'include',
