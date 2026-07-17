@@ -4,7 +4,7 @@ packet: 003-fixed-budget-coverage
 role: coder
 status: open
 date: 2026-07-17
-head: de3b54f82
+head: f8612af1f
 ---
 
 # Review request: fixed-budget coverage pre-registration
@@ -45,6 +45,14 @@ required 10k/50k/100k confirmation and Phase 3 capacity/routing conditions.
 Selection is held-out recall first, then warm p50, cached bytes, and build time
 for overlapping quality; training diagnostics never break an evaluation tie.
 
-Please review the deterministic algorithms, cap/fill behavior, query rotation,
-training/evaluation separation, and unchanged query-work contract. Code and
-measurement evidence will be appended after this pre-registration is committed.
+Implementation checkpoint `f8612af1f` adds the two benchmark-only policy names,
+shares the frequency-control selection helper with the existing production
+builder, validates suite/CLI inputs fail-closed, and emits the persisted sample
+digest with benchmark head metrics. Focused PG18 feature compilation and both
+policy/runner tests pass; their packet-local logs are listed in the manifest.
+
+The checked-in suite runs three fresh 100k physical generations with 50 timed
+iterations after 10 warmups. Every arm explicitly uses `head_sample_exact` so
+the builder is the only intended variable. Please review the deterministic
+algorithms, cap/fill behavior, query rotation, training/evaluation separation,
+unchanged query-work contract, and frozen suite before results are interpreted.
