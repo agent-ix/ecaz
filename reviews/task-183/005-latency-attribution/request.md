@@ -55,3 +55,17 @@ optimization is selected yet. After the profile:
 Any selected change is measured alone against byte-identical index and query
 inputs. Only a useful isolated candidate proceeds to the task's required
 10k/50k/100k confirmation; otherwise packet 006 records a stop decision.
+
+Implementation checkpoint `03921f632` adds the feature-gated stage atomics and
+snapshot/reset SQL functions, instruments exact landmark scoring and selection,
+physical query preparation, nested local/remote expansion, traversal,
+materialization, output merge, and total CustomScan setup, and teaches
+`ecaz bench latency` plus `ecaz bench suite` to emit structured stage rows.
+Both the measurement-feature and normal production PG18 builds compile. The
+counter, merge/format, and suite expansion/parser tests pass.
+
+The checked-in 100k suite expands to one production-policy physical fixture
+with stage counters enabled only for its latency arm. Audit and dry-run pass.
+Please review counter nesting, timer boundaries, post-warmup reset semantics,
+feature isolation, structured result propagation, and the frozen suite before
+the profile is interpreted.

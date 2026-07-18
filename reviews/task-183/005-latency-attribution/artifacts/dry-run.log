@@ -1,0 +1,5 @@
+Script started on 2026-07-17 18:20:20-07:00 [<not executed on terminal>]
+[suite:task183-latency-profile-100k] wrote reviews/task-183/005-latency-attribution/artifacts/run/suite-manifest.json
+[suite:task183-latency-profile-100k] trained-profile-100k -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-183/005-latency-attribution/artifacts/run/trained-profile-100k --run-dir target/task183-latency-profile --log-file reviews/task-183/005-latency-attribution/artifacts/run/trained-profile-100k/distann-local-multinode.log --nodes 3 --physical-benchmark --distann-stage-counters --benchmark-iterations 50 --benchmark-warmup-iterations 10 --base-port 41420 --graph-degree 32 --head-index-cap 4096 --beam-width 4 --hop-rounds 100 --production-head-policy training_landmarks_exact --training-query-path /home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv --queries 200 --top-k 10 --skip-fault-drills --corpus-prefix ec_real_100k --staged-dir /home/peter/dev/ecaz/data/staged-current
+
+Script done on 2026-07-17 18:20:20-07:00 [COMMAND_EXIT_CODE="0"]

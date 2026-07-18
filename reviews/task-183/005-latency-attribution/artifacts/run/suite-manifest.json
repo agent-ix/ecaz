@@ -1,0 +1,79 @@
+{
+  "suite": "task183-latency-profile-100k",
+  "schema_version": 1,
+  "config": "reviews/task-183/005-latency-attribution/artifacts/latency-profile-100k-suite.json",
+  "config_sha256": "d513813531933e9e276cdf1ad407f745921ad8b7987415b4bb839aba227f9e68",
+  "dry_run": true,
+  "generated_at_unix_ms": 1784337620722,
+  "runner_git_commit": "03921f632d904be0beb72ee10635d909a19ee8d0",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "trained-profile-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-183/005-latency-attribution/artifacts/run/trained-profile-100k",
+        "--run-dir",
+        "target/task183-latency-profile",
+        "--log-file",
+        "reviews/task-183/005-latency-attribution/artifacts/run/trained-profile-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "41420",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--production-head-policy",
+        "training_landmarks_exact",
+        "--training-query-path",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task183",
+        "phase4",
+        "latency_profile",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-183/005-latency-attribution/artifacts/run/trained-profile-100k/distann-multinode-summary.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
