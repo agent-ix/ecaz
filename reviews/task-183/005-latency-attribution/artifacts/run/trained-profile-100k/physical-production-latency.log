@@ -1,0 +1,14 @@
+┌───────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┐
+│ top_k ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state │
+╞═══════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╡
+│ 32    ┆ 50    ┆ 40.2 ms ┆ 5.79 ms ┆ 31.2 ms ┆ 39.2 ms ┆ 51.5 ms ┆ 56.3 ms ┆ 57.9 ms ┆ warm        │
+└───────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┘
+[distann-stage-counters] command=latency label=top_k=32 stage=custom_scan_total scans=50 samples=50 elapsed_ns=1901497299 elapsed_ms=1901.497299 mean_ms=38.029946
+[distann-stage-counters] command=latency label=top_k=32 stage=head_score scans=50 samples=50 elapsed_ns=113589052 elapsed_ms=113.589052 mean_ms=2.271781
+[distann-stage-counters] command=latency label=top_k=32 stage=local_expand scans=50 samples=398 elapsed_ns=65485148 elapsed_ms=65.485148 mean_ms=1.309703
+[distann-stage-counters] command=latency label=top_k=32 stage=output_merge scans=50 samples=50 elapsed_ns=2629607 elapsed_ms=2.629607 mean_ms=0.052592
+[distann-stage-counters] command=latency label=top_k=32 stage=query_prep scans=50 samples=50 elapsed_ns=1423807 elapsed_ms=1.423807 mean_ms=0.028476
+[distann-stage-counters] command=latency label=top_k=32 stage=remote_expand scans=50 samples=493 elapsed_ns=327013650 elapsed_ms=327.013650 mean_ms=6.540273
+[distann-stage-counters] command=latency label=top_k=32 stage=remote_materialize scans=50 samples=50 elapsed_ns=1347762841 elapsed_ms=1347.762841 mean_ms=26.955257
+[distann-stage-counters] command=latency label=top_k=32 stage=seed_select scans=50 samples=50 elapsed_ns=5070056 elapsed_ms=5.070056 mean_ms=0.101401
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_total scans=50 samples=50 elapsed_ns=395897864 elapsed_ms=395.897864 mean_ms=7.917957

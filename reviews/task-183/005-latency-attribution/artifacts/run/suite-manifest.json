@@ -3,9 +3,9 @@
   "schema_version": 1,
   "config": "reviews/task-183/005-latency-attribution/artifacts/latency-profile-100k-suite.json",
   "config_sha256": "d513813531933e9e276cdf1ad407f745921ad8b7987415b4bb839aba227f9e68",
-  "dry_run": true,
-  "generated_at_unix_ms": 1784337620722,
-  "runner_git_commit": "03921f632d904be0beb72ee10635d909a19ee8d0",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784338846710,
+  "runner_git_commit": "97cd5a76a5ea2d20ef94078566f66f85dacc97b2",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -73,7 +73,11 @@
       "expected_artifacts": [
         "reviews/task-183/005-latency-attribution/artifacts/run/trained-profile-100k/distann-multinode-summary.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1784338846710,
+      "finished_at_unix_ms": 1784340675904,
+      "duration_ms": 1924405,
+      "exit_code": 0
     }
   ]
 }
