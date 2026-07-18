@@ -30,6 +30,18 @@ Focused validation passed:
   unanimous SHA/profile attestation, exact three-owner topology, zero
   non-owned/orphan rows, and remote engagement at every scale.
 
+The trained-head test adds focused assertions only for the changed policy
+surface: deterministic build/replay, changed-input conflict, publication,
+inspection, and cross-build digest identity. It does not claim to freshly
+duplicate every generic physical-generation fault window. Those unchanged
+lifecycle mechanisms retain their outside-reviewed Task 179 coverage:
+packet 053 proves real three-owner partial-ack and post-ack/pre-pointer
+recovery; packet 060's aggregate PG18 run covers the DistANN lifecycle surface
+and recovery/retirement/reclaim sequence; packet 059 indexes scan-pin,
+retirement, rollback, corrupt-format, and zero-orphan evidence. The Task 182
+change reuses the existing generation head-state/sample ownership and cascade
+paths rather than introducing a new lifecycle artifact.
+
 Production A/B reproduced Task 181's recall points:
 
 | Scale | Current recall / p50 | Trained recall / p50 | Relative result |
@@ -58,3 +70,8 @@ Review sources:
 Task 183 owns same-seed RaBitQ/exact-neighbor attribution, fixed-budget coverage
 alternatives, conditional capacity/routing experiments, and isolated latency
 optimization. No residual research is hidden inside this closeout.
+
+Outside review ACCEPT, including code, format/ADR, tests, and benchmark
+evidence, is recorded at `feedback/2026-07-17-01-reviewer.md`. Its F182-1
+coverage observation is addressed by the explicit inherited-coverage scope
+above.

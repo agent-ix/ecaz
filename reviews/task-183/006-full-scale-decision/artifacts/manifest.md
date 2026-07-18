@@ -6,6 +6,8 @@
 - Timestamp: 2026-07-17 America/Los_Angeles
 - Decision: STOP with no Task 183 candidate; production unchanged
 - Follow-up: `plan/tasks/184-ec-distann-remote-payload-materialization.md`
+- Outside review ACCEPT:
+  `reviews/task-183/006-full-scale-decision/feedback/2026-07-17-01-reviewer.md`
 
 ## Evidence chain
 
@@ -29,6 +31,13 @@
   - remote materialization 26.955257 ms; traversal 7.917957 ms; head scoring
     2.271781 ms; seed selection 0.101401 ms
   - suite status: 1 completed, 0 failed/skipped/missing/stale
+- Small-corpus branch disposition:
+  - Task 182 reproduced flat 0.9990 recall and +4.3 ms p50 at 10k
+  - trained construction is explicit/default-off; current sample remains the
+    unchanged default
+  - automatic corpus-size substitution would add a production policy/threshold
+    not selected or profiled by Task 183
+  - decision: do not advance a bypass candidate
 
 ## Conditional full-scale result
 
@@ -36,3 +45,4 @@ No `ecaz bench suite` config or run exists in this packet. The task contract
 allowed the 10k/50k/100k confirmation only after selection of a useful bounded
 recall candidate or independently attributed eligible latency variant. Neither
 condition occurred. Task 182's immutable production baseline is not copied.
+The explicit small-corpus disposition addresses outside-review finding F183-1.

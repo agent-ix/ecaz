@@ -4,6 +4,10 @@
 - Task bucket / packet: `reviews/task-181/006-decision-correction/`
 - Lane: documentation-only correction; no benchmark rerun and no result change
 - Source evidence: `reviews/task-181/005-full-scale-decision/artifacts/full-scale/results.jsonl`
+- Retained 10k control evidence:
+  `reviews/task-181/005-full-scale-decision/artifacts/full-scale/current-10k-results.jsonl`
+- Retained 10k control evidence SHA-256:
+  `2181e3ecd1e0966921ab627ba4e64be240c09062c96389c7f57eeafdf58fd536`
 - Source manifest: `reviews/task-181/005-full-scale-decision/artifacts/manifest.md`
 - Fixture: three exact/disjoint physical owners, release build, 200 held-out
   queries / 2,000 distinct top-10 trials, 50 warm latency samples after 10
@@ -37,3 +41,7 @@ larger-scale result.
 The proposed 0.9990 recall target and 37.6 ms IVF anchor remain useful context.
 They are not stakeholder-approved hard gates and cannot support the superseded
 NO-GO by themselves.
+
+Outside review ACCEPT is recorded at
+`feedback/2026-07-17-01-reviewer.md`. F181-1 is resolved by the normalized
+retained-control JSONL above; no benchmark was rerun and no result changed.

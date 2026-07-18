@@ -23,6 +23,12 @@ Task 183 produced no benchmark candidate for full-scale confirmation:
   40.20 ms warm mean (67.05%). Head scoring consumed 2.272 ms (5.65%) and seed
   selection 0.101 ms (0.25%). Dominance outside the eligible Task 183 changes
   was pre-registered to yield no latency candidate.
+- The permitted small-corpus branch is explicitly declined. Task 182's trained
+  arm was recall-flat and 4.3 ms slower at 10k, but it is an opt-in/default-off
+  build policy; current-sample construction already remains the unchanged 10k
+  default. An automatic corpus-size substitution would introduce a new
+  production policy and unresolved threshold, and no 10k stage profile or
+  isolated bypass implementation was selected.
 
 The full-scale 10k/50k/100k matrix was conditional on a selected candidate.
 Running it now would compare no change and would provide no promotion evidence,
@@ -36,5 +42,10 @@ decompose owner execution, transport/bytes, coordinator decode/copy, request
 scheduling, and unused eager work before selecting at most one isolated change.
 
 Please review the conditional-skip reasoning, cross-packet evidence chain, and
-the Task 184 handoff. This request remains open for outside review; review is
-not a prerequisite to recording the completed measurement outcome.
+the Task 184 handoff. This request remains open under the packet workflow;
+outside review is recorded below and was not a prerequisite to recording the
+completed measurement outcome.
+
+Outside review ACCEPT is recorded at
+`feedback/2026-07-17-01-reviewer.md`. F183-1 is resolved by the explicit
+small-corpus disposition above; the STOP decision is unchanged.

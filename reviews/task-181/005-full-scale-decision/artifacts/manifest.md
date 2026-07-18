@@ -30,7 +30,21 @@ correctly failed the candidate preflight because the 10k query file had no
 rows 201-400. That successful current cell is retained under
 `suite-manifest-pretraining-fix.json` (SHA-256
 `f96df18eed42967dbbf9063c74b6515c190c478e0d9dafb53520d834f76c571d`)
-and `current-10k-report.md`. Before any candidate cell was produced, commit
+and `current-10k-report.md`. Feedback F181-1 identified that the original
+normalized results omitted this retained cell. The existing manifest/artifacts
+were therefore parsed, without rerunning or merging measurements, into
+`current-10k-results.jsonl` (SHA-256
+`2181e3ecd1e0966921ab627ba4e64be240c09062c96389c7f57eeafdf58fd536`)
+with:
+
+`target/release/ecaz bench suite report --manifest reviews/task-181/005-full-scale-decision/artifacts/full-scale/suite-manifest-pretraining-fix.json --results-output reviews/task-181/005-full-scale-decision/artifacts/full-scale/current-10k-results.jsonl`
+
+The normalization parser is the already-attested release CLI from Task 183
+head `97cd5a76a5ea2d20ef94078566f66f85dacc97b2`, SHA-256
+`9b67de7770016bf0f04c81f3b9c1fc64f0fc814b5aa8264cfc5141f3549ba1ec`.
+It contains the structured 0.9990 recall and 33.00 ms p50 rows cited below,
+along with the original topology, build, storage, head, and engagement rows.
+Before any candidate cell was produced, commit
 `320e3f6ab` froze the already-used, disjoint 100k rows 201-400 training slice
 for 10k; exact line comparison found zero overlap with the 10k evaluation
 file. The corrected config was re-audited and the remaining five steps ran via

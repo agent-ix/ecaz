@@ -1,14 +1,17 @@
 # Task 182: ec_distann Bounded-Head Production Implementation
 
-Status: **completed — PROMOTE explicit trained policy** (2026-07-16). The
+Status: **completed — outside-reviewed PROMOTE explicit trained policy**
+(2026-07-16; review ACCEPT 2026-07-17). The
 bounded 4,096 training-landmark, exact-scoring policy is implemented and
 attested on the normal production build/read path. Production A/B reproduced
 Task 181's recall: neutral at 10k, +0.0140 at 50k, and +0.0350 at 100k, with
 acceptable matched latency and effectively unchanged storage/build cost.
 Legacy/current builds remain byte-compatible and the default because trained
 builds require an explicit disjoint training relation. The owner oracle remains
-diagnostic. Task 183 owns residual recall and latency work. Depends on Tasks
-179, 180, and 181.
+diagnostic. Outside acceptance of code, format/ADR, tests, and benchmark
+evidence is recorded in
+`reviews/task-182/007-closeout/feedback/2026-07-17-01-reviewer.md`. Task 183
+owns residual recall and latency work. Depends on Tasks 179, 180, and 181.
 
 ## Why
 

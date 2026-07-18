@@ -19,6 +19,32 @@
   reference per cell
 - Decision evidence: `reviews/task-182/006-production-ab/artifacts/manifest.md`
 - Normalized rows: `reviews/task-182/006-production-ab/artifacts/run/results.jsonl`
+- Outside review ACCEPT:
+  `reviews/task-182/007-closeout/feedback/2026-07-17-01-reviewer.md`
+
+## Correctness coverage boundary
+
+Task 182 directly validates the changed trained-policy surface in packet 004:
+V1/V2 encoding, deterministic training and selected-head digests, changed-input
+replay conflict, Ready/publish/recover, and active inspection. Generic physical
+generation lifecycle ownership is unchanged and remains covered by the
+outside-reviewed Task 179 evidence chain:
+
+- `reviews/task-179/053-physical-publish-fault-windows/`: real three-owner
+  partial acknowledgement, post-ack/pre-pointer failure, idempotent recovery,
+  topology, serving, and remote materialization;
+- `reviews/task-179/059-closeout/`: indexed rollback/replay/abort, corrupt
+  format, scan-pin/retirement fencing, reclaim, and zero-residue/orphan
+  evidence; and
+- `reviews/task-179/060-recovery-state-closeout/` plus its outside feedback:
+  final 238-pass aggregate PG18 DistANN lifecycle run and recovery through
+  publication, retirement, reclaim, force-retire, abandonment, and
+  cancellation.
+
+The new policy persists in the existing head-state/sample rows, transaction,
+foreign-key cascade, generation fingerprint, and scan-pin path. It introduces
+no separately owned relation or lifecycle state. This addresses F182-1 without
+claiming every inherited fault window was freshly duplicated by Task 182.
 
 ## Key result
 

@@ -1,12 +1,15 @@
 # Task 181: ec_distann Head-Coverage and Landmark Selection Benchmark
 
-Status: completed — GO to Task 182 (corrected 2026-07-15). The best bounded
+Status: completed — outside-reviewed GO to Task 182 (corrected 2026-07-15;
+review ACCEPT 2026-07-17). The best bounded
 candidate reached 0.9990 / 0.9685 / 0.9625 distinct recall at 10k/50k/100k.
 Relative to unchanged production it was recall-flat at 10k, improved recall by
 0.0140 at 50k and 0.0350 at 100k, and reduced warm p50 by 6.8 ms and 2.4 ms at
 50k and 100k respectively. The earlier NO-GO incorrectly treated the proposed
-NFR-017 targets as stakeholder-approved hard task gates. Depends on Task 180's
-reviewed NO-GO and the completed Task 179 physical hash-shard lane.
+NFR-017 targets as stakeholder-approved hard task gates. Outside acceptance is
+recorded in `reviews/task-181/006-decision-correction/feedback/2026-07-17-01-reviewer.md`.
+Depends on Task 180's reviewed NO-GO and the completed Task 179 physical
+hash-shard lane.
 
 ## Why
 

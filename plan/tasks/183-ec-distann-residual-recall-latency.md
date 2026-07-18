@@ -1,6 +1,7 @@
 # Task 183: ec_distann Residual Recall and Latency Optimization
 
-Status: **complete — STOP; no Task 183 candidate** (2026-07-17). Phase 1 rejected
+Status: **complete — outside-reviewed STOP; no Task 183 candidate**
+(2026-07-17). Phase 1 rejected
 exact-neighbor traversal (0.9605 recall / 113.1 ms p50 versus RaBitQ at 0.9625 /
 43.8 ms). Phase 2 found that two distinct alternative 4,096-row heads produced
 the same top-32 seeds and 0.9625 recall as the Task 182 control, so both are
@@ -9,8 +10,13 @@ unsatisfied and capacity/routing is skipped. Phase 4 attributed 67.05% of mean
 wall latency to remote payload materialization, versus 5.65% to head scoring
 and 0.25% to seed selection. Under the frozen contract this yields no eligible
 Task 183 latency candidate, so the conditional full-scale matrix is skipped.
-Production remains unchanged; Task 184 owns the measured materialization
-bottleneck. Priority: completed measurement follow-up.
+The 10k small-corpus branch is explicitly declined because the trained policy
+is opt-in/default-off and an automatic corpus-size substitution would add a
+new production policy/threshold without a 10k profile. Production remains
+unchanged; Task 184 owns the measured materialization bottleneck. Outside
+acceptance is recorded in
+`reviews/task-183/006-full-scale-decision/feedback/2026-07-17-01-reviewer.md`.
+Priority: completed measurement follow-up.
 
 ## Why
 

@@ -27,3 +27,9 @@ own promote/iterate/abandon decision.
 
 See `artifacts/manifest.md` for the unchanged source measurements and corrected
 decision rationale.
+
+Outside review ACCEPT is recorded at
+`feedback/2026-07-17-01-reviewer.md`. Its F181-1 provenance observation is
+resolved by normalizing the retained pre-fix 10k control manifest/artifacts to
+`../005-full-scale-decision/artifacts/full-scale/current-10k-results.jsonl`.
+No benchmark was rerun and no measured value or GO decision changed.

@@ -71,6 +71,17 @@ selection rewrite therefore is not selected, and the task does not spend a
 materialization is routed to Task 184 for deeper attribution and an isolated
 A/B. Task 183 changes no production default or persisted format.
 
+The third eligible branch, a small-corpus bypass, is also not advanced. Task
+182 did reproduce flat 10k recall with a +4.3 ms trained-policy p50, so the
+branch was permitted for consideration. But `training_landmarks_exact` is an
+explicit default-off build policy: the unchanged `current_sample_graph` path
+already remains the default at 10k. Automatically substituting a different
+head membership or policy by corpus size would be a new production
+build/default rule with an unresolved threshold, not an isolated query-path
+bypass. No 10k stage profile or such implementation was pre-registered in
+this packet. The measured regression remains reported, but it does not produce
+a Task 183 candidate.
+
 The pre-registered decision contract was:
 
 - head scoring dominance permits one contiguous/vectorized exact-scoring A/B,
@@ -100,3 +111,6 @@ with stage counters enabled only for its latency arm. It completed one step
 with zero failures, skipped steps, missing artifacts, or stale artifacts.
 Please review counter nesting, timer boundaries, the derived decomposition,
 feature isolation, and the no-candidate decision.
+
+Outside review ACCEPT is recorded in packet 006 feedback. Its F183-1 finding is
+resolved by the explicit small-corpus-branch disposition above.
