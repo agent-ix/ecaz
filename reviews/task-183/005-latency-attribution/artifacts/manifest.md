@@ -13,6 +13,8 @@
 - Isolation: fresh one-index-per-table physical generation through the
   checked-in `ecaz bench suite` config
 - Timestamp: 2026-07-17 America/Los_Angeles
+- Installed release measurement head:
+  `97cd5a76a5ea2d20ef94078566f66f85dacc97b2`
 
 ## Validation artifacts
 
@@ -56,5 +58,17 @@
   - log SHA-256: `c3ceb47d129f5f41a6fc4287dbe71e2d7bb49095d92113cb4e180a6d0712b801`
   - dry-run manifest SHA-256:
     `e31c2c1048abd66d69e8b267d87f0238991fff743b2e1384c2b203803fff0351`
+- `implementation-install.log`
+  - command: `cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features 'pg18 pg_test distann-head-attribution-benchmark'`
+  - result: pass; 1,117 SQL entities discovered and installed
+  - log SHA-256: `642796eededa62bc6345f48d4fabd19b26dfc3d393e7758141e2ec552982bb71`
+  - installed `ecaz.so` SHA-256:
+    `58a2af361807a98b8ec37dd9ad0f32b15bf4738539273915ea0513078550dfe2`
+- `cli-release-build.log`
+  - command: `cargo build --release -p ecaz-cli`
+  - result: pass; only the pre-existing unused `path` warning
+  - log SHA-256: `e1670cca971610d2da76adfffb1c040c2bfb2ed0558a8135266a9bbd5154d2e9`
+  - release CLI SHA-256:
+    `9b67de7770016bf0f04c81f3b9c1fc64f0fc814b5aa8264cfc5141f3549ba1ec`
 
 No profile result or optimization decision is claimed yet.
