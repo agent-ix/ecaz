@@ -1,12 +1,16 @@
 # Task 183: ec_distann Residual Recall and Latency Optimization
 
-Status: **active — Phase 4 latency attribution** (2026-07-17). Phase 1 rejected
+Status: **complete — STOP; no Task 183 candidate** (2026-07-17). Phase 1 rejected
 exact-neighbor traversal (0.9605 recall / 113.1 ms p50 versus RaBitQ at 0.9625 /
 43.8 ms). Phase 2 found that two distinct alternative 4,096-row heads produced
 the same top-32 seeds and 0.9625 recall as the Task 182 control, so both are
 NO-GO. Because Phase 2 identified no winner, Phase 3's explicit prerequisite is
-unsatisfied and capacity/routing is skipped. The retained production policy now
-enters isolated latency profiling. Priority: P1 measurement-first follow-up.
+unsatisfied and capacity/routing is skipped. Phase 4 attributed 67.05% of mean
+wall latency to remote payload materialization, versus 5.65% to head scoring
+and 0.25% to seed selection. Under the frozen contract this yields no eligible
+Task 183 latency candidate, so the conditional full-scale matrix is skipped.
+Production remains unchanged; Task 184 owns the measured materialization
+bottleneck. Priority: completed measurement follow-up.
 
 ## Why
 
