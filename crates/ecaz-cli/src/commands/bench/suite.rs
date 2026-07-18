@@ -524,6 +524,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
+    distann_stage_counters: bool,
+    #[serde(default)]
     base_port: Option<u16>,
     #[serde(default)]
     rows: Option<usize>,
@@ -2274,6 +2276,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_latency".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_stage ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_stage".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_storage ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_storage".into(), values));
@@ -3208,6 +3214,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.distann_stage_counters && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} distann_stage_counters requires physical_benchmark",
+                        step.name
+                    )
+                }
                 if step.physical_benchmark && step.corpus_prefix.is_none() {
                     bail!(
                         "distann-local-multinode step {:?} physical_benchmark requires corpus_prefix",
@@ -4008,6 +4020,9 @@ fn expand_distann_local_multinode(
     }
     if step.physical_benchmark {
         args.push("--physical-benchmark".into());
+    }
+    if step.distann_stage_counters {
+        args.push("--distann-stage-counters".into());
     }
     push_opt_arg(
         &mut args,
@@ -5420,6 +5435,37 @@ psql header noise\n\
             vec![PathBuf::from(
                 "artifacts/cap-256/distann-multinode-summary.log"
             )]
+        );
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_task183_stage_profile() {
+        let raw = r#"{
+          "name": "distann-stage-profile",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "profile-100k",
+            "physical_benchmark": true,
+            "distann_stage_counters": true,
+            "corpus_prefix": "ec_real_100k"
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--distann-stage-counters".into()));
+
+        let rows = parse_distann_multinode_rows(
+            "[distann-multicluster] physical_benchmark_stage scale=100k variant=control arm=physical stage=head_score scans=50 samples=50 elapsed_ns=100000000 mean_ms=2.0\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "physical_benchmark_stage");
+        assert_eq!(
+            rows[0].1.get("stage").map(String::as_str),
+            Some("head_score")
         );
     }
 

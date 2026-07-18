@@ -99,6 +99,10 @@ pub struct LatencyArgs {
     /// Task 133: reset and snapshot IVF query-stage latency counters on each worker connection.
     #[arg(long)]
     pub ivf_stage_counters: bool,
+    /// Task 183: reset and snapshot physical ec_distann query-stage counters on
+    /// each worker connection. Requires the benchmark measurement extension.
+    #[arg(long)]
+    pub distann_stage_counters: bool,
     /// Milliseconds between backend RSS/HWM samples when --sample-backend-memory is set.
     #[arg(long, default_value_t = 25)]
     pub memory_sample_interval_ms: u64,
@@ -123,6 +127,11 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             profiles::names().join(", ")
         )
     })?;
+    if args.distann_stage_counters && profile.name != "ec_distann" {
+        return Err(eyre!(
+            "--distann-stage-counters is only supported with --profile ec_distann"
+        ));
+    }
     let guc = profile
         .ef_search_guc
         .ok_or_else(|| eyre!("profile {:?} has no tuning GUC to sweep", profile.name))?;
@@ -201,6 +210,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     let rerank_width_guc = rerank_width_guc(profile);
     let mut task87_counter_lines = Vec::new();
     let mut ivf_stage_counter_lines = Vec::new();
+    let mut distann_stage_counter_lines = Vec::new();
     for value in &sweep_values {
         let sweep_label = super::sweep_value_label(profile, *value);
         let sweep = run_sweep_point(
@@ -228,6 +238,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             args.memory_sample_interval_ms,
             args.task87_candidate_batch_counters,
             args.ivf_stage_counters,
+            args.distann_stage_counters,
         )
         .await?;
         if args.task87_candidate_batch_counters {
@@ -242,6 +253,13 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
                 "latency",
                 &sweep_label,
                 &sweep.ivf_stage_counters,
+            ));
+        }
+        if args.distann_stage_counters {
+            distann_stage_counter_lines.push(super::format_distann_stage_counter_lines(
+                "latency",
+                &sweep_label,
+                &sweep.distann_stage_counters,
             ));
         }
         let stats = summarize(&sweep.durations);
@@ -274,6 +292,10 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     if !ivf_stage_counter_lines.is_empty() {
         output.push('\n');
         output.push_str(&ivf_stage_counter_lines.join("\n"));
+    }
+    if !distann_stage_counter_lines.is_empty() {
+        output.push('\n');
+        output.push_str(&distann_stage_counter_lines.join("\n"));
     }
     println!("{output}");
     if let Some(path) = args.log_output {
@@ -315,6 +337,7 @@ async fn run_sweep_point(
     memory_sample_interval_ms: u64,
     task87_candidate_batch_counters: bool,
     ivf_stage_counters: bool,
+    distann_stage_counters: bool,
 ) -> Result<LatencySweepResult> {
     let bar = ProgressBar::new(iterations as u64);
     bar.set_style(
@@ -368,6 +391,7 @@ async fn run_sweep_point(
                 memory_sample_interval_ms,
                 task87_candidate_batch_counters,
                 ivf_stage_counters,
+                distann_stage_counters,
                 bar,
             )
             .await
@@ -378,12 +402,14 @@ async fn run_sweep_point(
     let mut memory = MemorySample::default();
     let mut task87_counter_sets = Vec::new();
     let mut ivf_stage_counter_sets = Vec::new();
+    let mut distann_stage_counter_sets = Vec::new();
     for h in handles {
         let result = h.await.map_err(|e| eyre!("worker panicked: {e}"))??;
         merged.extend(result.durations);
         memory.merge(result.memory);
         task87_counter_sets.push(result.task87_candidate_batch_counters);
         ivf_stage_counter_sets.push(result.ivf_stage_counters);
+        distann_stage_counter_sets.push(result.distann_stage_counters);
     }
     bar.finish_and_clear();
     Ok(LatencySweepResult {
@@ -391,6 +417,7 @@ async fn run_sweep_point(
         memory,
         task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
         ivf_stage_counters: super::merge_ivf_stage_counters(ivf_stage_counter_sets),
+        distann_stage_counters: super::merge_distann_stage_counters(distann_stage_counter_sets),
     })
 }
 
@@ -419,6 +446,7 @@ async fn worker(
     memory_sample_interval_ms: u64,
     task87_candidate_batch_counters: bool,
     ivf_stage_counters: bool,
+    distann_stage_counters: bool,
     bar: Arc<ProgressBar>,
 ) -> Result<LatencyWorkerResult> {
     // Each worker needs its own connection so the session-local GUC sticks.
@@ -457,6 +485,9 @@ async fn worker(
     }
     if ivf_stage_counters {
         super::reset_ivf_stage_counters(&client).await?;
+    }
+    if distann_stage_counters {
+        super::reset_distann_stage_counters(&client).await?;
     }
     let memory = Arc::new(Mutex::new(MemorySample::default()));
     let stop_memory_monitor = Arc::new(AtomicBool::new(false));
@@ -512,12 +543,18 @@ async fn worker(
     } else {
         Vec::new()
     };
+    let distann_stage_counters = if distann_stage_counters {
+        super::snapshot_distann_stage_counters(&client).await?
+    } else {
+        Vec::new()
+    };
     let memory = *memory.lock().await;
     Ok(LatencyWorkerResult {
         durations,
         memory,
         task87_candidate_batch_counters,
         ivf_stage_counters,
+        distann_stage_counters,
     })
 }
 
@@ -613,6 +650,7 @@ struct LatencySweepResult {
     memory: MemorySample,
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
     ivf_stage_counters: Vec<super::IvfStageCounterSnapshot>,
+    distann_stage_counters: Vec<super::DistannStageCounterSnapshot>,
 }
 
 #[derive(Debug, Default)]
@@ -621,6 +659,7 @@ struct LatencyWorkerResult {
     memory: MemorySample,
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
     ivf_stage_counters: Vec<super::IvfStageCounterSnapshot>,
+    distann_stage_counters: Vec<super::DistannStageCounterSnapshot>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

@@ -17,6 +17,8 @@
 use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, Spi};
 use std::ffi::c_void;
 use std::ptr;
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use std::time::Instant;
 
 use crate::am::common::{
     heap_slot::TupleSlotWriter,
@@ -1187,6 +1189,8 @@ unsafe fn run_physical_generation_search(
     source_attnum: i32,
     effective: usize,
 ) {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let total_started = Instant::now();
     if state.physical_generation.is_none() {
         state.physical_generation = Some(
             super::generation_read::PhysicalGenerationScan::open(state.index_oid)
@@ -1215,9 +1219,18 @@ unsafe fn run_physical_generation_search(
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     state.effective = effective;
     state.early_exit = collection.counters.early_exit;
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let materialize_started = Instant::now();
     let remote_payloads = context
         .materialize_remote_payloads(&collection.hits, &state.payload_attnums)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    super::stage_counters::record(
+        super::stage_counters::DistannQueryStage::RemoteMaterialize,
+        materialize_started.elapsed(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let merge_started = Instant::now();
     let mut proven_outputs = 0;
     state.outputs = collection
         .hits
@@ -1241,6 +1254,16 @@ unsafe fn run_physical_generation_search(
         })
         .collect();
     state.proven_outputs = proven_outputs;
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    super::stage_counters::record(
+        super::stage_counters::DistannQueryStage::OutputMerge,
+        merge_started.elapsed(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    super::stage_counters::record(
+        super::stage_counters::DistannQueryStage::CustomScanTotal,
+        total_started.elapsed(),
+    );
 }
 
 struct RemotePayload {

@@ -80,6 +80,8 @@ pub(crate) use self::scan_registry::{
 pub(crate) mod scan;
 mod shard_build;
 mod source_spool;
+#[cfg(feature = "distann-head-attribution-benchmark")]
+pub(crate) mod stage_counters;
 pub mod tuple;
 
 pub(crate) fn quote_ident(identifier: &str) -> String {

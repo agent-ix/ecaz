@@ -62,6 +62,10 @@ pub struct LocalMultinodePg18Args {
     /// measurement. This warms backend-local head and transport caches.
     #[arg(long, default_value_t = 0)]
     pub benchmark_warmup_iterations: u32,
+    /// Task 183 benchmark-only per-stage attribution for the physical latency
+    /// arm. Requires a measurement extension exposing the stage snapshot API.
+    #[arg(long, default_value_t = false)]
+    pub distann_stage_counters: bool,
     /// First TCP port; node k listens on base_port + (k - 1).
     #[arg(long, default_value_t = 39710)]
     pub base_port: u16,
@@ -184,6 +188,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.physical_benchmark && args.corpus_prefix.is_none() {
         bail!("--physical-benchmark requires --corpus-prefix");
+    }
+    if args.distann_stage_counters && !args.physical_benchmark {
+        bail!("--distann-stage-counters requires --physical-benchmark");
     }
     if args.benchmark_iterations == 0 {
         bail!("--benchmark-iterations must be at least 1");
@@ -1494,6 +1501,9 @@ async fn run_physical_benchmarks(
                 ),
             ]);
         }
+        if arm == "physical" && args.distann_stage_counters {
+            latency_args.push("--distann-stage-counters".into());
+        }
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
@@ -1507,6 +1517,23 @@ async fn run_physical_benchmarks(
             benchmark_ms(&row[8])?,
             args.benchmark_warmup_iterations,
         ));
+        if arm == "physical" && args.distann_stage_counters {
+            let stage_rows = latency
+                .lines()
+                .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
+                .collect::<Vec<_>>();
+            if stage_rows.len() != 9 {
+                bail!(
+                    "physical latency attribution expected 9 ec_distann stage rows, got {}",
+                    stage_rows.len()
+                );
+            }
+            for stage in stage_rows {
+                lines.push(format!(
+                    "physical_benchmark_stage scale={scale} variant={variant} arm={arm} seed_strategy={seed_strategy} {stage}"
+                ));
+            }
+        }
     }
 
     let sizes = coordinator

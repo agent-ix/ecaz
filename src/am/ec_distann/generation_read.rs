@@ -10,6 +10,8 @@ use std::collections::{HashMap, VecDeque};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use std::time::Instant;
 
 use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
@@ -1791,6 +1793,10 @@ impl PhysicalGenerationScan {
                 self.descriptor.dimensions
             ));
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record_scan();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let prep_started = Instant::now();
         let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)?;
         let code_len = binding.code_len(usize::from(self.descriptor.dimensions))?;
         let prepared =
@@ -1805,6 +1811,11 @@ impl PhysicalGenerationScan {
                 })
             })
             .transpose()?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::QueryPrep,
+            prep_started.elapsed(),
+        );
 
         let all_seeds = self.select_seed_candidates(query)?;
         if all_seeds.is_empty() {
@@ -1862,8 +1873,15 @@ impl PhysicalGenerationScan {
             top_k: effective_top_k,
             debug_fail_hop_round: super::options::debug_fail_hop_round(),
         };
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let traversal_started = Instant::now();
         let (hits, counters) = distann_orchestrated_search(&all_seeds, &mut expander, params)
             .map_err(|error| error.to_string())?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::TraversalTotal,
+            traversal_started.elapsed(),
+        );
         Ok(DistannHitCollection {
             hits,
             counters,
@@ -2091,6 +2109,8 @@ impl PhysicalMultiOwnerExpander<'_> {
             }
             let owned = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
             if Some(ordinal) == self.local_ordinal {
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                let local_started = Instant::now();
                 let response = self
                     .local
                     .as_mut()
@@ -2100,6 +2120,11 @@ impl PhysicalMultiOwnerExpander<'_> {
                         )
                     })?
                     .expand_nodes(&owned, code_threshold)?;
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record(
+                    super::stage_counters::DistannQueryStage::LocalExpand,
+                    local_started.elapsed(),
+                );
                 place_physical_owner_responses(ordinal, bucket, response, &mut ordered)?;
             } else {
                 remote_work.push((ordinal, owned));
@@ -2125,7 +2150,16 @@ impl PhysicalMultiOwnerExpander<'_> {
                 })
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let remote_started = Instant::now();
         let responses = super::remote_transport::remote_physical_expand_batch(&requests);
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if !requests.is_empty() {
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::RemoteExpand,
+                remote_started.elapsed(),
+            );
+        }
         for ((ordinal, _), response) in remote_work.into_iter().zip(responses) {
             place_physical_owner_responses(ordinal, &buckets[ordinal], response?, &mut ordered)?;
         }

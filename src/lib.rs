@@ -1830,6 +1830,39 @@ fn ec_ivf_stage_scoring_reset() {
     am::ec_ivf::stage_counters::reset();
 }
 
+/// Task 183 benchmark-only physical ec_distann query-stage attribution rows.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(stable)]
+fn ec_distann_stage_scoring_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(stage, String),
+        name!(scans, i64),
+        name!(samples, i64),
+        name!(elapsed_ns, i64),
+        name!(elapsed_ms, f64),
+    ),
+> {
+    let (scans, rows) = am::ec_distann::stage_counters::snapshot();
+    let scans = i64::try_from(scans).unwrap_or(i64::MAX);
+    let rows = rows.into_iter().map(move |row| {
+        (
+            row.stage.label().to_owned(),
+            scans,
+            i64::try_from(row.samples).unwrap_or(i64::MAX),
+            i64::try_from(row.elapsed_ns).unwrap_or(i64::MAX),
+            row.elapsed_ns as f64 / 1_000_000.0,
+        )
+    });
+    TableIterator::new(rows)
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile)]
+fn ec_distann_stage_scoring_reset() {
+    am::ec_distann::stage_counters::reset();
+}
+
 #[pg_extern(volatile)]
 fn ec_task87_candidate_batch_scoring_reset() {
     ec_block_kernel_scoring_reset();

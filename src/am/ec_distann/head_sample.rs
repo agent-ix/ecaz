@@ -2,6 +2,8 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::collections::{HashMap, HashSet};
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use std::time::Instant;
 
 use pgrx::datum::Uuid;
 use pgrx::{pg_sys, Spi};
@@ -1130,6 +1132,8 @@ impl DistannPhysicalHeadIndex {
         query: &[f32],
         seed_count: usize,
     ) -> Vec<super::scan::DistannSeedCandidate> {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let score_started = Instant::now();
         let mut seeds = self
             .vectors
             .iter()
@@ -1139,12 +1143,24 @@ impl DistannPhysicalHeadIndex {
                 dist: -crate::am::ec_diskann::source_inner_product(query, vector),
             })
             .collect::<Vec<_>>();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::HeadScore,
+            score_started.elapsed(),
+        );
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let select_started = Instant::now();
         seeds.sort_unstable_by(|left, right| {
             left.dist
                 .total_cmp(&right.dist)
                 .then_with(|| left.vec_id.cmp(&right.vec_id))
         });
         seeds.truncate(seed_count.min(seeds.len()));
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::SeedSelect,
+            select_started.elapsed(),
+        );
         seeds
     }
 
