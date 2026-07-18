@@ -19,27 +19,27 @@
 - `pg18-feature-check.log`
   - command: `cargo check --no-default-features --features 'pg18 pg_test distann-head-attribution-benchmark'`
   - result: pass
-  - SHA-256: `ad5b90339baa80fb3125390a71f3aa7863c2b8b58b1b80e117f5978deb7d4286`
+  - SHA-256: `85f187f6d6b4f081714434d0a5a02d838d58f4333b8d6e75b42de99e82fa6c47`
 - `production-feature-check.log`
   - command: `cargo check --no-default-features --features pg18`
   - result: pass; measurement-only code remains feature-gated
-  - SHA-256: `6717d387aae9ef7b109ce063b3bc817a744057ee37434befd4485056daba7b82`
+  - SHA-256: `c083ccdca73052781d13899fcb3ef201d671157a0ff731f4dfa516931e556504`
 - `stage-counter-test.log`
   - command: `cargo test --lib --no-default-features --features 'pg18 pg_test distann-head-attribution-benchmark' am::ec_distann::stage_counters::tests::counters_accumulate_nested_samples_and_reset -- --exact`
   - result: 1 passed, 0 failed
-  - SHA-256: `a82b36e4f4d7546903c6ee39425e1873705a0428eb56ce40b2d2d0dcf23d0fd1`
+  - SHA-256: `99a691b2825b8a8bbe3af656000bd890f5824cb25859d9e3a8e4efb3e84f4c70`
 - `cli-counter-test.log`
   - command: `cargo test -p ecaz-cli distann_stage_counters_merge_and_report_per_scan_mean`
   - result: 1 passed, 0 failed
-  - SHA-256: `797adca67d2e0ebc4d1550db9c5cc3ff21fc4f86f496c7fb77f7d8bc5da9a0bc`
+  - SHA-256: `b93ed9287a51a4686d065becbd7905ff7bd05b5e8ed8ea0cfa499c080a10d6d9`
 - `suite-profile-test.log`
   - command: `cargo test -p ecaz-cli distann_local_multinode_expands_task183_stage_profile`
   - result: 1 passed, 0 failed
-  - SHA-256: `55130c7fe8792746c5ff7f064896bcd3eb35d1d0e6d7cdd6f95119f5e0b68645`
+  - SHA-256: `97f9cb7182cad3d9f7b5b8361e9fc3bf55fe91e1d298099538e1a4bdf0a58496`
 - `cli-debug-build.log`
   - command: `cargo build -p ecaz-cli`
   - result: pass; only the pre-existing unused `path` warning
-  - SHA-256: `9bb28d79b399ea2e1d8a86d71e1db52f7200809401d9acba48b5097384a627f8`
+  - SHA-256: `c0e629d1f18f330e8a70cee6ee2c287a7b04a3204093e8df8cbe41ceaa854a13`
 - `latency-profile-100k-suite.json`
   - runner: `ecaz bench suite`
   - result: one fresh 100k trained-production physical fixture; 50 timed
@@ -48,12 +48,12 @@
 - `audit.log`
   - command: `target/debug/ecaz bench suite audit --config reviews/task-183/005-latency-attribution/artifacts/latency-profile-100k-suite.json`
   - result: pass, 1 step
-  - SHA-256: `3025dd0afdbd598d618064aa92416056dc22a3dea8d0101b4939bf929e3f2ac7`
+  - SHA-256: `8e593d39857a8c90b28ddeaa17b953ed650b8e6b5fc99982f5a489ce93af20f2`
 - `dry-run.log` and `run/suite-manifest.json`
   - command: `target/debug/ecaz bench suite run --config reviews/task-183/005-latency-attribution/artifacts/latency-profile-100k-suite.json --dry-run`
   - result: expands the intended policy/work contract and
     `--distann-stage-counters`
-  - log SHA-256: `bdd8c4c2aef5aa1a44b17e7116719865048c833ed01a875d9506f4a66d3bdbef`
+  - log SHA-256: `c3ceb47d129f5f41a6fc4287dbe71e2d7bb49095d92113cb4e180a6d0712b801`
   - dry-run manifest SHA-256:
     `e31c2c1048abd66d69e8b267d87f0238991fff743b2e1384c2b203803fff0351`
 
