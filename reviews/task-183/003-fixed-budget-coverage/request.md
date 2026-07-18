@@ -7,7 +7,7 @@ date: 2026-07-17
 head: f8612af1f
 ---
 
-# Review request: fixed-budget coverage pre-registration
+# Review request: fixed-budget coverage result
 
 Phase 1 found no positive recall contribution from exact-neighbor traversal, so
 Phase 2 keeps RaBitQ traversal and freezes three cap-4,096 landmark builders
@@ -51,8 +51,34 @@ builder, validates suite/CLI inputs fail-closed, and emits the persisted sample
 digest with benchmark head metrics. Focused PG18 feature compilation and both
 policy/runner tests pass; their packet-local logs are listed in the manifest.
 
-The checked-in suite runs three fresh 100k physical generations with 50 timed
+The checked-in suite ran three fresh 100k physical generations with 50 timed
 iterations after 10 warmups. Every arm explicitly uses `head_sample_exact` so
-the builder is the only intended variable. Please review the deterministic
-algorithms, cap/fill behavior, query rotation, training/evaluation separation,
-unchanged query-work contract, and frozen suite before results are interpreted.
+the builder is the only intended variable.
+
+## Result
+
+| Policy | Recall (95% CI) | Warm p50 / p95 | Head digest | Physical bytes |
+| --- | ---: | ---: | --- | ---: |
+| control | 0.9625 (0.9532--0.9700) | 41.0 / 54.5 ms | `50261d76...3b54` | 2,496,659,456 |
+| region-balanced | 0.9625 (0.9532--0.9700) | 42.8 / 55.1 ms | `5cf7924a...e109` | 2,496,659,456 |
+| query-facility | 0.9625 (0.9532--0.9700) | 41.6 / 55.7 ms | `2d796191...2c44` | 2,496,659,456 |
+
+All three persisted head digests differ, proving that the builders selected
+different 4,096-row samples. Exact scoring nevertheless returned the same
+top-32 seed IDs for every held-out evaluation query: the suite's aggregate seed
+digest is byte-identical across all arms. Consequently recall is byte-for-byte
+identical, while neither alternative improves the matched latency distribution.
+The owner-membership rate (0.5503125), zero-representation fraction (0.015),
+and exact overlap (0.51328125) are also unchanged; only bounded overlap moves
+slightly downward from 0.50671875 to 0.5065625 and 0.5059375.
+
+The two alternative coverage builders are therefore **NO-GO**. Phase 2 has no
+fixed-cap winner, so Task 183's explicit prerequisite for Phase 3 is not met:
+no 8,192-cap or query-conditioned-routing experiment will run. Task 183 moves
+to Phase 4 latency attribution using the retained Task 182/control policy.
+
+Please review the deterministic algorithms, cap/fill behavior, query rotation,
+training/evaluation separation, unchanged query-work contract, suite
+provenance, and the measured no-go decision. The packet-local report,
+`results.jsonl`, summaries, recall logs, and latency logs are listed in the
+manifest.
