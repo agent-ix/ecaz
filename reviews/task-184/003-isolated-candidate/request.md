@@ -15,6 +15,15 @@ implements only the packet-002 preregistered MAT-01/MAT-04 candidate behind the
 existing attribution benchmark feature and a default-zero GUC. Production
 builds contain neither the GUC nor the candidate branch.
 
+Correctness-runner checkpoint `7c2254e21` adds an opt-in suite-driven semantic
+matrix. It compares eager and batch-10 ordered JSON output for unfiltered
+identity, first-window rejection, multiple-window rejection, null payloads, and
+toasted varlena projection/qual behavior; it also requires mixed local/remote
+executor consumption. After timed arms have completed, a cursor fetch proves a
+remote first batch completed, deliberately stops the remote owners, and
+requires the next demanded batch to error before the owners are restarted.
+Every scenario is emitted as a structured suite result row with provenance.
+
 The eager path still fetches every remote ranked hit. With batch size 10, the
 candidate retains only remote `vec_id` identity in ranked output slots. When the
 executor reaches a pending slot, it fetches the remaining pending remote rows

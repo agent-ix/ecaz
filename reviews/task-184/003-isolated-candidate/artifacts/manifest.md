@@ -3,6 +3,7 @@
 - Task bucket / packet: `reviews/task-184/003-isolated-candidate/`
 - Runner checkpoint: `eacd0026428a02cf306cc3be411a2007d9265b42`
 - Candidate checkpoint: `245c2054f`
+- Correctness-runner checkpoint: `7c2254e21`
 - Status: implementation checkpoint; live correctness and A/B pending
 
 | Artifact | Command / meaning | Result |
@@ -13,6 +14,9 @@
 | `cargo-check-candidate.log` | feature PG18 check | pass |
 | `cargo-check-candidate-production.log` | normal PG18 check | pass; benchmark GUC/path absent |
 | `cargo-test-candidate-window.log` | focused deterministic ranked-window test | 1 passed |
+| `cargo-check-correctness-runner.log` | CLI check after suite semantic-matrix extension | pass |
+| `cargo-test-correctness-suite.log` | suite expansion / structured-result parser test | 1 passed |
+| `cargo-test-correctness-sql.log` | nullable/toasted semantic SQL construction test | 1 passed |
 
 The runner accepts an optional sixth physical seed-variant field for the
 materialization batch size. Five-field configs remain compatible and default
