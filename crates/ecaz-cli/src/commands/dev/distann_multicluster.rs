@@ -116,7 +116,8 @@ pub struct LocalMultinodePg18Args {
     pub training_query_path: Option<PathBuf>,
     /// Task 180 benchmark-only seed variants evaluated against one immutable
     /// physical generation. Repeat as
-    /// NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE.
+    /// NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE with an optional
+    /// sixth MATERIALIZATION_BATCH_SIZE field (zero preserves eager behavior).
     #[arg(long = "benchmark-seed-variant")]
     pub benchmark_seed_variants: Vec<String>,
     /// Query count for the recall comparison.
@@ -845,6 +846,7 @@ struct BenchmarkSeedVariant {
     head_search_width: u32,
     head_seed_count: u32,
     neighbor_score_mode: String,
+    materialization_batch_size: u32,
 }
 
 fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedVariant>> {
@@ -853,9 +855,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
         .iter()
         .map(|value| {
             let fields = value.split(':').collect::<Vec<_>>();
-            if fields.len() != 5 {
+            if !(5..=6).contains(&fields.len()) {
                 bail!(
-                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE, got {value:?}"
+                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE], got {value:?}"
                 );
             }
             let name = fields[0];
@@ -897,12 +899,29 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                     "benchmark seed variant neighbor score mode must be rabitq or exact_neighbor, got {neighbor_score_mode:?}"
                 );
             }
+            let materialization_batch_size = fields
+                .get(5)
+                .map(|field| {
+                    field.parse::<u32>().wrap_err_with(|| {
+                        format!(
+                            "parsing materialization batch size in benchmark seed variant {value:?}"
+                        )
+                    })
+                })
+                .transpose()?
+                .unwrap_or(0);
+            if materialization_batch_size > 4096 {
+                bail!(
+                    "benchmark seed variant materialization batch size must be in 0..=4096, got {value:?}"
+                );
+            }
             Ok(BenchmarkSeedVariant {
                 name: name.to_owned(),
                 strategy: strategy.to_owned(),
                 head_search_width,
                 head_seed_count,
                 neighbor_score_mode: neighbor_score_mode.to_owned(),
+                materialization_batch_size,
             })
         })
         .collect()
@@ -965,6 +984,7 @@ async fn run_physical_benchmarks(
                 .neighbor_score_mode
                 .clone()
                 .unwrap_or_else(|| "rabitq".to_owned()),
+            materialization_batch_size: 0,
         }]
     } else {
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
@@ -1341,12 +1361,13 @@ async fn run_physical_benchmarks(
                 register_same_seed_digest(&mut same_seed_digests, variant, &seed_id_digest)?
                     .unwrap_or_else(|| "none".to_owned());
             lines.push(format!(
-                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} neighbor_score_mode={} queries={} seed_id_digest={} compared_with={} same_seed=true",
+                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} neighbor_score_mode={} materialization_batch_size={} queries={} seed_id_digest={} compared_with={} same_seed=true",
                 variant.name,
                 variant.strategy,
                 variant.head_search_width,
                 variant.head_seed_count,
                 variant.neighbor_score_mode,
+                variant.materialization_batch_size,
                 args.queries,
                 seed_id_digest,
                 compared_with,
@@ -1360,15 +1381,17 @@ async fn run_physical_benchmarks(
             variant.head_search_width,
             variant.head_seed_count,
             attested_neighbor_score,
+            variant.materialization_batch_size,
         ));
         lines.push(format!(
-            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={} materialization_batch_size={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
             variant.head_search_width,
             variant.head_seed_count,
             variant.neighbor_score_mode,
+            variant.materialization_batch_size,
         ));
     }
     benchmark_arms.push((
@@ -1379,6 +1402,7 @@ async fn run_physical_benchmarks(
         production_head_width,
         production_head_width,
         "rabitq".to_owned(),
+        0,
     ));
 
     for (
@@ -1389,6 +1413,7 @@ async fn run_physical_benchmarks(
         head_search_width,
         head_seed_count,
         neighbor_score_mode,
+        materialization_batch_size,
     ) in benchmark_arms
     {
         let recall_log = log_dir.join(format!("{arm}-{variant}-recall.log"));
@@ -1440,6 +1465,14 @@ async fn run_physical_benchmarks(
                     ),
                 ]);
             }
+            if materialization_batch_size > 0 {
+                recall_args.extend([
+                    "--session-guc".into(),
+                    format!(
+                        "ec_distann.benchmark_materialization_batch_size={materialization_batch_size}"
+                    ),
+                ]);
+            }
         }
         let recall = run_physical_bench_child(recall_args).await?;
         let row = benchmark_table_row(&recall)?;
@@ -1449,7 +1482,7 @@ async fn run_physical_benchmarks(
         let distinct_recall_ci95_high = row[14].parse::<f64>()?;
         let mean_ms = benchmark_ms(&row[11])?;
         lines.push(format!(
-            "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={neighbor_score_mode} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
+            "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
             args.head_index_cap, row[1], row[2]
         ));
 
@@ -1501,13 +1534,21 @@ async fn run_physical_benchmarks(
                 ),
             ]);
         }
+        if arm == "physical" && materialization_batch_size > 0 {
+            latency_args.extend([
+                "--session-guc".into(),
+                format!(
+                    "ec_distann.benchmark_materialization_batch_size={materialization_batch_size}"
+                ),
+            ]);
+        }
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={neighbor_score_mode} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -1530,7 +1571,7 @@ async fn run_physical_benchmarks(
             }
             for stage in stage_rows {
                 lines.push(format!(
-                    "physical_benchmark_stage scale={scale} variant={variant} arm={arm} seed_strategy={seed_strategy} {stage}"
+                    "physical_benchmark_stage scale={scale} variant={variant} materialization_batch_size={materialization_batch_size} arm={arm} seed_strategy={seed_strategy} {stage}"
                 ));
             }
             let work_rows = latency
@@ -1545,7 +1586,7 @@ async fn run_physical_benchmarks(
             }
             for work in work_rows {
                 lines.push(format!(
-                    "physical_benchmark_materialization_work scale={scale} variant={variant} arm={arm} seed_strategy={seed_strategy} {work}"
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} materialization_batch_size={materialization_batch_size} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
         }
@@ -1604,13 +1645,14 @@ async fn run_physical_benchmarks(
     };
     for variant in &seed_variants {
         let shared = format!(
-            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={}",
+            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={} materialization_batch_size={}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
             variant.head_search_width,
             variant.head_seed_count,
             variant.neighbor_score_mode,
+            variant.materialization_batch_size,
         );
         lines.push(format!(
             "physical_benchmark_storage scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true owners={} physical_generation_bytes={physical_generation_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
@@ -3992,7 +4034,19 @@ mod tests {
             head_search_width: 32,
             head_seed_count: 32,
             neighbor_score_mode: neighbor_score_mode.to_owned(),
+            materialization_batch_size: 0,
         }
+    }
+
+    #[test]
+    fn materialization_variant_parser_is_backward_compatible() {
+        let variants = parse_benchmark_seed_variants(&[
+            "eager:persisted_head:32:32:rabitq".to_owned(),
+            "lazy:persisted_head:32:32:rabitq:10".to_owned(),
+        ])
+        .expect("variants parse");
+        assert_eq!(variants[0].materialization_batch_size, 0);
+        assert_eq!(variants[1].materialization_batch_size, 10);
     }
 
     #[test]

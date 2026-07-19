@@ -490,6 +490,10 @@ struct DistannBenchmarkSeedVariant {
     head_search_width: u32,
     head_seed_count: u32,
     neighbor_score_mode: String,
+    /// Task 184 benchmark-only global ranked-slot payload batch size. Zero
+    /// preserves eager materialization.
+    #[serde(default)]
+    materialization_batch_size: u32,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3200,6 +3204,13 @@ impl SuiteStep {
                                 variant.name
                             )
                         }
+                        if variant.materialization_batch_size > 4096 {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} materialization_batch_size must be in 0..=4096",
+                                step.name,
+                                variant.name
+                            )
+                        }
                         if !matches!(
                             variant.neighbor_score_mode.as_str(),
                             "rabitq" | "exact_neighbor"
@@ -4103,12 +4114,13 @@ fn expand_distann_local_multinode(
             &mut args,
             "--benchmark-seed-variant",
             &format!(
-                "{}:{}:{}:{}:{}",
+                "{}:{}:{}:{}:{}:{}",
                 variant.name,
                 variant.seed_strategy,
                 variant.head_search_width,
                 variant.head_seed_count,
-                variant.neighbor_score_mode
+                variant.neighbor_score_mode,
+                variant.materialization_batch_size
             ),
         );
     }
@@ -5495,14 +5507,16 @@ psql header noise\n\
                 "seed_strategy": "persisted_head",
                 "head_search_width": 32,
                 "head_seed_count": 32,
-                "neighbor_score_mode": "rabitq"
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 0
               },
               {
                 "name": "owner-oracle",
                 "seed_strategy": "owner_scan",
                 "head_search_width": 32,
                 "head_seed_count": 32,
-                "neighbor_score_mode": "rabitq"
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10
               }
             ]
           }]
@@ -5517,14 +5531,14 @@ psql header noise\n\
             window
                 == [
                     "--benchmark-seed-variant",
-                    "persisted-w32-s32:persisted_head:32:32:rabitq",
+                    "persisted-w32-s32:persisted_head:32:32:rabitq:0",
                 ]
         }));
         assert!(command.windows(2).any(|window| {
             window
                 == [
                     "--benchmark-seed-variant",
-                    "owner-oracle:owner_scan:32:32:rabitq",
+                    "owner-oracle:owner_scan:32:32:rabitq:10",
                 ]
         }));
     }
