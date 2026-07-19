@@ -152,9 +152,12 @@ Build `ec_distann` as a fifth access method:
   random-read storm — index-resident codes are forced by scan-fraction.
   distann has no scan-fraction: NFR-019 caps per-query work at BW×H expanded
   records independent of corpus size. Exact-vector row reads are bounded by
-  live expansions (tombstones may skip), final payload reads are bounded by k,
-  and the combined row-tier bound is BW×H+k per attempt; an implementation may
-  reuse a row read but correctness does not assume it. The thing that forced (B)
+  live expansions (tombstones may skip). For an unqualified LIMIT, final
+  payload reads are bounded by k; qual rejection can require additional proven
+  candidates under D12's fixed corpus-independent deepening ceiling. Task 191
+  reconciles NFR-019's older unconditional `+ k` wording before D12 becomes the
+  production default. An implementation may reuse a row read but correctness
+  does not assume it. The thing that forced (B)
   is exactly the failure mode distann is designed not to have. **What (A)
   buys:** the full vector is stored once (in the heap tier), never
   duplicated into the index → −1.0× raw off per-record amplification (D1);
@@ -171,6 +174,29 @@ Build `ec_distann` as a fifth access method:
   to avoid the heap detoast), but `ec_diskann`/`ec_distann` default to — and
   in practice only use — the local heap source (base heap for the single-node
   degenerate path, frozen epoch heap for multinode).
+- **D12 — Executor-driven, fixed-window final payload materialization.** Task
+  184 selected deterministic global-ranked windows of 10 over eager
+  materialization of the entire final candidate set. A scan retains each
+  candidate's `vec_id`; when the executor reaches the first not-yet-materialized
+  remote candidate in a window, the coordinator concurrently fetches only the
+  pending remote payloads in that proven ranked prefix. Qual rejection deepens
+  to the next window, still bounded by the already-ranked candidate set. Local
+  and remote candidates keep one global order. Projection attnums, snapshot and
+  generation fencing, row identity, and owner failure behavior are unchanged;
+  a failure during a later batch fails the query and cannot turn a prefix into
+  a complete result. Each request is capped by the current proven prefix and
+  total qual-driven materialization remains capped by the existing fixed
+  deepening ceiling derived once from the initial search bar
+  (`max(initial × 64, 1024)`), independent of corpus size. The fixed window
+  size is 10—adaptive sizing, 20/40 alternatives, prefetch, and pipelining are
+  not part of this decision. Task 184's matched
+  10k/50k/100k evidence preserved recall at 0.9990/0.9685/0.9625 and reduced
+  warm mean latency from 34.10/36.00/38.30 ms to 20.70/22.20/22.40 ms, with
+  better p50/p95/p99/max at every scale and unchanged storage/build. Evidence:
+  `reviews/task-184/003-isolated-candidate/` and
+  `reviews/task-184/004-full-scale-decision/`. Task 191 owns the normative FR
+  update and production-default implementation. Until Task 191 lands, normal
+  builds remain eager and Task 184's implementation remains benchmark-only.
 
 ## Consequences
 
@@ -188,6 +214,10 @@ Build `ec_distann` as a fifth access method:
   transport, not read-bound.
 - Latency floor is H × per-round transport cost; the post-142 pooling work
   is a prerequisite, and D4's reopen trigger guards the risk.
+- Final-payload remote work is driven by executor demand in bounded ranked
+  windows (D12), avoiding payload transport for candidates that never survive
+  `LIMIT`/qual consumption. This changes scan execution semantics but not the
+  persisted format, placement, wire endpoint, or failure contract.
 - The SPIRE partitioned lane remains shelved-with-evidence; its
   CustomScan/epoch/placement/transport machinery is reused, not discarded.
 

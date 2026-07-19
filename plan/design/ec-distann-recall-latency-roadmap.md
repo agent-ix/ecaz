@@ -56,6 +56,21 @@ neighbor traversal reached only 0.9605 recall and raised p50 from 43.8 to
 remote materialization is the primary measured latency direction, and a broad
 neighbor-codec replacement is not currently justified.
 
+Task 184 then selected executor-driven payload materialization in fixed global
+ranked windows of 10. On matched physical generations it preserved distinct
+recall and reduced warm latency as follows:
+
+| Scale | Recall eager / lazy10 | Mean ms eager / lazy10 | p95 ms eager / lazy10 | Remote materialize ms eager / lazy10 |
+| --- | --- | ---: | ---: | ---: |
+| 10k | 0.9990 / 0.9990 | 34.10 / 20.70 | 40.10 / 23.80 | 22.497 / 9.901 |
+| 50k | 0.9685 / 0.9685 | 36.00 / 22.20 | 42.60 / 24.90 | 24.244 / 10.037 |
+| 100k | 0.9625 / 0.9625 | 38.30 / 22.40 | 48.40 / 25.60 | 25.596 / 10.179 |
+
+The candidate also reduced remote payload bytes by 72–75%, passed the
+adversarial projection/qual/null/toast/mixed-owner/outage matrix, and changed no
+storage or construction cost. ADR-085 D12 records the selected semantics;
+Task 191 owns the production default. Task 187 waits for that retained baseline.
+
 NFR-017's `0.999` and `37.6 ms` values are aspirational comparison references,
 not hard acceptance thresholds. Decisions use complete relative Pareto evidence
 while topology, correctness, failure semantics, and bounded work remain hard
@@ -65,60 +80,62 @@ validity requirements.
 
 | Task | Workstream | Entry condition | Output |
 | --- | --- | --- | --- |
-| 184 | Remote payload materialization | executable now | attribution plus at most one isolated candidate |
+| 184 | Remote payload materialization | complete — PROMOTE | fixed batch-10 winner; productionization in Task 191 |
 | 185 | Fixed-cap gateway landmarks | executable now, independent of 184 | at most one fixed-cap recall candidate |
 | 186 | Larger compressed/hierarchical head | after Task 185 disposition | at most one bounded routing/capacity candidate |
-| 187 | Traversal transport | after Task 184 refreshes the latency profile | at most one traversal-latency candidate |
+| 187 | Traversal transport | after Task 191 lands Task 184's winner | at most one traversal-latency candidate |
 | 188 | Graph/search residual recall | after Tasks 185/186 establish the remaining entry gap | at most one graph or adaptive-work candidate |
 | 189 | Hybrid codec/distance | only after same-seed evidence identifies a codec opportunity | at most one codec candidate |
 | 190 | Architectural escalation | only if narrower tasks leave a material gap | reviewed architecture decision and follow-up, not a bundled rewrite |
+| 191 | Lazy payload productionization | Task 184 PROMOTE | normative contract, production default, and release A/B |
 
-Task 184 and Task 185 may proceed independently. Tasks 186--190 are gated to
-prevent expensive architecture or codec work from outrunning the measured
-bottlenecks. Task 172 retains broad throughput, injected-RTT, and capacity
-characterization; Task 167 retains physical DML.
+Task 184 is complete. Task 191 productionization and Task 185 recall work may
+proceed independently. Tasks 186--190 remain gated to prevent expensive
+architecture or codec work from outrunning the measured bottlenecks. Task 172
+retains broad throughput, injected-RTT, and capacity characterization; Task 167
+retains physical DML.
 
 Every production-affecting winner receives a separately numbered
 productionization task. A benchmark winner is not a default change.
 
 ## Candidate ledger: remote payload materialization
 
-Task 184 owns attribution and may select one isolated family. The current path
-already groups by owner, drives owners concurrently, pools connections,
-prepares the outer statement, and sends projection attnums. Those are controls,
-not new candidates.
+Task 184 completed attribution and selected one isolated family. The measured
+control already grouped by owner, drove owners concurrently, pooled
+connections, prepared the outer statement, and sent projection attnums; those
+remain controls rather than new candidates.
 
 | ID | Candidate | Status / trigger |
 | --- | --- | --- |
-| MAT-01 | Lazy first payload batch followed by deterministic deepening | active; measure requested versus consumed rows |
-| MAT-02 | Executor cursor-driven remote payload fetch | active; requires qual-safe bounded behavior |
-| MAT-03 | Adaptive payload batch size from observed qual rejection | conditional on MAT-01 counters |
-| MAT-04 | Fixed 10/20/40 bounded batches | active control for lazy designs |
+| MAT-01 | Lazy first payload batch followed by deterministic deepening | **selected** by Task 184; productionization Task 191 |
+| MAT-02 | Executor cursor-driven remote payload fetch | **selected mechanism**; adversarial qual/failure matrix passed |
+| MAT-03 | Adaptive payload batch size from observed qual rejection | deferred; fixed 10 already matched consumed remote rows and won end to end |
+| MAT-04 | Fixed 10/20/40 bounded batches | **fixed 10 selected**; 20/40 not advanced |
 | MAT-05 | `k + margin` fast path for provably unfiltered queries | conditional on planner proof |
 | MAT-06 | No-qual fast path with fail-closed fallback | conditional on projection/qual audit |
 | MAT-07 | Pipeline next payload batch while executor consumes current rows | conditional on lazy batching winner |
 | MAT-08 | Start materialization during the final traversal round | conditional on stable-finalist evidence |
 | MAT-09 | Speculative payload prefetch for likely final candidates | deferred; account for wasted work |
 | MAT-10 | Cancel speculative work when global ranking changes | conditional on MAT-09 |
-| MAT-11 | Move decoded payloads into output rows instead of cloning | active low-risk candidate |
-| MAT-12 | Rank-indexed payload storage instead of `HashMap<vec_id, payload>` | active low-risk candidate |
-| MAT-13 | Preserve request order and eliminate result-map lookup | active low-risk candidate |
-| MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | active low-risk candidate |
+| MAT-11 | Move decoded payloads into output rows instead of cloning | deferred after fixed-10 winner |
+| MAT-12 | Rank-indexed payload storage instead of `HashMap<vec_id, payload>` | deferred after fixed-10 winner |
+| MAT-13 | Preserve request order and eliminate result-map lookup | deferred after fixed-10 winner |
+| MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | deferred after fixed-10 winner |
 | MAT-15 | Packed payload buffer with offsets and null bitmap | conditional on decode/copy share |
 | MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on wire/decode share |
-| MAT-17 | Cache resolved row schema per published generation | active; measure owner setup share |
-| MAT-18 | Cache attnum-to-send-function resolution | active; measure owner setup share |
-| MAT-19 | Cache the owner-side inner SPI plan | active; outer statement is already prepared |
+| MAT-17 | Cache resolved row schema per published generation | deferred; owner setup was not the selected target |
+| MAT-18 | Cache attnum-to-send-function resolution | deferred; owner setup was not the selected target |
+| MAT-19 | Cache the owner-side inner SPI plan | deferred; outer statement is already prepared |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | conditional on MAT-19 attribution |
-| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | active; measure formatting and parse share |
+| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | deferred after fixed-10 winner |
 | MAT-22 | Return row-tier locator with expanded candidates | conditional; changes expansion wire payload |
-| MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | active owner-side candidate |
-| MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | active owner-side candidate |
+| MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | deferred after fixed-10 winner |
+| MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | deferred after fixed-10 winner |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
 | MAT-26 | Batch detoast/binary-send work by physical block | conditional on varlena/heap share |
 | MAT-27 | Covering row-tier layout for common scalar projections | deferred; format/storage decision |
-| MAT-28 | Exclude large/toasted columns unless planner proof requires them | active projection audit |
-| MAT-29 | Strengthen minimal projection derivation | active; current endpoint already accepts attnums |
+| MAT-28 | Exclude large/toasted columns unless planner proof requires them | deferred; Task 184 preserved existing planner projection proof |
+| MAT-29 | Strengthen minimal projection derivation | deferred; current endpoint already accepts attnums |
 | MAT-30 | Generation-scoped coordinator payload cache | conditional on cross-query hit-rate evidence |
 | MAT-31 | Bounded hot cache keyed by generation, vec_id, and projection | conditional on MAT-30 |
 | MAT-32 | Bounded coordinator hot-payload replica | deferred; storage/lifecycle decision |
@@ -340,5 +357,7 @@ or replacing a map do not require an ADR unless they alter a durable contract.
   NFR-017 reconciliation.
 - Task 183 packets 002--006: codec attribution, alternative heads, stage
   profile, and STOP.
+- Task 184 packets 001--004: materialization attribution, fixed-window
+  candidate, adversarial semantics/failure matrix, full-scale PROMOTE.
 - NFR-007 and NFR-017 through NFR-020: evidence, comparison, storage, bounded
   work, and failure contracts.

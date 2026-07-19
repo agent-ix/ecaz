@@ -1,7 +1,8 @@
 # Task 187: ec_distann Traversal Transport Optimization
 
-Status: **proposed, conditional on Task 184** (2026-07-19). Priority: P2
-latency follow-up.
+Status: **proposed, conditional on Task 191** (2026-07-19). Priority: P2
+latency follow-up. Task 184 selected lazy10 materialization; Task 191 must first
+make that production path the retained baseline.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`. This task
 owns `TRAV-01` through `TRAV-15` and `TRAV-20` through `TRAV-27`.
@@ -23,10 +24,12 @@ recall, graph, ordering, epoch/failure semantics, and total work bounds.
 
 ## Entry gate
 
-Task 184 must provide its final production-path profile and disposition. If
-traversal is no longer a material share, close this task with a documented
-conditional skip. Otherwise freeze the retained materialization path and index
-generation before selecting a traversal candidate.
+Task 184 has provided its profile and PROMOTE disposition. Task 191 must land
+and validate the selected materialization path before this task freezes the
+retained production baseline. If traversal is no longer a material share after
+that promotion, close this task with a documented conditional skip. Otherwise
+freeze the retained materialization path and index generation before selecting
+a traversal candidate.
 
 ## Phase 1: attribution
 

@@ -1,6 +1,15 @@
 # Task 184: ec_distann Remote Payload Materialization
 
-Status: **proposed** (2026-07-17). Priority: P1 measured latency follow-up.
+Status: **complete — PROMOTE fixed batch 10 to Task 191** (2026-07-19).
+Priority: P1 measured latency follow-up.
+
+Outcome: Task 184 selected MAT-01/MAT-02/MAT-04's executor-driven fixed
+global-ranked windows of 10. Across matched 10k/50k/100k physical A/B cells it
+preserved distinct recall at 0.9990/0.9685/0.9625 and reduced warm mean latency
+from 34.10/36.00/38.30 ms to 20.70/22.20/22.40 ms, with better reported tails,
+unchanged storage/build, and passing adversarial semantics/failure evidence.
+The normal production path remains eager; Task 191 owns productionization.
+Outside review remains open in packet 004 and was not self-accepted.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 family `MAT-01` through `MAT-40`. This task may import only the candidates its
