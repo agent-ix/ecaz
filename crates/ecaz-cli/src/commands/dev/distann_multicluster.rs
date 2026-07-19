@@ -648,17 +648,22 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     } else {
         args.dim
     };
+    let correctness_column = if args.materialization_correctness {
+        ", payload_note text"
+    } else {
+        ""
+    };
     let prefix = format!(
         "CREATE EXTENSION IF NOT EXISTS ecaz;
         DROP TABLE IF EXISTS dm CASCADE;
         DROP TABLE IF EXISTS dm_queries;
         CREATE TABLE dm (
-            id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({})
+            id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({}){}
         ) WITH (
             autovacuum_enabled = false,
             toast.autovacuum_enabled = false
         );",
-        physical_dim
+        physical_dim, correctness_column
     );
     let load = if !coordinator {
         String::new()
@@ -679,7 +684,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
         format!(
             "CREATE TEMP TABLE dm_stage (id bigint, vec text);
              COPY dm_stage (id, vec) FROM '{corpus}' WITH (FORMAT text, DELIMITER E'\\t');
-             INSERT INTO dm
+             INSERT INTO dm (id, source_id, source, embedding)
              SELECT id,
                     (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||
                      substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||
@@ -697,7 +702,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
         )
     } else {
         format!(
-            "INSERT INTO dm
+            "INSERT INTO dm (id, source_id, source, embedding)
              SELECT g,
                     (substr(md5(g::text),1,8)||'-'||substr(md5(g::text),9,4)||'-4'||
                      substr(md5(g::text),14,3)||'-8'||substr(md5(g::text),18,3)||'-'||
@@ -714,11 +719,12 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
         )
     };
     let correctness_fixture = if coordinator && args.materialization_correctness {
-        // `source` is naturally toasted at the real-corpus dimension. Making a
-        // deterministic half nullable before the immutable row tier is built
-        // lets the Task 184 matrix exercise both varlena and payload-null
-        // decoding without adding a benchmark-only column to production rows.
-        "UPDATE dm SET source = NULL WHERE id % 2 = 0;"
+        // Keep the benchmark/query vector non-null. A correctness-only payload
+        // column provides both genuine NULL datums and large toasted varlena
+        // datums in the immutable row tier without changing ordinary fixtures.
+        "UPDATE dm
+            SET payload_note = CASE WHEN id % 2 = 0 THEN NULL
+                                    ELSE repeat(md5(id::text), 400) END;"
     } else {
         ""
     };
@@ -1007,9 +1013,9 @@ fn materialization_semantic_sql(
            FROM (
              SELECT id,
                     source_id::text AS source_id,
-                    source IS NULL AS source_null,
-                    CASE WHEN source IS NULL THEN NULL ELSE md5(source::text) END AS source_digest,
-                    CASE WHEN source IS NULL THEN NULL ELSE octet_length(source::text) END AS source_octets,
+                    payload_note IS NULL AS payload_null,
+                    CASE WHEN payload_note IS NULL THEN NULL ELSE md5(payload_note) END AS payload_digest,
+                    CASE WHEN payload_note IS NULL THEN NULL ELSE octet_length(payload_note) END AS payload_octets,
                     embedding <#> (SELECT source FROM query_vector) AS distance
                FROM {corpus}
               WHERE {predicate}
@@ -1038,11 +1044,11 @@ async fn compare_materialization_scenario(
     let null_ok = !require_null
         || eager_value
             .as_array()
-            .is_some_and(|values| values.iter().all(|value| value["source_null"] == true));
+            .is_some_and(|values| values.iter().all(|value| value["payload_null"] == true));
     let toast_ok = !require_toast
         || eager_value.as_array().is_some_and(|values| {
             values.iter().all(|value| {
-                value["source_octets"]
+                value["payload_octets"]
                     .as_u64()
                     .is_some_and(|octets| octets > 2_000)
             })
@@ -1148,10 +1154,15 @@ async fn run_materialization_correctness(
             false,
             false,
         ),
-        ("null_payload", "source IS NULL".to_owned(), true, false),
+        (
+            "null_payload",
+            "payload_note IS NULL".to_owned(),
+            true,
+            false,
+        ),
         (
             "toasted_projection_qual",
-            "source IS NOT NULL AND id % 3 = 1".to_owned(),
+            "payload_note IS NOT NULL AND id % 3 = 1".to_owned(),
             false,
             true,
         ),
@@ -1211,7 +1222,7 @@ async fn run_materialization_correctness(
              SET ec_distann.benchmark_materialization_batch_size = 10;
              BEGIN;
              DECLARE task184_materialization_cursor NO SCROLL CURSOR FOR
-             SELECT id, source_id, source
+             SELECT id, source_id, source, payload_note
                FROM {corpus}
               ORDER BY embedding <#> (SELECT source FROM {queries} ORDER BY id OFFSET {mixed_query_offset} LIMIT 1)
               LIMIT 40;"
@@ -4391,14 +4402,14 @@ mod tests {
         let sql = materialization_semantic_sql(
             "physical_corpus",
             "physical_queries",
-            "source IS NOT NULL AND id % 3 = 1",
+            "payload_note IS NOT NULL AND id % 3 = 1",
             10,
             0,
         );
-        assert!(sql.contains("source IS NULL AS source_null"));
-        assert!(sql.contains("md5(source::text)"));
-        assert!(sql.contains("octet_length(source::text)"));
-        assert!(sql.contains("WHERE source IS NOT NULL AND id % 3 = 1"));
+        assert!(sql.contains("payload_note IS NULL AS payload_null"));
+        assert!(sql.contains("md5(payload_note)"));
+        assert!(sql.contains("octet_length(payload_note)"));
+        assert!(sql.contains("WHERE payload_note IS NOT NULL AND id % 3 = 1"));
         assert!(sql.contains("LIMIT 10"));
     }
 
