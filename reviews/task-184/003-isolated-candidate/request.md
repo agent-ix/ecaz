@@ -40,7 +40,27 @@ Stable-prefix deepening begins a rebuilt window at the executor's consumed
 cursor so already consumed remote rows are not fetched again.
 
 Feature and normal PG18 builds pass, as does the focused deterministic-window
-test. This request remains open and incomplete until the packet contains the
-preregistered adversarial semantic matrix and the byte-identical-generation
-eager/lazy A/B. Please review the bounded window/deepening logic, feature
-isolation, and preservation of endpoint fencing and failure semantics now.
+test.
+
+## Completed evidence and proceed decision
+
+The checked-in suite completed both the 10k semantic gate and matched 100k A/B.
+Every preregistered semantic scenario passed, including output identity, quals
+rejecting one and multiple windows, NULL and toasted payload datums,
+projection/qual use, mixed local/remote winners, and a real remote-owner outage
+after a completed first batch that aborted the later fetch.
+
+At 100k both variants retained 0.9625 distinct recall (95% CI
+0.9532--0.9700) on 200 queries / 2,000 trials and selected the same seed IDs.
+Warm mean latency improved from 39.30 to 23.40 ms (-40.5%); p95 from 50.50 to
+26.50 ms (-47.5%); p99 from 55.60 to 27.50 ms (-50.5%); and max from 56.20 to
+28.10 ms (-50.0%). Remote materialization fell from 25.910 to 10.292 ms/query.
+Requested remote payloads fell from 26.84 to 6.64/query, exactly matching remote
+executor consumption, and logical payload bytes fell from 496,003 to 122,707
+per query. Storage and construction were shared and identical.
+
+Topology, remote engagement, query separation, and unanimous release extension
+provenance passed. This is a material end-to-end and tail win with no observed
+quality, semantic, failure, storage, or construction tradeoff, so packet 003
+records **PROCEED** to the required packet-004 10k/50k/100k confirmation. The
+candidate remains feature-gated and default-off until that full decision.
