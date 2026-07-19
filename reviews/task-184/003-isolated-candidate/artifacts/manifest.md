@@ -17,6 +17,11 @@
 | `cargo-check-correctness-runner.log` | CLI check after suite semantic-matrix extension | pass |
 | `cargo-test-correctness-suite.log` | suite expansion / structured-result parser test | 1 passed |
 | `cargo-test-correctness-sql.log` | nullable/toasted semantic SQL construction test | 1 passed |
+| `implementation-install.log` | measurement-feature PG18 release install at `765f28a54` | pass |
+| `cli-release-build.log` | release CLI build at `765f28a54` | pass |
+| `install-provenance.log` | installed library / CLI SHA-256 | `4ee29c...23031` / `b9be6e...ed1b5` |
+| `suite-dry-run.log` | release-runner expansion of checked-in isolated suite | both steps and `0`/`10` arms present |
+| `suite-audit-preflight.log` | suite input/shape audit | 2 steps pass |
 
 The runner accepts an optional sixth physical seed-variant field for the
 materialization batch size. Five-field configs remain compatible and default

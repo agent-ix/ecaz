@@ -1,0 +1,6 @@
+Script started on 2026-07-19 11:32:08-07:00 [<not executed on terminal>]
+765f28a548b194f1bd1ba845ae06b2266d04153b
+4ee29c74860d91b84d67e4d9f122277f3cf5816251c0ab331daece58ed023031  /home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+b9be6e2bde88768039333df9dba7b36e45a4f74cd99275eb8d66e9492f5ed1b5  target/release/ecaz
+
+Script done on 2026-07-19 11:32:08-07:00 [COMMAND_EXIT_CODE="0"]
