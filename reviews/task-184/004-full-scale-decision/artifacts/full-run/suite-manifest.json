@@ -3,8 +3,8 @@
   "schema_version": 1,
   "config": "reviews/task-184/004-full-scale-decision/artifacts/full-scale-suite.json",
   "config_sha256": "e2ee9b170b6ef716e632344f019116cc251dd3ccaa13974547932d5f81a335b0",
-  "dry_run": true,
-  "generated_at_unix_ms": 1784489582202,
+  "dry_run": false,
+  "generated_at_unix_ms": 1784489663990,
   "runner_git_commit": "b51b0ad4795290731bf1b8044117701af6527c8a-dirty",
   "connection": {
     "database": "tqvector_bench",
@@ -77,7 +77,11 @@
       "expected_artifacts": [
         "reviews/task-184/004-full-scale-decision/artifacts/full-run/materialization-ab-10k/distann-multinode-summary.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1784489663991,
+      "finished_at_unix_ms": 1784489850840,
+      "duration_ms": 187030,
+      "exit_code": 0
     },
     {
       "name": "materialization-ab-50k",
@@ -142,7 +146,11 @@
       "expected_artifacts": [
         "reviews/task-184/004-full-scale-decision/artifacts/full-run/materialization-ab-50k/distann-multinode-summary.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1784489850840,
+      "finished_at_unix_ms": 1784490735009,
+      "duration_ms": 884986,
+      "exit_code": 0
     },
     {
       "name": "materialization-ab-100k",
@@ -207,7 +215,11 @@
       "expected_artifacts": [
         "reviews/task-184/004-full-scale-decision/artifacts/full-run/materialization-ab-100k/distann-multinode-summary.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1784490735009,
+      "finished_at_unix_ms": 1784492598908,
+      "duration_ms": 1865814,
+      "exit_code": 0
     }
   ]
 }
