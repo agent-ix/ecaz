@@ -558,6 +558,16 @@ enum CustomScanOutputRow {
         payload_nulls: Vec<bool>,
         payload_values: Vec<Vec<u8>>,
     },
+    /// Task 184 benchmark-only lazy candidate. Identity and ranked position are
+    /// retained without copying a row payload until the executor reaches this
+    /// deterministic ranked window.
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    RemotePending { vec_id: u64 },
+    /// A pending row that materialized as a tombstone. It occupies its ranked
+    /// position so proven-prefix/deepening boundaries remain based on raw rank,
+    /// but the access callback never emits it.
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    RemoteSkipped,
 }
 
 #[repr(C)]
@@ -968,6 +978,17 @@ unsafe extern "C-unwind" fn custom_scan_access(
             continue;
         }
         let output_index = state.next_output;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if matches!(
+            state.outputs.get(output_index),
+            Some(CustomScanOutputRow::RemotePending { .. })
+        ) {
+            materialize_pending_physical_window(state, output_index);
+            // Re-read the slot after the in-place Pending -> Remote/Skipped
+            // transition. Do not advance the cursor until its final state is
+            // handled below.
+            continue;
+        }
         state.next_output += 1;
         match &state.outputs[output_index] {
             CustomScanOutputRow::Local(tid) => {
@@ -1030,8 +1051,99 @@ unsafe extern "C-unwind" fn custom_scan_access(
                 record_executor_consumption(true);
                 return store_remote_payload(state, scan_slot, &nulls, &values);
             }
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            CustomScanOutputRow::RemotePending { .. } => {
+                pgrx::error!("EC_INTERNAL: pending remote payload was not materialized")
+            }
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            CustomScanOutputRow::RemoteSkipped => continue,
         }
     }
+}
+
+/// Materialize all pending remote rows in the current deterministic global
+/// ranked window, capped at the prefix the search has actually proven. A qual
+/// that rejects the current window drives the executor into the next window;
+/// no LIMIT-derived completeness assumption is made here.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn materialize_pending_physical_window(
+    state: &mut DistannCustomScanExecState,
+    output_index: usize,
+) {
+    let batch_size = super::options::benchmark_materialization_batch_size();
+    if batch_size == 0 {
+        pgrx::error!("EC_INTERNAL: pending remote payload with eager materialization enabled");
+    }
+    let (window_start, window_end) =
+        pending_materialization_window(output_index, batch_size, proven_prefix_len(state));
+    let remote_ids = state.outputs[window_start..window_end]
+        .iter()
+        .filter_map(|output| match output {
+            CustomScanOutputRow::RemotePending { vec_id } => Some(*vec_id),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    if remote_ids.is_empty() {
+        pgrx::error!("EC_INTERNAL: pending materialization window contains no pending rows");
+    }
+    let materialize_started = Instant::now();
+    let payloads = state
+        .physical_generation
+        .as_ref()
+        .unwrap_or_else(|| {
+            pgrx::error!("EcDistannDistributedScan lost its physical generation context")
+        })
+        .materialize_remote_payload_ids(&remote_ids, &state.payload_attnums)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let materialize_elapsed = materialize_started.elapsed();
+    super::stage_counters::record(
+        super::stage_counters::DistannQueryStage::RemoteMaterialize,
+        materialize_elapsed,
+    );
+    // CustomScanTotal is aggregate work per scan. Candidate scans can have
+    // multiple samples (initial search plus one per demanded payload window);
+    // elapsed_ns / scans remains the comparable mean-query total.
+    super::stage_counters::record(
+        super::stage_counters::DistannQueryStage::CustomScanTotal,
+        materialize_elapsed,
+    );
+
+    let association_started = Instant::now();
+    for index in window_start..window_end {
+        let vec_id = match &state.outputs[index] {
+            CustomScanOutputRow::RemotePending { vec_id } => *vec_id,
+            _ => continue,
+        };
+        state.outputs[index] = match payloads.get(&vec_id) {
+            Some(payload) => CustomScanOutputRow::Remote {
+                payload_nulls: payload.payload_nulls.clone(),
+                payload_values: payload.payload_values.clone(),
+            },
+            None => CustomScanOutputRow::RemoteSkipped,
+        };
+    }
+    super::stage_counters::record(
+        super::stage_counters::DistannQueryStage::MaterializeOutputAssociate,
+        association_started.elapsed(),
+    );
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn pending_materialization_window(
+    output_index: usize,
+    batch_size: usize,
+    proven_outputs: usize,
+) -> (usize, usize) {
+    debug_assert!(batch_size > 0);
+    let ranked_window_start = output_index / batch_size * batch_size;
+    let end = ranked_window_start
+        .saturating_add(batch_size)
+        .min(proven_outputs);
+    // Slots below output_index were already consumed (or caused their pending
+    // window to materialize). Search deepening rebuilds the stable ranked
+    // prefix, so starting at output_index is what prevents re-fetching that
+    // rebuilt-but-consumed prefix.
+    (output_index, end)
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1246,10 +1358,44 @@ unsafe fn run_physical_generation_search(
     );
     state.effective = effective;
     state.early_exit = collection.counters.early_exit;
+    let hits = collection.hits;
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    if super::options::benchmark_materialization_batch_size() > 0 {
+        let association_started = Instant::now();
+        state.proven_outputs = hits.len().min(effective);
+        state.outputs = hits
+            .into_iter()
+            .map(|hit| {
+                if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
+                    CustomScanOutputRow::Frozen(hit.heap_tid)
+                } else {
+                    CustomScanOutputRow::RemotePending { vec_id: hit.vec_id }
+                }
+            })
+            .collect();
+        let association_elapsed = association_started.elapsed();
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::MaterializeOutputAssociate,
+            association_elapsed,
+        );
+        super::stage_counters::record_work(
+            super::stage_counters::DistannMaterializationWork::OutputRowsAssociated,
+            state.outputs.len(),
+        );
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::OutputMerge,
+            association_elapsed,
+        );
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::CustomScanTotal,
+            total_started.elapsed(),
+        );
+        return;
+    }
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let materialize_started = Instant::now();
     let remote_payloads = context
-        .materialize_remote_payloads(&collection.hits, &state.payload_attnums)
+        .materialize_remote_payloads(&hits, &state.payload_attnums)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     #[cfg(feature = "distann-head-attribution-benchmark")]
     super::stage_counters::record(
@@ -1259,8 +1405,7 @@ unsafe fn run_physical_generation_search(
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let merge_started = Instant::now();
     let mut proven_outputs = 0;
-    state.outputs = collection
-        .hits
+    state.outputs = hits
         .into_iter()
         .enumerate()
         .filter_map(|(raw_rank, hit)| {
@@ -1503,4 +1648,18 @@ unsafe extern "C-unwind" fn end_custom_scan(node: *mut pg_sys::CustomScanState) 
     }
     let state = node.cast::<DistannCustomScanExecState>();
     release_custom_scan_resources(&mut *state);
+}
+
+#[cfg(all(test, feature = "distann-head-attribution-benchmark"))]
+mod materialization_candidate_tests {
+    use super::pending_materialization_window;
+
+    #[test]
+    fn ranked_windows_are_deterministic_and_proven_bounded() {
+        assert_eq!(pending_materialization_window(0, 10, 32), (0, 10));
+        assert_eq!(pending_materialization_window(9, 10, 32), (9, 10));
+        assert_eq!(pending_materialization_window(10, 10, 32), (10, 20));
+        assert_eq!(pending_materialization_window(31, 10, 32), (31, 32));
+        assert_eq!(pending_materialization_window(32, 10, 40), (32, 40));
+    }
 }

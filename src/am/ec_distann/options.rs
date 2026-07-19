@@ -52,6 +52,9 @@ static ECDISTANN_BENCHMARK_HEAD_POLICY_GUC: GucSetting<Option<CString>> =
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_TRAINING_QUERY_PATH_GUC: GucSetting<Option<CString>> =
     GucSetting::<Option<CString>>::new(None);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(0);
 const ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH: i32 = 4096;
 const ECDISTANN_DEFAULT_REMOTE_CONNECT_TIMEOUT_MS: i32 = 5_000;
 const ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS: i32 = 120_000;
@@ -276,6 +279,17 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_int_guc(
+        c"ec_distann.benchmark_materialization_batch_size",
+        c"Task 184 benchmark-only ranked-window payload batch size.",
+        c"Zero preserves eager physical payload materialization. A positive value materializes pending remote payloads in deterministic global-ranked windows as the executor requests them. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC,
+        0,
+        ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.hop_rounds",
         c"FR-081 hop-round budget (H) for ec_distann scans.",
@@ -437,6 +451,11 @@ pub(super) fn scan_profile_notice_enabled() -> bool {
 
 pub(super) fn physical_epoch_cache_enabled() -> bool {
     ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC.get()
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+pub(super) fn benchmark_materialization_batch_size() -> usize {
+    usize::try_from(ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC.get()).unwrap_or(0)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

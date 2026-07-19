@@ -2113,6 +2113,23 @@ impl PhysicalGenerationScan {
         hits: &[DistannScanHit],
         projection_attnums: &[pg_sys::AttrNumber],
     ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
+        let remote_ids = hits
+            .iter()
+            .filter(|hit| hit.heap_tid == ItemPointer::INVALID)
+            .map(|hit| hit.vec_id)
+            .collect::<Vec<_>>();
+        self.materialize_remote_payload_ids(&remote_ids, projection_attnums)
+    }
+
+    /// Materialize an already-ranked subset of remote physical identities.
+    /// Task 184's opt-in candidate uses this at executor demand boundaries;
+    /// eager production materialization reaches the same implementation after
+    /// filtering all remote hits above.
+    pub(crate) fn materialize_remote_payload_ids(
+        &self,
+        remote_ids: &[u64],
+        projection_attnums: &[pg_sys::AttrNumber],
+    ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let prepare_started = Instant::now();
         let schema_fingerprint = self.descriptor.row_schema.fingerprint()?;
@@ -2121,13 +2138,8 @@ impl PhysicalGenerationScan {
             .map(|attnum| i16::try_from(i32::from(*attnum)))
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| "EC_SCHEMA_MISMATCH: projection attnum exceeds smallint".to_owned())?;
-        let remote_ids = hits
-            .iter()
-            .filter(|hit| hit.heap_tid == ItemPointer::INVALID)
-            .map(|hit| hit.vec_id)
-            .collect::<Vec<_>>();
         let buckets = super::placement::group_by_owning_node(
-            &remote_ids,
+            remote_ids,
             self.routes.len(),
             self.descriptor.placement_hash_version,
         );
