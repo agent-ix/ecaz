@@ -1,0 +1,12 @@
+Script started on 2026-07-19 09:25:28-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 13s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-9325605036fcde8d)
+
+running 1 test
+test am::ec_distann::stage_counters::tests::counters_accumulate_nested_samples_and_reset ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2520 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-19 09:27:41-07:00 [COMMAND_EXIT_CODE="0"]
