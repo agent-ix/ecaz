@@ -4,7 +4,7 @@ packet: 004-full-scale-decision
 role: coder
 status: open
 date: 2026-07-19
-head: 765f28a548b194f1bd1ba845ae06b2266d04153b
+head: 98ff482f6209d1da2f12bd1ebc3d20ed4861ae69
 ---
 
 # Review request: full-scale materialization decision
@@ -48,7 +48,12 @@ and multiple batches, null and toasted projection/qual values, mixed
 local/remote winners, and a post-first-batch owner outage. All seven cases
 passed; later remote failure still fails the query rather than returning a
 partial result. Work remains bounded by the already-ranked candidate set and
-deepens in deterministic global rank windows of 10.
+deepens in deterministic global rank windows of 10. Each request ends at the
+current proven prefix and total qual-driven payload reads retain the existing
+corpus-independent ceiling fixed once from the initial search bar
+(`max(initial × 64, 1024)`). ADR-085 D12 records this exact choice. Task 191
+must reconcile NFR-019's older unconditional `payload reads <= k` prose before
+making D12 the production default; the bound itself is not left undecided.
 
 No 1m cell ran because `data/staged-current/` contains only the attested 10k,
 50k, and 100k corpora. This is the task's explicit provenance-conditioned 1m
@@ -62,4 +67,7 @@ clean installed extension SHA and release profile above.
 
 Review the compact evidence in `artifacts/manifest.md`, the 279 structured
 rows in `artifacts/full-run/results.jsonl`, and the three scale summaries.
+Decision checkpoint `98ff482f6209d1da2f12bd1ebc3d20ed4861ae69`
+records ADR-085 D12, closes the Task 184 roadmap entry, creates Task 191, and
+gates Task 187 on the productionized baseline.
 The request remains open for outside review; the coder has not self-accepted it.

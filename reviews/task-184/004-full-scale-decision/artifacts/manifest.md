@@ -12,6 +12,7 @@
 - Installed extension: same full SHA, release profile, unanimous across all
   three nodes at every scale
 - Runner correctness checkpoint: `b51b0ad4795290731bf1b8044117701af6527c8a`
+- Decision / roadmap checkpoint: `98ff482f6209d1da2f12bd1ebc3d20ed4861ae69`
 - Suite config SHA-256:
   `e2ee9b170b6ef716e632344f019116cc251dd3ccaa13974547932d5f81a335b0`
 - Final results SHA-256:
@@ -78,3 +79,6 @@ all required semantics while materially improving end-to-end mean and tails at
 every required scale, moving the attributed target consistently, reducing
 remote work/bytes, and changing neither storage nor construction. The 1m cell
 is conditionally skipped because no attested 1m corpus is staged on this host.
+ADR-085 D12 records the fixed window and existing corpus-independent deepening
+ceiling; Task 191 owns the normative NFR-019 reconciliation and production
+default. Task 187 waits for that productionized retained baseline.
