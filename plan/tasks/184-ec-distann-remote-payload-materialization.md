@@ -2,6 +2,10 @@
 
 Status: **proposed** (2026-07-17). Priority: P1 measured latency follow-up.
 
+Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
+family `MAT-01` through `MAT-40`. This task may import only the candidates its
+Phase 2 packet pre-registers and may advance at most one isolated candidate.
+
 ## Why
 
 Task 183 profiled the retained Task 182 production policy on a fresh 100k
@@ -154,3 +158,5 @@ without an end-to-end win is not a production result.
 - Task 182: retained production head policy and full-scale baseline.
 - ADR-085 and FR-078/FR-079: physical placement and row materialization.
 - NFR-007 and NFR-017 through NFR-020.
+- `plan/design/ec-distann-recall-latency-roadmap.md`: durable candidate and
+  negative-result ledger.
