@@ -66,6 +66,11 @@ pub struct LocalMultinodePg18Args {
     /// arm. Requires a measurement extension exposing the stage snapshot API.
     #[arg(long, default_value_t = false)]
     pub distann_stage_counters: bool,
+    /// Task 184 suite-driven semantic matrix for eager versus ranked-window
+    /// materialization. Requires two otherwise-identical benchmark variants
+    /// with batch sizes zero and ten.
+    #[arg(long, default_value_t = false)]
+    pub materialization_correctness: bool,
     /// First TCP port; node k listens on base_port + (k - 1).
     #[arg(long, default_value_t = 39710)]
     pub base_port: u16,
@@ -192,6 +197,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.distann_stage_counters && !args.physical_benchmark {
         bail!("--distann-stage-counters requires --physical-benchmark");
+    }
+    if args.materialization_correctness && !args.physical_benchmark {
+        bail!("--materialization-correctness requires --physical-benchmark");
+    }
+    if args.materialization_correctness && args.coordinator_outside_roster {
+        bail!("--materialization-correctness requires the coordinator to be physical owner zero");
     }
     if args.benchmark_iterations == 0 {
         bail!("--benchmark-iterations must be at least 1");
@@ -702,9 +713,19 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
             args.dim, args.rows
         )
     };
+    let correctness_fixture = if coordinator && args.materialization_correctness {
+        // `source` is naturally toasted at the real-corpus dimension. Making a
+        // deterministic half nullable before the immutable row tier is built
+        // lets the Task 184 matrix exercise both varlena and payload-null
+        // decoding without adding a benchmark-only column to production rows.
+        "UPDATE dm SET source = NULL WHERE id % 2 = 0;"
+    } else {
+        ""
+    };
     Ok(format!(
         "{prefix}
          {load}
+         {correctness_fixture}
          ANALYZE dm;
          CREATE INDEX dm_idx ON dm USING ec_distann
              (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
@@ -953,10 +974,309 @@ fn register_same_seed_digest(
     Ok(None)
 }
 
+async fn materialization_result_json(
+    coordinator: &tokio_postgres::Client,
+    batch_size: u32,
+    sql: &str,
+) -> Result<String> {
+    coordinator
+        .batch_execute(&format!(
+            "SET enable_seqscan = off; SET ec_distann.benchmark_materialization_batch_size = {batch_size};"
+        ))
+        .await?;
+    coordinator
+        .query_one(sql, &[])
+        .await
+        .wrap_err_with(|| format!("running materialization semantic query at batch {batch_size}"))?
+        .try_get::<_, String>(0)
+        .wrap_err("decoding materialization semantic result")
+}
+
+fn materialization_semantic_sql(
+    corpus: &str,
+    queries: &str,
+    predicate: &str,
+    limit: u32,
+    query_offset: u32,
+) -> String {
+    format!(
+        "WITH query_vector AS (
+             SELECT source FROM {queries} ORDER BY id OFFSET {query_offset} LIMIT 1
+         )
+         SELECT COALESCE(jsonb_agg(to_jsonb(result) ORDER BY result.distance)::text, '[]')
+           FROM (
+             SELECT id,
+                    source_id::text AS source_id,
+                    source IS NULL AS source_null,
+                    CASE WHEN source IS NULL THEN NULL ELSE md5(source::text) END AS source_digest,
+                    CASE WHEN source IS NULL THEN NULL ELSE octet_length(source::text) END AS source_octets,
+                    embedding <#> (SELECT source FROM query_vector) AS distance
+               FROM {corpus}
+              WHERE {predicate}
+              ORDER BY embedding <#> (SELECT source FROM query_vector)
+              LIMIT {limit}
+           ) result"
+    )
+}
+
+async fn compare_materialization_scenario(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    scenario: &str,
+    sql: &str,
+    require_null: bool,
+    require_toast: bool,
+) -> Result<String> {
+    let eager = materialization_result_json(coordinator, 0, sql).await?;
+    let candidate = materialization_result_json(coordinator, 10, sql).await?;
+    let eager_value: serde_json::Value = serde_json::from_str(&eager)?;
+    let candidate_value: serde_json::Value = serde_json::from_str(&candidate)?;
+    let rows = eager_value
+        .as_array()
+        .ok_or_else(|| color_eyre::eyre::eyre!("materialization result is not a JSON array"))?
+        .len();
+    let null_ok = !require_null
+        || eager_value
+            .as_array()
+            .is_some_and(|values| values.iter().all(|value| value["source_null"] == true));
+    let toast_ok = !require_toast
+        || eager_value.as_array().is_some_and(|values| {
+            values.iter().all(|value| {
+                value["source_octets"]
+                    .as_u64()
+                    .is_some_and(|octets| octets > 2_000)
+            })
+        });
+    let pass = eager_value == candidate_value && rows == 10 && null_ok && toast_ok;
+    if !pass {
+        bail!(
+            "materialization correctness scenario {scenario} failed: rows={rows} identity={} null_ok={null_ok} toast_ok={toast_ok}",
+            eager_value == candidate_value
+        );
+    }
+    Ok(format!(
+        "physical_materialization_correctness scale={scale} scenario={scenario} pass=true rows={rows} eager_digest={} candidate_digest={} null_ok={null_ok} toast_ok={toast_ok}",
+        hex::encode(Sha256::digest(eager.as_bytes())),
+        hex::encode(Sha256::digest(candidate.as_bytes())),
+    ))
+}
+
+async fn run_materialization_correctness(
+    coordinator: &tokio_postgres::Client,
+    pg_ctl: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    seed_variants: &[BenchmarkSeedVariant],
+    scale: &str,
+    corpus: &str,
+    queries: &str,
+) -> Result<Vec<String>> {
+    if nodes.len() < 2 {
+        bail!("materialization correctness requires at least two physical owners");
+    }
+    let eager = seed_variants
+        .iter()
+        .find(|variant| variant.materialization_batch_size == 0)
+        .ok_or_else(|| color_eyre::eyre::eyre!("materialization matrix has no eager variant"))?;
+    let candidate = seed_variants
+        .iter()
+        .find(|variant| variant.materialization_batch_size == 10)
+        .ok_or_else(|| color_eyre::eyre::eyre!("materialization matrix has no batch-10 variant"))?;
+    if eager.strategy != candidate.strategy
+        || eager.head_search_width != candidate.head_search_width
+        || eager.head_seed_count != candidate.head_seed_count
+        || eager.neighbor_score_mode != candidate.neighbor_score_mode
+    {
+        bail!("materialization correctness eager/candidate variants differ outside batch size");
+    }
+
+    coordinator
+        .batch_execute(&format!(
+            "SET ec_distann.benchmark_seed_mode = '{}';
+             SET ec_distann.benchmark_head_search_width = {};
+             SET ec_distann.benchmark_head_seed_count = {};
+             SET ec_distann.benchmark_exact_neighbor = {};",
+            eager.strategy.replace('\'', "''"),
+            eager.head_search_width,
+            eager.head_seed_count,
+            if eager.neighbor_score_mode == "exact_neighbor" {
+                "on"
+            } else {
+                "off"
+            },
+        ))
+        .await?;
+
+    coordinator
+        .batch_execute("SET ec_distann.benchmark_materialization_batch_size = 0")
+        .await?;
+    let ranked_ids = coordinator
+        .query(
+            &format!(
+                "SELECT id FROM {corpus}
+                  ORDER BY embedding <#> (SELECT source FROM {queries} ORDER BY id LIMIT 1)
+                  LIMIT 40"
+            ),
+            &[],
+        )
+        .await?;
+    if ranked_ids.len() < 30 {
+        bail!(
+            "materialization correctness expected at least 30 ranked IDs, got {}",
+            ranked_ids.len()
+        );
+    }
+    let ranked_ids = ranked_ids
+        .iter()
+        .map(|row| row.get::<_, i64>(0).to_string())
+        .collect::<Vec<_>>();
+    let exclude_first = ranked_ids[..10].join(",");
+    let exclude_multiple = ranked_ids[..20].join(",");
+
+    let mut lines = Vec::new();
+    for (scenario, predicate, require_null, require_toast) in [
+        ("unfiltered_identity", "TRUE".to_owned(), false, false),
+        (
+            "reject_first_window",
+            format!("id NOT IN ({exclude_first})"),
+            false,
+            false,
+        ),
+        (
+            "reject_multiple_windows",
+            format!("id NOT IN ({exclude_multiple})"),
+            false,
+            false,
+        ),
+        ("null_payload", "source IS NULL".to_owned(), true, false),
+        (
+            "toasted_projection_qual",
+            "source IS NOT NULL AND id % 3 = 1".to_owned(),
+            false,
+            true,
+        ),
+    ] {
+        let sql = materialization_semantic_sql(corpus, queries, &predicate, 10, 0);
+        lines.push(
+            compare_materialization_scenario(
+                coordinator,
+                scale,
+                scenario,
+                &sql,
+                require_null,
+                require_toast,
+            )
+            .await?,
+        );
+    }
+
+    let mut mixed = None;
+    for query_offset in 0..10 {
+        coordinator
+            .batch_execute("SELECT ec_distann_stage_scoring_reset(); SET ec_distann.benchmark_materialization_batch_size = 10")
+            .await?;
+        let mixed_sql = materialization_semantic_sql(corpus, queries, "TRUE", 10, query_offset);
+        let _ = coordinator.query_one(&mixed_sql, &[]).await?;
+        let work = coordinator
+            .query(
+                "SELECT metric, value FROM ec_distann_materialization_work_snapshot()
+                  WHERE metric IN ('executor_remote_rows_consumed', 'executor_local_rows_consumed')",
+                &[],
+            )
+            .await?;
+        let mut remote = 0_i64;
+        let mut local = 0_i64;
+        for row in work {
+            match row.get::<_, String>(0).as_str() {
+                "executor_remote_rows_consumed" => remote = row.get(1),
+                "executor_local_rows_consumed" => local = row.get(1),
+                _ => {}
+            }
+        }
+        if remote > 0 && local > 0 && remote + local == 10 {
+            mixed = Some((query_offset, remote, local));
+            break;
+        }
+    }
+    let (mixed_query_offset, remote, local) = mixed.ok_or_else(|| {
+        color_eyre::eyre::eyre!("no mixed local/remote top-10 in first 10 queries")
+    })?;
+    lines.push(format!(
+        "physical_materialization_correctness scale={scale} scenario=mixed_local_remote pass=true rows=10 query_offset={mixed_query_offset} remote_consumed={remote} local_consumed={local}"
+    ));
+
+    coordinator
+        .batch_execute(&format!(
+            "SELECT ec_distann_stage_scoring_reset();
+             SET ec_distann.benchmark_materialization_batch_size = 10;
+             BEGIN;
+             DECLARE task184_materialization_cursor NO SCROLL CURSOR FOR
+             SELECT id, source_id, source
+               FROM {corpus}
+              ORDER BY embedding <#> (SELECT source FROM {queries} ORDER BY id OFFSET {mixed_query_offset} LIMIT 1)
+              LIMIT 40;"
+        ))
+        .await?;
+    let first_rows = coordinator
+        .query("FETCH FORWARD 10 FROM task184_materialization_cursor", &[])
+        .await?;
+    let requested = coordinator
+        .query_one(
+            "SELECT value FROM ec_distann_materialization_work_snapshot()
+              WHERE metric = 'remote_candidates_requested'",
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    if first_rows.len() != 10 || requested == 0 {
+        coordinator.batch_execute("ROLLBACK").await?;
+        bail!(
+            "post-first-batch failure drill did not complete a remote first batch: rows={} requested={requested}",
+            first_rows.len()
+        );
+    }
+
+    let mut stopped = Vec::new();
+    for node in nodes.iter().skip(1) {
+        let mut stop = Command::new(pg_ctl);
+        stop.arg("-w")
+            .arg("-D")
+            .arg(&node.data_dir)
+            .arg("-m")
+            .arg("immediate")
+            .arg("stop")
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit());
+        run_status(stop)
+            .await
+            .wrap_err_with(|| format!("stopping remote owner {} for Task 184", node.node_id))?;
+        stopped.push(node);
+    }
+    let later_error = coordinator
+        .query("FETCH FORWARD ALL FROM task184_materialization_cursor", &[])
+        .await
+        .err();
+    let _ = coordinator.batch_execute("ROLLBACK").await;
+    for node in stopped {
+        restart_physical_node(pg_ctl, socket_dir, node, nodes).await?;
+    }
+    let Some(later_error) = later_error else {
+        bail!("post-first-batch remote-owner outage returned a complete prefix without error");
+    };
+    lines.push(format!(
+        "physical_materialization_correctness scale={scale} scenario=post_first_batch_remote_failure pass=true first_rows={} first_remote_requested={requested} error_digest={}",
+        first_rows.len(),
+        hex::encode(Sha256::digest(later_error.to_string().as_bytes())),
+    ));
+    Ok(lines)
+}
+
 async fn run_physical_benchmarks(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
     coordinator_port: u16,
+    pg_ctl: &Path,
+    socket_dir: &Path,
     nodes: &[Node],
     published: &[PhysicalTopologyRow],
     log_dir: &Path,
@@ -1666,6 +1986,21 @@ async fn run_physical_benchmarks(
             remote_owners > 0
         ));
     }
+    if args.materialization_correctness {
+        lines.extend(
+            run_materialization_correctness(
+                coordinator,
+                pg_ctl,
+                socket_dir,
+                nodes,
+                &seed_variants,
+                scale,
+                &physical_corpus,
+                &physical_queries,
+            )
+            .await?,
+        );
+    }
     for line in &mut lines {
         line.push_str(&format!(
             " corpus_prefix={corpus_prefix} query_sha256={query_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}"
@@ -2022,6 +2357,8 @@ async fn drive_physical_fixture(
             args,
             &coordinator,
             nodes[0].port,
+            pg_ctl,
+            socket_dir,
             owners,
             &published,
             log_dir,
@@ -4047,6 +4384,22 @@ mod tests {
         .expect("variants parse");
         assert_eq!(variants[0].materialization_batch_size, 0);
         assert_eq!(variants[1].materialization_batch_size, 10);
+    }
+
+    #[test]
+    fn materialization_semantic_sql_projects_null_and_varlena_evidence() {
+        let sql = materialization_semantic_sql(
+            "physical_corpus",
+            "physical_queries",
+            "source IS NOT NULL AND id % 3 = 1",
+            10,
+            0,
+        );
+        assert!(sql.contains("source IS NULL AS source_null"));
+        assert!(sql.contains("md5(source::text)"));
+        assert!(sql.contains("octet_length(source::text)"));
+        assert!(sql.contains("WHERE source IS NOT NULL AND id % 3 = 1"));
+        assert!(sql.contains("LIMIT 10"));
     }
 
     #[test]

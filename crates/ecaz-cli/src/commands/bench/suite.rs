@@ -530,6 +530,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     distann_stage_counters: bool,
     #[serde(default)]
+    materialization_correctness: bool,
+    #[serde(default)]
     base_port: Option<u16>,
     #[serde(default)]
     rows: Option<usize>,
@@ -2319,6 +2321,12 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                 }
                 rows.push(("physical_benchmark_engagement".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_materialization_correctness ") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                let pass = values.get("pass").is_some_and(|value| value == "true");
+                values.insert("pass_numeric".into(), if pass { "1" } else { "0" }.into());
+                rows.push(("physical_materialization_correctness".into(), values));
+            }
         } else if let Some(pass_idx) = body.find(" pass=") {
             // A generic drill-outcome line: `<label> pass=<bool>`.
             let label = body[..pass_idx].trim();
@@ -3235,6 +3243,31 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.materialization_correctness {
+                    if !step.physical_benchmark {
+                        bail!(
+                            "distann-local-multinode step {:?} materialization_correctness requires physical_benchmark",
+                            step.name
+                        )
+                    }
+                    let batch_sizes = step
+                        .benchmark_seed_variants
+                        .iter()
+                        .map(|variant| variant.materialization_batch_size)
+                        .collect::<std::collections::BTreeSet<_>>();
+                    if !batch_sizes.contains(&0) || !batch_sizes.contains(&10) {
+                        bail!(
+                            "distann-local-multinode step {:?} materialization_correctness requires eager batch 0 and candidate batch 10 variants",
+                            step.name
+                        )
+                    }
+                    if step.coordinator_outside_roster {
+                        bail!(
+                            "distann-local-multinode step {:?} materialization_correctness requires coordinator owner zero",
+                            step.name
+                        )
+                    }
+                }
                 if step.physical_benchmark && step.corpus_prefix.is_none() {
                     bail!(
                         "distann-local-multinode step {:?} physical_benchmark requires corpus_prefix",
@@ -4038,6 +4071,9 @@ fn expand_distann_local_multinode(
     }
     if step.distann_stage_counters {
         args.push("--distann-stage-counters".into());
+    }
+    if step.materialization_correctness {
+        args.push("--materialization-correctness".into());
     }
     push_opt_arg(
         &mut args,
@@ -5541,6 +5577,56 @@ psql header noise\n\
                     "owner-oracle:owner_scan:32:32:rabitq:10",
                 ]
         }));
+    }
+
+    #[test]
+    fn distann_materialization_correctness_is_suite_addressable_and_structured() {
+        let raw = r#"{
+          "name": "distann-materialization-correctness",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "correctness-10k",
+            "physical_benchmark": true,
+            "materialization_correctness": true,
+            "corpus_prefix": "ec_real_10k",
+            "benchmark_seed_variants": [
+              {
+                "name": "eager",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 0
+              },
+              {
+                "name": "lazy10",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10
+              }
+            ]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--materialization-correctness".into()));
+
+        let rows = parse_distann_multinode_rows(
+            "[distann-multicluster] physical_materialization_correctness scale=10k scenario=null_payload pass=true rows=10 eager_digest=aaaa candidate_digest=aaaa null_ok=true toast_ok=true\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "physical_materialization_correctness");
+        assert_eq!(
+            rows[0].1.get("scenario").map(String::as_str),
+            Some("null_payload")
+        );
+        assert_eq!(rows[0].1.get("pass_numeric").map(String::as_str), Some("1"));
     }
 
     #[test]
