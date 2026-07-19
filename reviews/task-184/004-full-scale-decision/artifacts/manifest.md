@@ -10,3 +10,11 @@ the same immutable physical generation at each of 10k, 50k, and 100k. No
 absolute latency threshold is imposed. The final decision will compare recall,
 mean and tail latency, stage/work attribution, bytes, storage, construction,
 topology, engagement, query separation, and installed release provenance.
+
+Preflight artifacts:
+
+| Artifact | Result |
+| --- | --- |
+| `suite-dry-run.log` | all three scales expand with explicit eager `:0` and lazy10 `:10` arms |
+| `suite-audit-preflight.log` | 3 steps pass input and shape audit |
+| `full-run/suite-manifest.json` | dry-run manifest; replaced by final execution manifest during the run |
