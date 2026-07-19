@@ -18,8 +18,8 @@
 | `cargo-test-correctness-suite.log` | suite expansion / structured-result parser test | 1 passed |
 | `cargo-test-correctness-sql.log` | nullable/toasted semantic SQL construction test | 1 passed |
 | `implementation-install.log` | measurement-feature PG18 release install at `765f28a54` | pass |
-| `cli-release-build.log` | release CLI build at `765f28a54` | pass |
-| `install-provenance.log` | installed library / CLI SHA-256 | `4ee29c...23031` / `b9be6e...ed1b5` |
+| `cli-release-build.log` | release CLI build at correctness-fixture checkpoint `b51b0ad47` | pass |
+| `install-provenance.log` | installed candidate library / runner CLI SHA-256 | `4ee29c...23031` / `fbeea8...48bba` |
 | `suite-dry-run.log` | release-runner expansion of checked-in isolated suite | both steps and `0`/`10` arms present |
 | `suite-audit-preflight.log` | suite input/shape audit | 2 steps pass |
 
