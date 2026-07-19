@@ -1,0 +1,83 @@
+{
+  "suite": "task184-materialization-profile-100k",
+  "schema_version": 1,
+  "config": "reviews/task-184/002-materialization-attribution/artifacts/materialization-profile-100k-suite.json",
+  "config_sha256": "dbeb8817d76bd0ad67e7c4ce8e4d8cce3401554a766b102165fd5327a21a4b27",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784480206967,
+  "runner_git_commit": "9d216fe8e1065e926a880d7bec660802545cff83",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "trained-profile-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-184/002-materialization-attribution/artifacts/run/trained-profile-100k",
+        "--run-dir",
+        "target/task184-materialization-profile",
+        "--log-file",
+        "reviews/task-184/002-materialization-attribution/artifacts/run/trained-profile-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "41420",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--production-head-policy",
+        "training_landmarks_exact",
+        "--training-query-path",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task184",
+        "phase1",
+        "materialization_profile",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-184/002-materialization-attribution/artifacts/run/trained-profile-100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784480206967,
+      "finished_at_unix_ms": 1784482097998,
+      "duration_ms": 1892253,
+      "exit_code": 0
+    }
+  ]
+}
