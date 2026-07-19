@@ -2280,6 +2280,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_stage".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_materialization_work ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_materialization_work".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_storage ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_storage".into(), values));
@@ -5459,13 +5463,19 @@ psql header noise\n\
         assert!(command.contains(&"--distann-stage-counters".into()));
 
         let rows = parse_distann_multinode_rows(
-            "[distann-multicluster] physical_benchmark_stage scale=100k variant=control arm=physical stage=head_score scans=50 samples=50 elapsed_ns=100000000 mean_ms=2.0\n",
+            "[distann-multicluster] physical_benchmark_stage scale=100k variant=control arm=physical stage=head_score scans=50 samples=50 elapsed_ns=100000000 mean_ms=2.0\n\
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=control arm=physical metric=remote_candidates_requested scans=50 value=500 mean_per_scan=10.0\n",
         );
-        assert_eq!(rows.len(), 1);
+        assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].0, "physical_benchmark_stage");
         assert_eq!(
             rows[0].1.get("stage").map(String::as_str),
             Some("head_score")
+        );
+        assert_eq!(rows[1].0, "physical_benchmark_materialization_work");
+        assert_eq!(
+            rows[1].1.get("metric").map(String::as_str),
+            Some("remote_candidates_requested")
         );
     }
 

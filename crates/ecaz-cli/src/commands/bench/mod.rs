@@ -699,6 +699,83 @@ pub(crate) fn format_distann_stage_counter_lines(
         .join("\n")
 }
 
+/// Task 184 physical ec_distann materialization-work attribution row.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DistannMaterializationWorkSnapshot {
+    pub(crate) metric: String,
+    pub(crate) scans: i64,
+    pub(crate) value: i64,
+}
+
+impl DistannMaterializationWorkSnapshot {
+    fn merge(&mut self, other: &Self) {
+        self.scans += other.scans;
+        self.value += other.value;
+    }
+}
+
+pub(crate) async fn snapshot_distann_materialization_work(
+    client: &Client,
+) -> Result<Vec<DistannMaterializationWorkSnapshot>> {
+    let rows = client
+        .query(
+            "SELECT metric, scans, value \
+             FROM ec_distann_materialization_work_snapshot() \
+             ORDER BY metric",
+            &[],
+        )
+        .await
+        .wrap_err("snapshotting ec_distann materialization work")?;
+    Ok(rows
+        .into_iter()
+        .map(|row| DistannMaterializationWorkSnapshot {
+            metric: row.get(0),
+            scans: row.get(1),
+            value: row.get(2),
+        })
+        .collect())
+}
+
+pub(crate) fn merge_distann_materialization_work(
+    snapshots: Vec<Vec<DistannMaterializationWorkSnapshot>>,
+) -> Vec<DistannMaterializationWorkSnapshot> {
+    let mut merged =
+        std::collections::BTreeMap::<String, DistannMaterializationWorkSnapshot>::new();
+    for snapshot_set in snapshots {
+        for snapshot in snapshot_set {
+            merged
+                .entry(snapshot.metric.clone())
+                .and_modify(|existing| existing.merge(&snapshot))
+                .or_insert(snapshot);
+        }
+    }
+    merged.into_values().collect()
+}
+
+pub(crate) fn format_distann_materialization_work_lines(
+    command: &str,
+    label: &str,
+    snapshots: &[DistannMaterializationWorkSnapshot],
+) -> String {
+    snapshots
+        .iter()
+        .map(|snapshot| {
+            format!(
+                "[distann-materialization-work] command={command} label={label} metric={} scans={} value={} mean_per_scan={:.6}",
+                snapshot.metric,
+                snapshot.scans,
+                snapshot.value,
+                if snapshot.scans > 0 {
+                    snapshot.value as f64 / snapshot.scans as f64
+                } else {
+                    0.0
+                },
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn validate_guc_name(name: &str) -> Result<()> {
     let mut parts = name.split('.');
     let Some(first) = parts.next() else {
@@ -895,6 +972,26 @@ mod tests {
         assert!(line.contains("stage=head_score scans=5 samples=5"));
         assert!(line.contains("elapsed_ns=10000000"));
         assert!(line.contains("mean_ms=2.000000"));
+    }
+
+    #[test]
+    fn distann_materialization_work_merges_and_reports_per_scan_mean() {
+        let merged = merge_distann_materialization_work(vec![
+            vec![DistannMaterializationWorkSnapshot {
+                metric: "remote_candidates_requested".into(),
+                scans: 2,
+                value: 20,
+            }],
+            vec![DistannMaterializationWorkSnapshot {
+                metric: "remote_candidates_requested".into(),
+                scans: 3,
+                value: 45,
+            }],
+        ]);
+        assert_eq!(merged.len(), 1);
+        let line = format_distann_materialization_work_lines("latency", "top_k=32", &merged);
+        assert!(line.contains("metric=remote_candidates_requested scans=5 value=65"));
+        assert!(line.contains("mean_per_scan=13.000000"));
     }
 
     #[test]

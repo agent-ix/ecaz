@@ -936,7 +936,9 @@ impl RetainedGenerationScan {
         vec_ids: &[u64],
         projection_attnums: &[i16],
         expected_schema_fingerprint: &[u8],
-    ) -> Result<Vec<PhysicalPayloadRow>, DistannExpandError> {
+    ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let validate_started = Instant::now();
         let expected: [u8; 32] = expected_schema_fingerprint.try_into().map_err(|_| {
             DistannExpandError::BadInput(format!(
                 "expected schema fingerprint must be 32 bytes, got {}",
@@ -990,10 +992,26 @@ impl RetainedGenerationScan {
             columns.push(attribute.name.clone());
             sends.push(attribute.send_function.clone());
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let validate_ns = duration_ns(validate_started.elapsed());
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let lookup_started = Instant::now();
         let nodes = self.resolve_nodes(vec_ids)?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let node_lookup_ns = duration_ns(lookup_started.elapsed());
         if nodes.is_empty() {
-            return Ok(Vec::new());
+            return Ok(PhysicalPayloadBatch {
+                rows: Vec::new(),
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                telemetry: OwnerMaterializationTelemetry {
+                    validate_ns,
+                    node_lookup_ns,
+                    payload_sql_ns: 0,
+                },
+            });
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let payload_sql_started = Instant::now();
         let row_name = super::handoff::qualified_relation_name(self.generation.row_tier_relid)
             .map_err(DistannExpandError::GenerationMissing)?;
         let sql = super::remote_endpoint::build_payload_sql(&row_name, &columns, &sends)
@@ -1066,7 +1084,7 @@ impl RetainedGenerationScan {
                 "physical payload response count mismatch".to_owned(),
             ));
         }
-        Ok(nodes
+        let rows = nodes
             .into_iter()
             .zip(payloads)
             .map(|(node, (missing, nulls, values))| {
@@ -1078,12 +1096,42 @@ impl RetainedGenerationScan {
                     values,
                 )
             })
-            .collect())
+            .collect();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let payload_sql_ns = duration_ns(payload_sql_started.elapsed());
+        Ok(PhysicalPayloadBatch {
+            rows,
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            telemetry: OwnerMaterializationTelemetry {
+                validate_ns,
+                node_lookup_ns,
+                payload_sql_ns,
+            },
+        })
     }
 }
 
 type PhysicalExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
 type PhysicalPayloadRow = (i64, bool, bool, Vec<bool>, Vec<Vec<u8>>);
+
+struct PhysicalPayloadBatch {
+    rows: Vec<PhysicalPayloadRow>,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    telemetry: OwnerMaterializationTelemetry,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[derive(Debug, Clone, Copy)]
+struct OwnerMaterializationTelemetry {
+    validate_ns: u64,
+    node_lookup_ns: u64,
+    payload_sql_ns: u64,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn duration_ns(duration: std::time::Duration) -> u64 {
+    u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+}
 
 fn expand_physical_nodes_impl(
     index_oid: pg_sys::Oid,
@@ -1523,8 +1571,83 @@ fn ec_distann_materialize_physical_row_payloads(
         .and_then(|store| {
             store.materialize_payloads(&ids, &projection_attnums, &expected_schema_fingerprint)
         })
+        .map(|batch| batch.rows)
         .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
+}
+
+/// Task 184 benchmark-only physical payload endpoint with owner-side timing
+/// metadata. Timing values repeat on each response row so the existing ordered
+/// row contract remains intact; the coordinator validates that every row in a
+/// request reports identical metadata.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_materialize_physical_row_payloads_profile(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    vec_ids: Vec<i64>,
+    projection_attnums: Vec<i16>,
+    expected_schema_fingerprint: Vec<u8>,
+) -> TableIterator<
+    'static,
+    (
+        name!(vec_id, i64),
+        name!(is_tombstone, bool),
+        name!(tuple_payload_missing, bool),
+        name!(payload_nulls, Vec<bool>),
+        name!(payload_values, Vec<Vec<u8>>),
+        name!(owner_total_ns, i64),
+        name!(owner_open_validate_ns, i64),
+        name!(owner_node_lookup_ns, i64),
+        name!(owner_payload_sql_ns, i64),
+        name!(payload_bytes, i64),
+    ),
+> {
+    let total_started = Instant::now();
+    let ids = vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let open_started = Instant::now();
+    let store = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .unwrap_or_else(|error| error.raise());
+    let open_ns = duration_ns(open_started.elapsed());
+    let batch = store
+        .materialize_payloads(&ids, &projection_attnums, &expected_schema_fingerprint)
+        .unwrap_or_else(|error| error.raise());
+    let owner_total_ns = duration_ns(total_started.elapsed());
+    let owner_open_validate_ns = open_ns.saturating_add(batch.telemetry.validate_ns);
+    let owner_node_lookup_ns = batch.telemetry.node_lookup_ns;
+    let owner_payload_sql_ns = batch.telemetry.payload_sql_ns;
+    let payload_bytes = batch
+        .rows
+        .iter()
+        .map(|(_, _, _, nulls, values)| {
+            nulls
+                .len()
+                .saturating_add(values.iter().map(Vec::len).sum::<usize>())
+        })
+        .sum::<usize>();
+    let owner_total_ns = i64::try_from(owner_total_ns).unwrap_or(i64::MAX);
+    let owner_open_validate_ns = i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
+    let owner_node_lookup_ns = i64::try_from(owner_node_lookup_ns).unwrap_or(i64::MAX);
+    let owner_payload_sql_ns = i64::try_from(owner_payload_sql_ns).unwrap_or(i64::MAX);
+    let payload_bytes = i64::try_from(payload_bytes).unwrap_or(i64::MAX);
+    TableIterator::new(batch.rows.into_iter().map(move |row| {
+        (
+            row.0,
+            row.1,
+            row.2,
+            row.3,
+            row.4,
+            owner_total_ns,
+            owner_open_validate_ns,
+            owner_node_lookup_ns,
+            owner_payload_sql_ns,
+            payload_bytes,
+        )
+    }))
 }
 
 pub(crate) struct PhysicalGenerationScan {
@@ -1990,6 +2113,8 @@ impl PhysicalGenerationScan {
         hits: &[DistannScanHit],
         projection_attnums: &[pg_sys::AttrNumber],
     ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let prepare_started = Instant::now();
         let schema_fingerprint = self.descriptor.row_schema.fingerprint()?;
         let projection_attnums = projection_attnums
             .iter()
@@ -2043,17 +2168,49 @@ impl PhysicalGenerationScan {
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::MaterializePrepare,
+                prepare_started.elapsed(),
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::RemoteCandidatesRequested,
+                remote_ids.len(),
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::RemoteOwnersRequested,
+                remote_work.len(),
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::PayloadColumnsRequested,
+                remote_ids.len().saturating_mul(projection_attnums.len()),
+            );
+        }
         let responses = super::remote_transport::remote_physical_materialize_batch(&requests);
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let map_started = Instant::now();
         for ((ordinal, ids), response) in remote_work.into_iter().zip(responses) {
             let response = response.map_err(|error| error.to_string())?;
-            if response.len() != ids.len() {
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            {
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::RemoteRowsReturned,
+                    response.rows.len(),
+                );
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::PayloadBytesReturned,
+                    usize::try_from(response.telemetry.payload_bytes).unwrap_or(usize::MAX),
+                );
+            }
+            if response.rows.len() != ids.len() {
                 return Err(format!(
                     "EC_INTERNAL: physical owner {ordinal} returned {} payloads for {} rows",
-                    response.len(),
+                    response.rows.len(),
                     ids.len()
                 ));
             }
-            for (requested, payload) in ids.into_iter().zip(response) {
+            for (requested, payload) in ids.into_iter().zip(response.rows) {
                 if payload.vec_id != requested {
                     return Err(format!(
                         "EC_INTERNAL: physical owner {ordinal} did not preserve payload order"
@@ -2065,6 +2222,11 @@ impl PhysicalGenerationScan {
                     ));
                 }
                 if payload.is_tombstone {
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    super::stage_counters::record_work(
+                        super::stage_counters::DistannMaterializationWork::RemoteTombstones,
+                        1,
+                    );
                     continue;
                 }
                 payloads.insert(
@@ -2074,8 +2236,18 @@ impl PhysicalGenerationScan {
                         payload_values: payload.payload_values,
                     },
                 );
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::RemotePayloadsInstalled,
+                    1,
+                );
             }
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::MaterializeMapInsert,
+            map_started.elapsed(),
+        );
         Ok(payloads)
     }
 }

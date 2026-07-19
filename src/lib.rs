@@ -1857,6 +1857,35 @@ fn ec_distann_stage_scoring_snapshot() -> TableIterator<
     TableIterator::new(rows)
 }
 
+/// Task 184 benchmark-only physical materialization-work attribution rows.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(stable)]
+fn ec_distann_materialization_work_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(metric, String),
+        name!(scans, i64),
+        name!(value, i64),
+        name!(mean_per_scan, f64),
+    ),
+> {
+    let (scans, rows) = am::ec_distann::stage_counters::materialization_work_snapshot();
+    let scans_i64 = i64::try_from(scans).unwrap_or(i64::MAX);
+    let rows = rows.into_iter().map(move |row| {
+        (
+            row.metric.label().to_owned(),
+            scans_i64,
+            i64::try_from(row.value).unwrap_or(i64::MAX),
+            if scans == 0 {
+                0.0
+            } else {
+                row.value as f64 / scans as f64
+            },
+        )
+    });
+    TableIterator::new(rows)
+}
+
 #[cfg(feature = "distann-head-attribution-benchmark")]
 #[pg_extern(volatile)]
 fn ec_distann_stage_scoring_reset() {

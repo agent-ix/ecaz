@@ -565,9 +565,18 @@ const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
        $1::text::regclass, $2::bytea, $3::real[],
        $4::bytea, $5::bigint[], $6::real)";
 
+#[cfg(not(feature = "distann-head-attribution-benchmark"))]
 const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
         payload_nulls, payload_values
    FROM ec_distann_materialize_row_payloads(
+       $1::text::regclass, $2::bytea, $3::bigint[],
+       $4::smallint[], $5::bytea)";
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
+        payload_nulls, payload_values, owner_total_ns, owner_open_validate_ns,
+        owner_node_lookup_ns, owner_payload_sql_ns, payload_bytes
+   FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
        $4::smallint[], $5::bytea)";
 
@@ -779,7 +788,7 @@ pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
 
 pub(crate) fn remote_physical_materialize_batch(
     requests: &[DistannPhysicalMaterializeRequest<'_>],
-) -> Vec<Result<Vec<DistannMaterializedRow>, DistannExpandError>> {
+) -> Vec<Result<DistannPhysicalMaterializeBatch, DistannExpandError>> {
     if requests.is_empty() {
         return Vec::new();
     }
@@ -808,31 +817,96 @@ pub(crate) fn remote_physical_materialize_batch(
                 .enumerate()
                 .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
                 .collect::<Vec<_>>();
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let connection_started = std::time::Instant::now();
             ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
                 .await
                 .map_err(DistannExpandError::Internal)?;
             ensure_physical_statements(connections, &conn_keys, PHYSICAL_MATERIALIZE_SQL).await?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::MaterializeConnectionReady,
+                connection_started.elapsed(),
+            );
             let futures = requests.iter().enumerate().map(|(index, request)| {
                 let pooled = &connections[&conn_keys[index]];
-                run_one_physical_materialize(
+                run_one_physical_materialize_raw(
                     &pooled.client,
                     &pooled.prepared_statements[PHYSICAL_MATERIALIZE_SQL],
                     request,
                     &wire_ids[index],
                 )
             });
-            Ok(join_owner_futures(futures).await)
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let wait_started = std::time::Instant::now();
+            let rows = join_owner_futures(futures).await;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::MaterializeRequestWait,
+                wait_started.elapsed(),
+            );
+            Ok(rows)
         })
     });
-    outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect())
+    let raw = outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect());
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let decode_started = std::time::Instant::now();
+    let decoded = raw
+        .into_iter()
+        .map(|result| {
+            result.and_then(|(rows, roundtrip)| {
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                let _ = roundtrip;
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record(
+                    super::stage_counters::DistannQueryStage::MaterializeRequestRoundtripWork,
+                    roundtrip,
+                );
+                decode_physical_materialize_rows(rows)
+            })
+        })
+        .collect::<Vec<_>>();
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::MaterializeCoordinatorDecode,
+            decode_started.elapsed(),
+        );
+        let mut owner_critical_ns = 0;
+        for batch in decoded.iter().filter_map(|result| result.as_ref().ok()) {
+            owner_critical_ns = owner_critical_ns.max(batch.telemetry.owner_total_ns);
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::MaterializeOwnerEndpointWork,
+                Duration::from_nanos(batch.telemetry.owner_total_ns),
+            );
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::MaterializeOwnerOpenValidateWork,
+                Duration::from_nanos(batch.telemetry.owner_open_validate_ns),
+            );
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::MaterializeOwnerNodeLookupWork,
+                Duration::from_nanos(batch.telemetry.owner_node_lookup_ns),
+            );
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::MaterializeOwnerPayloadSqlWork,
+                Duration::from_nanos(batch.telemetry.owner_payload_sql_ns),
+            );
+        }
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::MaterializeOwnerEndpointCritical,
+            Duration::from_nanos(owner_critical_ns),
+        );
+    }
+    decoded
 }
 
-async fn run_one_physical_materialize(
+async fn run_one_physical_materialize_raw(
     client: &Client,
     statement: &Statement,
     request: &DistannPhysicalMaterializeRequest<'_>,
     wire_ids: &[i64],
-) -> Result<Vec<DistannMaterializedRow>, DistannExpandError> {
+) -> Result<(Vec<Row>, Duration), DistannExpandError> {
+    let started = std::time::Instant::now();
     let rows = physical_query(
         client,
         statement,
@@ -845,9 +919,36 @@ async fn run_one_physical_materialize(
         ],
     )
     .await?;
-    rows.into_iter()
+    Ok((rows, started.elapsed()))
+}
+
+fn decode_physical_materialize_rows(
+    rows: Vec<Row>,
+) -> Result<DistannPhysicalMaterializeBatch, DistannExpandError> {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let mut telemetry = None;
+    let rows = rows
+        .into_iter()
         .map(|row| {
             let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            {
+                let row_telemetry = DistannOwnerMaterializeTelemetry {
+                    owner_total_ns: nonnegative_i64_to_u64(row.try_get(5).map_err(row_err)?)?,
+                    owner_open_validate_ns: nonnegative_i64_to_u64(
+                        row.try_get(6).map_err(row_err)?,
+                    )?,
+                    owner_node_lookup_ns: nonnegative_i64_to_u64(row.try_get(7).map_err(row_err)?)?,
+                    owner_payload_sql_ns: nonnegative_i64_to_u64(row.try_get(8).map_err(row_err)?)?,
+                    payload_bytes: nonnegative_i64_to_u64(row.try_get(9).map_err(row_err)?)?,
+                };
+                if telemetry.is_some_and(|existing| existing != row_telemetry) {
+                    return Err(DistannExpandError::Internal(
+                        "physical owner returned inconsistent materialization telemetry".to_owned(),
+                    ));
+                }
+                telemetry = Some(row_telemetry);
+            }
             Ok(DistannMaterializedRow {
                 vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
                 is_tombstone: row.try_get(1).map_err(row_err)?,
@@ -856,7 +957,21 @@ async fn run_one_physical_materialize(
                 payload_values: row.try_get(4).map_err(row_err)?,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, DistannExpandError>>()?;
+    Ok(DistannPhysicalMaterializeBatch {
+        rows,
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        telemetry: telemetry.unwrap_or_default(),
+    })
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn nonnegative_i64_to_u64(value: i64) -> Result<u64, DistannExpandError> {
+    u64::try_from(value).map_err(|_| {
+        DistannExpandError::Internal(
+            "physical owner returned negative materialization telemetry".to_owned(),
+        )
+    })
 }
 
 fn classify_physical_read_error(error: tokio_postgres::Error) -> DistannExpandError {
@@ -1458,6 +1573,22 @@ pub(super) struct DistannMaterializedRow {
     pub(super) tuple_payload_missing: bool,
     pub(super) payload_nulls: Vec<bool>,
     pub(super) payload_values: Vec<Vec<u8>>,
+}
+
+pub(crate) struct DistannPhysicalMaterializeBatch {
+    pub(crate) rows: Vec<DistannMaterializedRow>,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) telemetry: DistannOwnerMaterializeTelemetry,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DistannOwnerMaterializeTelemetry {
+    pub(crate) owner_total_ns: u64,
+    pub(crate) owner_open_validate_ns: u64,
+    pub(crate) owner_node_lookup_ns: u64,
+    pub(crate) owner_payload_sql_ns: u64,
+    pub(crate) payload_bytes: u64,
 }
 
 /// Issue a batch of remote `ec_distann_materialize_row_payloads` calls — one per

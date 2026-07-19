@@ -1522,15 +1522,30 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
                 .collect::<Vec<_>>();
-            if stage_rows.len() != 9 {
+            if stage_rows.len() != 21 {
                 bail!(
-                    "physical latency attribution expected 9 ec_distann stage rows, got {}",
+                    "physical latency attribution expected 21 ec_distann stage rows, got {}",
                     stage_rows.len()
                 );
             }
             for stage in stage_rows {
                 lines.push(format!(
                     "physical_benchmark_stage scale={scale} variant={variant} arm={arm} seed_strategy={seed_strategy} {stage}"
+                ));
+            }
+            let work_rows = latency
+                .lines()
+                .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
+                .collect::<Vec<_>>();
+            if work_rows.len() != 13 {
+                bail!(
+                    "physical latency attribution expected 13 ec_distann materialization-work rows, got {}",
+                    work_rows.len()
+                );
+            }
+            for work in work_rows {
+                lines.push(format!(
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
         }

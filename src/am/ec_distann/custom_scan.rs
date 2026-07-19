@@ -987,6 +987,8 @@ unsafe extern "C-unwind" fn custom_scan_access(
                 if visible {
                     // Copy the heap row into the virtual scan slot the projection
                     // reads from.
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    record_executor_consumption(false);
                     return pg_sys::ExecCopySlot(scan_slot, state.local_heap_slot);
                 }
                 // Row no longer visible under the snapshot — skip to the next.
@@ -1008,6 +1010,8 @@ unsafe extern "C-unwind" fn custom_scan_access(
                     state.frozen_row_slot,
                 );
                 if visible {
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    record_executor_consumption(false);
                     return pg_sys::ExecCopySlot(scan_slot, state.frozen_row_slot);
                 }
                 pgrx::error!(
@@ -1022,10 +1026,28 @@ unsafe extern "C-unwind" fn custom_scan_access(
             } => {
                 let nulls = payload_nulls.clone();
                 let values = payload_values.clone();
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                record_executor_consumption(true);
                 return store_remote_payload(state, scan_slot, &nulls, &values);
             }
         }
     }
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn record_executor_consumption(remote: bool) {
+    super::stage_counters::record_work(
+        super::stage_counters::DistannMaterializationWork::ExecutorRowsConsumed,
+        1,
+    );
+    super::stage_counters::record_work(
+        if remote {
+            super::stage_counters::DistannMaterializationWork::ExecutorRemoteRowsConsumed
+        } else {
+            super::stage_counters::DistannMaterializationWork::ExecutorLocalRowsConsumed
+        },
+        1,
+    );
 }
 
 /// The number of leading outputs that are PROVEN under the current search bar,
@@ -1217,6 +1239,11 @@ unsafe fn run_physical_generation_search(
     let collection = context
         .search(snapshot, source_attnum, &state.query, effective)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    super::stage_counters::record_work(
+        super::stage_counters::DistannMaterializationWork::RankedCandidates,
+        collection.hits.len(),
+    );
     state.effective = effective;
     state.early_exit = collection.counters.early_exit;
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1255,10 +1282,21 @@ unsafe fn run_physical_generation_search(
         .collect();
     state.proven_outputs = proven_outputs;
     #[cfg(feature = "distann-head-attribution-benchmark")]
-    super::stage_counters::record(
-        super::stage_counters::DistannQueryStage::OutputMerge,
-        merge_started.elapsed(),
-    );
+    {
+        let association_elapsed = merge_started.elapsed();
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::MaterializeOutputAssociate,
+            association_elapsed,
+        );
+        super::stage_counters::record_work(
+            super::stage_counters::DistannMaterializationWork::OutputRowsAssociated,
+            state.outputs.len(),
+        );
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::OutputMerge,
+            association_elapsed,
+        );
+    }
     #[cfg(feature = "distann-head-attribution-benchmark")]
     super::stage_counters::record(
         super::stage_counters::DistannQueryStage::CustomScanTotal,

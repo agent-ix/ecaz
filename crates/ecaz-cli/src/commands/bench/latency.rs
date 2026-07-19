@@ -211,6 +211,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     let mut task87_counter_lines = Vec::new();
     let mut ivf_stage_counter_lines = Vec::new();
     let mut distann_stage_counter_lines = Vec::new();
+    let mut distann_materialization_work_lines = Vec::new();
     for value in &sweep_values {
         let sweep_label = super::sweep_value_label(profile, *value);
         let sweep = run_sweep_point(
@@ -261,6 +262,13 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
                 &sweep_label,
                 &sweep.distann_stage_counters,
             ));
+            distann_materialization_work_lines.push(
+                super::format_distann_materialization_work_lines(
+                    "latency",
+                    &sweep_label,
+                    &sweep.distann_materialization_work,
+                ),
+            );
         }
         let stats = summarize(&sweep.durations);
         let mut row = vec![
@@ -296,6 +304,10 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     if !distann_stage_counter_lines.is_empty() {
         output.push('\n');
         output.push_str(&distann_stage_counter_lines.join("\n"));
+    }
+    if !distann_materialization_work_lines.is_empty() {
+        output.push('\n');
+        output.push_str(&distann_materialization_work_lines.join("\n"));
     }
     println!("{output}");
     if let Some(path) = args.log_output {
@@ -403,6 +415,7 @@ async fn run_sweep_point(
     let mut task87_counter_sets = Vec::new();
     let mut ivf_stage_counter_sets = Vec::new();
     let mut distann_stage_counter_sets = Vec::new();
+    let mut distann_materialization_work_sets = Vec::new();
     for h in handles {
         let result = h.await.map_err(|e| eyre!("worker panicked: {e}"))??;
         merged.extend(result.durations);
@@ -410,6 +423,7 @@ async fn run_sweep_point(
         task87_counter_sets.push(result.task87_candidate_batch_counters);
         ivf_stage_counter_sets.push(result.ivf_stage_counters);
         distann_stage_counter_sets.push(result.distann_stage_counters);
+        distann_materialization_work_sets.push(result.distann_materialization_work);
     }
     bar.finish_and_clear();
     Ok(LatencySweepResult {
@@ -418,6 +432,9 @@ async fn run_sweep_point(
         task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
         ivf_stage_counters: super::merge_ivf_stage_counters(ivf_stage_counter_sets),
         distann_stage_counters: super::merge_distann_stage_counters(distann_stage_counter_sets),
+        distann_materialization_work: super::merge_distann_materialization_work(
+            distann_materialization_work_sets,
+        ),
     })
 }
 
@@ -507,6 +524,7 @@ async fn worker(
         None
     };
     let mut durations = Vec::new();
+    let mut client_result_rows = 0_i64;
     let query_result: Result<()> = loop {
         let idx = counter.fetch_add(1, Ordering::Relaxed);
         if idx >= iterations {
@@ -519,9 +537,12 @@ async fn worker(
         } else {
             client.query(&stmt, &[q, &k_i64]).await
         };
-        if let Err(err) = query_result {
-            break Err(err.into());
-        }
+        let rows = match query_result {
+            Ok(rows) => rows,
+            Err(err) => break Err(err.into()),
+        };
+        client_result_rows =
+            client_result_rows.saturating_add(i64::try_from(rows.len()).unwrap_or(i64::MAX));
         durations.push(t0.elapsed());
         bar.inc(1);
     };
@@ -543,18 +564,31 @@ async fn worker(
     } else {
         Vec::new()
     };
-    let distann_stage_counters = if distann_stage_counters {
+    let distann_stage_counter_snapshots = if distann_stage_counters {
         super::snapshot_distann_stage_counters(&client).await?
     } else {
         Vec::new()
     };
+    let mut distann_materialization_work = if distann_stage_counters {
+        super::snapshot_distann_materialization_work(&client).await?
+    } else {
+        Vec::new()
+    };
+    if distann_stage_counters {
+        distann_materialization_work.push(super::DistannMaterializationWorkSnapshot {
+            metric: "client_result_rows".into(),
+            scans: i64::try_from(durations.len()).unwrap_or(i64::MAX),
+            value: client_result_rows,
+        });
+    }
     let memory = *memory.lock().await;
     Ok(LatencyWorkerResult {
         durations,
         memory,
         task87_candidate_batch_counters,
         ivf_stage_counters,
-        distann_stage_counters,
+        distann_stage_counters: distann_stage_counter_snapshots,
+        distann_materialization_work,
     })
 }
 
@@ -651,6 +685,7 @@ struct LatencySweepResult {
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
     ivf_stage_counters: Vec<super::IvfStageCounterSnapshot>,
     distann_stage_counters: Vec<super::DistannStageCounterSnapshot>,
+    distann_materialization_work: Vec<super::DistannMaterializationWorkSnapshot>,
 }
 
 #[derive(Debug, Default)]
@@ -660,6 +695,7 @@ struct LatencyWorkerResult {
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
     ivf_stage_counters: Vec<super::IvfStageCounterSnapshot>,
     distann_stage_counters: Vec<super::DistannStageCounterSnapshot>,
+    distann_materialization_work: Vec<super::DistannMaterializationWorkSnapshot>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
