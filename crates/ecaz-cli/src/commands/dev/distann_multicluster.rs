@@ -887,6 +887,19 @@ async fn run_physical_bench_child(args: Vec<String>) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+fn append_materialization_benchmark_guc(
+    args: &mut Vec<String>,
+    arm: &str,
+    materialization_batch_size: u32,
+) {
+    if arm == "physical" {
+        args.extend([
+            "--session-guc".into(),
+            format!("ec_distann.benchmark_materialization_batch_size={materialization_batch_size}"),
+        ]);
+    }
+}
+
 #[derive(Clone, Debug)]
 struct BenchmarkSeedVariant {
     name: String,
@@ -1891,14 +1904,7 @@ async fn run_physical_benchmarks(
                     ),
                 ]);
             }
-            if materialization_batch_size > 0 {
-                recall_args.extend([
-                    "--session-guc".into(),
-                    format!(
-                        "ec_distann.benchmark_materialization_batch_size={materialization_batch_size}"
-                    ),
-                ]);
-            }
+            append_materialization_benchmark_guc(&mut recall_args, arm, materialization_batch_size);
         }
         let recall = run_physical_bench_child(recall_args).await?;
         let row = benchmark_table_row(&recall)?;
@@ -1960,14 +1966,7 @@ async fn run_physical_benchmarks(
                 ),
             ]);
         }
-        if arm == "physical" && materialization_batch_size > 0 {
-            latency_args.extend([
-                "--session-guc".into(),
-                format!(
-                    "ec_distann.benchmark_materialization_batch_size={materialization_batch_size}"
-                ),
-            ]);
-        }
+        append_materialization_benchmark_guc(&mut latency_args, arm, materialization_batch_size);
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
@@ -4490,6 +4489,23 @@ mod tests {
         .expect("variants parse");
         assert_eq!(variants[0].materialization_batch_size, 0);
         assert_eq!(variants[1].materialization_batch_size, 10);
+    }
+
+    #[test]
+    fn eager_materialization_control_is_forwarded_as_explicit_zero() {
+        let mut eager_args = Vec::new();
+        append_materialization_benchmark_guc(&mut eager_args, "physical", 0);
+        assert_eq!(
+            eager_args,
+            [
+                "--session-guc",
+                "ec_distann.benchmark_materialization_batch_size=0"
+            ]
+        );
+
+        let mut single_args = Vec::new();
+        append_materialization_benchmark_guc(&mut single_args, "single", 0);
+        assert!(single_args.is_empty());
     }
 
     #[test]
