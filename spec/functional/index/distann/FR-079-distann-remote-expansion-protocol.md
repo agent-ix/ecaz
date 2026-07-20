@@ -29,8 +29,8 @@ query real[], vec_ids bigint[], code_threshold real DEFAULT NULL) RETURNS
 TABLE (vec_id bigint, exact_dist real, is_tombstone bool, neighbor_vec_ids
 bigint[], neighbor_code_dists real[])`
 
-Final tuple materialization endpoint, invoked once per owner for the proven
-result prefix:
+Final tuple materialization endpoint, invoked once per owner for each demanded
+window of the proven result prefix:
 
 `ec_distann_materialize_row_payloads(index_regclass regclass,
 epoch_fingerprint bytea, vec_ids bigint[], projection_attnums smallint[],
@@ -150,8 +150,22 @@ entry.
   partial batch.
 - The coordinator SHALL reconstruct virtual tuples with its local catalog
   receive functions after validating the same schema fingerprint.
+- Final payload work SHALL be executor-driven in deterministic windows of 10
+  global-ranked slots. A request SHALL contain only pending remote vec_ids from
+  the demanded window and SHALL end no later than the current proven prefix.
+  The window size is fixed internal policy, not a reloption or production GUC.
+- Search deepening SHALL preserve already-materialized slots in the stable
+  ranked prefix. One remote vec_id SHALL NOT be requested twice in one scan
+  solely because a deepened search rebuilt that prefix.
 - The coordinator SHALL evaluate remaining SQL quals against reconstructed
-  tuples before exposing rows to the executor.
+  tuples before exposing rows to the executor. A qual that rejects a window
+  SHALL advance demand to the next deterministic window, subject to the
+  [NFR-019](../../../non-functional/NFR-019-distann-per-query-touch-bound.md)
+  deepening ceiling.
+- An error from any owner in any window, including a window requested after
+  rows passed earlier quals, SHALL abort the query with zero completed result;
+  the coordinator SHALL NOT reinterpret the already-seen prefix as a complete
+  result.
 - Every generated implementation function and normative SQL overload in the
   remote expansion/materialization endpoint class SHALL revoke `PUBLIC`
   execute, run as `SECURITY DEFINER`, and fix `search_path` to
@@ -197,6 +211,8 @@ zero returned rows when one request member fails.
 | FR-079-AC-9 | Structural inspection proves the materialization request contains no caller-selected function name/OID and no raw conninfo | Test (TC-040) |
 | FR-079-AC-10 | While an old epoch is retained, both old and new Published fingerprints resolve their own record and row-tier generations without cross-generation reads | Test (TC-042) |
 | FR-079-AC-11 | With schema usage granted, an unprivileged role receives function-level permission denial from a real call to every protected extension-owned `ec_distann_*` overload enumerated from `pg_proc`; every protected overload is SECURITY DEFINER with the fixed safe search path, and production extension SQL contains no debug/test endpoint | Test (TC-040) |
+| FR-079-AC-12 | Payload requests are deterministic global-ranked windows of at most 10 pending remote vec_ids, never cross the proven prefix, and do not re-request a materialized stable-prefix vec_id after deepening | Test (TC-040, TC-041) |
+| FR-079-AC-13 | A later-window owner failure aborts the query instead of returning an earlier qualifying prefix as complete | Test (TC-042) |
 
 ## Dependencies
 
