@@ -1,0 +1,18 @@
+Script started on 2026-07-20 13:24:06-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on artifact directory
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 32.82s
+     Running unittests src/main.rs (/home/peter/dev/ecaz/target/debug/deps/ecaz-b3837791554df568)
+
+running 1 test
+test commands::dev::distann_multicluster::tests::eager_materialization_control_is_forwarded_as_explicit_zero ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 448 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-20 13:24:39-07:00 [COMMAND_EXIT_CODE="0"]
+ ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 448 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-20 13:24:39-07:00 [COMMAND_EXIT_CODE="0"]
