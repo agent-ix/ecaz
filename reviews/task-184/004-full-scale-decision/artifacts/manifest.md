@@ -13,6 +13,7 @@
   three nodes at every scale
 - Runner correctness checkpoint: `b51b0ad4795290731bf1b8044117701af6527c8a`
 - Decision / roadmap checkpoint: `98ff482f6209d1da2f12bd1ebc3d20ed4861ae69`
+- Review-disposition checkpoint: `6d4e1da825c9e9d0bd4f84f0bbc66ec4685afcfe`
 - Suite config SHA-256:
   `e2ee9b170b6ef716e632344f019116cc251dd3ccaa13974547932d5f81a335b0`
 - Final results SHA-256:
@@ -65,6 +66,7 @@ each scale. Materialization engagement passed for eager and lazy10.
 | `suite-audit.log` | Post-run audit: 3 steps pass |
 | `suite-status.log` | Post-run status: all three steps succeeded |
 | `suite-report.md` | Human-readable projection of the final structured results |
+| `review-disposition.md` | Outside ACCEPT acknowledgment and one-to-one disposition of all five review notes |
 
 Regenerable per-arm recall/latency logs, PostgreSQL logs, and the suite driver's
 combined child logs were pruned after `results.jsonl` and the compact summaries

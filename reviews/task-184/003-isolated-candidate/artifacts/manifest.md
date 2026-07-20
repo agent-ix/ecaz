@@ -16,7 +16,7 @@
 | `cargo-test-candidate-window.log` | focused deterministic ranked-window test | 1 passed |
 | `cargo-check-correctness-runner.log` | CLI check after suite semantic-matrix extension | pass |
 | `cargo-test-correctness-suite.log` | suite expansion / structured-result parser test | 1 passed |
-| `cargo-test-correctness-sql.log` | nullable/toasted semantic SQL construction test | 1 passed |
+| `cargo-test-correctness-sql.log` | nullable/wide-varlena semantic SQL construction test | 1 passed |
 | `implementation-install.log` | measurement-feature PG18 release install at `765f28a54` | pass |
 | `cli-release-build.log` | release CLI build at correctness-fixture checkpoint `b51b0ad47` | pass |
 | `install-provenance.log` | installed candidate library / runner CLI SHA-256 | `4ee29c...23031` / `fbeea8...48bba` |
@@ -50,18 +50,26 @@ exhaust.
 
 ## Live correctness result
 
-The 10k semantic gate used a correctness-only nullable/toasted `payload_note`
+The 10k semantic gate used a correctness-only nullable/wide-varlena `payload_note`
 column while keeping the real query vector unchanged. All seven structured
 outcomes passed:
 
 - unfiltered ordered output identity;
 - quals rejecting the first 10 and first 20 ranked positions;
 - genuine NULL payload datums;
-- 12,800-byte toasted varlena projection plus qual;
+- 12,800-byte repeated-MD5 varlena projection plus qual. Outside review notes
+  that EXTENDED storage likely compresses this value inline; it proves the
+  wide/compressed varlena send/receive path, not an external TOAST pointer.
+  Task 191 requires a separately asserted out-of-line fixture;
 - mixed winners (6 remote, 4 local);
 - equal eager/lazy digests for every semantic query; and
 - an actual remote-owner outage after a completed first fetch (6 remote rows
   requested), with the subsequent demanded batch aborting the query.
+
+The immutable structured artifacts retain their original runner labels
+`toasted_projection_qual` and `toast_ok`; after outside review those labels mean
+wide-varlena eager/lazy equivalence only and are not cited as proof of external
+TOAST storage.
 
 ## Same-generation 100k result
 

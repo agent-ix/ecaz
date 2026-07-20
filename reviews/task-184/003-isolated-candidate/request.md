@@ -18,7 +18,7 @@ builds contain neither the GUC nor the candidate branch.
 Correctness-runner checkpoint `7c2254e21` adds an opt-in suite-driven semantic
 matrix. It compares eager and batch-10 ordered JSON output for unfiltered
 identity, first-window rejection, multiple-window rejection, null payloads, and
-toasted varlena projection/qual behavior; it also requires mixed local/remote
+wide compressed-inline varlena projection/qual behavior; it also requires mixed local/remote
 executor consumption. After timed arms have completed, a cursor fetch proves a
 remote first batch completed, deliberately stops the remote owners, and
 requires the next demanded batch to error before the owners are restarted.
@@ -46,7 +46,7 @@ test.
 
 The checked-in suite completed both the 10k semantic gate and matched 100k A/B.
 Every preregistered semantic scenario passed, including output identity, quals
-rejecting one and multiple windows, NULL and toasted payload datums,
+rejecting one and multiple windows, NULL and wide varlena payload datums,
 projection/qual use, mixed local/remote winners, and a real remote-owner outage
 after a completed first batch that aborted the later fetch.
 

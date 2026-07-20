@@ -4,7 +4,7 @@ packet: 004-full-scale-decision
 role: coder
 status: open
 date: 2026-07-19
-head: 98ff482f6209d1da2f12bd1ebc3d20ed4861ae69
+head: 6d4e1da825c9e9d0bd4f84f0bbc66ec4685afcfe
 ---
 
 # Review request: full-scale materialization decision
@@ -44,7 +44,8 @@ separation, and unanimous clean installed-extension provenance at
 
 Packet 003's adversarial semantic matrix remains the correctness gate: exact
 eager/lazy output identity for unfiltered results, filters rejecting the first
-and multiple batches, null and toasted projection/qual values, mixed
+and multiple batches, null and wide compressed-inline varlena projection/qual
+values, mixed
 local/remote winners, and a post-first-batch owner outage. All seven cases
 passed; later remote failure still fails the query rather than returning a
 partial result. Work remains bounded by the already-ranked candidate set and
@@ -70,4 +71,14 @@ rows in `artifacts/full-run/results.jsonl`, and the three scale summaries.
 Decision checkpoint `98ff482f6209d1da2f12bd1ebc3d20ed4861ae69`
 records ADR-085 D12, closes the Task 184 roadmap entry, creates Task 191, and
 gates Task 187 on the productionized baseline.
-The request remains open for outside review; the coder has not self-accepted it.
+
+## Outside review: ACCEPT
+
+The outside reviewer accepted packets 001--004 and the PROMOTE decision on
+2026-07-20. No blocking code, correctness, evidence, or decision finding
+remains. Four non-blocking technical observations are acknowledged in
+`artifacts/review-disposition.md` and made explicit requirements of Task 191 at
+checkpoint `6d4e1da825c9e9d0bd4f84f0bbc66ec4685afcfe`.
+
+The coder has not edited the feedback or self-closed this request. The
+reviewer's ACCEPT is the acceptance record.
