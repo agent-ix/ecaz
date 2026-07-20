@@ -1,0 +1,17 @@
+Script started on 2026-07-20 14:27:10-07:00 [<not executed on terminal>]
+3ceaba9615bef4dcd9c4ca7c49c2dd07256b9e51
+21b0998963e4982fbe521f034ed3bab3b1eb835bfb3e433239042352a3eec74c  /home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+shared_library_benchmark_materialization_guc_strings=0
+generated_sql_benchmark_materialization_guc_strings=0
+src/am/ec_distann/custom_scan.rs
+1076:    let batch_size = super::options::materialization_batch_size();
+1414:    if super::options::materialization_batch_size() > 0 {
+
+src/am/ec_distann/options.rs
+59:pub(super) const PRODUCTION_MATERIALIZATION_BATCH_SIZE: usize = 10;
+286:        c"ec_distann.benchmark_materialization_batch_size",
+458:pub(super) fn materialization_batch_size() -> usize {
+462:            .unwrap_or(PRODUCTION_MATERIALIZATION_BATCH_SIZE);
+465:    PRODUCTION_MATERIALIZATION_BATCH_SIZE
+
+Script done on 2026-07-20 14:27:10-07:00 [COMMAND_EXIT_CODE="0"]
