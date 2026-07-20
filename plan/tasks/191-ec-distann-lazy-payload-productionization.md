@@ -39,6 +39,22 @@ Before the default change:
 4. state the rollback contract: installing the prior extension restores eager
    scans without an index rebuild because D12 changes no durable bytes.
 
+Task 184's outside review adds four required carryovers before the production
+gate:
+
+5. make the wide-varlena scenario prove genuine out-of-line TOAST storage, not
+   merely compressed-inline detoast; use incompressible content and/or
+   `STORAGE EXTERNAL`, and assert the fixture's storage shape before comparing
+   eager and lazy outputs;
+6. preserve materialized-but-unconsumed remote payloads in the stable prefix
+   across search deepening, and assert that one `vec_id` is not remotely fetched
+   twice solely because a rebuild reset its slot to pending;
+7. remove the `output_merge` / `materialize_output_associate` double-booking or
+   emit explicit machine-readable alias metadata so reporters cannot add both
+   as independent work; and
+8. capture the suite runner Git descriptor before creating or updating tracked
+   artifact outputs, eliminating the runner's self-inflicted `-dirty` state.
+
 ## Implementation
 
 - Move the proven lazy slot/deepening implementation onto the unconditional
@@ -55,6 +71,10 @@ Before the default change:
   and total qual-driven payload reads cannot exceed the deepening ceiling fixed
   once from the initial search bar (`max(initial × 64, 1024)`). Add counter
   assertions for this bound; do not introduce a new work-cap choice.
+- Carry already-materialized payloads forward when a deepened search rebuilds
+  a stable ranked prefix. Preserve rank, identity, datum ownership, and failure
+  semantics; this is a redundant-work fix, not a cache with cross-query or
+  cross-generation lifetime.
 - Keep Task 184's attribution/work counters feature-gated unless a narrowly
   justified production diagnostic is explicitly reviewed.
 
@@ -65,10 +85,14 @@ for:
 
 - eager/production output identity without quals;
 - filters rejecting the first window and multiple windows;
-- null and toasted/varlena projected and qualified columns;
+- null and genuinely out-of-line toasted/varlena projected and qualified
+  columns, with fixture-shape evidence;
 - mixed local/remote winners and tie ordering;
 - fewer than, exactly, and more than 10 ranked candidates; and
 - an owner outage after the first cursor batch, which must fail closed.
+
+The multiple-window qual case must also prove that stable-prefix rebuilds do
+not re-request a previously materialized remote `vec_id`.
 
 Also prove a normal production build has no benchmark GUC while using
 the same lazy10 driver, and that the feature build's eager override is not a
@@ -83,6 +107,10 @@ samples after 10 warmups at concurrency one. Record recall/Wilson interval,
 mean/p50/p95/p99/max, materialization stage/work/bytes, storage, construction,
 topology, remote engagement, query separation, and unanimous installed release
 provenance.
+
+The final suite manifest must carry a clean runner descriptor without relying
+on a prose exception, and stage results must either be non-overlapping or
+machine-readably identify aliases.
 
 Promote only if the production path reproduces Task 184's recall/semantic
 parity and material end-to-end mean and tail improvement at every required
@@ -106,6 +134,7 @@ scale. Use relative Pareto evidence; do not invent an absolute latency gate.
 - Head, graph, codec, placement, or protocol changes.
 - A production tuning knob for the batch size.
 - Treating Task 184's benchmark-feature build as sufficient release evidence.
+- Cross-query payload caching; the stable-prefix reuse above is scan-local.
 
 ## References
 

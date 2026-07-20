@@ -70,6 +70,10 @@ The candidate also reduced remote payload bytes by 72–75%, passed the
 adversarial projection/qual/null/toast/mixed-owner/outage matrix, and changed no
 storage or construction cost. ADR-085 D12 records the selected semantics;
 Task 191 owns the production default. Task 187 waits for that retained baseline.
+Outside review accepted Task 184 on 2026-07-20 and carried four non-blocking
+hardening requirements into Task 191: a proven external-TOAST fixture,
+scan-local stable-prefix payload reuse across deepening, unambiguous stage
+accounting, and pre-output runner provenance capture.
 
 NFR-017's `0.999` and `37.6 ms` values are aspirational comparison references,
 not hard acceptance thresholds. Decisions use complete relative Pareto evidence
