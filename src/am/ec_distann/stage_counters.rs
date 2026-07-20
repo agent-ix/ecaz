@@ -128,10 +128,11 @@ pub(crate) enum DistannMaterializationWork {
     ExecutorRowsConsumed,
     ExecutorRemoteRowsConsumed,
     ExecutorLocalRowsConsumed,
+    DuplicateRemoteCandidatesRequested,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 12] = [
+    pub(crate) const ALL: [Self; 13] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -144,6 +145,7 @@ impl DistannMaterializationWork {
         Self::ExecutorRowsConsumed,
         Self::ExecutorRemoteRowsConsumed,
         Self::ExecutorLocalRowsConsumed,
+        Self::DuplicateRemoteCandidatesRequested,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -160,6 +162,7 @@ impl DistannMaterializationWork {
             Self::ExecutorRowsConsumed => "executor_rows_consumed",
             Self::ExecutorRemoteRowsConsumed => "executor_remote_rows_consumed",
             Self::ExecutorLocalRowsConsumed => "executor_local_rows_consumed",
+            Self::DuplicateRemoteCandidatesRequested => "duplicate_remote_candidates_requested",
         }
     }
 
@@ -177,6 +180,7 @@ impl DistannMaterializationWork {
             Self::ExecutorRowsConsumed => 9,
             Self::ExecutorRemoteRowsConsumed => 10,
             Self::ExecutorLocalRowsConsumed => 11,
+            Self::DuplicateRemoteCandidatesRequested => 12,
         }
     }
 }

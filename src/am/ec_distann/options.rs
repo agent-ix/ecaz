@@ -54,7 +54,9 @@ static ECDISTANN_BENCHMARK_TRAINING_QUERY_PATH_GUC: GucSetting<Option<CString>> 
     GucSetting::<Option<CString>>::new(None);
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC: GucSetting<i32> =
-    GucSetting::<i32>::new(0);
+    GucSetting::<i32>::new(-1);
+/// ADR-085 D12 production policy. This is deliberately not a GUC or reloption.
+pub(super) const PRODUCTION_MATERIALIZATION_BATCH_SIZE: usize = 10;
 const ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH: i32 = 4096;
 const ECDISTANN_DEFAULT_REMOTE_CONNECT_TIMEOUT_MS: i32 = 5_000;
 const ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS: i32 = 120_000;
@@ -282,10 +284,10 @@ pub(super) fn register_gucs() {
     #[cfg(feature = "distann-head-attribution-benchmark")]
     GucRegistry::define_int_guc(
         c"ec_distann.benchmark_materialization_batch_size",
-        c"Task 184 benchmark-only ranked-window payload batch size.",
-        c"Zero preserves eager physical payload materialization. A positive value materializes pending remote payloads in deterministic global-ranked windows as the executor requests them. This GUC is absent from normal production builds.",
+        c"Task 191 benchmark-only final-payload policy override.",
+        c"Minus one uses the production fixed lazy-10 policy. Zero selects the eager A/B control. A positive value selects an explicit deterministic ranked-window size for benchmark/test use. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC,
-        0,
+        -1,
         ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH,
         GucContext::Userset,
         GucFlags::default(),
@@ -453,9 +455,14 @@ pub(super) fn physical_epoch_cache_enabled() -> bool {
     ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC.get()
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
-pub(super) fn benchmark_materialization_batch_size() -> usize {
-    usize::try_from(ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC.get()).unwrap_or(0)
+pub(super) fn materialization_batch_size() -> usize {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return usize::try_from(ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC.get())
+            .unwrap_or(PRODUCTION_MATERIALIZATION_BATCH_SIZE);
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    PRODUCTION_MATERIALIZATION_BATCH_SIZE
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
