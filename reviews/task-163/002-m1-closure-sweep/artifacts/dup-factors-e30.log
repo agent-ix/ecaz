@@ -1,0 +1,2 @@
+50k e0.3: sharded build: shards=4 duplication_factor=2.2766 max_shard_size=36110 stitch_edges_before_prune=2285340 stitch_edges_after_prune=1530690 stitch_peak_union_len=114 reachability_repairs=1
+100k e0.3: sharded build: shards=4 duplication_factor=2.6107 max_shard_size=75376 stitch_edges_before_prune=4851985 stitch_edges_after_prune=3130920 stitch_peak_union_len=119 reachability_repairs=3

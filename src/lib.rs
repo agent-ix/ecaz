@@ -28,9 +28,9 @@
     clippy::wrong_self_convention
 )]
 
-use pgrx::extension_sql_file;
 use pgrx::ffi::CString;
 use pgrx::prelude::*;
+use pgrx::{extension_sql, extension_sql_file};
 use pgrx::{pg_sys, Internal};
 
 const MODULE_VERSION_CSTR: &core::ffi::CStr = {
@@ -74,11 +74,16 @@ use storage::relation_guard::IndexRelationGuard;
 pub unsafe extern "C-unwind" fn _PG_init() {
     fault::register_gucs();
     am::register_gucs();
+    // SAFETY: hook installation is restricted to PostgreSQL's
+    // shared_preload_libraries processing window and chains prior hooks.
+    unsafe { am::ec_distann::register_scan_registry_shared_memory() };
     // SAFETY: `_PG_init` runs once in a backend during extension load, before
     // SQL callbacks use these process-local hook registrations.
     unsafe {
         am::register_custom_scan();
         am::register_dml_frontdoor_planner_hook();
+        am::ec_distann::register_build_gate_hooks();
+        am::ec_distann::register_generation_cache_invalidation();
     }
     #[cfg(feature = "pg18")]
     // SAFETY: PG18 hook/stat registrations are process-local initialization
@@ -401,6 +406,102 @@ pub mod bench_api {
         VAMANA_NODE_NEIGHBOR_COUNT_OFFSET, VAMANA_NODE_PRIMARY_HEAPTID_OFFSET,
         VAMANA_NODE_RERANK_TID_OFFSET, VAMANA_NODE_TAG_OFFSET,
     };
+    pub use crate::am::{
+        distann_node_neighbor_codes_offset, distann_node_neighbor_vec_ids_offset,
+        owner_stream_digest, DistannAbandonBindingAuditV1, DistannAbandonedBinding,
+        DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildOptions,
+        DistannBuildSpec, DistannCancelPublishAuditV1, DistannCodecArtifact,
+        DistannEpochFingerprint, DistannEpochManifestV2,
+        DistannGenerationDescriptor, DistannHeadPolicy,
+        DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannManifestBuildOptions,
+        DistannManifestCodecParameters, DistannMetadataPage, DistannNodeTuple,
+        DistannOwnerExpectation, DistannPublishedEpochIdentity, DistannReadyReceipt,
+        DistannRetireDecisionV1, DistannRosterEntry,
+        DistannRowSchemaAttribute, DistannRowSchemaDescriptor, DistannSourceSnapshot,
+        DistannSuccessorActivationV1, DISTANN_ABANDONED_BINDING_ENTRY_BYTES,
+        DISTANN_ABANDONED_BINDING_SET_COUNT_OFFSET,
+        DISTANN_ABANDONED_BINDING_SET_FIXED_PREFIX_BYTES,
+        DISTANN_ABANDONED_BINDING_SET_VERSION,
+        DISTANN_ABANDON_BINDING_AUDIT_COORDINATOR_UUID_OFFSET,
+        DISTANN_ABANDON_BINDING_AUDIT_FIXED_PREFIX_BYTES,
+        DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_BUILD_ID_OFFSET,
+        DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_EPOCH_OFFSET,
+        DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_FINGERPRINT_LENGTH_OFFSET,
+        DISTANN_ABANDON_BINDING_AUDIT_VERSION, DISTANN_ABANDON_BINDING_AUDIT_VERSION_OFFSET,
+        DISTANN_BUILD_SPEC_VERSION, DISTANN_BUILD_SPEC_VERSION_OFFSET,
+        DISTANN_BUILD_CANDIDATE_BUILD_SPEC_LENGTH_OFFSET,
+        DISTANN_BUILD_CANDIDATE_FIXED_PREFIX_BYTES,
+        DISTANN_BUILD_CANDIDATE_REGISTRATION_DIGEST_OFFSET, DISTANN_BUILD_CANDIDATE_VERSION,
+        DISTANN_BUILD_CANDIDATE_VERSION_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_COORDINATOR_UUID_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_EPOCH_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_FINGERPRINT_LENGTH_OFFSET,
+        DISTANN_CANCEL_PUBLISH_AUDIT_FIXED_PREFIX_BYTES, DISTANN_CANCEL_PUBLISH_AUDIT_VERSION,
+        DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET,
+        DISTANN_CODEC_ARTIFACT_VERSION, DISTANN_CODEC_ARTIFACT_VERSION_OFFSET,
+        DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES,
+        DISTANN_EPOCH_MANIFEST_VERSION, DISTANN_EPOCH_MANIFEST_VERSION_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_COORDINATOR_UUID_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_DIMENSIONS_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES,
+        DISTANN_GENERATION_DESCRIPTOR_GRAPH_DEGREE_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_GRAPH_RECORD_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_HANDOFF_WIRE_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_INDEX_FORMAT_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_PLACEMENT_HASH_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET,
+        DISTANN_GENERATION_DESCRIPTOR_VERSION, DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET,
+        DISTANN_GRAPH_RECORD_VERSION,
+        DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES,
+        DISTANN_HANDOFF_MAX_BYTES, DISTANN_HANDOFF_VERSION_OFFSET, DISTANN_HANDOFF_WIRE_VERSION,
+        DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, DISTANN_OWNER_STREAM_HASH_STATE_BYTES,
+        DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
+        DISTANN_MANIFEST_BUILD_OPTIONS_BYTES, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION,
+        DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET, DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES,
+        DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION,
+        DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET, DISTANN_METADATA_ACTIVE_EPOCH_OFFSET,
+        DISTANN_METADATA_ALPHA_OFFSET, DISTANN_METADATA_BUILD_LIST_SIZE_L_OFFSET,
+        DISTANN_METADATA_BYTES, DISTANN_METADATA_CLOSURE_EPSILON_OFFSET,
+        DISTANN_METADATA_CODEC_SUBVECTOR_COUNT_OFFSET, DISTANN_METADATA_CODEC_SUBVECTOR_DIM_OFFSET,
+        DISTANN_METADATA_CONTENT_DIGEST_OFFSET, DISTANN_METADATA_DELTA_BUFFER_HEAD_OFFSET,
+        DISTANN_METADATA_DELTA_COUNT_OFFSET, DISTANN_METADATA_DIMENSIONS_OFFSET,
+        DISTANN_METADATA_DIRECTORY_HEAD_OFFSET, DISTANN_METADATA_ENTRY_POINT_OFFSET,
+        DISTANN_METADATA_EPOCH_STATE_OFFSET, DISTANN_METADATA_FLAGS_OFFSET,
+        DISTANN_METADATA_FORMAT_VERSION_OFFSET, DISTANN_METADATA_GRAPH_DEGREE_R_OFFSET,
+        DISTANN_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET, DISTANN_METADATA_HEAD_INDEX_CAP_OFFSET,
+        DISTANN_METADATA_HEAD_SAMPLE_HEAD_OFFSET, DISTANN_METADATA_IN_FLIGHT_COUNT_OFFSET,
+        DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET, DISTANN_METADATA_NEIGHBOR_CODEC_KIND_OFFSET,
+        DISTANN_METADATA_NODE_COUNT_OFFSET, DISTANN_METADATA_SEED_OFFSET,
+        DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
+        DISTANN_NODE_HEADER_BYTES, DISTANN_NODE_HEAP_TID_OFFSET,
+        DISTANN_NODE_NEIGHBOR_COUNT_OFFSET, DISTANN_NODE_SEARCH_CODE_OFFSET,
+        DISTANN_NODE_TAG_OFFSET, DISTANN_NODE_VEC_ID_OFFSET, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+        DISTANN_PLACEMENT_HASH_VERSION, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
+        DISTANN_READY_RECEIPT_VERSION, DISTANN_READY_RECEIPT_VERSION_OFFSET,
+        DISTANN_RETIRE_DECISION_COORDINATOR_UUID_OFFSET, DISTANN_RETIRE_DECISION_EPOCH_OFFSET,
+        DISTANN_RETIRE_DECISION_FINGERPRINT_LENGTH_OFFSET,
+        DISTANN_RETIRE_DECISION_FIXED_PREFIX_BYTES, DISTANN_RETIRE_DECISION_TARGET_BUILD_ID_OFFSET,
+        DISTANN_RETIRE_DECISION_VERSION, DISTANN_RETIRE_DECISION_VERSION_OFFSET,
+        DISTANN_ROW_SCHEMA_VERSION, DISTANN_ROW_SCHEMA_VERSION_OFFSET,
+        DISTANN_SOURCE_SNAPSHOT_VERSION, DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET,
+        DISTANN_SUCCESSOR_ACTIVATION_COORDINATOR_UUID_OFFSET,
+        DISTANN_SUCCESSOR_ACTIVATION_FIXED_PREFIX_BYTES,
+        DISTANN_SUCCESSOR_ACTIVATION_PREDECESSOR_PRESENT_OFFSET,
+        DISTANN_SUCCESSOR_ACTIVATION_VERSION, DISTANN_SUCCESSOR_ACTIVATION_VERSION_OFFSET,
+        INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
+    };
+
+    pub fn distann_restore_owner_stream_hash_state(
+        input: &[u8],
+        expected_cumulative_digest: [u8; 32],
+    ) -> Result<[u8; 32], String> {
+        crate::am::restore_owner_stream_hash_state(input, expected_cumulative_digest)
+    }
     pub use crate::storage::page::{
         DataPage, DataPageChain, ItemPointer, HEAPTID_INLINE_CAPACITY,
         ITEM_POINTER_BLOCK_NUMBER_OFFSET, ITEM_POINTER_BYTES, ITEM_POINTER_OFFSET_NUMBER_OFFSET,
@@ -416,6 +517,387 @@ pub mod bench_api {
 }
 
 extension_sql_file!("../sql/bootstrap.sql", name = "bootstrap", bootstrap);
+
+extension_sql!(
+    r#"
+ALTER FUNCTION ec_distann_control_identity(regclass) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_control_identity(regclass)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_control_identity(regclass) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_configure_participant_identity(regclass, text)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_configure_participant_identity(regclass, text)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_configure_participant_identity(regclass, text)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_register_node_descriptor(
+    regclass, integer, integer, text, text, text, boolean
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_register_node_descriptor(
+    regclass, integer, integer, text, text, text, boolean
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_register_node_descriptor(
+    regclass, integer, integer, text, text, text, boolean
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_unregister_node_descriptor(regclass, integer)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_unregister_node_descriptor(regclass, integer)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_unregister_node_descriptor(regclass, integer)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_begin_epoch_build(regclass, bigint, uuid)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_begin_epoch_build(regclass, bigint, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_begin_epoch_build(regclass, bigint, uuid)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_build_gate_relation_mask(oid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_build_gate_relation_mask(oid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_build_gate_relation_mask(oid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_begin_epoch_handoff(
+    regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_begin_epoch_handoff(
+    regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_begin_epoch_handoff(
+    regclass, bigint, uuid, bytea, bytea, bytea, bytea, bigint, bytea
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_stage_epoch_batch(regclass, uuid, bigint, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_stage_epoch_batch(regclass, uuid, bigint, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_stage_epoch_batch(regclass, uuid, bigint, bytea, bytea)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_seal_epoch_handoff(regclass, uuid, bigint, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_seal_epoch_handoff(regclass, uuid, bigint, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_seal_epoch_handoff(regclass, uuid, bigint, bytea)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_abort_epoch_handoff(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_list_unpublished_generations(regclass) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_list_unpublished_generations(regclass)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_list_unpublished_generations(regclass) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_catalog_index_cleanup(oid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_catalog_index_cleanup(oid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_catalog_index_cleanup(oid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_prepare_control_rebuild(oid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_prepare_control_rebuild(oid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_prepare_control_rebuild(oid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_initialize_control_registry(oid, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_initialize_control_registry(oid, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_initialize_control_registry(oid, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_publish_epoch(regclass, uuid, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_publish_epoch(regclass, uuid, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_publish_epoch(regclass, uuid, bytea, bytea)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_epoch_generation_status(regclass, uuid)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_epoch_generation_status(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_epoch_generation_status(regclass, uuid)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_mark_epoch_retired(regclass, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_mark_epoch_retired(regclass, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_mark_epoch_retired(regclass, bytea, bytea)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_apply_epoch_retire(regclass, bytea, bytea)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_reclaim_cancelled_generation(regclass, bytea, bytea)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_reclaim_cancelled_generation(regclass, bytea, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_reclaim_cancelled_generation(regclass, bytea, bytea)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_retire_epoch(regclass, bytea) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_retire_epoch(regclass, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_retire_epoch(regclass, bytea) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_force_retire_epoch(regclass, bytea, text) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_force_retire_epoch(regclass, bytea, text)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_force_retire_epoch(regclass, bytea, text) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_recover_epoch_retire(regclass, bytea) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_recover_epoch_retire(regclass, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_recover_epoch_retire(regclass, bytea) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_abandon_predecessor_binding(regclass, uuid, integer, text)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_abandon_predecessor_binding(regclass, uuid, integer, text)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_abandon_predecessor_binding(regclass, uuid, integer, text)
+    FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_build_epoch(regclass, bigint, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_build_epoch(regclass, bigint, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_build_epoch(regclass, bigint, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_decide_epoch_publish(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_decide_epoch_publish(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_decide_epoch_publish(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_recover_epoch_publish(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_recover_epoch_publish(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_recover_epoch_publish(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_cancel_epoch_publish(regclass, uuid, text) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_cancel_epoch_publish(regclass, uuid, text)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_cancel_epoch_publish(regclass, uuid, text) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_recover_cancelled_publish(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_recover_cancelled_publish(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_recover_cancelled_publish(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_abort_epoch_build(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_abort_epoch_build(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_abort_epoch_build(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_epoch_build_status(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_epoch_build_status(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_epoch_build_status(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_generation_topology(regclass, uuid) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_generation_topology(regclass, uuid)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_generation_topology(regclass, uuid) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_epoch_topology(regclass, bytea) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_epoch_topology(regclass, bytea)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_epoch_topology(regclass, bytea) FROM PUBLIC;
+
+-- FR-079 physical-generation overloads. The implementation functions keep
+-- unique generated names so pgrx's entity graph remains unambiguous; these SQL
+-- wrappers provide the normative endpoint names alongside the legacy oid
+-- signatures during the format transition.
+ALTER FUNCTION ec_distann_expand_nodes(oid, bytea, real[], bigint[], real)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_expand_nodes(oid, bytea, real[], bigint[], real)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
+    oid, bytea, real[], bigint[], real
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_materialize_rows(oid, bytea, bigint[])
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_materialize_rows(oid, bytea, bigint[])
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_materialize_rows(
+    oid, bytea, bigint[]
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_apply_record_writes(oid, bytea, bigint[])
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_apply_record_writes(oid, bytea, bigint[])
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_apply_record_writes(
+    oid, bytea, bigint[]
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_expand_physical_nodes(
+    regclass, bytea, real[], bigint[], real
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_expand_physical_nodes(
+    regclass, bytea, real[], bytea, bigint[], real
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_expand_physical_nodes(
+    regclass, bytea, real[], bytea, bigint[], real
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_expand_physical_nodes(
+    regclass, bytea, real[], bytea, bigint[], real
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_materialize_physical_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_materialize_physical_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_materialize_physical_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_materialize_row_payloads(
+    oid, bytea, bigint[], text[], text[]
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_materialize_row_payloads(
+    oid, bytea, bigint[], text[], text[]
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_materialize_row_payloads(
+    oid, bytea, bigint[], text[], text[]
+) FROM PUBLIC;
+
+CREATE FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bigint[], real DEFAULT NULL
+) RETURNS TABLE (
+    vec_id bigint, exact_dist real, is_tombstone boolean,
+    neighbor_vec_ids bigint[], neighbor_code_dists real[]
+)
+LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
+AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5)';
+
+CREATE FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bytea, bigint[], real DEFAULT NULL
+) RETURNS TABLE (
+    vec_id bigint, exact_dist real, is_tombstone boolean,
+    neighbor_vec_ids bigint[], neighbor_code_dists real[]
+)
+LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
+AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5, $6)';
+
+CREATE FUNCTION ec_distann_materialize_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) RETURNS TABLE (
+    vec_id bigint, is_tombstone boolean, tuple_payload_missing boolean,
+    payload_nulls boolean[], payload_values bytea[]
+)
+LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
+AS 'SELECT * FROM ec_distann_materialize_physical_row_payloads($1, $2, $3, $4, $5)';
+
+ALTER FUNCTION ec_distann_expand_nodes(regclass, bytea, real[], bigint[], real)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_expand_nodes(regclass, bytea, real[], bigint[], real)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+ALTER FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bytea, bigint[], real
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bytea, bigint[], real
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+ALTER FUNCTION ec_distann_materialize_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_materialize_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+
+REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bigint[], real
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bytea, bigint[], real
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION ec_distann_materialize_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) FROM PUBLIC;
+
+-- Class-wide closure: every extension-owned ec_distann SQL function is an
+-- internal/operator endpoint unless it is one of the deliberately public,
+-- non-privileged surfaces below. Deriving the set from extension dependencies
+-- makes newly-added siblings fail closed without another signature checklist.
+DO $distann_endpoint_privileges$
+DECLARE
+    endpoint record;
+BEGIN
+    FOR endpoint IN
+        SELECT namespace.nspname,
+               proc.proname,
+               pg_catalog.pg_get_function_identity_arguments(proc.oid) AS identity_arguments
+          FROM pg_catalog.pg_proc proc
+          JOIN pg_catalog.pg_namespace namespace
+            ON namespace.oid = proc.pronamespace
+          JOIN pg_catalog.pg_depend dependency
+            ON dependency.classid = 'pg_catalog.pg_proc'::pg_catalog.regclass
+           AND dependency.objid = proc.oid
+           AND dependency.deptype = 'e'
+          JOIN pg_catalog.pg_extension extension
+            ON extension.oid = dependency.refobjid
+         WHERE extension.extname = 'ecaz'
+           AND proc.prokind = 'f'
+           AND proc.proname LIKE 'ec_distann\_%' ESCAPE '\'
+           AND proc.proname NOT IN (
+               'ec_distann_handler',
+               'ec_distann_owning_node',
+               'ec_distann_epoch_status'
+           )
+    LOOP
+        EXECUTE pg_catalog.format(
+            'ALTER FUNCTION %I.%I(%s) SECURITY DEFINER',
+            endpoint.nspname,
+            endpoint.proname,
+            endpoint.identity_arguments
+        );
+        EXECUTE pg_catalog.format(
+            'ALTER FUNCTION %I.%I(%s) SET search_path TO pg_catalog, %I, pg_temp',
+            endpoint.nspname,
+            endpoint.proname,
+            endpoint.identity_arguments,
+            endpoint.nspname
+        );
+        EXECUTE pg_catalog.format(
+            'REVOKE ALL ON FUNCTION %I.%I(%s) FROM PUBLIC',
+            endpoint.nspname,
+            endpoint.proname,
+            endpoint.identity_arguments
+        );
+    END LOOP;
+END
+$distann_endpoint_privileges$;
+
+CREATE TRIGGER ec_distann_build_gate_registration_changed
+AFTER INSERT OR UPDATE OR DELETE OR TRUNCATE
+ON @extschema@.ec_distann_build_registration
+FOR EACH STATEMENT
+EXECUTE FUNCTION @extschema@.ec_distann_build_gate_registration_changed();
+
+ALTER TABLE @extschema@.ec_distann_build_registration
+    ENABLE ALWAYS TRIGGER ec_distann_build_gate_registration_changed;
+REVOKE ALL ON FUNCTION ec_distann_build_gate_registration_changed() FROM PUBLIC;
+"#,
+    name = "distann_internal_privileges",
+    finalize,
+);
 
 #[pg_extern(volatile)]
 fn ecaz_fault_reset_palloc_counter() {
@@ -1346,6 +1828,68 @@ fn ec_ivf_stage_scoring_snapshot() -> TableIterator<
 #[pg_extern(volatile)]
 fn ec_ivf_stage_scoring_reset() {
     am::ec_ivf::stage_counters::reset();
+}
+
+/// Task 183 benchmark-only physical ec_distann query-stage attribution rows.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(stable)]
+fn ec_distann_stage_scoring_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(stage, String),
+        name!(scans, i64),
+        name!(samples, i64),
+        name!(elapsed_ns, i64),
+        name!(elapsed_ms, f64),
+    ),
+> {
+    let (scans, rows) = am::ec_distann::stage_counters::snapshot();
+    let scans = i64::try_from(scans).unwrap_or(i64::MAX);
+    let rows = rows.into_iter().map(move |row| {
+        (
+            row.stage.label().to_owned(),
+            scans,
+            i64::try_from(row.samples).unwrap_or(i64::MAX),
+            i64::try_from(row.elapsed_ns).unwrap_or(i64::MAX),
+            row.elapsed_ns as f64 / 1_000_000.0,
+        )
+    });
+    TableIterator::new(rows)
+}
+
+/// Task 184 benchmark-only physical materialization-work attribution rows.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(stable)]
+fn ec_distann_materialization_work_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(metric, String),
+        name!(scans, i64),
+        name!(value, i64),
+        name!(mean_per_scan, f64),
+    ),
+> {
+    let (scans, rows) = am::ec_distann::stage_counters::materialization_work_snapshot();
+    let scans_i64 = i64::try_from(scans).unwrap_or(i64::MAX);
+    let rows = rows.into_iter().map(move |row| {
+        (
+            row.metric.label().to_owned(),
+            scans_i64,
+            i64::try_from(row.value).unwrap_or(i64::MAX),
+            if scans == 0 {
+                0.0
+            } else {
+                row.value as f64 / scans as f64
+            },
+        )
+    });
+    TableIterator::new(rows)
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile)]
+fn ec_distann_stage_scoring_reset() {
+    am::ec_distann::stage_counters::reset();
 }
 
 #[pg_extern(volatile)]
@@ -17822,10 +18366,8 @@ fn ec_spire_remote_search_with_initial_threshold(
     let requested_epoch =
         u64::try_from(requested_epoch).expect("positive requested_epoch should fit u64");
 
-    let index_relation = open_valid_ec_spire_index_guard(
-        index_oid,
-        "ec_spire_remote_search_with_initial_threshold",
-    );
+    let index_relation =
+        open_valid_ec_spire_index_guard(index_oid, "ec_spire_remote_search_with_initial_threshold");
     let rows = with_spire_live_index_relation!(
         index_relation,
         am::spire_remote_search_candidates_with_initial_threshold,
@@ -20299,7 +20841,10 @@ mod unit_tests {
 pub mod pg_test {
     pub fn setup(_options: Vec<&str>) {}
     pub fn postgresql_conf_options() -> Vec<&'static str> {
-        vec!["max_prepared_transactions = 10"]
+        vec![
+            "max_prepared_transactions = 10",
+            "shared_preload_libraries = 'ecaz'",
+        ]
     }
 }
 

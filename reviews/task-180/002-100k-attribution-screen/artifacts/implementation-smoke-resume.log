@@ -1,0 +1,4 @@
+[suite:task180-attribution-surface-pg18-smoke] wrote reviews/task-180/002-100k-attribution-screen/artifacts/implementation-smoke/suite-manifest.json
+[suite:task180-attribution-surface-pg18-smoke] surface-smoke-10k already succeeded in resume manifest
+[suite:task180-attribution-surface-pg18-smoke] wrote reviews/task-180/002-100k-attribution-screen/artifacts/implementation-smoke/results.jsonl
+[suite:task180-attribution-surface-pg18-smoke] wrote reviews/task-180/002-100k-attribution-screen/artifacts/implementation-smoke/suite-manifest.json

@@ -1,0 +1,18 @@
+Script started on 2026-07-12 13:04:26-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 29.41s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-9ac09d4715e441d2)
+
+running 7 tests
+test am::ec_distann::remote_transport::tests::conninfo_parse_error_is_redacted ... ok
+test am::ec_distann::remote_transport::tests::parsed_remote_config_has_nonzero_connect_timeout ... ok
+test am::ec_distann::remote_transport::tests::missing_coverage_is_an_error ... ok
+test am::ec_distann::remote_transport::tests::reassembles_interleaved_request_across_owners ... ok
+test am::ec_distann::remote_transport::tests::wrong_response_count_is_an_error ... ok
+test am::ec_distann::remote_transport::tests::remote_await_preserves_remote_error ... ok
+test am::ec_distann::remote_transport::tests::remote_await_enforces_client_deadline ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 2495 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-12 13:04:54-07:00 [COMMAND_EXIT_CODE="0"]

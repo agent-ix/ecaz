@@ -226,10 +226,12 @@ pub(crate) async fn apply_session_gucs(
     session_gucs: &[(String, String)],
 ) -> Result<()> {
     for (name, value) in session_gucs {
+        // Parameterized set_config so values containing spaces/@/;/= (e.g. an
+        // ec_distann roster spec) apply without a `SET name = value` syntax error.
         client
-            .batch_execute(&format!("SET {name} = {value}"))
+            .execute("SELECT set_config($1, $2, false)", &[name, value])
             .await
-            .wrap_err_with(|| format!("SET {name} = {value}"))?;
+            .wrap_err_with(|| format!("set_config({name}, {value})"))?;
     }
     Ok(())
 }
@@ -606,6 +608,174 @@ pub(crate) fn format_ivf_stage_counter_lines(
     lines.join("\n")
 }
 
+/// Task 183 physical ec_distann query-stage latency attribution row.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DistannStageCounterSnapshot {
+    pub(crate) stage: String,
+    pub(crate) scans: i64,
+    pub(crate) samples: i64,
+    pub(crate) elapsed_ns: i64,
+}
+
+impl DistannStageCounterSnapshot {
+    fn merge(&mut self, other: &Self) {
+        self.scans += other.scans;
+        self.samples += other.samples;
+        self.elapsed_ns += other.elapsed_ns;
+    }
+}
+
+pub(crate) async fn reset_distann_stage_counters(client: &Client) -> Result<()> {
+    client
+        .batch_execute("SELECT ec_distann_stage_scoring_reset()")
+        .await
+        .wrap_err(
+            "resetting ec_distann stage counters (install a measurement extension built with \
+             distann-head-attribution-benchmark)",
+        )
+}
+
+pub(crate) async fn snapshot_distann_stage_counters(
+    client: &Client,
+) -> Result<Vec<DistannStageCounterSnapshot>> {
+    let rows = client
+        .query(
+            "SELECT stage, scans, samples, elapsed_ns \
+             FROM ec_distann_stage_scoring_snapshot() \
+             ORDER BY stage",
+            &[],
+        )
+        .await
+        .wrap_err("snapshotting ec_distann stage counters")?;
+    Ok(rows
+        .into_iter()
+        .map(|row| DistannStageCounterSnapshot {
+            stage: row.get(0),
+            scans: row.get(1),
+            samples: row.get(2),
+            elapsed_ns: row.get(3),
+        })
+        .collect())
+}
+
+pub(crate) fn merge_distann_stage_counters(
+    snapshots: Vec<Vec<DistannStageCounterSnapshot>>,
+) -> Vec<DistannStageCounterSnapshot> {
+    let mut merged = std::collections::BTreeMap::<String, DistannStageCounterSnapshot>::new();
+    for snapshot_set in snapshots {
+        for snapshot in snapshot_set {
+            merged
+                .entry(snapshot.stage.clone())
+                .and_modify(|existing| existing.merge(&snapshot))
+                .or_insert(snapshot);
+        }
+    }
+    merged.into_values().collect()
+}
+
+pub(crate) fn format_distann_stage_counter_lines(
+    command: &str,
+    label: &str,
+    snapshots: &[DistannStageCounterSnapshot],
+) -> String {
+    snapshots
+        .iter()
+        .map(|snapshot| {
+            format!(
+                "[distann-stage-counters] command={command} label={label} stage={} scans={} samples={} elapsed_ns={} elapsed_ms={:.6} mean_ms={:.6}",
+                snapshot.stage,
+                snapshot.scans,
+                snapshot.samples,
+                snapshot.elapsed_ns,
+                snapshot.elapsed_ns as f64 / 1_000_000.0,
+                if snapshot.scans > 0 {
+                    snapshot.elapsed_ns as f64 / snapshot.scans as f64 / 1_000_000.0
+                } else {
+                    0.0
+                },
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Task 184 physical ec_distann materialization-work attribution row.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct DistannMaterializationWorkSnapshot {
+    pub(crate) metric: String,
+    pub(crate) scans: i64,
+    pub(crate) value: i64,
+}
+
+impl DistannMaterializationWorkSnapshot {
+    fn merge(&mut self, other: &Self) {
+        self.scans += other.scans;
+        self.value += other.value;
+    }
+}
+
+pub(crate) async fn snapshot_distann_materialization_work(
+    client: &Client,
+) -> Result<Vec<DistannMaterializationWorkSnapshot>> {
+    let rows = client
+        .query(
+            "SELECT metric, scans, value \
+             FROM ec_distann_materialization_work_snapshot() \
+             ORDER BY metric",
+            &[],
+        )
+        .await
+        .wrap_err("snapshotting ec_distann materialization work")?;
+    Ok(rows
+        .into_iter()
+        .map(|row| DistannMaterializationWorkSnapshot {
+            metric: row.get(0),
+            scans: row.get(1),
+            value: row.get(2),
+        })
+        .collect())
+}
+
+pub(crate) fn merge_distann_materialization_work(
+    snapshots: Vec<Vec<DistannMaterializationWorkSnapshot>>,
+) -> Vec<DistannMaterializationWorkSnapshot> {
+    let mut merged =
+        std::collections::BTreeMap::<String, DistannMaterializationWorkSnapshot>::new();
+    for snapshot_set in snapshots {
+        for snapshot in snapshot_set {
+            merged
+                .entry(snapshot.metric.clone())
+                .and_modify(|existing| existing.merge(&snapshot))
+                .or_insert(snapshot);
+        }
+    }
+    merged.into_values().collect()
+}
+
+pub(crate) fn format_distann_materialization_work_lines(
+    command: &str,
+    label: &str,
+    snapshots: &[DistannMaterializationWorkSnapshot],
+) -> String {
+    snapshots
+        .iter()
+        .map(|snapshot| {
+            format!(
+                "[distann-materialization-work] command={command} label={label} metric={} scans={} value={} mean_per_scan={:.6}",
+                snapshot.metric,
+                snapshot.scans,
+                snapshot.value,
+                if snapshot.scans > 0 {
+                    snapshot.value as f64 / snapshot.scans as f64
+                } else {
+                    0.0
+                },
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn validate_guc_name(name: &str) -> Result<()> {
     let mut parts = name.split('.');
     let Some(first) = parts.next() else {
@@ -779,6 +949,49 @@ mod tests {
         .unwrap_err()
         .to_string()
         .contains("--profile ec_ivf"));
+    }
+
+    #[test]
+    fn distann_stage_counters_merge_and_report_per_scan_mean() {
+        let merged = merge_distann_stage_counters(vec![
+            vec![DistannStageCounterSnapshot {
+                stage: "head_score".into(),
+                scans: 2,
+                samples: 2,
+                elapsed_ns: 4_000_000,
+            }],
+            vec![DistannStageCounterSnapshot {
+                stage: "head_score".into(),
+                scans: 3,
+                samples: 3,
+                elapsed_ns: 6_000_000,
+            }],
+        ]);
+        assert_eq!(merged.len(), 1);
+        let line = format_distann_stage_counter_lines("latency", "top_k=32", &merged);
+        assert!(line.contains("stage=head_score scans=5 samples=5"));
+        assert!(line.contains("elapsed_ns=10000000"));
+        assert!(line.contains("mean_ms=2.000000"));
+    }
+
+    #[test]
+    fn distann_materialization_work_merges_and_reports_per_scan_mean() {
+        let merged = merge_distann_materialization_work(vec![
+            vec![DistannMaterializationWorkSnapshot {
+                metric: "remote_candidates_requested".into(),
+                scans: 2,
+                value: 20,
+            }],
+            vec![DistannMaterializationWorkSnapshot {
+                metric: "remote_candidates_requested".into(),
+                scans: 3,
+                value: 45,
+            }],
+        ]);
+        assert_eq!(merged.len(), 1);
+        let line = format_distann_materialization_work_lines("latency", "top_k=32", &merged);
+        assert!(line.contains("metric=remote_candidates_requested scans=5 value=65"));
+        assert!(line.contains("mean_per_scan=13.000000"));
     }
 
     #[test]

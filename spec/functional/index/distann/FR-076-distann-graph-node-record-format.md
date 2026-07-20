@@ -18,9 +18,9 @@ by a global `vec_id`, containing everything a single read needs to score and
 expand the node during beam search: a coarse search code, the adjacency list,
 and a compressed code for each neighbor. The record SHALL NOT store the
 full-precision vector; the exact distance of an expanded node is computed
-from its co-placed heap row ([FR-078](./FR-078-distann-hash-placement.md),
+from its co-placed epoch row ([FR-078](./FR-078-distann-hash-placement.md),
 [FR-079](./FR-079-distann-remote-expansion-protocol.md)), so the corpus
-vectors live once in the heap tier and are never duplicated into the index
+vectors live once in the row tier and are never duplicated into the index
 (ADR-085 decision D11). Records SHALL be self-describing and epoch-versioned.
 
 This is the `ec_diskann` record shape (coarse code + adjacency; full vector
@@ -33,31 +33,106 @@ row supplies exact rerank.
 record: distann_graph_node
 version: 1
 fields:
-  - { name: vec_id, type: u64, rule: global identity per ADR-068 source_identity; unique per logical row }
-  - { name: heap_tid, type: item_pointer, rule: owning heap tuple; resolves the co-placed full-precision vector for exact rerank (FR-079) and final materialization }
+  - { name: record_version, type: u16, rule: exactly 1; little-endian at byte offset 0 }
   - { name: flags, type: u16, rule: bit0 = tombstone }
-  - { name: search_code, type: bytes, rule: one neighbor_code_format code for this node's own vector, fixed stride; used to score the node when it enters the beam }
+  - { name: vec_id, type: u64, rule: global identity per ADR-068 source_identity; unique per logical row }
+  - { name: heap_tid, type: item_pointer, rule: owner-local epoch-row-tier tuple; resolves the full-precision vector for exact rerank and the frozen source payload for final materialization }
   - { name: neighbor_count, type: u16, rule: "<= graph_degree (R)" }
-  - { name: neighbor_vec_ids, type: u64[neighbor_count], rule: adjacency list }
-  - { name: neighbor_codes, type: bytes, rule: one neighbor_code_format code per neighbor, fixed stride, scoreable via QuantCodec::score_ip_batch }
+  - { name: search_code, type: bytes[code_stride], rule: one neighbor_code_format code for this node's own vector; used to score the node when it enters the beam }
+  - { name: neighbor_vec_ids, type: u64[R], rule: first neighbor_count slots are adjacency; remaining slots are canonical zero padding }
+  - { name: neighbor_codes, type: bytes[R * code_stride], rule: one fixed-stride code per live neighbor slot; remaining slots are canonical zero padding }
 ```
 
 ## Record Fields
 
 | Field | Type | Rule |
 |-------|------|------|
-| vec_id | u64 | Global identity derived from the ADR-068 source-identity contract; unique per logical row across all nodes and epochs |
-| heap_tid | ItemPointer | Owning heap tuple; the co-placed heap row it resolves ([FR-078](./FR-078-distann-hash-placement.md)) is the single source of the node's full-precision vector for exact rerank ([FR-079](./FR-079-distann-remote-expansion-protocol.md)) and for final materialization |
+| record_version | u16 | Exactly 1, little-endian at byte offset 0; unknown and byte-swapped versions reject before any other field is interpreted |
 | flags | u16 | Bit 0 = tombstone (deleted, retained until vacuum) |
-| search_code | byte block | One `neighbor_code_format` code for this node's own vector, fixed stride; scores the node when it enters the beam without a heap read |
+| vec_id | u64 | Global identity derived from the ADR-068 source-identity contract; unique per logical row across all nodes and epochs |
+| heap_tid | ItemPointer | Owner-local epoch-row-tier tuple; the co-placed row it resolves ([FR-078](./FR-078-distann-hash-placement.md)) is the source of the node's full-precision vector for exact rerank and the frozen source payload for final materialization ([FR-079](./FR-079-distann-remote-expansion-protocol.md)) |
 | neighbor_count | u16 | ≤ `graph_degree` (R) |
-| neighbor_vec_ids | u64[neighbor_count] | Adjacency list |
-| neighbor_codes | byte block | One `neighbor_code_format` code per neighbor, fixed stride, scoreable via `QuantCodec::score_ip_batch` without any further read |
+| search_code | byte[code_stride] | One `neighbor_code_format` code for this node's own vector; scores the node when it enters the beam without a heap read |
+| neighbor_vec_ids | u64[R] | First `neighbor_count` slots are the adjacency list; unused slots are zero |
+| neighbor_codes | byte[R × code_stride] | One scoreable code per live neighbor slot; unused slots are zero |
+
+The fixed header is 20 bytes with offsets: `record_version=0`, `flags=2`,
+`vec_id=4`, `heap_tid=12`, `neighbor_count=18`, and `search_code=20`.
+The 6-byte `ItemPointer` encoding is exactly `block_number u32_le` followed by
+`offset_number u16_le`, with no alignment padding. Thus the header arithmetic
+is `2 + 2 + 8 + 6 + 2 = 20` bytes.
+Consequently the complete record remains exactly
+`20 + code_stride + (R × 8) + (R × code_stride)` bytes. The legacy local-v4
+tuple's `(tag=0x09, reserved=0)` prefix is not a physical-generation version
+and SHALL NOT be accepted by the physical-v1 decoder.
+Physical graph-record version `9` SHALL never be assigned: its little-endian
+prefix `(0x09, 0x00)` byte-collides with that legacy local tuple prefix.
+
+## Handoff Entry Layout
+
+The coordinator-to-owner handoff in
+[FR-078](./FR-078-distann-hash-placement.md) SHALL use a versioned canonical
+entry that contains no node-local physical locator. The owning node allocates
+the epoch-row-tier tuple first and writes the resulting local `ItemPointer`
+into the persisted graph-node record.
+
+```yaml
+record: distann_epoch_handoff_entry
+version: 1
+fields:
+  - { name: wire_version, type: u16, rule: exactly 1 for this contract }
+  - { name: vec_id, type: u64, rule: global identity of the logical source row }
+  - { name: source_identity, type: length_prefixed_bytes, rule: canonical source-identity bytes used for collision detection }
+  - { name: graph_flags, type: u16, rule: build handoff accepts zero only; tombstones are a published-epoch mutation }
+  - { name: search_code, type: length_prefixed_bytes, rule: exactly one code at the epoch codec stride }
+  - { name: neighbor_vec_ids, type: length_prefixed_u64_array, rule: global adjacency with length <= graph_degree }
+  - { name: neighbor_codes, type: length_prefixed_bytes, rule: one fixed-stride code per neighbor_vec_id }
+  - { name: row_null_bitmap, type: length_prefixed_bytes, rule: one bit per non-dropped source attribute in ascending attnum order }
+  - { name: row_values, type: length_prefixed_byte_array, rule: PostgreSQL binary typsend value per non-NULL, non-dropped source attribute in ascending attnum order }
+```
+
+The batch envelope SHALL use the following versioned layout:
+
+```yaml
+record: distann_epoch_handoff_batch
+version: 1
+fields:
+  - { name: wire_version, type: u16, rule: exactly 1 }
+  - { name: epoch, type: u64, rule: non-zero target epoch }
+  - { name: build_id, type: uuid_bytes, rule: 16 RFC 4122 version-4 network-order bytes }
+  - { name: batch_seq, type: u64, rule: starts at zero and increments by one per owner stream }
+  - { name: build_spec_digest, type: byte[32], rule: SHA-256 of the immutable pre-handoff build specification }
+  - { name: row_schema_fingerprint, type: byte[32], rule: FR-078 source/destination schema identity }
+  - { name: index_format_version, type: u16, rule: destination graph format }
+  - { name: neighbor_codec_kind, type: u8, rule: FR-076 codec discriminator }
+  - { name: entry_count, type: u32, rule: number of entries in this envelope }
+  - { name: encoded_entries_bytes, type: u32, rule: total of entry length prefixes plus entry bytes }
+  - { name: entries, type: length_prefixed_entry[entry_count], rule: strictly increasing vec_id order }
+  - { name: batch_digest, type: byte[32], rule: SHA-256 over the domain separator and every preceding field/entry byte }
+```
+
+Fixed-width integer fields SHALL use little-endian encoding except the UUID
+bytes defined above. Every length prefix SHALL be an unsigned little-endian
+`u32`. The row NULL bitmap SHALL contain `ceil(non_dropped_attribute_count / 8)`
+bytes, with the first non-dropped attnum in the least-significant bit of byte zero and
+`1 = NULL`, `0 = non-NULL`. A NULL
+attribute SHALL consume no `row_values` element. Each non-NULL attribute SHALL
+consume exactly one length-prefixed `row_values` element in ascending attnum
+order.
+
+The entry digest SHALL be
+`SHA-256("ec_distann_handoff_entry_v1\0" || canonical_entry)`.
+The batch digest SHALL be
+`SHA-256("ec_distann_handoff_batch_v1\0" || canonical_batch_without_digest)`.
+Raw conninfo, PostgreSQL OIDs, source heap TIDs, destination heap TIDs, and
+caller-supplied send-function names SHALL NOT appear in either the entry or
+batch envelope.
 
 ## Behavior
 
-- The record format SHALL carry a format-version tag in the index metadata
-  page following the `VamanaMetadataPage` convention; version bumps follow
+- The physical record SHALL carry `record_version` at byte offset zero and the
+  generation descriptor/control metadata SHALL declare the same graph format;
+  version bumps follow
   [NFR-016](../../../non-functional/NFR-016-on-disk-format-evolution-discipline.md)
   (research posture: rebuild, no migration).
 - `vec_id` SHALL be stable across index rebuilds for the same logical row,
@@ -70,17 +145,27 @@ fields:
 - Expanding a record SHALL require exactly one index-record read to score all
   its neighbors: neighbor scoring uses the embedded codes, never a secondary
   lookup. The expanded node's exact distance SHALL come from a single read of
-  its co-placed heap row (via `heap_tid`), not from any vector stored in the
+  its co-placed epoch row (via `heap_tid`), not from any vector stored in the
   record ([FR-079](./FR-079-distann-remote-expansion-protocol.md)); both reads
-  are node-local (the heap row is co-placed by [FR-078](./FR-078-distann-hash-placement.md)),
+  are node-local (the epoch row is co-placed by [FR-078](./FR-078-distann-hash-placement.md)),
   so expansion adds no network round-trip.
 - The record SHALL NOT carry the full-precision vector. The single
-  authoritative copy of each vector lives in the co-placed heap tier; the
+  authoritative copy of each vector lives in the co-placed epoch row tier; the
   index stores only codes and adjacency. This removes exactly 1.0× the raw
   vector bytes from per-record amplification versus an inline-vector layout
   (ADR-085 decisions D1, D11; [NFR-018](../../../non-functional/NFR-018-distann-space-amplification.md)).
 - Tombstoned records SHALL remain readable (for graph traversal continuity)
   but SHALL be excluded from result sets.
+- The handoff encoder SHALL serialize source attributes with their catalog
+  `typsend` functions resolved locally from the build snapshot.
+- The handoff decoder SHALL resolve matching `typreceive` functions from the
+  validated destination row-tier schema.
+- The handoff decoder SHALL reject the batch before writing any row when its
+  row-schema fingerprint differs from the destination generation.
+- The handoff digest SHALL cover the canonical source identity, graph payload,
+  NULL bitmap, and row-value bytes.
+- The handoff digest SHALL exclude the destination-local `ItemPointer` assigned
+  while ingesting the epoch row tier.
 
 ## Constraints
 
@@ -98,7 +183,11 @@ fields:
 | FR-076-AC-3 | Scoring a node's neighbors after one record read matches direct codec scoring of the neighbors' vectors | Test |
 | FR-076-AC-4 | Tombstoned records are traversable but never returned | Test |
 | FR-076-AC-5 | The encoded record layout contains no full-precision vector field (structural inspection of the decoded record) | Test |
-| FR-076-AC-6 | At fixed R and `neighbor_code_format`, encoded record byte size is independent of vector dimension | Test |
+| FR-076-AC-6 | At fixed R and fixed codec stride `S`, encoded record bytes equal `20 + S + (R × 8) + (R × S)`; dimension may affect `S` but contributes no additional full-precision `4 × dimension` field | Test |
+| FR-076-AC-7 | A handoff entry round-trip preserves source identity, graph payload, NULLs, and every source-column binary value byte-exactly | Test (TC-040) |
+| FR-076-AC-8 | Structural inspection proves that handoff entries contain no heap TID, PostgreSQL OID, raw conninfo, or caller-selected send function | Test (TC-040) |
+| FR-076-AC-9 | A destination with a different row-schema fingerprint rejects the batch before allocating a row-tier tuple or graph record | Test (TC-040) |
+| FR-076-AC-10 | Re-encoding an identical entry produces the same SHA-256 entry digest on coordinator and owner | Test (TC-040) |
 
 ## Dependencies
 

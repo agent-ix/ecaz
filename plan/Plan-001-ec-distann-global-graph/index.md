@@ -6,6 +6,12 @@ okf_version: "0.1"
 ---
 # Plan-001 — ec_distann global-graph access method
 
+> **2026-07-10 corrective execution note:** Task-003/004 produced a useful
+> replicated-serving control, not FR-078 physical shards. Their original
+> implementation checklists are historical. The reviewed corrective execution
+> task is `plan/tasks/179-ec-distann-physical-hash-shard-generations.md`; the
+> distributed gate is Task 172 after Task 179, while Task 163 D8 remains open.
+
 ## Contents
 
 * [Plan-001: ec_distann global-graph access method (M0–M5)](./plan.md) - Plan overview, dependency graph, tracks, gates, test plan.
@@ -16,3 +22,4 @@ okf_version: "0.1"
 * [Task-005: M4 — bench gate](./tasks/Task-005-m4-bench-gate.md) - NFR-017/018/019 gate matrix, Gate G2, ADR-085 verdict.
 * [Task-006: M5 — incremental insert](./tasks/Task-006-m5-incremental-insert.md) - FR-083 full, TC-043.
 * [Task-007: suite-runner distann extension](./tasks/Task-007-suite-runner-distann-extension.md) - distann-pipeline step kind, release guard, storage summation (Track B).
+* [Corrective Task 179](../tasks/179-ec-distann-physical-hash-shard-generations.md) - physical owner generations, streamed handoff, publication/recovery, frozen row tier, and topology preflight.

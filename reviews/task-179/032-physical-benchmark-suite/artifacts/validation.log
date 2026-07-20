@@ -1,0 +1,16 @@
+head=4570ac008
+
+command: cargo check -p ecaz-cli
+result: PASS
+note: one pre-existing dead_code warning for LoadedDistributedPlacementConfig.path
+
+command: cargo test -p ecaz-cli distann_physical_topology_and_gate_are_structured -- --nocapture
+result: PASS
+summary: 1 passed; 0 failed; 427 filtered out
+
+release development probe (not promoted benchmark evidence):
+scale=10k queries=10 top_k=10 sweep=32
+physical recall=1.0000 mean_ms=10727.91
+single recall=1.0000 mean_ms=1043.92
+physical latency count=5 p50_ms=10664.7 p95_ms=11065.2 p99_ms=11125.8
+

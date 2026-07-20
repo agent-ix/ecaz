@@ -8,6 +8,7 @@ use color_eyre::eyre::Result;
 
 use crate::psql::ConnectionOptions;
 
+mod distann_multicluster;
 mod fault;
 mod install;
 mod pg_upgrade;
@@ -41,6 +42,12 @@ pub enum DevCommand {
         #[command(subcommand)]
         command: spire_multicluster::SpireMulticlusterCommand,
     },
+    /// ec_distann real multi-instance fixture (spin N PG18 instances, replicate
+    /// a deterministic corpus, run the multi-node distinct-recall gate).
+    DistannMulticluster {
+        #[command(subcommand)]
+        command: distann_multicluster::DistannMulticlusterCommand,
+    },
     /// Run SQL against local pgrx PostgreSQL or a global connection target.
     Sql(sql::SqlArgs),
     /// Run PG18-to-PG18 pg_upgrade with ECAZ data and post-upgrade checks.
@@ -65,6 +72,7 @@ impl DevCommand {
             DevCommand::Scratch { command } => command.run(&conn.database).await,
             DevCommand::Fault { command } => command.run(conn).await,
             DevCommand::SpireMulticluster { command } => command.run(&conn.database).await,
+            DevCommand::DistannMulticluster { command } => command.run().await,
             DevCommand::Sql(args) => sql::run(conn, args).await,
             DevCommand::PgUpgradeSmoke(args) => pg_upgrade::run(args).await,
             DevCommand::EvictRelationCache(args) => relation_cache::run(conn, args).await,

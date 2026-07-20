@@ -59,9 +59,9 @@ presence alone.
 | StR-004 | US-006..US-011, FR-019..FR-027, FR-030 | TC-005, TC-006, TC-017 | Partial: ReadStream/product speedup measurements remain deferred |
 | StR-005 | US-012..US-014, FR-028..FR-036 | TC-002, TC-003, TC-004, TC-007..TC-012 | Partial: local implementation surface is backed by grouped evidence; strict per-AC evidence inventory remains `GAP-018` and product scale evidence is deferred |
 | StR-005 SPIRE extension | US-018..US-020, US-022, FR-048..FR-060, NFR-013, NFR-014 | TC-020 SPIRE, TC-021..TC-025, TC-034 | Partial: implementation baseline is broad, but AC-level mapping, CustomScan lifecycle proof, Stage E live coverage, and product-scale AWS evidence remain gaps |
-| StR-006 | US-015, US-016, US-017 benchmark suites, FR-037, FR-038 benchmark suites, NFR-007..NFR-009, NFR-015 | TC-015, TC-016, TC-019, TC-020 benchmark suites, TC-033 | Partial: product hardware gates are explicit gaps |
+| StR-006 | US-015, US-016, US-017 benchmark suites, FR-037, FR-038 benchmark suites, NFR-007..NFR-009, NFR-015 | TC-015, TC-016, TC-019, TC-049, TC-033 | Partial: product hardware gates are explicit gaps |
 | StR-007 cloud | US-021, FR-044..FR-047, NFR-010, NFR-011 | TC-026..TC-032 | Planned: cloud harness implementation begins on `feat/cloud-test-harness` |
-| StR-008 distann | FR-075..FR-083, NFR-017..NFR-020 | TC-037..TC-044 | Planned: ec_distann program (Task 161 specs); gate evidence lands with milestones M0..M5 |
+| StR-008 distann | FR-075..FR-083, NFR-014, NFR-016..NFR-020 | TC-037..TC-044, TC-050 | Planned: physical hash-sharded ec_distann program; TC-040/TC-042/TC-044 must prove disjoint ownership and TC-050 must freeze every persisted/wire format before the program can close |
 
 ### User Story Coverage
 
@@ -83,7 +83,7 @@ presence alone.
 | US-014 | US-014-AC-1..3 | TC-010, TC-011, TC-012, TC-015 | Partial: local DiskANN v1 evidence is grouped; strict per-AC evidence inventory remains `GAP-018` and product claims are deferred |
 | US-015 | US-015-AC-1..4 | TC-015, TC-016, TC-033 | Partial: product benchmark claim lane is a planned gate |
 | US-016 | US-016-AC-1..3 | TC-019 | Partial: docs/spec traceability is grouped; command execution tests run on demand and strict per-AC evidence inventory remains `GAP-018` |
-| US-017 benchmark suites | US-017-AC-1..5 | TC-020 benchmark suites, TC-033 | Partial: first auto-runner surface is implemented, but strict per-AC evidence inventory remains `GAP-018` and richer thresholds are deferred |
+| US-017 benchmark suites | US-017-AC-1..5 | TC-049, TC-033 | Partial: first auto-runner surface is implemented, but strict per-AC evidence inventory remains `GAP-018` and richer thresholds are deferred |
 | US-018 | US-018-AC-1..6 | TC-021, TC-022, TC-023 | Partial: relation-backed local stores, PID hash placement, store diagnostics, strict/degraded handling, and sequential backend read scheduling are implemented, but strict per-AC evidence inventory remains `GAP-018` and true parallel local-store execution is deferred |
 | US-019 | US-019-AC-1..6 | TC-023, TC-024 | Partial: CustomScan distributed reads, placement-aware dispatch, typed remote tuple payloads, and origin-node visibility are implemented, but strict per-AC evidence inventory remains `GAP-018` and AWS product evidence is deferred |
 | US-020 | US-020-AC-1..6 | TC-023, TC-025 | Partial: epoch publication, maintenance hooks, diagnostics, and coordinator DML/2PC recovery are implemented, but strict per-AC evidence inventory remains `GAP-018` and background prepared-xact recovery is deferred |
@@ -117,7 +117,7 @@ presence alone.
 | FR-035 | FR-035-AC-1..3 | TC-011 | Partial: local DiskANN scan/prefilter/rerank evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
 | FR-036 | FR-036-AC-1..3 | TC-012 | Partial: local DiskANN insert/vacuum/diagnostics evidence is grouped; strict per-AC evidence inventory remains `GAP-018` |
 | FR-037 | FR-037-AC-1..4 | TC-019 | Partial: docs/spec traceability is grouped; CLI unit execution was not run in this docs checkpoint and strict per-AC evidence inventory remains `GAP-018` |
-| FR-038 benchmark suites | FR-038-AC-1..10 | TC-020 benchmark suites, TC-033, TC-036 | Partial: first auto-runner surface is implemented, but strict per-AC evidence inventory, backend-profile preflight proof, and full schema-driven report generation remain iterative |
+| FR-038 benchmark suites | FR-038-AC-1..10 | TC-049, TC-033, TC-036 | Partial: first auto-runner surface is implemented, but strict per-AC evidence inventory, backend-profile preflight proof, and full schema-driven report generation remain iterative |
 | FR-039..FR-043 tombstones | No active ACs | Spec inspection | Superseded: retained tombstone files preserve immutable ID history and point to `FR-048..FR-060` replacements |
 | FR-048 | FR-048-AC-1..8 | TC-020 SPIRE, TC-021, TC-024, TC-025 | Partial: domain model, identities, epochs, placement, and read/write boundary definitions are specified, but strict per-AC evidence inventory remains `GAP-018` |
 | FR-049 | FR-049-AC-1..3 | TC-020 SPIRE, TC-022, TC-034 | Partial: common header decode and rejection paths exist; external fixture compatibility remains a gap before format freeze |
@@ -135,13 +135,13 @@ presence alone.
 | FR-061 IVF persisted format | FR-061-AC-1..3 | TC-007 | Partial: spec-only schema transcription from `src/am/ec_ivf/page.rs`; independent-decode and rejection-path evidence remain `GAP-018`-style inventory work |
 | FR-062 DiskANN persisted format | FR-062-AC-1..3 | TC-010, TC-012 | Partial: spec-only schema transcription from `src/am/ec_diskann/{page,tuple}.rs`; rejection-path evidence inventory pending |
 | FR-063 block-kernel counter snapshot | FR-063-AC-1..3 | TC-035 | Partial: field names and label sets pinned; round-trip parity test between snapshot, log line, and results row not yet packeted |
-| FR-064 suite config schema | FR-064-AC-1..3 | TC-020 benchmark suites, TC-036 | Partial: schema documented from `SuiteConfig`; checked-in-suite parse audit not yet packeted |
-| FR-065 suite manifest schema | FR-065-AC-1..3 | TC-020 benchmark suites, TC-036 | Partial: schema documented from `SuiteManifest`; backend-preflight proof shares TC-036 gaps |
-| FR-066 suite results row schema | FR-066-AC-1..3 | TC-020 benchmark suites, TC-033, TC-035 | Partial: row shape documented from `ResultRow`; FR-063 field-parity test not yet packeted |
+| FR-064 suite config schema | FR-064-AC-1..3 | TC-049, TC-036 | Partial: schema documented from `SuiteConfig`; checked-in-suite parse audit not yet packeted |
+| FR-065 suite manifest schema | FR-065-AC-1..3 | TC-049, TC-036 | Partial: schema documented from `SuiteManifest`; backend-preflight proof shares TC-036 gaps |
+| FR-066 suite results row schema | FR-066-AC-1..3 | TC-049, TC-033, TC-035 | Partial: row shape documented from `ResultRow`; FR-063 field-parity test not yet packeted |
 | FR-067 DiskANN scan pipeline | FR-067-AC-1..3 | TC-011, TC-035 | Partial: stage decomposition specified; batch-on/off A/B and stage-attribution packet evidence pending |
 | FR-068 IVF scan pipeline | FR-068-AC-1..3 | TC-008, TC-035 | Partial: stage decomposition specified; pruning-vs-batch axis evidence pending |
 | FR-069 IVF parallel build | FR-069-AC-1..3 | TC-007, TC-016 | Partial: protocol specified; serial/parallel equivalence evidence lives with FR-031-AC-4 fixtures |
-| FR-070 suite run lifecycle | FR-070-AC-1..3 | TC-020 benchmark suites, TC-036 | Partial: ordering guarantees specified; preflight/resume CLI evidence shares TC-036 gaps |
+| FR-070 suite run lifecycle | FR-070-AC-1..3 | TC-049, TC-036 | Partial: ordering guarantees specified; preflight/resume CLI evidence shares TC-036 gaps |
 | FR-071 HNSW configuration | FR-071-AC-1..2 | TC-004, TC-035 | Partial: GUC/reloption inventory matches `register_gucs()` at authoring time; drift audit not automated |
 | FR-072 IVF configuration | FR-072-AC-1..2 | TC-008 | Partial: inventory matches `register_gucs()` at authoring time, including Task 51 adaptive/SoA switches; drift audit not automated |
 | FR-073 DiskANN configuration | FR-073-AC-1..2 | TC-011 | Partial: inventory matches `register_gucs()` at authoring time, including candidate_batch_scoring and scan_profile_notice; drift audit not automated |
@@ -150,15 +150,46 @@ presence alone.
 | FR-045 | FR-045-AC-1..4 | TC-027 | Planned: terraform module and profile selection |
 | FR-046 | FR-046-AC-1..3 | TC-028 | Planned: dataset registry and parquet staging |
 | FR-047 | FR-047-AC-1..4 | TC-029, TC-032 | Planned: in-VPC parallel corpus load |
-| FR-075 | FR-075-AC-1..4 | TC-037 | Planned: ec_distann AM surface (`src/tests/ec_distann_basic.rs`) |
-| FR-076 | FR-076-AC-1..6, FR-076-CON-1..2 | TC-037, TC-044 | Planned: record round-trip + identity stability + lean-record/no-inline-vector (AC-5) + dim-independent record size (AC-6) in TC-037; CON-1 storage budget measured in TC-044 |
-| FR-077 | FR-077-AC-1..4, FR-077-CON-1..4 | TC-038, TC-039 | Planned: proptest invariants (TC-038) + stitched-vs-monolithic recall A/B (TC-039); build emits co-placed vector tier (asserted via TC-040 co-resolution) |
-| FR-078 | FR-078-AC-1..4 | TC-040 | Planned: placement determinism + roster-change epoch behavior; AC-4 record/heap-row co-resolution + runtime co-placement-drift fault |
-| FR-079 | FR-079-AC-1..5 | TC-040 | Planned: expand_nodes contract incl. epoch-fingerprint rejection, placement-error disambiguation, four-outcome table (incl. missing-heap-row case d), and exact_dist==heap distance (AC-5) |
+| FR-075 | FR-075-AC-1..6 | TC-037, TC-040, TC-042 | Partial: single-node AM, metadata-only control initialization, transactional Building/abort relation lifecycle, destructive control REINDEX, and dependency cleanup are covered; publication/read-path completion remains planned |
+| FR-076 | FR-076-AC-1..10, FR-076-CON-1..2 | TC-037, TC-040, TC-044, TC-050 | Planned: graph records and the exact fixed-stride size formula/no-f32-vector term in TC-037; handoff row/graph round-trip and forbidden-field inspection in TC-040; storage in TC-044; golden, endian, digest, and layout fixtures in TC-050 |
+| FR-077 | FR-077-AC-1..5, FR-077-CON-1..4 | TC-038, TC-039, TC-040 | Planned: randomized stitch invariants and canonical one-entry-per-vec_id output in TC-038/TC-040; stitched-vs-monolithic recall A/B in TC-039 |
+| FR-078 | FR-078-AC-1..16, FR-078-CON-1..5 | TC-040, TC-042, TC-044, TC-050 | Partial: UUID-provenanced insert-only node registration, control compatibility identity, and generation begin/abort/storage/handoff exist; durable coordinator registration, exact disjoint topology, materialization, and recovery remain planned |
+| FR-079 | FR-079-AC-1..10 | TC-040, TC-042 | Planned: expansion and materialization order, exact scoring, frozen-row projection/quals, stable zero-partial errors, safe request shape, and retained-generation isolation |
 | FR-080 | FR-080-AC-1..4, FR-080-CON-1 | TC-037, TC-041 | Planned: determinism/reachability in TC-037; C recall-sensitivity measurement in TC-041 |
 | FR-081 | FR-081-AC-1..5 | TC-041 | Planned: 2-node result identity, BW×H cap assertion, dedupe, early-exit equivalence, EXPLAIN counters |
-| FR-082 | FR-082-AC-1..6 | TC-042 | Planned: lifecycle drills (epoch-swap-under-load, fingerprint retry, retirement gating) + epoch-frozen co-placed vector under concurrent delete+VACUUM+TID-reuse (AC-5) + wedged-in-flight-count operator override (AC-6) |
-| FR-083 | FR-083-AC-1..7 | TC-043 | Planned: tombstone/vacuum, interim posture, incremental insert parity + mid-insert fault drills; AC-7 inserted vec_id reads co-placed vector node-locally |
+| FR-082 | FR-082-AC-1..16, FR-082-CON-1..5 | TC-040, TC-042, TC-043, TC-050 | Planned: complete lifecycle and commit-only publication recovery, durable T2 candidate, predecessor-roster retirement, reclaim tombstones, generation isolation, shared-memory scan registration/fencing, DML/schema lock, retention audit, roster changes, and fingerprint wire format |
+| FR-083 | FR-083-AC-1..8 | TC-043, TC-044 | Planned: tombstone/vacuum, interim and incremental insert, full row-tier payload, atomic UPDATE replacement, and fault/concurrency/benchmark drills |
+
+### EC_DISTANN Acceptance-Criterion Trace Detail
+
+These rows are the criterion-level plan for the physical hash-sharded path.
+They are traceability, not implementation evidence: every referenced case is
+`Planned` until a packet contains its assertions and logs.
+
+| Requirement | Criterion-to-test mapping | Coverage |
+| --- | --- | --- |
+| FR-075 | AC-1→TC-037; AC-2→TC-037; AC-3→TC-037; AC-4→TC-037; AC-5→TC-040/TC-042; AC-6→TC-040/TC-042 | Partial |
+| FR-076 | AC-1→TC-037/TC-050; AC-2→TC-037; AC-3→TC-037; AC-4→TC-037; AC-5→TC-037/TC-050; AC-6→TC-037/TC-050; AC-7→TC-040/TC-050; AC-8→TC-040/TC-050; AC-9→TC-040; AC-10→TC-040/TC-050 | Planned |
+| FR-077 | AC-1→TC-039; AC-2→TC-038; AC-3→TC-039; AC-4→TC-038; AC-5→TC-038/TC-040 | Planned |
+| FR-078 | AC-1→TC-040; AC-2→TC-044; AC-3→TC-042; AC-4→TC-040; AC-5→TC-040/TC-044; AC-6→TC-040; AC-7→TC-040; AC-8→TC-042; AC-9→TC-040; AC-10→TC-040/TC-044; AC-11→TC-040; AC-12→TC-040; AC-13→TC-040/TC-050; AC-14→TC-040; AC-15→TC-040/TC-050; AC-16→TC-042/TC-050 | Partial |
+| FR-079 | AC-1→TC-040; AC-2→TC-040/TC-042; AC-3→TC-040; AC-4→TC-040; AC-5→TC-040; AC-6→TC-040; AC-7→TC-040; AC-8→TC-040/TC-042; AC-9→TC-040; AC-10→TC-042 | Planned |
+| FR-080 | AC-1→TC-037; AC-2→TC-037; AC-3→TC-041; AC-4→TC-041 | Planned |
+| FR-081 | AC-1→TC-041; AC-2→TC-041; AC-3→TC-041; AC-4→TC-041; AC-5→TC-041 | Planned |
+| FR-082 | AC-1→TC-042; AC-2→TC-042; AC-3→TC-042; AC-4→TC-042/TC-043; AC-5→TC-042; AC-6→TC-042; AC-7→TC-042; AC-8→TC-042; AC-9→TC-042; AC-10→TC-042; AC-11→TC-042; AC-12→TC-042; AC-13→TC-042; AC-14→TC-042/TC-050; AC-15→TC-042/TC-050; AC-16→TC-042/TC-050 | Planned |
+| FR-083 | AC-1→TC-043; AC-2→TC-043; AC-3→TC-043; AC-4→TC-043/TC-044; AC-5→TC-043; AC-6→TC-043; AC-7→TC-043; AC-8→TC-043 | Planned |
+| NFR-014 | AC-1→TC-024/TC-040; AC-2→TC-025/TC-042; AC-3→TC-024/TC-040; AC-4→TC-040; AC-5→TC-040; AC-6→TC-042 | Partial for SPIRE, planned for EC_DISTANN |
+| NFR-016 | AC-1→TC-050; AC-2→TC-050; AC-3→TC-050; AC-4→TC-050; AC-5→TC-050; AC-6→TC-050 | Planned for EC_DISTANN formats; global NFR remains partial |
+| NFR-020 | AC-1→TC-041/TC-042; AC-2→TC-042; AC-3→TC-042; AC-4→TC-040/TC-042; AC-5→TC-040/TC-042; AC-6→TC-042; AC-7→TC-042 | Planned |
+
+### EC_DISTANN Constraint Trace Detail
+
+| Requirement | Constraint-to-test mapping | Coverage |
+| --- | --- | --- |
+| FR-076 | CON-1→TC-044; CON-2→TC-037 | Planned |
+| FR-077 | CON-1→TC-038; CON-2→TC-038; CON-3→TC-038; CON-4→TC-038/TC-040 | Planned |
+| FR-078 | CON-1→TC-040; CON-2→TC-040; CON-3→TC-040; CON-4→TC-040/TC-044; CON-5→TC-040 | Planned |
+| FR-080 | CON-1→TC-037/TC-041 | Planned |
+| FR-082 | CON-1→TC-042; CON-2→TC-042; CON-3→TC-040/TC-042; CON-4→TC-042; CON-5→TC-050 | Planned |
 
 ### Non-Functional Requirement Coverage
 
@@ -170,19 +201,20 @@ presence alone.
 | NFR-004 | NFR-004-AC-1..5 | TC-013, TC-034 | Partial: Task 34 documents the lane surface, but only packet-local raw logs count as completed evidence; unpacketed local lanes, PG18 sanitizer, and SQLsmith remain gaps |
 | NFR-005 | Build and CI | TC-014 | Partial: static docs checkpoint did not run build/test commands |
 | NFR-006 | Async I/O cold-cache performance | TC-017 | Gap: measurement deferred |
-| NFR-007 | Benchmark provenance | TC-015, TC-020 benchmark suites, TC-036 | Partial: review-packet citations exist, but backend-profile proof and legacy benchmark summary rows remain outside NFR-015 row-level conformance until `GAP-021` closes |
+| NFR-007 | Benchmark provenance | TC-015, TC-049, TC-036 | Partial: review-packet citations exist, but backend-profile proof and legacy benchmark summary rows remain outside NFR-015 row-level conformance until `GAP-021` closes |
 | NFR-008 | Scale boundary | TC-016 | Partial: policy is specified; execution remains deferred and strict per-AC evidence inventory remains `GAP-018` |
 | NFR-009 | CLI drift and artifact discipline | TC-019 | Partial: docs/spec traceability exists; command-tree execution audit is deferred to CLI tests and strict per-AC evidence inventory remains `GAP-018` |
 | NFR-010 | Cloud cost discipline (status reporting, no NAT, --confirm-cost gate) | TC-031 | Planned: cloud harness implementation in progress |
 | NFR-011 | Cloud corpus load throughput targets | TC-032 | Planned: targets baseline once first `1m` run lands |
 | NFR-012 | Cloud throughput targets | TC-016, TC-032 | Partial: targets are specified; product evidence is gated on controlled cloud runs |
 | NFR-013 | SPIRE local readiness and capacity | TC-020 SPIRE, TC-021, TC-022, TC-023, TC-025 | Partial: implementation traceability exists; full capacity envelope needs controlled local storage evidence |
-| NFR-014 | SPIRE transport security and operations | TC-024, TC-025 | Partial: v1 contract specifies TLS, timeout, cancellation, and observability behavior; deployment evidence deferred |
+| NFR-014 | Distributed transport security and operations | TC-024, TC-025, TC-040, TC-042 | Partial: SPIRE v1 remains implementation-backed; EC_DISTANN must prove privilege revocation, identity/schema/owner validation, bounded allocation, sanitized errors, and attributable recovery/lifecycle actions |
 | NFR-015 | Benchmark reporting standard | TC-033, TC-035, TC-036 | Partial: standard is specified; existing and future benchmark rows must conform packet-by-packet, including block-kernel counters and backend provenance, before being marked complete |
-| NFR-017 | distinct_recall/latency gate vs release IVF anchor, 10k/50k/100k, 3-worker | TC-044 | Planned: pre-registered `ecaz bench suite` matrix on the Task 146 anchor protocol; release-guarded distann-pipeline step kind |
-| NFR-018 | Space amplification ≤4× raw vector bytes | TC-044 | Planned: storage step ratio row per scale, plus transient build peak in epoch manifest |
-| NFR-019 | Per-query expansion ≤ BW×H, corpus-independent | TC-041, TC-044 | Planned: per-cell counter assertion + cross-scale expanded-count ratio row; per-expansion heap-read count equals expanded-record count (same BW×H bound, ADR-085 D11) |
-| NFR-020 | Fault behavior: correct-or-error, never silent partials | TC-042, TC-043 | Planned: full drill matrix (reused + hop_round_failure_mid_beam, missing_node_record, placement_drift, missing_heap_row, coplacement_drift, mid-insert) |
+| NFR-016 | Persisted and wire-format evolution discipline | TC-050 | Partial globally; planned for DistANN: every FR-076/FR-078/FR-082 structure requires a fixture, independent decoder, byte-swap rejection, static layout assertion, and upgrade-matrix row |
+| NFR-017 | distinct_recall/latency gate vs release IVF anchor, 10k/50k/100k, three physical owners | TC-040, TC-044 | Planned: pre-registered `ecaz bench suite` matrix plus a mandatory topology audit; replicated control indexes, replicas, or tombstone-pruned replicas invalidate the row |
+| NFR-018 | Physical space amplification ≤4× raw vector bytes | TC-037, TC-040, TC-044 | Planned: establish the local record baseline, then sum disjoint owner graph/control bytes per scale, report payload/retained/building bytes separately, and exclude replicated or tombstone-pruned lanes |
+| NFR-019 | Per-query expansion ≤ BW×H, corpus-independent | TC-041, TC-044 | Planned: per-cell graph/expansion ≤ BW×H, exact-vector reads ≤ live expansions, payload reads ≤ k, total row-tier reads ≤ BW×H+k, plus cross-scale ratio rows |
+| NFR-020 | Fault behavior: correct-or-error, never silent partials | TC-040, TC-042, TC-043 | Planned: handoff replay/conflict, every publication crash boundary, missing/mismatched topology evidence, remote scan faults, and DML faults with normalized state inventories |
 
 ## Test Case Summary
 
@@ -207,7 +239,7 @@ presence alone.
 | TC-017 | ReadStream cold-cache speedup gate | Benchmark | P2 | NFR-006, FR-019 | Gap: deferred |
 | TC-018 | HNSW insert decontention follow-up | Benchmark / implementation | P2 | Future Task 13 | Gap: future work |
 | TC-019 | `ecaz` CLI command tree, profiles, logging, and docs links | Unit / docs audit | P1 | US-016, FR-037, NFR-009 | Implemented for docs traceability; CLI tests run on demand |
-| TC-020 benchmark suites | `ecaz bench suite` dry-run, execution manifest, audit, status, report, and results extraction | Unit / CLI smoke | P1 | US-017 benchmark suites, FR-038 benchmark suites, FR-064, FR-065, FR-066, FR-070, NFR-007, NFR-009 | Implemented for first auto-runner surface; backend profile preflight remains under TC-036 |
+| TC-049 | `ecaz bench suite` dry-run, execution manifest, audit, status, report, and results extraction | Unit / CLI smoke | P1 | US-017 benchmark suites, FR-038 benchmark suites, FR-064, FR-065, FR-066, FR-070, NFR-007, NFR-009 | Renumbered from the duplicate `TC-020 benchmark suites`; implemented for first auto-runner surface, with backend profile preflight under TC-036 |
 | TC-020 SPIRE | SPIRE partition-object domain model and binary storage formats | Design packet / pg_test | P0 | US-022, FR-048, FR-049, FR-050, FR-051, FR-052, NFR-013 | Implemented for spec traceability; format-freeze binary compatibility tests should be added before external persistence commitments |
 | TC-021 | SPIRE local store configuration, placement, and diagnostics | SQL / pg_test | P1 | US-018, US-022, FR-053, FR-055, FR-060, NFR-013 | Implemented for local v1 behavior; true parallel local-store execution deferred |
 | TC-022 | SPIRE routing, scoring, dedupe, and heap visibility handling | pg_test | P0 | US-018, US-022, FR-050, FR-051, FR-053 | Implemented for eager bounded local scans |
@@ -228,11 +260,12 @@ presence alone.
 | TC-037 | ec_distann single-node AM surface, record format (lean record carries no full-precision vector field, FR-076-AC-5), head index; M0 bench evidence (ec_diskann parity A/B, head-cap C sensitivity, D7 codec comparison, D1 storage ratio) | Unit / pg_test (`src/tests/ec_distann_basic.rs`) + `ecaz bench suite` (M0 cells) | P0 | FR-075, FR-076, FR-080, NFR-018 | Planned (M0) |
 | TC-038 | Stitch correctness property suite (degree ≤ R, vec_id uniqueness, medoid reachability, idempotence, α-prune invariant) | proptest (`src/am/ec_distann/`) | P0 | FR-077-CON-1..3, FR-077-AC-2, FR-077-AC-4 | Planned (M1) |
 | TC-039 | Stitched-vs-monolithic build recall A/B at 100k | Benchmark (`ecaz bench suite`) | P0 | FR-077-AC-1, FR-077-AC-3 | Planned (M1) |
-| TC-040 | Hash placement determinism + record/heap-row co-resolution (FR-078-AC-4) + remote expansion protocol contract: four-outcome table incl. missing-heap-row (case d) and co-placement-drift structural faults, exact_dist==full-precision heap distance (FR-079-AC-5) | pg_test (`src/tests/ec_distann_remote.rs`) | P0 | FR-078, FR-079 | Planned (M2) |
-| TC-041 | Hop-round orchestration: 2-node result identity, BW×H cap, dedupe, early-exit equivalence, EXPLAIN counters, head-index C sensitivity | pg_test + 2-node fixture + bench counters | P0 | FR-080, FR-081, NFR-019 | Planned (M2) |
-| TC-042 | Epoch lifecycle + multinode fault drill matrix (reused cases + hop_round_failure_mid_beam, missing_node_record, placement_drift, missing_heap_row, coplacement_drift) + epoch-frozen co-placed vector: concurrent delete+VACUUM+TID-reuse never reranks against a different tuple (FR-082-AC-5) | Multinode fixture drills | P0 | FR-082, NFR-020 | Planned (M3) |
+| TC-040 | Physical owner handoff and remote row materialization: metadata-only control index; node-registry validation; generation/codec descriptor round-trip and owner scoring parity; placement-hash golden vectors; entry/batch round-trip and digests; begin/stage/seal/abort; exact and conflicting replay; sequence/order and one-in-flight enforcement; callback-live index-TID/HOT resolution under one supplied MVCC scan, recently-dead pre-callback exclusion, defensive callback-dead no-access behavior, callback/slot mismatch rejection; pre-build/8 MiB boundaries; wrong owner, duplicate, malformed, schema/projection faults with zero mutation; transactional hidden relation creation/rollback; DROP dependency cleanup and destructive control REINDEX UUID replacement; coordinator in/out roster; exact disjoint graph/row unions; generated/NULL/toasted payload reconstruction; projection/qual equivalence; topology endpoint; endpoint and hidden-relation privileges; expansion order, stable errors, and exact distance | pg_test + three-PostgreSQL-node fixture (`src/tests/ec_distann_remote.rs`) | P0 | FR-075, FR-076, FR-077, FR-078, FR-079, NFR-014, NFR-017, NFR-020 | Planned (physical M2 replacement) |
+| TC-041 | Hop-round orchestration: 2-node result identity, BW×H cap, dedupe, early-exit equivalence, EXPLAIN counters, head-index C sensitivity, and correct-or-error round faults | pg_test + 2-node fixture + bench counters | P0 | FR-080, FR-081, NFR-019, NFR-020 | Planned (M2) |
+| TC-042 | Epoch lifecycle and publication/retirement fault matrix: durable build registration before remote begin; exact/conflicting/corrupt replay; top-level/savepoint rollback lock cleanup; durable T2 candidate recovery and consumption-time digest verification; Absent→Building→Ready→Published→Retired→Reclaimed-tombstone and Aborted paths; Building/Ready invisibility; participant-first/coordinator-pointer-last publication; predecessor retirement including a removed owner; unavailable predecessor plus audited abandon-binding and returning-node rejection; every pre/post durable-decision crash boundary; advisory-lock single-flight recovery and privilege fallback; shared-memory scan-token cleanup/cancellation/backend-exit; zero participant query-path pin work; zero-in-flight retire fence; dropped-UUID fence churn/recycling; Applied-before-retire gating; partial retire/reclaim-tombstone recovery; unavailable participant; audited non-active force-retire; fingerprint restart-once; retained old/new isolation; DML/schema lock; VACUUM/TID-reuse immunity; roster reorder/add/remove; topology inventory after every drill | Three-PostgreSQL-node fixture + fault injection | P0 | FR-078, FR-079, FR-082, NFR-014, NFR-020 | Planned (physical M3 replacement) |
 | TC-043 | DML path: tombstone/vacuum (tombstone traversable, exact_dist may be NULL, no heap read required), interim insert posture, incremental distributed insert parity + co-placed vector for inserted vec_id (FR-083-AC-7), mid-insert fault + concurrency drills | pg_test + multinode drills | P1 | FR-083, NFR-020 | Planned (M3/M5) |
-| TC-044 | distann bench gate: 10k/50k/100k four-way comparison (ec_distann / IVF / HNSW / best-SPIRE) on the Task 146 protocol, release-guarded distann-pipeline step, matched-recall rule per NFR-017, informational netem H×RTT run, multinode storage summation, min-BW×H-for-recall row; M5 insert-parity bench cell (FR-083-AC-4) | Benchmark (`ecaz bench suite`) | P0 | NFR-017, NFR-018, NFR-019, FR-076-CON-1, FR-083-AC-4, StR-008 | Planned (M4 gate; prerequisite: task-138 distinct_recall + task-146 anchors merged) |
+| TC-044 | Physical DistANN gate: topology preflight proves three disjoint owners, exact coverage, one graph record and row per vec_id, zero live/tombstoned non-owner residue, and coordinator locality before 10k/50k/100k four-way recall/latency/storage comparison; replicated and tombstone-pruned controls are labeled invalid for the gate; includes matched-recall, netem H×RTT, summed owner storage, BW×H, and insert-parity rows | Benchmark (`ecaz bench suite`) | P0 | FR-078, NFR-017, NFR-018, NFR-019, FR-076-CON-1, FR-083-AC-4, StR-008 | Planned (M4 gate; blocked until physical topology and task-138/task-146 prerequisites land) |
+| TC-050 | DistANN persisted/wire-format discipline: handoff entry/batch; generation descriptor v2 binding authoritative coordinator UUID, ordered roster/logical-index identities, and trained codec artifact while superseded draft v1 rejects/rebuilds; placement-hash v1 golden vectors; registration/candidate/activation/retire-decision, abandoned-binding-set, and abandon-binding-audit digests; owner receipt; wrap-aware FullTransactionId source snapshot; epoch manifest/fingerprint; generation metadata; and row-schema descriptor golden fixtures; little-endian/UUID rules, independent decode, byte-swap and unknown-version rejection, size/offset assertions, compatibility-matrix rows, and rebuild-only version transitions | Unit / fixture / upgrade-matrix | P0 | FR-076, FR-078, FR-082, NFR-016 | Planned with physical hash-shard implementation; IDs TC-045..TC-048 are reserved by Task 173 |
 
 ## Option Permutation Matrix
 
@@ -240,6 +273,21 @@ presence alone.
 | --- | --- | --- | --- |
 | TC-037 | `ec_distann.neighbor_code_format` | `grouped_pq` (default), `rabitq`, `turboquant` | All codecs build/scan correctly; recall/storage per codec recorded at M0 (ADR-085 D7) |
 | TC-038 | `ec_distann.closure_epsilon` | 0 (single shard assignment), default, high overlap | Build succeeds; duplication factor recorded; stitch output invariants hold at every value |
+| TC-040 | Coordinator membership | coordinator outside the owner roster; one-node degenerate roster; coordinator inside a three-owner roster | Outside-roster coordinator stores no graph/row data; one-node remains valid; in-roster coordinator stores only its hash-owned slice |
+| TC-040 | Handoff replay state | fresh request; byte-identical replay before/after acknowledgement; conflicting replay with same build/sequence identity | Fresh applies once; identical replay returns the prior receipt without byte/count change; conflict returns the documented category with zero mutation |
+| TC-040 | Owner hash restart state | initial/one-entry/multi-entry state; every entry and byte split; exact replay; empty sequence zero; bad length/version/implementation/buffer suffix/message length/cumulative digest | Canonical 107-byte state resumes to the one-shot owner digest; malformed or mismatched state rejects before physical/catalog mutation; empty sequence zero leaves NULL last vec-id and initialized state |
+| TC-040 | Row-tier schema/payload | built-in fixed/variable types; NULL; generated value; toasted value; schema mismatch; unsupported binary type; system-column request | Supported values round-trip from the frozen snapshot; every unsupported/mismatch case fails before partial row/record creation |
+| TC-040 | Generation codec descriptor | seeded RaBitQ/TurboQuant; trained GroupedPQ; corrupted artifact bytes or enclosing descriptor digest; unsupported kind/version/shape | Every owner prepares and scores identically without retraining; corrupted/unsupported descriptors fail before generation creation |
+| TC-040 | Node registry and transport transaction contract | participant identity configure/replay/conflict; coordinator outside roster; coordinator as one owner; duplicate ordinal/id/endpoint/participant/local; raw/provider-alias input; endpoint/canonical-locator/key-attnum/opclass/nullability mismatch; desired-roster replacement; READ COMMITTED success plus Repeatable Read/Serializable rejection before remote dispatch; direct privilege denial and attacker/temp search-path spoof | Registration persists only authenticated endpoint/UUID/canonical locator plus secret reference; invalid entries fail without catalog or remote mutation; build-specific private bindings keep active/retained epochs stable while the desired roster changes; only READ COMMITTED reaches handoff/lifecycle RPC; definer execution reaches only trusted extension objects/types |
+| TC-042 | Epoch roster transition | unchanged roster; reordered roster; owner added; owner removed | Unchanged canonical roster is stable; reorder/add/remove yields a new fingerprint while retained old-owner resolution remains stable |
+| TC-042 | Publication recovery boundary | before durable decision; after one/some/all participant publishes but before coordinator swap; after coordinator swap | Recovery retains old active epoch before commit-only decision or completes the decided generation exactly once; no mixed active generation |
+| TC-042 | Begin registration/lock ownership | exact replay; different epoch/build; same-session second build; competing backend; nested subcommit/subabort; top-level abort; backend death then second-backend abort/recovery | One gate-active build exists; exact binding bytes replay; ownership never leaks/borrows; both session locks promote/release/reacquire only at specified boundaries |
+| TC-042 | Durable T2 candidate | exact replay; one-byte corruption in registration/spec/descriptor/snapshot/receipt-set/manifest bytes or digest; client/backend loss after Ready | Candidate and Ready transition are atomic; T3 consumes exact durable bytes and never recaptures the source |
+| TC-042 | Successor activation/predecessor marks | no predecessor; unchanged/removed predecessor owner; crash after pointer swap and after 0/1/all marks; removed owner temporarily or permanently unavailable; exact/conflicting activation replay; exact/conflicting/unauthorized abandon; crash before/after abandon CAS; concurrent late Retired acknowledgement versus abandon; abandoned owner returns | Pending keeps predecessor active; Activated keeps successor active; recovery reaches Applied only after every old binding has an exact Retired marker or immutable audited Abandoned disposition; audit+CAS are atomic and exact replay returns stored bytes/time; one concurrent terminal state wins; abandonment never runs automatically or asserts reclaim; coordinator routing never selects the forfeited binding and direct successor-fingerprint requests fail normal participant validation; conflict changes zero bytes |
+| TC-042 | Scan retention and retire fence | first local registration; identical replay; same token/different fingerprint; normal completion; error; cancel; restart; coordinator backend crash; participant restart; retire with live/zero registrations; crash after partial participant reclaim; forced active/non-active retire | Local counts change exactly once and all ordinary exits clean up; scans perform zero participant pin RPC/WAL work; participants never reclaim without a durable fenced decision; partial retire recovers; active force-retire rejects and non-active override is fully audited |
+| TC-042 | Shared registry boundaries | preload absent; fence/token capacity 0/1/max/max+1; duplicate UUID in another database; normal exit; abrupt backend termination; ProcNumber/PID/generation reuse; postmaster restart; waiter cancellation; retire transaction commit/abort/savepoint; create/drop UUID churn beyond fence capacity with a held/waiting entry | Registry fails before RPC when unavailable/full, database namespaces never alias, only provably dead tokens and dropped unreferenced fences are reaped, live/waiting locktags are never recycled, and heavyweight fence exclusion follows transaction outcome without commit-spanning LWLocks |
+| TC-042 | Retire/reclaim atomicity | covering successor Pending/Activated/Applied; no/one/multiple abandoned predecessor bindings; altered abandon-audit digest; canonical decision one-byte corruption; fault before/after tombstone insert and each relation drop; restart; exact/conflicting replay; partial-owner recovery; generation-status versus data/topology lookup | Predecessor retirement rejects until the covering successor is Applied; canonical decision carries the exact abandoned ordinal/audit-digest set, sends reclaim only to non-abandoned bindings, and reaches Applied after those exact acknowledgements while forfeiture audits remain; one participant apply transaction either retains all storage or leaves exact Reclaimed tombstone with no storage; status remains truthful, data endpoints report missing, and replay is byte-exact |
+| TC-042 | Distributed-build source/control gate | SELECT; INSERT/UPDATE/DELETE/MERGE; COPY FROM; TRUNCATE; source ALTER/DROP/CLUSTER/VACUUM FULL; control ALTER/DROP/REINDEX; committed and savepoint-aborted destructive cleanup with a 3+ epoch predecessor chain; coordinator-session loss before/after Ready; OID reuse | Reads/prior epoch continue; every tuple/schema/control-identity rewrite fails from committed build registration through activation/abort even after session loss; committed cleanup removes the exact full chain successor/leaf-first under immediate predecessor-FK validation, aborted cleanup restores all rows/locks, and an unrelated reused OID is not gated |
 | TC-041 | `ec_distann.beam_width` × `ec_distann.hop_rounds` | low/default/high BW × H combinations | Expansion counter ≤ BW×H in every combination; recall monotone non-decreasing in BW and H |
 | TC-004 | `ec_hnsw.storage_format` | `turboquant`, `pq_fastscan`, `rabitq` | Valid formats build/scan; incompatible live storage-format changes reject until rebuild |
 | TC-004 | `ec_hnsw.ef_search` | relation default, session override, reset | Effective scan breadth follows session override when set |
@@ -259,7 +307,7 @@ presence alone.
 | TC-019 | `ecaz` command groups | `corpus`, `bench`, `compare`, `dev`, `quant`, `stress` | Help tree, README tree, and dispatch modules stay aligned |
 | TC-019 | `ecaz` AM profiles | `ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire` | Profile metadata selects AM, opclass, embedding type, scan GUC, sweep axis, and reloption set |
 | TC-019 | `ecaz` logging | terminal output, `--log-file`, dev SQL `--log-output` | Review evidence can be stored under packet-local artifacts |
-| TC-020 benchmark suites | `ecaz bench suite` commands | `run`, `audit`, `status`, `report`, legacy dry-run alias, `--only-tag`, `--resume-from`, `results.jsonl`, thresholds, threshold filters | Configs expand into ordinary `ecaz` commands; manifests support status/report inspection, normalized result rows, threshold assertions, and strict resume safety |
+| TC-049 | `ecaz bench suite` commands | `run`, `audit`, `status`, `report`, legacy dry-run alias, `--only-tag`, `--resume-from`, `results.jsonl`, thresholds, threshold filters | Configs expand into ordinary `ecaz` commands; manifests support status/report inspection, normalized result rows, threshold assertions, and strict resume safety |
 | TC-021 | SPIRE local stores | single store, disabled store, two active stores | Configuration, PID hash placement, diagnostics, and strict/degraded behavior are visible without claiming intra-backend parallelism |
 | TC-021 | SPIRE relation options | `storage_format`, `local_store_count`, local store tablespaces, boundary replica count | Valid combinations produce placement diagnostics; invalid bounds reject or surface explicit degraded status |
 | TC-022 | SPIRE scan options | `ec_spire.nprobe`, recursive fanout, rerank width, max candidate rows | Effective route budget and candidate limits are visible in diagnostics and bounded in scans |
@@ -277,6 +325,14 @@ presence alone.
 | distann reloption ranges (`graph_degree`, `head_index_cap`, `hop_rounds`, `beam_width`) | Below-min / above-max | invalid values at CREATE INDEX / SET | TC-037 | ERROR with descriptive message |
 | distann expansion cap | Max | query configured at BW×H boundary | TC-041 | Counter never exceeds BW×H |
 | distann space amplification | Max | 100k storage ratio | TC-044 | ≤ 4.0× raw vector bytes (NFR-018 threshold) |
+| DistANN handoff batch | Byte cap | 8 MiB−1, exactly 8 MiB, 8 MiB+1, and one entry whose complete eventual encoding exceeds 8 MiB | TC-040 | First two apply; oversize batch rejects before cap-exceeding allocation/mutation and oversize entry rejects during source capture before graph construction or remote begin |
+| DistANN owner batch sequence | Ordering/replay | sequence 0, exact next, identical replay, conflicting replay, gap, regression | TC-040 | Only fresh exact-next or identical acknowledged replay succeeds; all other cases are stable zero-mutation errors |
+| DistANN owner roster | Cardinality | 0, 1, and 3 owners | TC-040, TC-042 | Empty rejects; one-owner degenerate and three-owner physical layouts satisfy exact/disjoint coverage |
+| DistANN epoch fingerprint | Length/version | canonical 34 bytes, 33 bytes, 35 bytes, and unknown version | TC-040, TC-050 | Only canonical supported version+digest decodes; invalid lengths/versions return the documented error without lookup |
+| DistANN projection attnum | Domain | valid first/last user attnum, 0, beyond natts, dropped, duplicate, and system-column attnum | TC-040 | Valid user columns reconstruct in request order; invalid/dropped/system inputs fail with zero partial rows |
+| DistANN seal inventory | Exactness | exact counts/digests, ±1 record/row, wrong owner digest, missing sequence | TC-040, TC-042 | Only exact inventory reaches Ready; every seal-time inventory mismatch remains Building and reports `EC_BUILD_INCOMPLETE` |
+| DistANN node registry | Roster ordinal/cardinality | ordinal 0 and last valid; negative/gap/duplicate ordinal; duplicate node/endpoint; zero roster | TC-040 | One dense immutable order succeeds; malformed/empty distributed roster fails before build |
+| DistANN scan retention | Idempotency/count/fence | zero registrations, first registration, identical replay, conflicting token reuse, duplicate release, live registration during retire, zero-registration retire, participant restart, partial retire application | TC-042 | Coordinator-local count follows unique live tokens exactly with zero participant query-path writes; normal retire fences and requires zero; participant reclaim requires the durable decision; recovery completes partial apply |
 | `ecvector(N)` dimension | Exact | N values | TC-002 | Pass |
 | `ecvector(N)` dimension | Mismatch | N-1 / N+1 values | TC-002 | ERROR |
 | `encode_to_ecvector` defaults | Canonical | `(4, 42)` | TC-002 | Pass |
@@ -291,6 +347,71 @@ presence alone.
 | SPIRE remote limits | Min/max and outside range | remote node fanout, selected PID cap, payload byte cap, timeout, cancellation | TC-024, TC-034 | Strict fail-closed or degraded skip with stable status |
 | Hardening optional tools | Missing/present tool states | installed, missing, unsupported platform | TC-034 | Missing tools produce setup text; unsupported platform skips explicitly |
 
+## Error Path Tests
+
+Every EC_DISTANN endpoint error below asserts the category, sanitized context,
+zero partial result rows, unchanged active pointer, and unchanged physical
+counts/bytes unless the requirement explicitly permits the current operation to
+roll back while retaining resumable Building state.
+
+| Error category | Trigger | Test Case | Required postcondition |
+| --- | --- | --- | --- |
+| `EC_BUILD_ID_CONFLICT` | Same build id with different immutable build parameters | TC-040 | No generation or byte change |
+| `EC_BUILD_BUSY` | Another backend owns the live source/control build locks | TC-042 | Fail non-blockingly; preserve existing gate/ownership and issue no RPC |
+| `EC_NODE_DESCRIPTOR` | Duplicate/malformed roster identity, raw conninfo, or incompatible remote control index | TC-040 | No descriptor catalog or remote generation mutation |
+| `EC_SOURCE_IDENTITY` | Physical build uses local heap-TID identity, NULL identity, wrong type, or wrong byte width | TC-040 | Reject before snapshot capture, hidden relation creation, or remote mutation |
+| `EC_SOURCE_SNAPSHOT` | Callback-live index TID resolves no snapshot-visible tuple, or its HOT-aware fetched vector/source identity differs from callback datums | TC-040 | Reject before graph construction, participant begin, or remote mutation |
+| `EC_BATCH_SEQUENCE` | Gap, regression, or out-of-order owner sequence | TC-040 | Prior acknowledgement remains authoritative; no batch mutation |
+| `EC_BATCH_CONFLICT` | Same sequence with different digest or bytes | TC-040 | No count, digest, or byte change |
+| `EC_HANDOFF_DIGEST` | Supplied batch bytes do not match the batch digest | TC-040 | Current batch rolls back; Building generation stays resumable |
+| `EC_WRONG_OWNER` | Entry hashes to a different roster participant | TC-040 | Entire batch rolls back |
+| `EC_DUPLICATE_VEC_ID` | Duplicate within a batch or across acknowledged batches | TC-040 | Entire batch rolls back |
+| `EC_SCHEMA_MISMATCH` | Source/request schema fingerprint differs from selected generation | TC-040 | Reject before tuple allocation; zero partial rows |
+| `EC_SCHEMA_UNSUPPORTED` | Required source attribute lacks compatible binary send/receive support | TC-040 | Reject before handoff begins |
+| `EC_GENERATION_DESCRIPTOR` | Descriptor digest/version, trained codec artifact, codec shape, or schema descriptor is inconsistent | TC-040, TC-050 | Reject before generation relation/catalog creation or mutation |
+| `EC_UNSUPPORTED_PROJECTION` | Unspecified system-column identity is requested | TC-040 | Planning/materialization rejects; zero partial rows |
+| `EC_HANDOFF_FORMAT` | Unknown or malformed wire, graph, or codec version | TC-040, TC-050 | Entire batch rejects before persistent mutation |
+| `EC_HANDOFF_TOO_LARGE` | Batch or one entry exceeds 8 MiB | TC-040 | Reject before cap-exceeding allocation or mutation |
+| `EC_BUILD_INCOMPLETE` | Seal sees missing sequence, count, row, directory, or final owner digest | TC-040, TC-042 | Generation remains Building and query-invisible |
+| `EC_BUILD_STATE` | Handoff operation is invalid for generation state | TC-040, TC-042 | State remains unchanged |
+| `EC_BAD_INPUT` | Malformed query/fingerprint, dimension, projection array, or request cap | TC-040 | Zero returned rows and no lookup side effects |
+| `EC_EPOCH_MISMATCH` | Unknown/non-readable generation or local manifest disagreement | TC-040, TC-042 | First scan attempt may restart from an empty state; second errors |
+| `EC_EPOCH_FINGERPRINT_VERSION` | Unknown fingerprint version | TC-040, TC-050 | Reject before generation lookup |
+| `EC_PLACEMENT` | Requested vec_id belongs to another participant | TC-040 | Zero returned rows; no fallback scan |
+| `EC_RECORD_MISSING` | Locally owned vec_id lacks a directory record | TC-040, TC-042 | Classified structural fault; zero partial batch |
+| `EC_VECTOR_MISSING` | Graph record lacks its frozen row-tier tuple/vector | TC-040, TC-042 | Classified structural fault; zero partial batch |
+| `EC_REMOTE_INTERNAL` | Unclassified local relation/catalog/decode/storage failure | TC-040, TC-042 | Sanitized fail-closed response; no partial batch |
+| `EC_EPOCH_STATE` | Lifecycle transition is absent from the normative state table | TC-042 | Generation and active pointer remain unchanged |
+| `EC_EPOCH_PIN_CONFLICT` | One coordinator-local scan token is reused for a different fingerprint | TC-042 | Neither local registration/count changes and no participant call occurs |
+| `EC_EPOCH_PIN_CAPACITY` | Exact scan-token or fence-map capacity is exhausted | TC-042 | Fail before participant access; do not evict/coalesce a token |
+| `EC_EPOCH_REGISTRY_UNAVAILABLE` | Shared scan registry is absent or version-incompatible | TC-042 | Distributed scan/retire fails before participant access |
+| `EC_PUBLISH_INCOMPLETE` | Receipt/schema/count/digest/coverage/co-placement/topology precondition is absent or mismatched | TC-042 | Ready remains hidden and no durable decision exists |
+| `EC_PUBLISH_DIGEST` | Canonical manifest or Ready-receipt digest differs | TC-042, TC-050 | No participant state or active pointer changes |
+| `EC_PUBLISH_PENDING` | Successor participant unavailable while decision is Pending | TC-042 | Predecessor keeps serving; decision remains recoverable and successor pointer stays hidden |
+| `EC_PREDECESSOR_RETIRE_PENDING` | Removed or retained predecessor owner is unavailable after successor activation | TC-042 | Successor remains active; decision remains Activated and predecessor reclaim is delayed |
+| `EC_PREDECESSOR_ABANDON` | Abandon-binding is unauthorized, malformed, conflicts with an audit, or does not target a Pending binding of an Activated decision | TC-042, TC-050 | No binding or decision mutation and no participant call; exact authorized replay is stable |
+| `EC_TRANSACTION_ISOLATION` | A DistANN handoff or lifecycle endpoint is invoked in Repeatable Read or Serializable | TC-040, TC-042 | Reject before lock, catalog, RPC, or participant mutation; caller retries in a new READ COMMITTED transaction |
+| `EC_RETENTION_ACTIVE` | Normal retire sees one or more coordinator-local live registrations under its fence | TC-042 | Generation stays retained until drain or audited non-active force-retire |
+| `EC_GENERATION_MISSING` | Unknown, Aborted, or Reclaimed build/fingerprint is requested by a data/topology/scan endpoint | TC-040, TC-042 | No data and no fallback generation; status-by-build alone reports the tombstone |
+
+## State Transition Tests
+
+| Current state | Event | Expected state/visibility | Test Case |
+| --- | --- | --- | --- |
+| Absent | Accepted begin | Building, hidden | TC-040, TC-042 |
+| Building | Valid next batch or identical replay | Building, hidden; exact-once counts | TC-040 |
+| Building | Every owner seals with matching receipt | Ready, hidden | TC-040, TC-042 |
+| Building or Ready | Abort before durable publish decision | Aborted, hidden and reclaimable | TC-042 |
+| Building or Ready | Invalid operation or failed validation | Unchanged, hidden | TC-040, TC-042 |
+| Ready | Durable commit-only publish decision, then participant apply | Published by explicit fingerprint; prior active pointer unchanged | TC-042 |
+| Published new generation | Coordinator swaps active pointer, then recovery resolves every predecessor binding | New generation active immediately; every former-owner binding becomes exact Retired or explicit audited Abandoned, including removed owners; Applied requires all bindings terminal | TC-042 |
+| Retired with local in-flight registrations | Normal retire | Retained and readable by already-registered attempts; fence rejects reclaim | TC-042 |
+| Retired with zero local registrations | Durable retire decision then participant apply | Physical storage removed, immutable Reclaimed tombstone retained, and partial application/replay is recoverable | TC-042 |
+| Non-active Retired with local registrations | Explicit force-retire | Physical storage removed only after complete operator override audit; immutable Reclaimed tombstone remains and active fingerprint still rejects | TC-042 |
+| Any state after durable decision | Abort request | Rejected; recovery completes publication exactly once | TC-042 |
+| Published | FR-083 insert/update/delete mutation | Same epoch fingerprint; directory exposes one complete live version and retains old physical versions as specified | TC-042, TC-043 |
+| Published or retained Retired | First/duplicate local registration then final/duplicate release | Generation state unchanged; coordinator unique-token count increments/decrements exactly once; no participant write | TC-042 |
+
 ## Edge Cases
 
 | ID | Description | Related Req | Test Case | Risk if Untested |
@@ -304,6 +425,16 @@ presence alone.
 | EC-025 | Co-placement drift: record on node A, its heap row on node B | FR-078, FR-079 | TC-040, TC-042 | Runtime silent miss instead of a placement/structural fault |
 | EC-026 | Tombstoned record returned with is_tombstone but its heap tuple already VACUUMed | FR-079, FR-083 | TC-043 | Forced heap read on an excluded row → spurious fault; exact_dist must be skippable (NULL) |
 | EC-027 | heap_tid resolves a TID-reused tuple after concurrent delete+VACUUM within a published epoch | FR-082 | TC-042 | exact_dist silently computed against the wrong vector, undetected by the epoch fingerprint |
+| EC-028 | Coordinator crashes after only a subset of participants applies a durable publish decision | FR-082, NFR-020 | TC-042 | New generation is stranded or active pointer exposes partial topology |
+| EC-029 | Acknowledged handoff is retried first byte-identically and then with conflicting bytes | FR-078, NFR-020 | TC-040 | Exact retry duplicates storage or conflicting retry rewrites durable data |
+| EC-030 | One canonical row/graph handoff entry exceeds the complete 8 MiB batch cap | FR-078 | TC-040 | Unbounded allocation, split-entry ambiguity, or partial mutation |
+| EC-031 | Coordinator is not an owner-roster participant | FR-078 | TC-040, TC-044 | Coordinator accidentally retains a full or partial serving index |
+| EC-032 | Retained old/new generations map the same vec_id to different local TIDs | FR-079, FR-082 | TC-042 | Cross-generation directory lookup materializes the wrong row |
+| EC-033 | Frozen row contains generated, NULL, and toasted values in one payload | FR-076, FR-078, FR-079 | TC-040, TC-050 | Payload reconstruction changes source semantics or loses NULL boundaries |
+| EC-034 | Cleanup races a crash after the durable publish decision but before active-pointer swap | FR-082, NFR-020 | TC-042 | Commit-only generation is deleted or recovery activates missing storage |
+| EC-035 | Projection requests a PostgreSQL system column | FR-078, FR-079 | TC-040 | Owner trusts caller-selected identity or exposes unsupported semantics |
+| EC-036 | Trained-codec owners receive only the codec kind but not identical codebook/model bytes | FR-078 | TC-040, TC-050 | Owner query preparation silently scores handoff codes under a different model |
+| EC-037 | Participant restarts or cleanup runs while a retained fingerprint lacks a coordinator retire decision | FR-082 | TC-042 | Participant autonomously reclaims storage still addressable by a live coordinator scan |
 | EC-001 | Empty indexes and repeated rescans | FR-030, FR-032, FR-035 | TC-004, TC-008, TC-011 | Executor may emit stale state or crash |
 | EC-002 | Duplicate vectors and duplicate heap TID overflow | FR-030, FR-036 | TC-004, TC-012 | Missing rows or corrupted duplicate chains |
 | EC-003 | Non-finite fp32 input | FR-028, FR-034 | TC-002, TC-010 | Invalid scores or backend errors |
@@ -311,7 +442,7 @@ presence alone.
 | EC-005 | Dead tuple cleanup during vacuum | FR-022, FR-033, FR-036 | TC-004, TC-009, TC-012 | Deleted rows returned or graph connectivity loss |
 | EC-006 | Product benchmark claim without controlled hardware | NFR-007, NFR-008 | TC-016 | Misleading docs or unsupported roadmap decisions |
 | EC-007 | CLI README command tree drifts from Clap tree | FR-037, NFR-009 | TC-019 | Operators run stale commands or miss supported workflows |
-| EC-008 | Long benchmark sequence loses provenance across manual shell commands | FR-038 benchmark suites, NFR-007, NFR-009 | TC-020 benchmark suites | Operators cannot audit what ran or identify missing artifacts |
+| EC-008 | Long benchmark sequence loses provenance across manual shell commands | FR-038 benchmark suites, NFR-007, NFR-009 | TC-049 | Operators cannot audit what ran or identify missing artifacts |
 | EC-009 | SPIRE stored heap TID goes stale after UPDATE/HOT movement | FR-048, FR-050, FR-053, FR-059 | TC-020 SPIRE, TC-022, TC-025 | Wrong tuple returned or candidate silently lost |
 | EC-010 | SPIRE epoch publish fails after some partition objects are durable | FR-052, FR-054, FR-059, FR-060 | TC-023, TC-025 | Active epoch may point at incompatible object versions |
 | EC-011 | Cloud profile left running unattended (forgotten EC2/EBS spend) | NFR-010 | TC-031 | Material AWS spend accumulates silently |
@@ -335,6 +466,7 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | INT-004 | CLI operator benchmark and stress workflows | PostgreSQL plus local corpus files | database/filesystem | TC-019 | Partial: docs/spec trace complete; execution run on demand |
 | INT-005 | SPIRE local and remote partition-store lifecycle | PostgreSQL 18 plus optional remote PostgreSQL nodes | database | TC-020..TC-025 | Partial: local and PostgreSQL-node v1 behavior is specified and implementation-backed; AWS/RDS evidence deferred |
 | INT-006 | Cloud harness end-to-end (provision, install, load, bench, teardown) | AWS (EC2 Graviton, EBS, S3, SSM) plus PostgreSQL 18 | cloud-infrastructure | TC-026..TC-032 | Planned: implementation in progress on `feat/cloud-test-harness` |
+| INT-007 | EC_DISTANN physical hash-sharded handoff, publication, scan, and format compatibility | Three independent PostgreSQL 18 instances plus coordinator (which may be outside the owner roster) | database | TC-040, TC-042, TC-044, TC-050 | Planned: no replicated-index fixture can satisfy this integration row |
 
 ## Coverage Gaps
 
@@ -365,6 +497,8 @@ Ecaz has one required local service integration: PostgreSQL itself.
 | GAP-023 | LUT32 SIMD closure partially evidenced | Medium | AVX2 kernels are landed, measured, and packeted (Task 102 packets 001-002); close Task 102 with Graviton 4 NEON/SVE2 hardware evidence before publishing LUT32 completion claims |
 | GAP-024 | Graviton 4 vector-length and deferred hardware cells not yet packeted | Medium | Require measured `sve`/`sve2` vector-length labels and explicit absent/deferred cells before ARM production claims |
 | GAP-025 | Task 103 Intel AVX2 lane not yet closed | Medium | Land the int8_approx32 AVX2 kernel (AC1), record the tiled_lut32 retire/deprioritize and hamming32 skip dispositions in the matrix (AC2/AC3), and validate/bench rabitq32 on Intel (AC4) before Intel completeness claims |
+| GAP-026 | EC_DISTANN currently has no implementation or packeted evidence for physical disjoint owner generations, streamed epoch handoff, commit-only publication, or frozen row-tier materialization | High | Implement the dedicated physical-hash-shard task; close TC-040/TC-042/TC-050 on a true three-instance fixture before reopening TC-044 gate measurements |
+| GAP-027 | EC_DISTANN FR-075..FR-083 currently trace directly to StR-008 without a dedicated user story | Low | Accepted for this architecture program because StR-008 and ADR-085 directly govern the milestone requirements; add a user story only if a product-facing workflow diverges from those contracts |
 
 ## Test Execution Summary
 
@@ -372,7 +506,7 @@ This checkpoint is a docs/spec cleanup. Tests were not run by default under the 
 
 | Category | Total Groups | Implemented / Evidenced | Partial | Gap |
 | --- | ---: | ---: | ---: | ---: |
-| Unit / pg_test behavior groups | 21 | 15 | 6 | 0 |
+| Unit / pg_test behavior groups | 22 | 15 | 6 | 1 planned format-compatibility group |
 | Benchmark / measurement groups | 6 | 1 | 3 | 2 |
 | Hardening / analysis groups | 1 | 1 packeted subset | 1 documented-but-unpacketed local lane set plus 1 live PG18/manual lane set | 1 |
-| Integration groups | 6 | 0 | 6 | 0 |
+| Integration groups | 7 | 0 | 6 | 1 planned physical DistANN group |

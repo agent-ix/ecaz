@@ -1,0 +1,11 @@
+SET
+SET
+SET
+CREATE TABLE
+INSERT 0 1
+DO
+[suite-result] dml_gate_latency lane=control round=2 trial=1 statements=25000 total_ms=190.604 us_per_statement=7.624
+[suite-result] dml_gate_latency lane=control round=2 trial=2 statements=25000 total_ms=169.429 us_per_statement=6.777
+[suite-result] dml_gate_latency lane=control round=2 trial=3 statements=25000 total_ms=175.402 us_per_statement=7.016
+[suite-result] dml_gate_latency lane=control round=2 trial=4 statements=25000 total_ms=173.978 us_per_statement=6.959
+[suite-result] dml_gate_round lane=control round=2 samples=4 median_us=6.988 p95_us=7.533

@@ -1,0 +1,174 @@
+{
+  "name": "task163-d8-scale-memory",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-163/005-d8-scale-memory/artifacts/candidate",
+  "description": "Post-D8 exact-SHA build memory and durable shard NOTICE evidence at 10k/50k/100k, plus a same-config 10k recall comparison against immutable packet 001's pre-D8 stitched arm. All candidate loads use build_shards=4, closure_epsilon=0.1, rabitq, seed 42, isolated prefixes, and 25ms build-backend memory sampling.",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "thresholds": [
+    {
+      "name": "10k-build-hwm",
+      "step": "load-10k-current",
+      "metric": "build_memory",
+      "field": "hwm_peak_kb",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "name": "50k-build-hwm",
+      "step": "load-50k-current",
+      "metric": "build_memory",
+      "field": "hwm_peak_kb",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "name": "100k-build-hwm",
+      "step": "load-100k-current",
+      "metric": "build_memory",
+      "field": "hwm_peak_kb",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "name": "10k-completion-high-water",
+      "step": "load-10k-current",
+      "metric": "distann_shard_build",
+      "field": "build_peak_completion_bytes",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "name": "50k-completion-high-water",
+      "step": "load-50k-current",
+      "metric": "distann_shard_build",
+      "field": "build_peak_completion_bytes",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "name": "100k-completion-high-water",
+      "step": "load-100k-current",
+      "metric": "distann_shard_build",
+      "field": "build_peak_completion_bytes",
+      "op": "gt",
+      "value": 0
+    },
+    {
+      "name": "10k-recall-ef16",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": { "top_k": "16" },
+      "field": "recall@k",
+      "op": "eq",
+      "value": 0.9950
+    },
+    {
+      "name": "10k-recall-ef32",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": { "top_k": "32" },
+      "field": "recall@k",
+      "op": "eq",
+      "value": 0.9985
+    },
+    {
+      "name": "10k-recall-ef64",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": { "top_k": "64" },
+      "field": "recall@k",
+      "op": "eq",
+      "value": 1.0
+    },
+    {
+      "name": "10k-recall-ef100",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": { "top_k": "100" },
+      "field": "recall@k",
+      "op": "eq",
+      "value": 1.0
+    },
+    {
+      "name": "10k-recall-ef200",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": { "top_k": "200" },
+      "field": "recall@k",
+      "op": "eq",
+      "value": 1.0
+    }
+  ],
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["task163", "d8", "precheck"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "ec_distann_bench",
+        "--socket-dir", "/home/peter/.pgrx", "--raw",
+        "--sql", "SELECT now() AS captured_at, version() AS postgres_version, ecaz_build_profile() AS build_profile, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem;",
+        "--log-output", "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-current",
+      "tags": ["task163", "d8", "ec_real_10k", "current", "load"],
+      "prefix": "d8_current_10k",
+      "profile": "ec_distann",
+      "corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.1"],
+      "log_file": "${artifact_dir}/load-10k.log"
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-current",
+      "tags": ["task163", "d8", "ec_real_10k", "current", "recall"],
+      "prefix": "d8_current_10k",
+      "profile": "ec_distann",
+      "k": 10,
+      "sweep": [16, 32, 64, 100, 200],
+      "log_output": "${artifact_dir}/recall-10k.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-current",
+      "tags": ["task163", "d8", "ec_real_50k", "current", "load"],
+      "prefix": "d8_current_50k",
+      "profile": "ec_distann",
+      "corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.1"],
+      "log_file": "${artifact_dir}/load-50k.log"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-current",
+      "tags": ["task163", "d8", "ec_real_100k", "current", "load"],
+      "prefix": "d8_current_100k",
+      "profile": "ec_distann",
+      "corpus_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.1"],
+      "log_file": "${artifact_dir}/load-100k.log"
+    }
+  ]
+}

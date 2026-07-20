@@ -1,0 +1,23 @@
+2026-07-09 08:25:52.484 PDT [1128082] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 08:25:52.487 PDT [1128082] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-09 08:25:52.495 PDT [1128088] LOG:  database system was shut down at 2026-07-09 08:25:50 PDT
+2026-07-09 08:25:52.499 PDT [1128082] LOG:  database system is ready to accept connections
+2026-07-09 08:25:53.206 PDT [1128108] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 08:25:54.298 PDT [1128127] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 08:25:55.575 PDT [1128219] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:25:58.341 PDT [1128341] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:25:58.974 PDT [1128376] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:25:59.326 PDT [1128396] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:25:59.329 PDT [1128397] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:25:59.652 PDT [1128414] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:26:00.612 PDT [1128469] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:26:01.317 PDT [1128505] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:26:05.385 PDT [1128553] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:26:06.467 PDT [1128580] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 08:26:08.182 PDT [1128082] LOG:  received fast shutdown request
+2026-07-09 08:26:08.186 PDT [1128082] LOG:  aborting any active transactions
+2026-07-09 08:26:08.187 PDT [1128082] LOG:  background worker "logical replication launcher" (PID 1128091) exited with exit code 1
+2026-07-09 08:26:08.187 PDT [1128086] LOG:  shutting down
+2026-07-09 08:26:08.192 PDT [1128086] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 08:26:08.390 PDT [1128086] LOG:  checkpoint complete: wrote 945 buffers (5.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.018 s, sync=0.157 s, total=0.204 s; sync files=136, longest=0.007 s, average=0.002 s; distance=17277 kB, estimate=17277 kB; lsn=0/2833A80, redo lsn=0/2833A80
+2026-07-09 08:26:08.406 PDT [1128082] LOG:  database system is shut down

@@ -35,6 +35,15 @@ relationships:
   - target: "ix://agent-ix/ecaz/FR-036"
     type: "constrains"
     cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-076"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-078"
+    type: "constrains"
+    cardinality: "1:N"
+  - target: "ix://agent-ix/ecaz/FR-082"
+    type: "constrains"
+    cardinality: "1:N"
 ---
 # NFR-016: On-Disk Format Evolution Discipline
 
@@ -194,7 +203,7 @@ format-version discriminator.
 ### NFR-016-AC-2
 
 Every persisted struct named in FR-007, FR-008, FR-013, FR-015,
-FR-022, FR-034, FR-035, FR-036, and the SPIRE storage FRs has at least
+FR-022, FR-034, FR-035, FR-036, FR-076, FR-078, FR-082, and the SPIRE storage FRs has at least
 one static size or offset assertion in `tests/size_of_assertions.rs`.
 A pull request that changes any pinned size or offset without bumping
 the format version fails CI.
@@ -242,7 +251,7 @@ behavior is not documented in its FR is in violation of NFR-016-EV-5.
 |------|-----------|-------------|
 | Upstream | StR-001 | Native compressed vector storage is meaningless if the on-disk bytes drift silently between releases. |
 | Upstream-design | ADR for on-disk forward-compatibility encoding | Selects the encoding convention for optional regions and reserved fields. To be ADR-070 or successor. |
-| Downstream | FR-007, FR-008, FR-013, FR-015, FR-022, FR-027, FR-034, FR-035, FR-036 | Every FR that describes a persisted surface is constrained by this NFR. |
+| Downstream | FR-007, FR-008, FR-013, FR-015, FR-022, FR-027, FR-034, FR-035, FR-036, FR-076, FR-078, FR-082 | Every FR that describes a persisted surface is constrained by this NFR. |
 | Coordinated | Task 37 (crash recovery + amcheck) | WAL record version tags are governed by the WAL portion of this NFR; per-record contracts live in the Task 37 FR work. |
 | Coordinated | Task 42 (on-disk format invariants) | Provides the fixture, matrix, and qemu lane infrastructure this NFR mandates. |
 

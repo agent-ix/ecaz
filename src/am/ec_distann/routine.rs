@@ -9,12 +9,16 @@ use crate::am::common::{
 };
 use crate::am::ec_diskann::DiskannScanDescView;
 
+use super::expand_error::DistannExpandError;
 use super::{
-    ambuild, cost, expand::LocalNodeExpander, head_cache, options,
+    ambuild, cost,
+    expand::LocalNodeExpander,
+    head_cache, options,
+    quote_ident,
     quantizer::{self, DistannPreparedQuery},
     scan::{
-        distann_orchestrated_search, DistannOrchestrationParams, DistannScanHit,
-        DistannSeedCandidate,
+        distann_orchestrated_search, DistannOrchestrationParams, DistannScanCounters,
+        DistannScanHit, DistannSeedCandidate,
     },
     tuple::DistannNodeTuple,
 };
@@ -77,33 +81,67 @@ fn build_ec_distann_routine() -> IndexAmRoutineBox {
 }
 
 unsafe extern "C-unwind" fn ec_distann_aminsert(
-    _index_relation: pg_sys::Relation,
-    _values: *mut pg_sys::Datum,
-    _isnull: *mut bool,
-    _heap_tid: pg_sys::ItemPointer,
+    index_relation: pg_sys::Relation,
+    values: *mut pg_sys::Datum,
+    isnull: *mut bool,
+    heap_tid: pg_sys::ItemPointer,
     _heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
     _index_unchanged: bool,
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
     pg_am_callback!({
-        pgrx::error!(
-            "ec_distann aminsert is not implemented yet: the FR-083 delta-buffer DML slice lands later in Task 162"
-        );
+        // The persisted format, not the mutable reloption, is authoritative
+        // across ALTER/REINDEX boundaries. This cached block-0 read is the
+        // correctness gate; any future relcache optimization must include
+        // invalidation and be justified by benchmark evidence.
+        let metadata = ambuild::read_metadata_from_index(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann aminsert metadata read failed: {e}"));
+        if metadata.is_distributed_control() {
+            pgrx::error!(
+                "EC_GENERATION_MISSING: ec_distann distributed-control inserts require a Published physical generation"
+            );
+        }
+        // FR-083 / ADR-085 D5 interim posture: spool to the bounded exact-scan
+        // delta buffer with same-statement visibility; drained at the next epoch
+        // build. Incremental distributed insert (M5) replaces this.
+        super::dml::delta_insert(index_relation, values, isnull, heap_tid)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann aminsert failed: {e}"));
+        // Delta rows are exact-scanned; there is no false-positive recheck.
+        false
     })
 }
 
 unsafe extern "C-unwind" fn ec_distann_ambulkdelete(
     info: *mut pg_sys::IndexVacuumInfo,
     stats: *mut pg_sys::IndexBulkDeleteResult,
-    _callback: pg_sys::IndexBulkDeleteCallback,
-    _callback_state: *mut c_void,
+    callback: pg_sys::IndexBulkDeleteCallback,
+    callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     pg_am_callback!({
-        // The D10 tombstone path arrives with the FR-083 DML slice; within
-        // a published epoch nothing is physically reclaimed regardless.
-        ec_distann_noop_vacuum_stats((*info).index, stats)
-            .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"))
+        // See aminsert: persisted metadata is authoritative. Keep this read
+        // until a measured relcache cache can prove correct invalidation.
+        let metadata = ambuild::read_metadata_from_index((*info).index)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete metadata read failed: {e}"));
+        if metadata.is_distributed_control() {
+            // The logical control root indexes zero heap tuples. DELETE/HOT-miss
+            // UPDATE may still make source tuples dead, so VACUUM must be able to
+            // maintain the heap instead of failing forever on this empty index.
+            return ec_distann_noop_vacuum_stats((*info).index, stats)
+                .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
+        }
+        // FR-083 D10 tombstone delete: flag records whose heap row is dead;
+        // nothing is physically reclaimed within a Published epoch (next epoch
+        // build drops tombstones + repairs edges).
+        let tombstoned =
+            super::dml::tombstone_dead_records((*info).index, callback, callback_state)
+                .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
+        let stats = ec_distann_noop_vacuum_stats((*info).index, stats)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
+        if !stats.is_null() {
+            (*stats).tuples_removed += tombstoned as f64;
+        }
+        stats
     })
 }
 
@@ -166,6 +204,13 @@ unsafe extern "C-unwind" fn ec_distann_ambeginscan(
     norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
     pg_am_callback!({
+        let metadata = ambuild::read_metadata_from_index(index_relation)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann scan metadata read failed: {e}"));
+        if metadata.is_distributed_control() {
+            pgrx::error!(
+                "EC_DISTANN_CONTROL_SCAN: a distributed-control index is CustomScan-only and cannot be scanned through amgettuple"
+            );
+        }
         let scan = pg_sys::RelationGetIndexScan(index_relation, nkeys, norderbys);
         if scan.is_null() {
             pgrx::error!("ec_distann failed to allocate scan descriptor");
@@ -243,6 +288,277 @@ unsafe extern "C-unwind" fn ec_distann_amrescan(
     })
 }
 
+/// Hits from the shared FR-080/FR-081 search core, plus whether the active
+/// roster is multi-node (so callers can materialize remote-owned hits their own
+/// way — see [`collect_distann_hits`]).
+pub(crate) struct DistannHitCollection {
+    pub(crate) hits: Vec<DistannScanHit>,
+    pub(crate) counters: DistannScanCounters,
+    pub(crate) multi_node: bool,
+}
+
+/// Shared FR-080/FR-081 search core: head-index descent → seeds → (single- or
+/// multi-node) expander → orchestration → delta-buffer merge. Used by both the
+/// AM `amgettuple` scan and the multi-node CustomScan.
+///
+/// Local hits come back with `heap_tid` resolved (the `LocalNodeExpander` reads
+/// the co-placed record); remote hits carry `heap_tid = INVALID` (not in the
+/// FR-079 wire contract). Callers materialize remote hits differently:
+/// - `amgettuple` runs on the co-located/loopback substrate where the
+///   coordinator holds the full directory — pass `materialize_remote_locally =
+///   true` and this resolves each remote hit's heap TID from that directory.
+/// - the CustomScan ships row payloads from the owning node — pass `false` and
+///   remote hits stay `INVALID` for the scan node to fill from owner payloads.
+///
+/// # Safety
+/// `handle`/`index_relation` must be the live index relation; `heap_relation`,
+/// `snapshot`, and `slot` must be valid for the co-placed exact-distance rerank
+/// for the duration of the call.
+#[allow(clippy::too_many_arguments)]
+pub(crate) unsafe fn collect_distann_hits(
+    handle: ptr::NonNull<pg_sys::RelationData>,
+    index_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
+    snapshot: pg_sys::Snapshot,
+    slot: *mut pg_sys::TupleTableSlot,
+    source_attnum: i32,
+    raw_query: &[f32],
+    effective_top_k: usize,
+    materialize_remote_locally: bool,
+) -> DistannHitCollection {
+    let metadata = ambuild::read_metadata_from_index_handle(handle)
+        .unwrap_or_else(|e| pgrx::error!("ec_distann scan metadata read failed: {e}"));
+    if metadata.is_distributed_control() {
+        pgrx::error!(
+            "EC_GENERATION_MISSING: ec_distann distributed-control index has no Published physical generation"
+        );
+    }
+    if metadata.dimensions == 0 || metadata.node_count == 0 {
+        // Empty index -> zero rows (FR-081); nothing to deepen either.
+        return DistannHitCollection {
+            hits: Vec::new(),
+            counters: DistannScanCounters::default(),
+            multi_node: false,
+        };
+    }
+    if raw_query.len() != usize::from(metadata.dimensions) {
+        pgrx::error!(
+            "ec_distann scan query dimension mismatch: index dim {}, query dim {}",
+            metadata.dimensions,
+            raw_query.len()
+        );
+    }
+
+    let index_oid = (*index_relation).rd_id;
+    let entry = head_cache::cached_index_entry(index_oid.into(), handle, &metadata)
+        .unwrap_or_else(|e| pgrx::error!("ec_distann scan head-cache setup failed: {e}"));
+    let prepared_query =
+        DistannPreparedQuery::prepare(&metadata, entry.flat_codebooks.as_deref(), raw_query)
+            .unwrap_or_else(|e| pgrx::error!("ec_distann scan query preparation failed: {e}"));
+    let code_len = quantizer::metadata_code_len(&metadata)
+        .unwrap_or_else(|e| pgrx::error!("ec_distann scan code length failed: {e}"));
+
+    let beam_width = options::current_beam_width();
+    let hop_rounds = options::current_hop_rounds();
+    let top_k = effective_top_k;
+
+    // FR-080 head-index descent: exact -ip over the sample vectors,
+    // zero remote calls; the frontier seeds the hop rounds.
+    let head_list_size = (beam_width * 2).max(32).min(entry.head_vectors.len());
+    let head_result = crate::am::greedy_search(
+        &entry.head_graph,
+        entry.head_entry,
+        head_list_size,
+        |node: u32| {
+            -crate::am::ec_diskann::source_inner_product(
+                raw_query,
+                &entry.head_vectors[node as usize],
+            )
+        },
+    );
+    let seeds: Vec<DistannSeedCandidate> = head_result
+        .frontier
+        .iter()
+        .map(|candidate| DistannSeedCandidate {
+            vec_id: entry.head_vec_ids[candidate.node as usize],
+            dist: candidate.distance,
+        })
+        .collect();
+
+    let params = DistannOrchestrationParams {
+        beam_width,
+        hop_rounds,
+        top_k,
+        debug_fail_hop_round: options::debug_fail_hop_round(),
+    };
+    // FR-078/FR-081: with a multi-node roster the scan drives the remote
+    // expander (group by owner → pooled transport → endpoint → reassemble);
+    // the empty/single-node roster stays fully local. The FR-081 loop is
+    // identical either way.
+    //
+    // FR-082-AC-2: the whole attempt runs under `run_scan_attempt_with_restart`,
+    // so a retriable epoch mismatch from any hop discards all partial state and
+    // restarts once from the head seeds under a refreshed epoch view (the closure
+    // re-reads the active epoch each attempt); a second mismatch fails the query.
+    let (mut hits, counters, multi_node) = super::scan::run_scan_attempt_with_restart(|| {
+        // FR-082: consume the epoch from the published manifest (re-read per
+        // attempt so a concurrent republish is picked up on restart). The
+        // fingerprint below then attests to the published epoch, not the GUC.
+        let scan_metadata = ambuild::read_metadata_from_index_handle(handle)
+            .map_err(DistannExpandError::Internal)?;
+        let scan_epoch = super::roster::scan_epoch(&scan_metadata);
+        let placement = super::roster::placement_directory_for_epoch(scan_epoch)
+            .map_err(DistannExpandError::Internal)?;
+        let multi_node = placement.node_count() > 1;
+        // Rebuilt per attempt: orchestration consumes the expander, and a
+        // restart must not carry stale beam/visited state.
+        let local_expander = LocalNodeExpander {
+            index_handle: handle,
+            directory: &entry.directory,
+            graph_degree_r: metadata.graph_degree_r,
+            code_len,
+            prepared_query: &prepared_query,
+            heap_relation,
+            snapshot,
+            slot,
+            source_attnum,
+            raw_query,
+            pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
+        };
+        let (hits, counters) = if multi_node {
+            let local_index = placement
+                .nodes
+                .iter()
+                .position(|node| node.is_local)
+                .ok_or_else(|| {
+                    DistannExpandError::Internal(
+                        "ec_distann scan: no local node in the roster".to_owned(),
+                    )
+                })?;
+            // Identity carries the published scan epoch (placement.epoch) plus
+            // this index's build-time metadata — the fresh scan_metadata so a
+            // republished epoch/state is reflected in the fingerprint.
+            let identity = super::roster::local_epoch_identity(&placement, &scan_metadata);
+            let fingerprint = super::epoch::compute_epoch_fingerprint(
+                &identity,
+                super::epoch::DISTANN_EPOCH_FINGERPRINT_V1,
+            )
+            .to_vec();
+            let roster_spec = super::roster::current_roster_spec();
+            let epoch = scan_epoch;
+            let index_name = distann_index_relname(index_relation);
+            let mut remote = super::remote_transport::RemoteNodeExpander {
+                local: local_expander,
+                placement: &placement,
+                local_index,
+                index_regclass: &index_name,
+                epoch_fingerprint: &fingerprint,
+                roster_spec: &roster_spec,
+                epoch,
+            };
+            distann_orchestrated_search(&seeds, &mut remote, params)?
+        } else {
+            let mut local = local_expander;
+            distann_orchestrated_search(&seeds, &mut local, params)?
+        };
+        Ok((hits, counters, multi_node))
+    })
+    .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
+
+    // Loopback-only remote-hit materialization. Remote responses carry
+    // heap_tid = INVALID (not in the FR-079 wire contract); on the co-located
+    // substrate the coordinator holds the full vec_id → record directory, so a
+    // remote hit's heap row is locally resolvable — the `amgettuple` path uses
+    // this. A real multi-node deployment (the CustomScan) ships row payloads
+    // from the owning node instead and passes `materialize_remote_locally=false`,
+    // leaving remote hits INVALID for the scan node to fill from owner payloads.
+    if multi_node && materialize_remote_locally {
+        for hit in &mut hits {
+            if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
+                continue;
+            }
+            let record_tid = super::reader::directory_lookup(&entry.directory, hit.vec_id)
+                .unwrap_or_else(|| {
+                    pgrx::error!(
+                        "ec_distann scan: remote hit vec_id {:#018x} is not locally \
+                         resolvable (use the multi-node CustomScan for real row shipping)",
+                        hit.vec_id
+                    )
+                });
+            let raw = super::reader::read_raw_tuple_bytes_from_relation(
+                handle,
+                record_tid,
+                "ec_distann remote-hit materialization",
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+            hit.heap_tid = crate::storage::page::ItemPointer::decode(
+                &raw[super::tuple::DISTANN_NODE_HEAP_TID_OFFSET
+                    ..super::tuple::DISTANN_NODE_HEAP_TID_OFFSET + 6],
+            )
+            .unwrap_or_else(|e| pgrx::error!("{e}"));
+        }
+    }
+
+    // FR-083 / ADR-085 D5: merge the interim delta buffer (bounded, exact-
+    // scanned) into results so inserted rows are visible same-statement.
+    // Delta rows carry exact distances, so they rank exactly against the
+    // graph hits.
+    //
+    // Reviewer 002-P3 — dedup invariant: a graph vec_id and a delta vec_id
+    // are distinct by construction. A vec_id is derived from the record's
+    // identity (local mode: from the heap TID; include mode: from the
+    // identity column), and a delta entry is a *new* heap row with its own
+    // TID/identity, so it never collides with a built graph node. An UPDATE
+    // is delete-then-insert: the old node is a *different* vec_id (already
+    // tombstoned, hence absent from `hits`) and the new row has a new vec_id.
+    // So `seen.insert` here only guards against a duplicated delta entry, not
+    // a graph/delta collision — there is nothing to distance-compare. If
+    // vec_id derivation ever changes to allow collisions, this must become a
+    // closer-of-the-two merge; `test_ec_distann_delta_insert_visible_same_statement`
+    // pins the current new-vec_id-per-insert behavior.
+    if metadata.delta_buffer_head != crate::storage::page::ItemPointer::INVALID {
+        let deltas = super::reader::read_delta_chain(
+            handle,
+            metadata.delta_buffer_head,
+            usize::from(metadata.dimensions),
+        )
+        .unwrap_or_else(|e| pgrx::error!("ec_distann delta-buffer scan failed: {e}"));
+        if !deltas.is_empty() {
+            let mut seen: std::collections::HashSet<u64> =
+                hits.iter().map(|hit| hit.vec_id).collect();
+            for entry in deltas {
+                if !seen.insert(entry.vec_id) {
+                    continue;
+                }
+                let exact_dist =
+                    -crate::am::ec_diskann::source_inner_product(raw_query, &entry.vector);
+                hits.push(DistannScanHit {
+                    vec_id: entry.vec_id,
+                    heap_tid: entry.heap_tid,
+                    exact_dist,
+                });
+            }
+            // NB (011-04-P1): a deterministic total-order tie-break
+            // `(exact_dist, vec_id)` here WOULD make the served prefix invariant
+            // across iterative deepening, but it is COUPLED to the FR-081-AC-4
+            // early-exit soundness (164-P1): with a total order,
+            // `test_ec_distann_limit_beyond_top_k_deepens_correctly` reveals that
+            // a shallow-bar early-exit can declare a proven prefix that omits a
+            // true top-k member, so serving it before deepening is unsound. The
+            // tie-break must land WITH the early-exit fix, not before it; until
+            // then this stays a bare distance sort (matching the single-node AM
+            // and multi-node CustomScan, so their results remain identical).
+            hits.sort_unstable_by(|left, right| left.exact_dist.total_cmp(&right.exact_dist));
+        }
+    }
+
+    DistannHitCollection {
+        hits,
+        counters,
+        multi_node,
+    }
+}
+
 /// Run (or re-run, for iterative deepening) the FR-081 orchestration into
 /// the scan opaque. `effective_top_k` is the D9 exit bar for this attempt.
 unsafe fn execute_distann_scan(
@@ -258,58 +574,6 @@ unsafe fn execute_distann_scan(
         let index_relation = (*scan).indexRelation;
         let handle = ptr::NonNull::new(index_relation)
             .unwrap_or_else(|| pgrx::error!("ec_distann scan received a null index relation"));
-        let metadata = ambuild::read_metadata_from_index_handle(handle)
-            .unwrap_or_else(|e| pgrx::error!("ec_distann scan metadata read failed: {e}"));
-        if metadata.dimensions == 0 || metadata.node_count == 0 {
-            // Empty index -> zero rows (FR-081); nothing to deepen either.
-            opaque.result_buf = Vec::new();
-            opaque.proven_k = effective_top_k;
-            opaque.early_exit = false;
-            return;
-        }
-        if raw_query.len() != usize::from(metadata.dimensions) {
-            pgrx::error!(
-                "ec_distann scan query dimension mismatch: index dim {}, query dim {}",
-                metadata.dimensions,
-                raw_query.len()
-            );
-        }
-
-        let index_oid = (*index_relation).rd_id;
-        let entry = head_cache::cached_index_entry(index_oid.into(), handle, &metadata)
-            .unwrap_or_else(|e| pgrx::error!("ec_distann scan head-cache setup failed: {e}"));
-        let prepared_query =
-            DistannPreparedQuery::prepare(&metadata, entry.flat_codebooks.as_deref(), raw_query)
-                .unwrap_or_else(|e| pgrx::error!("ec_distann scan query preparation failed: {e}"));
-        let code_len = quantizer::metadata_code_len(&metadata)
-            .unwrap_or_else(|e| pgrx::error!("ec_distann scan code length failed: {e}"));
-
-        let beam_width = options::current_beam_width();
-        let hop_rounds = options::current_hop_rounds();
-        let top_k = effective_top_k;
-
-        // FR-080 head-index descent: exact -ip over the sample vectors,
-        // zero remote calls; the frontier seeds the hop rounds.
-        let head_list_size = (beam_width * 2).max(32).min(entry.head_vectors.len());
-        let head_result = crate::am::greedy_search(
-            &entry.head_graph,
-            entry.head_entry,
-            head_list_size,
-            |node: u32| {
-                -crate::am::ec_diskann::source_inner_product(
-                    raw_query,
-                    &entry.head_vectors[node as usize],
-                )
-            },
-        );
-        let seeds: Vec<DistannSeedCandidate> = head_result
-            .frontier
-            .iter()
-            .map(|candidate| DistannSeedCandidate {
-                vec_id: entry.head_vec_ids[candidate.node as usize],
-                dist: candidate.distance,
-            })
-            .collect();
 
         let scan_desc = DiskannScanDescView::from_raw(scan, "ec_distann scan");
         let heap_relation_state = scan_desc
@@ -325,47 +589,36 @@ unsafe fn execute_distann_scan(
         let slot = crate::storage::slot_guard::TupleTableSlotGuard::single_for_heap(heap_relation)
             .unwrap_or_else(|| pgrx::error!("ec_distann scan heap slot setup failed"));
 
-        let mut expander = LocalNodeExpander {
-            index_handle: handle,
-            directory: &entry.directory,
-            graph_degree_r: metadata.graph_degree_r,
-            code_len,
-            prepared_query: &prepared_query,
+        let collection = collect_distann_hits(
+            handle,
+            index_relation,
             heap_relation,
-            snapshot: snapshot_state.as_ptr(),
-            slot: slot.as_ptr(),
+            snapshot_state.as_ptr(),
+            slot.as_ptr(),
             source_attnum,
             raw_query,
-            pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
-        };
-        let (hits, counters) = distann_orchestrated_search(
-            &seeds,
-            &mut expander,
-            DistannOrchestrationParams {
-                beam_width,
-                hop_rounds,
-                top_k,
-            },
-        )
-        .unwrap_or_else(|e| pgrx::error!("ec_distann scan orchestration failed: {e}"));
+            effective_top_k,
+            true,
+        );
 
         if options::scan_profile_notice_enabled() {
+            let counters = &collection.counters;
             pgrx::notice!(
                 "ec_distann_scan_profile beam_width={} hop_rounds={} top_k={} rounds_executed={} records_expanded={} neighbors_code_scored={} early_exit={} beam_exhausted={} result_count={}",
-                beam_width,
-                hop_rounds,
-                top_k,
+                options::current_beam_width(),
+                options::current_hop_rounds(),
+                effective_top_k,
                 counters.rounds_executed,
                 counters.records_expanded,
                 counters.neighbors_code_scored,
                 counters.early_exit,
                 counters.beam_exhausted,
-                hits.len(),
+                collection.hits.len(),
             );
         }
-        opaque.result_buf = hits;
-        opaque.proven_k = top_k;
-        opaque.early_exit = counters.early_exit;
+        opaque.early_exit = collection.counters.early_exit;
+        opaque.proven_k = effective_top_k;
+        opaque.result_buf = collection.hits;
     }
 }
 
@@ -422,7 +675,31 @@ unsafe extern "C-unwind" fn ec_distann_amendscan(scan: pg_sys::IndexScanDesc) {
     })
 }
 
-fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
+/// The index's **schema-qualified, quoted** name for the multi-node transport's
+/// `$1::text::regclass` resolution. Reviewer 005-P2: an unqualified relname only
+/// resolves when the remote session shares the coordinator's search_path;
+/// qualifying with the namespace (and quoting both idents) makes remote
+/// resolution robust to differing search_paths and mixed-case/reserved names.
+pub(super) unsafe fn distann_index_relname(index_relation: pg_sys::Relation) -> String {
+    let rd_rel = (*index_relation).rd_rel;
+    let relname = std::ffi::CStr::from_ptr((*rd_rel).relname.data.as_ptr())
+        .to_string_lossy()
+        .into_owned();
+    // get_namespace_name palloc's a C string for the namespace oid.
+    let nsp_ptr = pg_sys::get_namespace_name((*rd_rel).relnamespace);
+    if nsp_ptr.is_null() {
+        return quote_ident(&relname);
+    }
+    let namespace = std::ffi::CStr::from_ptr(nsp_ptr)
+        .to_string_lossy()
+        .into_owned();
+    pg_sys::pfree(nsp_ptr.cast());
+    format!("{}.{}", quote_ident(&namespace), quote_ident(&relname))
+}
+
+/// Minimal SQL identifier quoting (double quotes, embedded `"` doubled) so a
+/// schema/relation with mixed case or reserved words resolves via regclass.
+pub(crate) fn indexed_ecvector_attnum(index_relation: pg_sys::Relation) -> Result<i32, String> {
     // SAFETY: The index relation is live; BuildIndexInfo returns palloc'd
     // metadata that remains valid until it is released at the end of this block.
     unsafe {

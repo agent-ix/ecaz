@@ -1,0 +1,31 @@
+Task 179 packet 017 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: 3c24daf4109281cda32d37112ab2972f2924908e
+
+Command:
+  cargo check --lib --no-default-features --features 'pg18 pg_test'
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx test pg18 test_distann_build_lock_recovery_guards
+Key result:
+  test tests::pg_test_distann_build_lock_recovery_guards ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2493 filtered out
+
+Command:
+  cargo pgrx test pg18 test_distann_multi_epoch_publish
+Key result:
+  test tests::pg_test_distann_multi_epoch_publish ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2493 filtered out
+
+Notes:
+- The two PG18 tests completed before the final commit was created from the
+  validated working tree.
+- A final cargo check and strict clippy completed after the replay lock-release
+  self-review adjustment.

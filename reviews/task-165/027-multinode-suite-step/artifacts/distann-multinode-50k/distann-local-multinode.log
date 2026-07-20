@@ -1,0 +1,12 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz-task165
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] nodes=3 base_port=39710 rows=50000 dim=16
+[distann-multicluster] node 1 loaded + indexed
+[distann-multicluster] node 2 loaded + indexed
+[distann-multicluster] node 3 loaded + indexed
+[distann-multicluster] RECALL_RESULT n_queries=100 identical=100 mismatched_ids=0
+[distann-multicluster] suite_recall_gate single=0.0800 multi=0.0800 delta=0.0000 pass=true
+[distann-multicluster] qual_correctness single_n=10 multi_n=10 mismatch=0 pass=true
+[distann-multicluster] fr082_published_epoch base_ok=true coord_only_publish_errored=true all_publish_swap_ok=true pass=true
+[distann-multicluster] summary written to reviews/task-165/027-multinode-suite-step/artifacts/distann-multinode-50k/distann-multinode-summary.log
+[distann-multicluster] GATE PASS (recall-only): multi-node distinct-recall identical to single-node

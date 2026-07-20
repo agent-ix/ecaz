@@ -1,0 +1,24 @@
+Task 179 packet 021 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: b75f73a069f708fb674c1e4d5e98296c39aae8f0
+
+Command:
+  cargo check --lib --no-default-features --features 'pg18 pg_test'
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx test pg18 test_distann_multi_epoch_publish
+Key result:
+  test tests::pg_test_distann_multi_epoch_publish ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2494 filtered out
+
+The fixture verifies the first recovery leaves the successor decision Activated
+and its predecessor disposition Pending. A later recovery transaction verifies
+the predecessor generation and disposition become Retired and the covering
+successor decision becomes Applied.
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]

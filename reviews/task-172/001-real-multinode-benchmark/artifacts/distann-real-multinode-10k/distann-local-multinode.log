@@ -1,0 +1,16 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz-task165
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] nodes=3 base_port=39710 rows=2000 dim=16
+[distann-multicluster] node 1 loaded + indexed
+[distann-multicluster] node 2 loaded + indexed
+[distann-multicluster] node 3 loaded + indexed
+[distann-multicluster] RECALL_RESULT n_queries=200 identical=200 mismatched_ids=0
+[distann-multicluster] suite_recall_gate single=0.9990 multi=0.9990 delta=0.0000 pass=true
+[distann-multicluster] qual_correctness single_n=10 multi_n=10 mismatch=0 pass=true
+[distann-multicluster] fr082_published_epoch base_ok=true coord_only_publish_errored=true all_publish_swap_ok=true pass=true
+[distann-multicluster] storage_node node=1 index_bytes=115687424 heap_bytes=282214400 rows=10000 dim=1536
+[distann-multicluster] storage_node node=2 index_bytes=115687424 heap_bytes=282214400 rows=10000 dim=1536
+[distann-multicluster] storage_node node=3 index_bytes=115687424 heap_bytes=282214400 rows=10000 dim=1536
+[distann-multicluster] storage_summation nodes=3 coord_index_bytes=115687424 cluster_index_bytes=347062272 cluster_heap_bytes=846643200 corpus_rows=10000 dim=1536 raw_vector_bytes=61440000 cluster_index_space_amplification=5.6488
+[distann-multicluster] summary written to reviews/task-172/001-real-multinode-benchmark/artifacts/distann-real-multinode-10k/distann-multinode-summary.log
+[distann-multicluster] GATE PASS (recall-only): multi-node distinct-recall identical to single-node

@@ -1,0 +1,12 @@
+# Slice B.1 row-payload endpoint — test evidence
+head SHA: a4ecd5e7018b2a1f1ad892344ed2b3650fb3d4de
+command: cargo pgrx test pg18 --no-default-features --features pg18 distann
+date: 2026-07-08
+
+## clippy
+    Checking tokio-rustls v0.26.4
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 19.41s
+
+## pg_test result
+test tests::pg_test_ec_distann_materialize_row_payloads_ships_binary_columns ... ok
+test result: ok. 103 passed; 0 failed; 0 ignored; 0 measured; 2267 filtered out; finished in 70.15s

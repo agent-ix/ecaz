@@ -1,0 +1,48 @@
+{
+  "name": "task172-distann-real-multinode",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-172/001-real-multinode-benchmark/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "distann-real-multinode-10k",
+      "tags": ["task172", "ec_distann", "multinode", "ec_real_10k"],
+      "nodes": 3,
+      "base_port": 39710,
+      "graph_degree": 32,
+      "queries": 200,
+      "top_k": 10,
+      "skip_fault_drills": true,
+      "corpus_prefix": "ec_real_10k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "distann-real-multinode-50k",
+      "tags": ["task172", "ec_distann", "multinode", "ec_real_50k"],
+      "nodes": 3,
+      "base_port": 39710,
+      "graph_degree": 32,
+      "queries": 200,
+      "top_k": 10,
+      "skip_fault_drills": true,
+      "corpus_prefix": "ec_real_50k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "distann-real-multinode-100k",
+      "tags": ["task172", "ec_distann", "multinode", "ec_real_100k"],
+      "nodes": 3,
+      "base_port": 39710,
+      "graph_degree": 32,
+      "queries": 200,
+      "top_k": 10,
+      "skip_fault_drills": true,
+      "corpus_prefix": "ec_real_100k"
+    }
+  ]
+}

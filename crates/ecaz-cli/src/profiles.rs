@@ -230,6 +230,7 @@ pub const EC_DISTANN: IndexProfile = IndexProfile {
         "alpha",
         "neighbor_code_format",
         "closure_epsilon",
+        "build_shards",
         "head_index_cap",
         "source_identity",
     ],

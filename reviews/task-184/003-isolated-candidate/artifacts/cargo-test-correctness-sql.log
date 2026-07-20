@@ -1,0 +1,13 @@
+Script started on 2026-07-19 11:41:00-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 38s
+     Running unittests src/main.rs (target/debug/deps/ecaz-7a300cc40de2e0f7)
+
+running 1 test
+test commands::dev::distann_multicluster::tests::materialization_semantic_sql_projects_null_and_varlena_evidence ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 447 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-19 11:42:38-07:00 [COMMAND_EXIT_CODE="0"]

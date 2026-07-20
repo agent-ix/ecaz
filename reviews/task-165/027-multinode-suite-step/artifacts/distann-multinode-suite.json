@@ -1,0 +1,29 @@
+{
+  "name": "task165-distann-multinode-50k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-165/027-multinode-suite-step/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "distann-multinode-50k",
+      "tags": [
+        "task165",
+        "ec_distann",
+        "multinode",
+        "ec_real_50k"
+      ],
+      "nodes": 3,
+      "rows": 50000,
+      "dim": 16,
+      "graph_degree": 32,
+      "queries": 100,
+      "top_k": 10,
+      "skip_fault_drills": true
+    }
+  ]
+}

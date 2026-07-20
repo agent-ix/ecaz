@@ -1,0 +1,127 @@
+{
+  "suite": "task179-physical-publish-fault-windows",
+  "schema_version": 1,
+  "config": "reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-suite.json",
+  "config_sha256": "3e3931565fda83b763a2c7a92b56c9c32bee07b2899507691e8692f6ad876ec3",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783941709842,
+  "runner_git_commit": "e6e03dfc21350275c22fa5113222606ab0d37a43",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "physical-publish-faults",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run",
+        "--run-dir",
+        "target/task179-physical-publish-faults",
+        "--log-file",
+        "reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--base-port",
+        "40480",
+        "--rows",
+        "90",
+        "--dim",
+        "4",
+        "--graph-degree",
+        "8",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "1",
+        "--top-k",
+        "10"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "physical",
+        "publish",
+        "fault-window"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run/distann-local-multinode.log",
+        "reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783941709842,
+      "finished_at_unix_ms": 1783941717562,
+      "duration_ms": 7718,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "topology-gate",
+      "step": "physical-publish-faults",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "participant-down-partial",
+      "step": "physical-publish-faults",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_publish_fault_participant_down_partial"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "post-ack-pre-pointer",
+      "step": "physical-publish-faults",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_publish_fault_post_ack_pre_pointer"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "idempotent-recovery",
+      "step": "physical-publish-faults",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_publish_fault_idempotent_recovery"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    }
+  ]
+}

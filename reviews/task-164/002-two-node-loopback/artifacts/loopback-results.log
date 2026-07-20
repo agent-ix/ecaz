@@ -1,0 +1,11 @@
+# M2 two-node loopback results (SHA 4d5093545, release .so, committed ec_distann_m2)
+# host: Intel desktop PG18 port 28818; loopback = both roster nodes -> same instance, per-call local_node_id set
+
+## TC-040/041 result identity + latency, real 10k/dim-1536 (BW=4 H=64 k=10):
+ base_rows | two_rows | base_minus_two | two_minus_base | ranks_identical 
+-----------+----------+----------------+----------------+-----------------
+        12 |       12 |              0 |              0 | t
+psql:/home/peter/dev/ecaz-task164/reviews/task-164/002-two-node-loopback/tc040-rtt-10k.sql:54: NOTICE:  REAL10K single_ms=0.687 two_ms=3.495 transport_delta_ms=2.808 transport_share_pct=80.3
+
+## Toy corpus (400 nodes dim-4) identity + RTT:
+single_node_mean_ms=0.095 two_node_mean_ms=2.997 transport_delta_ms=2.902 transport_share_pct=96.8 (compute-starved)

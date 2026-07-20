@@ -1,0 +1,38 @@
+Script started on 2026-07-10 23:45:52-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 29s
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-7ab498d6db7f9603)
+
+running 13 tests
+test distann_codec_artifact_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_build_spec_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_generation_descriptor_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_manifest_subrecord_fixtures_decode_and_reject_swap ... ok
+test distann_handoff_entry_and_batch_v1_fixtures_decode_independently ... ok
+test distann_metadata_v4_and_control_v5_fixtures_decode_independently ... ok
+test distann_metadata_versions_reject_byte_swap ... ok
+test distann_epoch_manifest_v2_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_owner_stream_hash_state_v1_fixture_is_independent_and_fixed ... ok
+test distann_physical_graph_record_v1_fixture_decodes_and_rejects_swap ... ok
+test distann_ready_receipt_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_row_schema_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_source_snapshot_v1_fixture_decodes_independently_and_rejects_swap ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 44.90s
+     Running tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-587d69ce82a7583a)
+
+running 2 tests
+test upgrade_matrix_has_unique_entries_and_existing_fixtures ... ok
+test upgrade_matrix_names_current_writable_formats ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-10 23:48:04-07:00 [COMMAND_EXIT_CODE="0"]

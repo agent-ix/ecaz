@@ -1,0 +1,6 @@
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json
+[suite:task172-physical-multinode-10k-50k-100k] physical-10k already succeeded in resume manifest
+[suite:task172-physical-multinode-10k-50k-100k] physical-50k already succeeded in resume manifest
+[suite:task172-physical-multinode-10k-50k-100k] physical-100k already succeeded in resume manifest
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/results.jsonl
+[suite:task172-physical-multinode-10k-50k-100k] wrote reviews/task-172/002-physical-multinode-benchmark/artifacts/suite-manifest.json

@@ -1,0 +1,5 @@
+physical_fixture owners=1 coordinator_outside_roster=false source_rows=30
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=30 rows=30 non_owned=0 orphans=0 graph_bytes=16384 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=30 rows=30 non_owned=0 orphans=0 graph_bytes=16384 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=1 source_rows=30
+[distann-multicluster] physical_topology_gate pass=true owners=1 remote_verified=0 source_rows=30

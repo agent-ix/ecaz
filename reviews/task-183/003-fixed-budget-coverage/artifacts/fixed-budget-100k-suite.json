@@ -1,0 +1,57 @@
+{
+  "name": "task183-fixed-budget-coverage-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-183/003-fixed-budget-coverage/artifacts/run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode", "name": "control-100k",
+      "tags": ["task183", "phase2", "training_landmarks", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/control-100k", "run_dir": "target/task183-fixed-budget-coverage",
+      "nodes": 3, "base_port": 41420, "graph_degree": 32, "head_index_cap": 4096,
+      "head_policy": "training_landmarks",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4, "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "control", "seed_strategy": "head_sample_exact", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_100k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    },
+    {
+      "kind": "distann-local-multinode", "name": "region-balanced-100k",
+      "tags": ["task183", "phase2", "training_region_balanced", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/region-balanced-100k", "run_dir": "target/task183-fixed-budget-coverage",
+      "nodes": 3, "base_port": 41420, "graph_degree": 32, "head_index_cap": 4096,
+      "head_policy": "training_region_balanced",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4, "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "region-balanced", "seed_strategy": "head_sample_exact", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_100k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    },
+    {
+      "kind": "distann-local-multinode", "name": "query-facility-100k",
+      "tags": ["task183", "phase2", "training_query_facility", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/query-facility-100k", "run_dir": "target/task183-fixed-budget-coverage",
+      "nodes": 3, "base_port": 41420, "graph_degree": 32, "head_index_cap": 4096,
+      "head_policy": "training_query_facility",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4, "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "query-facility", "seed_strategy": "head_sample_exact", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_100k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}

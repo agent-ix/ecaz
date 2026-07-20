@@ -1,0 +1,24 @@
+Task 179 packet 027 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: b29366f27d9663cbce3e1468688d954541d5493f
+
+Command:
+  cargo check --lib --no-default-features --features 'pg18 pg_test'
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx test pg18 test_distann_three_owner_physical_handoff
+Key result:
+  test tests::pg_test_distann_three_owner_physical_handoff ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2495 filtered out
+
+The fixture verifies T4a leaves the successor Activated. A later recovery marks
+all three predecessor participant generations Retired, persists every
+disposition acknowledgement, advances the covering decision to Applied, and
+keeps the successor active.

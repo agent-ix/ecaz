@@ -1,0 +1,10 @@
+Script started on 2026-07-17 13:42:00-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on build directory
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 16s
+
+Script done on 2026-07-17 13:43:12-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,347 @@
+{
+  "suite": "task179-candidate-default-10k-50k-100k",
+  "schema_version": 1,
+  "config": "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default-suite.json",
+  "config_sha256": "909499dc95a4a01c0e6ffc47c3c786b9e2594c774e0e2bf904e1e01f527431eb",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784012725208,
+  "runner_git_commit": "45f9f0f980d9548083aa965659df4de7089b6e18",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "candidate-default-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/10k",
+        "--run-dir",
+        "target/task179-complete-candidate-default",
+        "--log-file",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40630",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "complete-findings",
+        "candidate-default",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/10k/distann-local-multinode.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/10k/distann-multinode-summary.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/10k/physical-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/10k/physical-latency.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/10k/single-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/10k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784012725209,
+      "finished_at_unix_ms": 1784012896049,
+      "duration_ms": 182373,
+      "exit_code": 0
+    },
+    {
+      "name": "candidate-default-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/50k",
+        "--run-dir",
+        "target/task179-complete-candidate-default",
+        "--log-file",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40630",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "complete-findings",
+        "candidate-default",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/50k/distann-local-multinode.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/50k/distann-multinode-summary.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/50k/physical-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/50k/physical-latency.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/50k/single-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/50k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784012896049,
+      "finished_at_unix_ms": 1784013753674,
+      "duration_ms": 914892,
+      "exit_code": 0
+    },
+    {
+      "name": "candidate-default-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/100k",
+        "--run-dir",
+        "target/task179-complete-candidate-default",
+        "--log-file",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "30",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40630",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "complete-findings",
+        "candidate-default",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/100k/distann-local-multinode.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/100k/distann-multinode-summary.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/100k/physical-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/100k/physical-latency.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/100k/single-recall.log",
+        "reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-default/100k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784013753674,
+      "finished_at_unix_ms": 1784015570664,
+      "duration_ms": 1941595,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "candidate-default-10k-topology",
+      "step": "candidate-default-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "candidate-default-10k-recall",
+      "step": "candidate-default-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall 1 Gte 0.9 -> true"
+    },
+    {
+      "name": "candidate-default-10k-remote",
+      "step": "candidate-default-10k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    },
+    {
+      "name": "candidate-default-50k-topology",
+      "step": "candidate-default-50k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "candidate-default-50k-recall",
+      "step": "candidate-default-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.98,
+      "passed": true,
+      "message": "recall 0.98 Gte 0.9 -> true"
+    },
+    {
+      "name": "candidate-default-50k-remote",
+      "step": "candidate-default-50k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    },
+    {
+      "name": "candidate-default-100k-topology",
+      "step": "candidate-default-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "candidate-default-100k-recall",
+      "step": "candidate-default-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.95,
+      "passed": true,
+      "message": "recall 0.95 Gte 0.9 -> true"
+    },
+    {
+      "name": "candidate-default-100k-remote",
+      "step": "candidate-default-100k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "beam_width": "4",
+        "hop_rounds": "100"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    }
+  ]
+}

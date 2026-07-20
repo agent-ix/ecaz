@@ -76,7 +76,12 @@ pub const RABITQ_SUPPORTED_BITS: [u8; 4] = [1, 2, 4, 8];
 /// Rotated unit-vector coordinates have std ≈ `1/√D`; scaling by
 /// `√D` puts them roughly in `N(0, 1)`. Clipping at 2σ covers
 /// ~95% of the mass and keeps quantization levels well-utilized.
-const RABITQ_DEFAULT_QUANT_CLIP: f32 = 2.0;
+///
+/// This value and its exact IEEE-754 bits are part of EC-DistANN codec-artifact
+/// v1's seeded derivation. Changing it requires bumping
+/// `DISTANN_CODEC_ARTIFACT_VERSION` and regenerating its golden score vectors.
+pub(crate) const RABITQ_DEFAULT_QUANT_CLIP: f32 = 2.0;
+const _: () = assert!(RABITQ_DEFAULT_QUANT_CLIP.to_bits() == 0x4000_0000);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct SeededSrhtCacheKey {

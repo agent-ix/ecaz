@@ -1,0 +1,17 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=40490 rows=90 dim=4 head_index_cap=4096
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=33 rows=33 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=24 rows=24 non_owned=0 orphans=0 graph_bytes=16384 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=33 rows=33 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=24 rows=24 non_owned=0 orphans=0 graph_bytes=16384 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=90
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true expected_source_id=093f65e0-80a2-45f8-876b-1c5722a46aa2 materialized_source_id=093f65e0-80a2-45f8-876b-1c5722a46aa2
+[distann-multicluster] physical_remote_owner node=3 custom_scan=true pass=true expected_source_id=03afdbd6-6e79-49b1-85f8-597834fa83a4 materialized_source_id=03afdbd6-6e79-49b1-85f8-597834fa83a4
+[distann-multicluster] physical_drop_extension_cleanup pass=true node=1 ready_before=1 published_before=1 hidden_before=6 hidden_after=0 extension_after=0 post_drop_dml_rows=1
+[distann-multicluster] physical_drop_extension_cleanup pass=true node=2 ready_before=1 published_before=1 hidden_before=6 hidden_after=0 extension_after=0 post_drop_dml_rows=1
+[distann-multicluster] physical_drop_extension_cleanup pass=true node=3 ready_before=1 published_before=1 hidden_before=6 hidden_after=0 extension_after=0 post_drop_dml_rows=1
+[distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=2 source_rows=90
+[distann-multicluster] summary written to /home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/distann-multinode-summary.log

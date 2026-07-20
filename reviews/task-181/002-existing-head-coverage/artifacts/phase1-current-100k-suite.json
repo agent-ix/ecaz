@@ -1,0 +1,44 @@
+{
+  "name": "task181-phase1-current-head-coverage-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-181/002-existing-head-coverage/artifacts/phase1-current-100k",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [
+    { "name": "topology", "step": "phase1-current-100k", "metric": "drill_outcome", "filters": { "drill": "physical_topology_gate" }, "field": "pass_numeric", "op": "eq", "value": 1 },
+    { "name": "provenance", "step": "phase1-current-100k", "metric": "physical_benchmark_provenance", "field": "unanimous_numeric", "op": "eq", "value": 1 },
+    { "name": "landmark-provenance", "step": "phase1-current-100k", "metric": "physical_benchmark_landmark", "filters": { "head_policy": "current_sample" }, "field": "evaluation_queries", "op": "eq", "value": 200 },
+    { "name": "production-row", "step": "phase1-current-100k", "metric": "physical_benchmark_recall", "filters": { "variant": "production", "arm": "physical" }, "field": "distinct_recall", "op": "gte", "value": 0.8 },
+    { "name": "exact-row", "step": "phase1-current-100k", "metric": "physical_benchmark_recall", "filters": { "variant": "exact-membership", "arm": "physical" }, "field": "distinct_recall", "op": "gte", "value": 0.8 },
+    { "name": "owner-row", "step": "phase1-current-100k", "metric": "physical_benchmark_recall", "filters": { "variant": "owner-oracle", "arm": "physical" }, "field": "distinct_recall", "op": "gte", "value": 0.8 }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "phase1-current-100k",
+      "tags": ["task181", "phase1", "current_sample", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/100k",
+      "run_dir": "target/task181-phase1-current-100k",
+      "nodes": 3,
+      "base_port": 41020,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "head_policy": "current_sample",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 10,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "production", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq" },
+        { "name": "exact-membership", "seed_strategy": "head_sample_exact", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq" },
+        { "name": "owner-oracle", "seed_strategy": "owner_scan", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}

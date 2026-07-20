@@ -1,0 +1,64 @@
+{
+  "name": "task179-physical-publish-fault-windows",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [
+    {
+      "name": "topology-gate",
+      "step": "physical-publish-faults",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "participant-down-partial",
+      "step": "physical-publish-faults",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_publish_fault_participant_down_partial" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "post-ack-pre-pointer",
+      "step": "physical-publish-faults",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_publish_fault_post_ack_pre_pointer" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "idempotent-recovery",
+      "step": "physical-publish-faults",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_publish_fault_idempotent_recovery" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "physical-publish-faults",
+      "tags": ["task179", "physical", "publish", "fault-window"],
+      "artifact_dir": "reviews/task-179/053-physical-publish-fault-windows/artifacts/fault-run",
+      "nodes": 3,
+      "base_port": 40480,
+      "rows": 90,
+      "dim": 4,
+      "graph_degree": 8,
+      "head_index_cap": 4096,
+      "queries": 1,
+      "top_k": 10,
+      "run_dir": "target/task179-physical-publish-faults"
+    }
+  ]
+}

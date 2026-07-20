@@ -1,0 +1,16 @@
+Script started on 2026-07-13 22:39:30-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 2m 19s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-89f327b3d2932c09)
+
+running 1 test
+test am::ec_distann::lifecycle_state::tests::lifecycle_transition_authority_rejects_terminal_and_skipped_edges ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2513 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-13 22:41:40-07:00 [COMMAND_EXIT_CODE="0"]

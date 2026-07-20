@@ -81,6 +81,11 @@ impl ProdQuantizer {
         assert!(dim > 0, "dimension must be positive");
         assert!((2..=8).contains(&bits), "bits must be within 2..=8");
 
+        // EC-DistANN TurboQuant codec-artifact v1 persists only dim/bits/seed,
+        // so transform rounding, sign derivation, MSE-bit selection, Lloyd-Max
+        // iteration count, and codebook generation below are frozen derivation
+        // semantics for that artifact version. Drift is guarded by DistANN's
+        // fixed code/score golden vectors and requires an artifact-version bump.
         let transform_dim = rotation::effective_transform_dim(dim);
         let qjl_active = qjl_enabled(dim, bits);
         let codebook_iterations = if cfg!(miri) { 128 } else { 20_000 };

@@ -1,0 +1,23 @@
+Script started on 2026-07-11 01:09:01-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 27.04s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-9ac09d4715e441d2)
+
+running 12 tests
+test am::ec_distann::handoff_wire::tests::empty_owner_stream_round_trip_does_not_advance_state ... ok
+test am::ec_distann::handoff_router::tests::router_retains_exact_unacknowledged_batch_after_failure ... ok
+test am::ec_distann::handoff_wire::tests::handoff_batch_round_trip_verifies_digest_and_order ... ok
+test am::ec_distann::handoff_wire::tests::owner_stream_hash_initial_state_golden_is_frozen ... ok
+test am::ec_distann::handoff_wire::tests::handoff_preflight_rejects_shape_nulls_order_and_oversize ... ok
+test am::ec_distann::handoff_wire::tests::owner_stream_digest_is_stable_and_order_sensitive ... ok
+test am::ec_distann::handoff_wire::tests::handoff_entry_round_trip_preserves_graph_and_row_bytes ... ok
+test am::ec_distann::handoff_wire::tests::owner_stream_hash_restore_rejects_malformed_state_and_digest ... ok
+test am::ec_distann::handoff_router::tests::router_bounds_batches_routes_owners_and_sends_empty_sequence_zero ... ok
+test am::ec_distann::handoff_wire::tests::owner_stream_hash_resume_matches_one_shot_at_every_entry_partition ... ok
+test am::ec_distann::handoff_wire::tests::owner_stream_hash_resume_matches_one_shot_at_every_byte_boundary ... ok
+test am::ec_distann::handoff_router::tests::router_enforces_real_multi_owner_capacity_minus_exact_and_plus_one ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 2435 filtered out; finished in 2.80s
+
+
+Script done on 2026-07-11 01:09:30-07:00 [COMMAND_EXIT_CODE="0"]

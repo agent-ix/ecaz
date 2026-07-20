@@ -132,6 +132,28 @@ pub(crate) fn read_head_samples_from_relation(
     Ok(samples)
 }
 
+/// Walk the FR-083 D5 interim delta buffer from the live relation, newest
+/// first (the chain is prepended at insert). Bounded by
+/// `DISTANN_DELTA_BUFFER_CAP`; a longer chain is a structural fault.
+pub(crate) fn read_delta_chain(
+    handle: RelationHandle,
+    head_tid: ItemPointer,
+    dimensions: usize,
+) -> Result<Vec<super::tuple::DistannDeltaTuple>, String> {
+    let mut entries = Vec::new();
+    let mut cursor = head_tid;
+    while cursor != ItemPointer::INVALID {
+        let raw = read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann delta entry")?;
+        let tuple = super::tuple::DistannDeltaTuple::decode(&raw, dimensions)?;
+        cursor = tuple.next_tid;
+        entries.push(tuple);
+        if entries.len() > 1 << 20 {
+            return Err("ec_distann delta chain is unbounded (structural fault)".to_owned());
+        }
+    }
+    Ok(entries)
+}
+
 /// Walk the persisted GroupedPq codebook chain from the live relation into
 /// the flat centroid array (mirrors ec_diskann's chain reader shape).
 pub(crate) fn read_grouped_codebooks_from_relation(

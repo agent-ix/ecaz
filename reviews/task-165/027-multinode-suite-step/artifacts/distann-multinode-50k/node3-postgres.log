@@ -1,0 +1,19 @@
+2026-07-09 12:31:37.075 PDT [1216469] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-09 12:31:37.080 PDT [1216469] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39712"
+2026-07-09 12:31:37.093 PDT [1216475] LOG:  database system was shut down at 2026-07-09 12:31:36 PDT
+2026-07-09 12:31:37.099 PDT [1216469] LOG:  database system is ready to accept connections
+2026-07-09 12:31:52.333 PDT [1216517] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 12:32:09.202 PDT [1216560] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-09 12:32:20.909 PDT [1216695] ERROR:  [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-09 12:32:20.909 PDT [1216695] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-09 12:32:20.909 PDT [1216695] ERROR:  [EC_EPOCH_MISMATCH] ec_distann_expand_nodes epoch fingerprint mismatch: caller epoch differs from this node's active epoch
+2026-07-09 12:32:20.909 PDT [1216695] STATEMENT:  SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], $4::bigint[], $5)
+2026-07-09 12:32:20.910 PDT [1216695] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 12:32:21.781 PDT [1216705] LOG:  could not receive data from client: Connection reset by peer
+2026-07-09 12:32:22.605 PDT [1216469] LOG:  received fast shutdown request
+2026-07-09 12:32:22.609 PDT [1216469] LOG:  aborting any active transactions
+2026-07-09 12:32:22.610 PDT [1216469] LOG:  background worker "logical replication launcher" (PID 1216478) exited with exit code 1
+2026-07-09 12:32:22.610 PDT [1216473] LOG:  shutting down
+2026-07-09 12:32:22.613 PDT [1216473] LOG:  checkpoint starting: shutdown immediate
+2026-07-09 12:32:22.926 PDT [1216473] LOG:  checkpoint complete: wrote 12905 buffers (78.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 6 recycled; write=0.094 s, sync=0.171 s, total=0.316 s; sync files=133, longest=0.027 s, average=0.002 s; distance=98910 kB, estimate=98910 kB; lsn=0/77EBF08, redo lsn=0/77EBF08
+2026-07-09 12:32:22.957 PDT [1216469] LOG:  database system is shut down

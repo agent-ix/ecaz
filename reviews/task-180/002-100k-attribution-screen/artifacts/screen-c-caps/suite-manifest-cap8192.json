@@ -1,0 +1,140 @@
+{
+  "suite": "task180-100k-bounded-head-attribution-screen-c-caps",
+  "schema_version": 1,
+  "config": "reviews/task-180/002-100k-attribution-screen/artifacts/screen-c-caps-suite.json",
+  "config_sha256": "ee6c9927fe6673a262a28d90d42494aeab27d4eae54acebd9d188070dbe265e0",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784098586222,
+  "runner_git_commit": "29c5920308e9d8fb477c6297922c9d67b086eb9a",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "screen-c-cap-8192-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-180/002-100k-attribution-screen/artifacts/screen-c-caps/cap-8192-100k",
+        "--run-dir",
+        "target/task180-screen-c-cap8192",
+        "--log-file",
+        "reviews/task-180/002-100k-attribution-screen/artifacts/screen-c-caps/cap-8192-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40940",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "8192",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "exact-sample-cap8192-s32:head_sample_exact:32:32:rabitq",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task180",
+        "phase1",
+        "screen-c",
+        "cap-8192",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-180/002-100k-attribution-screen/artifacts/screen-c-caps/cap-8192-100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784098586222,
+      "finished_at_unix_ms": 1784100579203,
+      "duration_ms": 1998979,
+      "exit_code": 0
+    },
+    {
+      "name": "screen-c-cap-16384-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task180",
+        "phase1",
+        "screen-c",
+        "cap-16384",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-180/002-100k-attribution-screen/artifacts/screen-c-caps/cap-16384-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "cap-8192-topology",
+      "step": "screen-c-cap-8192-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap-8192-provenance",
+      "step": "screen-c-cap-8192-100k",
+      "metric": "physical_benchmark_provenance",
+      "field": "unanimous_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "unanimous_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap-8192-row",
+      "step": "screen-c-cap-8192-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "exact-sample-cap8192-s32"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.8,
+      "actual": 0.925,
+      "passed": true,
+      "message": "distinct_recall 0.925 Gte 0.8 -> true"
+    }
+  ]
+}

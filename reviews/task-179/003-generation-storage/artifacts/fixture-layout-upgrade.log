@@ -1,0 +1,107 @@
+Script started on 2026-07-10 17:18:58-07:00 [TERM="dumb" TTY="/dev/pts/20" COLUMNS="80" LINES="24"]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 27s
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-f16dfa7f816b9a1c)
+
+running 65 tests
+test diskann_metadata_v3_fixture_decodes ... ok
+test diskann_metadata_v3_byteswapped_version_is_rejected ... ok
+test diskann_vamana_node_tuple_v3_byteswapped_neighbor_count_is_rejected ... ok
+test diskann_vamana_codebook_tuple_v3_fixture_decodes ... ok
+test diskann_vamana_overflow_tuple_v3_byteswapped_count_is_rejected ... ok
+test diskann_vamana_node_tuple_v3_fixture_decodes ... ok
+test distann_build_spec_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_codec_artifact_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test diskann_vamana_overflow_tuple_v3_fixture_decodes ... ok
+test distann_generation_descriptor_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_manifest_subrecord_fixtures_decode_and_reject_swap ... ok
+test distann_metadata_v4_and_control_v5_fixtures_decode_independently ... ok
+test distann_handoff_entry_and_batch_v1_fixtures_decode_independently ... ok
+test distann_epoch_manifest_v2_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_physical_graph_record_v1_fixture_decodes_and_rejects_swap ... ok
+test distann_metadata_versions_reject_byte_swap ... ok
+test distann_ready_receipt_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_source_snapshot_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_row_schema_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test hnsw_grouped_codebook_tuple_v3_fixture_decodes ... ok
+test hnsw_element_tuple_v3_fixture_decodes ... ok
+test hnsw_grouped_hot_tuple_v2_fixture_decodes ... ok
+test hnsw_metadata_v3_byteswapped_version_is_rejected ... ok
+test hnsw_metadata_v3_fixture_decodes ... ok
+test hnsw_metadata_v4_rabitq_byteswapped_version_is_rejected ... ok
+test hnsw_metadata_v4_rabitq_fixture_decodes ... ok
+test hnsw_neighbor_tuple_v3_fixture_decodes ... ok
+test hnsw_rerank_tuple_v3_fixture_decodes ... ok
+test hnsw_turbo_hot_tuple_v3_fixture_decodes ... ok
+test ivf_centroid_tuple_v1_byteswapped_dimensions_is_rejected ... ok
+test ivf_centroid_tuple_v1_fixture_decodes ... ok
+test ivf_list_directory_tuple_v1_fixture_decodes ... ok
+test ivf_metadata_byteswapped_version_is_rejected ... ok
+test ivf_metadata_v3_is_rejected_by_version ... ok
+test ivf_metadata_v4_is_rejected_by_version ... ok
+test ivf_metadata_v5_is_rejected_by_version ... ok
+test ivf_metadata_v6_is_rejected_by_version ... ok
+test ivf_metadata_v7_is_rejected_by_version ... ok
+test ivf_metadata_v8_is_rejected_by_version ... ok
+test ivf_metadata_v9_fixture_decodes ... ok
+test ivf_posting_tuple_v1_fixture_decodes ... ok
+test ivf_pq_codebook_tuple_v1_fixture_decodes ... ok
+test spire_delta_partition_object_v1_fixture_decodes ... ok
+test spire_epoch_manifest_v1_byteswapped_version_is_rejected ... ok
+test spire_epoch_manifest_v1_fixture_decodes ... ok
+test spire_leaf_partition_object_v1_byteswapped_version_is_rejected ... ok
+test spire_leaf_partition_object_v1_fixture_decodes ... ok
+test spire_leaf_v2_meta_byteswapped_version_is_rejected ... ok
+test spire_leaf_v2_meta_fixture_decodes ... ok
+test spire_leaf_v2_segment_fixture_decodes ... ok
+test spire_local_store_config_v1_byteswapped_version_is_rejected ... ok
+test spire_local_store_config_v1_fixture_decodes ... ok
+test spire_manifest_entry_v1_byteswapped_version_is_rejected ... ok
+test spire_manifest_entry_v1_fixture_decodes ... ok
+test spire_object_manifest_v1_byteswapped_version_is_rejected ... ok
+test spire_object_manifest_v1_fixture_decodes ... ok
+test spire_partition_object_v2_chain_meta_byteswapped_version_is_rejected ... ok
+test spire_partition_object_v2_chain_meta_fixture_decodes ... ok
+test spire_partition_object_v2_chain_segment_fixture_decodes ... ok
+test spire_placement_directory_v1_byteswapped_version_is_rejected ... ok
+test spire_placement_directory_v1_fixture_decodes ... ok
+test spire_placement_entry_v1_byteswapped_version_is_rejected ... ok
+test spire_placement_entry_v1_fixture_decodes ... ok
+test spire_routing_root_partition_object_v1_fixture_decodes ... ok
+test spire_top_graph_partition_object_v1_fixture_decodes ... ok
+
+test result: ok. 65 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-9a4061abca2edc54)
+
+running 13 tests
+test compression_ratio_1536_4bit ... ok
+test element_tuple_encoded_len_1536_4bit ... ok
+test heaptid_inline_capacity ... ok
+test item_pointer_struct_size ... ok
+test item_pointer_wire_size ... ok
+test mse_code_len_1536_4bit ... ok
+test page_header_size ... ok
+test payload_len_1536_dim_2bit ... ok
+test payload_len_1536_dim_3bit ... ok
+test payload_len_1536_dim_4bit ... ok
+test payload_len_1536_dim_6bit ... ok
+test payload_len_1536_dim_8bit ... ok
+test qjl_code_len_1536 ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-2f1c72ec51d03982)
+
+running 2 tests
+test upgrade_matrix_names_current_writable_formats ... ok
+test upgrade_matrix_has_unique_entries_and_existing_fixtures ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-10 17:20:25-07:00 [COMMAND_EXIT_CODE="0"]

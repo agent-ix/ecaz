@@ -1,0 +1,5 @@
+# M3 slice 1 tombstone-delete evidence (SHA c06dcdb10)
+# cmd: cargo pgrx test pg18 --no-default-features --features pg18 delete_tombstones
+
+test tests::pg_test_ec_distann_delete_tombstones_record ... ok
+clippy: 0 warnings

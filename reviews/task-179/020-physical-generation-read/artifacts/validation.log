@@ -1,0 +1,19 @@
+Task 179 packet 020 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: 21fd1a6f1e0a56a95b976a6f72ff99c56ba17c4b
+
+Command:
+  cargo pgrx test pg18 test_distann_multi_epoch_publish
+Key result:
+  test tests::pg_test_distann_multi_epoch_publish ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2494 filtered out
+
+The test asserts EXPLAIN contains EcDistannDistributedScan for the v5 control and
+the Published physical search returns source id
+11111111-1111-4111-8111-111111111111 for query [1,0,0,0]. The same run also
+retains packet 018 crash-window and two-epoch activation coverage.
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]

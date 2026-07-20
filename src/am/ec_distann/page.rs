@@ -7,9 +7,31 @@
 
 use crate::storage::page::ItemPointer;
 
-/// ec_distann on-disk format version. Bump on any layout change (NFR-016:
-/// rebuild, no migration).
-pub const INDEX_FORMAT_V1_DISTANN: u16 = 1;
+use super::canonical_wire::is_rfc4122_v4_uuid;
+
+/// Legacy single-node ec_distann on-disk format version. Bump on any layout
+/// change (NFR-016: rebuild, no migration). v2 (Task 164) appends `content_digest`, binding the
+/// build-time record/vector tier into the FR-082 epoch fingerprint so two
+/// graphs with identical shape metadata but different content never collide.
+/// v3 (reviewer 002-P2) appends `delta_count`, so the interim delta-buffer cap
+/// check is O(1) instead of deserializing the whole buffer on every insert.
+/// v4 (Task 165 FR-082) appends the epoch-lifecycle triple (`epoch_state`,
+/// `active_epoch`, `in_flight_count`) so Building→Published→Retired lifecycle
+/// state and the retention in-flight gate persist across restart.
+pub const INDEX_FORMAT_V1_DISTANN: u16 = 4;
+
+/// Task 179's opt-in logical control format. The v4 legacy encoder remains the
+/// default and byte-for-byte writable while `distributed_control=false`; v5
+/// appends a never-reused logical-index UUID and gives the existing flags byte
+/// an explicit distributed-control meaning.
+pub const INDEX_FORMAT_V5_DISTANN_CONTROL: u16 = 5;
+
+/// FR-082 epoch lifecycle states (persisted in `epoch_state`). A build lands
+/// `Published` (the build IS the publish in the single-index model); a republish
+/// swaps the active epoch; retirement gates storage reclaim on in-flight zero.
+pub const DISTANN_EPOCH_STATE_BUILDING: u8 = 0;
+pub const DISTANN_EPOCH_STATE_PUBLISHED: u8 = 1;
+pub const DISTANN_EPOCH_STATE_RETIRED: u8 = 2;
 
 /// Neighbor-code codec kinds persisted in the metadata page. Mirrors the
 /// `neighbor_code_format` reloption (ADR-085 D7; default pinned to RaBitQ
@@ -18,7 +40,9 @@ pub const DISTANN_NEIGHBOR_CODEC_GROUPED_PQ: u8 = 1;
 pub const DISTANN_NEIGHBOR_CODEC_RABITQ: u8 = 2;
 pub const DISTANN_NEIGHBOR_CODEC_TURBOQUANT: u8 = 3;
 
-pub const DISTANN_METADATA_BYTES: usize = 72;
+pub const DISTANN_METADATA_BYTES: usize = 97;
+pub const DISTANN_CONTROL_METADATA_BYTES: usize = 113;
+pub const DISTANN_METADATA_FLAG_DISTRIBUTED_CONTROL: u8 = 0x01;
 
 pub const DISTANN_METADATA_FORMAT_VERSION_OFFSET: usize = 0;
 pub const DISTANN_METADATA_ENTRY_POINT_OFFSET: usize = 2;
@@ -38,6 +62,17 @@ pub const DISTANN_METADATA_CODEC_SUBVECTOR_COUNT_OFFSET: usize = 56;
 pub const DISTANN_METADATA_CODEC_SUBVECTOR_DIM_OFFSET: usize = 58;
 pub const DISTANN_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET: usize = 60;
 pub const DISTANN_METADATA_DIRECTORY_HEAD_OFFSET: usize = 66;
+/// FR-082 build-time content digest (Task 164): binds the sorted vec_id set,
+/// source vectors (co-placed tier), and adjacency into the epoch fingerprint.
+pub const DISTANN_METADATA_CONTENT_DIGEST_OFFSET: usize = 72;
+/// FR-083 interim delta-buffer entry count (reviewer 002-P2): kept in metadata
+/// so `delta_insert`'s cap check is O(1). Zero on an empty/just-built index.
+pub const DISTANN_METADATA_DELTA_COUNT_OFFSET: usize = 80;
+/// FR-082 epoch lifecycle triple (v4).
+pub const DISTANN_METADATA_EPOCH_STATE_OFFSET: usize = 84;
+pub const DISTANN_METADATA_ACTIVE_EPOCH_OFFSET: usize = 85;
+pub const DISTANN_METADATA_IN_FLIGHT_COUNT_OFFSET: usize = 93;
+pub const DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET: usize = 97;
 
 /// Fixed-size metadata record stored on block 0.
 #[derive(Debug, Clone, PartialEq)]
@@ -78,6 +113,28 @@ pub struct DistannMetadataPage {
     /// Head of the sorted vec_id -> record-TID directory chain (FR-078's
     /// per-node resolution surface; single-node in M0).
     pub directory_head: ItemPointer,
+    /// FR-082 build-time content digest over the sorted vec_id set, the
+    /// co-placed source vectors, and the stitched adjacency (Task 164). Zero on
+    /// an empty index; set at flush. Bound into the epoch fingerprint so two
+    /// graphs with identical shape metadata but different content never share a
+    /// fingerprint.
+    pub content_digest: u64,
+    /// FR-083 interim delta-buffer entry count (reviewer 002-P2). Kept in
+    /// metadata so an insert's cap check does not deserialize the buffer; reset
+    /// to 0 by an epoch build (REINDEX) or a delta fold that drains the buffer.
+    pub delta_count: u32,
+    /// FR-082 epoch lifecycle state (one of `DISTANN_EPOCH_STATE_*`).
+    pub epoch_state: u8,
+    /// FR-082 active epoch number for this published graph.
+    pub active_epoch: u64,
+    /// FR-082 retention gate: count of scans in-flight against this epoch. A
+    /// retire waits for this to reach zero; a wedged count (crashed coordinator)
+    /// is cleared only by the operator force-retire override.
+    pub in_flight_count: u32,
+    /// Task 179 logical identity. All zero in legacy v4; a non-zero RFC 4122
+    /// UUID in the v5 distributed-control format. PostgreSQL relation OIDs are
+    /// never used as a cross-node generation identity.
+    pub logical_index_uuid: [u8; 16],
 }
 
 impl DistannMetadataPage {
@@ -111,11 +168,70 @@ impl DistannMetadataPage {
             codec_subvector_dim: 0,
             grouped_codebook_head: ItemPointer::INVALID,
             directory_head: ItemPointer::INVALID,
+            content_digest: 0,
+            delta_count: 0,
+            // A freshly built index is immediately queryable: the build is the
+            // publish in the single-index model (FR-082). ambuild stamps the
+            // active epoch after the graph lands.
+            epoch_state: DISTANN_EPOCH_STATE_PUBLISHED,
+            active_epoch: 1,
+            in_flight_count: 0,
+            logical_index_uuid: [0; 16],
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn distributed_control(
+        graph_degree_r: u16,
+        build_list_size_l: u16,
+        alpha: f32,
+        seed: u64,
+        neighbor_codec_kind: u8,
+        head_index_cap: u32,
+        closure_epsilon: f32,
+        logical_index_uuid: [u8; 16],
+    ) -> Self {
+        assert!(
+            is_rfc4122_v4_uuid(&logical_index_uuid),
+            "distributed-control logical index UUID must be RFC 4122 version 4"
+        );
+        let mut metadata = Self::empty(
+            graph_degree_r,
+            build_list_size_l,
+            alpha,
+            0,
+            seed,
+            neighbor_codec_kind,
+            head_index_cap,
+            closure_epsilon,
+        );
+        metadata.format_version = INDEX_FORMAT_V5_DISTANN_CONTROL;
+        metadata.flags = DISTANN_METADATA_FLAG_DISTRIBUTED_CONTROL;
+        metadata.epoch_state = DISTANN_EPOCH_STATE_BUILDING;
+        metadata.active_epoch = 0;
+        metadata.logical_index_uuid = logical_index_uuid;
+        metadata
+    }
+
+    pub fn is_distributed_control(&self) -> bool {
+        self.format_version == INDEX_FORMAT_V5_DISTANN_CONTROL
+            && self.flags & DISTANN_METADATA_FLAG_DISTRIBUTED_CONTROL != 0
+    }
+
+    pub fn encoded_len_for_version(format_version: u16) -> Result<usize, String> {
+        match format_version {
+            INDEX_FORMAT_V1_DISTANN => Ok(DISTANN_METADATA_BYTES),
+            INDEX_FORMAT_V5_DISTANN_CONTROL => Ok(DISTANN_CONTROL_METADATA_BYTES),
+            other => Err(format!(
+                "invalid distann metadata format version: got {other}, expected {INDEX_FORMAT_V1_DISTANN} or {INDEX_FORMAT_V5_DISTANN_CONTROL}"
+            )),
         }
     }
 
     pub fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(DISTANN_METADATA_BYTES);
+        let encoded_len = Self::encoded_len_for_version(self.format_version)
+            .expect("ec_distann metadata encoder must use a supported version");
+        let mut out = Vec::with_capacity(encoded_len);
         out.extend_from_slice(&self.format_version.to_le_bytes());
         self.entry_point.encode_into(&mut out);
         out.extend_from_slice(&self.graph_degree_r.to_le_bytes());
@@ -134,23 +250,32 @@ impl DistannMetadataPage {
         out.extend_from_slice(&self.codec_subvector_dim.to_le_bytes());
         self.grouped_codebook_head.encode_into(&mut out);
         self.directory_head.encode_into(&mut out);
-        debug_assert_eq!(out.len(), DISTANN_METADATA_BYTES);
+        out.extend_from_slice(&self.content_digest.to_le_bytes());
+        out.extend_from_slice(&self.delta_count.to_le_bytes());
+        out.push(self.epoch_state);
+        out.extend_from_slice(&self.active_epoch.to_le_bytes());
+        out.extend_from_slice(&self.in_flight_count.to_le_bytes());
+        if self.format_version == INDEX_FORMAT_V5_DISTANN_CONTROL {
+            out.extend_from_slice(&self.logical_index_uuid);
+        }
+        debug_assert_eq!(out.len(), encoded_len);
         out
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
-        if input.len() != DISTANN_METADATA_BYTES {
+        if !matches!(input.len(), DISTANN_METADATA_BYTES | DISTANN_CONTROL_METADATA_BYTES) {
             return Err(format!(
-                "distann metadata length mismatch: got {}, expected {DISTANN_METADATA_BYTES}",
+                "distann metadata length mismatch: got {}, expected {DISTANN_METADATA_BYTES} or {DISTANN_CONTROL_METADATA_BYTES}",
                 input.len()
             ));
         }
-
         let format_version =
             u16::from_le_bytes(input[0..2].try_into().expect("format version bytes"));
-        if format_version != INDEX_FORMAT_V1_DISTANN {
+        let expected_len = Self::encoded_len_for_version(format_version)?;
+        if input.len() != expected_len {
             return Err(format!(
-                "invalid distann metadata format version: got {format_version}, expected {INDEX_FORMAT_V1_DISTANN}"
+                "distann metadata length mismatch: got {}, expected {expected_len} for format {format_version}",
+                input.len(),
             ));
         }
 
@@ -166,7 +291,24 @@ impl DistannMetadataPage {
             ));
         }
 
-        Ok(Self {
+        let flags = input[DISTANN_METADATA_FLAGS_OFFSET];
+        match format_version {
+            INDEX_FORMAT_V1_DISTANN if flags != 0 => {
+                return Err(format!(
+                    "invalid legacy distann metadata flags: got {flags:#04x}, expected zero"
+                ));
+            }
+            INDEX_FORMAT_V5_DISTANN_CONTROL
+                if flags != DISTANN_METADATA_FLAG_DISTRIBUTED_CONTROL =>
+            {
+                return Err(format!(
+                    "invalid distann control metadata flags: got {flags:#04x}, expected {DISTANN_METADATA_FLAG_DISTRIBUTED_CONTROL:#04x}"
+                ));
+            }
+            _ => {}
+        }
+
+        let metadata = Self {
             format_version,
             entry_point: ItemPointer::decode(&input[2..8])?,
             graph_degree_r: u16::from_le_bytes(
@@ -179,7 +321,7 @@ impl DistannMetadataPage {
             dimensions: u16::from_le_bytes(input[16..18].try_into().expect("dimensions bytes")),
             seed: u64::from_le_bytes(input[18..26].try_into().expect("seed bytes")),
             neighbor_codec_kind,
-            flags: input[DISTANN_METADATA_FLAGS_OFFSET],
+            flags,
             head_index_cap: u32::from_le_bytes(
                 input[28..32].try_into().expect("head_index_cap bytes"),
             ),
@@ -197,17 +339,80 @@ impl DistannMetadataPage {
             ),
             grouped_codebook_head: ItemPointer::decode(&input[60..66])?,
             directory_head: ItemPointer::decode(&input[66..72])?,
-        })
+            content_digest: u64::from_le_bytes(
+                input[72..80].try_into().expect("content_digest bytes"),
+            ),
+            delta_count: u32::from_le_bytes(
+                input[80..84].try_into().expect("delta_count bytes"),
+            ),
+            epoch_state: input[DISTANN_METADATA_EPOCH_STATE_OFFSET],
+            active_epoch: u64::from_le_bytes(
+                input[85..93].try_into().expect("active_epoch bytes"),
+            ),
+            in_flight_count: u32::from_le_bytes(
+                input[93..97].try_into().expect("in_flight_count bytes"),
+            ),
+            logical_index_uuid: if format_version == INDEX_FORMAT_V5_DISTANN_CONTROL {
+                input[DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET..DISTANN_CONTROL_METADATA_BYTES]
+                    .try_into()
+                    .expect("logical index UUID bytes")
+            } else {
+                [0; 16]
+            },
+        };
+        if !matches!(
+            metadata.epoch_state,
+            DISTANN_EPOCH_STATE_BUILDING
+                | DISTANN_EPOCH_STATE_PUBLISHED
+                | DISTANN_EPOCH_STATE_RETIRED
+        ) {
+            return Err(format!(
+                "invalid distann metadata epoch state: got {}",
+                metadata.epoch_state
+            ));
+        }
+        if metadata.is_distributed_control()
+            && (!is_rfc4122_v4_uuid(&metadata.logical_index_uuid)
+                || metadata.entry_point != ItemPointer::INVALID
+                || metadata.dimensions != 0
+                || metadata.node_count != 0
+                || metadata.head_sample_head != ItemPointer::INVALID
+                || metadata.delta_buffer_head != ItemPointer::INVALID
+                || metadata.codec_subvector_count != 0
+                || metadata.codec_subvector_dim != 0
+                || metadata.grouped_codebook_head != ItemPointer::INVALID
+                || metadata.directory_head != ItemPointer::INVALID
+                || metadata.content_digest != 0
+                || metadata.delta_count != 0
+                || metadata.epoch_state != DISTANN_EPOCH_STATE_BUILDING
+                || metadata.active_epoch != 0
+                || metadata.in_flight_count != 0)
+        {
+            return Err(
+                "invalid distann control metadata: logical control contains local graph/generation state"
+                    .to_owned(),
+            );
+        }
+        Ok(metadata)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        DistannMetadataPage, DISTANN_METADATA_BYTES, DISTANN_NEIGHBOR_CODEC_GROUPED_PQ,
-        DISTANN_NEIGHBOR_CODEC_RABITQ,
+        DistannMetadataPage, DISTANN_CONTROL_METADATA_BYTES,
+        DISTANN_METADATA_BYTES, DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET,
+        DISTANN_NEIGHBOR_CODEC_GROUPED_PQ, DISTANN_NEIGHBOR_CODEC_RABITQ,
+        INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
     };
     use crate::storage::page::ItemPointer;
+
+    fn control_uuid() -> [u8; 16] {
+        let mut uuid = [0xA5; 16];
+        uuid[6] = 0x45;
+        uuid[8] = 0x85;
+        uuid
+    }
 
     fn sample() -> DistannMetadataPage {
         let mut metadata = DistannMetadataPage::empty(
@@ -235,6 +440,8 @@ mod tests {
             block_number: 43,
             offset_number: 2,
         };
+        metadata.content_digest = 0x0123_4567_89AB_CDEF;
+        metadata.delta_count = 7;
         metadata
     }
 
@@ -277,5 +484,91 @@ mod tests {
             DISTANN_NEIGHBOR_CODEC_GROUPED_PQ,
             DISTANN_NEIGHBOR_CODEC_RABITQ
         );
+    }
+
+    #[test]
+    fn legacy_v4_encoder_remains_fixed_at_97_bytes() {
+        let encoded = sample().encode();
+        assert_eq!(encoded.len(), 97);
+        assert_eq!(
+            u16::from_le_bytes(encoded[0..2].try_into().unwrap()),
+            INDEX_FORMAT_V1_DISTANN
+        );
+        assert_eq!(encoded, DistannMetadataPage::decode(&encoded).unwrap().encode());
+    }
+
+    #[test]
+    fn distributed_control_v5_round_trip_persists_uuid_without_graph_state() {
+        let uuid = control_uuid();
+        let metadata = DistannMetadataPage::distributed_control(
+            32,
+            100,
+            1.2,
+            42,
+            DISTANN_NEIGHBOR_CODEC_RABITQ,
+            4096,
+            0.3,
+            uuid,
+        );
+        let encoded = metadata.encode();
+        assert_eq!(encoded.len(), DISTANN_CONTROL_METADATA_BYTES);
+        assert_eq!(
+            u16::from_le_bytes(encoded[0..2].try_into().unwrap()),
+            INDEX_FORMAT_V5_DISTANN_CONTROL
+        );
+        assert_eq!(
+            &encoded[DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET..],
+            uuid.as_slice()
+        );
+        let decoded = DistannMetadataPage::decode(&encoded).unwrap();
+        assert!(decoded.is_distributed_control());
+        assert_eq!(decoded.logical_index_uuid, uuid);
+        assert_eq!(decoded.node_count, 0);
+        assert_eq!(decoded.active_epoch, 0);
+    }
+
+    #[test]
+    fn distributed_control_v5_rejects_zero_uuid_and_local_graph_state() {
+        let mut encoded = DistannMetadataPage::distributed_control(
+            32,
+            100,
+            1.2,
+            42,
+            DISTANN_NEIGHBOR_CODEC_RABITQ,
+            4096,
+            0.3,
+            control_uuid(),
+        )
+        .encode();
+        encoded[DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET..].fill(0);
+        assert!(DistannMetadataPage::decode(&encoded).is_err());
+
+        let mut encoded = DistannMetadataPage::distributed_control(
+            32,
+            100,
+            1.2,
+            42,
+            DISTANN_NEIGHBOR_CODEC_RABITQ,
+            4096,
+            0.3,
+            control_uuid(),
+        )
+        .encode();
+        encoded[36..44].copy_from_slice(&1_u64.to_le_bytes());
+        assert!(DistannMetadataPage::decode(&encoded).is_err());
+
+        let mut encoded = DistannMetadataPage::distributed_control(
+            32,
+            100,
+            1.2,
+            42,
+            DISTANN_NEIGHBOR_CODEC_RABITQ,
+            4096,
+            0.3,
+            control_uuid(),
+        )
+        .encode();
+        encoded[DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET + 6] = 0x15;
+        assert!(DistannMetadataPage::decode(&encoded).is_err());
     }
 }

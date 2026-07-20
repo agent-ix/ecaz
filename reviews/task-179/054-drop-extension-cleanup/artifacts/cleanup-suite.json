@@ -1,0 +1,48 @@
+{
+  "name": "task179-drop-extension-cleanup",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [
+    {
+      "name": "topology-gate",
+      "step": "drop-extension-cleanup",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_topology_gate" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "drop-extension-cleanup",
+      "step": "drop-extension-cleanup",
+      "metric": "drill_outcome",
+      "filters": { "drill": "physical_drop_extension_cleanup" },
+      "field": "pass_numeric",
+      "op": "eq",
+      "value": 1
+    }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "drop-extension-cleanup",
+      "tags": ["task179", "physical", "drop-extension", "cleanup"],
+      "artifact_dir": "reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run",
+      "nodes": 3,
+      "base_port": 40490,
+      "rows": 90,
+      "dim": 4,
+      "graph_degree": 8,
+      "head_index_cap": 4096,
+      "queries": 1,
+      "top_k": 10,
+      "skip_fault_drills": true,
+      "drop_extension_cleanup_drill": true,
+      "run_dir": "target/task179-drop-extension-cleanup"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+CREATE EXTENSION
+ shared_preload_libraries
+--------------------------
+ ecaz
+(1 row)
+
+ ecaz_build_profile
+--------------------
+ release
+(1 row)

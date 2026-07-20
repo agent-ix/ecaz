@@ -1,0 +1,26 @@
+{
+  "name": "task181-bounded-hierarchy-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-181/003-fixed-cap-policy-screen/artifacts/hierarchy-100k",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [
+    { "name": "hierarchy-row", "step": "hierarchy-100k", "metric": "physical_benchmark_recall", "filters": { "variant": "bounded-hierarchy", "arm": "physical" }, "field": "distinct_recall", "op": "gte", "value": 0.8 }
+  ],
+  "steps": [
+    {
+      "kind": "distann-local-multinode", "name": "hierarchy-100k",
+      "tags": ["task181", "phase3", "bounded_hierarchy", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/100k", "run_dir": "target/task181-hierarchy-100k",
+      "nodes": 3, "base_port": 41060, "graph_degree": 32, "head_index_cap": 16384,
+      "head_policy": "geometry_landmarks", "beam_width": 4, "hop_rounds": 100,
+      "queries": 200, "top_k": 10, "physical_benchmark": true,
+      "benchmark_iterations": 10, "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "bounded-hierarchy", "seed_strategy": "head_hierarchy", "head_search_width": 256, "head_seed_count": 32, "neighbor_score_mode": "rabitq" },
+        { "name": "exact-membership", "seed_strategy": "head_sample_exact", "head_search_width": 256, "head_seed_count": 32, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_100k", "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}

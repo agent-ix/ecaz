@@ -53,13 +53,21 @@ impl IndexRelationGuard {
         self.relation
     }
 
-    #[cfg(any(test, feature = "pg_test"))]
+    /// Close the relcache reference on drop but retain the lock acquired by
+    /// `index_open` until the surrounding transaction ends. This is required
+    /// when several SQL calls form one serialized operator transaction: an
+    /// early unlock can invert relation-lock and catalog-row-lock ordering
+    /// across sessions and deadlock a replacement sequence.
+    pub(crate) fn retain_lock_until_transaction_end(&mut self) {
+        debug_assert_ne!(self.lockmode, pg_sys::NoLock as pg_sys::LOCKMODE);
+        self.lockmode = pg_sys::NoLock as pg_sys::LOCKMODE;
+    }
+
     pub(crate) fn handle(&self) -> crate::storage::relation::RelationHandle {
         NonNull::new(self.relation)
             .unwrap_or_else(|| pgrx::error!("index relation guard unexpectedly null"))
     }
 
-    #[cfg(any(test, feature = "pg_test"))]
     pub(crate) fn heap_relation_oid(&self) -> pg_sys::Oid {
         crate::storage::relation::index_heap_relation_oid_handle(self.handle())
     }

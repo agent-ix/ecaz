@@ -1,0 +1,11 @@
+# M3 slice 5 multinode scan materialization evidence
+# head SHA: 30e16a085 (+ materialization change, this commit)
+# build profile: release (verified ecaz_build_profile=release)
+# DB: ec_distann_m2, index m2_10k_idx (ec_distann, 10000 rows, dim 1536)
+# cmd: ecaz dev sql --db ec_distann_m2 --file scan-compare.sql
+
+## 2-node loopback amgettuple scan vs single-node baseline (top-10):
+ base_rows | two_rows | base_minus_two | two_minus_base | order_identical 
+-----------+----------+----------------+----------------+-----------------
+        10 |       10 |              0 |              0 | t
+(1 row)

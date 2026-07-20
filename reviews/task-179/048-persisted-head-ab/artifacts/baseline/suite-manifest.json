@@ -1,0 +1,374 @@
+{
+  "suite": "task179-owner-scan-baseline-10k-50k-100k",
+  "schema_version": 1,
+  "config": "reviews/task-179/048-persisted-head-ab/artifacts/baseline-suite.json",
+  "config_sha256": "c2ac2d1e2cbf525775e1931d4587a5afdb59c6bc5d091f15ddcc5760267dc9f0",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783922314617,
+  "runner_git_commit": "24ec63788cc5c8ea361eb8c0ceff6c5a966e5323",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "baseline-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/10k",
+        "--run-dir",
+        "target/task179-seed-ab-baseline",
+        "--log-file",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40440",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "owner-scan-baseline",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/10k/distann-local-multinode.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/10k/distann-multinode-summary.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/10k/physical-recall.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/10k/physical-latency.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/10k/single-recall.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/10k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783922314617,
+      "finished_at_unix_ms": 1783922499900,
+      "duration_ms": 196135,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/50k",
+        "--run-dir",
+        "target/task179-seed-ab-baseline",
+        "--log-file",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40440",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "owner-scan-baseline",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/50k/distann-local-multinode.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/50k/distann-multinode-summary.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/50k/physical-recall.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/50k/physical-latency.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/50k/single-recall.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/50k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783922499901,
+      "finished_at_unix_ms": 1783923468538,
+      "duration_ms": 1021392,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/100k",
+        "--run-dir",
+        "target/task179-seed-ab-baseline",
+        "--log-file",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40440",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "owner-scan-baseline",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/100k/distann-local-multinode.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/100k/distann-multinode-summary.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/100k/physical-recall.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/100k/physical-latency.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/100k/single-recall.log",
+        "reviews/task-179/048-persisted-head-ab/artifacts/baseline/100k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783923468538,
+      "finished_at_unix_ms": 1783925526094,
+      "duration_ms": 2169748,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "baseline-10k-topology",
+      "step": "baseline-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "baseline-10k-recall",
+      "step": "baseline-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "4096",
+        "seed_strategy": "owner_scan"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall 1 Gte 0.9 -> true"
+    },
+    {
+      "name": "baseline-10k-latency",
+      "step": "baseline-10k",
+      "metric": "physical_benchmark_latency",
+      "filters": {
+        "arm": "physical",
+        "seed_strategy": "owner_scan"
+      },
+      "field": "count",
+      "op": "gte",
+      "expected": 50.0,
+      "actual": 50.0,
+      "passed": true,
+      "message": "count 50 Gte 50 -> true"
+    },
+    {
+      "name": "baseline-10k-remote",
+      "step": "baseline-10k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "4096"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    },
+    {
+      "name": "baseline-50k-topology",
+      "step": "baseline-50k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "baseline-50k-recall",
+      "step": "baseline-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "4096",
+        "seed_strategy": "owner_scan"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall 1 Gte 0.9 -> true"
+    },
+    {
+      "name": "baseline-50k-latency",
+      "step": "baseline-50k",
+      "metric": "physical_benchmark_latency",
+      "filters": {
+        "arm": "physical",
+        "seed_strategy": "owner_scan"
+      },
+      "field": "count",
+      "op": "gte",
+      "expected": 50.0,
+      "actual": 50.0,
+      "passed": true,
+      "message": "count 50 Gte 50 -> true"
+    },
+    {
+      "name": "baseline-50k-remote",
+      "step": "baseline-50k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "4096"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    },
+    {
+      "name": "baseline-100k-topology",
+      "step": "baseline-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "baseline-100k-recall",
+      "step": "baseline-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "4096",
+        "seed_strategy": "owner_scan"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.995,
+      "passed": true,
+      "message": "recall 0.995 Gte 0.9 -> true"
+    },
+    {
+      "name": "baseline-100k-latency",
+      "step": "baseline-100k",
+      "metric": "physical_benchmark_latency",
+      "filters": {
+        "arm": "physical",
+        "seed_strategy": "owner_scan"
+      },
+      "field": "count",
+      "op": "gte",
+      "expected": 50.0,
+      "actual": 50.0,
+      "passed": true,
+      "message": "count 50 Gte 50 -> true"
+    },
+    {
+      "name": "baseline-100k-remote",
+      "step": "baseline-100k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "4096"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    }
+  ]
+}

@@ -1,0 +1,205 @@
+{
+  "name": "task-163-m1-stitch-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-163/001-m1-stitch-ab/artifacts",
+  "description": "Task 163 M1 TC-039 A/B: ec_distann stitched (build_shards=4, closure_epsilon=0.1) vs monolithic (build_shards=1) at 10k/50k/100k, recall@10 + latency + storage, rabitq codec (D7 default). Exit bar: stitched recall within 0.001 of monolithic at equal search params (FR-077-AC-1). distinct_recall == recall for this AM: one global Vamana graph, one logical record per vector, no partition duplication (ADR-085), so recall@10 is the distinct_recall. Bespoke config (not the canonical lane sweep): the variant axis is build_shards (the M1 change), so both arms hold every other option at the profile default and differ only in shard count -- this isolates the stitch effect per the A/B-per-change rule. Per-arm table isolation via distinct prefixes. Sweep drives ec_distann.top_k (the D9 early-exit bar); hop_rounds stays the NFR-019 cap. Protocol: recall step precedes latency step per arm (task-168 first-point trap).",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": ["setup", "precheck", "m1", "task-163"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "ec_distann_bench",
+        "--socket-dir", "/home/peter/.pgrx", "--raw",
+        "--sql", "SELECT now() AS captured_at, version() AS postgres_version, ecaz_build_profile() AS build_profile, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem;",
+        "--log-output", "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/precheck-host.log"]
+    },
+
+    {
+      "kind": "load", "name": "load-10k-mono",
+      "tags": ["m1", "task-163", "ec_real_10k", "distann_mono", "load"],
+      "prefix": "m1_10k_mono", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=1"]
+    },
+    {
+      "kind": "recall", "name": "recall-10k-mono",
+      "tags": ["m1", "task-163", "ec_real_10k", "distann_mono", "recall"],
+      "prefix": "m1_10k_mono", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "latency", "name": "latency-10k-mono",
+      "tags": ["m1", "task-163", "ec_real_10k", "distann_mono", "latency"],
+      "prefix": "m1_10k_mono", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200],
+      "concurrency": 1, "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage", "name": "storage-10k-mono",
+      "tags": ["m1", "task-163", "ec_real_10k", "distann_mono", "storage"],
+      "prefix": "m1_10k_mono"
+    },
+
+    {
+      "kind": "load", "name": "load-10k-stitch",
+      "tags": ["m1", "task-163", "ec_real_10k", "distann_stitch", "load"],
+      "prefix": "m1_10k_stitch", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.1"]
+    },
+    {
+      "kind": "recall", "name": "recall-10k-stitch",
+      "tags": ["m1", "task-163", "ec_real_10k", "distann_stitch", "recall"],
+      "prefix": "m1_10k_stitch", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "latency", "name": "latency-10k-stitch",
+      "tags": ["m1", "task-163", "ec_real_10k", "distann_stitch", "latency"],
+      "prefix": "m1_10k_stitch", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200],
+      "concurrency": 1, "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage", "name": "storage-10k-stitch",
+      "tags": ["m1", "task-163", "ec_real_10k", "distann_stitch", "storage"],
+      "prefix": "m1_10k_stitch"
+    },
+
+    {
+      "kind": "load", "name": "load-50k-mono",
+      "tags": ["m1", "task-163", "ec_real_50k", "distann_mono", "load"],
+      "prefix": "m1_50k_mono", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=1"]
+    },
+    {
+      "kind": "recall", "name": "recall-50k-mono",
+      "tags": ["m1", "task-163", "ec_real_50k", "distann_mono", "recall"],
+      "prefix": "m1_50k_mono", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "latency", "name": "latency-50k-mono",
+      "tags": ["m1", "task-163", "ec_real_50k", "distann_mono", "latency"],
+      "prefix": "m1_50k_mono", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200],
+      "concurrency": 1, "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage", "name": "storage-50k-mono",
+      "tags": ["m1", "task-163", "ec_real_50k", "distann_mono", "storage"],
+      "prefix": "m1_50k_mono"
+    },
+
+    {
+      "kind": "load", "name": "load-50k-stitch",
+      "tags": ["m1", "task-163", "ec_real_50k", "distann_stitch", "load"],
+      "prefix": "m1_50k_stitch", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.1"]
+    },
+    {
+      "kind": "recall", "name": "recall-50k-stitch",
+      "tags": ["m1", "task-163", "ec_real_50k", "distann_stitch", "recall"],
+      "prefix": "m1_50k_stitch", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "latency", "name": "latency-50k-stitch",
+      "tags": ["m1", "task-163", "ec_real_50k", "distann_stitch", "latency"],
+      "prefix": "m1_50k_stitch", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200],
+      "concurrency": 1, "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage", "name": "storage-50k-stitch",
+      "tags": ["m1", "task-163", "ec_real_50k", "distann_stitch", "storage"],
+      "prefix": "m1_50k_stitch"
+    },
+
+    {
+      "kind": "load", "name": "load-100k-mono",
+      "tags": ["m1", "task-163", "ec_real_100k", "distann_mono", "load"],
+      "prefix": "m1_100k_mono", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=1"]
+    },
+    {
+      "kind": "recall", "name": "recall-100k-mono",
+      "tags": ["m1", "task-163", "ec_real_100k", "distann_mono", "recall"],
+      "prefix": "m1_100k_mono", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "latency", "name": "latency-100k-mono",
+      "tags": ["m1", "task-163", "ec_real_100k", "distann_mono", "latency"],
+      "prefix": "m1_100k_mono", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200],
+      "concurrency": 1, "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage", "name": "storage-100k-mono",
+      "tags": ["m1", "task-163", "ec_real_100k", "distann_mono", "storage"],
+      "prefix": "m1_100k_mono"
+    },
+
+    {
+      "kind": "load", "name": "load-100k-stitch",
+      "tags": ["m1", "task-163", "ec_real_100k", "distann_stitch", "load"],
+      "prefix": "m1_100k_stitch", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.1"]
+    },
+    {
+      "kind": "recall", "name": "recall-100k-stitch",
+      "tags": ["m1", "task-163", "ec_real_100k", "distann_stitch", "recall"],
+      "prefix": "m1_100k_stitch", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "latency", "name": "latency-100k-stitch",
+      "tags": ["m1", "task-163", "ec_real_100k", "distann_stitch", "latency"],
+      "prefix": "m1_100k_stitch", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200],
+      "concurrency": 1, "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage", "name": "storage-100k-stitch",
+      "tags": ["m1", "task-163", "ec_real_100k", "distann_stitch", "storage"],
+      "prefix": "m1_100k_stitch"
+    }
+  ]
+}

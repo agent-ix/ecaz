@@ -1,6 +1,10 @@
 # Task 164: ec_distann M2 — Hash Placement, Remote Expansion, Two-Node Read Path
 
-Status: proposed (2026-07-06). Depends on: Tasks 162, 163.
+Status: partial / replicated-serving control only (2026-07-10). Depends on:
+Tasks 162, 163. The remote expansion/orchestration substrate landed, but the
+fixture built a complete graph on every node and filtered serving ownership.
+It therefore does not satisfy the revised physical FR-078/FR-079 contracts;
+Task 179 owns the corrective generation handoff and frozen row-tier read path.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 — first distributed milestone; produces the D4 baton-passing
 reopen-trigger measurement.
@@ -15,6 +19,14 @@ read path is exactly the single-node algorithm with placement underneath.
 
 2-node reads byte-identical to single-node; per-query expansion provably
 ≤ BW×H; the H×RTT delta measured.
+
+## Corrective boundary (2026-07-10)
+
+The landed two-node identity, transport, dedupe, and BW×H evidence remains a
+valid replicated-control baseline. Do not mark FR-078, FR-079 materialization,
+or physical M2 complete from this task. Task 179 replaces GUC-derived epoch
+identity, caller-selected materialization functions, and live base-heap TIDs
+with manifest-selected physical generations and AM-owned frozen row tiers.
 
 ## Scope
 

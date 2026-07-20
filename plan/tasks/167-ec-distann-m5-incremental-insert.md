@@ -1,8 +1,11 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: proposed (2026-07-06). Depends on: Task 166 (gate verdict; committed
-scope regardless of verdict unless the operator explicitly descopes — ADR-085
-D5).
+Status: partial / requires physical-generation adaptation (2026-07-10).
+Depends on: Task 166 and Task 179's Published-generation storage/read contract
+(gate verdict remains committed scope unless the operator explicitly descopes
+— ADR-085 D5). The landed delta/fold experiments apply to the legacy local or
+replicated surface; they do not yet implement FR-083 against disjoint owner row
+tiers and retained replacement records.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P1 — the program's committed write path (operator decision
 2026-07-06: in scope, not conditional).
@@ -18,6 +21,15 @@ last, where its failure cannot invalidate the read path.
 `aminsert` performs distributed self-insertion with the graph left
 consistent under any single fault, at insert cost bounded by the traversal
 cap + `graph_degree` back-edge amendments.
+
+## Corrective boundary (2026-07-10)
+
+After Task 179 lands, reopen this task for physical owner routing: inserts must
+append a complete row-tier tuple and record on one owner, UPDATE must atomically
+redirect the stable vec_id while retaining the old physical pair, and all
+materialization must use the generation schema descriptor. Task 179 must fail
+closed on distributed-control DML until that adaptation is reviewed; it must
+not silently invoke the legacy local-heap path.
 
 ## Scope
 

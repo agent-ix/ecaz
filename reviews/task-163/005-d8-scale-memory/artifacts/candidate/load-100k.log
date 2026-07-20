@@ -1,0 +1,25 @@
+[loader] inspecting /home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv
+[loader] inspecting /home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv
+[loader] corpus: 100000 rows, sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95  queries: 1000 rows, sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[loader] warning: manifest verification failed for /home/peter/dev/ecaz/data/staged-current/ec_real_100k_manifest.json: prefix="ec_real_100k" (expected "d8_current_100k")
+[postgres notice] extension "ecaz" already exists, skipping
+[loader] copied corpus table d8_current_100k_corpus in 40.80s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table d8_current_100k_corpus in 29.81s
+[loader] copied queries table d8_current_100k_queries in 442.47ms
+[loader] building d8_current_100k_idx using ec_distann (reloptions=[neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.1]) ...
+[postgres notice] ec_distann sharded build: shards=4 duplication_factor=1.3268 max_shard_size=46703 stitch_edges_before_prune=3703763 stitch_edges_after_prune=3102638 stitch_peak_union_len=117 shard_output_spill_bytes=17524784 stitch_peak_cursor_bytes=34016 stitch_peak_group_bytes=2224 stitch_peak_retained_bytes=36240 build_peak_completion_bytes=6289260 reachability_repairs=8
+[loader] build_memory index=d8_current_100k_idx backend_pid=1124719 rss_before_kb=170300 hwm_before_kb=170300 rss_peak_kb=2170028 hwm_peak_kb=2170028 samples=9345 sample_interval_ms=25
+[loader] built d8_current_100k_idx in 247.18s
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                                  │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_distann                                                                             │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ d8_current_100k_corpus (100000 rows)                                                   │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ d8_current_100k_queries (1000 rows)                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ d8_current_100k_idx [neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.1] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix d8_current_100k in 329.21s

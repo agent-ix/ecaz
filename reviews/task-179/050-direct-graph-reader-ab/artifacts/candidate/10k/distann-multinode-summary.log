@@ -1,0 +1,16 @@
+physical_fixture owners=3 coordinator_outside_roster=false source_rows=10000
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=3323 rows=3323 non_owned=0 orphans=0 graph_bytes=25133056 row_bytes=55427072 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=3391 rows=3391 non_owned=0 orphans=0 graph_bytes=25575424 row_bytes=56582144 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=3286 rows=3286 non_owned=0 orphans=0 graph_bytes=24797184 row_bytes=54837248 directory_bytes=122880 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=3323 rows=3323 non_owned=0 orphans=0 graph_bytes=25133056 row_bytes=55427072 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=3391 rows=3391 non_owned=0 orphans=0 graph_bytes=25575424 row_bytes=56582144 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=3286 rows=3286 non_owned=0 orphans=0 graph_bytes=24797184 row_bytes=54837248 directory_bytes=122880 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=10000
+[distann-multicluster] physical_benchmark_build scale=10k head_index_cap=4096 physical_ms=68070 publish_ms=81514 single_ms=17006
+[distann-multicluster] physical_benchmark_recall scale=10k head_index_cap=4096 arm=physical seed_strategy=persisted_head queries=20 trials=200 recall=1.0000 mean_ms=744.55
+[distann-multicluster] physical_benchmark_latency scale=10k head_index_cap=4096 arm=physical seed_strategy=persisted_head count=50 mean_ms=43.20 p50_ms=43.20 p95_ms=55.50 p99_ms=56.30 max_ms=56.40 concurrency=1 cache=warm warmup_iterations=10
+[distann-multicluster] physical_benchmark_recall scale=10k head_index_cap=4096 arm=single seed_strategy=single_index queries=20 trials=200 recall=1.0000 mean_ms=716.76
+[distann-multicluster] physical_benchmark_latency scale=10k head_index_cap=4096 arm=single seed_strategy=single_index count=50 mean_ms=2.85 p50_ms=2.77 p95_ms=3.65 p99_ms=3.95 max_ms=4.23 concurrency=1 cache=warm warmup_iterations=10
+[distann-multicluster] physical_benchmark_storage scale=10k head_index_cap=4096 owners=3 physical_generation_bytes=242761728 coordinator_source_bytes=166699008 single_index_bytes=115687424 single_source_bytes=282214400
+[distann-multicluster] physical_benchmark_engagement scale=10k head_index_cap=4096 remote_owners=2 materialize_probes=2 pass=true
+[distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=2 source_rows=10000

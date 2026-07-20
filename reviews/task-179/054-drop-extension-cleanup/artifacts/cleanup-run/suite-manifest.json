@@ -1,0 +1,101 @@
+{
+  "suite": "task179-drop-extension-cleanup",
+  "schema_version": 1,
+  "config": "reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-suite.json",
+  "config_sha256": "cbf8572cce3bb0d88126968cb7b66520294862d5dc49c256b733c8f6436db676",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783943314660,
+  "runner_git_commit": "0e8e8f6e823cae06b53a3dc0157c631a84dabb6d",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "drop-extension-cleanup",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run",
+        "--run-dir",
+        "target/task179-drop-extension-cleanup",
+        "--log-file",
+        "reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--base-port",
+        "40490",
+        "--rows",
+        "90",
+        "--dim",
+        "4",
+        "--graph-degree",
+        "8",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "1",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--drop-extension-cleanup-drill"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "physical",
+        "drop-extension",
+        "cleanup"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/distann-local-multinode.log",
+        "reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783943314660,
+      "finished_at_unix_ms": 1783943320778,
+      "duration_ms": 7775,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "topology-gate",
+      "step": "drop-extension-cleanup",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "drop-extension-cleanup",
+      "step": "drop-extension-cleanup",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_drop_extension_cleanup"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    }
+  ]
+}

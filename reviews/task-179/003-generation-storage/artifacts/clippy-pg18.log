@@ -1,0 +1,9 @@
+Script started on 2026-07-10 17:20:29-07:00 [TERM="dumb" TTY="/dev/pts/20" COLUMNS="80" LINES="24"]
+    Checking ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+    Checking rustls-webpki v0.103.13
+    Checking rustls v0.23.41
+    Checking tokio-rustls v0.26.4
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 31.78s
+
+Script done on 2026-07-10 17:21:00-07:00 [COMMAND_EXIT_CODE="0"]

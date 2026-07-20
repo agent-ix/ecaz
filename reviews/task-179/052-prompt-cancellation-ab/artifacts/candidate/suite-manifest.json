@@ -1,0 +1,374 @@
+{
+  "suite": "task179-prompt-cancel-candidate-10k-50k-100k",
+  "schema_version": 1,
+  "config": "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate-suite.json",
+  "config_sha256": "77f7263969f4fe05eb85e2cdfba9d21d647000e31f903d78c0d0320950711297",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783936911636,
+  "runner_git_commit": "24ec63788cc5c8ea361eb8c0ceff6c5a966e5323",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "candidate-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/10k",
+        "--run-dir",
+        "target/task179-prompt-cancel-candidate",
+        "--log-file",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40470",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "prompt-cancel-candidate",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/10k/distann-local-multinode.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/10k/distann-multinode-summary.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/10k/physical-recall.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/10k/physical-latency.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/10k/single-recall.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/10k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783936911637,
+      "finished_at_unix_ms": 1783937119373,
+      "duration_ms": 219077,
+      "exit_code": 0
+    },
+    {
+      "name": "candidate-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/50k",
+        "--run-dir",
+        "target/task179-prompt-cancel-candidate",
+        "--log-file",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40470",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "prompt-cancel-candidate",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/50k/distann-local-multinode.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/50k/distann-multinode-summary.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/50k/physical-recall.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/50k/physical-latency.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/50k/single-recall.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/50k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783937119374,
+      "finished_at_unix_ms": 1783938033696,
+      "duration_ms": 966197,
+      "exit_code": 0
+    },
+    {
+      "name": "candidate-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/100k",
+        "--run-dir",
+        "target/task179-prompt-cancel-candidate",
+        "--log-file",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "40470",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "prompt-cancel-candidate",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/100k/distann-local-multinode.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/100k/distann-multinode-summary.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/100k/physical-recall.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/100k/physical-latency.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/100k/single-recall.log",
+        "reviews/task-179/052-prompt-cancellation-ab/artifacts/candidate/100k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783938033696,
+      "finished_at_unix_ms": 1783939923253,
+      "duration_ms": 1998537,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "candidate-10k-topology",
+      "step": "candidate-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "candidate-10k-recall",
+      "step": "candidate-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "4096",
+        "seed_strategy": "persisted_head"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall 1 Gte 0.9 -> true"
+    },
+    {
+      "name": "candidate-10k-latency",
+      "step": "candidate-10k",
+      "metric": "physical_benchmark_latency",
+      "filters": {
+        "arm": "physical",
+        "seed_strategy": "persisted_head"
+      },
+      "field": "count",
+      "op": "gte",
+      "expected": 50.0,
+      "actual": 50.0,
+      "passed": true,
+      "message": "count 50 Gte 50 -> true"
+    },
+    {
+      "name": "candidate-10k-remote",
+      "step": "candidate-10k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "4096"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    },
+    {
+      "name": "candidate-50k-topology",
+      "step": "candidate-50k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "candidate-50k-recall",
+      "step": "candidate-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "4096",
+        "seed_strategy": "persisted_head"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.98,
+      "passed": true,
+      "message": "recall 0.98 Gte 0.9 -> true"
+    },
+    {
+      "name": "candidate-50k-latency",
+      "step": "candidate-50k",
+      "metric": "physical_benchmark_latency",
+      "filters": {
+        "arm": "physical",
+        "seed_strategy": "persisted_head"
+      },
+      "field": "count",
+      "op": "gte",
+      "expected": 50.0,
+      "actual": 50.0,
+      "passed": true,
+      "message": "count 50 Gte 50 -> true"
+    },
+    {
+      "name": "candidate-50k-remote",
+      "step": "candidate-50k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "4096"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    },
+    {
+      "name": "candidate-100k-topology",
+      "step": "candidate-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "candidate-100k-recall",
+      "step": "candidate-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "4096",
+        "seed_strategy": "persisted_head"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.9,
+      "actual": 0.95,
+      "passed": true,
+      "message": "recall 0.95 Gte 0.9 -> true"
+    },
+    {
+      "name": "candidate-100k-latency",
+      "step": "candidate-100k",
+      "metric": "physical_benchmark_latency",
+      "filters": {
+        "arm": "physical",
+        "seed_strategy": "persisted_head"
+      },
+      "field": "count",
+      "op": "gte",
+      "expected": 50.0,
+      "actual": 50.0,
+      "passed": true,
+      "message": "count 50 Gte 50 -> true"
+    },
+    {
+      "name": "candidate-100k-remote",
+      "step": "candidate-100k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "4096"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 2.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 2 -> true"
+    }
+  ]
+}

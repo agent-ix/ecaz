@@ -1,0 +1,21 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=40450 rows=2000 dim=16 head_index_cap=4096
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=16637 rows=16637 non_owned=0 orphans=0 graph_bytes=135593984 row_bytes=277266432 directory_bytes=540672 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=16756 rows=16756 non_owned=0 orphans=0 graph_bytes=136822784 row_bytes=279265280 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=16607 rows=16607 non_owned=0 orphans=0 graph_bytes=135307264 row_bytes=276783104 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=16637 rows=16637 non_owned=0 orphans=0 graph_bytes=135610368 row_bytes=277291008 directory_bytes=540672 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=16756 rows=16756 non_owned=0 orphans=0 graph_bytes=136822784 row_bytes=279265280 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=16607 rows=16607 non_owned=0 orphans=0 graph_bytes=135307264 row_bytes=276783104 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=50000
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true
+[distann-multicluster] physical_remote_owner node=3 custom_scan=true pass=true
+[distann-multicluster] physical_benchmark_build scale=50k head_index_cap=4096 physical_ms=436592 publish_ms=503913 single_ms=166235
+[distann-multicluster] physical_benchmark_recall scale=50k head_index_cap=4096 arm=physical seed_strategy=persisted_head queries=20 trials=200 recall=0.9800 mean_ms=664.70
+[distann-multicluster] physical_benchmark_latency scale=50k head_index_cap=4096 arm=physical seed_strategy=persisted_head count=50 mean_ms=57.10 p50_ms=57.30 p95_ms=74.40 p99_ms=74.70 max_ms=74.80 concurrency=1 cache=warm warmup_iterations=10
+[distann-multicluster] physical_benchmark_recall scale=50k head_index_cap=4096 arm=single seed_strategy=single_index queries=20 trials=200 recall=0.9750 mean_ms=611.20
+[distann-multicluster] physical_benchmark_latency scale=50k head_index_cap=4096 arm=single seed_strategy=single_index count=50 mean_ms=3.53 p50_ms=3.51 p95_ms=4.27 p99_ms=4.44 max_ms=4.54 concurrency=1 cache=warm warmup_iterations=10
+[distann-multicluster] physical_benchmark_storage scale=50k head_index_cap=4096 owners=3 physical_generation_bytes=1242742784 coordinator_source_bytes=833208320 single_index_bytes=444186624 single_source_bytes=1276518400
+[distann-multicluster] physical_benchmark_engagement scale=50k head_index_cap=4096 remote_owners=2 materialize_probes=2 pass=true
+[distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=2 source_rows=50000
+[distann-multicluster] summary written to /home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/reviews/task-179/048-persisted-head-ab/artifacts/candidate/50k/distann-multinode-summary.log

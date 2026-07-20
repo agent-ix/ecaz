@@ -1,0 +1,66 @@
+{
+  "suite": "task179-head-cap-suite-surface-dry-run",
+  "schema_version": 1,
+  "config": "reviews/task-179/037-head-cap-suite-surface/artifacts/head-cap-dry-run.json",
+  "config_sha256": "6dfe2a192f533e78f9826ba6e9b50c145c07afc7e58f145e687330bd165a91c3",
+  "dry_run": true,
+  "generated_at_unix_ms": 1783888119957,
+  "runner_git_commit": "efb0aa8cb4c5d9bb6f61b88b03baa671a4f9d10c",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "head-cap-256-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run/head-cap-256-10k",
+        "--run-dir",
+        "target/task179-head-cap-dry-run",
+        "--log-file",
+        "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run/head-cap-256-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40300",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "256",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "expected_artifacts": [
+        "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run/head-cap-256-10k/distann-local-multinode.log",
+        "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run/head-cap-256-10k/distann-multinode-summary.log",
+        "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run/head-cap-256-10k/physical-recall.log",
+        "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run/head-cap-256-10k/physical-latency.log",
+        "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run/head-cap-256-10k/single-recall.log",
+        "reviews/task-179/037-head-cap-suite-surface/artifacts/dry-run/head-cap-256-10k/single-latency.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

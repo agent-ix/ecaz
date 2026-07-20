@@ -22,9 +22,12 @@
 //! convergence early-exit stops when the best unvisited code distance
 //! cannot improve the current kth exact distance.
 
-use std::collections::HashSet;
+use std::cmp::Ordering;
+use std::collections::{BinaryHeap, HashSet};
 
 use crate::storage::page::ItemPointer;
+
+use super::expand_error::DistannExpandError;
 
 /// One expanded record, mirroring an `ec_distann_expand_nodes` response row
 /// (plus the local-only `heap_tid`; see the module docs).
@@ -53,7 +56,7 @@ pub(crate) trait DistannNodeExpander {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
-    ) -> Result<Vec<DistannExpandedNode>, String>;
+    ) -> Result<Vec<DistannExpandedNode>, DistannExpandError>;
 }
 
 /// Head-index descent output seeding the hop-round frontier.
@@ -69,6 +72,9 @@ pub(crate) struct DistannOrchestrationParams {
     pub(crate) beam_width: usize,
     pub(crate) hop_rounds: usize,
     pub(crate) top_k: usize,
+    /// NFR-020 fault injection: fail at the start of this 0-based hop round
+    /// (after earlier rounds executed). `None` disables injection.
+    pub(crate) debug_fail_hop_round: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -87,27 +93,57 @@ pub(crate) struct DistannScanHit {
     pub(crate) exact_dist: f32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BeamCandidate {
+    dist: f32,
+    vec_id: u64,
+}
+
+impl Eq for BeamCandidate {}
+
+impl Ord for BeamCandidate {
+    fn cmp(&self, other: &Self) -> Ordering {
+        // BinaryHeap is a max-heap. Reverse the total distance order so the
+        // best (smallest) code distance is popped first, with a stable vec-id
+        // tie-break that makes equal-distance traversal deterministic.
+        other
+            .dist
+            .total_cmp(&self.dist)
+            .then_with(|| other.vec_id.cmp(&self.vec_id))
+    }
+}
+
+impl PartialOrd for BeamCandidate {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 /// Eager FR-081 orchestration: runs to completion at rescan; `amgettuple`
 /// is a cursor over the returned hits (ADR-056 pattern).
 pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
     seeds: &[DistannSeedCandidate],
     expander: &mut E,
     params: DistannOrchestrationParams,
-) -> Result<(Vec<DistannScanHit>, DistannScanCounters), String> {
+) -> Result<(Vec<DistannScanHit>, DistannScanCounters), DistannExpandError> {
     let mut counters = DistannScanCounters::default();
     if params.beam_width == 0 || params.hop_rounds == 0 {
-        return Err("ec_distann scan requires beam_width >= 1 and hop_rounds >= 1".to_owned());
+        return Err(DistannExpandError::BadInput(
+            "ec_distann scan requires beam_width >= 1 and hop_rounds >= 1".to_owned(),
+        ));
     }
 
     // Beam pool ordered by code distance; `enqueued` dedupes by vec_id
     // (FR-081: visited-set dedupe is by vec_id, expansion at most once).
-    let mut beam: Vec<(f32, u64)> = Vec::with_capacity(
-        seeds.len() + params.beam_width * params.hop_rounds * 8,
-    );
-    let mut enqueued: HashSet<u64> = HashSet::with_capacity(beam.capacity());
+    let beam_capacity = seeds.len() + params.beam_width * params.hop_rounds * 8;
+    let mut beam = BinaryHeap::with_capacity(beam_capacity);
+    let mut enqueued: HashSet<u64> = HashSet::with_capacity(beam_capacity);
     for seed in seeds {
         if enqueued.insert(seed.vec_id) {
-            beam.push((seed.dist, seed.vec_id));
+            beam.push(BeamCandidate {
+                dist: seed.dist,
+                vec_id: seed.vec_id,
+            });
         }
     }
     let mut expanded: HashSet<u64> = HashSet::new();
@@ -115,18 +151,19 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
 
     let mut batch: Vec<u64> = Vec::with_capacity(params.beam_width);
     for _ in 0..params.hop_rounds {
-        // Best BW unvisited candidates by code distance.
-        beam.sort_unstable_by(|left, right| left.0.total_cmp(&right.0));
+        // Pop the best BW unvisited candidates by code distance. Maintaining
+        // the heap avoids re-sorting the entire accumulated frontier on every
+        // hop round.
         batch.clear();
         let mut best_unvisited_dist = None;
-        for (dist, vec_id) in beam.iter() {
-            if expanded.contains(vec_id) {
+        while let Some(candidate) = beam.pop() {
+            if expanded.contains(&candidate.vec_id) {
                 continue;
             }
             if best_unvisited_dist.is_none() {
-                best_unvisited_dist = Some(*dist);
+                best_unvisited_dist = Some(candidate.dist);
             }
-            batch.push(*vec_id);
+            batch.push(candidate.vec_id);
             if batch.len() >= params.beam_width {
                 break;
             }
@@ -146,31 +183,41 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
             }
         }
 
+        // NFR-020 fault injection: a mid-beam round failure must discard the
+        // partial beam and error rather than surface a partial result. Fires
+        // after earlier rounds executed (counters.rounds_executed == round idx).
+        if params.debug_fail_hop_round == Some(counters.rounds_executed) {
+            return Err(DistannExpandError::Internal(format!(
+                "ec_distann injected hop-round failure at round {} (ec_distann.debug_fail_hop_round)",
+                counters.rounds_executed
+            )));
+        }
+
         let responses = expander.expand_nodes(&batch, None)?;
         if responses.len() != batch.len() {
-            return Err(format!(
+            return Err(DistannExpandError::Internal(format!(
                 "ec_distann expansion returned {} entries for {} requested vec_ids",
                 responses.len(),
                 batch.len()
-            ));
+            )));
         }
         counters.rounds_executed += 1;
         for (requested, response) in batch.iter().zip(responses.iter()) {
             if response.vec_id != *requested {
-                return Err(format!(
+                return Err(DistannExpandError::Internal(format!(
                     "ec_distann expansion order violation: requested vec_id {requested:#x}, got {:#x}",
                     response.vec_id
-                ));
+                )));
             }
             expanded.insert(response.vec_id);
             counters.records_expanded += 1;
 
             if !response.is_tombstone {
                 let exact_dist = response.exact_dist.ok_or_else(|| {
-                    format!(
+                    DistannExpandError::Internal(format!(
                         "ec_distann expansion returned no exact distance for live vec_id {:#x}",
                         response.vec_id
-                    )
+                    ))
                 })?;
                 hits.push(DistannScanHit {
                     vec_id: response.vec_id,
@@ -180,9 +227,9 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
             }
 
             if response.neighbor_vec_ids.len() != response.neighbor_code_dists.len() {
-                return Err(
-                    "ec_distann expansion neighbor arrays are not index-aligned".to_owned()
-                );
+                return Err(DistannExpandError::Internal(
+                    "ec_distann expansion neighbor arrays are not index-aligned".to_owned(),
+                ));
             }
             counters.neighbors_code_scored += response.neighbor_vec_ids.len();
             for (neighbor_vec_id, code_dist) in response
@@ -191,7 +238,10 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
                 .zip(response.neighbor_code_dists.iter())
             {
                 if enqueued.insert(*neighbor_vec_id) {
-                    beam.push((*code_dist, *neighbor_vec_id));
+                    beam.push(BeamCandidate {
+                        dist: *code_dist,
+                        vec_id: *neighbor_vec_id,
+                    });
                 }
             }
         }
@@ -201,8 +251,32 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
         counters.records_expanded <= params.beam_width * params.hop_rounds,
         "BW x H expansion cap violated"
     );
+    // Bare distance sort: a `(exact_dist, vec_id)` total-order tie-break is
+    // coupled to the FR-081-AC-4 early-exit soundness fix (164-P1) and must land
+    // with it (see the matching note in routine.rs).
     hits.sort_unstable_by(|left, right| left.exact_dist.total_cmp(&right.exact_dist));
     Ok((hits, counters))
+}
+
+/// FR-082-AC-2 restart-once: run a coordinator scan attempt; if any hop round
+/// fails with a **retriable epoch mismatch**, discard all partial state (the
+/// closure rebuilds it), let the caller refresh its epoch view (the closure
+/// re-reads it), and restart the whole attempt exactly once. A second epoch
+/// mismatch — or any other error — propagates. Non-epoch errors on the first
+/// attempt propagate immediately (no restart). NFR-019 per-attempt accounting is
+/// reset naturally because each attempt runs the orchestration fresh.
+///
+/// This is the coordinator half of the epoch-swap consistency contract; the
+/// closure's "refresh" reads whatever the active epoch source provides (the
+/// roster/epoch GUCs today; the persisted epoch manifest once FR-082's lifecycle
+/// lands — see reviews/task-165/014-fr082-lifecycle-design).
+pub(crate) fn run_scan_attempt_with_restart<T>(
+    mut attempt: impl FnMut() -> Result<T, DistannExpandError>,
+) -> Result<T, DistannExpandError> {
+    match attempt() {
+        Err(DistannExpandError::EpochMismatch(_)) => attempt(),
+        other => other,
+    }
 }
 
 fn kth_exact_dist(hits: &mut [DistannScanHit], top_k: usize) -> f32 {
@@ -216,11 +290,64 @@ fn kth_exact_dist(hits: &mut [DistannScanHit], top_k: usize) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::{
-        distann_orchestrated_search, DistannExpandedNode, DistannNodeExpander,
-        DistannOrchestrationParams, DistannSeedCandidate,
+        distann_orchestrated_search, run_scan_attempt_with_restart, DistannExpandedNode,
+        DistannExpandError, DistannNodeExpander, DistannOrchestrationParams, DistannSeedCandidate,
     };
     use crate::storage::page::ItemPointer;
+    use std::cell::Cell;
     use std::collections::HashMap;
+
+    #[test]
+    fn restart_success_on_first_attempt_runs_once() {
+        let calls = Cell::new(0);
+        let result = run_scan_attempt_with_restart(|| {
+            calls.set(calls.get() + 1);
+            Ok::<_, DistannExpandError>(42)
+        });
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(calls.get(), 1, "no restart when the first attempt succeeds");
+    }
+
+    #[test]
+    fn restart_once_after_epoch_mismatch_then_succeeds() {
+        // FR-082-AC-2: one epoch mismatch triggers exactly one restart, which
+        // succeeds under the refreshed epoch.
+        let calls = Cell::new(0);
+        let result = run_scan_attempt_with_restart(|| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 1 {
+                Err(DistannExpandError::EpochMismatch("stale".to_owned()))
+            } else {
+                Ok(7)
+            }
+        });
+        assert_eq!(result.unwrap(), 7);
+        assert_eq!(calls.get(), 2, "exactly one restart");
+    }
+
+    #[test]
+    fn restart_second_epoch_mismatch_errors() {
+        // A second mismatch fails the query (attempts capped at two).
+        let calls = Cell::new(0);
+        let result = run_scan_attempt_with_restart(|| {
+            calls.set(calls.get() + 1);
+            Err::<i32, _>(DistannExpandError::EpochMismatch(format!("mismatch {}", calls.get())))
+        });
+        assert!(matches!(result, Err(DistannExpandError::EpochMismatch(_))));
+        assert_eq!(calls.get(), 2, "capped at two attempts");
+    }
+
+    #[test]
+    fn restart_non_epoch_error_does_not_restart() {
+        // A structural/placement error is not retriable — it propagates at once.
+        let calls = Cell::new(0);
+        let result = run_scan_attempt_with_restart(|| {
+            calls.set(calls.get() + 1);
+            Err::<i32, _>(DistannExpandError::Placement("not owned".to_owned()))
+        });
+        assert!(matches!(result, Err(DistannExpandError::Placement(_))));
+        assert_eq!(calls.get(), 1, "no restart on a non-epoch error");
+    }
 
     fn tid(offset: u16) -> ItemPointer {
         ItemPointer {
@@ -240,7 +367,7 @@ mod tests {
             &mut self,
             vec_ids: &[u64],
             _code_threshold: Option<f32>,
-        ) -> Result<Vec<DistannExpandedNode>, String> {
+        ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
             self.calls.push(vec_ids.to_vec());
             vec_ids
                 .iter()
@@ -248,7 +375,7 @@ mod tests {
                     let (exact, tombstone, neighbors) = self
                         .nodes
                         .get(vec_id)
-                        .ok_or_else(|| format!("unknown vec_id {vec_id}"))?;
+                        .ok_or_else(|| DistannExpandError::Internal(format!("unknown vec_id {vec_id}")))?;
                     Ok(DistannExpandedNode {
                         vec_id: *vec_id,
                         exact_dist: (!tombstone).then_some(*exact),
@@ -267,6 +394,7 @@ mod tests {
             beam_width: bw,
             hop_rounds: h,
             top_k: k,
+            debug_fail_hop_round: None,
         }
     }
 

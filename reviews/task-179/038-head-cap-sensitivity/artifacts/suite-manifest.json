@@ -1,0 +1,929 @@
+{
+  "suite": "task179-head-cap-sensitivity-10k-50k-100k",
+  "schema_version": 1,
+  "config": "reviews/task-179/038-head-cap-sensitivity/artifacts/head-cap-sensitivity.json",
+  "config_sha256": "9b88d0f461a3b6aa2984a0a11bfc6c169e06ceb0b2552dac128e0f4c5541df24",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783889246678,
+  "runner_git_commit": "6c25e55a22a7828ae5b3bb2c8309e15b3738d2d3",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "cap64-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-10k",
+        "--run-dir",
+        "target/task179-head-cap-sensitivity",
+        "--log-file",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40320",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "64",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "head-cap",
+        "cap64",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-10k/distann-local-multinode.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-10k/distann-multinode-summary.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-10k/physical-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-10k/physical-latency.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-10k/single-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-10k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783889246679,
+      "finished_at_unix_ms": 1783889387420,
+      "duration_ms": 147699,
+      "exit_code": 0
+    },
+    {
+      "name": "cap256-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-10k",
+        "--run-dir",
+        "target/task179-head-cap-sensitivity",
+        "--log-file",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40320",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "256",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "head-cap",
+        "cap256",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-10k/distann-local-multinode.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-10k/distann-multinode-summary.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-10k/physical-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-10k/physical-latency.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-10k/single-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-10k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783889387421,
+      "finished_at_unix_ms": 1783889533114,
+      "duration_ms": 152668,
+      "exit_code": 0
+    },
+    {
+      "name": "cap4096-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-10k",
+        "--run-dir",
+        "target/task179-head-cap-sensitivity",
+        "--log-file",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40320",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "head-cap",
+        "cap4096",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-10k/distann-local-multinode.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-10k/distann-multinode-summary.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-10k/physical-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-10k/physical-latency.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-10k/single-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-10k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783889533114,
+      "finished_at_unix_ms": 1783889729230,
+      "duration_ms": 205916,
+      "exit_code": 0
+    },
+    {
+      "name": "cap64-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-50k",
+        "--run-dir",
+        "target/task179-head-cap-sensitivity",
+        "--log-file",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40320",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "64",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "head-cap",
+        "cap64",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-50k/distann-local-multinode.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-50k/distann-multinode-summary.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-50k/physical-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-50k/physical-latency.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-50k/single-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-50k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783889729230,
+      "finished_at_unix_ms": 1783890586692,
+      "duration_ms": 899412,
+      "exit_code": 0
+    },
+    {
+      "name": "cap256-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-50k",
+        "--run-dir",
+        "target/task179-head-cap-sensitivity",
+        "--log-file",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40320",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "256",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "head-cap",
+        "cap256",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-50k/distann-local-multinode.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-50k/distann-multinode-summary.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-50k/physical-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-50k/physical-latency.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-50k/single-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-50k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783890586692,
+      "finished_at_unix_ms": 1783891427599,
+      "duration_ms": 881645,
+      "exit_code": 0
+    },
+    {
+      "name": "cap4096-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-50k",
+        "--run-dir",
+        "target/task179-head-cap-sensitivity",
+        "--log-file",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40320",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "head-cap",
+        "cap4096",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-50k/distann-local-multinode.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-50k/distann-multinode-summary.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-50k/physical-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-50k/physical-latency.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-50k/single-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-50k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783891427600,
+      "finished_at_unix_ms": 1783892339730,
+      "duration_ms": 957335,
+      "exit_code": 0
+    },
+    {
+      "name": "cap64-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-100k",
+        "--run-dir",
+        "target/task179-head-cap-sensitivity",
+        "--log-file",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40320",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "64",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "head-cap",
+        "cap64",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-100k/distann-local-multinode.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-100k/distann-multinode-summary.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-100k/physical-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-100k/physical-latency.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-100k/single-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap64-100k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783892339730,
+      "finished_at_unix_ms": 1783894178910,
+      "duration_ms": 1931433,
+      "exit_code": 0
+    },
+    {
+      "name": "cap256-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-100k",
+        "--run-dir",
+        "target/task179-head-cap-sensitivity",
+        "--log-file",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40320",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "256",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "head-cap",
+        "cap256",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-100k/distann-local-multinode.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-100k/distann-multinode-summary.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-100k/physical-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-100k/physical-latency.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-100k/single-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap256-100k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783894178911,
+      "finished_at_unix_ms": 1783895995968,
+      "duration_ms": 1906972,
+      "exit_code": 0
+    },
+    {
+      "name": "cap4096-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-100k",
+        "--run-dir",
+        "target/task179-head-cap-sensitivity",
+        "--log-file",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "20",
+        "--base-port",
+        "40320",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--queries",
+        "20",
+        "--top-k",
+        "10",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "head-cap",
+        "cap4096",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-100k/distann-local-multinode.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-100k/distann-multinode-summary.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-100k/physical-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-100k/physical-latency.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-100k/single-recall.log",
+        "reviews/task-179/038-head-cap-sensitivity/artifacts/cap4096-100k/single-latency.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783895995969,
+      "finished_at_unix_ms": 1783897905146,
+      "duration_ms": 2005383,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "cap64-10k-topology",
+      "step": "cap64-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap64-10k-recall",
+      "step": "cap64-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "64"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 0.995,
+      "passed": true,
+      "message": "recall 0.995 Gte 0 -> true"
+    },
+    {
+      "name": "cap64-10k-remote",
+      "step": "cap64-10k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "64"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 1.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 1 -> true"
+    },
+    {
+      "name": "cap256-10k-topology",
+      "step": "cap256-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap256-10k-recall",
+      "step": "cap256-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "256"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 0.995,
+      "passed": true,
+      "message": "recall 0.995 Gte 0 -> true"
+    },
+    {
+      "name": "cap256-10k-remote",
+      "step": "cap256-10k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "256"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 1.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 1 -> true"
+    },
+    {
+      "name": "cap4096-10k-topology",
+      "step": "cap4096-10k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap4096-10k-recall",
+      "step": "cap4096-10k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "4096"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall 1 Gte 0 -> true"
+    },
+    {
+      "name": "cap4096-10k-remote",
+      "step": "cap4096-10k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "4096"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 1.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 1 -> true"
+    },
+    {
+      "name": "cap64-50k-topology",
+      "step": "cap64-50k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap64-50k-recall",
+      "step": "cap64-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "64"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 0.975,
+      "passed": true,
+      "message": "recall 0.975 Gte 0 -> true"
+    },
+    {
+      "name": "cap64-50k-remote",
+      "step": "cap64-50k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "64"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 1.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 1 -> true"
+    },
+    {
+      "name": "cap256-50k-topology",
+      "step": "cap256-50k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap256-50k-recall",
+      "step": "cap256-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "256"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 0.98,
+      "passed": true,
+      "message": "recall 0.98 Gte 0 -> true"
+    },
+    {
+      "name": "cap256-50k-remote",
+      "step": "cap256-50k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "256"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 1.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 1 -> true"
+    },
+    {
+      "name": "cap4096-50k-topology",
+      "step": "cap4096-50k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap4096-50k-recall",
+      "step": "cap4096-50k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "4096"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 0.98,
+      "passed": true,
+      "message": "recall 0.98 Gte 0 -> true"
+    },
+    {
+      "name": "cap4096-50k-remote",
+      "step": "cap4096-50k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "4096"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 1.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 1 -> true"
+    },
+    {
+      "name": "cap64-100k-topology",
+      "step": "cap64-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap64-100k-recall",
+      "step": "cap64-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "64"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 0.92,
+      "passed": true,
+      "message": "recall 0.92 Gte 0 -> true"
+    },
+    {
+      "name": "cap64-100k-remote",
+      "step": "cap64-100k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "64"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 1.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 1 -> true"
+    },
+    {
+      "name": "cap256-100k-topology",
+      "step": "cap256-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap256-100k-recall",
+      "step": "cap256-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "256"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 0.945,
+      "passed": true,
+      "message": "recall 0.945 Gte 0 -> true"
+    },
+    {
+      "name": "cap256-100k-remote",
+      "step": "cap256-100k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "256"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 1.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 1 -> true"
+    },
+    {
+      "name": "cap4096-100k-topology",
+      "step": "cap4096-100k",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "cap4096-100k-recall",
+      "step": "cap4096-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "head_index_cap": "4096"
+      },
+      "field": "recall",
+      "op": "gte",
+      "expected": 0.0,
+      "actual": 0.95,
+      "passed": true,
+      "message": "recall 0.95 Gte 0 -> true"
+    },
+    {
+      "name": "cap4096-100k-remote",
+      "step": "cap4096-100k",
+      "metric": "physical_benchmark_engagement",
+      "filters": {
+        "head_index_cap": "4096"
+      },
+      "field": "remote_owners",
+      "op": "gte",
+      "expected": 1.0,
+      "actual": 2.0,
+      "passed": true,
+      "message": "remote_owners 2 Gte 1 -> true"
+    }
+  ]
+}

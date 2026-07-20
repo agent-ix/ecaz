@@ -43,6 +43,9 @@ This specification is the top-level requirements artifact for the current main-b
 - `ec_spire`, the SPIRE partition-object access method for PID-addressed IVF
   storage, local partition stores, CustomScan distributed reads, typed remote
   tuple transport, and coordinator-routed writes
+- `ec_distann`, the global-Vamana access method whose stitched graph records and
+  frozen source rows are physically hash-placed across PostgreSQL nodes and
+  searched through fingerprint-selected remote expansion/materialization
 - `ecaz`, the operator CLI for corpus, benchmark, comparison, stress, quantizer, and local development workflows
 - configured `ecaz bench suite` runs for repeatable long benchmark sequences and packet-local run manifests
 - Shared quantizer, scoring, planner, observability, WAL, and benchmark evidence requirements
@@ -72,6 +75,10 @@ This specification governs:
   mechanics, binary sidecar prefilter, grouped-PQ traversal fallback, heap
   rerank, insert/vacuum repair, unit-normalized v0 contract, reloptions, GUCs,
   planner costing, and measurement evidence
+- DistANN global-graph build/stitch, physical hash-owner handoff, frozen epoch
+  row tiers, manifest publication/recovery, remote graph expansion and row
+  materialization, coordinator orchestration, lifecycle, DML, and distributed
+  benchmark evidence
 - SPIRE partition-object storage and execution: PID-addressed root, routing,
   leaf, delta, and top-graph objects; Leaf V2 columnar segments; epoch
   publication; local partition stores; leaf block summaries and block-pruning
@@ -95,6 +102,9 @@ This specification does not govern:
   propagation, cross-shard embedding UPDATE-as-move, background prepared-xact
   recovery, true parallel local-store execution inside one backend, and product
   distributed benchmark claims before controlled multi-node measurements
+- Concurrent source-row DML replay during an ec_distann distributed epoch
+  build; the initial contract permits reads but blocks source DML/schema changes
+  from snapshot capture through publish or abort
 - Product benchmark claims not backed by dedicated controlled hardware
 - GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, Symphony, and parallel index scan unless reactivated by a later accepted ADR
 - Cosine and L2 operator families in the current v0 inner-product surface
@@ -121,6 +131,7 @@ This specification does not govern:
 | `ec_ivf` | `ecvector_ip_ops`, `tqvector_ip_ops` | Optional posting-list index for IVF tradeoff measurement | Implemented local v1 |
 | `ec_diskann` | `ecvector_diskann_ip_ops`, `tqvector_diskann_ip_ops` | Optional Vamana/DiskANN-style graph index | Implemented local v1 |
 | `ec_spire` | `ecvector_spire_ip_ops`, `tqvector_spire_ip_ops` | SPIRE partition-object local and distributed index | Implemented local and distributed v1 |
+| `ec_distann` | `ecvector_distann_ip_ops`, `tqvector_distann_ip_ops` | One global Vamana graph with physically hash-sharded records and frozen row tier | Proposed; local/replicated prototype exists, physical publish path pending |
 
 All current index families expose inner-product ordering through `<#>` as negative inner product so `ORDER BY embedding <#> query ASC LIMIT k` returns highest-similarity rows first.
 
@@ -148,6 +159,14 @@ returns rows without coordinator mirror tables. Coordinator writes route by
 placement metadata and use PostgreSQL two-phase commit for multi-node INSERT
 atomicity; broader shard SQL remains outside v1.
 
+`ec_distann` is the successor distributed-search architecture. It keeps one
+logical global Vamana graph and places each graph record plus its frozen logical
+source row on exactly one deterministic hash owner. The coordinator stores the
+head sample and epoch manifest, advances fingerprint-selected graph hops across
+owners, and reconstructs final tuples from typed owner payloads. A replicated
+full graph with serving-owner filtering is a development control, not a
+conforming distributed storage topology.
+
 ## 4. System Overview
 
 ```mermaid
@@ -162,6 +181,7 @@ graph TD
     I["ec_ivf"]
     D["ec_diskann"]
     S["ec_spire<br/>partition objects"]
+    DN["ec_distann<br/>global graph, hash-placed records"]
     CS["EcSpireDistributedScan<br/>CustomScan"]
     RE["Remote Executor<br/>typed tuple transport"]
     DML["Coordinator DML<br/>placement + 2PC"]
@@ -179,6 +199,7 @@ graph TD
     AM --> I
     AM --> D
     AM --> S
+    AM --> DN
     SQL --> CS
     SQL --> DML
     CS --> RE
@@ -204,6 +225,7 @@ src/
 │   ├── ec_hnsw/
 │   ├── ec_ivf/
 │   ├── ec_diskann/
+│   ├── ec_distann/
 │   └── ec_spire/
 ├── quant/
 ├── storage/
@@ -215,7 +237,7 @@ Shared behavior belongs under `am/common`, `quant`, or `storage`. AM-specific pa
 
 The requirements mirror that layout. Non-SPIRE functional requirements are
 grouped under `spec/functional/common`, `spec/functional/quant`,
-`spec/functional/index/{hnsw,ivf,diskann}`, and `spec/functional/operator`.
+`spec/functional/index/{hnsw,ivf,diskann,distann}`, and `spec/functional/operator`.
 SPIRE keeps its bounded substructure under `spec/functional/spire`.
 
 ## 5. Data Model
@@ -248,6 +270,10 @@ Each AM owns its persisted index format:
 - `ec_hnsw`: layered HNSW element/neighbor tuples, optional binary sidecars, optional rerank payloads, and storage-format-specific tuple variants
 - `ec_ivf`: metadata, centroid directory, posting-list pages, optional PQ/RaBitQ payloads, slack pages, and admin/drift snapshots
 - `ec_diskann`: Vamana nodes, medoid metadata, grouped-PQ codebook chain, binary sidecars, duplicate overflow chains, and vacuum repair metadata
+- `ec_distann`: stitched global Vamana records physically partitioned by hash
+  owner, owner-local vec_id directories, AM-owned frozen epoch row tiers,
+  coordinator head samples, placement/receipt manifests, and retained epoch
+  generations
 - `ec_spire`: root/control objects, routing arrays, top graph, Leaf V2 segment
   objects, delta objects, replacement manifests, epoch metadata, PID placement
   map, store descriptors, local store configuration, remote endpoint metadata,
@@ -312,6 +338,8 @@ spec/
 ├── stakeholder/
 ├── usecase/
 ├── functional/
+│   ├── index/
+│   │   └── distann/
 │   └── spire/
 │       ├── storage/
 │       ├── local/
@@ -379,6 +407,10 @@ references are not sufficient when the ADR index marks a duplicate identifier.
 - SPIRE true parallel local-store execution, cross-shard non-vector query
   planning, cross-shard embedding UPDATE-as-move, automatic DDL propagation, and
   background prepared-xact recovery remain deferred.
+- EC_DISTANN distributed benchmark promotion remains deferred until the
+  FR-078 physical hash-shard handoff and FR-082 publish/recovery contracts are
+  implemented and pass the topology audit; replicated-serving results remain
+  control-only evidence.
 - GPU/offline build trainers, OPQ/AQ/LSQ successors, SPANN, and additional distance metrics remain outside the current implemented surface.
 
 ## 12. References

@@ -1,0 +1,14 @@
+# M3 exit gate: 50k multinode recall == single-node (release)
+# head SHA: 56abbf1fb + transport error-detail fix (this commit)
+# build profile: release (ecaz_build_profile=release)
+# DB: ec_distann_bench, index m1_50k_mono_idx (50000 rows, dim 1536, REINDEXed with current .so)
+# roster: 2-node loopback (both -> ec_distann_bench @ port 28818)
+# cmd: ecaz dev sql --db ec_distann_bench --file recall-compare.sql
+
+## 51 queries, 2-node loopback top-10 vs single-node top-10:
+SET
+ n_queries | identical_queries | total_mismatched_ids 
+-----------+-------------------+----------------------
+        51 |                51 |                    0
+
+# RESULT: 51/51 queries byte-identical, 0 mismatched ids => multinode recall == single-node (delta 0, >= -0.001).

@@ -209,6 +209,7 @@ enum SuiteStep {
     CrossAm(CrossAmStep),
     Latency(LatencyStep),
     SpireLocalMultinode(SpireLocalMultinodeStep),
+    DistannLocalMultinode(DistannLocalMultinodeStep),
     SpirePipeline(SpirePipelineStep),
     Storage(StorageStep),
     Explain(ExplainStep),
@@ -292,6 +293,10 @@ struct LoadStep {
     reloptions: Vec<String>,
     #[serde(default)]
     log_file: Option<PathBuf>,
+    #[serde(default)]
+    sample_backend_memory: Option<bool>,
+    #[serde(default)]
+    memory_sample_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -470,6 +475,110 @@ struct SpireLocalMultinodeStep {
     skip_fault_drills: bool,
     #[serde(default)]
     skip_install: bool,
+}
+
+/// FR-082/NFR-020 distann multinode fixture step: drives
+/// `ecaz dev distann-multicluster local-multinode-pg18`, which loads source rows
+/// only on the coordinator, builds one physically sharded generation across N
+/// real PG18 instances, validates Ready/Published topology on every owner, and
+/// exercises cross-process serving. The historical replicated-serving control
+/// has a separate explicit dev subcommand and is not topology evidence.
+#[derive(Debug, Deserialize)]
+struct DistannBenchmarkSeedVariant {
+    name: String,
+    seed_strategy: String,
+    head_search_width: u32,
+    head_seed_count: u32,
+    neighbor_score_mode: String,
+    /// Task 184 benchmark-only global ranked-slot payload batch size. Zero
+    /// preserves eager materialization.
+    #[serde(default)]
+    materialization_batch_size: u32,
+}
+
+#[derive(Debug, Deserialize)]
+struct DistannLocalMultinodeStep {
+    name: String,
+    #[serde(default)]
+    tags: Vec<String>,
+    #[serde(default)]
+    pgoptions: Option<String>,
+    #[serde(default)]
+    artifact_dir: Option<PathBuf>,
+    #[serde(default)]
+    run_dir: Option<PathBuf>,
+    #[serde(default)]
+    log_file: Option<PathBuf>,
+    /// Keep only the compact summary as durable evidence. Raw fixture and
+    /// per-arm logs may be pruned after results.jsonl has been materialized.
+    #[serde(default)]
+    compact_artifacts: bool,
+    #[serde(default)]
+    pg: Option<u16>,
+    #[serde(default)]
+    pgbin: Option<PathBuf>,
+    #[serde(default)]
+    nodes: Option<u32>,
+    #[serde(default)]
+    coordinator_outside_roster: bool,
+    #[serde(default)]
+    physical_benchmark: bool,
+    #[serde(default)]
+    benchmark_iterations: Option<u32>,
+    #[serde(default)]
+    benchmark_warmup_iterations: Option<u32>,
+    #[serde(default)]
+    distann_stage_counters: bool,
+    #[serde(default)]
+    materialization_correctness: bool,
+    #[serde(default)]
+    base_port: Option<u16>,
+    #[serde(default)]
+    rows: Option<usize>,
+    #[serde(default)]
+    dim: Option<usize>,
+    #[serde(default)]
+    graph_degree: Option<u32>,
+    #[serde(default)]
+    head_index_cap: Option<u32>,
+    #[serde(default)]
+    beam_width: Option<u32>,
+    #[serde(default)]
+    hop_rounds: Option<u32>,
+    #[serde(default)]
+    seed_strategy: Option<String>,
+    #[serde(default)]
+    head_search_width: Option<u32>,
+    #[serde(default)]
+    head_seed_count: Option<u32>,
+    #[serde(default)]
+    neighbor_score_mode: Option<String>,
+    #[serde(default)]
+    head_policy: Option<String>,
+    #[serde(default)]
+    production_head_policy: Option<String>,
+    #[serde(default)]
+    training_query_path: Option<PathBuf>,
+    /// Seed-search arms measured against one immutable physical generation.
+    /// This avoids rebuilding identical 100k storage for every attribution
+    /// setting while preserving one result row per named arm.
+    #[serde(default)]
+    benchmark_seed_variants: Vec<DistannBenchmarkSeedVariant>,
+    #[serde(default)]
+    queries: Option<u32>,
+    #[serde(default)]
+    top_k: Option<u32>,
+    #[serde(default)]
+    skip_fault_drills: bool,
+    #[serde(default)]
+    drop_extension_cleanup_drill: bool,
+    /// Load a real staged corpus (`{staged_dir}/{corpus_prefix}_*.tsv`) instead
+    /// of the synthetic deterministic corpus. Makes this a real-corpus
+    /// distributed quality lane (Task 172).
+    #[serde(default)]
+    corpus_prefix: Option<String>,
+    #[serde(default)]
+    staged_dir: Option<PathBuf>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1215,6 +1324,18 @@ fn apply_default_artifact_logs(config: &mut SuiteConfig) {
                         .map(|dir| dir.join("local-multinode.log"));
                 }
             }
+            SuiteStep::DistannLocalMultinode(step) => {
+                if step.artifact_dir.is_none() {
+                    step.artifact_dir =
+                        Some(artifact_dir.join(artifact_safe_step_name(&step.name)));
+                }
+                if step.log_file.is_none() {
+                    step.log_file = step
+                        .artifact_dir
+                        .as_ref()
+                        .map(|dir| dir.join("distann-local-multinode.log"));
+                }
+            }
             SuiteStep::SpirePipeline(step) if step.log_output.is_none() => {
                 step.log_output = Some(log_path(&step.name));
             }
@@ -1283,6 +1404,12 @@ fn apply_artifact_dir_templates(config: &mut SuiteConfig) {
                 rewrite_artifact_dir_path(&mut step.pgbin, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.prepared_dir, &artifact_dir);
                 rewrite_artifact_dir_path(&mut step.bench_truth_corpus_file, &artifact_dir);
+            }
+            SuiteStep::DistannLocalMultinode(step) => {
+                rewrite_artifact_dir_path(&mut step.artifact_dir, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.run_dir, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.log_file, &artifact_dir);
+                rewrite_artifact_dir_path(&mut step.pgbin, &artifact_dir);
             }
             SuiteStep::SpirePipeline(step) => {
                 rewrite_artifact_dir_path(&mut step.truth_corpus_file, &artifact_dir);
@@ -1710,6 +1837,28 @@ fn parse_result_rows(
                 values: add_result_context(manifest, step, values),
             })
             .collect(),
+        "distann-local-multinode" => parse_distann_multinode_rows(raw)
+            .into_iter()
+            .map(|(metric, values)| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric,
+                artifact: artifact.into(),
+                values: add_result_context(manifest, step, values),
+            })
+            .collect(),
+        "raw" => parse_raw_result_rows(raw)
+            .into_iter()
+            .map(|(metric, values)| ResultRow {
+                suite: manifest.suite.clone(),
+                step: step.name.clone(),
+                kind: step.kind.clone(),
+                metric,
+                artifact: artifact.into(),
+                values: add_result_context(manifest, step, values),
+            })
+            .collect(),
         _ => Vec::new(),
     }
 }
@@ -1901,6 +2050,28 @@ fn parse_space_key_values(rest: &str) -> Option<BTreeMap<String, String>> {
     (!values.is_empty()).then_some(values)
 }
 
+/// Normalize decision-grade output from a raw suite step without teaching the
+/// runner about the command that produced it. The emitting command owns the
+/// metric name and whitespace-delimited key/value fields; the suite owns
+/// provenance, JSONL persistence, and threshold evaluation.
+fn parse_raw_result_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
+    const PREFIX: &str = "[suite-result] ";
+    raw.lines()
+        .filter_map(|line| {
+            let body = line.trim().strip_prefix(PREFIX)?;
+            let (metric, fields) = body.split_once(char::is_whitespace)?;
+            if metric.is_empty()
+                || !metric
+                    .chars()
+                    .all(|ch| ch.is_ascii_alphanumeric() || ch == '_' || ch == '-')
+            {
+                return None;
+            }
+            parse_space_key_values(fields.trim()).map(|values| (metric.to_owned(), values))
+        })
+        .collect()
+}
+
 fn parse_storage_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
     let mut rows = Vec::new();
     for table_row in parse_table_rows(raw) {
@@ -2016,11 +2187,184 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
             rows.push(("ec_ivf_build_timing".into(), values));
         } else if let Some(values) = parse_ec_diskann_build_timing_line(line) {
             rows.push(("ec_diskann_build_timing".into(), values));
+        } else if let Some(rest) = line.trim_start().strip_prefix("[loader] build_memory ") {
+            if let Some(values) = parse_space_key_values(rest) {
+                rows.push(("build_memory".into(), values));
+            }
+        } else if let Some(rest) = line
+            .trim_start()
+            .strip_prefix("[postgres notice] ec_distann sharded build: ")
+        {
+            if let Some(values) = parse_space_key_values(rest) {
+                rows.push(("distann_shard_build".into(), values));
+            }
         } else if let Some((name, seconds)) = parse_timed_loader_line(line, "completed prefix ") {
             rows.push(("load_timing".into(), timed_values("total", &name, seconds)));
         }
     }
     rows
+}
+
+/// Parse the `ecaz dev distann-multicluster` fixture log emitted by a
+/// `distann-local-multinode` suite step into structured result rows. The
+/// fixture prints `[distann-multicluster] ...` lines; three shapes carry
+/// decision-grade signal (027-P1 — the empty-`results.jsonl` fix):
+///
+/// - `RECALL_RESULT n_queries=.. identical=.. mismatched_ids=..` — the
+///   byte-identical single-vs-multi top-k distinct-recall identity. Emits a
+///   `distinct_recall_identity` row with an `identity_ok` threshold
+///   (`mismatched_ids == 0`).
+/// - `suite_recall_gate single=.. multi=.. delta=.. pass=..` — the
+///   `ecaz bench recall` single-vs-multi gate. Emits a `suite_recall_gate` row.
+/// - any `<drill> pass=<bool>` line (qual, FR-082, fault drills, concurrency,
+///   retention, AC-5, disjoint, recovery) — emits a `drill_outcome` row with
+///   the drill label and pass flag, so every asserted fixture arm traces to a
+///   result row.
+fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
+    const PREFIX: &str = "[distann-multicluster] ";
+    let mut rows = Vec::new();
+    for line in raw.lines() {
+        let line = line.trim();
+        let Some(body) = line.find(PREFIX).map(|idx| &line[idx + PREFIX.len()..]) else {
+            continue;
+        };
+        let body = body.trim();
+        if let Some(rest) = body.strip_prefix("RECALL_RESULT") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                let identity_ok = values
+                    .get("mismatched_ids")
+                    .map(|m| m == "0")
+                    .unwrap_or(false);
+                values.insert("identity_ok".into(), identity_ok.to_string());
+                rows.push(("distinct_recall_identity".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("suite_recall_gate ") {
+            // Only the measured form carries `single=`; SKIPPED/INCONCLUSIVE do not.
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                if values.contains_key("single") {
+                    rows.push(("suite_recall_gate".into(), values));
+                }
+            }
+        } else if let Some(rest) = body.strip_prefix("storage_summation ") {
+            // Task 172 AC-3 / NFR-018 cluster storage summation.
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("storage_summation".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("storage_node ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("storage_node".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_topology ") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                let topology_ok = values
+                    .get("state")
+                    .is_some_and(|state| state == "Ready" || state == "Published")
+                    && values.get("non_owned").is_some_and(|value| value == "0")
+                    && values.get("orphans").is_some_and(|value| value == "0");
+                values.insert("topology_ok".into(), topology_ok.to_string());
+                rows.push(("physical_topology".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_recall ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_recall".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_provenance ") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                if let Some(unanimous) = values.get("unanimous").map(|value| value == "true") {
+                    values.insert(
+                        "unanimous_numeric".into(),
+                        if unanimous { "1" } else { "0" }.into(),
+                    );
+                }
+                rows.push(("physical_benchmark_provenance".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_latency ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_latency".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_stage ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_stage".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_materialization_work ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_materialization_work".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_storage ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_storage".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_head ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_head".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_head_policy ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_head_policy".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_build ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_build".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_landmark ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_landmark".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_coverage ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_coverage".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_engagement ") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                if let Some(pass) = values.get("pass").map(|value| value == "true") {
+                    values.insert("pass_numeric".into(), if pass { "1" } else { "0" }.into());
+                }
+                rows.push(("physical_benchmark_engagement".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_materialization_correctness ") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                let pass = values.get("pass").is_some_and(|value| value == "true");
+                values.insert("pass_numeric".into(), if pass { "1" } else { "0" }.into());
+                rows.push(("physical_materialization_correctness".into(), values));
+            }
+        } else if let Some(pass_idx) = body.find(" pass=") {
+            // A generic drill-outcome line: `<label> pass=<bool>`.
+            let label = body[..pass_idx].trim();
+            let pass_token = body[pass_idx + " pass=".len()..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("");
+            if (pass_token == "true" || pass_token == "false") && !label.is_empty() {
+                let mut values = BTreeMap::new();
+                values.insert("drill".into(), sanitize_drill_label(label));
+                values.insert("pass".into(), pass_token.to_owned());
+                values.insert(
+                    "pass_numeric".into(),
+                    if pass_token == "true" { "1" } else { "0" }.into(),
+                );
+                rows.push(("drill_outcome".into(), values));
+            }
+        }
+    }
+    rows
+}
+
+/// Collapse a free-text drill label (which may carry interior spaces from the
+/// fixture, e.g. `recovery RECALL_RESULT ...`) into a compact identifier.
+fn sanitize_drill_label(label: &str) -> String {
+    label
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join("_")
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' || ch == '-' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn parse_ec_ivf_build_timing_line(line: &str) -> Option<BTreeMap<String, String>> {
@@ -2429,6 +2773,7 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => &step.name,
             SuiteStep::Latency(step) => &step.name,
             SuiteStep::SpireLocalMultinode(step) => &step.name,
+            SuiteStep::DistannLocalMultinode(step) => &step.name,
             SuiteStep::SpirePipeline(step) => &step.name,
             SuiteStep::Storage(step) => &step.name,
             SuiteStep::Explain(step) => &step.name,
@@ -2447,6 +2792,7 @@ impl SuiteStep {
             SuiteStep::CrossAm(_) => "cross-am",
             SuiteStep::Latency(_) => "latency",
             SuiteStep::SpireLocalMultinode(_) => "spire-local-multinode",
+            SuiteStep::DistannLocalMultinode(_) => "distann-local-multinode",
             SuiteStep::SpirePipeline(_) => "spire-pipeline",
             SuiteStep::Storage(_) => "storage",
             SuiteStep::Explain(_) => "explain",
@@ -2465,6 +2811,7 @@ impl SuiteStep {
             SuiteStep::CrossAm(step) => &step.tags,
             SuiteStep::Latency(step) => &step.tags,
             SuiteStep::SpireLocalMultinode(step) => &step.tags,
+            SuiteStep::DistannLocalMultinode(step) => &step.tags,
             SuiteStep::SpirePipeline(step) => &step.tags,
             SuiteStep::Storage(step) => &step.tags,
             SuiteStep::Explain(step) => &step.tags,
@@ -2479,6 +2826,7 @@ impl SuiteStep {
             SuiteStep::Load(step) => step.pgoptions.as_deref(),
             SuiteStep::Latency(step) => step.pgoptions.as_deref(),
             SuiteStep::SpireLocalMultinode(step) => step.pgoptions.as_deref(),
+            SuiteStep::DistannLocalMultinode(step) => step.pgoptions.as_deref(),
             SuiteStep::SpirePipeline(step) => step.pgoptions.as_deref(),
             _ => None,
         }
@@ -2524,6 +2872,14 @@ impl SuiteStep {
                 if !step.chunked && (step.corpus_file.is_none() || step.queries_file.is_none()) {
                     bail!(
                         "load step {:?} requires corpus_file and queries_file unless chunked=true",
+                        step.name
+                    )
+                }
+                if step.sample_backend_memory.unwrap_or(false)
+                    && step.memory_sample_interval_ms == Some(0)
+                {
+                    bail!(
+                        "load step {:?} must set memory_sample_interval_ms >= 1",
                         step.name
                     )
                 }
@@ -2640,6 +2996,281 @@ impl SuiteStep {
                 if step.bench_queries_limit == Some(0) {
                     bail!(
                         "spire-local-multinode step {:?} must set bench_queries_limit >= 1",
+                        step.name
+                    )
+                }
+                Ok(())
+            }
+            SuiteStep::DistannLocalMultinode(step) => {
+                if step.pg.unwrap_or(18) != 18 {
+                    bail!(
+                        "distann-local-multinode step {:?} requires pg=18, got {}",
+                        step.name,
+                        step.pg.unwrap_or(18)
+                    )
+                }
+                if step.nodes == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set nodes >= 1",
+                        step.name
+                    )
+                }
+                if step.top_k == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set top_k >= 1",
+                        step.name
+                    )
+                }
+                if step
+                    .head_index_cap
+                    .is_some_and(|value| !(16..=1_048_576).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set head_index_cap in 16..=1048576",
+                        step.name
+                    )
+                }
+                if step
+                    .beam_width
+                    .is_some_and(|value| !(1..=64).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set beam_width in 1..=64",
+                        step.name
+                    )
+                }
+                if step
+                    .hop_rounds
+                    .is_some_and(|value| !(1..=256).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set hop_rounds in 1..=256",
+                        step.name
+                    )
+                }
+                if let Some(strategy) = step.seed_strategy.as_deref() {
+                    if !matches!(
+                        strategy,
+                        "persisted_head" | "head_sample_exact" | "head_hierarchy" | "owner_scan"
+                    ) {
+                        bail!(
+                            "distann-local-multinode step {:?} seed_strategy must be persisted_head, head_sample_exact, head_hierarchy, or owner_scan",
+                            step.name
+                        )
+                    }
+                    if !step.physical_benchmark {
+                        bail!(
+                            "distann-local-multinode step {:?} seed_strategy requires physical_benchmark",
+                            step.name
+                        )
+                    }
+                }
+                if step
+                    .head_search_width
+                    .is_some_and(|value| !(1..=4096).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set head_search_width in 1..=4096",
+                        step.name
+                    )
+                }
+                if step
+                    .head_seed_count
+                    .is_some_and(|value| !(1..=4096).contains(&value))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} must set head_seed_count in 1..=4096",
+                        step.name
+                    )
+                }
+                if let Some(mode) = step.neighbor_score_mode.as_deref() {
+                    if !matches!(mode, "rabitq" | "exact_neighbor") {
+                        bail!(
+                            "distann-local-multinode step {:?} neighbor_score_mode must be rabitq or exact_neighbor",
+                            step.name
+                        )
+                    }
+                    if !step.physical_benchmark {
+                        bail!(
+                            "distann-local-multinode step {:?} neighbor_score_mode requires physical_benchmark",
+                            step.name
+                        )
+                    }
+                }
+                if let Some(policy) = step.head_policy.as_deref() {
+                    if !matches!(
+                        policy,
+                        "current_sample"
+                            | "geometry_landmarks"
+                            | "graph_landmarks"
+                            | "training_landmarks"
+                            | "training_region_balanced"
+                            | "training_query_facility"
+                    ) {
+                        bail!(
+                            "distann-local-multinode step {:?} has invalid head_policy {:?}",
+                            step.name,
+                            policy
+                        )
+                    }
+                    if policy.starts_with("training_") && step.training_query_path.is_none() {
+                        bail!(
+                            "distann-local-multinode step {:?} training head policy requires training_query_path",
+                            step.name
+                        )
+                    }
+                }
+                if let Some(policy) = step.production_head_policy.as_deref() {
+                    if !matches!(policy, "current_sample_graph" | "training_landmarks_exact") {
+                        bail!(
+                            "distann-local-multinode step {:?} has invalid production_head_policy {:?}",
+                            step.name,
+                            policy
+                        )
+                    }
+                    if policy == "training_landmarks_exact" {
+                        if step.training_query_path.is_none() {
+                            bail!(
+                                "distann-local-multinode step {:?} training_landmarks_exact requires training_query_path",
+                                step.name
+                            )
+                        }
+                        if step.head_index_cap.unwrap_or(4096) != 4096 {
+                            bail!(
+                                "distann-local-multinode step {:?} training_landmarks_exact requires head_index_cap 4096",
+                                step.name
+                            )
+                        }
+                    }
+                }
+                if step.head_policy.is_some() && step.production_head_policy.is_some() {
+                    bail!(
+                        "distann-local-multinode step {:?} cannot combine head_policy and production_head_policy",
+                        step.name
+                    )
+                }
+                let training_path_expected = step
+                    .head_policy
+                    .as_deref()
+                    .is_some_and(|policy| policy.starts_with("training_"))
+                    || step.production_head_policy.as_deref() == Some("training_landmarks_exact");
+                if step.training_query_path.is_some() != training_path_expected {
+                    bail!(
+                        "distann-local-multinode step {:?} training_query_path is required exactly for a training head policy",
+                        step.name
+                    )
+                }
+                if !step.benchmark_seed_variants.is_empty() {
+                    if !step.physical_benchmark {
+                        bail!(
+                            "distann-local-multinode step {:?} benchmark_seed_variants requires physical_benchmark",
+                            step.name
+                        )
+                    }
+                    if step.seed_strategy.is_some()
+                        || step.head_search_width.is_some()
+                        || step.head_seed_count.is_some()
+                        || step.neighbor_score_mode.is_some()
+                    {
+                        bail!(
+                            "distann-local-multinode step {:?} benchmark_seed_variants cannot be combined with singular seed controls",
+                            step.name
+                        )
+                    }
+                    let mut variant_names = std::collections::BTreeSet::new();
+                    for variant in &step.benchmark_seed_variants {
+                        if variant.name.is_empty()
+                            || !variant.name.bytes().all(|byte| {
+                                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-')
+                            })
+                            || !variant_names.insert(variant.name.as_str())
+                        {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant names must be unique ASCII identifiers",
+                                step.name
+                            )
+                        }
+                        if !matches!(
+                            variant.seed_strategy.as_str(),
+                            "persisted_head"
+                                | "head_sample_exact"
+                                | "head_hierarchy"
+                                | "owner_scan"
+                        ) {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} has an invalid strategy",
+                                step.name,
+                                variant.name
+                            )
+                        }
+                        if !(1..=4096).contains(&variant.head_search_width)
+                            || !(1..=4096).contains(&variant.head_seed_count)
+                        {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} widths must be in 1..=4096",
+                                step.name,
+                                variant.name
+                            )
+                        }
+                        if variant.materialization_batch_size > 4096 {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} materialization_batch_size must be in 0..=4096",
+                                step.name,
+                                variant.name
+                            )
+                        }
+                        if !matches!(
+                            variant.neighbor_score_mode.as_str(),
+                            "rabitq" | "exact_neighbor"
+                        ) {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} has an invalid neighbor score mode",
+                                step.name,
+                                variant.name
+                            )
+                        }
+                    }
+                }
+                if step.benchmark_iterations == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set benchmark_iterations >= 1",
+                        step.name
+                    )
+                }
+                if step.distann_stage_counters && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} distann_stage_counters requires physical_benchmark",
+                        step.name
+                    )
+                }
+                if step.materialization_correctness {
+                    if !step.physical_benchmark {
+                        bail!(
+                            "distann-local-multinode step {:?} materialization_correctness requires physical_benchmark",
+                            step.name
+                        )
+                    }
+                    let batch_sizes = step
+                        .benchmark_seed_variants
+                        .iter()
+                        .map(|variant| variant.materialization_batch_size)
+                        .collect::<std::collections::BTreeSet<_>>();
+                    if !batch_sizes.contains(&0) || !batch_sizes.contains(&10) {
+                        bail!(
+                            "distann-local-multinode step {:?} materialization_correctness requires eager batch 0 and candidate batch 10 variants",
+                            step.name
+                        )
+                    }
+                    if step.coordinator_outside_roster {
+                        bail!(
+                            "distann-local-multinode step {:?} materialization_correctness requires coordinator owner zero",
+                            step.name
+                        )
+                    }
+                }
+                if step.physical_benchmark && step.corpus_prefix.is_none() {
+                    bail!(
+                        "distann-local-multinode step {:?} physical_benchmark requires corpus_prefix",
                         step.name
                     )
                 }
@@ -2762,6 +3393,9 @@ impl SuiteStep {
             SuiteStep::SpireLocalMultinode(step) => {
                 Ok(expand_spire_local_multinode(step, defaults))
             }
+            SuiteStep::DistannLocalMultinode(step) => {
+                Ok(expand_distann_local_multinode(step, defaults))
+            }
             SuiteStep::SpirePipeline(step) => Ok(expand_spire_pipeline(step, defaults)),
             SuiteStep::Storage(step) => Ok(expand_storage(step)),
             SuiteStep::Explain(step) => Ok(expand_explain(step, defaults, conn)),
@@ -2798,6 +3432,28 @@ impl SuiteStep {
                 .collect(),
             SuiteStep::CrossAm(step) => step.log_output.iter().cloned().collect(),
             SuiteStep::Latency(step) => step.log_output.iter().cloned().collect(),
+            SuiteStep::DistannLocalMultinode(step) => {
+                if step.compact_artifacts {
+                    return step
+                        .artifact_dir
+                        .iter()
+                        .map(|dir| dir.join("distann-multinode-summary.log"))
+                        .collect();
+                }
+                let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
+                if let Some(dir) = &step.artifact_dir {
+                    artifacts.push(dir.join("distann-multinode-summary.log"));
+                    if step.physical_benchmark {
+                        artifacts.extend([
+                            dir.join("physical-recall.log"),
+                            dir.join("physical-latency.log"),
+                            dir.join("single-recall.log"),
+                            dir.join("single-latency.log"),
+                        ]);
+                    }
+                }
+                artifacts
+            }
             SuiteStep::SpireLocalMultinode(step) => {
                 let mut artifacts: Vec<PathBuf> = step.smoke_log.iter().cloned().collect();
                 if let Some(run_dir) = &step.run_dir {
@@ -3071,6 +3727,22 @@ fn expand_load(step: &LoadStep, defaults: &SuiteDefaults) -> Vec<String> {
     }
     for reloption in &step.reloptions {
         push_arg(&mut args, "--reloption", reloption);
+    }
+    if step
+        .sample_backend_memory
+        .or(defaults.sample_backend_memory)
+        .unwrap_or(false)
+    {
+        args.push("--sample-backend-memory".into());
+        push_arg(
+            &mut args,
+            "--memory-sample-interval-ms",
+            &step
+                .memory_sample_interval_ms
+                .or(defaults.memory_sample_interval_ms)
+                .unwrap_or(25)
+                .to_string(),
+        );
     }
     args
 }
@@ -3365,6 +4037,147 @@ fn expand_spire_local_multinode(
     if step.skip_install {
         args.push("--skip-install".into());
     }
+    args
+}
+
+fn expand_distann_local_multinode(
+    step: &DistannLocalMultinodeStep,
+    defaults: &SuiteDefaults,
+) -> Vec<String> {
+    let mut args = vec![
+        "dev".into(),
+        "distann-multicluster".into(),
+        "local-multinode-pg18".into(),
+    ];
+    push_arg(
+        &mut args,
+        "--pg",
+        &step.pg.or(defaults.pg).unwrap_or(18).to_string(),
+    );
+    push_opt_path(&mut args, "--pgbin", step.pgbin.as_deref());
+    push_opt_path(&mut args, "--artifact-dir", step.artifact_dir.as_deref());
+    push_opt_path(&mut args, "--run-dir", step.run_dir.as_deref());
+    push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--nodes",
+        step.nodes.map(|v| v.to_string()).as_deref(),
+    );
+    if step.coordinator_outside_roster {
+        args.push("--coordinator-outside-roster".into());
+    }
+    if step.physical_benchmark {
+        args.push("--physical-benchmark".into());
+    }
+    if step.distann_stage_counters {
+        args.push("--distann-stage-counters".into());
+    }
+    if step.materialization_correctness {
+        args.push("--materialization-correctness".into());
+    }
+    push_opt_arg(
+        &mut args,
+        "--benchmark-iterations",
+        step.benchmark_iterations.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--benchmark-warmup-iterations",
+        step.benchmark_warmup_iterations
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_u16(&mut args, "--base-port", step.base_port);
+    push_opt_arg(
+        &mut args,
+        "--rows",
+        step.rows.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--dim",
+        step.dim.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--graph-degree",
+        step.graph_degree.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--head-index-cap",
+        step.head_index_cap.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--beam-width",
+        step.beam_width.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--hop-rounds",
+        step.hop_rounds.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(&mut args, "--seed-strategy", step.seed_strategy.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--head-search-width",
+        step.head_search_width.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--head-seed-count",
+        step.head_seed_count.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--neighbor-score-mode",
+        step.neighbor_score_mode.as_deref(),
+    );
+    push_opt_arg(&mut args, "--head-policy", step.head_policy.as_deref());
+    push_opt_arg(
+        &mut args,
+        "--production-head-policy",
+        step.production_head_policy.as_deref(),
+    );
+    push_opt_path(
+        &mut args,
+        "--training-query-path",
+        step.training_query_path.as_deref(),
+    );
+    for variant in &step.benchmark_seed_variants {
+        push_arg(
+            &mut args,
+            "--benchmark-seed-variant",
+            &format!(
+                "{}:{}:{}:{}:{}:{}",
+                variant.name,
+                variant.seed_strategy,
+                variant.head_search_width,
+                variant.head_seed_count,
+                variant.neighbor_score_mode,
+                variant.materialization_batch_size
+            ),
+        );
+    }
+    push_opt_arg(
+        &mut args,
+        "--queries",
+        step.queries.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--top-k",
+        step.top_k.map(|v| v.to_string()).as_deref(),
+    );
+    if step.skip_fault_drills {
+        args.push("--skip-fault-drills".into());
+    }
+    if step.drop_extension_cleanup_drill {
+        args.push("--drop-extension-cleanup-drill".into());
+    }
+    push_opt_arg(&mut args, "--corpus-prefix", step.corpus_prefix.as_deref());
+    push_opt_path(&mut args, "--staged-dir", step.staged_dir.as_deref());
     args
 }
 
@@ -4146,6 +4959,183 @@ mod tests {
     }
 
     #[test]
+    fn raw_suite_result_rows_are_structured() {
+        let raw = "\
+psql header noise\n\
+[suite-result] dml_gate_latency lane=control trial=1 us_per_statement=3.125\n\
+[suite-result] dml_gate_latency lane=installed trial=1 us_per_statement=17.750\n\
+[suite-result] invalid/metric lane=ignored\n\
+[suite-result] missing_fields\n";
+        let rows = parse_raw_result_rows(raw);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "dml_gate_latency");
+        assert_eq!(rows[0].1.get("lane").map(String::as_str), Some("control"));
+        assert_eq!(
+            rows[1].1.get("us_per_statement").map(String::as_str),
+            Some("17.750")
+        );
+    }
+
+    #[test]
+    fn distann_multinode_rows_parse_recall_identity_gate_and_drills() {
+        // 027-P1: the `distann-local-multinode` step used to emit an empty
+        // results.jsonl because parse_result_rows had no arm. This pins the
+        // three decision-grade shapes the fixture emits.
+        let raw = "\
+[distann-multicluster] node 1 loaded + indexed\n\
+[distann-multicluster] RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0\n\
+[distann-multicluster] suite_recall_gate single=0.9950 multi=0.9950 delta=0.0000 pass=true\n\
+[distann-multicluster] qual_correctness mismatched_ids=0 pass=true\n\
+[distann-multicluster] fault_drill remote_statement_timeout pass=true\n\
+[distann-multicluster] suite_recall_gate=SKIPPED(no exe)\n";
+        let rows = parse_distann_multinode_rows(raw);
+
+        let identity = rows
+            .iter()
+            .find(|(m, _)| m == "distinct_recall_identity")
+            .expect("recall identity row");
+        assert_eq!(identity.1.get("n_queries").map(String::as_str), Some("50"));
+        assert_eq!(
+            identity.1.get("mismatched_ids").map(String::as_str),
+            Some("0")
+        );
+        assert_eq!(
+            identity.1.get("identity_ok").map(String::as_str),
+            Some("true")
+        );
+
+        let gate = rows
+            .iter()
+            .find(|(m, _)| m == "suite_recall_gate")
+            .expect("suite recall gate row");
+        assert_eq!(gate.1.get("single").map(String::as_str), Some("0.9950"));
+        assert_eq!(gate.1.get("multi").map(String::as_str), Some("0.9950"));
+        assert_eq!(gate.1.get("pass").map(String::as_str), Some("true"));
+
+        // The SKIPPED gate line (no `single=`) must NOT produce a gate row.
+        assert_eq!(
+            rows.iter()
+                .filter(|(m, _)| m == "suite_recall_gate")
+                .count(),
+            1,
+            "only the measured gate line yields a row"
+        );
+
+        let drills: Vec<&String> = rows
+            .iter()
+            .filter(|(m, _)| m == "drill_outcome")
+            .filter_map(|(_, v)| v.get("drill"))
+            .collect();
+        assert!(
+            drills
+                .iter()
+                .any(|d| d.contains("fault_drill_remote_statement_timeout")),
+            "fault drill outcome captured: {drills:?}"
+        );
+        assert!(
+            drills.iter().any(|d| d.contains("qual_correctness")),
+            "qual drill outcome captured: {drills:?}"
+        );
+    }
+
+    #[test]
+    fn distann_multinode_recall_mismatch_sets_identity_not_ok() {
+        let raw =
+            "[distann-multicluster] RECALL_RESULT n_queries=50 identical=48 mismatched_ids=4\n";
+        let rows = parse_distann_multinode_rows(raw);
+        let identity = rows
+            .iter()
+            .find(|(m, _)| m == "distinct_recall_identity")
+            .expect("recall identity row");
+        assert_eq!(
+            identity.1.get("identity_ok").map(String::as_str),
+            Some("false"),
+            "a nonzero mismatch fails the identity threshold"
+        );
+    }
+
+    #[test]
+    fn distann_physical_provenance_is_structured() {
+        let raw = "[distann-multicluster] physical_benchmark_provenance scale=10k extension_git_sha=0123456789abcdef extension_build_profile=release nodes=3 unanimous=true\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "physical_benchmark_provenance");
+        assert_eq!(
+            rows[0].1.get("extension_git_sha").map(String::as_str),
+            Some("0123456789abcdef")
+        );
+        assert_eq!(
+            rows[0].1.get("extension_build_profile").map(String::as_str),
+            Some("release")
+        );
+        assert_eq!(rows[0].1.get("unanimous").map(String::as_str), Some("true"));
+        assert_eq!(
+            rows[0].1.get("unanimous_numeric").map(String::as_str),
+            Some("1")
+        );
+    }
+
+    #[test]
+    fn distann_physical_topology_and_gate_are_structured() {
+        let raw = "[distann-multicluster] physical_topology phase=published node=2 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=65536 row_bytes=16384 directory_bytes=16384 control_bytes=8192\n\
+[distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=3 source_rows=90\n\
+[distann-multicluster] physical_publish_fault participant_down_partial pass=true decision=Pending registration=Decided active_count=0 local_state=Ready remote_acked_state=Published unavailable_node=3\n\
+[distann-multicluster] physical_publish_fault post_ack_pre_pointer pass=true decision=Pending registration=Decided active_count=0 owner_states=Ready,Published,Published\n\
+[distann-multicluster] physical_publish_fault idempotent_recovery pass=true decision=Applied registration=Published active_count=1 owner_states=Published,Published,Published\n\
+[distann-multicluster] physical_benchmark_recall scale=10k arm=physical seed_strategy=persisted_head queries=10 trials=100 recall=1.0000 mean_ms=10727.91\n\
+[distann-multicluster] physical_benchmark_latency scale=10k arm=physical seed_strategy=persisted_head count=5 mean_ms=10744.10 p50_ms=10664.70 p95_ms=11065.20 p99_ms=11125.80 max_ms=11141.00 concurrency=1 cache=warm\n\
+[distann-multicluster] physical_benchmark_head scale=10k head_index_cap=4096 head_search_width=32 head_seed_count=32 seed_strategy=persisted_head neighbor_score_mode=rabitq sample_count=4096 head_sample_bytes=25231360 head_graph_bytes=540672 head_cache_estimated_bytes=25772032\n\
+[distann-multicluster] physical_benchmark_head_policy scale=10k policy=training_landmarks_exact scoring_mode=exact_landmark_scan training_queries=200 training_query_digest=aaaa head_index_cap=4096 returned_seed_count=32 sample_count=4096 head_sample_digest=bbbb\n";
+        let rows = parse_distann_multinode_rows(raw);
+        let topology = rows
+            .iter()
+            .find(|(metric, _)| metric == "physical_topology")
+            .expect("topology row");
+        assert_eq!(
+            topology.1.get("topology_ok").map(String::as_str),
+            Some("true")
+        );
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "drill_outcome"
+                && values.get("drill").map(String::as_str) == Some("physical_topology_gate")
+                && values.get("pass").map(String::as_str) == Some("true")
+        }));
+        for drill in [
+            "physical_publish_fault_participant_down_partial",
+            "physical_publish_fault_post_ack_pre_pointer",
+            "physical_publish_fault_idempotent_recovery",
+        ] {
+            assert!(rows.iter().any(|(metric, values)| {
+                metric == "drill_outcome"
+                    && values.get("drill").map(String::as_str) == Some(drill)
+                    && values.get("pass").map(String::as_str) == Some("true")
+            }));
+        }
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "physical_benchmark_recall"
+                && values.get("arm").map(String::as_str) == Some("physical")
+                && values.get("seed_strategy").map(String::as_str) == Some("persisted_head")
+                && values.get("recall").map(String::as_str) == Some("1.0000")
+        }));
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "physical_benchmark_latency"
+                && values.get("seed_strategy").map(String::as_str) == Some("persisted_head")
+                && values.get("p95_ms").map(String::as_str) == Some("11065.20")
+        }));
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "physical_benchmark_head"
+                && values.get("sample_count").map(String::as_str) == Some("4096")
+                && values.get("head_search_width").map(String::as_str) == Some("32")
+        }));
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "physical_benchmark_head_policy"
+                && values.get("policy").map(String::as_str) == Some("training_landmarks_exact")
+                && values.get("scoring_mode").map(String::as_str) == Some("exact_landmark_scan")
+                && values.get("training_queries").map(String::as_str) == Some("200")
+        }));
+    }
+
+    #[test]
     fn shell_join_with_pgoptions_renders_environment_prefix() {
         let command = vec![
             "--database".into(),
@@ -4262,6 +5252,8 @@ mod tests {
                 table_reloptions: Vec::new(),
                 reloptions: Vec::new(),
                 log_file: Some("${artifact_dir}/load.log".into()),
+                sample_backend_memory: None,
+                memory_sample_interval_ms: None,
             })],
         };
 
@@ -4436,6 +5428,315 @@ mod tests {
             .expected_artifacts
             .iter()
             .any(|path| path.ends_with("bench-suite/results.jsonl")));
+    }
+
+    #[test]
+    fn distann_local_multinode_step_expands_head_index_cap() {
+        let raw = r#"{
+          "name": "distann-head-cap",
+          "schema_version": 1,
+          "defaults": {"pg": 18},
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "cap-256",
+            "nodes": 3,
+            "head_index_cap": 256,
+            "beam_width": 16,
+            "hop_rounds": 25,
+            "seed_strategy": "head_sample_exact",
+            "head_search_width": 128,
+            "head_seed_count": 64,
+            "physical_benchmark": true,
+            "compact_artifacts": true,
+            "artifact_dir": "artifacts/cap-256",
+            "benchmark_warmup_iterations": 7,
+            "drop_extension_cleanup_drill": true,
+            "corpus_prefix": "ec_real_10k"
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--head-index-cap", "256"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--beam-width", "16"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--hop-rounds", "25"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--seed-strategy", "head_sample_exact"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--head-search-width", "128"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--head-seed-count", "64"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--benchmark-warmup-iterations", "7"]));
+        assert!(command.contains(&"--drop-extension-cleanup-drill".into()));
+        assert_eq!(
+            config.steps[0].expected_artifacts(),
+            vec![PathBuf::from(
+                "artifacts/cap-256/distann-multinode-summary.log"
+            )]
+        );
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_task183_stage_profile() {
+        let raw = r#"{
+          "name": "distann-stage-profile",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "profile-100k",
+            "physical_benchmark": true,
+            "distann_stage_counters": true,
+            "corpus_prefix": "ec_real_100k"
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--distann-stage-counters".into()));
+
+        let rows = parse_distann_multinode_rows(
+            "[distann-multicluster] physical_benchmark_stage scale=100k variant=control arm=physical stage=head_score scans=50 samples=50 elapsed_ns=100000000 mean_ms=2.0\n\
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=control arm=physical metric=remote_candidates_requested scans=50 value=500 mean_per_scan=10.0\n",
+        );
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "physical_benchmark_stage");
+        assert_eq!(
+            rows[0].1.get("stage").map(String::as_str),
+            Some("head_score")
+        );
+        assert_eq!(rows[1].0, "physical_benchmark_materialization_work");
+        assert_eq!(
+            rows[1].1.get("metric").map(String::as_str),
+            Some("remote_candidates_requested")
+        );
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_seed_variants_on_one_fixture() {
+        let raw = r#"{
+          "name": "distann-seed-screen",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "screen-100k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_100k",
+            "benchmark_seed_variants": [
+              {
+                "name": "persisted-w32-s32",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 0
+              },
+              {
+                "name": "owner-oracle",
+                "seed_strategy": "owner_scan",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10
+              }
+            ]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--benchmark-seed-variant",
+                    "persisted-w32-s32:persisted_head:32:32:rabitq:0",
+                ]
+        }));
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--benchmark-seed-variant",
+                    "owner-oracle:owner_scan:32:32:rabitq:10",
+                ]
+        }));
+    }
+
+    #[test]
+    fn distann_materialization_correctness_is_suite_addressable_and_structured() {
+        let raw = r#"{
+          "name": "distann-materialization-correctness",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "correctness-10k",
+            "physical_benchmark": true,
+            "materialization_correctness": true,
+            "corpus_prefix": "ec_real_10k",
+            "benchmark_seed_variants": [
+              {
+                "name": "eager",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 0
+              },
+              {
+                "name": "lazy10",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10
+              }
+            ]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--materialization-correctness".into()));
+
+        let rows = parse_distann_multinode_rows(
+            "[distann-multicluster] physical_materialization_correctness scale=10k scenario=null_payload pass=true rows=10 eager_digest=aaaa candidate_digest=aaaa null_ok=true toast_ok=true\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "physical_materialization_correctness");
+        assert_eq!(
+            rows[0].1.get("scenario").map(String::as_str),
+            Some("null_payload")
+        );
+        assert_eq!(rows[0].1.get("pass_numeric").map(String::as_str), Some("1"));
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_production_trained_head() {
+        let raw = r#"{
+          "name": "distann-production-head",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "trained-100k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_100k",
+            "head_index_cap": 4096,
+            "production_head_policy": "training_landmarks_exact",
+            "training_query_path": "/staged/ec_real_100k_queries.tsv"
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .windows(2)
+            .any(|window| { window == ["--production-head-policy", "training_landmarks_exact"] }));
+        assert!(command.windows(2).any(|window| {
+            window == ["--training-query-path", "/staged/ec_real_100k_queries.tsv"]
+        }));
+        assert!(!command.iter().any(|argument| argument == "--head-policy"));
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_task183_training_policies() {
+        for policy in ["training_region_balanced", "training_query_facility"] {
+            let raw = format!(
+                r#"{{
+                  "name": "distann-task183-head",
+                  "schema_version": 1,
+                  "steps": [{{
+                    "kind": "distann-local-multinode",
+                    "name": "{policy}-100k",
+                    "physical_benchmark": true,
+                    "corpus_prefix": "ec_real_100k",
+                    "head_index_cap": 4096,
+                    "head_policy": "{policy}",
+                    "training_query_path": "/staged/ec_real_100k_queries.tsv"
+                  }}]
+                }}"#
+            );
+            let config: SuiteConfig = serde_json::from_str(&raw).expect("suite parses");
+            validate_config(&config).expect("suite validates");
+            let command = config.steps[0]
+                .expand(&config.defaults, &conn())
+                .expect("step expands");
+            assert!(command
+                .windows(2)
+                .any(|window| { window == ["--head-policy", policy] }));
+            assert!(command.windows(2).any(|window| {
+                window == ["--training-query-path", "/staged/ec_real_100k_queries.tsv"]
+            }));
+        }
+    }
+
+    #[test]
+    fn distann_drop_extension_cleanup_is_structured() {
+        let raw = "[distann-multicluster] physical_drop_extension_cleanup pass=true node=2 ready_before=1 published_before=1 hidden_before=8 hidden_after=0 extension_after=0 post_drop_dml_rows=1\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "drill_outcome");
+        assert_eq!(
+            rows[0].1.get("drill").map(String::as_str),
+            Some("physical_drop_extension_cleanup")
+        );
+        assert_eq!(rows[0].1.get("pass").map(String::as_str), Some("true"));
+    }
+
+    #[test]
+    fn distann_local_multinode_rejects_out_of_range_head_index_cap() {
+        let step: SuiteStep = serde_json::from_str(
+            r#"{
+              "kind": "distann-local-multinode",
+              "name": "invalid-cap",
+              "head_index_cap": 15
+            }"#,
+        )
+        .expect("step parses");
+
+        assert!(step.validate().is_err());
+    }
+
+    #[test]
+    fn distann_local_multinode_rejects_out_of_range_search_shape() {
+        for field in [
+            r#""beam_width": 65"#,
+            r#""hop_rounds": 257"#,
+            r#""head_search_width": 4097"#,
+            r#""head_seed_count": 0"#,
+            r#""seed_strategy": "unknown""#,
+        ] {
+            let step: SuiteStep = serde_json::from_str(&format!(
+                r#"{{
+                  "kind": "distann-local-multinode",
+                  "name": "invalid-search-shape",
+                  {field}
+                }}"#
+            ))
+            .expect("step parses");
+            assert!(step.validate().is_err());
+        }
     }
 
     #[test]
@@ -4978,6 +6279,8 @@ mod tests {
             table_reloptions: Vec::new(),
             reloptions: vec!["nlists=1024".into()],
             log_file: Some("load.log".into()),
+            sample_backend_memory: Some(true),
+            memory_sample_interval_ms: Some(10),
         };
         let args = expand_load(&step, &defaults);
         assert!(args.contains(&"--chunked".into()));
@@ -4990,6 +6293,10 @@ mod tests {
             .any(|w| w == ["--manifest-file", "stage/anchor_manifest.json"]));
         assert!(!args.iter().any(|arg| arg == "--corpus-file"));
         assert!(!args.iter().any(|arg| arg == "--queries-file"));
+        assert!(args.contains(&"--sample-backend-memory".into()));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--memory-sample-interval-ms", "10"]));
     }
 
     #[test]
@@ -5022,6 +6329,8 @@ mod tests {
                 table_reloptions: vec!["parallel_workers=4".into()],
                 reloptions: vec!["nlists=128".into()],
                 log_file: Some("load.log".into()),
+                sample_backend_memory: None,
+                memory_sample_interval_ms: None,
             })],
         };
         let args = SuiteRunOptions {
@@ -5426,6 +6735,8 @@ mod tests {
             table_reloptions: Vec::new(),
             reloptions: Vec::new(),
             log_file: Some("load.log".into()),
+            sample_backend_memory: None,
+            memory_sample_interval_ms: None,
         });
 
         assert_eq!(step.pgoptions(), Some("-c ec_spire.leaf_block_rows=16"));
@@ -6107,6 +7418,36 @@ mod tests {
         assert_eq!(
             rows[1].1.get("seconds").map(String::as_str),
             Some("0.183480")
+        );
+    }
+
+    #[test]
+    fn parses_loader_build_memory_rows() {
+        let rows = parse_load_rows(
+            "[loader] build_memory index=d8_idx backend_pid=42 rss_before_kb=100 hwm_before_kb=120 rss_peak_kb=900 hwm_peak_kb=950 samples=31 sample_interval_ms=25\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "build_memory");
+        assert_eq!(rows[0].1.get("index").map(String::as_str), Some("d8_idx"));
+        assert_eq!(
+            rows[0].1.get("hwm_peak_kb").map(String::as_str),
+            Some("950")
+        );
+    }
+
+    #[test]
+    fn parses_distann_shard_build_notice() {
+        let rows = parse_load_rows(
+            "[postgres notice] ec_distann sharded build: shards=4 duplication_factor=1.2 max_shard_size=4000 stitch_edges_before_prune=10 stitch_edges_after_prune=9 stitch_peak_union_len=64 shard_output_spill_bytes=2000 stitch_peak_cursor_bytes=34000 stitch_peak_group_bytes=1000 stitch_peak_retained_bytes=35000 build_peak_completion_bytes=1500 reachability_repairs=0\n",
+        );
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "distann_shard_build");
+        assert_eq!(
+            rows[0]
+                .1
+                .get("build_peak_completion_bytes")
+                .map(String::as_str),
+            Some("1500")
         );
     }
 

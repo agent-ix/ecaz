@@ -1,0 +1,17 @@
+Script started on 2026-07-11 08:40:01-07:00 [<not executed on terminal>]
+head=54d09c17725e7e0e106348ac8dd97722bafd7be4
+timestamp=2026-07-11T08:40:01-07:00
+stable_error_categories_missing_from_matrix=0
+duplicate_test_summary_ids=0
+distann_criterion_mappings_missing=0
+distann_criterion_mappings_unexpected=0
+tc_020_owner=SPIRE
+tc_049_owner=benchmark_suite
+tc_045_through_tc_048_owner=Task_173_reserved
+tc_050_owner=DistANN_format_discipline
+task_179_plan_link=pass
+git_diff_check=pass
+spec_matrix_status=PARTIAL
+reason=physical_hash_shard_implementation_and_runtime_evidence_are_incomplete
+
+Script done on 2026-07-11 08:40:01-07:00 [COMMAND_EXIT_CODE="0"]

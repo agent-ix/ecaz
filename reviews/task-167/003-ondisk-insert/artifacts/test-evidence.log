@@ -1,0 +1,6 @@
+# M5 on-disk incremental insert evidence
+# cmd: cargo pgrx test pg18 --no-default-features --features pg18 distann
+
+test tests::pg_test_ec_distann_fold_delta_into_graph ... ok
+test result: ok. 101 passed; 0 failed
+clippy: 0 warnings

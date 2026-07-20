@@ -1,0 +1,24 @@
+Task 179 packet 028 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: b7c123c47fde2c62829e4e34862dd3dd2503306c
+
+Command:
+  cargo check --lib --no-default-features --features 'pg18 pg_test'
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx test pg18 test_distann_three_owner_physical_handoff
+Key result:
+  test tests::pg_test_distann_three_owner_physical_handoff ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2495 filtered out
+
+After T4b the fixture commits and recovers one normal retire decision. It
+verifies zero predecessor generation rows, exactly three immutable reclaim
+tombstones, the coordinator retire decision Applied, and the successor still
+active.

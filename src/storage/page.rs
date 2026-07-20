@@ -166,13 +166,28 @@ impl DataPage {
 pub struct DataPageChain {
     pub(crate) page_size: usize,
     pub(crate) pages: Vec<DataPage>,
+    /// Block number of the chain's first page. `new` starts at
+    /// `FIRST_DATA_BLOCK_NUMBER` (a fresh index, written from block 1);
+    /// `with_base_block` starts at an arbitrary base so an incrementally-
+    /// appended chain (e.g. a rebuilt directory landing at the relation's
+    /// current end) carries correct `next_tid`s when `write_data_pages`
+    /// appends it via `P_NEW`.
+    pub(crate) base_block: u32,
 }
 
 impl DataPageChain {
     pub fn new(page_size: usize) -> Self {
+        Self::with_base_block(FIRST_DATA_BLOCK_NUMBER, page_size)
+    }
+
+    /// A chain whose first page is `base_block` (see `base_block`). The base
+    /// must equal the relation's main-fork block count at write time so that
+    /// `P_NEW` allocation lines up with the chain's own numbering.
+    pub fn with_base_block(base_block: u32, page_size: usize) -> Self {
         Self {
             page_size,
-            pages: vec![DataPage::new(FIRST_DATA_BLOCK_NUMBER, page_size)],
+            pages: vec![DataPage::new(base_block, page_size)],
+            base_block,
         }
     }
 
@@ -185,12 +200,12 @@ impl DataPageChain {
     }
 
     pub fn get_page(&self, block_number: u32) -> Option<&DataPage> {
-        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+        let index = block_number.checked_sub(self.base_block)? as usize;
         self.pages.get(index)
     }
 
     pub fn get_page_mut(&mut self, block_number: u32) -> Option<&mut DataPage> {
-        let index = block_number.checked_sub(FIRST_DATA_BLOCK_NUMBER)? as usize;
+        let index = block_number.checked_sub(self.base_block)? as usize;
         self.pages.get_mut(index)
     }
 
@@ -263,7 +278,7 @@ impl DataPageChain {
             self.pages
                 .iter()
                 .enumerate()
-                .all(|(i, page)| { page.block_number == FIRST_DATA_BLOCK_NUMBER + i as u32 }),
+                .all(|(i, page)| { page.block_number == self.base_block + i as u32 }),
             "DataPageChain pages are not contiguous"
         );
         self.pages
@@ -309,6 +324,30 @@ mod tests {
         ptr.encode_into(&mut buf);
         let decoded = ItemPointer::decode(&buf).unwrap();
         assert_eq!(decoded, ptr);
+    }
+
+    #[test]
+    fn miri_data_page_chain_base_block_offsets_tuples_and_lookup() {
+        // A base-block chain numbers its pages from `base` (for incremental
+        // append at the relation's current end), and get_page/raw_tuple resolve
+        // against that base so next_tid pointers stay correct.
+        let base = 5000_u32;
+        let mut chain = DataPageChain::with_base_block(base, 128);
+        let first = chain.insert_raw_tuple(vec![1; 32]).unwrap();
+        let second = chain.insert_raw_tuple(vec![2; 32]).unwrap();
+        let third = chain.insert_raw_tuple(vec![3; 32]).unwrap();
+
+        assert_eq!(first.block_number, base, "chain starts at base");
+        assert_eq!(second.block_number, base, "same page while it fits");
+        assert_eq!(third.block_number, base + 1, "next page is base+1");
+        // Lookups resolve against the base.
+        assert_eq!(chain.get_page(first.block_number).unwrap().raw_tuple(first).unwrap(), &[1; 32]);
+        assert_eq!(chain.get_page(third.block_number).unwrap().raw_tuple(third).unwrap(), &[3; 32]);
+        // Below-base blocks are not in this chain.
+        assert!(chain.get_page(base - 1).is_none());
+        // pages() carry the base-relative block numbers for write_data_pages.
+        assert_eq!(chain.pages()[0].block_number(), base);
+        assert_eq!(chain.pages()[1].block_number(), base + 1);
     }
 
     #[test]

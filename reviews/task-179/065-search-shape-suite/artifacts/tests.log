@@ -1,0 +1,15 @@
+Script started on 2026-07-13 22:49:56-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 46.46s
+     Running unittests src/main.rs (target/debug/deps/ecaz-35b6ba101cd4e391)
+
+running 3 tests
+test commands::bench::suite::tests::distann_local_multinode_rejects_out_of_range_head_index_cap ... ok
+test commands::bench::suite::tests::distann_local_multinode_rejects_out_of_range_search_shape ... ok
+test commands::bench::suite::tests::distann_local_multinode_step_expands_head_index_cap ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 432 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-13 22:50:39-07:00 [COMMAND_EXIT_CODE="0"]

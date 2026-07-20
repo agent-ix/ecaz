@@ -1,0 +1,301 @@
+Script started on 2026-07-10 20:28:11-07:00 [<not executed on terminal>]
+[32m[1m       Using[0m[39m [37m[1mCliArgument("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+CARGO_TARGET_DIR="/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/target" PGRX_ALL_FEATURES="false" PGRX_BUILD_PROFILE="dev" PGRX_FEATURES="pg18 pg_test" PGRX_NO_DEFAULT_FEATURES="true" PGRX_NO_SCHEMA="false" "/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "test" "--features" "pg18 pg_test" "--no-default-features" "distann"
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling rustls-webpki v0.103.13
+   Compiling rustls v0.23.41
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 4m 42s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0023cddb9d84495c)
+
+running 162 tests
+test am::ec_distann::canonical_wire::tests::canonical_decoder_rejects_truncation_and_trailing_bytes ... ok
+test am::ec_distann::canonical_wire::tests::canonical_scalar_and_length_round_trip ... ok
+test am::ec_distann::epoch::tests::fingerprint_is_deterministic ... ok
+test am::ec_distann::epoch::tests::fingerprint_bytes_round_trip ... ok
+test am::ec_distann::epoch::tests::fingerprint_is_sensitive_to_every_field ... ok
+test am::ec_distann::epoch::tests::fingerprint_is_roster_order_sensitive ... ok
+test am::ec_distann::epoch::tests::fingerprint_length_prefix_prevents_aliasing ... ok
+test am::ec_distann::expand_error::tests::wire_roundtrip_preserves_class ... ok
+test am::ec_distann::expand_error::tests::classes_have_distinct_sqlstates_and_categories ... ok
+test am::ec_distann::generation_descriptor::tests::grouped_pq_artifact_round_trip_preserves_trained_bytes ... ok
+test am::ec_distann::generation_store::tests::control_compatibility_v1_golden_is_frozen ... ok
+test am::ec_distann::generation_descriptor::tests::roster_digest_is_canonical_and_order_sensitive ... ok
+test am::ec_distann::generation_descriptor::tests::build_spec_round_trip_and_owner_sum_validation ... ok
+test am::ec_distann::handoff_wire::tests::handoff_entry_round_trip_preserves_graph_and_row_bytes ... ok
+test am::ec_distann::generation_descriptor::tests::generation_descriptor_round_trip_binds_schema_codec_and_roster ... ok
+test am::ec_distann::handoff_wire::tests::handoff_batch_round_trip_verifies_digest_and_order ... ok
+test am::ec_distann::identity::tests::distann_vec_id_differs_for_distinct_identities ... ok
+test am::ec_distann::identity::tests::distann_vec_id_is_deterministic_for_identical_identity ... ok
+test am::ec_distann::identity::tests::distann_vec_id_local_mode_is_deterministic_and_tid_sensitive ... ok
+test am::ec_distann::handoff_wire::tests::owner_stream_digest_is_stable_and_order_sensitive ... ok
+test am::ec_distann::insert::tests::backlink_appends_when_free ... ok
+test am::ec_distann::identity::tests::distann_vec_id_domains_do_not_alias ... ok
+test am::ec_distann::insert::tests::backlink_idempotent_when_already_linked ... ok
+test am::ec_distann::insert::tests::backlink_reprunes_when_full ... ok
+test am::ec_distann::insert::tests::build_node_tuple_rejects_bad_shape ... ok
+test am::ec_distann::insert::tests::build_node_tuple_round_trips_and_pads ... ok
+test am::ec_distann::identity::tests::distann_vec_id_values_are_pinned_against_accidental_hash_changes ... ok
+test am::ec_distann::insert::tests::select_rejects_bad_input ... ok
+test am::ec_distann::insert::tests::rank_candidates_keeps_closest ... ok
+test am::ec_distann::insert::tests::select_respects_degree_bound_and_returns_valid_vec_ids ... ok
+test am::ec_distann::manifest_v2::tests::emit_distann_golden_fixture_hex ... ignored
+test am::ec_distann::manifest_v2::tests::codec_and_build_parameter_subrecords_reject_unknown_versions ... ok
+test am::ec_distann::manifest_v2::tests::manifest_rejects_unknown_versions_receipt_reorder_and_bad_parent ... ok
+test am::ec_distann::manifest_v2::tests::source_snapshot_digest_binds_full_xid_epoch_bits ... ok
+test am::ec_distann::manifest_v2::tests::ready_receipt_round_trip_verifies_digest_state_and_counts ... ok
+test am::ec_distann::manifest_v2::tests::source_snapshot_round_trip_and_digest_are_canonical ... ok
+test am::ec_distann::options::tests::distann_default_options_match_spec_defaults ... ok
+test am::ec_distann::options::tests::distann_neighbor_code_format_parses_all_d7_codecs ... ok
+test am::ec_distann::options::tests::distann_source_identity_parses_include_only ... ok
+test am::ec_distann::page::tests::distann_metadata_codec_kinds_are_distinct ... ok
+test am::ec_distann::manifest_v2::tests::manifest_round_trip_binds_roster_receipts_and_v2_fingerprint ... ok
+test am::ec_distann::page::tests::distann_metadata_rejects_unknown_codec_kind ... ok
+test am::ec_distann::page::tests::distann_metadata_rejects_unknown_format_version ... ok
+test am::ec_distann::page::tests::distann_metadata_rejects_wrong_length ... ok
+test am::ec_distann::page::tests::distann_metadata_round_trip_preserves_all_fields ... ok
+test am::ec_distann::page::tests::distributed_control_v5_rejects_zero_uuid_and_local_graph_state ... ok
+test am::ec_distann::page::tests::distributed_control_v5_round_trip_persists_uuid_without_graph_state ... ok
+test am::ec_distann::page::tests::legacy_v4_encoder_remains_fixed_at_97_bytes ... ok
+test am::ec_distann::placement::tests::group_by_owning_node_covers_all_ids_with_positions ... ok
+test am::ec_distann::placement::tests::group_by_owning_node_keeps_duplicate_positions ... ok
+test am::ec_distann::placement::tests::placement_changes_only_with_node_count ... ok
+test am::ec_distann::placement::tests::placement_hash_v1_golden_vectors ... ok
+test am::ec_distann::placement::tests::placement_is_deterministic ... ok
+test am::ec_distann::placement::tests::single_node_owns_everything ... ok
+test am::ec_distann::remote_transport::tests::missing_coverage_is_an_error ... ok
+test am::ec_distann::remote_transport::tests::reassembles_interleaved_request_across_owners ... ok
+test am::ec_distann::remote_transport::tests::wrong_response_count_is_an_error ... ok
+test am::ec_distann::roster::tests::parse_roster_empty_is_single_node ... ok
+test am::ec_distann::roster::tests::parse_roster_rejects_malformed_entries ... ok
+test am::ec_distann::roster::tests::parse_roster_tolerates_trailing_separator_and_whitespace ... ok
+test am::ec_distann::roster::tests::parse_roster_two_nodes ... ok
+test am::ec_distann::roster::tests::placement_order_matches_spec_order ... ok
+test am::ec_distann::row_schema::tests::row_schema_rejects_version_order_and_unsupported_binary_identity ... ok
+test am::ec_distann::row_schema::tests::row_schema_round_trip_and_fingerprint_are_canonical ... ok
+test am::ec_distann::scan::tests::distann_orchestration_early_exits_when_beam_cannot_improve_kth ... ok
+test am::ec_distann::scan::tests::distann_orchestration_excludes_tombstones_but_traverses_their_edges ... ok
+test am::ec_distann::scan::tests::distann_orchestration_expands_no_vec_id_twice_and_respects_cap ... ok
+test am::ec_distann::scan::tests::distann_orchestration_hop_rounds_cap_bounds_expansions ... ok
+test am::ec_distann::scan::tests::distann_orchestration_returns_sub_k_on_exhaustion_as_complete ... ok
+test am::ec_distann::scan::tests::restart_non_epoch_error_does_not_restart ... ok
+test am::ec_distann::scan::tests::restart_once_after_epoch_mismatch_then_succeeds ... ok
+test am::ec_distann::scan::tests::restart_second_epoch_mismatch_errors ... ok
+test am::ec_distann::scan::tests::restart_success_on_first_attempt_runs_once ... ok
+test am::ec_distann::shard_build::tests::repair_reachability_bounds_degree_on_disconnected_graph ... ok
+test am::ec_distann::shard_build::tests::resolve_shard_count_behaviour ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_coverage_gap ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_over_degree_entry ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_out_of_range_node_and_neighbor ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_truncated_payload ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_unconsumed_tail ... ok
+test am::ec_distann::shard_build::tests::tc038_corrupt_spool_rejects_unsorted_stream ... ok
+test am::ec_distann::handoff_wire::tests::handoff_preflight_rejects_shape_nulls_order_and_oversize ... ok
+test am::ec_distann::tuple::tests::distann_node_rejects_wrong_tag_and_unknown_flags ... ok
+test am::ec_distann::tuple::tests::distann_node_decode_into_reuses_pooled_buffers ... ok
+test am::ec_distann::tuple::tests::distann_node_encoded_len_is_dimension_independent ... ok
+test am::ec_distann::placement::tests::placement_is_balanced_across_three_nodes ... ok
+test am::ec_distann::tuple::tests::distann_head_sample_tuple_round_trips ... ok
+test am::ec_distann::tuple::tests::distann_node_rejects_neighbor_count_above_graph_degree ... ok
+test am::ec_distann::tuple::tests::distann_node_round_trip_is_byte_exact ... ok
+test am::ec_distann::tuple::tests::distann_delta_tuple_round_trips ... ok
+test am::ec_distann::tuple::tests::distann_node_tombstone_flag_round_trips ... ok
+test am::ec_distann::tuple::tests::distann_physical_node_v1_rejects_legacy_and_unknown_versions ... ok
+test am::ec_distann::tuple::tests::distann_directory_tuple_round_trips ... ok
+test am::ec_distann::tuple::tests::distann_node_rejects_truncated_input ... ok
+test am::ec_distann::shard_build::tests::tc038_stitch_idempotence ... ok
+test am::ec_distann::generation_descriptor::tests::seeded_codec_artifacts_round_trip ... ok
+test am::ec_distann::quantizer::tests::seeded_codec_v1_golden_score_vectors ... ok
+test am::ec_distann::quantizer::tests::codec_artifact_restores_codes_and_prepared_scores_without_retraining ... ok
+test am::ec_distann::shard_build::tests::tc038_closure_duplication_scales_with_epsilon ... ok
+test am::ec_distann::shard_build::tests::tc038_d8_spill_and_cursor_bound ... ok
+test am::ec_distann::shard_build::tests::tc038_medoid_reachability ... ok
+test am::ec_distann::shard_build::tests::tc038_alpha_prune_invariant ... ok
+[32m[1m       Using[0m[39m [37m[1mPgConfig("pg18")[0m[39m and `pg_config` from [36m/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config[39m
+[32m[1m    Building[0m[39m extension with features [36mpg_test pg18[39m
+[32m[1m     Running[0m[39m command [36m"/home/peter/.rustup/toolchains/stable-x86_64-unknown-linux-gnu/bin/cargo" "build" "--lib" "--features" "pg_test pg18" "--no-default-features" "--message-format=json-render-diagnostics"[39m
+test am::ec_distann::shard_build::tests::tc038_degree_bounded ... ok
+test am::ec_distann::shard_build::tests::tc038_uniqueness_and_valid_edges ... ok
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+test am::ec_distann::shard_build::tests::tc038_determinism ... ok
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 29.50s
+[32m[1m  Installing[0m[39m extension
+[32m[1m     Copying[0m[39m control file to [36m/home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz.control[39m
+[32m[1m     Copying[0m[39m shared library to [36m/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so[39m
+[32m[1m  Discovered[0m[39m [36m[1m1041[0m[39m SQL entities: [36m[1m2[0m[39m schemas ([36m[1m1[0m[39m unique), [36m[1m1037[0m[39m functions, [36m[1m0[0m[39m types, [36m[1m0[0m[39m enums, [36m[1m2[0m[39m sqls, [36m[1m0[0m[39m ords, [36m[1m0[0m[39m hashes, [36m[1m0[0m[39m aggregates, [36m[1m0[0m[39m triggers
+[32m[1m  Rebuilding[0m[39m [36mpgrx_embed[39m, in debug mode, for SQL generation with features [36mpg_test pg18[39m
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+test tests::pg_test_distann_control_metadata_and_fail_closed has been running for over 60 seconds
+test tests::pg_test_distann_control_mode_change_reindex has been running for over 60 seconds
+test tests::pg_test_distann_control_rejects_temporary_relation has been running for over 60 seconds
+test tests::pg_test_distann_control_requires_include_identity has been running for over 60 seconds
+test tests::pg_test_distann_control_requires_not_null_identity has been running for over 60 seconds
+test tests::pg_test_distann_control_requires_permanent_wal_logged_relation has been running for over 60 seconds
+test tests::pg_test_distann_control_vacuum_and_concurrent_create has been running for over 60 seconds
+test tests::pg_test_distann_generation_creation_rolls_back_whole_transaction has been running for over 60 seconds
+test tests::pg_test_distann_generation_drop_and_reindex_clean_dependencies has been running for over 60 seconds
+test tests::pg_test_distann_generation_relations_replay_abort_and_privileges has been running for over 60 seconds
+test tests::pg_test_distann_node_registration_binds_indexed_key_attnum has been running for over 60 seconds
+test tests::pg_test_distann_node_registration_provenance_and_guards has been running for over 60 seconds
+test tests::pg_test_distann_registry_atomic_replacement_no_deadlock has been running for over 60 seconds
+test tests::pg_test_distann_registry_repeatable_read_rejects_stale_snapshot has been running for over 60 seconds
+test tests::pg_test_distann_registry_security_definer_path_and_acl has been running for over 60 seconds
+test tests::pg_test_ec_distann_access_method_is_registered has been running for over 60 seconds
+test tests::pg_test_ec_distann_apply_record_writes_tombstones has been running for over 60 seconds
+test tests::pg_test_ec_distann_build_persists_graph_structures has been running for over 60 seconds
+test tests::pg_test_ec_distann_content_digest_binds_build_content has been running for over 60 seconds
+test tests::pg_test_ec_distann_create_drop_reindex_on_empty_table has been running for over 60 seconds
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 44.50s
+[32m[1m     Writing[0m[39m SQL entities to /home/peter/.pgrx/18.3/pgrx-install/share/postgresql/extension/ecaz--0.1.1.sql
+[32m[1m    Finished[0m[39m installing ecaz
+test tests::pg_test_ec_distann_access_method_is_registered ... ok
+test tests::pg_test_distann_control_requires_not_null_identity ... ok
+test tests::pg_test_distann_control_requires_include_identity ... ok
+test tests::pg_test_ec_distann_build_persists_graph_structures ... ok
+test tests::pg_test_distann_control_requires_permanent_wal_logged_relation ... ok
+test tests::pg_test_distann_control_rejects_temporary_relation ... ok
+test tests::pg_test_ec_distann_apply_record_writes_tombstones ... ok
+test tests::pg_test_ec_distann_content_digest_binds_build_content ... ok
+test tests::pg_test_distann_control_mode_change_reindex ... ok
+test tests::pg_test_distann_control_metadata_and_fail_closed ... ok
+test tests::pg_test_ec_distann_create_drop_reindex_on_empty_table ... ok
+test tests::pg_test_distann_node_registration_binds_indexed_key_attnum ... ok
+test tests::pg_test_distann_generation_creation_rolls_back_whole_transaction ... ok
+test tests::pg_test_ec_distann_delete_tombstones_record ... ok
+test tests::pg_test_ec_distann_delta_insert_visible_same_statement ... ok
+test tests::pg_test_ec_distann_create_on_populated_table_records_metadata ... ok
+test tests::pg_test_ec_distann_expand_nodes_rejects_epoch_mismatch ... ok
+test tests::pg_test_ec_distann_default_codec_is_rabitq ... ok
+test tests::pg_test_ec_distann_expand_nodes_rejects_nonowned_placement ... ok
+test tests::pg_test_ec_distann_epoch_lifecycle_publish_retire_override ... ok
+test tests::pg_test_ec_distann_expand_nodes_single_node_matches_local ... ok
+test tests::pg_test_ec_distann_guc_defaults ... ok
+test tests::pg_test_distann_generation_relations_replay_abort_and_privileges ... ok
+test tests::pg_test_ec_distann_fault_drills_distinct_classes ... ok
+test tests::pg_test_distann_registry_security_definer_path_and_acl ... ok
+test tests::pg_test_ec_distann_include_mode_requires_include_column ... ok
+test tests::pg_test_ec_distann_fold_multi_row_clustered_delta ... ok
+test tests::pg_test_ec_distann_fold_delta_into_graph ... ok
+test tests::pg_test_ec_distann_insert_into_empty_index_is_rejected ... ok
+test tests::pg_test_ec_distann_include_mode_rejects_short_bytea_identity ... ok
+test tests::pg_test_ec_distann_include_mode_rejects_null_identity ... ok
+test tests::pg_test_ec_distann_head_cache_invalidates_across_reindex ... ok
+test tests::pg_test_ec_distann_limit_beyond_top_k_deepens_correctly ... ok
+test tests::pg_test_distann_generation_drop_and_reindex_clean_dependencies ... ok
+test tests::pg_test_ec_distann_materialize_rows_ships_heap_identity ... ok
+test tests::pg_test_ec_distann_head_sample_is_deterministic_across_reindex ... ok
+test tests::pg_test_ec_distann_include_identity_is_tid_independent ... ok
+test tests::pg_test_ec_distann_owning_node_surface ... ok
+test tests::pg_test_ec_distann_materialize_row_payloads_ships_binary_columns ... ok
+test tests::pg_test_ec_distann_rejects_invalid_neighbor_code_format ... ok
+test tests::pg_test_ec_distann_ordered_scan_scores_are_monotone ... ok
+test tests::pg_test_ec_distann_rejects_out_of_range_graph_degree ... ok
+test tests::pg_test_ec_distann_rejects_stray_include_column ... ok
+test tests::pg_test_ec_distann_ordered_scan_self_recall_rabitq ... ok
+test tests::pg_test_distann_control_vacuum_and_concurrent_create ... ok
+test tests::pg_test_ec_distann_ordered_scan_self_recall_grouped_pq ... ok
+test tests::pg_test_ec_distann_rebuild_assigns_identical_vec_ids ... ok
+test tests::pg_test_ec_distann_reindex_drains_delta_buffer ... ok
+test tests::pg_test_ec_distann_search_codes_match_direct_codec_encoding ... ok
+test tests::pg_test_ec_distann_sql_ordered_scan_through_planner ... ok
+test tests::pg_test_ec_distann_tombstone_excludes_and_preserves_live_vectors ... ok
+test tests::pg_test_ec_distann_sharded_build_self_recall ... ok
+test tests::pg_test_ec_distann_sharded_build_is_deterministic_across_reindex ... ok
+test tests::pg_test_distann_registry_repeatable_read_rejects_stale_snapshot ... ok
+test tests::pg_test_distann_registry_atomic_replacement_no_deadlock ... ok
+test tests::pg_test_distann_node_registration_provenance_and_guards ... ok
+test tests::pg_test_ec_distann_d8_multiblock_buffile_spool ... ok
+
+test result: ok. 161 passed; 0 failed; 1 ignored; 0 measured; 2267 filtered out; finished in 76.51s
+
+     Running unittests src/bin/approx_score_study.rs (target/debug/deps/approx_score_study-6ed6515a5c286380)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running unittests src/bin/pgrx_embed.rs (target/debug/deps/pgrx_embed_ecaz-1391688b6fe2adbe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/simd_bench.rs (target/debug/deps/simd_bench-f3cb81b49ca04799)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kani_item_pointer.rs (target/debug/deps/kani_item_pointer-1f01f70b289d0206)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/on_disk_fixtures.rs (target/debug/deps/on_disk_fixtures-b9860277cfb92ec5)
+
+running 12 tests
+test distann_codec_artifact_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_build_spec_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_manifest_subrecord_fixtures_decode_and_reject_swap ... ok
+test distann_metadata_v4_and_control_v5_fixtures_decode_independently ... ok
+test distann_metadata_versions_reject_byte_swap ... ok
+test distann_handoff_entry_and_batch_v1_fixtures_decode_independently ... ok
+test distann_physical_graph_record_v1_fixture_decodes_and_rejects_swap ... ok
+test distann_generation_descriptor_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_epoch_manifest_v2_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_ready_receipt_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_source_snapshot_v1_fixture_decodes_independently_and_rejects_swap ... ok
+test distann_row_schema_v1_fixture_decodes_independently_and_rejects_swap ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 53 filtered out; finished in 0.00s
+
+     Running tests/proptest_page.rs (target/debug/deps/proptest_page-2fd0de4a88e4f87c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 5 filtered out; finished in 0.00s
+
+     Running tests/proptest_quant.rs (target/debug/deps/proptest_quant-1e1791ae8f8c7b0f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 10 filtered out; finished in 0.00s
+
+     Running tests/recall_integration.rs (target/debug/deps/recall_integration-739da60824701e30)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 23 filtered out; finished in 0.00s
+
+     Running tests/simd_diff.rs (target/debug/deps/simd_diff-59e21742a177e776)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/size_of_assertions.rs (target/debug/deps/size_of_assertions-5272ad53c6f7c78d)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 13 filtered out; finished in 0.00s
+
+     Running tests/upgrade_matrix.rs (target/debug/deps/upgrade_matrix-cf890e4aef138cf8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+     Running tests/wal_policy.rs (target/debug/deps/wal_policy-9d9cbf7bef901ec5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-10 20:34:09-07:00 [COMMAND_EXIT_CODE="0"]

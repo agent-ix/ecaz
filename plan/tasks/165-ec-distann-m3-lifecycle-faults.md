@@ -1,6 +1,11 @@
 # Task 165: ec_distann M3 — Multinode Lifecycle + Fault Drills
 
-Status: proposed (2026-07-06). Depends on: Task 164.
+Status: partial / replicated-serving control only (2026-07-10). Depends on:
+Task 164. The 12-drill transport/fanout matrix and single-relation lifecycle
+model remain useful evidence, but the current metadata page has only one graph
+generation and no physical owner handoff, Ready receipts, commit-only cluster
+decision, durable scan pins, or retained row-tier generations. Task 179 owns
+that corrective FR-082 implementation.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 — NFR-020's never-silently-wrong bar is proven here.
 
@@ -14,6 +19,14 @@ trusted. FR-082 full lifecycle + FR-083's early DML slices land here.
 
 Full fault matrix green on a 3-worker fixture; epoch swap under concurrent
 load provably consistent.
+
+## Corrective boundary (2026-07-10)
+
+Do not close FR-082 or NFR-020's publication/recovery rows from the existing
+replicated fixture. Task 179 must rerun the relevant drills against distinct
+Building/Ready/Published/Retired physical generations. Existing fault names and
+result-or-classified-error assertions should be reused as controls, not copied
+as proof of a topology they never exercised.
 
 ## Scope
 

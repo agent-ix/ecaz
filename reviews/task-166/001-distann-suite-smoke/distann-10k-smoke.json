@@ -1,0 +1,55 @@
+{
+  "name": "distann-10k-smoke",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-166/001-distann-suite-smoke/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-distann",
+      "tags": ["load", "task-166", "ec_real_10k", "distann"],
+      "prefix": "m4_smoke_real10k_distann",
+      "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-distann",
+      "tags": ["recall", "task-166", "ec_real_10k", "distann"],
+      "prefix": "m4_smoke_real10k_distann",
+      "profile": "ec_distann",
+      "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-distann",
+      "tags": ["latency", "task-166", "ec_real_10k", "distann"],
+      "prefix": "m4_smoke_real10k_distann",
+      "profile": "ec_distann",
+      "k": 10,
+      "sweep": [16, 32, 64, 100, 200],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-distann",
+      "tags": ["storage", "task-166", "ec_real_10k", "distann"],
+      "prefix": "m4_smoke_real10k_distann"
+    }
+  ]
+}

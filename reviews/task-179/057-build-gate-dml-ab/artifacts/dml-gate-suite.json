@@ -1,0 +1,188 @@
+{
+  "name": "task179-build-gate-dml-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-179/057-build-gate-dml-ab/artifacts/run",
+  "thresholds": [
+    {
+      "name": "control has no ecaz extension",
+      "step": "prepare-control",
+      "metric": "dml_gate_setup",
+      "filters": { "lane": "control" },
+      "field": "extension_installed",
+      "op": "eq",
+      "value": 0
+    },
+    {
+      "name": "installed lane has ecaz extension",
+      "step": "prepare-installed",
+      "metric": "dml_gate_setup",
+      "filters": { "lane": "installed" },
+      "field": "extension_installed",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "control lane is preloaded",
+      "step": "prepare-control",
+      "metric": "dml_gate_setup",
+      "filters": { "lane": "control" },
+      "field": "preload_ok",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "installed lane is preloaded",
+      "step": "prepare-installed",
+      "metric": "dml_gate_setup",
+      "filters": { "lane": "installed" },
+      "field": "preload_ok",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "control has eight measured trials",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "control_samples",
+      "op": "eq",
+      "value": 8
+    },
+    {
+      "name": "installed has eight measured trials",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "installed_samples",
+      "op": "eq",
+      "value": 8
+    },
+    {
+      "name": "inactive gate median ratio is at most 1.10x",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "ratio",
+      "op": "lte",
+      "value": 1.10
+    },
+    {
+      "name": "inactive gate median delta is at most one microsecond",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "delta_us",
+      "op": "lte",
+      "value": 1.0
+    },
+    {
+      "name": "inactive gate p95 ratio is at most 1.15x",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "p95_ratio",
+      "op": "lte",
+      "value": 1.15
+    }
+  ],
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "create-databases",
+      "tags": ["lane=setup"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "postgres",
+        "--file", "reviews/task-179/057-build-gate-dml-ab/artifacts/create-databases.sql",
+        "--log-output", "${artifact_dir}/create-databases.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/create-databases.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "install-extension",
+      "tags": ["lane=installed"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "task179_gate_installed",
+        "--file", "reviews/task-179/057-build-gate-dml-ab/artifacts/install-extension.sql",
+        "--log-output", "${artifact_dir}/install-extension.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/install-extension.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "prepare-control",
+      "tags": ["lane=control"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "task179_gate_control",
+        "--file", "reviews/task-179/057-build-gate-dml-ab/artifacts/prepare-lane.sql",
+        "--log-output", "${artifact_dir}/prepare-control.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/prepare-control.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "prepare-installed",
+      "tags": ["lane=installed"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "task179_gate_installed",
+        "--file", "reviews/task-179/057-build-gate-dml-ab/artifacts/prepare-lane.sql",
+        "--log-output", "${artifact_dir}/prepare-installed.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/prepare-installed.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "control-round-1",
+      "tags": ["lane=control", "round=1"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "task179_gate_control",
+        "--set", "round=1",
+        "--file", "reviews/task-179/057-build-gate-dml-ab/artifacts/measure-lane.sql",
+        "--log-output", "${artifact_dir}/control-round-1.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/control-round-1.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "installed-round-1",
+      "tags": ["lane=installed", "round=1"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "task179_gate_installed",
+        "--set", "round=1",
+        "--file", "reviews/task-179/057-build-gate-dml-ab/artifacts/measure-lane.sql",
+        "--log-output", "${artifact_dir}/installed-round-1.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/installed-round-1.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "installed-round-2",
+      "tags": ["lane=installed", "round=2"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "task179_gate_installed",
+        "--set", "round=2",
+        "--file", "reviews/task-179/057-build-gate-dml-ab/artifacts/measure-lane.sql",
+        "--log-output", "${artifact_dir}/installed-round-2.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/installed-round-2.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "control-round-2",
+      "tags": ["lane=control", "round=2"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "task179_gate_control",
+        "--set", "round=2",
+        "--file", "reviews/task-179/057-build-gate-dml-ab/artifacts/measure-lane.sql",
+        "--log-output", "${artifact_dir}/control-round-2.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/control-round-2.log"]
+    },
+    {
+      "kind": "raw",
+      "name": "compare-ab",
+      "tags": ["lane=ab"],
+      "args": [
+        "dev", "sql", "--pg", "18", "--db", "postgres",
+        "--file", "reviews/task-179/057-build-gate-dml-ab/artifacts/compare-ab.sql",
+        "--log-output", "${artifact_dir}/compare-ab.log"
+      ],
+      "expected_artifacts": ["${artifact_dir}/compare-ab.log"]
+    }
+  ]
+}

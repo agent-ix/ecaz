@@ -1,0 +1,23 @@
+[loader] warning: profile "ec_distann" does not list build_shards as known reloption; passing through verbatim. Known reloptions: graph_degree, build_list_size, alpha, neighbor_code_format, closure_epsilon, head_index_cap, source_identity
+[loader] inspecting data/staged-current/ec_real_50k_corpus.tsv
+[loader] inspecting data/staged-current/ec_real_50k_queries.tsv
+[loader] corpus: 50000 rows, sha256=56023baaa7bc42f758272e8617603d538808e6290a8a70a3a84e057571240133  queries: 1000 rows, sha256=95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3
+[loader] warning: manifest verification failed for data/staged-current/ec_real_50k_manifest.json: prefix="ec_real_50k" (expected "m1c_50k_e30")
+[loader] copied corpus table m1c_50k_e30_corpus in 22.20s
+[loader] encoding ecvector embeddings via encode_to_ecvector(source, 4, 42) ...
+[loader] encoded corpus table m1c_50k_e30_corpus in 16.18s
+[loader] copied queries table m1c_50k_e30_queries in 476.20ms
+[loader] building m1c_50k_e30_idx using ec_distann (reloptions=[neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.3]) ...
+[loader] built m1c_50k_e30_idx in 208.55s
+┌─────────┬────────────────────────────────────────────────────────────────────────────────────┐
+│ field   ┆ value                                                                              │
+╞═════════╪════════════════════════════════════════════════════════════════════════════════════╡
+│ profile ┆ ec_distann                                                                         │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ corpus  ┆ m1c_50k_e30_corpus (50000 rows)                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ queries ┆ m1c_50k_e30_queries (1000 rows)                                                    │
+├╌╌╌╌╌╌╌╌╌┼╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌┤
+│ indexes ┆ m1c_50k_e30_idx [neighbor_code_format=rabitq, build_shards=4, closure_epsilon=0.3] │
+└─────────┴────────────────────────────────────────────────────────────────────────────────────┘
+[loader] completed prefix m1c_50k_e30 in 254.17s

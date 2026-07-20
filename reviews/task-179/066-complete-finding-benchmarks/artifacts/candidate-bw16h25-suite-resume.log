@@ -1,0 +1,8 @@
+[suite:task179-candidate-bw16h25-10k-50k-100k] wrote reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-bw16h25/suite-manifest-resume.json
+[suite:task179-candidate-bw16h25-10k-50k-100k] candidate-bw16h25-10k already succeeded in resume manifest
+[suite:task179-candidate-bw16h25-10k-50k-100k] candidate-bw16h25-50k already succeeded in resume manifest
+[suite:task179-candidate-bw16h25-10k-50k-100k] candidate-bw16h25-100k -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-bw16h25/100k --run-dir target/task179-complete-candidate-bw16h25 --log-file reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-bw16h25/100k/distann-local-multinode.log --nodes 3 --physical-benchmark --benchmark-iterations 30 --benchmark-warmup-iterations 10 --base-port 40640 --graph-degree 32 --head-index-cap 4096 --beam-width 16 --hop-rounds 25 --queries 20 --top-k 10 --corpus-prefix ec_real_100k --staged-dir /home/peter/dev/ecaz/data/staged-current
+[suite:task179-candidate-bw16h25-10k-50k-100k] wrote reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-bw16h25/suite-manifest-resume.json
+[suite:task179-candidate-bw16h25-10k-50k-100k] wrote reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-bw16h25/suite-manifest-resume.json
+[suite:task179-candidate-bw16h25-10k-50k-100k] wrote reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-bw16h25/results-resume.jsonl
+[suite:task179-candidate-bw16h25-10k-50k-100k] wrote reviews/task-179/066-complete-finding-benchmarks/artifacts/candidate-bw16h25/suite-manifest-resume.json

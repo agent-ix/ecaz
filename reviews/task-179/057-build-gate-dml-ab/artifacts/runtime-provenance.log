@@ -1,0 +1,5 @@
+ server_version | shared_preload_libraries |      postmaster_started      | extversion | tgenabled |              trigger_function              
+----------------+--------------------------+------------------------------+------------+-----------+--------------------------------------------
+ 18.3           | ecaz                     | 2026-07-13 07:11:37.50386-07 | 0.1.1      | A         | ec_distann_build_gate_registration_changed
+(1 row)
+

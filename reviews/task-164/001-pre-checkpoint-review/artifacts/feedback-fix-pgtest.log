@@ -1,0 +1,11 @@
+# M2 feedback-fix pg_test evidence (SHA 936dcb168, 2026-07-08T06:24Z)
+# cmd: cargo pgrx test pg18 --no-default-features --features pg18 ec_distann
+
+test tests::pg_test_ec_distann_expand_nodes_single_node_matches_local ... ok
+test tests::pg_test_ec_distann_expand_nodes_rejects_nonowned_placement ... ok
+test tests::pg_test_ec_distann_content_digest_binds_build_content ... ok
+test tests::pg_test_ec_distann_expand_nodes_rejects_epoch_mismatch ... ok
+test tests::pg_test_ec_distann_sharded_build_self_recall ... ok
+test tests::pg_test_ec_distann_sharded_build_is_deterministic_across_reindex ... ok
+
+test result: ok. 86 passed; 0 failed; 0 ignored; 0 measured; 2266 filtered out; finished in 121.26s

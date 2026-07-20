@@ -2060,7 +2060,7 @@ fn with_heap_source_vector<T>(
     result
 }
 
-fn fetch_heap_source_vector(
+pub(crate) fn fetch_heap_source_vector(
     heap_relation: pg_sys::Relation,
     snapshot: pg_sys::Snapshot,
     slot: *mut pg_sys::TupleTableSlot,

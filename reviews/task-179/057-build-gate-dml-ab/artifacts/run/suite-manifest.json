@@ -1,0 +1,413 @@
+{
+  "suite": "task179-build-gate-dml-ab",
+  "schema_version": 1,
+  "config": "reviews/task-179/057-build-gate-dml-ab/artifacts/dml-gate-suite.json",
+  "config_sha256": "afabfc3b5f2b400a2d360352bc0ac8ec95f982fa005a71c027bd834395f13e5d",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783952095306,
+  "runner_git_commit": "07371ff3f9047701bacccbc32bb9b5043414bf78",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "create-databases",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--file",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/create-databases.sql",
+        "--log-output",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/create-databases.log"
+      ],
+      "selected": true,
+      "tags": [
+        "lane=setup"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/create-databases.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783952095306,
+      "finished_at_unix_ms": 1783952095553,
+      "duration_ms": 247,
+      "exit_code": 0
+    },
+    {
+      "name": "install-extension",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task179_gate_installed",
+        "--file",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/install-extension.sql",
+        "--log-output",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/install-extension.log"
+      ],
+      "selected": true,
+      "tags": [
+        "lane=installed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/install-extension.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783952095554,
+      "finished_at_unix_ms": 1783952095884,
+      "duration_ms": 330,
+      "exit_code": 0
+    },
+    {
+      "name": "prepare-control",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task179_gate_control",
+        "--file",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/prepare-lane.sql",
+        "--log-output",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/prepare-control.log"
+      ],
+      "selected": true,
+      "tags": [
+        "lane=control"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/prepare-control.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783952095885,
+      "finished_at_unix_ms": 1783952095918,
+      "duration_ms": 33,
+      "exit_code": 0
+    },
+    {
+      "name": "prepare-installed",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task179_gate_installed",
+        "--file",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/prepare-lane.sql",
+        "--log-output",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/prepare-installed.log"
+      ],
+      "selected": true,
+      "tags": [
+        "lane=installed"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/prepare-installed.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783952095919,
+      "finished_at_unix_ms": 1783952095942,
+      "duration_ms": 23,
+      "exit_code": 0
+    },
+    {
+      "name": "control-round-1",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task179_gate_control",
+        "--set",
+        "round=1",
+        "--file",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/measure-lane.sql",
+        "--log-output",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/control-round-1.log"
+      ],
+      "selected": true,
+      "tags": [
+        "lane=control",
+        "round=1"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/control-round-1.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783952095942,
+      "finished_at_unix_ms": 1783952096858,
+      "duration_ms": 915,
+      "exit_code": 0
+    },
+    {
+      "name": "installed-round-1",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task179_gate_installed",
+        "--set",
+        "round=1",
+        "--file",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/measure-lane.sql",
+        "--log-output",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/installed-round-1.log"
+      ],
+      "selected": true,
+      "tags": [
+        "lane=installed",
+        "round=1"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/installed-round-1.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783952096858,
+      "finished_at_unix_ms": 1783952097769,
+      "duration_ms": 910,
+      "exit_code": 0
+    },
+    {
+      "name": "installed-round-2",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task179_gate_installed",
+        "--set",
+        "round=2",
+        "--file",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/measure-lane.sql",
+        "--log-output",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/installed-round-2.log"
+      ],
+      "selected": true,
+      "tags": [
+        "lane=installed",
+        "round=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/installed-round-2.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783952097769,
+      "finished_at_unix_ms": 1783952098687,
+      "duration_ms": 917,
+      "exit_code": 0
+    },
+    {
+      "name": "control-round-2",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "task179_gate_control",
+        "--set",
+        "round=2",
+        "--file",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/measure-lane.sql",
+        "--log-output",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/control-round-2.log"
+      ],
+      "selected": true,
+      "tags": [
+        "lane=control",
+        "round=2"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/control-round-2.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783952098687,
+      "finished_at_unix_ms": 1783952099598,
+      "duration_ms": 910,
+      "exit_code": 0
+    },
+    {
+      "name": "compare-ab",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "postgres",
+        "--file",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/compare-ab.sql",
+        "--log-output",
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/compare-ab.log"
+      ],
+      "selected": true,
+      "tags": [
+        "lane=ab"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/057-build-gate-dml-ab/artifacts/run/compare-ab.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783952099598,
+      "finished_at_unix_ms": 1783952099624,
+      "duration_ms": 25,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "control has no ecaz extension",
+      "step": "prepare-control",
+      "metric": "dml_gate_setup",
+      "filters": {
+        "lane": "control"
+      },
+      "field": "extension_installed",
+      "op": "eq",
+      "expected": 0.0,
+      "actual": 0.0,
+      "passed": true,
+      "message": "extension_installed 0 Eq 0 -> true"
+    },
+    {
+      "name": "installed lane has ecaz extension",
+      "step": "prepare-installed",
+      "metric": "dml_gate_setup",
+      "filters": {
+        "lane": "installed"
+      },
+      "field": "extension_installed",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "extension_installed 1 Eq 1 -> true"
+    },
+    {
+      "name": "control lane is preloaded",
+      "step": "prepare-control",
+      "metric": "dml_gate_setup",
+      "filters": {
+        "lane": "control"
+      },
+      "field": "preload_ok",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "preload_ok 1 Eq 1 -> true"
+    },
+    {
+      "name": "installed lane is preloaded",
+      "step": "prepare-installed",
+      "metric": "dml_gate_setup",
+      "filters": {
+        "lane": "installed"
+      },
+      "field": "preload_ok",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "preload_ok 1 Eq 1 -> true"
+    },
+    {
+      "name": "control has eight measured trials",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "control_samples",
+      "op": "eq",
+      "expected": 8.0,
+      "actual": 8.0,
+      "passed": true,
+      "message": "control_samples 8 Eq 8 -> true"
+    },
+    {
+      "name": "installed has eight measured trials",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "installed_samples",
+      "op": "eq",
+      "expected": 8.0,
+      "actual": 8.0,
+      "passed": true,
+      "message": "installed_samples 8 Eq 8 -> true"
+    },
+    {
+      "name": "inactive gate median ratio is at most 1.10x",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "ratio",
+      "op": "lte",
+      "expected": 1.1,
+      "actual": 0.988,
+      "passed": true,
+      "message": "ratio 0.988 Lte 1.1 -> true"
+    },
+    {
+      "name": "inactive gate median delta is at most one microsecond",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "delta_us",
+      "op": "lte",
+      "expected": 1.0,
+      "actual": -0.085,
+      "passed": true,
+      "message": "delta_us -0.085 Lte 1 -> true"
+    },
+    {
+      "name": "inactive gate p95 ratio is at most 1.15x",
+      "step": "compare-ab",
+      "metric": "dml_gate_ab",
+      "field": "p95_ratio",
+      "op": "lte",
+      "expected": 1.15,
+      "actual": 0.99,
+      "passed": true,
+      "message": "p95_ratio 0.99 Lte 1.15 -> true"
+    }
+  ]
+}

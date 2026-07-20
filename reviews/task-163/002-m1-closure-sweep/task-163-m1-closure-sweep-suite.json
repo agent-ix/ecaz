@@ -1,0 +1,97 @@
+{
+  "name": "task-163-m1-closure-sweep",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-163/002-m1-closure-sweep/artifacts",
+  "description": "Task 163 M1 closure-band sweep. Packet 001 measured stitched (build_shards=4, closure_epsilon=0.1) trailing monolithic by up to 0.004 recall@10 at 100k ef=200 (gap grows with corpus size) -- FR-077-AC-1's 0.001 bar not met at eps=0.1. This sweep widens the closure band (eps in {0.3, 0.6, 1.0}) at 50k/100k to find the eps that closes the gap and to characterize the recall-vs-eps and build-time-vs-eps tradeoff (the M1 'measure the closure band' deliverable). The stitch emits exactly one record per vec_id (FR-077-CON-2), so final storage is eps-independent; only recall and build wall time move with eps. Baselines are the packet-001 monolithic arms (m1_50k_mono / m1_100k_mono), NOT re-measured here. build_shards=4 held; rabitq codec; sweep drives ec_distann.top_k. Recall step only per arm (parity is a recall question; build time captured in the load log).",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true
+  },
+  "steps": [
+    {
+      "kind": "load", "name": "load-50k-e30",
+      "tags": ["m1", "task-163", "ec_real_50k", "closure_e30", "load"],
+      "prefix": "m1c_50k_e30", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.3"]
+    },
+    {
+      "kind": "recall", "name": "recall-50k-e30",
+      "tags": ["m1", "task-163", "ec_real_50k", "closure_e30", "recall"],
+      "prefix": "m1c_50k_e30", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "load", "name": "load-50k-e60",
+      "tags": ["m1", "task-163", "ec_real_50k", "closure_e60", "load"],
+      "prefix": "m1c_50k_e60", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.6"]
+    },
+    {
+      "kind": "recall", "name": "recall-50k-e60",
+      "tags": ["m1", "task-163", "ec_real_50k", "closure_e60", "recall"],
+      "prefix": "m1c_50k_e60", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "load", "name": "load-100k-e30",
+      "tags": ["m1", "task-163", "ec_real_100k", "closure_e30", "load"],
+      "prefix": "m1c_100k_e30", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.3"]
+    },
+    {
+      "kind": "recall", "name": "recall-100k-e30",
+      "tags": ["m1", "task-163", "ec_real_100k", "closure_e30", "recall"],
+      "prefix": "m1c_100k_e30", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "load", "name": "load-100k-e60",
+      "tags": ["m1", "task-163", "ec_real_100k", "closure_e60", "load"],
+      "prefix": "m1c_100k_e60", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=0.6"]
+    },
+    {
+      "kind": "recall", "name": "recall-100k-e60",
+      "tags": ["m1", "task-163", "ec_real_100k", "closure_e60", "recall"],
+      "prefix": "m1c_100k_e60", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    },
+    {
+      "kind": "load", "name": "load-100k-e100",
+      "tags": ["m1", "task-163", "ec_real_100k", "closure_e100", "load"],
+      "prefix": "m1c_100k_e100", "profile": "ec_distann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "reloptions": ["neighbor_code_format=rabitq", "build_shards=4", "closure_epsilon=1.0"]
+    },
+    {
+      "kind": "recall", "name": "recall-100k-e100",
+      "tags": ["m1", "task-163", "ec_real_100k", "closure_e100", "recall"],
+      "prefix": "m1c_100k_e100", "profile": "ec_distann", "k": 10,
+      "sweep": [16, 32, 64, 100, 200]
+    }
+  ]
+}

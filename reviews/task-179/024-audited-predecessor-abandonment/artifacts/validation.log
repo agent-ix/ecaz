@@ -1,0 +1,24 @@
+Task 179 packet 024 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: 3eabc6aab71022a24516cec465294d20e1378cfd
+
+Command:
+  cargo check --lib --no-default-features --features 'pg18 pg_test'
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]
+
+Command:
+  cargo pgrx test pg18 test_distann_multi_epoch_publish
+Key result:
+  test tests::pg_test_distann_multi_epoch_publish ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2494 filtered out
+
+The live fixture verifies one pending binding becomes Abandoned with canonical
+audit bytes and a 32-byte digest, the covering successor becomes Applied, and
+the uncontacted predecessor participant remains Published. Exact replay succeeds
+and a changed reason fails EC_PREDECESSOR_ABANDON.

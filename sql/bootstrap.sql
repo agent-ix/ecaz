@@ -265,6 +265,707 @@ ON ec_spire_placement (index_oid, source_identity);
 CREATE INDEX ec_spire_placement_by_index_oid
 ON ec_spire_placement (index_oid);
 
+-- Task 179 physical-generation control catalogs. Every row carries both the
+-- local relation OID and the never-reused logical UUID from v5 control
+-- metadata; production lookups must match both so OID reuse cannot select
+-- stale state.
+CREATE TABLE ec_distann_participant_identity (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    endpoint_identity text NOT NULL CHECK (
+        endpoint_identity ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$'
+    ),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid)
+);
+
+CREATE TABLE ec_distann_registry_state (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    revision bigint NOT NULL DEFAULT 0 CHECK (revision >= 0),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid)
+);
+
+CREATE TABLE ec_distann_node_descriptor (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    roster_ordinal integer NOT NULL CHECK (roster_ordinal >= 0),
+    node_id integer NOT NULL CHECK (node_id > 0),
+    endpoint_identity text NOT NULL CHECK (
+        endpoint_identity ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$'
+    ),
+    conninfo_secret_name text NOT NULL CHECK (
+        conninfo_secret_name ~ '^[A-Z][A-Z0-9_]{0,127}$'
+    ),
+    remote_index_regclass text NOT NULL CHECK (
+        remote_index_regclass ~ '^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$'
+    ),
+    participant_logical_index_uuid uuid NOT NULL,
+    compatibility_digest bytea NOT NULL CHECK (octet_length(compatibility_digest) = 32),
+    is_local boolean NOT NULL DEFAULT false,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, roster_ordinal),
+    UNIQUE (index_oid, logical_index_uuid, node_id),
+    UNIQUE (index_oid, logical_index_uuid, endpoint_identity),
+    UNIQUE (index_oid, logical_index_uuid, participant_logical_index_uuid)
+);
+
+CREATE UNIQUE INDEX ec_distann_node_descriptor_one_local
+    ON ec_distann_node_descriptor (index_oid, logical_index_uuid)
+    WHERE is_local;
+
+CREATE TABLE ec_distann_generation (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    owner_ordinal integer NOT NULL CHECK (owner_ordinal >= 0),
+    node_id integer NOT NULL CHECK (node_id > 0),
+    state text NOT NULL CHECK (
+        state IN ('Building', 'Ready', 'Published', 'Retired')
+    ),
+    build_spec_digest bytea NOT NULL CHECK (octet_length(build_spec_digest) = 32),
+    roster_digest bytea NOT NULL CHECK (octet_length(roster_digest) = 32),
+    generation_descriptor bytea NOT NULL CHECK (octet_length(generation_descriptor) > 0),
+    generation_descriptor_digest bytea NOT NULL CHECK (
+        octet_length(generation_descriptor_digest) = 32
+    ),
+    expected_owner_count bigint NOT NULL CHECK (expected_owner_count >= 0),
+    expected_owner_digest bytea NOT NULL CHECK (octet_length(expected_owner_digest) = 32),
+    row_tier_relid oid NOT NULL CHECK (row_tier_relid <> '0'::oid),
+    graph_store_relid oid NOT NULL CHECK (graph_store_relid <> '0'::oid),
+    directory_relid oid NOT NULL CHECK (directory_relid <> '0'::oid),
+    next_batch_seq bigint NOT NULL DEFAULT 0 CHECK (next_batch_seq >= 0),
+    cumulative_record_count bigint NOT NULL DEFAULT 0 CHECK (cumulative_record_count >= 0),
+    cumulative_owner_digest bytea NOT NULL CHECK (octet_length(cumulative_owner_digest) = 32),
+    last_vec_id_le bytea CHECK (
+        last_vec_id_le IS NULL OR octet_length(last_vec_id_le) = 8
+    ),
+    owner_stream_sha256_state bytea NOT NULL CHECK (
+        octet_length(owner_stream_sha256_state) = 107
+        AND get_byte(owner_stream_sha256_state, 0) = 1
+        AND get_byte(owner_stream_sha256_state, 1) = 0
+        AND get_byte(owner_stream_sha256_state, 2) = 1
+    ),
+    ready_receipt bytea CHECK (
+        ready_receipt IS NULL OR (
+            octet_length(ready_receipt) = 303
+            AND get_byte(ready_receipt, 0) = 1
+            AND get_byte(ready_receipt, 1) = 0
+        )
+    ),
+    epoch_fingerprint bytea CHECK (
+        epoch_fingerprint IS NULL OR octet_length(epoch_fingerprint) = 34
+    ),
+    manifest_digest bytea CHECK (
+        manifest_digest IS NULL OR octet_length(manifest_digest) = 32
+    ),
+    epoch_manifest bytea,
+    published_at timestamptz,
+    successor_activation bytea,
+    successor_activation_digest bytea CHECK (
+        successor_activation_digest IS NULL
+        OR octet_length(successor_activation_digest) = 32
+    ),
+    retired_at timestamptz,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CHECK ((cumulative_record_count = 0) = (last_vec_id_le IS NULL)),
+    CHECK (state = 'Building' OR next_batch_seq > 0),
+    CHECK ((state = 'Building') = (ready_receipt IS NULL)),
+    CHECK (
+        (state IN ('Published', 'Retired')) =
+        (epoch_fingerprint IS NOT NULL AND manifest_digest IS NOT NULL
+         AND epoch_manifest IS NOT NULL AND published_at IS NOT NULL)
+    ),
+    CHECK (
+        (state = 'Retired') =
+        (successor_activation IS NOT NULL
+         AND successor_activation_digest IS NOT NULL AND retired_at IS NOT NULL)
+    ),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (row_tier_relid),
+    UNIQUE (graph_store_relid),
+    UNIQUE (directory_relid)
+);
+
+CREATE UNIQUE INDEX ec_distann_generation_fingerprint_unique
+    ON ec_distann_generation (index_oid, logical_index_uuid, epoch_fingerprint)
+    WHERE epoch_fingerprint IS NOT NULL;
+
+CREATE TABLE ec_distann_generation_batch (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    batch_seq bigint NOT NULL CHECK (batch_seq >= 0),
+    batch_digest bytea NOT NULL CHECK (octet_length(batch_digest) = 32),
+    encoded_bytes bigint NOT NULL CHECK (encoded_bytes BETWEEN 141 AND 8388608),
+    accepted_record_count bigint NOT NULL CHECK (accepted_record_count >= 0),
+    cumulative_record_count bigint NOT NULL CHECK (
+        cumulative_record_count >= accepted_record_count
+    ),
+    cumulative_owner_digest bytea NOT NULL CHECK (octet_length(cumulative_owner_digest) = 32),
+    acknowledged_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CHECK (batch_seq <> 0 OR cumulative_record_count = accepted_record_count),
+    CHECK (
+        accepted_record_count > 0
+        OR (batch_seq = 0 AND cumulative_record_count = 0)
+    ),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id, batch_seq),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_generation (index_oid, logical_index_uuid, build_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE ec_distann_build_registration (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    source_relid oid NOT NULL CHECK (source_relid <> '0'::oid),
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    state text NOT NULL CHECK (
+        state IN (
+            'Registered', 'Building', 'Ready', 'Aborted', 'Decided',
+            'Published', 'Cancelled'
+        )
+    ),
+    registry_revision bigint NOT NULL CHECK (registry_revision >= 0),
+    roster_snapshot bytea NOT NULL CHECK (octet_length(roster_snapshot) > 0),
+    roster_digest bytea NOT NULL CHECK (octet_length(roster_digest) = 32),
+    row_schema_fingerprint bytea NOT NULL CHECK (octet_length(row_schema_fingerprint) = 32),
+    registration_digest bytea NOT NULL CHECK (octet_length(registration_digest) = 32),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (index_oid, logical_index_uuid, epoch),
+    UNIQUE (
+        index_oid, logical_index_uuid, build_id, epoch, registration_digest
+    )
+);
+
+CREATE UNIQUE INDEX ec_distann_build_registration_one_gate_active
+    ON ec_distann_build_registration (index_oid, logical_index_uuid)
+    WHERE state IN ('Registered', 'Building', 'Ready', 'Decided');
+
+CREATE INDEX ec_distann_build_registration_source_gate
+    ON ec_distann_build_registration (source_relid, index_oid, logical_index_uuid)
+    WHERE state IN ('Registered', 'Building', 'Ready', 'Decided');
+
+CREATE TABLE ec_distann_build_participant_binding (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    roster_ordinal integer NOT NULL CHECK (roster_ordinal >= 0),
+    node_id integer NOT NULL CHECK (node_id > 0),
+    endpoint_identity text NOT NULL CHECK (
+        endpoint_identity ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$'
+    ),
+    conninfo_secret_name text NOT NULL CHECK (
+        conninfo_secret_name ~ '^[A-Z][A-Z0-9_]{0,127}$'
+    ),
+    remote_index_regclass text NOT NULL CHECK (
+        remote_index_regclass ~ '^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$'
+    ),
+    participant_logical_index_uuid uuid NOT NULL,
+    compatibility_digest bytea NOT NULL CHECK (octet_length(compatibility_digest) = 32),
+    is_local boolean NOT NULL,
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id, roster_ordinal),
+    UNIQUE (index_oid, logical_index_uuid, build_id, node_id),
+    UNIQUE (index_oid, logical_index_uuid, build_id, endpoint_identity),
+    UNIQUE (index_oid, logical_index_uuid, build_id, participant_logical_index_uuid),
+    UNIQUE (
+        index_oid, logical_index_uuid, build_id, roster_ordinal, node_id,
+        endpoint_identity, remote_index_regclass,
+        participant_logical_index_uuid
+    ),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_build_registration (index_oid, logical_index_uuid, build_id)
+        ON DELETE CASCADE
+);
+
+CREATE UNIQUE INDEX ec_distann_build_participant_one_local
+    ON ec_distann_build_participant_binding (index_oid, logical_index_uuid, build_id)
+    WHERE is_local;
+
+CREATE TABLE ec_distann_build_candidate (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    registration_digest bytea NOT NULL CHECK (octet_length(registration_digest) = 32),
+    build_spec bytea NOT NULL CHECK (octet_length(build_spec) > 0),
+    build_spec_digest bytea NOT NULL CHECK (octet_length(build_spec_digest) = 32),
+    generation_descriptor bytea NOT NULL CHECK (octet_length(generation_descriptor) > 0),
+    generation_descriptor_digest bytea NOT NULL CHECK (
+        octet_length(generation_descriptor_digest) = 32
+    ),
+    source_snapshot bytea NOT NULL CHECK (octet_length(source_snapshot) > 0),
+    source_snapshot_digest bytea NOT NULL CHECK (octet_length(source_snapshot_digest) = 32),
+    ready_receipt_set bytea NOT NULL CHECK (octet_length(ready_receipt_set) > 0),
+    ready_receipt_set_digest bytea NOT NULL CHECK (
+        octet_length(ready_receipt_set_digest) = 32
+    ),
+    epoch_manifest bytea NOT NULL CHECK (octet_length(epoch_manifest) > 0),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    candidate_digest bytea NOT NULL CHECK (octet_length(candidate_digest) = 32),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (
+        index_oid, logical_index_uuid, build_id, epoch,
+        registration_digest, candidate_digest, manifest_digest, epoch_fingerprint
+    ),
+    FOREIGN KEY (
+        index_oid, logical_index_uuid, build_id, epoch, registration_digest
+    ) REFERENCES ec_distann_build_registration (
+        index_oid, logical_index_uuid, build_id, epoch, registration_digest
+    )
+        ON DELETE CASCADE
+);
+
+-- FR-080 coordinator-local, epoch-versioned head object. The state row makes
+-- an empty generation distinguishable from a missing/corrupt sample; vectors
+-- are row-wise so the canonical bounded object is not constrained by one
+-- PostgreSQL varlena value. Build abort cascades through the candidate FK.
+CREATE TABLE ec_distann_generation_head_state (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL,
+    dimensions integer NOT NULL CHECK (dimensions > 0 AND dimensions <= 65535),
+    sample_count integer NOT NULL CHECK (sample_count >= 0),
+    head_sample_digest bytea NOT NULL CHECK (octet_length(head_sample_digest) = 32),
+    head_policy smallint NOT NULL CHECK (head_policy IN (0, 1)),
+    training_query_count integer NOT NULL CHECK (training_query_count >= 0),
+    training_query_digest bytea NOT NULL CHECK (octet_length(training_query_digest) = 32),
+    head_graph_entry integer NOT NULL CHECK (head_graph_entry >= 0),
+    head_graph_digest bytea NOT NULL CHECK (octet_length(head_graph_digest) = 32),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    CHECK (
+        (head_policy = 0 AND training_query_count = 0
+            AND training_query_digest = decode(repeat('00', 32), 'hex'))
+        OR
+        (head_policy = 1 AND training_query_count = 200
+            AND training_query_digest <> decode(repeat('00', 32), 'hex'))
+    ),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_build_candidate (index_oid, logical_index_uuid, build_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE ec_distann_generation_head_sample (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL,
+    sample_ordinal integer NOT NULL CHECK (sample_ordinal >= 0),
+    vec_id bigint NOT NULL,
+    vector real[] NOT NULL,
+    neighbors integer[] NOT NULL,
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id, sample_ordinal),
+    UNIQUE (index_oid, logical_index_uuid, build_id, vec_id),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_generation_head_state (index_oid, logical_index_uuid, build_id)
+        ON DELETE CASCADE
+);
+
+CREATE TABLE ec_distann_publish_decision (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    epoch_manifest bytea NOT NULL CHECK (octet_length(epoch_manifest) > 0),
+    registration_digest bytea NOT NULL CHECK (octet_length(registration_digest) = 32),
+    candidate_digest bytea NOT NULL CHECK (octet_length(candidate_digest) = 32),
+    predecessor_build_id uuid CHECK (
+        predecessor_build_id IS NULL OR (
+            (get_byte(uuid_send(predecessor_build_id), 6) & 240) = 64
+            AND (get_byte(uuid_send(predecessor_build_id), 8) & 192) = 128
+        )
+    ),
+    predecessor_epoch bigint,
+    predecessor_epoch_fingerprint bytea,
+    predecessor_manifest_digest bytea,
+    successor_activation bytea NOT NULL CHECK (octet_length(successor_activation) > 0),
+    successor_activation_digest bytea NOT NULL CHECK (
+        octet_length(successor_activation_digest) = 32
+    ),
+    decision_state text NOT NULL CHECK (
+        decision_state IN ('Pending', 'Activated', 'Applied', 'Cancelled')
+    ),
+    committed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    activated_at timestamptz,
+    applied_at timestamptz,
+    cancelled_at timestamptz,
+    cancelled_by text,
+    cancellation_reason text,
+    cancellation_time_unix_micros bigint,
+    cancellation_audit bytea,
+    cancellation_audit_digest bytea CHECK (
+        cancellation_audit_digest IS NULL
+        OR octet_length(cancellation_audit_digest) = 32
+    ),
+    cancellation_reclaimed_at timestamptz,
+    CHECK (
+        (predecessor_build_id IS NULL AND predecessor_epoch IS NULL
+         AND predecessor_epoch_fingerprint IS NULL
+         AND predecessor_manifest_digest IS NULL)
+        OR
+        (predecessor_build_id IS NOT NULL AND predecessor_epoch IS NOT NULL
+         AND predecessor_epoch > 0
+         AND predecessor_epoch_fingerprint IS NOT NULL
+         AND predecessor_manifest_digest IS NOT NULL
+         AND octet_length(predecessor_epoch_fingerprint) = 34
+         AND octet_length(predecessor_manifest_digest) = 32)
+    ),
+    CHECK ((decision_state IN ('Pending', 'Cancelled')) = (activated_at IS NULL)),
+    CHECK ((decision_state = 'Applied') = (applied_at IS NOT NULL)),
+    CHECK (
+        (decision_state = 'Cancelled'
+         AND cancelled_at IS NOT NULL
+         AND cancelled_by IS NOT NULL AND length(cancelled_by) > 0
+         AND cancellation_reason IS NOT NULL
+         AND octet_length(cancellation_reason) BETWEEN 1 AND 1024
+         AND cancellation_time_unix_micros IS NOT NULL
+         AND cancellation_audit IS NOT NULL
+         AND octet_length(cancellation_audit) > 0
+         AND cancellation_audit_digest IS NOT NULL)
+        OR
+        (decision_state <> 'Cancelled'
+         AND cancelled_at IS NULL AND cancelled_by IS NULL
+         AND cancellation_reason IS NULL
+         AND cancellation_time_unix_micros IS NULL
+         AND cancellation_audit IS NULL AND cancellation_audit_digest IS NULL
+         AND cancellation_reclaimed_at IS NULL)
+    ),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint),
+    UNIQUE (
+        index_oid, logical_index_uuid, build_id, epoch,
+        epoch_fingerprint, manifest_digest
+    ),
+    UNIQUE (
+        index_oid, logical_index_uuid, build_id, predecessor_build_id,
+        predecessor_epoch, predecessor_epoch_fingerprint,
+        predecessor_manifest_digest, successor_activation_digest
+    ),
+    UNIQUE (
+        index_oid, logical_index_uuid, build_id, predecessor_build_id,
+        predecessor_epoch, predecessor_epoch_fingerprint,
+        predecessor_manifest_digest, successor_activation_digest,
+        decision_state
+    ),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_build_registration (
+            index_oid, logical_index_uuid, build_id
+        )
+        ON DELETE RESTRICT,
+    FOREIGN KEY (
+        index_oid, logical_index_uuid, build_id, epoch,
+        registration_digest, candidate_digest, manifest_digest, epoch_fingerprint
+    ) REFERENCES ec_distann_build_candidate (
+        index_oid, logical_index_uuid, build_id, epoch,
+        registration_digest, candidate_digest, manifest_digest, epoch_fingerprint
+    ) ON DELETE RESTRICT,
+    CONSTRAINT ec_distann_publish_decision_predecessor_fk FOREIGN KEY (
+        index_oid, logical_index_uuid, predecessor_build_id,
+        predecessor_epoch, predecessor_epoch_fingerprint,
+        predecessor_manifest_digest
+    ) REFERENCES ec_distann_publish_decision (
+        index_oid, logical_index_uuid, build_id, epoch,
+        epoch_fingerprint, manifest_digest
+    ) ON DELETE RESTRICT
+);
+
+CREATE UNIQUE INDEX ec_distann_publish_decision_one_recovery_active
+    ON ec_distann_publish_decision (index_oid, logical_index_uuid)
+    WHERE decision_state IN ('Pending', 'Activated');
+
+CREATE INDEX ec_distann_publish_decision_predecessor_lookup
+    ON ec_distann_publish_decision (
+        index_oid, logical_index_uuid, predecessor_build_id,
+        predecessor_epoch, predecessor_epoch_fingerprint,
+        predecessor_manifest_digest
+    );
+
+CREATE TABLE ec_distann_predecessor_disposition (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    successor_build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(successor_build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(successor_build_id), 8) & 192) = 128
+    ),
+    predecessor_build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(predecessor_build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(predecessor_build_id), 8) & 192) = 128
+    ),
+    predecessor_epoch bigint NOT NULL CHECK (predecessor_epoch > 0),
+    predecessor_epoch_fingerprint bytea NOT NULL CHECK (
+        octet_length(predecessor_epoch_fingerprint) = 34
+    ),
+    predecessor_manifest_digest bytea NOT NULL CHECK (
+        octet_length(predecessor_manifest_digest) = 32
+    ),
+    predecessor_roster_ordinal integer NOT NULL CHECK (
+        predecessor_roster_ordinal >= 0
+    ),
+    node_id integer NOT NULL CHECK (node_id > 0),
+    endpoint_identity text NOT NULL CHECK (
+        endpoint_identity ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$'
+    ),
+    remote_index_regclass text NOT NULL CHECK (
+        remote_index_regclass ~ '^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$'
+    ),
+    participant_logical_index_uuid uuid NOT NULL,
+    successor_activation_digest bytea NOT NULL CHECK (
+        octet_length(successor_activation_digest) = 32
+    ),
+    disposition text NOT NULL DEFAULT 'Pending' CHECK (
+        disposition IN ('Pending', 'Retired', 'Abandoned')
+    ),
+    retired_activation_digest bytea CHECK (
+        retired_activation_digest IS NULL
+        OR octet_length(retired_activation_digest) = 32
+    ),
+    abandon_audit bytea,
+    abandon_audit_digest bytea CHECK (
+        abandon_audit_digest IS NULL OR octet_length(abandon_audit_digest) = 32
+    ),
+    abandon_caller_name text,
+    abandon_reason text,
+    abandon_time_unix_micros bigint,
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    CHECK (
+        (disposition = 'Pending'
+         AND retired_activation_digest IS NULL
+         AND abandon_audit IS NULL AND abandon_audit_digest IS NULL
+         AND abandon_caller_name IS NULL AND abandon_reason IS NULL
+         AND abandon_time_unix_micros IS NULL)
+        OR
+        (disposition = 'Retired'
+         AND retired_activation_digest IS NOT NULL
+         AND retired_activation_digest = successor_activation_digest
+         AND abandon_audit IS NULL AND abandon_audit_digest IS NULL
+         AND abandon_caller_name IS NULL AND abandon_reason IS NULL
+         AND abandon_time_unix_micros IS NULL)
+        OR
+        (disposition = 'Abandoned'
+         AND retired_activation_digest IS NULL
+         AND abandon_audit IS NOT NULL AND octet_length(abandon_audit) > 0
+         AND abandon_audit_digest IS NOT NULL
+         AND abandon_caller_name IS NOT NULL
+         AND length(abandon_caller_name) > 0
+         AND abandon_reason IS NOT NULL
+         AND octet_length(abandon_reason) BETWEEN 1 AND 1024
+         AND abandon_time_unix_micros IS NOT NULL)
+    ),
+    PRIMARY KEY (
+        index_oid, logical_index_uuid, successor_build_id,
+        predecessor_roster_ordinal
+    ),
+    UNIQUE (
+        index_oid, logical_index_uuid, successor_build_id,
+        participant_logical_index_uuid
+    ),
+    FOREIGN KEY (
+        index_oid, logical_index_uuid, successor_build_id,
+        predecessor_build_id, predecessor_epoch,
+        predecessor_epoch_fingerprint, predecessor_manifest_digest,
+        successor_activation_digest
+    )
+        REFERENCES ec_distann_publish_decision (
+            index_oid, logical_index_uuid, build_id,
+            predecessor_build_id, predecessor_epoch,
+            predecessor_epoch_fingerprint, predecessor_manifest_digest,
+            successor_activation_digest
+        ) ON DELETE RESTRICT,
+    FOREIGN KEY (
+        index_oid, logical_index_uuid, predecessor_build_id,
+        predecessor_roster_ordinal, node_id, endpoint_identity,
+        remote_index_regclass, participant_logical_index_uuid
+    ) REFERENCES ec_distann_build_participant_binding (
+        index_oid, logical_index_uuid, build_id, roster_ordinal, node_id,
+        endpoint_identity, remote_index_regclass,
+        participant_logical_index_uuid
+    ) ON DELETE RESTRICT
+);
+
+CREATE TABLE ec_distann_retire_decision (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    roster_snapshot bytea NOT NULL CHECK (octet_length(roster_snapshot) > 0),
+    roster_digest bytea NOT NULL CHECK (octet_length(roster_digest) = 32),
+    abandoned_binding_set bytea NOT NULL CHECK (
+        octet_length(abandoned_binding_set) >= 4
+    ),
+    abandoned_binding_set_digest bytea NOT NULL CHECK (
+        octet_length(abandoned_binding_set_digest) = 32
+    ),
+    retire_decision bytea NOT NULL CHECK (octet_length(retire_decision) > 0),
+    retire_decision_digest bytea NOT NULL CHECK (octet_length(retire_decision_digest) = 32),
+    forced boolean NOT NULL DEFAULT false,
+    overridden_in_flight_count bigint NOT NULL DEFAULT 0 CHECK (overridden_in_flight_count >= 0),
+    caller_name text NOT NULL CHECK (length(caller_name) > 0),
+    reason text NOT NULL DEFAULT 'normal' CHECK (
+        octet_length(reason) BETWEEN 1 AND 1024
+    ),
+    decision_time_unix_micros bigint NOT NULL,
+    covering_successor_build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(covering_successor_build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(covering_successor_build_id), 8) & 192) = 128
+    ),
+    covering_successor_activation_digest bytea NOT NULL CHECK (
+        octet_length(covering_successor_activation_digest) = 32
+    ),
+    covering_successor_decision_state text NOT NULL DEFAULT 'Applied' CHECK (
+        covering_successor_decision_state = 'Applied'
+    ),
+    decision_state text NOT NULL CHECK (decision_state IN ('Pending', 'Applied')),
+    committed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    applied_at timestamptz,
+    CHECK ((decision_state = 'Applied') = (applied_at IS NOT NULL)),
+    CHECK (
+        (NOT forced AND overridden_in_flight_count = 0 AND reason = 'normal')
+        OR forced
+    ),
+    PRIMARY KEY (index_oid, logical_index_uuid, epoch_fingerprint),
+    FOREIGN KEY (
+        index_oid, logical_index_uuid, build_id, epoch,
+        epoch_fingerprint, manifest_digest
+    ) REFERENCES ec_distann_publish_decision (
+        index_oid, logical_index_uuid, build_id, epoch,
+        epoch_fingerprint, manifest_digest
+    ) ON DELETE RESTRICT,
+    FOREIGN KEY (
+        index_oid, logical_index_uuid, covering_successor_build_id,
+        build_id, epoch, epoch_fingerprint, manifest_digest,
+        covering_successor_activation_digest,
+        covering_successor_decision_state
+    ) REFERENCES ec_distann_publish_decision (
+        index_oid, logical_index_uuid, build_id,
+        predecessor_build_id, predecessor_epoch,
+        predecessor_epoch_fingerprint, predecessor_manifest_digest,
+        successor_activation_digest, decision_state
+    ) ON DELETE RESTRICT
+);
+
+CREATE TABLE ec_distann_generation_reclaim (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    build_spec_digest bytea NOT NULL CHECK (octet_length(build_spec_digest) = 32),
+    generation_descriptor_digest bytea NOT NULL CHECK (
+        octet_length(generation_descriptor_digest) = 32
+    ),
+    record_count bigint NOT NULL CHECK (record_count >= 0),
+    row_count bigint NOT NULL CHECK (row_count >= 0),
+    successor_activation_digest bytea CHECK (
+        successor_activation_digest IS NULL
+        OR octet_length(successor_activation_digest) = 32
+    ),
+    retire_decision bytea NOT NULL CHECK (octet_length(retire_decision) > 0),
+    retire_decision_digest bytea NOT NULL CHECK (octet_length(retire_decision_digest) = 32),
+    reclaimed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint)
+);
+
+CREATE TABLE ec_distann_cancelled_generation_reclaim (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    prior_state text NOT NULL CHECK (prior_state IN ('Ready', 'Published')),
+    build_spec_digest bytea NOT NULL CHECK (octet_length(build_spec_digest) = 32),
+    generation_descriptor_digest bytea NOT NULL CHECK (
+        octet_length(generation_descriptor_digest) = 32
+    ),
+    record_count bigint NOT NULL CHECK (record_count >= 0),
+    row_count bigint NOT NULL CHECK (row_count >= 0),
+    cancellation_audit bytea NOT NULL CHECK (octet_length(cancellation_audit) > 0),
+    cancellation_audit_digest bytea NOT NULL CHECK (
+        octet_length(cancellation_audit_digest) = 32
+    ),
+    reclaimed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint)
+);
+
+CREATE TABLE ec_distann_active_epoch (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch bigint NOT NULL CHECK (epoch > 0),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    manifest_digest bytea NOT NULL CHECK (octet_length(manifest_digest) = 32),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid),
+    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint),
+    FOREIGN KEY (
+        index_oid, logical_index_uuid, build_id, epoch,
+        epoch_fingerprint, manifest_digest
+    ) REFERENCES ec_distann_publish_decision (
+        index_oid, logical_index_uuid, build_id, epoch,
+        epoch_fingerprint, manifest_digest
+    )
+);
+
+REVOKE ALL ON TABLE ec_distann_participant_identity FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_registry_state FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_node_descriptor FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_generation FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_generation_batch FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_build_registration FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_build_participant_binding FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_build_candidate FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_publish_decision FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_predecessor_disposition FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_retire_decision FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_active_epoch FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_generation_reclaim FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_cancelled_generation_reclaim FROM PUBLIC;
+
 CREATE TYPE ec_spire_placement_entry AS (
     pk_value bytea,
     node_id integer,
@@ -619,6 +1320,8 @@ $$;
 CREATE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event()
 RETURNS event_trigger
 LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, @extschema@, pg_temp
 AS $$
 DECLARE
     dropped_object record;
@@ -634,9 +1337,45 @@ BEGIN
 END
 $$;
 
+REVOKE ALL ON FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event()
+    FROM PUBLIC;
+
 CREATE EVENT TRIGGER ec_spire_remote_catalog_drop_index_cleanup
 ON sql_drop
 EXECUTE FUNCTION ec_spire_remote_catalog_drop_index_cleanup_event();
+
+CREATE FUNCTION ec_distann_catalog_drop_index_cleanup_event()
+RETURNS event_trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, @extschema@, pg_temp
+AS $$
+DECLARE
+    dropped_object record;
+BEGIN
+    FOR dropped_object IN
+        SELECT *
+          FROM pg_event_trigger_dropped_objects()
+         WHERE object_type = 'index'
+    LOOP
+        -- Registry state exists for every v5 logical control and for no
+        -- ordinary or hidden directory index. Avoid the full multi-catalog
+        -- cleanup path for unrelated database-wide index drops.
+        IF EXISTS (
+            SELECT 1 FROM ec_distann_registry_state
+             WHERE index_oid = dropped_object.objid::oid
+        ) THEN
+            PERFORM ec_distann_catalog_index_cleanup(dropped_object.objid::oid);
+        END IF;
+    END LOOP;
+END
+$$;
+
+REVOKE ALL ON FUNCTION ec_distann_catalog_drop_index_cleanup_event() FROM PUBLIC;
+
+CREATE EVENT TRIGGER ec_distann_catalog_drop_index_cleanup
+ON sql_drop
+EXECUTE FUNCTION ec_distann_catalog_drop_index_cleanup_event();
 
 CREATE FUNCTION tqvector_inner_product(tqvector, tqvector)
 RETURNS float4

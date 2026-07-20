@@ -1,0 +1,428 @@
+Script started on 2026-07-12 19:21:51-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling ecaz-fault-injection v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/crates/ecaz-fault-injection)
+warning: the MSRV in `clippy.toml` and `Cargo.toml` differ; using `1.75.0` from `clippy.toml`
+
+warning: `ecaz-cli` (build script) generated 1 warning
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/crates/ecaz-cli)
+    Checking ecaz-cloud v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards/crates/ecaz-cloud)
+error: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:176:5
+    |
+175 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+176 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `-D dead-code` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[expect(dead_code)]` or `#[allow(dead_code)]`
+
+error: this function has too many arguments (11/8)
+   --> crates/ecaz-cli/src/commands/bench/build_probe.rs:294:1
+    |
+294 | / async fn compare_query_results(
+295 | |     client: &tokio_postgres::Client,
+296 | |     corpus_table: &str,
+297 | |     corpus_ids: &[i64],
+...   |
+305 | |     compare_queries: usize,
+306 | | ) -> Result<Vec<QueryComparison>> {
+    | |_________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+    = note: `-D clippy::too-many-arguments` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::too_many_arguments)]`
+
+error: the loop variable `query_row` is used to index `query_ids`
+   --> crates/ecaz-cli/src/commands/bench/build_probe.rs:319:22
+    |
+319 |     for query_row in 0..compare_count {
+    |                      ^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_range_loop
+    = note: `-D clippy::needless-range-loop` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_range_loop)]`
+help: consider using an iterator and enumerate()
+    |
+319 -     for query_row in 0..compare_count {
+319 +     for (query_row, <item>) in query_ids.iter().enumerate().take(compare_count) {
+    |
+
+error: this function has too many arguments (15/8)
+   --> crates/ecaz-cli/src/commands/bench/build_probe.rs:728:1
+    |
+728 | / fn render_probe(
+729 | |     args: &BuildProbeArgs,
+730 | |     corpus_table: &str,
+731 | |     rows: usize,
+...   |
+743 | |     frontier_diagnosis: Option<&FrontierDiagnosis>,
+744 | | ) -> String {
+    | |___________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (10/8)
+   --> crates/ecaz-cli/src/commands/bench/sidecar_rerank.rs:967:1
+    |
+967 | / async fn rerank_with_sidecar_db(
+968 | |     client: &Client,
+969 | |     sidecar: &Sidecar,
+970 | |     read_mode: SidecarReadMode,
+...   |
+977 | |     concurrency: usize,
+978 | | ) -> Result<RerankRun> {
+    | |______________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this function has too many arguments (11/8)
+    --> crates/ecaz-cli/src/commands/bench/sidecar_rerank.rs:1055:1
+     |
+1055 | / async fn rerank_one_sidecar_db_query(
+1056 | |     client: &Client,
+1057 | |     sidecar: &Sidecar,
+1058 | |     read_mode: SidecarReadMode,
+...    |
+1066 | |     final_rerank_k: Option<usize>,
+1067 | | ) -> Result<RerankQueryResult> {
+     | |______________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: manual slice size calculation
+    --> crates/ecaz-cli/src/commands/bench/sidecar_rerank.rs:1264:20
+     |
+1264 |     let expected = query.len() * std::mem::size_of::<f32>();
+     |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: try: `std::mem::size_of_val(query)`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#manual_slice_size_calculation
+     = note: `-D clippy::manual-slice-size-calculation` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::manual_slice_size_calculation)]`
+
+error: this function has too many arguments (9/8)
+    --> crates/ecaz-cli/src/commands/bench/spire_pipeline.rs:1348:1
+     |
+1348 | / async fn apply_session_options(
+1349 | |     client: &Client,
+1350 | |     nprobe: i32,
+1351 | |     rerank_width: Option<i32>,
+...    |
+1357 | |     session_gucs: &[(String, String)],
+1358 | | ) -> Result<()> {
+     | |_______________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: large size difference between variants
+   --> crates/ecaz-cli/src/commands/bench/mod.rs:638:1
+    |
+638 | / pub enum BenchCommand {
+639 | |     /// Recall@k sweep: measure accuracy vs ground truth for a set of tuning points.
+640 | |     Recall(RecallArgs),
+    | |     ------------------ the second-largest variant contains at least 280 bytes
+641 | |     /// Cross-AM consistency: compare per-query top-k predictions across AMs.
+...   |
+660 | |     SpirePipeline(SpirePipelineArgs),
+    | |     -------------------------------- the largest variant contains at least 592 bytes
+...   |
+664 | |     TqBiasAudit(TqBiasAuditArgs),
+665 | | }
+    | |_^ the entire enum is at least 592 bytes
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#large_enum_variant
+    = note: `-D clippy::large-enum-variant` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::large_enum_variant)]`
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+    |
+660 -     SpirePipeline(SpirePipelineArgs),
+660 +     SpirePipeline(Box<SpirePipelineArgs>),
+    |
+
+error: this function has too many arguments (10/8)
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:824:1
+    |
+824 | / fn write_distributed_placement_outputs(
+825 | |     output_dir: &Path,
+826 | |     input: &LoadedDistributedPlacementConfig,
+827 | |     prefix: &str,
+...   |
+834 | |     reloptions: &[(String, String)],
+835 | | ) -> Result<DistributedPlacementOutputPlan> {
+    | |___________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: usage of `bool::then` in `filter_map`
+    --> crates/ecaz-cli/src/commands/corpus/load.rs:1278:10
+     |
+1278 |           .filter_map(|(key, _)| {
+     |  __________^
+1279 | |             HNSW_ONLY_RELOPTIONS
+1280 | |                 .iter()
+1281 | |                 .any(|hnsw_key| hnsw_key == &key.as_str())
+1282 | |                 .then(|| key.clone())
+1283 | |         })
+     | |__________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#filter_map_bool_then
+     = note: `-D clippy::filter-map-bool-then` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::filter_map_bool_then)]`
+help: use `filter` then `map` instead
+     |
+1278 ~         .filter(|&(key, _)| HNSW_ONLY_RELOPTIONS
+1279 +                 .iter()
+1280 +                 .any(|hnsw_key| hnsw_key == &key.as_str())).map(|(key, _)| key.clone())
+     |
+
+error: this function has too many arguments (9/8)
+    --> crates/ecaz-cli/src/commands/corpus/load.rs:1783:1
+     |
+1783 | / async fn ensure_corpus_table(
+1784 | |     client: &mut Client,
+1785 | |     table: &str,
+1786 | |     path: &Path,
+...    |
+1792 | |     table_reloptions: &[(String, String)],
+1793 | | ) -> Result<usize> {
+     | |__________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#too_many_arguments
+
+error: this async expression only awaits a single future
+   --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:891:40
+    |
+891 |     let connection_task = tokio::spawn(async move { connection.await });
+    |                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: you can reduce it to: `connection`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#redundant_async_block
+    = note: `-D clippy::redundant-async-block` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::redundant_async_block)]`
+
+error: doc list item without indentation
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:2358:5
+     |
+2358 | /// Task 172 AC-3 / NFR-018 cluster storage summation. Queries each node for its
+     |     ^
+     |
+     = help: if this is supposed to be its own paragraph, add a blank line
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+     = note: `-D clippy::doc-lazy-continuation` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::doc_lazy_continuation)]`
+help: indent this line
+     |
+2358 | ///   Task 172 AC-3 / NFR-018 cluster storage summation. Queries each node for its
+     |     ++
+
+error: doc list item without indentation
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:2359:5
+     |
+2359 | /// `dm_idx` index bytes and `dm` heap bytes, sums across the cluster, and
+     |     ^
+     |
+     = help: if this is supposed to be its own paragraph, add a blank line
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+help: indent this line
+     |
+2359 | ///   `dm_idx` index bytes and `dm` heap bytes, sums across the cluster, and
+     |     ++
+
+error: doc list item without indentation
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:2360:5
+     |
+2360 | /// computes the replicated-index space amplification vs raw f32 vectors
+     |     ^
+     |
+     = help: if this is supposed to be its own paragraph, add a blank line
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+help: indent this line
+     |
+2360 | ///   computes the replicated-index space amplification vs raw f32 vectors
+     |     ++
+
+error: doc list item without indentation
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:2361:5
+     |
+2361 | /// (`cluster_index_bytes / (rows * dim * 4)`). Emits one `storage_node` line per
+     |     ^
+     |
+     = help: if this is supposed to be its own paragraph, add a blank line
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+help: indent this line
+     |
+2361 | ///   (`cluster_index_bytes / (rows * dim * 4)`). Emits one `storage_node` line per
+     |     ++
+
+error: doc list item without indentation
+    --> crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:2362:5
+     |
+2362 | /// node plus a `storage_summation` summary line (both parsed into result rows).
+     |     ^
+     |
+     = help: if this is supposed to be its own paragraph, add a blank line
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#doc_lazy_continuation
+help: indent this line
+     |
+2362 | ///   node plus a `storage_summation` summary line (both parsed into result rows).
+     |     ++
+
+error: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+   --> crates/ecaz-cli/src/commands/dev/fault.rs:670:9
+    |
+670 | /         match client.simple_query("SELECT 1").await {
+671 | |             Ok(_) => {
+672 | |                 return Err(eyre!(
+673 | |                     "idle_in_transaction_session_timeout {} unexpectedly left the backend usable",
+...   |
+677 | |             Err(_) => {}
+678 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#single_match
+    = note: `-D clippy::single-match` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::single_match)]`
+help: try
+    |
+670 ~         if let Ok(_) = client.simple_query("SELECT 1").await {
+671 +             return Err(eyre!(
+672 +                 "idle_in_transaction_session_timeout {} unexpectedly left the backend usable",
+673 +                 am.as_str()
+674 +             ))
+675 +         }
+    |
+
+error: you seem to be trying to use `match` for destructuring a single pattern. Consider using `if let`
+    --> crates/ecaz-cli/src/commands/dev/fault.rs:1309:5
+     |
+1309 | /     match worker_task.await? {
+1310 | |         Ok(()) => return Err(eyre!("{label} unexpectedly completed before SIGKILL")),
+1311 | |         Err(_) => {}
+1312 | |     }
+     | |_____^ help: try: `if let Ok(()) = worker_task.await? { return Err(eyre!("{label} unexpectedly completed before SIGKILL")) }`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#single_match
+
+error: writing `&PathBuf` instead of `&Path` involves a new object where a slice will do
+   --> crates/ecaz-cli/src/commands/dev/install.rs:187:16
+    |
+187 |     pgrx_home: &PathBuf,
+    |                ^^^^^^^^ help: change this to: `&Path`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#ptr_arg
+    = note: `-D clippy::ptr-arg` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::ptr_arg)]`
+
+error: writing `&PathBuf` instead of `&Path` involves a new object where a slice will do
+   --> crates/ecaz-cli/src/commands/dev/scratch.rs:194:45
+    |
+194 | async fn stop_existing_postmaster(data_dir: &PathBuf) -> Result<()> {
+    |                                             ^^^^^^^^ help: change this to: `&Path`
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#ptr_arg
+
+error: large size difference between variants
+  --> crates/ecaz-cli/src/commands/dev/spire_multicluster.rs:18:1
+   |
+18 | / pub enum SpireMulticlusterCommand {
+19 | |     /// Run the PG18 one-coordinator/one-remote baseline smoke fixture.
+20 | |     #[command(name = "smoke-pg18")]
+21 | |     SmokePg18(SmokePg18Args),
+   | |     ------------------------ the second-largest variant contains at least 184 bytes
+...  |
+35 | |     LocalMultinodePg18(LocalMultinodePg18Args),
+   | |     ------------------------------------------ the largest variant contains at least 600 bytes
+36 | | }
+   | |_^ the entire enum is at least 600 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+35 -     LocalMultinodePg18(LocalMultinodePg18Args),
+35 +     LocalMultinodePg18(Box<LocalMultinodePg18Args>),
+   |
+
+error: enclosing `Ok` and `?` operator are unneeded
+   --> crates/ecaz-cli/src/commands/dev/support.rs:242:5
+    |
+242 | /     Ok(Path::new(env!("CARGO_MANIFEST_DIR"))
+243 | |         .join("sql/refresh_adr030_scratch_debug_helpers.sql")
+244 | |         .canonicalize()
+245 | |         .wrap_err("resolving bundled scratch debug-helper SQL")?)
+    | |_________________________________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#needless_question_mark
+    = note: `-D clippy::needless-question-mark` implied by `-D warnings`
+    = help: to override `-D warnings` add `#[allow(clippy::needless_question_mark)]`
+help: remove the enclosing `Ok` and `?` operator
+    |
+242 ~     Path::new(env!("CARGO_MANIFEST_DIR"))
+243 |         .join("sql/refresh_adr030_scratch_debug_helpers.sql")
+244 |         .canonicalize()
+245 ~         .wrap_err("resolving bundled scratch debug-helper SQL")
+    |
+
+error: large size difference between variants
+  --> crates/ecaz-cli/src/commands/dev/mod.rs:24:1
+   |
+24 | /   pub enum DevCommand {
+25 | |       /// Local install/setup helpers for ecaz, pgvector, and pgvectorscale development.
+26 | |       Install {
+27 | |           #[command(subcommand)]
+...  |
+31 | | /     Scratch {
+32 | | |         #[command(subcommand)]
+33 | | |         command: scratch::ScratchCommand,
+34 | | |     },
+   | | |_____- the second-largest variant contains at least 200 bytes
+...  |
+41 | | /     SpireMulticluster {
+42 | | |         #[command(subcommand)]
+43 | | |         command: spire_multicluster::SpireMulticlusterCommand,
+44 | | |     },
+   | | |_____- the largest variant contains at least 600 bytes
+...  |
+65 | |       ResourceTest(resource_test::ResourceTestArgs),
+66 | |   }
+   | |___^ the entire enum is at least 600 bytes
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#large_enum_variant
+help: consider boxing the large fields or introducing indirection in some other way to reduce the total size of the enum
+   |
+43 -         command: spire_multicluster::SpireMulticlusterCommand,
+43 +         command: Box<spire_multicluster::SpireMulticlusterCommand>,
+   |
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning (1 duplicate)
+error: could not compile `ecaz-cli` (bin "ecaz") due to 25 previous errors; 1 warning emitted
+warning: build failed, waiting for other jobs to finish...
+error: items after a test module
+    --> crates/ecaz-cli/src/commands/dev/spire_multicluster.rs:2677:1
+     |
+2677 | mod tests {
+     | ^^^^^^^^^
+...
+2740 | fn joined_reloption_args(shared: &[String], specific: &[String]) -> Vec<String> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2744 | fn default_local_multinode_run_id() -> String {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2752 | fn log_local_multinode(path: Option<&Path>, line: &str) -> Result<()> {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2769 | fn push_path_arg(command: &mut Command, name: &str, value: Option<&PathBuf>) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+2775 | fn push_u16_arg(command: &mut Command, name: &str, value: Option<u16>) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.94.0/index.html#items_after_test_module
+     = note: `-D clippy::items-after-test-module` implied by `-D warnings`
+     = help: to override `-D warnings` add `#[allow(clippy::items_after_test_module)]`
+     = help: move the items to before the test module was defined
+
+warning: `ecaz-cli` (bin "ecaz" test) generated 1 warning (1 duplicate)
+error: could not compile `ecaz-cli` (bin "ecaz" test) due to 25 previous errors; 1 warning emitted
+
+Script done on 2026-07-12 19:22:15-07:00 [COMMAND_EXIT_CODE="101"]

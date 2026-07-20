@@ -49,22 +49,32 @@ task files: `plan/tasks/162..167-*.md` (M0=162 … M5=167). Task 168's
 batched-beam primitive (`src/am/ec_diskann/scan.rs::greedy_descent_beam_with`)
 is already landed on this branch and is the FR-081 local-loop building block.
 
+## 2026-07-10 corrective execution note
+
+This bundle preserves the original M0–M5 decomposition, but its M2/M3 task
+checklists are no longer the implementation authority. Tasks 164/165 built and
+drilled a replicated-serving control. Task 163 still lacks its D8 bounded
+spill, Task 166 is a single-instance benchmark control, Task 179 now owns
+physical M2/M3 completion, and Task 172 owns the distributed M4 gate. Use
+`plan/tasks/179-ec-distann-physical-hash-shard-generations.md` for implementation
+order and the revised FRs for behavior.
+
 ## Requirements Summary
 
 | Req | Title | Milestone(s) | Tests |
 |---|---|---|---|
-| FR-075 | ec_distann Access Method Surface | M0 | TC-037 |
-| FR-076 | Graph-Node Record Format + Global Identity (lean record, D11) | M0 | TC-037, TC-044 |
-| FR-077 | Sharded Clustered Build + Closure Overlap + Stitch | M1 | TC-038, TC-039 |
-| FR-078 | Hash Placement + Placement Directory (co-placed heap row) | M2 | TC-040 |
-| FR-079 | Remote Expansion Protocol (exact_dist from local heap read) | M2 | TC-040 |
+| FR-075 | ec_distann Access Method Surface + distributed control | M0, corrective M2 | TC-037, TC-040, TC-042 |
+| FR-076 | Graph-Node + handoff formats and global identity | M0, corrective M2 | TC-037, TC-040, TC-044, TC-050 |
+| FR-077 | Sharded Clustered Build + Closure Overlap + bounded stitch | M1 | TC-038, TC-039, TC-040 |
+| FR-078 | Physical hash-owner generation + frozen row tier handoff | Corrective M2 (Task 179) | TC-040, TC-042, TC-044, TC-050 |
+| FR-079 | Remote Expansion + frozen-row materialization | Corrective M2 (Task 179) | TC-040, TC-042 |
 | FR-080 | Coordinator Head Index | M0 (degenerate), M2 | TC-037, TC-041 |
 | FR-081 | Query Orchestration + Scan Semantics | M0 (local), M2 (remote) | TC-041 |
-| FR-082 | Epoch Lifecycle + Consistency (D10 immutability) | M2 (subset), M3 | TC-042 |
-| FR-083 | DML Path (tombstone/delta early; full insert M5) | M3 (early), M5 | TC-043 |
-| NFR-017 | Latency + Recall Gate vs release anchors | M4 | TC-044 |
+| FR-082 | Physical generation lifecycle, commit-only publication, pins | Corrective M3 (Task 179) | TC-040, TC-042, TC-050 |
+| FR-083 | DML Path (physical adaptation after Task 179) | M5 | TC-042, TC-043 |
+| NFR-017 | Physical distributed latency + recall gate vs release anchors | M4 (Task 172) | TC-040, TC-044 |
 | NFR-018 | Space Amplification ≤ 4× raw | M0 measure, M4 gate | TC-044 |
-| NFR-019 | Per-Query Touch Bound (reads==expansions==reranks ≤ BW×H) | M2, M4 | TC-041, TC-044 |
+| NFR-019 | Per-Query Touch Bound (graph ≤ BW×H; exact rows ≤ live expansions; payload ≤ k) | M2, M4 | TC-041, TC-044 |
 | NFR-020 | Fault Behavior (correct-or-error, no silent partials) | M3 | TC-042, TC-043 |
 
 ## Dependency Graph
@@ -82,8 +92,8 @@ is already landed on this branch and is the FR-081 local-loop building block.
   Reason: two-node read path consumes a stitched, seed-deterministic build
   (M2's result-identity test depends on build determinism).
 - `FR-078 co-placement -> FR-079 exact rerank`
-  Reason: FR-079's local heap read is only sound when the vector tier is
-  co-placed by the same hash owner (D11).
+  Reason: FR-079's local epoch-row read is only sound when the vector tier is
+  frozen and co-placed by the same hash owner (D11).
 - `FR-082 epoch subset (M2 fingerprint) -> FR-082 full (M3) -> FR-083 (M3 early, M5 full)`
   Reason: D10 epoch immutability is what makes owned-but-absent /
   vector-missing hard errors and TID-stability sound; DML semantics sit on it.
@@ -96,10 +106,11 @@ is already landed on this branch and is the FR-081 local-loop building block.
 
 ## Critical Path
 
-M0 (Task-001) → M1 (Task-002) → M2 (Task-003) → M3 (Task-004) → M4 gate
-(Task-005) → M5 (Task-006). Single-coder serial by design (one branch per
-milestone task); the only genuinely parallelizable item is the suite-runner
-extension (Task-007), which must merge before M4.
+Corrected path: M0 (Task 162, done) → M1 quality plus D8 closeout (Task 163) →
+physical M2/M3 (Task 179; Tasks 164/165 retained as controls) → distributed M4
+gate (Task 172; Task 166 is the single-instance control) → physical M5
+adaptation (Task 167). The suite-runner extension remains independently
+mergeable but cannot emit a valid gate row before Task 179 topology passes.
 
 ## Shared Dependencies (discrete deliverables)
 

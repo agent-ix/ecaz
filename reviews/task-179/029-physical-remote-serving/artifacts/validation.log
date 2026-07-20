@@ -1,0 +1,33 @@
+Task 179 packet 029 validation
+Date: 2026-07-12 America/Los_Angeles
+Head: 6f9b98bfabb5d25447435614b039bed20dadb99a
+
+Command:
+  cargo pgrx schema pg18 --no-default-features --features pg18,pg_test \
+    --out /tmp/task179-schema-v2.sql
+Key result:
+  Discovered 1091 SQL entities: 1087 functions
+  Generated ec_distann_expand_physical_nodes(regclass, ...),
+  ec_distann_physical_seed_candidates(regclass, ...), and
+  ec_distann_materialize_physical_row_payloads(regclass, ...), plus the
+  normative ec_distann_expand_nodes and ec_distann_materialize_row_payloads
+  physical overload wrappers.
+
+Command:
+  cargo pgrx test pg18 test_distann_three_owner_physical_handoff \
+    --no-default-features --features pg18,pg_test
+Key result:
+  test tests::pg_test_distann_three_owner_physical_handoff ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2495 filtered out
+
+The fixture forces EcDistannDistributedScan, returns 30 frozen rows, and checks
+that their source identities cover physical owner ordinals {0, 1, 2}. During
+test iteration two planner-only fixture corrections were made (enable_seqscan
+placement and real[] query operand). After the passing run, the endpoint's
+missing-generation error classification and an allocation-free ownership
+preflight were tightened without changing the exercised serving path.
+
+Final-head command:
+  cargo clippy --lib --no-default-features --features pg18,pg_test -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]

@@ -1,0 +1,209 @@
+{
+  "suite": "task179-real-physical-fixture",
+  "schema_version": 1,
+  "config": "reviews/task-179/031-real-physical-multicluster/artifacts/physical-fixture-suite.json",
+  "config_sha256": "ff9a790614c21ca5954254508601b7d7eb5314307e7d36b71328c8f44f8a4b67",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783857595947,
+  "runner_git_commit": "2aabb45f9e3abcc058980c7308666897bc7ba6e8",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "physical-one-owner",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-one-owner",
+        "--run-dir",
+        "target/task179-suite-one-owner",
+        "--log-file",
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-one-owner/distann-local-multinode.log",
+        "--nodes",
+        "1",
+        "--base-port",
+        "39920",
+        "--rows",
+        "30",
+        "--dim",
+        "4",
+        "--graph-degree",
+        "8",
+        "--queries",
+        "1",
+        "--top-k",
+        "10"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "physical",
+        "one-owner"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-one-owner/distann-local-multinode.log",
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-one-owner/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783857595948,
+      "finished_at_unix_ms": 1783857598157,
+      "duration_ms": 2208,
+      "exit_code": 0
+    },
+    {
+      "name": "physical-three-owner-in-roster",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-three-owner-in-roster",
+        "--run-dir",
+        "target/task179-suite-three-in-roster",
+        "--log-file",
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-three-owner-in-roster/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--base-port",
+        "39930",
+        "--rows",
+        "90",
+        "--dim",
+        "4",
+        "--graph-degree",
+        "8",
+        "--queries",
+        "1",
+        "--top-k",
+        "10"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "physical",
+        "three-owner",
+        "coordinator-in-roster"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-three-owner-in-roster/distann-local-multinode.log",
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-three-owner-in-roster/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783857598158,
+      "finished_at_unix_ms": 1783857605829,
+      "duration_ms": 7670,
+      "exit_code": 0
+    },
+    {
+      "name": "physical-three-owner-outside-roster",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-three-owner-outside-roster",
+        "--run-dir",
+        "target/task179-suite-three-outside-roster",
+        "--log-file",
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-three-owner-outside-roster/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--coordinator-outside-roster",
+        "--base-port",
+        "39940",
+        "--rows",
+        "90",
+        "--dim",
+        "4",
+        "--graph-degree",
+        "8",
+        "--queries",
+        "1",
+        "--top-k",
+        "10"
+      ],
+      "selected": true,
+      "tags": [
+        "task179",
+        "physical",
+        "three-owner",
+        "coordinator-outside-roster"
+      ],
+      "expected_artifacts": [
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-three-owner-outside-roster/distann-local-multinode.log",
+        "reviews/task-179/031-real-physical-multicluster/artifacts/physical-three-owner-outside-roster/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783857605830,
+      "finished_at_unix_ms": 1783857615206,
+      "duration_ms": 9352,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "one-owner-topology-gate",
+      "step": "physical-one-owner",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "three-owner-in-roster-topology-gate",
+      "step": "physical-three-owner-in-roster",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    },
+    {
+      "name": "three-owner-outside-roster-topology-gate",
+      "step": "physical-three-owner-outside-roster",
+      "metric": "drill_outcome",
+      "filters": {
+        "drill": "physical_topology_gate"
+      },
+      "field": "pass_numeric",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "pass_numeric 1 Eq 1 -> true"
+    }
+  ]
+}

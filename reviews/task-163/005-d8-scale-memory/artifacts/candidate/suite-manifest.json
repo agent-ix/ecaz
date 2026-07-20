@@ -1,0 +1,416 @@
+{
+  "suite": "task163-d8-scale-memory",
+  "schema_version": 1,
+  "config": "reviews/task-163/005-d8-scale-memory/artifacts/candidate-suite.json",
+  "config_sha256": "2ae4ce2a8fce91d44596a0ca318676302da3aa92fec1645d6915f8644947dd2f",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783945627175,
+  "runner_git_commit": "cec8abba1770dc500a890c7ad57a932deae4c51c",
+  "connection": {
+    "database": "ec_distann_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release",
+    "git_commit": "cec8abba1770dc500a890c7ad57a932deae4c51c",
+    "sha256": "318624bbce5c20868f1307db16f7abc2f8fda994321119b820dbd37e4f66fbf0",
+    "path": "/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so"
+  },
+  "steps": [
+    {
+      "name": "precheck-host",
+      "kind": "raw",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "ec_distann_bench",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS postgres_version, ecaz_build_profile() AS build_profile, current_setting('shared_buffers') AS shared_buffers, current_setting('work_mem') AS work_mem, current_setting('maintenance_work_mem') AS maintenance_work_mem;",
+        "--log-output",
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/precheck-host.log"
+      ],
+      "selected": true,
+      "tags": [
+        "task163",
+        "d8",
+        "precheck"
+      ],
+      "expected_artifacts": [
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/precheck-host.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783945627265,
+      "finished_at_unix_ms": 1783945627279,
+      "duration_ms": 13,
+      "exit_code": 0
+    },
+    {
+      "name": "load-10k-current",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/load-10k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "d8_current_10k",
+        "--profile",
+        "ec_distann",
+        "--corpus-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "neighbor_code_format=rabitq",
+        "--reloption",
+        "build_shards=4",
+        "--reloption",
+        "closure_epsilon=0.1",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25"
+      ],
+      "selected": true,
+      "tags": [
+        "task163",
+        "d8",
+        "ec_real_10k",
+        "current",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/load-10k.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783945627280,
+      "finished_at_unix_ms": 1783945645321,
+      "duration_ms": 18040,
+      "exit_code": 0
+    },
+    {
+      "name": "recall-10k-current",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "d8_current_10k",
+        "--profile",
+        "ec_distann",
+        "--k",
+        "10",
+        "--sweep",
+        "16,32,64,100,200",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/recall-10k.log"
+      ],
+      "selected": true,
+      "tags": [
+        "task163",
+        "d8",
+        "ec_real_10k",
+        "current",
+        "recall"
+      ],
+      "expected_artifacts": [
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/recall-10k.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783945645321,
+      "finished_at_unix_ms": 1783945673735,
+      "duration_ms": 30055,
+      "exit_code": 0
+    },
+    {
+      "name": "load-50k-current",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/load-50k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "d8_current_50k",
+        "--profile",
+        "ec_distann",
+        "--corpus-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "neighbor_code_format=rabitq",
+        "--reloption",
+        "build_shards=4",
+        "--reloption",
+        "closure_epsilon=0.1",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25"
+      ],
+      "selected": true,
+      "tags": [
+        "task163",
+        "d8",
+        "ec_real_50k",
+        "current",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/load-50k.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783945673735,
+      "finished_at_unix_ms": 1783945829574,
+      "duration_ms": 165762,
+      "exit_code": 0
+    },
+    {
+      "name": "load-100k-current",
+      "kind": "load",
+      "command": [
+        "--database",
+        "ec_distann_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/load-100k.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "d8_current_100k",
+        "--profile",
+        "ec_distann",
+        "--corpus-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--reloption",
+        "neighbor_code_format=rabitq",
+        "--reloption",
+        "build_shards=4",
+        "--reloption",
+        "closure_epsilon=0.1",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25"
+      ],
+      "selected": true,
+      "tags": [
+        "task163",
+        "d8",
+        "ec_real_100k",
+        "current",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-163/005-d8-scale-memory/artifacts/candidate/load-100k.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783945829574,
+      "finished_at_unix_ms": 1783946140636,
+      "duration_ms": 329212,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "10k-build-hwm",
+      "step": "load-10k-current",
+      "metric": "build_memory",
+      "field": "hwm_peak_kb",
+      "op": "gt",
+      "expected": 0.0,
+      "actual": 397428.0,
+      "passed": true,
+      "message": "hwm_peak_kb 397428 Gt 0 -> true"
+    },
+    {
+      "name": "50k-build-hwm",
+      "step": "load-50k-current",
+      "metric": "build_memory",
+      "field": "hwm_peak_kb",
+      "op": "gt",
+      "expected": 0.0,
+      "actual": 1185676.0,
+      "passed": true,
+      "message": "hwm_peak_kb 1185676 Gt 0 -> true"
+    },
+    {
+      "name": "100k-build-hwm",
+      "step": "load-100k-current",
+      "metric": "build_memory",
+      "field": "hwm_peak_kb",
+      "op": "gt",
+      "expected": 0.0,
+      "actual": 2170028.0,
+      "passed": true,
+      "message": "hwm_peak_kb 2170028 Gt 0 -> true"
+    },
+    {
+      "name": "10k-completion-high-water",
+      "step": "load-10k-current",
+      "metric": "distann_shard_build",
+      "field": "build_peak_completion_bytes",
+      "op": "gt",
+      "expected": 0.0,
+      "actual": 464244.0,
+      "passed": true,
+      "message": "build_peak_completion_bytes 464244 Gt 0 -> true"
+    },
+    {
+      "name": "50k-completion-high-water",
+      "step": "load-50k-current",
+      "metric": "distann_shard_build",
+      "field": "build_peak_completion_bytes",
+      "op": "gt",
+      "expected": 0.0,
+      "actual": 3307900.0,
+      "passed": true,
+      "message": "build_peak_completion_bytes 3307900 Gt 0 -> true"
+    },
+    {
+      "name": "100k-completion-high-water",
+      "step": "load-100k-current",
+      "metric": "distann_shard_build",
+      "field": "build_peak_completion_bytes",
+      "op": "gt",
+      "expected": 0.0,
+      "actual": 6289260.0,
+      "passed": true,
+      "message": "build_peak_completion_bytes 6289260 Gt 0 -> true"
+    },
+    {
+      "name": "10k-recall-ef16",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": {
+        "top_k": "16"
+      },
+      "field": "recall@k",
+      "op": "eq",
+      "expected": 0.995,
+      "actual": 0.995,
+      "passed": true,
+      "message": "recall@k 0.995 Eq 0.995 -> true"
+    },
+    {
+      "name": "10k-recall-ef32",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": {
+        "top_k": "32"
+      },
+      "field": "recall@k",
+      "op": "eq",
+      "expected": 0.9985,
+      "actual": 0.9985,
+      "passed": true,
+      "message": "recall@k 0.9985 Eq 0.9985 -> true"
+    },
+    {
+      "name": "10k-recall-ef64",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": {
+        "top_k": "64"
+      },
+      "field": "recall@k",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall@k 1 Eq 1 -> true"
+    },
+    {
+      "name": "10k-recall-ef100",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": {
+        "top_k": "100"
+      },
+      "field": "recall@k",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall@k 1 Eq 1 -> true"
+    },
+    {
+      "name": "10k-recall-ef200",
+      "step": "recall-10k-current",
+      "metric": "recall",
+      "filters": {
+        "top_k": "200"
+      },
+      "field": "recall@k",
+      "op": "eq",
+      "expected": 1.0,
+      "actual": 1.0,
+      "passed": true,
+      "message": "recall@k 1 Eq 1 -> true"
+    }
+  ]
+}

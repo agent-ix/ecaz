@@ -1,0 +1,16 @@
+Script started on 2026-07-13 13:36:16-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-179-physical-shards)
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 25s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-9ac09d4715e441d2)
+
+running 1 test
+test am::ec_distann::remote_transport::tests::interrupt_poll_accepts_cancel_and_backend_termination ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2508 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-13 13:37:36-07:00 [COMMAND_EXIT_CODE="0"]

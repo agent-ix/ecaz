@@ -1,8 +1,11 @@
 # Task 163: ec_distann M1 — Sharded Build + Stitch Correctness
 
-Status: proposed (2026-07-06). Depends on: Task 161; Task 162 (record
-format). The pure-graph stitch core may start in parallel with 162 once 161
-merges.
+Status: partial / D8 implementation review requested (2026-07-10). Checkpoint
+`079a235f9` replaces all-resident shard outputs with PostgreSQL `BufFile` spills
+and bounded k-way cursors; packet 003 carries the focused proof. D8 remains
+open until an outside reviewer accepts that checkpoint. Depends on: Task 161;
+Task 162 (record format). The D8 closeout is a hard prerequisite of Task 179's
+physical owner handoff.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 — the paper's least-proven step and the program's highest
 technical risk (spec-review SR-006 FND-001).
@@ -17,6 +20,16 @@ parallelism, not the program) — but that must be proven, not assumed.
 
 Stitched 100k build within 0.001 distinct_recall of a monolithic build at
 equal search parameters, with all structural invariants property-tested.
+
+## Corrective closeout note (2026-07-10)
+
+Packets 001–002 establish graph quality and honestly report the old retained
+shard-output memory. Packet 003 implements the correction: each sorted shard is
+written to its own sequential PostgreSQL-managed `BufFile`; the stitch retains
+only one header per cursor, the merge heap, and one vec_id union/prune group.
+Task 179 consumes that stream after outside-review acceptance and does not
+redefine D8. This packet does not by itself settle any remaining Task 163 recall
+acceptance interpretation.
 
 ## Scope
 

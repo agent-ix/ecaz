@@ -1,0 +1,35 @@
+Task 182 builder/format validation
+date: 2026-07-16 America/Los_Angeles
+head: 43b3ace1ae6b85ec088b84b98ed0195255c83a0f
+worktree: task-182-ec-distann-bounded-head-production
+
+PASS
+command: cargo check --no-default-features --features pg18,pg_test --tests
+result: Finished dev profile; all library and test targets compiled.
+
+PASS
+command: cargo test --no-default-features --features pg18 --lib am::ec_distann::generation_descriptor::tests::build_options_preserve_v1_and_bind_trained_head_inputs -- --exact
+result: 1 passed; 0 failed; legacy 26-byte options round-trip and trained V2 policy/count/digest/cap validation pass.
+
+PASS
+command: cargo test --no-default-features --features pg18 --lib am::ec_distann::head_sample::tests::training_query_set_digest_and_exact_policy_are_deterministic -- --exact
+result: 1 passed; 0 failed; canonical training digest, duplicate rejection, and exact configured scoring are deterministic.
+
+PASS
+command: cargo test --no-default-features --features pg18 --lib am::ec_distann::manifest_v2::tests::manifest_build_options_preserve_legacy_bytes_and_round_trip_trained_policy -- --exact
+result: 1 passed; 0 failed; the legacy 30-byte manifest subrecord remains byte-compatible and the trained 73-byte record round-trips.
+
+PASS
+command: cargo pgrx test pg18 --no-default-features --features pg18 test_distann_trained_head_build_replay_publish_and_inspection
+result: 1 passed; 0 failed; 2517 filtered out. Same-input replay is idempotent, changed training input fails EC_BUILD_ID_CONFLICT, repeated builds preserve the head-sample digest, publication succeeds, and active inspection attests the trained exact policy.
+
+PASS
+command: cargo check --no-default-features --features pg18,distann-head-attribution-benchmark
+result: Finished dev profile; the existing benchmark-only Task 180/181 surface still compiles after production helper extraction.
+
+PASS
+command: git diff --check
+result: no whitespace errors.
+
+ENVIRONMENT NOTE
+An initial standalone size_of_assertions link attempt failed because the filesystem had only 43 MB free and lld terminated with SIGBUS. `cargo clean` removed only this worktree's regenerable target artifacts (63.4 GiB). The subsequent full PG18 pgrx build linked successfully, compiled the size assertion target, installed the extension, and passed the focused lifecycle test. This was not a code failure and no corpus, benchmark, or review evidence was removed.

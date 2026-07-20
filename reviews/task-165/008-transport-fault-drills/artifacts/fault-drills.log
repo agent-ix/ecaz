@@ -1,0 +1,35 @@
+SET
+psql:reviews/task-165/008-transport-fault-drills/fault-drills.sql:11: NOTICE:  table "qv" does not exist, skipping
+DROP TABLE
+SELECT 1
+=== DRILL 0: baseline (good 2-node roster) — expect 10 rows ===
+SET
+SET
+SET
+ baseline_rows 
+---------------
+            10
+(1 row)
+
+=== DRILL 1: connection_reset (node 1 unreachable port) — expect ERROR, fail-closed ===
+SET
+psql:reviews/task-165/008-transport-fault-drills/fault-drills.sql:21: ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/.pgrx port=1 dbname=ec_distann_m2 user=peter": error connecting to server
+=== DRILL 2: missing_remote_target (node 1 nonexistent database) — expect ERROR, fail-closed ===
+SET
+psql:reviews/task-165/008-transport-fault-drills/fault-drills.sql:25: ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/.pgrx port=28818 dbname=ec_distann_nonexistent user=peter": db error
+=== DRILL 3: no-false-reject — session epoch bump w/o content change — expect 10 rows ===
+SET
+SET
+ no_false_reject_rows 
+----------------------
+                   10
+(1 row)
+
+=== DRILL 4: recovery — restore good roster/epoch — expect 10 rows again ===
+SET
+SET
+ recovery_rows 
+---------------
+            10
+(1 row)
+

@@ -1,0 +1,34 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz-task165
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] nodes=3 base_port=39710 rows=2000 dim=16
+[distann-multicluster] node 1 loaded + indexed
+[distann-multicluster] node 2 loaded + indexed
+[distann-multicluster] node 3 loaded + indexed
+[distann-multicluster] RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0
+[distann-multicluster] suite_recall_gate single=0.5000 multi=0.5000 delta=0.0000 pass=true
+[distann-multicluster] qual_correctness single_n=10 multi_n=10 mismatch=0 pass=true
+[distann-multicluster] hop_round_failure_mid_beam DIAG errored=true mid_beam=true
+[distann-multicluster] missing_node_record DIAG errored=true tagged=true
+[distann-multicluster] co_placement_drift[owner=0] target_id=4 arm=correct_complete multi_n=10 single_n=10 pass=true
+[distann-multicluster] co_placement_drift[owner=2] target_id=3 arm=correct_complete multi_n=10 single_n=10 pass=true
+[distann-multicluster] mid_delete_lost_tombstone DIAG vec_id=-233159393038328982 id=1 errored=true stable_tombstoned=true excluded_from_scan=true pass=true
+[distann-multicluster] mid_insert_failure DIAG fold_errored=true before_n=10 after_n=10 consistent=true pass=true
+[distann-multicluster] concurrency_scan_insert_epochswap pass=true
+[distann-multicluster] live_retention_gate pass=true
+[distann-multicluster] ac5_frozen_vector_after_vacuum_reuse pass=true
+[distann-multicluster] fault_drill simulated_network_partition pass=true
+[distann-multicluster] fault_drill epoch_bump_no_false_reject pass=true
+[distann-multicluster] fault_drill remote_content_divergence pass=true
+[distann-multicluster] fault_drill missing_or_reindexed_remote_index pass=true
+[distann-multicluster] fault_drill remote_backend_termination pass=true
+[distann-multicluster] fault_drill placement_drift pass=true
+[distann-multicluster] fault_drill remote_statement_timeout pass=true
+[distann-multicluster] fault_drill hop_round_failure_mid_beam pass=true
+[distann-multicluster] fault_drill missing_node_record pass=true
+[distann-multicluster] fault_drill missing_heap_row_co_placement_drift pass=true
+[distann-multicluster] fault_drill mid_delete_lost_tombstone_no_resurrect pass=true
+[distann-multicluster] fault_drill mid_insert_failure_rolls_back pass=true
+[distann-multicluster] recovery RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0 recovered=true
+[distann-multicluster] disjoint_shard identical_after_prune=true per_node_rows[n1:2000->647 n2:2000->639 n3:2000->714]
+[distann-multicluster] summary written to reviews/task-165/024-fault-taxonomy/artifacts/distann-multinode-summary.log
+[distann-multicluster] GATE PASS: recall identical; 12 faults fail-closed; recovery clean

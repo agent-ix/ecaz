@@ -1,0 +1,14 @@
+2026-07-08 14:32:27.637 PDT [841019] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 14:32:27.642 PDT [841019] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39710"
+2026-07-08 14:32:27.655 PDT [841025] LOG:  database system was shut down at 2026-07-08 14:32:24 PDT
+2026-07-08 14:32:27.661 PDT [841019] LOG:  database system is ready to accept connections
+2026-07-08 14:32:31.430 PDT [841056] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 7.2427 at position 0
+2026-07-08 14:32:54.009 PDT [841106] ERROR:  ec_distann scan orchestration failed: [EC_INTERNAL] ec_distann remote transport could not connect to "host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=1 dbname=postgres user=postgres": error connecting to server
+2026-07-08 14:32:54.009 PDT [841106] STATEMENT:  SET enable_seqscan=off; SET ec_distann.roster='1@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39710 dbname=postgres user=postgres;2@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=39711 dbname=postgres user=postgres;3@host=/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets port=1 dbname=postgres user=postgres'; SET ec_distann.local_node_id=1; SET ec_distann.epoch=1; SELECT id FROM dm ORDER BY embedding <#> (SELECT source FROM dm WHERE id=1) LIMIT 10;
+2026-07-08 14:32:54.011 PDT [841019] LOG:  received fast shutdown request
+2026-07-08 14:32:54.071 PDT [841019] LOG:  aborting any active transactions
+2026-07-08 14:32:54.072 PDT [841019] LOG:  background worker "logical replication launcher" (PID 841028) exited with exit code 1
+2026-07-08 14:32:54.073 PDT [841023] LOG:  shutting down
+2026-07-08 14:32:54.075 PDT [841023] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 14:32:54.208 PDT [841023] LOG:  checkpoint complete: wrote 7442 buffers (45.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 4 recycled; write=0.047 s, sync=0.071 s, total=0.136 s; sync files=130, longest=0.003 s, average=0.001 s; distance=60339 kB, estimate=60339 kB; lsn=0/5241200, redo lsn=0/5241200
+2026-07-08 14:32:54.224 PDT [841019] LOG:  database system is shut down

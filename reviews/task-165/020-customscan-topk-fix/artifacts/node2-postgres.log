@@ -1,0 +1,15 @@
+2026-07-08 21:44:25.504 PDT [1033263] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-08 21:44:25.508 PDT [1033263] LOG:  listening on Unix socket "/home/peter/dev/ecaz-task165/target/distann-local-multinode/sockets/.s.PGSQL.39711"
+2026-07-08 21:44:25.523 PDT [1033269] LOG:  database system was shut down at 2026-07-08 21:44:23 PDT
+2026-07-08 21:44:25.529 PDT [1033263] LOG:  database system is ready to accept connections
+2026-07-08 21:44:26.210 PDT [1033289] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 21:44:27.304 PDT [1033300] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-07-08 21:44:28.579 PDT [1033391] LOG:  could not receive data from client: Connection reset by peer
+2026-07-08 21:44:39.319 PDT [1033727] LOG:  could not receive data from client: Connection reset by peer
+2026-07-08 21:44:39.516 PDT [1033263] LOG:  received fast shutdown request
+2026-07-08 21:44:39.520 PDT [1033263] LOG:  aborting any active transactions
+2026-07-08 21:44:39.521 PDT [1033263] LOG:  background worker "logical replication launcher" (PID 1033272) exited with exit code 1
+2026-07-08 21:44:39.521 PDT [1033267] LOG:  shutting down
+2026-07-08 21:44:39.526 PDT [1033267] LOG:  checkpoint starting: shutdown immediate
+2026-07-08 21:44:39.693 PDT [1033267] LOG:  checkpoint complete: wrote 940 buffers (5.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.018 s, sync=0.133 s, total=0.172 s; sync files=134, longest=0.008 s, average=0.001 s; distance=7053 kB, estimate=7053 kB; lsn=0/1E37C10, redo lsn=0/1E37C10
+2026-07-08 21:44:39.707 PDT [1033263] LOG:  database system is shut down

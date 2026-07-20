@@ -1,0 +1,5 @@
+DROP DATABASE
+DROP DATABASE
+CREATE DATABASE
+CREATE DATABASE
+[suite-result] dml_gate_databases created=2

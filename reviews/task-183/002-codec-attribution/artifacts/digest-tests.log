@@ -1,0 +1,19 @@
+Script started on 2026-07-17 13:42:00-07:00 [<not executed on terminal>]
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on artifact directory
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-180-bounded-head-recall/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 01s
+     Running unittests src/main.rs (target/debug/deps/ecaz-7a300cc40de2e0f7)
+
+running 2 tests
+test commands::dev::distann_multicluster::tests::same_seed_digest_accepts_equal_neighbor_score_arms ... ok
+test commands::dev::distann_multicluster::tests::same_seed_digest_rejects_different_neighbor_score_arms ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 439 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-17 13:42:58-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,14 @@
+Task 179 packet 019 validation
+Date: 2026-07-11 America/Los_Angeles
+Head: 230459ce6e6f64b9ae9c0854fa0ec867ee265353
+
+Command:
+  cargo test --lib --no-default-features --features 'pg18 pg_test' fingerprint_count_is_exact_not_logical_index_wide
+Key result:
+  test am::ec_distann::scan_registry::tests::fingerprint_count_is_exact_not_logical_index_wide ... ok
+  test result: ok. 1 passed; 0 failed; 0 ignored; 2494 filtered out
+
+Command:
+  cargo clippy --lib --no-default-features --features 'pg18 pg_test' -- -D warnings
+Result:
+  Finished `dev` profile [unoptimized + debuginfo]

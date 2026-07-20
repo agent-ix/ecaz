@@ -1,20 +1,37 @@
 //! Golden on-disk fixture decode checks.
 
+use sha2::{Digest, Sha256};
+
 use ecaz::bench_api::{
-    spire_decode_delta_partition_object_fixture, spire_decode_leaf_partition_object_fixture,
-    spire_decode_leaf_v2_meta_fixture, spire_decode_leaf_v2_segment_fixture,
-    spire_decode_partition_object_v2_chain_meta_fixture,
+    distann_restore_owner_stream_hash_state, spire_decode_delta_partition_object_fixture,
+    spire_decode_leaf_partition_object_fixture, spire_decode_leaf_v2_meta_fixture,
+    spire_decode_leaf_v2_segment_fixture, spire_decode_partition_object_v2_chain_meta_fixture,
     spire_decode_partition_object_v2_chain_segment_fixture,
     spire_decode_routing_partition_object_fixture, spire_decode_top_graph_partition_object_fixture,
-    vamana_decode_overflow_tuple_fixture, ItemPointer, IvfBlockRef, IvfCentroidTuple,
+    vamana_decode_overflow_tuple_fixture, DistannAbandonBindingAuditV1,
+    DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildSpec, DistannCodecArtifact,
+    DistannCancelPublishAuditV1, DistannEpochFingerprint, DistannEpochManifestV2,
+    DistannGenerationDescriptor,
+    DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannManifestBuildOptions,
+    DistannManifestCodecParameters, DistannMetadataPage, DistannNodeTuple, DistannReadyReceipt,
+    DistannRetireDecisionV1, DistannRowSchemaDescriptor, DistannSourceSnapshot,
+    DistannSuccessorActivationV1, ItemPointer, IvfBlockRef, IvfCentroidTuple,
     IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode,
     IvfRerankScoreMode, IvfStorageFormat, MetadataPage, SpireConsistencyMode, SpireEpochManifest,
     SpireEpochState, SpireLocalStoreConfig, SpireLocalStoreState, SpireManifestEntry,
     SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
     TqElementTuple, TqGroupedCodebookTuple, TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple,
     TqTurboHotTuple, VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple,
-    EC_IVF_CENTROID_DIMENSIONS_OFFSET, EC_IVF_METADATA_FORMAT_VERSION_OFFSET,
-    HNSW_METADATA_FORMAT_VERSION_OFFSET, INDEX_FORMAT_V3_DISKANN,
+    DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_METADATA_BYTES,
+    DISTANN_METADATA_FORMAT_VERSION_OFFSET, DISTANN_NODE_FORMAT_VERSION_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, DISTANN_OWNER_STREAM_HASH_STATE_BYTES,
+    DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET,
+    DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET, EC_IVF_CENTROID_DIMENSIONS_OFFSET,
+    EC_IVF_METADATA_FORMAT_VERSION_OFFSET, HNSW_METADATA_FORMAT_VERSION_OFFSET,
+    INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V3_DISKANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
     SPIRE_EPOCH_MANIFEST_FORMAT_VERSION_OFFSET, SPIRE_LOCAL_STORE_CONFIG_FORMAT_VERSION_OFFSET,
     SPIRE_MANIFEST_ENTRY_FORMAT_VERSION_OFFSET, SPIRE_OBJECT_MANIFEST_FORMAT_VERSION_OFFSET,
     SPIRE_PARTITION_OBJECT_FORMAT_VERSION_OFFSET, SPIRE_PLACEMENT_DIRECTORY_FORMAT_VERSION_OFFSET,
@@ -22,12 +39,73 @@ use ecaz::bench_api::{
     VAMANA_NODE_NEIGHBOR_COUNT_OFFSET,
 };
 
+fn assert_distann_domain_digest(bytes: &[u8], domain: &[u8], expected_hex: &str) {
+    let mut hasher = Sha256::new();
+    hasher.update(domain);
+    hasher.update(bytes);
+    assert_eq!(hex::encode(hasher.finalize()), expected_hex);
+}
+
 fn decode_hex_fixture(contents: &str) -> Vec<u8> {
     let hex = contents
         .lines()
         .filter(|line| !line.trim_start().starts_with('#'))
         .collect::<String>();
     hex::decode(hex.trim()).expect("fixture hex should decode")
+}
+
+/// Deliberately independent little-endian reader for TC-050. These checks do
+/// not call the production canonical decoder, so a matching encoder/decoder
+/// bug cannot silently bless every golden fixture.
+struct DistannFixtureReader<'a> {
+    bytes: &'a [u8],
+    position: usize,
+}
+
+impl<'a> DistannFixtureReader<'a> {
+    fn new(bytes: &'a [u8]) -> Self {
+        Self { bytes, position: 0 }
+    }
+
+    fn take(&mut self, length: usize) -> &'a [u8] {
+        let end = self.position.checked_add(length).expect("fixture offset");
+        assert!(
+            end <= self.bytes.len(),
+            "independent fixture decode truncated"
+        );
+        let value = &self.bytes[self.position..end];
+        self.position = end;
+        value
+    }
+
+    fn u8(&mut self) -> u8 {
+        self.take(1)[0]
+    }
+
+    fn u16(&mut self) -> u16 {
+        u16::from_le_bytes(self.take(2).try_into().unwrap())
+    }
+
+    fn u32(&mut self) -> u32 {
+        u32::from_le_bytes(self.take(4).try_into().unwrap())
+    }
+
+    fn u64(&mut self) -> u64 {
+        u64::from_le_bytes(self.take(8).try_into().unwrap())
+    }
+
+    fn i64(&mut self) -> i64 {
+        i64::from_le_bytes(self.take(8).try_into().unwrap())
+    }
+
+    fn len_bytes(&mut self) -> &'a [u8] {
+        let length = self.u32() as usize;
+        self.take(length)
+    }
+
+    fn finish(self) {
+        assert_eq!(self.position, self.bytes.len(), "fixture trailing bytes");
+    }
 }
 
 #[test]
@@ -182,6 +260,854 @@ fn diskann_metadata_v3_byteswapped_version_is_rejected() {
         err.contains("invalid vamana metadata format version"),
         "unexpected error: {err}"
     );
+}
+
+#[test]
+fn distann_metadata_v4_and_control_v5_fixtures_decode_independently() {
+    let legacy = decode_hex_fixture(include_str!("../fixtures/on-disk/distann_metadata_v4.hex"));
+    assert_eq!(legacy.len(), DISTANN_METADATA_BYTES);
+    assert_eq!(
+        u16::from_le_bytes(legacy[0..2].try_into().unwrap()),
+        INDEX_FORMAT_V1_DISTANN
+    );
+    assert_eq!(u64::from_le_bytes(legacy[36..44].try_into().unwrap()), 42);
+    let legacy_decoded = DistannMetadataPage::decode(&legacy).unwrap();
+    assert!(!legacy_decoded.is_distributed_control());
+    assert_eq!(legacy_decoded.dimensions, 128);
+    assert_eq!(legacy_decoded.content_digest, 0xA1A2_A3A4_A5A6_A7A8);
+
+    let control = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_control_metadata_v5.hex"
+    ));
+    let mut expected_uuid = [0xA5; 16];
+    expected_uuid[6] = 0x45;
+    expected_uuid[8] = 0x85;
+    assert_eq!(control.len(), DISTANN_CONTROL_METADATA_BYTES);
+    assert_eq!(
+        u16::from_le_bytes(control[0..2].try_into().unwrap()),
+        INDEX_FORMAT_V5_DISTANN_CONTROL
+    );
+    assert_eq!(&control[97..113], &expected_uuid);
+    let control_decoded = DistannMetadataPage::decode(&control).unwrap();
+    assert!(control_decoded.is_distributed_control());
+    assert_eq!(control_decoded.logical_index_uuid, expected_uuid);
+    assert_eq!(control_decoded.node_count, 0);
+    assert_eq!(control_decoded.active_epoch, 0);
+}
+
+#[test]
+fn distann_metadata_versions_reject_byte_swap() {
+    for fixture in [
+        include_str!("../fixtures/on-disk/distann_metadata_v4.hex"),
+        include_str!("../fixtures/on-disk/distann_control_metadata_v5.hex"),
+    ] {
+        let mut bytes = decode_hex_fixture(fixture);
+        bytes.swap(
+            DISTANN_METADATA_FORMAT_VERSION_OFFSET,
+            DISTANN_METADATA_FORMAT_VERSION_OFFSET + 1,
+        );
+        assert!(DistannMetadataPage::decode(&bytes).is_err());
+    }
+}
+
+#[test]
+fn distann_physical_graph_record_v1_fixture_decodes_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_graph_record_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 0);
+    assert_eq!(independent.u64(), 0x1122_3344_5566_7788);
+    assert_eq!(independent.u32(), 9);
+    assert_eq!(independent.u16(), 3);
+    assert_eq!(independent.u16(), 2);
+    assert_eq!(independent.take(2), [0xA1, 0xA2]);
+    assert_eq!(independent.u64(), 101);
+    assert_eq!(independent.u64(), 202);
+    assert_eq!(independent.u64(), 0);
+    assert_eq!(independent.u64(), 0);
+    assert_eq!(independent.take(8), [1, 2, 3, 4, 0, 0, 0, 0]);
+    independent.finish();
+
+    let record = DistannNodeTuple::decode_physical_v1(&bytes, 4, 2).unwrap();
+    assert_eq!(record.vec_id, 0x1122_3344_5566_7788);
+    assert_eq!(record.neighbor_count, 2);
+    assert_eq!(record.neighbor_vec_ids, vec![101, 202, 0, 0]);
+
+    let mut swapped = bytes;
+    swapped.swap(
+        DISTANN_NODE_FORMAT_VERSION_OFFSET,
+        DISTANN_NODE_FORMAT_VERSION_OFFSET + 1,
+    );
+    assert!(DistannNodeTuple::decode_physical_v1(&swapped, 4, 2).is_err());
+}
+
+#[test]
+fn distann_row_schema_v1_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_row_schema_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    let count = independent.u16();
+    assert_eq!(count, 3);
+    let mut attnums = Vec::new();
+    for _ in 0..count {
+        attnums.push(independent.u16());
+        independent.len_bytes(); // attribute name
+        independent.len_bytes(); // type namespace
+        independent.len_bytes(); // type name
+        independent.take(4); // typmod
+        independent.len_bytes(); // collation namespace
+        independent.len_bytes(); // collation name
+        independent.u8(); // dropped
+        independent.u8(); // generated
+        independent.len_bytes(); // send function
+        independent.len_bytes(); // receive function
+    }
+    independent.finish();
+    assert_eq!(attnums, vec![1, 2, 3]);
+
+    let schema = DistannRowSchemaDescriptor::decode(&bytes).unwrap();
+    assert_eq!(schema.attributes.len(), 3);
+    assert!(schema.attributes[1].dropped);
+    assert_eq!(schema.attributes[2].type_name, "ecvector");
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannRowSchemaDescriptor::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_codec_artifact_v1_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_codec_artifact_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u8(), 1);
+    assert_eq!(independent.u16(), 4);
+    assert_eq!(independent.u64(), 99);
+    assert_eq!(independent.u32(), 4);
+    let sign_count = independent.u32();
+    assert_eq!(sign_count, 4);
+    independent.take(sign_count as usize * 4);
+    let group_count = independent.u32();
+    assert_eq!(group_count, 2);
+    assert_eq!(independent.u32(), 2);
+    assert_eq!(independent.u16(), 16);
+    for _ in 0..group_count {
+        let value_count = independent.u32();
+        assert_eq!(value_count, 32);
+        independent.take(value_count as usize * 4);
+    }
+    independent.finish();
+
+    match DistannCodecArtifact::decode(&bytes).unwrap() {
+        DistannCodecArtifact::GroupedPq4 {
+            dimensions, model, ..
+        } => {
+            assert_eq!(dimensions, 4);
+            assert_eq!(model.group_count, 2);
+            assert_eq!(model.codebooks.len(), 2);
+        }
+        other => panic!("unexpected codec fixture variant: {other:?}"),
+    }
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannCodecArtifact::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_generation_descriptor_v1_fixture_is_rebuild_only_and_rejected() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_generation_descriptor_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 5);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 8);
+    assert_eq!(independent.u16(), 4);
+    assert_eq!(independent.u16(), 1);
+    let roster_count = independent.u32();
+    assert_eq!(roster_count, 2);
+    for expected_node in [10, 20] {
+        assert_eq!(independent.u32(), expected_node);
+        independent.take(16);
+        independent.len_bytes();
+    }
+    assert_eq!(independent.u8(), 2);
+    independent.len_bytes();
+    independent.len_bytes();
+    independent.take(32);
+    independent.finish();
+
+    assert!(DistannGenerationDescriptor::decode(&bytes).is_err());
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannGenerationDescriptor::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_generation_descriptor_v2_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_generation_descriptor_v2.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 2);
+    let coordinator_uuid = independent.take(16);
+    assert_eq!(coordinator_uuid[6] >> 4, 4);
+    assert_eq!(coordinator_uuid[8] >> 6, 2);
+    assert_eq!(independent.u16(), 5);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 8);
+    assert_eq!(independent.u16(), 4);
+    assert_eq!(independent.u16(), 1);
+    let roster_count = independent.u32();
+    assert_eq!(roster_count, 2);
+    for expected_node in [10, 20] {
+        assert_eq!(independent.u32(), expected_node);
+        independent.take(16);
+        independent.len_bytes();
+    }
+    assert_eq!(independent.u8(), 2);
+    independent.len_bytes();
+    independent.len_bytes();
+    independent.take(32);
+    independent.finish();
+
+    let descriptor = DistannGenerationDescriptor::decode(&bytes).unwrap();
+    assert_eq!(descriptor.roster.len(), 2);
+    assert_eq!(descriptor.roster[1].node_id, 20);
+    assert_eq!(descriptor.dimensions, 8);
+    assert_eq!(descriptor.coordinator_logical_index_uuid, coordinator_uuid);
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannGenerationDescriptor::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_build_registration_v1_fixture_decodes_and_digests_independently() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_build_registration_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u32(), 1234);
+    let coordinator_uuid = independent.take(16);
+    assert_eq!(coordinator_uuid[6] >> 4, 4);
+    assert_eq!(coordinator_uuid[8] >> 6, 2);
+    assert_eq!(independent.u32(), 5678);
+    assert_eq!(independent.u64(), 7);
+    let build_id = independent.take(16);
+    assert_eq!(build_id[6] >> 4, 4);
+    assert_eq!(build_id[8] >> 6, 2);
+    assert_eq!(independent.u64(), 9);
+
+    let roster = independent.len_bytes();
+    let mut roster_reader = DistannFixtureReader::new(roster);
+    assert_eq!(roster_reader.u16(), 1);
+    assert_eq!(roster_reader.u32(), 1);
+    assert_eq!(roster_reader.u32(), 17);
+    roster_reader.take(16);
+    assert_eq!(roster_reader.len_bytes(), b"registration/node-17");
+    roster_reader.finish();
+
+    independent.take(32); // public roster digest
+    assert_eq!(independent.take(32), [0x11; 32]);
+    assert_eq!(independent.take(32), [0x22; 32]);
+    assert_eq!(independent.u32(), 1);
+    assert_eq!(independent.u32(), 0); // roster ordinal
+    assert_eq!(independent.u32(), 17);
+    assert_eq!(independent.len_bytes(), b"registration/node-17");
+    assert_eq!(independent.len_bytes(), b"REGISTRATION_SECRET");
+    assert_eq!(independent.len_bytes(), b"public.registration_idx");
+    let participant_uuid = independent.take(16);
+    assert_eq!(participant_uuid[6] >> 4, 4);
+    assert_eq!(participant_uuid[8] >> 6, 2);
+    assert_eq!(independent.take(32), [0x22; 32]);
+    assert_eq!(independent.u8(), 1);
+    independent.finish();
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"ec_distann_build_registration_v1\0");
+    hasher.update(&bytes);
+    assert_eq!(
+        hex::encode(hasher.finalize()),
+        "c5a90122402eb68d6f443d63fe3e5744c07ff902a27e02d02125494c290f25ab"
+    );
+}
+
+#[test]
+fn distann_build_candidate_v1_fixture_decodes_independently_and_rejects_version_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_build_candidate_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.take(32), [0xA0; 32]);
+    assert!(!independent.len_bytes().is_empty()); // build specification
+    independent.take(32);
+    assert!(!independent.len_bytes().is_empty()); // generation descriptor
+    independent.take(32);
+    assert!(!independent.len_bytes().is_empty()); // source snapshot
+    independent.take(32);
+    let receipt_set = independent.len_bytes();
+    let mut receipts = DistannFixtureReader::new(receipt_set);
+    assert_eq!(receipts.u32(), 2);
+    assert!(!receipts.len_bytes().is_empty());
+    assert!(!receipts.len_bytes().is_empty());
+    receipts.finish();
+    let receipt_set_digest = independent.take(32);
+    assert_distann_domain_digest(
+        receipt_set,
+        b"ec_distann_ready_receipt_set_v1\0",
+        "778aca82955691a96a3f94d14b27e66c8f6eec017a9d86ab478ede930785ec6a",
+    );
+    assert_eq!(
+        hex::encode(receipt_set_digest),
+        "778aca82955691a96a3f94d14b27e66c8f6eec017a9d86ab478ede930785ec6a"
+    );
+    assert!(!independent.len_bytes().is_empty()); // epoch manifest
+    let manifest_digest = independent.take(32);
+    let fingerprint = independent.take(DISTANN_EPOCH_FINGERPRINT_BYTES);
+    assert_eq!(&fingerprint[2..], manifest_digest);
+    independent.finish();
+
+    let candidate = DistannBuildCandidateV1::decode(&bytes).unwrap();
+    assert_distann_domain_digest(
+        &bytes,
+        b"ec_distann_build_candidate_v1\0",
+        "5f1795a1534db0a694c6a9588b56dfed47824fee5ea35c4ee5145c17fd2c723a",
+    );
+    assert_eq!(
+        hex::encode(candidate.digest().unwrap()),
+        "5f1795a1534db0a694c6a9588b56dfed47824fee5ea35c4ee5145c17fd2c723a"
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannBuildCandidateV1::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_successor_activation_v1_fixture_decodes_independently_and_rejects_version_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_successor_activation_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    independent.take(16); // coordinator UUID
+    assert_eq!(independent.u8(), 1);
+    independent.take(16); // predecessor build
+    assert_eq!(independent.u64(), 7);
+    let predecessor_fingerprint = independent.len_bytes();
+    let predecessor_digest = independent.take(32);
+    assert_eq!(&predecessor_fingerprint[2..], predecessor_digest);
+    independent.take(16); // successor build
+    assert_eq!(independent.u64(), 8);
+    let successor_fingerprint = independent.len_bytes();
+    let successor_digest = independent.take(32);
+    assert_eq!(&successor_fingerprint[2..], successor_digest);
+    independent.finish();
+
+    let activation = DistannSuccessorActivationV1::decode(&bytes).unwrap();
+    assert_eq!(activation.predecessor.unwrap().epoch, 7);
+    assert_eq!(activation.successor.epoch, 8);
+    assert_distann_domain_digest(
+        &bytes,
+        b"ec_distann_successor_activation_v1\0",
+        "7e899375e04da53713908a66393f358079fbf157798bb82b7c3f4eb969e3289f",
+    );
+    assert_eq!(
+        hex::encode(activation.digest().unwrap()),
+        "7e899375e04da53713908a66393f358079fbf157798bb82b7c3f4eb969e3289f"
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannSuccessorActivationV1::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_abandon_binding_audit_v1_fixture_decodes_independently_and_rejects_version_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_abandon_binding_audit_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    independent.take(16); // coordinator UUID
+    independent.take(16); // successor build
+    assert_eq!(independent.u64(), 8);
+    independent.len_bytes(); // successor fingerprint
+    independent.take(16); // predecessor build
+    assert_eq!(independent.u64(), 7);
+    let predecessor_fingerprint = independent.len_bytes();
+    let predecessor_manifest = independent.take(32);
+    assert_eq!(&predecessor_fingerprint[2..], predecessor_manifest);
+    assert_eq!(independent.u32(), 1);
+    assert_eq!(independent.u32(), 20);
+    independent.take(16); // participant UUID
+    assert_eq!(independent.len_bytes(), b"cluster-a/node-20");
+    assert_eq!(independent.len_bytes(), b"public.distann_idx");
+    independent.take(32); // activation digest
+    assert_eq!(independent.i64(), 1_750_000_000_123_456);
+    assert_eq!(independent.len_bytes(), b"ecaz_operator");
+    assert_eq!(
+        independent.len_bytes(),
+        b"participant permanently unavailable"
+    );
+    independent.finish();
+
+    let audit = DistannAbandonBindingAuditV1::decode(&bytes).unwrap();
+    assert_eq!(audit.node_id, 20);
+    assert_distann_domain_digest(
+        &bytes,
+        b"ec_distann_abandon_predecessor_binding_v1\0",
+        "6de563bc944a6bed733aa317fdd96c2955c707b0141a41adcee40a358e0f0bee",
+    );
+    assert_eq!(
+        hex::encode(audit.digest().unwrap()),
+        "6de563bc944a6bed733aa317fdd96c2955c707b0141a41adcee40a358e0f0bee"
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannAbandonBindingAuditV1::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_cancel_publish_audit_v1_fixture_decodes_independently_and_rejects_version_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_cancel_publish_audit_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    independent.take(16); // coordinator UUID
+    independent.take(16); // cancelled build id
+    assert_eq!(independent.u64(), 8);
+    let fingerprint = independent.len_bytes();
+    let manifest_digest = independent.take(32);
+    assert_eq!(&fingerprint[2..], manifest_digest);
+    assert_eq!(independent.i64(), 1_750_000_000_654_321);
+    assert_eq!(independent.len_bytes(), b"ecaz_operator");
+    assert_eq!(
+        independent.len_bytes(),
+        b"successor participant permanently unavailable"
+    );
+    independent.finish();
+
+    let audit = DistannCancelPublishAuditV1::decode(&bytes).unwrap();
+    assert_eq!(audit.epoch, 8);
+    assert_distann_domain_digest(
+        &bytes,
+        b"ec_distann_cancel_epoch_publish_v1\0",
+        "42a9358f6ec4998673293572fffba5db37127c328d5e7fd2141ac34a9dc2bb53",
+    );
+    assert_eq!(
+        hex::encode(audit.digest().unwrap()),
+        "42a9358f6ec4998673293572fffba5db37127c328d5e7fd2141ac34a9dc2bb53"
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannCancelPublishAuditV1::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_abandoned_binding_set_v1_fixture_decodes_independently_and_rejects_count_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_abandoned_binding_set_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u32(), 2);
+    assert_eq!(independent.u32(), 0);
+    assert_eq!(independent.take(32), [0xA1; 32]);
+    assert_eq!(independent.u32(), 1);
+    independent.take(32);
+    independent.finish();
+
+    let set = DistannAbandonedBindingSetV1::decode(&bytes).unwrap();
+    assert_eq!(set.entries.len(), 2);
+    assert_distann_domain_digest(
+        &bytes,
+        b"ec_distann_abandoned_binding_set_v1\0",
+        "5d261a123049966c026d2b91cec2635d69e8ab1a5015516f33a5ebf0360f26e0",
+    );
+    assert_eq!(
+        hex::encode(set.digest().unwrap()),
+        "5d261a123049966c026d2b91cec2635d69e8ab1a5015516f33a5ebf0360f26e0"
+    );
+
+    // This domain-versioned segment intentionally begins with count, not an
+    // in-band version word. Swapping the count endian must still fail closed.
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannAbandonedBindingSetV1::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_retire_decision_v1_fixture_decodes_independently_and_rejects_version_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_retire_decision_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    independent.take(16); // coordinator UUID
+    independent.take(16); // target build
+    assert_eq!(independent.u64(), 7);
+    let fingerprint = independent.len_bytes();
+    let manifest_digest = independent.take(32);
+    assert_eq!(&fingerprint[2..], manifest_digest);
+    assert!(!independent.len_bytes().is_empty()); // target roster snapshot
+    independent.take(32); // roster digest
+    assert_eq!(independent.u32(), 2);
+    assert_eq!(independent.u32(), 0);
+    independent.take(32);
+    assert_eq!(independent.u32(), 1);
+    independent.take(32);
+    assert_eq!(independent.u8(), 1);
+    assert_eq!(independent.u64(), 3);
+    assert_eq!(independent.i64(), 1_750_000_001_654_321);
+    assert_eq!(independent.len_bytes(), b"ecaz_operator");
+    assert_eq!(
+        independent.len_bytes(),
+        b"forced after audited drain timeout"
+    );
+    independent.finish();
+
+    let decision = DistannRetireDecisionV1::decode(&bytes).unwrap();
+    assert!(decision.forced);
+    assert_eq!(decision.abandoned_bindings.entries.len(), 2);
+    assert_distann_domain_digest(
+        &bytes,
+        b"ec_distann_retire_decision_v1\0",
+        "393d5ee8f174606e2639e6bb05cbe72966e90bc3306db5001e57fcdf2bd070f8",
+    );
+    assert_eq!(
+        hex::encode(decision.digest().unwrap()),
+        "393d5ee8f174606e2639e6bb05cbe72966e90bc3306db5001e57fcdf2bd070f8"
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannRetireDecisionV1::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_build_spec_v1_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_build_spec_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u64(), 7);
+    independent.take(16);
+    assert!(independent.len_bytes().is_empty());
+    independent.take(32);
+    independent.take(32);
+    assert_eq!(independent.len_bytes().len(), 26);
+    assert_eq!(independent.u64(), 10);
+    independent.take(32 * 3);
+    let owner_count = independent.u32();
+    assert_eq!(owner_count, 2);
+    for expected_node in [10, 20] {
+        assert_eq!(independent.u32(), expected_node);
+        independent.u64();
+        independent.take(32);
+    }
+    independent.finish();
+
+    let build_spec = DistannBuildSpec::decode(&bytes).unwrap();
+    assert_eq!(build_spec.epoch, 7);
+    assert_eq!(build_spec.expected_global_count, 10);
+    assert_eq!(build_spec.build_options.build_shards, 0);
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannBuildSpec::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_handoff_entry_and_batch_v1_fixtures_decode_independently() {
+    let shape = DistannHandoffShape {
+        code_stride: 2,
+        graph_degree: 4,
+        non_dropped_attribute_count: 3,
+    };
+    let entry_bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_handoff_entry_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&entry_bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u64(), 7);
+    assert_eq!(independent.len_bytes(), &[7; 16]);
+    assert_eq!(independent.u16(), 0);
+    assert_eq!(independent.len_bytes(), &[0xA7, 0x0F]);
+    let neighbor_count = independent.u32();
+    assert_eq!(neighbor_count, 2);
+    assert_eq!(independent.u64(), 17);
+    assert_eq!(independent.u64(), 27);
+    assert_eq!(independent.len_bytes(), &[1, 2, 3, 4]);
+    assert_eq!(independent.len_bytes(), &[0b0000_0010]);
+    let value_count = independent.u32();
+    assert_eq!(value_count, 2);
+    assert_eq!(independent.len_bytes(), &[0x11, 0x22]);
+    assert_eq!(independent.len_bytes(), &[0x33]);
+    independent.finish();
+    let entry = DistannHandoffEntry::decode(&entry_bytes, shape).unwrap();
+    assert_eq!(entry.vec_id, 7);
+    assert_eq!(entry.row_values.len(), 2);
+
+    let batch_bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_handoff_batch_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&batch_bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u64(), 7);
+    independent.take(16);
+    assert_eq!(independent.u64(), 0);
+    independent.take(64);
+    assert_eq!(independent.u16(), 5);
+    assert_eq!(independent.u8(), 2);
+    assert_eq!(independent.u32(), 2);
+    let entry_section_bytes = independent.u32() as usize;
+    let entry_section = independent.take(entry_section_bytes);
+    let mut entries = DistannFixtureReader::new(entry_section);
+    assert_eq!(entries.len_bytes().len(), entry_bytes.len());
+    assert_eq!(entries.len_bytes().len(), entry_bytes.len());
+    entries.finish();
+    independent.take(32);
+    independent.finish();
+    let batch = DistannHandoffBatch::decode(&batch_bytes, shape).unwrap();
+    assert_eq!(batch.entries.len(), 2);
+    assert_eq!(batch.entries[1].vec_id, 8);
+
+    let mut entry_swapped = entry_bytes;
+    entry_swapped.swap(0, 1);
+    assert!(DistannHandoffEntry::decode(&entry_swapped, shape).is_err());
+    let mut batch_swapped = batch_bytes;
+    batch_swapped.swap(0, 1);
+    assert!(DistannHandoffBatch::decode(&batch_swapped, shape).is_err());
+}
+
+#[test]
+fn distann_owner_stream_hash_state_v1_fixture_is_independent_and_fixed() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_owner_stream_hash_state_v1.hex"
+    ));
+    assert_eq!(bytes.len(), DISTANN_OWNER_STREAM_HASH_STATE_BYTES);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_BYTES, 107);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET, 0);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET, 2);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET, 3);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET, 35);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET, 43);
+    assert_eq!(DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, 44);
+
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1, "state format version");
+    assert_eq!(independent.u8(), 1, "sha2 0.11 implementation tag");
+    assert_eq!(
+        independent.take(32),
+        hex::decode("67e6096a85ae67bb72f36e3c3af54fa57f520e518c68059babd9831f19cde05b").unwrap(),
+        "no full block has been compressed, so the SHA-256 chain is its IV"
+    );
+    assert_eq!(independent.u64(), 0, "compressed block count");
+    let buffered_bytes = independent.u8() as usize;
+    let eager_buffer = independent.take(63);
+    let domain = b"ec_distann_owner_stream_v1\0";
+    assert_eq!(buffered_bytes, domain.len());
+    assert_eq!(&eager_buffer[..buffered_bytes], domain);
+    assert!(
+        eager_buffer[buffered_bytes..].iter().all(|byte| *byte == 0),
+        "unused eager-buffer bytes must be canonical zeroes"
+    );
+    independent.finish();
+
+    let expected_digest: [u8; 32] =
+        hex::decode("5f25ef3436224c6f7777c23f9a673cdcfab00a719d11db3c3bec157f63bd8ad6")
+            .unwrap()
+            .try_into()
+            .unwrap();
+    assert_eq!(
+        distann_restore_owner_stream_hash_state(&bytes, expected_digest).unwrap(),
+        expected_digest
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(
+        DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
+        DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET + 1,
+    );
+    assert!(distann_restore_owner_stream_hash_state(&swapped, expected_digest).is_err());
+}
+
+#[test]
+fn distann_source_snapshot_v1_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_source_snapshot_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u64(), 0x0102_0304_0506_0708);
+    assert_eq!(independent.len_bytes(), b"ecaz");
+    assert_eq!(independent.u64(), 100);
+    assert_eq!(independent.u64(), 200);
+    assert_eq!(independent.u32(), 3);
+    let xip_count = independent.u32();
+    assert_eq!(xip_count, 3);
+    assert_eq!(
+        (0..xip_count)
+            .map(|_| independent.u64())
+            .collect::<Vec<_>>(),
+        vec![101, 103, 107]
+    );
+    let subxip_count = independent.u32();
+    assert_eq!(subxip_count, 2);
+    assert_eq!(independent.u64(), 109);
+    assert_eq!(independent.u64(), 113);
+    assert_eq!(independent.u8(), 0);
+    assert_eq!(independent.u8(), 1);
+    independent.finish();
+    let snapshot = DistannSourceSnapshot::decode(&bytes).unwrap();
+    assert_eq!(snapshot.database_name, "ecaz");
+    assert!(snapshot.taken_during_recovery);
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannSourceSnapshot::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_ready_receipt_v1_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_ready_receipt_v1.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u32(), 10);
+    assert_eq!(independent.u64(), 7);
+    independent.take(16);
+    independent.take(64);
+    assert_eq!(independent.u64(), 10);
+    assert_eq!(independent.u64(), 6);
+    assert_eq!(independent.u64(), 6);
+    independent.take(32 * 4);
+    assert_eq!(independent.u64(), 600);
+    assert_eq!(independent.u64(), 1200);
+    assert_eq!(independent.u64(), 60);
+    assert_eq!(independent.u8(), 1);
+    independent.take(32);
+    independent.finish();
+    let receipt = DistannReadyReceipt::decode(&bytes).unwrap();
+    assert_eq!(receipt.node_id, 10);
+    assert_eq!(receipt.owned_record_count, receipt.row_count);
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannReadyReceipt::decode(&swapped).is_err());
+}
+
+#[test]
+fn distann_manifest_subrecord_fixtures_decode_and_reject_swap() {
+    let codec_bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_manifest_codec_parameters_v1.hex"
+    ));
+    let mut codec_reader = DistannFixtureReader::new(&codec_bytes);
+    assert_eq!(codec_reader.u16(), 1);
+    assert_eq!(codec_reader.u8(), 2);
+    assert_eq!(codec_reader.u16(), 8);
+    assert_eq!(codec_reader.u32(), 13);
+    assert_eq!(codec_reader.u64(), 42);
+    assert_eq!(codec_reader.u32(), 0);
+    assert_eq!(codec_reader.u32(), 0);
+    assert_eq!(codec_reader.u32(), 0);
+    assert_eq!(codec_reader.u16(), 0);
+    codec_reader.finish();
+    let codec = DistannManifestCodecParameters::decode(&codec_bytes).unwrap();
+    assert_eq!(codec.code_stride, 13);
+
+    let build_bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_manifest_build_options_v1.hex"
+    ));
+    let mut build_reader = DistannFixtureReader::new(&build_bytes);
+    assert_eq!(build_reader.u16(), 1);
+    assert_eq!(build_reader.u16(), 4);
+    assert_eq!(build_reader.take(26).len(), 26);
+    build_reader.finish();
+    let build = DistannManifestBuildOptions::decode(&build_bytes).unwrap();
+    assert_eq!(build.graph_degree, 4);
+    assert_eq!(build.options.build_shards, 0);
+
+    let mut codec_swapped = codec_bytes;
+    codec_swapped.swap(0, 1);
+    assert!(DistannManifestCodecParameters::decode(&codec_swapped).is_err());
+    let mut build_swapped = build_bytes;
+    build_swapped.swap(0, 1);
+    assert!(DistannManifestBuildOptions::decode(&build_swapped).is_err());
+}
+
+#[test]
+fn distann_epoch_manifest_v2_fixture_decodes_independently_and_rejects_swap() {
+    let bytes = decode_hex_fixture(include_str!(
+        "../fixtures/on-disk/distann_epoch_manifest_v2.hex"
+    ));
+    let mut independent = DistannFixtureReader::new(&bytes);
+    assert_eq!(independent.u16(), 2);
+    assert_eq!(independent.u64(), 7);
+    independent.take(16);
+    assert!(independent.len_bytes().is_empty());
+    independent.take(32 * 3);
+    assert_eq!(independent.u16(), 1);
+    let roster_count = independent.u32();
+    assert_eq!(roster_count, 2);
+    for expected_node in [10, 20] {
+        assert_eq!(independent.u32(), expected_node);
+        independent.take(16);
+        independent.len_bytes();
+    }
+    assert_eq!(independent.u16(), 5);
+    assert_eq!(independent.u16(), 1);
+    assert_eq!(independent.u16(), 1);
+    independent.len_bytes();
+    independent.len_bytes();
+    independent.take(32 * 2);
+    assert_eq!(independent.u64(), 10);
+    independent.take(32 * 2);
+    let receipt_count = independent.u32();
+    assert_eq!(receipt_count, 2);
+    for _ in 0..receipt_count {
+        assert_eq!(independent.len_bytes().len(), 303);
+    }
+    independent.finish();
+
+    let manifest = DistannEpochManifestV2::decode(&bytes).unwrap();
+    assert_eq!(manifest.roster.len(), 2);
+    assert_eq!(manifest.participant_receipts.len(), 2);
+    let fingerprint = manifest.fingerprint().unwrap();
+    assert_eq!(
+        fingerprint.as_bytes().len(),
+        DISTANN_EPOCH_FINGERPRINT_BYTES
+    );
+    assert_eq!(
+        DistannEpochFingerprint::decode(fingerprint.as_bytes()).unwrap(),
+        fingerprint
+    );
+
+    let mut swapped = bytes;
+    swapped.swap(0, 1);
+    assert!(DistannEpochManifestV2::decode(&swapped).is_err());
+    let mut swapped_fingerprint = *fingerprint.as_bytes();
+    swapped_fingerprint.swap(0, 1);
+    assert!(DistannEpochFingerprint::decode(&swapped_fingerprint).is_err());
 }
 
 #[test]

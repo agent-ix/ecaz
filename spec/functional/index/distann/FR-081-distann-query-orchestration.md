@@ -38,12 +38,12 @@ neighbors into the beam and exact distances into the result heap.
   (convergence early-exit).
 - The scan SHALL treat BW × H as the hard expansion cap
   ([NFR-019](../../../non-functional/NFR-019-distann-per-query-touch-bound.md)).
-- Visited-set dedupe SHALL be by vec_id; a vec_id SHALL never be expanded
-  twice in one scan.
+- Visited-set dedupe SHALL use vec_id as its key.
+- The scan SHALL NOT expand one vec_id twice in one attempt.
 - Final results SHALL be ordered by exact distance; no separate rerank
   round-trip is performed (exact distances arrive with expansion responses).
-  Results SHALL be drawn only from expanded records (head-index candidates
-  enter results only via their own expansion).
+- The scan SHALL draw results only from expanded records.
+  Head-index candidates enter results only through their own expansion.
 - If the beam exhausts (no unvisited candidates remain) before k results
   accumulate, the scan SHALL return the fewer-than-k results as a complete
   result (scan exhaustion is not a fault); empty index → zero rows.
@@ -53,6 +53,11 @@ neighbors into the beam and exact distances into the result heap.
 - The scan SHALL surface per-query counters (rounds executed, records
   expanded, candidates code-scored, per-node batch sizes, pool reuse) via
   EXPLAIN and the bench pipeline step.
+- Every remote connection SHALL have a nonzero connect deadline. Every remote
+  lifecycle, expansion, and materialization call SHALL have both a nonzero
+  client-side deadline and a remote `statement_timeout`; the coordinator SHALL
+  check PostgreSQL interrupts before and after each awaited RPC. Timeout and
+  cancellation SHALL fail the attempt without returning partial results.
 - While the deployment is single-node, the same loop SHALL run with a local
   expansion function of identical signature (no transport).
 
@@ -65,6 +70,7 @@ neighbors into the beam and exact distances into the result heap.
 | FR-081-AC-3 | No vec_id is expanded twice within one scan | Test |
 | FR-081-AC-4 | Early-exit never returns results different from running all H rounds | Test (A/B on fixed corpus) |
 | FR-081-AC-5 | EXPLAIN reports the per-query traversal counters | Inspection |
+| FR-081-AC-6 | A stalled connect or remote statement terminates within its configured nonzero budget, and cancellation is observed between RPC awaits without returning partial rows | Test |
 
 ## Dependencies
 

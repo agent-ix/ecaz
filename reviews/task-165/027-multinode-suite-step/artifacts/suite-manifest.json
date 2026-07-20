@@ -1,0 +1,68 @@
+{
+  "suite": "task165-distann-multinode-50k",
+  "schema_version": 1,
+  "config": "reviews/task-165/027-multinode-suite-step/artifacts/distann-multinode-suite.json",
+  "config_sha256": "b73a2dc8b21572dbeaad2a249feb7d02255ea56c8b254c6cbcc18ad86fb6b00d",
+  "dry_run": false,
+  "generated_at_unix_ms": 1783625492289,
+  "runner_git_commit": "a1a52948fdc5b66b6aa2b002567c275ae565b37c-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "distann-multinode-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-165/027-multinode-suite-step/artifacts/distann-multinode-50k",
+        "--log-file",
+        "reviews/task-165/027-multinode-suite-step/artifacts/distann-multinode-50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--rows",
+        "50000",
+        "--dim",
+        "16",
+        "--graph-degree",
+        "32",
+        "--queries",
+        "100",
+        "--top-k",
+        "10",
+        "--skip-fault-drills"
+      ],
+      "selected": true,
+      "tags": [
+        "task165",
+        "ec_distann",
+        "multinode",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-165/027-multinode-suite-step/artifacts/distann-multinode-50k/distann-local-multinode.log",
+        "reviews/task-165/027-multinode-suite-step/artifacts/distann-multinode-50k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1783625492289,
+      "finished_at_unix_ms": 1783625543009,
+      "duration_ms": 50752,
+      "exit_code": 0
+    }
+  ]
+}

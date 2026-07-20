@@ -1,0 +1,6 @@
+[suite:task179-drop-extension-cleanup] wrote reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/suite-manifest.json
+[suite:task179-drop-extension-cleanup] drop-extension-cleanup -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run --run-dir target/task179-drop-extension-cleanup --log-file reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/distann-local-multinode.log --nodes 3 --base-port 40490 --rows 90 --dim 4 --graph-degree 8 --head-index-cap 4096 --queries 1 --top-k 10 --skip-fault-drills --drop-extension-cleanup-drill
+[suite:task179-drop-extension-cleanup] wrote reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/suite-manifest.json
+[suite:task179-drop-extension-cleanup] wrote reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/suite-manifest.json
+[suite:task179-drop-extension-cleanup] wrote reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/results.jsonl
+[suite:task179-drop-extension-cleanup] wrote reviews/task-179/054-drop-extension-cleanup/artifacts/cleanup-run/suite-manifest.json

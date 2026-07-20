@@ -1,0 +1,6 @@
+# M3 slice 3 write-endpoint evidence
+# cmd: cargo pgrx test pg18 --no-default-features --features pg18 distann
+
+test tests::pg_test_ec_distann_apply_record_writes_tombstones ... ok
+test result: ok. 90 passed; 0 failed; 0 ignored; 0 measured; 2266 filtered out; finished in 64.35s
+clippy: 0 warnings

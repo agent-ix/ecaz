@@ -1,0 +1,727 @@
+{
+  "name": "task166-m4-baseline-comparison",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-166/001-m4-baseline-comparison/artifacts",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "raw",
+      "name": "precheck-host",
+      "tags": [
+        "setup",
+        "task166",
+        "m4-baseline"
+      ],
+      "args": [
+        "dev",
+        "sql",
+        "--pg",
+        "18",
+        "--db",
+        "distann_t165",
+        "--socket-dir",
+        "/home/peter/.pgrx",
+        "--raw",
+        "--sql",
+        "SELECT now() AS captured_at, version() AS pg;",
+        "--log-output",
+        "${artifact_dir}/precheck-host.log"
+      ],
+      "expected_artifacts": [
+        "${artifact_dir}/precheck-host.log"
+      ]
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "hnsw",
+        "load"
+      ],
+      "prefix": "m4cmp_hnsw_10k",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "hnsw",
+        "recall"
+      ],
+      "prefix": "m4cmp_hnsw_10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "hnsw",
+        "latency"
+      ],
+      "prefix": "m4cmp_hnsw_10k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "hnsw",
+        "storage"
+      ],
+      "prefix": "m4cmp_hnsw_10k"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "ivf",
+        "load"
+      ],
+      "prefix": "m4cmp_ivf_10k",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "ivf",
+        "recall"
+      ],
+      "prefix": "m4cmp_ivf_10k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "ivf",
+        "latency"
+      ],
+      "prefix": "m4cmp_ivf_10k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "ivf",
+        "storage"
+      ],
+      "prefix": "m4cmp_ivf_10k"
+    },
+    {
+      "kind": "load",
+      "name": "load-10k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "diskann",
+        "load"
+      ],
+      "prefix": "m4cmp_diskann_10k",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-10k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "diskann",
+        "recall"
+      ],
+      "prefix": "m4cmp_diskann_10k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "diskann",
+        "latency"
+      ],
+      "prefix": "m4cmp_diskann_10k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-10k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_10k",
+        "diskann",
+        "storage"
+      ],
+      "prefix": "m4cmp_diskann_10k"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "hnsw",
+        "load"
+      ],
+      "prefix": "m4cmp_hnsw_50k",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "hnsw",
+        "recall"
+      ],
+      "prefix": "m4cmp_hnsw_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "hnsw",
+        "latency"
+      ],
+      "prefix": "m4cmp_hnsw_50k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "hnsw",
+        "storage"
+      ],
+      "prefix": "m4cmp_hnsw_50k"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "ivf",
+        "load"
+      ],
+      "prefix": "m4cmp_ivf_50k",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "ivf",
+        "recall"
+      ],
+      "prefix": "m4cmp_ivf_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "ivf",
+        "latency"
+      ],
+      "prefix": "m4cmp_ivf_50k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "ivf",
+        "storage"
+      ],
+      "prefix": "m4cmp_ivf_50k"
+    },
+    {
+      "kind": "load",
+      "name": "load-50k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "diskann",
+        "load"
+      ],
+      "prefix": "m4cmp_diskann_50k",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-50k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "diskann",
+        "recall"
+      ],
+      "prefix": "m4cmp_diskann_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-50k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "diskann",
+        "latency"
+      ],
+      "prefix": "m4cmp_diskann_50k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-50k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_50k",
+        "diskann",
+        "storage"
+      ],
+      "prefix": "m4cmp_diskann_50k"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "hnsw",
+        "load"
+      ],
+      "prefix": "m4cmp_hnsw_100k",
+      "profile": "ec_hnsw",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true,
+      "m": [
+        16
+      ],
+      "ef_construction": 128
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "hnsw",
+        "recall"
+      ],
+      "prefix": "m4cmp_hnsw_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "hnsw",
+        "latency"
+      ],
+      "prefix": "m4cmp_hnsw_100k",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [
+        40,
+        64,
+        100,
+        128,
+        160,
+        200
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-hnsw",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "hnsw",
+        "storage"
+      ],
+      "prefix": "m4cmp_hnsw_100k"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "ivf",
+        "load"
+      ],
+      "prefix": "m4cmp_ivf_100k",
+      "profile": "ec_ivf",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "ivf",
+        "recall"
+      ],
+      "prefix": "m4cmp_ivf_100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "ivf",
+        "latency"
+      ],
+      "prefix": "m4cmp_ivf_100k",
+      "profile": "ec_ivf",
+      "k": 10,
+      "sweep": [
+        8,
+        16,
+        24,
+        32,
+        48,
+        64
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-ivf",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "ivf",
+        "storage"
+      ],
+      "prefix": "m4cmp_ivf_100k"
+    },
+    {
+      "kind": "load",
+      "name": "load-100k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "diskann",
+        "load"
+      ],
+      "prefix": "m4cmp_diskann_100k",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "recall-100k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "diskann",
+        "recall"
+      ],
+      "prefix": "m4cmp_diskann_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ]
+    },
+    {
+      "kind": "latency",
+      "name": "latency-100k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "diskann",
+        "latency"
+      ],
+      "prefix": "m4cmp_diskann_100k",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [
+        64,
+        128,
+        200,
+        400,
+        800
+      ],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "storage-100k-diskann",
+      "tags": [
+        "task166",
+        "m4-baseline",
+        "ec_real_100k",
+        "diskann",
+        "storage"
+      ],
+      "prefix": "m4cmp_diskann_100k"
+    }
+  ]
+}

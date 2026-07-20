@@ -1,0 +1,101 @@
+{
+  "suite": "task181-bounded-hierarchy-100k",
+  "schema_version": 1,
+  "config": "reviews/task-181/003-fixed-cap-policy-screen/artifacts/hierarchy-100k-suite.json",
+  "config_sha256": "4fc54bcf7ef319701e0a8eacbee87da09418e416ffc875495e2e5b73a592ece0",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784156019812,
+  "runner_git_commit": "e75dfc14bbf0c1ff406a7dc1795f7e1c2f4514d8",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "hierarchy-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-181/003-fixed-cap-policy-screen/artifacts/hierarchy-100k/100k",
+        "--run-dir",
+        "target/task181-hierarchy-100k",
+        "--log-file",
+        "reviews/task-181/003-fixed-cap-policy-screen/artifacts/hierarchy-100k/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "10",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "41060",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "16384",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--head-policy",
+        "geometry_landmarks",
+        "--benchmark-seed-variant",
+        "bounded-hierarchy:head_hierarchy:256:32:rabitq",
+        "--benchmark-seed-variant",
+        "exact-membership:head_sample_exact:256:32:rabitq",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task181",
+        "phase3",
+        "bounded_hierarchy",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-181/003-fixed-cap-policy-screen/artifacts/hierarchy-100k/100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784156019813,
+      "finished_at_unix_ms": 1784158921615,
+      "duration_ms": 2918500,
+      "exit_code": 0
+    }
+  ],
+  "threshold_results": [
+    {
+      "name": "hierarchy-row",
+      "step": "hierarchy-100k",
+      "metric": "physical_benchmark_recall",
+      "filters": {
+        "arm": "physical",
+        "variant": "bounded-hierarchy"
+      },
+      "field": "distinct_recall",
+      "op": "gte",
+      "expected": 0.8,
+      "actual": 0.9145,
+      "passed": true,
+      "message": "distinct_recall 0.9145 Gte 0.8 -> true"
+    }
+  ]
+}
