@@ -2004,9 +2004,9 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            if work_rows.len() != 13 {
+            if work_rows.len() != 14 {
                 bail!(
-                    "physical latency attribution expected 13 ec_distann materialization-work rows, got {}",
+                    "physical latency attribution expected 14 ec_distann materialization-work rows, got {}",
                     work_rows.len()
                 );
             }
