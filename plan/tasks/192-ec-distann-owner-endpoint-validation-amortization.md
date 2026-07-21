@@ -1,6 +1,6 @@
 # Task 192: ec_distann Owner Endpoint Validation Amortization
 
-Status: **in progress** (2026-07-21). Priority: P1 latency follow-up to
+Status: **complete — STOP, no candidate** (2026-07-21). Priority: P1 latency follow-up to
 Task 187's STOP. Roadmap candidates: `MAT-37` and `MAT-38` (their
 "catalog/open share" trigger is now measured — see Entry gate).
 
@@ -78,6 +78,12 @@ at 100k on release build `fe98ea2cc`.
    `ecaz bench suite`, plus the epoch-change/failure drill.
 4. **Decision.** PROMOTE to a separately reviewed productionization slice or
    STOP with the negative result recorded in the roadmap ledger.
+
+## Decision
+
+STOP. The proposed resolved-schema cache was not advanced: it would bypass
+live row-tier catalog validation and no paired A/B artifact completed. The
+existing descriptor-generation cache remains unchanged.
 
 ## Required review packets
 

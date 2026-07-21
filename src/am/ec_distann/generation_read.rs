@@ -379,7 +379,6 @@ struct CachedRetainedEpoch {
     generation: GenerationCatalogRow,
     source_attnum: i32,
     code_len: usize,
-    row_schema: Arc<super::row_schema::ResolvedRowSchema>,
 }
 
 thread_local! {
@@ -631,7 +630,6 @@ struct RetainedGenerationScan {
     graph_relation_name: String,
     source_attnum: i32,
     code_len: usize,
-    row_schema: Arc<super::row_schema::ResolvedRowSchema>,
 }
 
 impl RetainedGenerationScan {
@@ -699,10 +697,6 @@ impl RetainedGenerationScan {
             let code_len = binding
                 .code_len(usize::from(descriptor.dimensions))
                 .map_err(DistannExpandError::GenerationMissing)?;
-            let row_schema = Arc::new(
-                super::row_schema::resolve_relation_schema(generation.row_tier_relid)
-                    .map_err(DistannExpandError::GenerationMissing)?,
-            );
             let cached = CachedRetainedEpoch {
                 index_oid,
                 fingerprint,
@@ -710,7 +704,6 @@ impl RetainedGenerationScan {
                 generation,
                 source_attnum,
                 code_len,
-                row_schema,
             };
             cache_retained_epoch(cached.clone());
             cached
@@ -720,7 +713,6 @@ impl RetainedGenerationScan {
             generation,
             source_attnum,
             code_len,
-            row_schema,
             ..
         } = cached;
         let row_relation = HeapRelationGuard::try_access_share(generation.row_tier_relid)
@@ -758,7 +750,6 @@ impl RetainedGenerationScan {
             graph_relation_name,
             source_attnum,
             code_len,
-            row_schema,
         })
     }
 
@@ -954,7 +945,9 @@ impl RetainedGenerationScan {
                 expected_schema_fingerprint.len()
             ))
         })?;
-        let resolved_schema = &self.row_schema;
+        let resolved_schema =
+            super::row_schema::resolve_relation_schema(self.generation.row_tier_relid)
+                .map_err(DistannExpandError::GenerationMissing)?;
         if self
             .descriptor
             .row_schema
