@@ -2287,10 +2287,17 @@ impl PhysicalMultiOwnerExpander<'_> {
         vec_ids: &[u64],
         code_threshold: Option<f32>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let partition_started = Instant::now();
         let buckets = super::placement::group_by_owning_node(
             vec_ids,
             self.routes.len(),
             self.descriptor.placement_hash_version,
+        );
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::TraversalCoordinatorPartition,
+            partition_started.elapsed(),
         );
         let mut ordered = (0..vec_ids.len()).map(|_| None).collect::<Vec<_>>();
         let mut remote_work = Vec::new();
@@ -2321,6 +2328,8 @@ impl PhysicalMultiOwnerExpander<'_> {
                 remote_work.push((ordinal, owned));
             }
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let request_started = Instant::now();
         let requests = remote_work
             .iter()
             .map(|(ordinal, owned)| {
@@ -2342,6 +2351,11 @@ impl PhysicalMultiOwnerExpander<'_> {
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::TraversalRequestEncode,
+            request_started.elapsed(),
+        );
+        #[cfg(feature = "distann-head-attribution-benchmark")]
         let remote_started = Instant::now();
         let responses = super::remote_transport::remote_physical_expand_batch(&requests);
         #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -2350,10 +2364,21 @@ impl PhysicalMultiOwnerExpander<'_> {
                 super::stage_counters::DistannQueryStage::RemoteExpand,
                 remote_started.elapsed(),
             );
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::TraversalTransportWait,
+                remote_started.elapsed(),
+            );
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let decode_started = Instant::now();
         for ((ordinal, _), response) in remote_work.into_iter().zip(responses) {
             place_physical_owner_responses(ordinal, &buckets[ordinal], response?, &mut ordered)?;
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::TraversalCoordinatorDecode,
+            decode_started.elapsed(),
+        );
         ordered
             .into_iter()
             .map(|node| {
@@ -2507,6 +2532,8 @@ impl DistannNodeExpander for GenerationExpander<'_> {
         vec_ids: &[u64],
         _code_threshold: Option<f32>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let graph_started = Instant::now();
         let records = lookup_graph_nodes(
             self.graph_relation,
             self.directory_relation,
@@ -2521,6 +2548,11 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                 ))
             },
         )?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::TraversalOwnerGraphRead,
+            graph_started.elapsed(),
+        );
 
         vec_ids
             .iter()
@@ -2533,6 +2565,8 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                 })?;
                 let count = usize::from(node.neighbor_count);
                 let mut neighbor_dists = vec![0.0; count];
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                let score_started = Instant::now();
                 self.prepared
                     .score_dists_batch(
                         &node.neighbor_codes[..count * self.code_len],
@@ -2541,6 +2575,11 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                         &mut neighbor_dists,
                     )
                     .map_err(DistannExpandError::Internal)?;
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record(
+                    super::stage_counters::DistannQueryStage::TraversalOwnerScore,
+                    score_started.elapsed(),
+                );
                 Ok(DistannExpandedNode {
                     vec_id: node.vec_id,
                     exact_dist: (!node.tombstoned)

@@ -234,6 +234,8 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
                 super::stage_counters::DistannMaterializationWork::TraversalRepeatedNodes,
                 usize::from(!inserted),
             );
+            #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+            let _ = inserted;
             counters.records_expanded += 1;
 
             if !response.is_tombstone {
@@ -267,10 +269,17 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
                         super::stage_counters::DistannMaterializationWork::TraversalFrontierInsertions,
                         1,
                     );
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    let frontier_started = std::time::Instant::now();
                     beam.push(BeamCandidate {
                         dist: *code_dist,
                         vec_id: *neighbor_vec_id,
                     });
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    super::stage_counters::record(
+                        super::stage_counters::DistannQueryStage::TraversalFrontierInsert,
+                        frontier_started.elapsed(),
+                    );
                 }
             }
         }

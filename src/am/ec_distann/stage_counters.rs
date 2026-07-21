@@ -29,10 +29,17 @@ pub(crate) enum DistannQueryStage {
     MaterializeCoordinatorDecode,
     MaterializeMapInsert,
     MaterializeOutputAssociate,
+    TraversalCoordinatorPartition,
+    TraversalRequestEncode,
+    TraversalOwnerGraphRead,
+    TraversalOwnerScore,
+    TraversalTransportWait,
+    TraversalCoordinatorDecode,
+    TraversalFrontierInsert,
 }
 
 impl DistannQueryStage {
-    pub(crate) const ALL: [Self; 21] = [
+    pub(crate) const ALL: [Self; 28] = [
         Self::QueryPrep,
         Self::HeadScore,
         Self::SeedSelect,
@@ -54,6 +61,13 @@ impl DistannQueryStage {
         Self::MaterializeCoordinatorDecode,
         Self::MaterializeMapInsert,
         Self::MaterializeOutputAssociate,
+        Self::TraversalCoordinatorPartition,
+        Self::TraversalRequestEncode,
+        Self::TraversalOwnerGraphRead,
+        Self::TraversalOwnerScore,
+        Self::TraversalTransportWait,
+        Self::TraversalCoordinatorDecode,
+        Self::TraversalFrontierInsert,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -79,6 +93,13 @@ impl DistannQueryStage {
             Self::MaterializeCoordinatorDecode => "materialize_coordinator_decode",
             Self::MaterializeMapInsert => "materialize_map_insert",
             Self::MaterializeOutputAssociate => "materialize_output_associate",
+            Self::TraversalCoordinatorPartition => "traversal_coordinator_partition",
+            Self::TraversalRequestEncode => "traversal_request_encode",
+            Self::TraversalOwnerGraphRead => "traversal_owner_graph_read",
+            Self::TraversalOwnerScore => "traversal_owner_score",
+            Self::TraversalTransportWait => "traversal_transport_wait",
+            Self::TraversalCoordinatorDecode => "traversal_coordinator_decode",
+            Self::TraversalFrontierInsert => "traversal_frontier_insert",
         }
     }
 
@@ -105,6 +126,13 @@ impl DistannQueryStage {
             Self::MaterializeCoordinatorDecode => 18,
             Self::MaterializeMapInsert => 19,
             Self::MaterializeOutputAssociate => 20,
+            Self::TraversalCoordinatorPartition => 21,
+            Self::TraversalRequestEncode => 22,
+            Self::TraversalOwnerGraphRead => 23,
+            Self::TraversalOwnerScore => 24,
+            Self::TraversalTransportWait => 25,
+            Self::TraversalCoordinatorDecode => 26,
+            Self::TraversalFrontierInsert => 27,
         }
     }
 }
