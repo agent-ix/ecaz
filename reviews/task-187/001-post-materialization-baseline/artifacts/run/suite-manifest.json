@@ -1,0 +1,83 @@
+{
+  "suite": "task187-post-materialization-baseline-100k",
+  "schema_version": 1,
+  "config": "reviews/task-187/001-post-materialization-baseline/artifacts/post-materialization-baseline-suite.json",
+  "config_sha256": "c19086675a718c071786cf286dae6b5ef645ad4b5dabb8103e1989faa1b06a7e",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784611702510,
+  "runner_git_commit": "fe98ea2cc2273465ae28a942b7dacf9ca347a0de",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "lazy10-baseline-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-187/001-post-materialization-baseline/artifacts/run/lazy10-baseline-100k",
+        "--run-dir",
+        "target/task187-post-materialization-baseline",
+        "--log-file",
+        "reviews/task-187/001-post-materialization-baseline/artifacts/run/lazy10-baseline-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "41420",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--production-head-policy",
+        "training_landmarks_exact",
+        "--training-query-path",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task187",
+        "phase1",
+        "post_materialization",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-187/001-post-materialization-baseline/artifacts/run/lazy10-baseline-100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784611702543,
+      "finished_at_unix_ms": 1784613597156,
+      "duration_ms": 1907250,
+      "exit_code": 0
+    }
+  ]
+}
