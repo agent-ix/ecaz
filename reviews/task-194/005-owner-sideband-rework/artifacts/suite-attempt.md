@@ -6,5 +6,6 @@
 - Initial attempt: sandbox denied TCP socket creation; no measurement emitted.
 - Elevated attempt: fixture startup succeeded, but the runtime loaded the prior 28-row extension, so the updated CLI rejected the emitted rows.
 - After rebuilding/installing the corrected extension, the next elevated attempt stalled before topology output while the nearly-full host spent minutes in PostgreSQL checkpoints. It was terminated cleanly; no benchmark result is claimed.
+- A third attempt after reclaiming 20 GB reproduced the same pre-topology futex stall after approximately 13 minutes; it was also terminated cleanly. The repeated condition is recorded for runtime follow-up, not treated as benchmark evidence.
 
 This is an environment/provenance blocker for the required fresh A/A run, not evidence for a candidate or STOP disposition.
