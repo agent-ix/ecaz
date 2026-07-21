@@ -79,11 +79,18 @@ at 100k on release build `fe98ea2cc`.
 4. **Decision.** PROMOTE to a separately reviewed productionization slice or
    STOP with the negative result recorded in the roadmap ledger.
 
-## Decision
+## Reopened analysis
 
-STOP. The proposed resolved-schema cache was not advanced: it would bypass
-live row-tier catalog validation and no paired A/B artifact completed. The
-existing descriptor-generation cache remains unchanged.
+The proposed cache is not yet a production change. ADR-085 D10 makes the
+published AM-owned row tier immutable for the lifetime of its generation:
+physical reclaim, row replacement, and catalog-shape changes occur only while
+assembling a new generation, which is atomically published and fingerprinted.
+Therefore a published generation's row relation cannot undergo ordinary DDL
+in place. The cache must still validate the attested generation/fingerprint on
+every request and discard state on epoch change; it must not rely on epoch
+identity alone to cover an out-of-contract catalog mutation. The required A/A
+and cached-vs-uncached suite run will determine whether the remaining live
+validation is measurable before any disposition.
 
 ## Required review packets
 

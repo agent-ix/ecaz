@@ -2114,6 +2114,8 @@ mod tests {
             heap_tid: ItemPointer::INVALID,
             neighbor_vec_ids: vec![vec_id.wrapping_add(1)],
             neighbor_code_dists: vec![0.5],
+            owner_total_ns: 0,
+            owner_open_validate_ns: 0,
         }
     }
 

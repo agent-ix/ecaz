@@ -425,6 +425,8 @@ mod tests {
                         heap_tid: tid(*vec_id as u16),
                         neighbor_vec_ids: neighbors.iter().map(|(id, _)| *id).collect(),
                         neighbor_code_dists: neighbors.iter().map(|(_, d)| *d).collect(),
+                        owner_total_ns: 0,
+                        owner_open_validate_ns: 0,
                     })
                 })
                 .collect()

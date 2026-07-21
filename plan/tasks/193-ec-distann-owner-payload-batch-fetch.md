@@ -30,12 +30,15 @@ Target the 8.34 ms/scan payload SQL component. Rank order, result identity,
 tombstone/visibility handling, and the lazy10 window contract (FR-079,
 ADR-085 D12, NFR-019 bounds including the `t`-skip qualifier) are unchanged.
 
-## Decision
+## Reopened candidate
 
-The proposed MAT-23/MAT-24 behavior is already implemented: one owner-window
-request carries an array of TIDs and one `unnest ... WITH ORDINALITY` SQL query
-returns rows in request order. No duplicate candidate is advanced. MAT-19
-prepared-plan caching remains a separate future experiment.
+The packet-001 audit remains accepted: MAT-23/MAT-24 behavior is already
+implemented, with one owner-window request and one ordinality-preserving
+`unnest` query. The task remains open because MAT-19 is still in this task's
+candidate pool. The explicitly pre-registered experiment is the narrow
+owner-side prepared-plan cache for the `build_payload_sql` inner query,
+keyed by generation plus projection fingerprint and invalidated with the
+generation entry. It must be measured after the verified Task 194 A/A.
 
 ## Entry gate
 
