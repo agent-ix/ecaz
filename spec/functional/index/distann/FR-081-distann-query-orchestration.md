@@ -23,8 +23,12 @@ neighbors into the beam and exact distances into the result heap.
 
 ## Behavior
 
-- The scan SHALL be eager (ADR-056 pattern): the orchestration loop runs at
-  rescan; `amgettuple` is cursor-only over the finished result heap.
+- Graph traversal and exact-distance ranking SHALL be eager (ADR-056 pattern):
+  the orchestration loop runs at rescan and produces a bounded ranked candidate
+  set. Final payloads SHALL NOT be eagerly fetched for that entire set.
+  `CustomScan` cursor demand SHALL materialize the fixed global-ranked windows
+  specified by FR-079, evaluate coordinator quals, and deepen the eager search
+  bar only when the current proven prefix cannot satisfy the executor.
 - Per hop round the coordinator SHALL: select the best BW unvisited beam
   candidates; group them by owning node
   ([FR-078](./FR-078-distann-hash-placement.md)); issue the per-node
@@ -57,7 +61,13 @@ neighbors into the beam and exact distances into the result heap.
   lifecycle, expansion, and materialization call SHALL have both a nonzero
   client-side deadline and a remote `statement_timeout`; the coordinator SHALL
   check PostgreSQL interrupts before and after each awaited RPC. Timeout and
-  cancellation SHALL fail the attempt without returning partial results.
+  cancellation SHALL fail the attempt without returning partial results. This
+  includes a materialization failure after one or more earlier cursor windows.
+- The production materialization window SHALL be exactly 10 and SHALL have no
+  production GUC or reloption. An eager override MAY exist only in a
+  benchmark/test feature build. Installing the prior extension binary restores
+  eager materialization without rebuilding an index because this policy changes
+  no persisted index, row-tier, wire, or generation bytes.
 - While the deployment is single-node, the same loop SHALL run with a local
   expansion function of identical signature (no transport).
 
@@ -71,6 +81,8 @@ neighbors into the beam and exact distances into the result heap.
 | FR-081-AC-4 | Early-exit never returns results different from running all H rounds | Test (A/B on fixed corpus) |
 | FR-081-AC-5 | EXPLAIN reports the per-query traversal counters | Inspection |
 | FR-081-AC-6 | A stalled connect or remote statement terminates within its configured nonzero budget, and cancellation is observed between RPC awaits without returning partial rows | Test |
+| FR-081-AC-7 | Production builds use the fixed lazy-10 driver and expose no materialization-batch GUC; a feature build can select eager solely for matched A/B evidence | Inspection + Test (TC-040, TC-049) |
+| FR-081-AC-8 | Unqualified and qual-driven payload reads obey NFR-019's fixed-window bounds, including across search deepening | Test (counter assertion) |
 
 ## Dependencies
 

@@ -1,8 +1,8 @@
 # Task 187: ec_distann Traversal Transport Optimization
 
-Status: **proposed, conditional on Task 191** (2026-07-19). Priority: P2
-latency follow-up. Task 184 selected lazy10 materialization; Task 191 must first
-make that production path the retained baseline.
+Status: **proposed, unblocked by Task 191** (2026-07-20). Priority: P2 latency
+follow-up. Task 191 promoted and release-validated lazy10 as the retained
+production baseline.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`. This task
 owns `TRAV-01` through `TRAV-15` and `TRAV-20` through `TRAV-27`.
@@ -24,12 +24,32 @@ recall, graph, ordering, epoch/failure semantics, and total work bounds.
 
 ## Entry gate
 
-Task 184 has provided its profile and PROMOTE disposition. Task 191 must land
-and validate the selected materialization path before this task freezes the
-retained production baseline. If traversal is no longer a material share after
-that promotion, close this task with a documented conditional skip. Otherwise
-freeze the retained materialization path and index generation before selecting
-a traversal candidate.
+Task 184 provided its profile and PROMOTE disposition. Task 191 landed and
+validated the selected materialization path. Traversal remains material at
+100k: 7.849 ms against 23.70 ms warm wall mean (33.1%), so the conditional
+skip does not apply and Phase 1 attribution is executable.
+
+### Retained Task 191 baseline
+
+- production `training_landmarks_exact`, cap 4,096, exact landmark scoring,
+  32 returned seeds, BW4/H100, graph degree 32, RaBitQ neighbor scoring;
+- deterministic global-ranked payload windows fixed at 10, with no production
+  tuning GUC;
+- 100k physical recall 0.9625 (95% Wilson 0.9532–0.9700), warm latency
+  mean/p50/p95/p99/max 23.70/23.50/27.20/28.00/28.10 ms;
+- 100k physical generation 2,496,626,688 bytes, head digest
+  `50261d7627471fa3329535cd017ead6102cb220c62ca12dc9715178d05333b54`,
+  seed digest
+  `488caa73ad3f6c22864f9af309569ba4fe6edd72c8d535e71eec7bff78af6d50`;
+- staged query SHA-256
+  `a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782`;
+  and
+- retained evidence:
+  `reviews/task-191/003-production-full-scale/artifacts/full-run/production-ab-100k/distann-multinode-summary.log`.
+
+Phase 1 must refresh attribution on a fresh byte-identical generation rather
+than treating the Task 191 aggregate traversal timer as the requested
+decomposition.
 
 ## Phase 1: attribution
 

@@ -1481,7 +1481,10 @@ fn build_manifest(
         config_sha256: sha256_hex(raw.as_bytes()),
         dry_run: args.dry_run,
         generated_at_unix_ms: now_ms(),
-        runner_git_commit: Some(env!("ECAZ_GIT_SHA").to_string()),
+        // Capture before write_manifest_if_requested creates or updates any
+        // packet-local outputs. The build-time stamp remains the fallback when
+        // the runner is invoked outside a Git checkout.
+        runner_git_commit: Some(capture_runner_git_descriptor()),
         connection: ManifestConnection {
             database: conn.database.clone(),
             host: conn.host.clone(),
@@ -1539,6 +1542,27 @@ fn build_manifest(
         });
     }
     Ok(manifest)
+}
+
+fn capture_runner_git_descriptor() -> String {
+    let head = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .filter(|head| !head.is_empty());
+    let dirty = std::process::Command::new("git")
+        .args(["status", "--porcelain", "--untracked-files=no"])
+        .output()
+        .ok()
+        .filter(|output| output.status.success())
+        .map(|output| !output.stdout.is_empty());
+    match (head, dirty) {
+        (Some(head), Some(true)) => format!("{head}-dirty"),
+        (Some(head), Some(false)) => head,
+        _ => env!("ECAZ_GIT_SHA").to_owned(),
+    }
 }
 
 fn step_selected(step: &SuiteStep, args: &SuiteRunOptions) -> bool {

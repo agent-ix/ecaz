@@ -555,19 +555,17 @@ enum CustomScanOutputRow {
     /// A remote-owned hit: reconstruct a virtual tuple from the owner-shipped
     /// per-column binary payload.
     Remote {
+        vec_id: u64,
         payload_nulls: Vec<bool>,
         payload_values: Vec<Vec<u8>>,
     },
-    /// Task 184 benchmark-only lazy candidate. Identity and ranked position are
-    /// retained without copying a row payload until the executor reaches this
-    /// deterministic ranked window.
-    #[cfg(feature = "distann-head-attribution-benchmark")]
+    /// Identity and ranked position are retained without copying a row payload
+    /// until the executor reaches this deterministic ranked window.
     RemotePending { vec_id: u64 },
     /// A pending row that materialized as a tombstone. It occupies its ranked
     /// position so proven-prefix/deepening boundaries remain based on raw rank,
     /// but the access callback never emits it.
-    #[cfg(feature = "distann-head-attribution-benchmark")]
-    RemoteSkipped,
+    RemoteSkipped { vec_id: u64 },
 }
 
 #[repr(C)]
@@ -616,6 +614,8 @@ struct DistannCustomScanExecState {
     local_heap_slot: *mut pg_sys::TupleTableSlot,
     frozen_row_slot: *mut pg_sys::TupleTableSlot,
     physical_generation: Option<super::generation_read::PhysicalGenerationScan>,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    materialized_remote_ids: std::collections::HashSet<u64>,
 }
 
 fn default_exec_state() -> DistannCustomScanExecState {
@@ -638,6 +638,8 @@ fn default_exec_state() -> DistannCustomScanExecState {
         local_heap_slot: ptr::null_mut(),
         frozen_row_slot: ptr::null_mut(),
         physical_generation: None,
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        materialized_remote_ids: std::collections::HashSet::new(),
         query: Vec::new(),
         effective: 0,
         early_exit: false,
@@ -702,6 +704,8 @@ fn release_custom_scan_resources(state: &mut DistannCustomScanExecState) {
     drop(std::mem::take(&mut state.payload_inputs));
     drop(std::mem::take(&mut state.outputs));
     drop(std::mem::take(&mut state.query));
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    drop(std::mem::take(&mut state.materialized_remote_ids));
     drop(state.physical_generation.take());
 }
 
@@ -773,6 +777,8 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     state.payload_send_functions = payload_send_functions;
     state.payload_inputs = payload_inputs;
     state.outputs.clear();
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    state.materialized_remote_ids.clear();
     state.next_output = 0;
     state.loaded = false;
 }
@@ -978,7 +984,6 @@ unsafe extern "C-unwind" fn custom_scan_access(
             continue;
         }
         let output_index = state.next_output;
-        #[cfg(feature = "distann-head-attribution-benchmark")]
         if matches!(
             state.outputs.get(output_index),
             Some(CustomScanOutputRow::RemotePending { .. })
@@ -1042,6 +1047,7 @@ unsafe extern "C-unwind" fn custom_scan_access(
                 );
             }
             CustomScanOutputRow::Remote {
+                vec_id: _,
                 payload_nulls,
                 payload_values,
             } => {
@@ -1051,12 +1057,10 @@ unsafe extern "C-unwind" fn custom_scan_access(
                 record_executor_consumption(true);
                 return store_remote_payload(state, scan_slot, &nulls, &values);
             }
-            #[cfg(feature = "distann-head-attribution-benchmark")]
             CustomScanOutputRow::RemotePending { .. } => {
                 pgrx::error!("EC_INTERNAL: pending remote payload was not materialized")
             }
-            #[cfg(feature = "distann-head-attribution-benchmark")]
-            CustomScanOutputRow::RemoteSkipped => continue,
+            CustomScanOutputRow::RemoteSkipped { .. } => continue,
         }
     }
 }
@@ -1065,12 +1069,11 @@ unsafe extern "C-unwind" fn custom_scan_access(
 /// ranked window, capped at the prefix the search has actually proven. A qual
 /// that rejects the current window drives the executor into the next window;
 /// no LIMIT-derived completeness assumption is made here.
-#[cfg(feature = "distann-head-attribution-benchmark")]
 fn materialize_pending_physical_window(
     state: &mut DistannCustomScanExecState,
     output_index: usize,
 ) {
-    let batch_size = super::options::benchmark_materialization_batch_size();
+    let batch_size = super::options::materialization_batch_size();
     if batch_size == 0 {
         pgrx::error!("EC_INTERNAL: pending remote payload with eager materialization enabled");
     }
@@ -1086,6 +1089,23 @@ fn materialize_pending_physical_window(
     if remote_ids.is_empty() {
         pgrx::error!("EC_INTERNAL: pending materialization window contains no pending rows");
     }
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        let duplicate_requests = remote_ids
+            .iter()
+            .filter(|vec_id| !state.materialized_remote_ids.insert(**vec_id))
+            .count();
+        super::stage_counters::record_work(
+            super::stage_counters::DistannMaterializationWork::DuplicateRemoteCandidatesRequested,
+            duplicate_requests,
+        );
+        if duplicate_requests > 0 {
+            pgrx::error!(
+                "EC_INTERNAL: stable-prefix deepening re-requested {duplicate_requests} remote payloads"
+            );
+        }
+    }
+    #[cfg(feature = "distann-head-attribution-benchmark")]
     let materialize_started = Instant::now();
     let payloads = state
         .physical_generation
@@ -1095,19 +1115,23 @@ fn materialize_pending_physical_window(
         })
         .materialize_remote_payload_ids(&remote_ids, &state.payload_attnums)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
-    let materialize_elapsed = materialize_started.elapsed();
-    super::stage_counters::record(
-        super::stage_counters::DistannQueryStage::RemoteMaterialize,
-        materialize_elapsed,
-    );
-    // CustomScanTotal is aggregate work per scan. Candidate scans can have
-    // multiple samples (initial search plus one per demanded payload window);
-    // elapsed_ns / scans remains the comparable mean-query total.
-    super::stage_counters::record(
-        super::stage_counters::DistannQueryStage::CustomScanTotal,
-        materialize_elapsed,
-    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        let materialize_elapsed = materialize_started.elapsed();
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::RemoteMaterialize,
+            materialize_elapsed,
+        );
+        // CustomScanTotal is aggregate work per scan. Candidate scans can have
+        // multiple samples (initial search plus one per demanded payload window);
+        // elapsed_ns / scans remains the comparable mean-query total.
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::CustomScanTotal,
+            materialize_elapsed,
+        );
+    }
 
+    #[cfg(feature = "distann-head-attribution-benchmark")]
     let association_started = Instant::now();
     for index in window_start..window_end {
         let vec_id = match &state.outputs[index] {
@@ -1116,19 +1140,20 @@ fn materialize_pending_physical_window(
         };
         state.outputs[index] = match payloads.get(&vec_id) {
             Some(payload) => CustomScanOutputRow::Remote {
+                vec_id,
                 payload_nulls: payload.payload_nulls.clone(),
                 payload_values: payload.payload_values.clone(),
             },
-            None => CustomScanOutputRow::RemoteSkipped,
+            None => CustomScanOutputRow::RemoteSkipped { vec_id },
         };
     }
+    #[cfg(feature = "distann-head-attribution-benchmark")]
     super::stage_counters::record(
         super::stage_counters::DistannQueryStage::MaterializeOutputAssociate,
         association_started.elapsed(),
     );
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 fn pending_materialization_window(
     output_index: usize,
     batch_size: usize,
@@ -1139,11 +1164,32 @@ fn pending_materialization_window(
     let end = ranked_window_start
         .saturating_add(batch_size)
         .min(proven_outputs);
-    // Slots below output_index were already consumed (or caused their pending
-    // window to materialize). Search deepening rebuilds the stable ranked
-    // prefix, so starting at output_index is what prevents re-fetching that
-    // rebuilt-but-consumed prefix.
+    // Slots below output_index were already consumed. Materialized-but-
+    // unconsumed slots in this window survive a stable-prefix rebuild, so only
+    // still-pending rows are requested by the caller.
     (output_index, end)
+}
+
+fn take_stable_remote_output(
+    previous_outputs: &mut [Option<CustomScanOutputRow>],
+    previous_proven: usize,
+    raw_rank: usize,
+    vec_id: u64,
+) -> Option<CustomScanOutputRow> {
+    if raw_rank >= previous_proven {
+        return None;
+    }
+    let previous = previous_outputs.get_mut(raw_rank)?.take()?;
+    match previous {
+        row @ CustomScanOutputRow::Remote {
+            vec_id: previous_id,
+            ..
+        }
+        | row @ CustomScanOutputRow::RemoteSkipped {
+            vec_id: previous_id,
+        } if previous_id == vec_id => Some(row),
+        _ => None,
+    }
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1291,6 +1337,7 @@ unsafe fn run_search_and_build_outputs(
             match payloads.get(&hit.vec_id) {
                 Some(payload) if !payload.tuple_payload_missing => {
                     Some(CustomScanOutputRow::Remote {
+                        vec_id: hit.vec_id,
                         payload_nulls: payload.payload_nulls.clone(),
                         payload_values: payload.payload_values.clone(),
                     })
@@ -1323,6 +1370,11 @@ unsafe fn run_physical_generation_search(
     source_attnum: i32,
     effective: usize,
 ) {
+    let previous_proven = proven_prefix_len(state);
+    let mut previous_outputs = std::mem::take(&mut state.outputs)
+        .into_iter()
+        .map(Some)
+        .collect::<Vec<_>>();
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let total_started = Instant::now();
     if state.physical_generation.is_none() {
@@ -1359,37 +1411,43 @@ unsafe fn run_physical_generation_search(
     state.effective = effective;
     state.early_exit = collection.counters.early_exit;
     let hits = collection.hits;
-    #[cfg(feature = "distann-head-attribution-benchmark")]
-    if super::options::benchmark_materialization_batch_size() > 0 {
+    if super::options::materialization_batch_size() > 0 {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
         let association_started = Instant::now();
         state.proven_outputs = hits.len().min(effective);
         state.outputs = hits
             .into_iter()
-            .map(|hit| {
+            .enumerate()
+            .map(|(raw_rank, hit)| {
                 if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
                     CustomScanOutputRow::Frozen(hit.heap_tid)
                 } else {
-                    CustomScanOutputRow::RemotePending { vec_id: hit.vec_id }
+                    take_stable_remote_output(
+                        &mut previous_outputs,
+                        previous_proven,
+                        raw_rank,
+                        hit.vec_id,
+                    )
+                    .unwrap_or(CustomScanOutputRow::RemotePending { vec_id: hit.vec_id })
                 }
             })
             .collect();
-        let association_elapsed = association_started.elapsed();
-        super::stage_counters::record(
-            super::stage_counters::DistannQueryStage::MaterializeOutputAssociate,
-            association_elapsed,
-        );
-        super::stage_counters::record_work(
-            super::stage_counters::DistannMaterializationWork::OutputRowsAssociated,
-            state.outputs.len(),
-        );
-        super::stage_counters::record(
-            super::stage_counters::DistannQueryStage::OutputMerge,
-            association_elapsed,
-        );
-        super::stage_counters::record(
-            super::stage_counters::DistannQueryStage::CustomScanTotal,
-            total_started.elapsed(),
-        );
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            let association_elapsed = association_started.elapsed();
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::MaterializeOutputAssociate,
+                association_elapsed,
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::OutputRowsAssociated,
+                state.outputs.len(),
+            );
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::CustomScanTotal,
+                total_started.elapsed(),
+            );
+        }
         return;
     }
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1415,6 +1473,7 @@ unsafe fn run_physical_generation_search(
                 remote_payloads
                     .get(&hit.vec_id)
                     .map(|payload| CustomScanOutputRow::Remote {
+                        vec_id: hit.vec_id,
                         payload_nulls: payload.payload_nulls.clone(),
                         payload_values: payload.payload_values.clone(),
                     })
@@ -1429,10 +1488,6 @@ unsafe fn run_physical_generation_search(
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
         let association_elapsed = merge_started.elapsed();
-        super::stage_counters::record(
-            super::stage_counters::DistannQueryStage::MaterializeOutputAssociate,
-            association_elapsed,
-        );
         super::stage_counters::record_work(
             super::stage_counters::DistannMaterializationWork::OutputRowsAssociated,
             state.outputs.len(),
@@ -1633,6 +1688,8 @@ unsafe extern "C-unwind" fn custom_scan_recheck(
 unsafe extern "C-unwind" fn rescan_custom_scan(node: *mut pg_sys::CustomScanState) {
     let state = exec_state_mut(node);
     state.outputs.clear();
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    state.materialized_remote_ids.clear();
     state.next_output = 0;
     state.loaded = false;
 }
@@ -1650,9 +1707,9 @@ unsafe extern "C-unwind" fn end_custom_scan(node: *mut pg_sys::CustomScanState) 
     release_custom_scan_resources(&mut *state);
 }
 
-#[cfg(all(test, feature = "distann-head-attribution-benchmark"))]
+#[cfg(test)]
 mod materialization_candidate_tests {
-    use super::pending_materialization_window;
+    use super::{pending_materialization_window, take_stable_remote_output, CustomScanOutputRow};
 
     #[test]
     fn ranked_windows_are_deterministic_and_proven_bounded() {
@@ -1661,5 +1718,28 @@ mod materialization_candidate_tests {
         assert_eq!(pending_materialization_window(10, 10, 32), (10, 20));
         assert_eq!(pending_materialization_window(31, 10, 32), (31, 32));
         assert_eq!(pending_materialization_window(32, 10, 40), (32, 40));
+    }
+
+    #[test]
+    fn stable_ranked_payload_survives_deepening_without_refetch() {
+        let mut previous = vec![
+            Some(CustomScanOutputRow::RemotePending { vec_id: 7 }),
+            Some(CustomScanOutputRow::Remote {
+                vec_id: 11,
+                payload_nulls: vec![false],
+                payload_values: vec![vec![1, 2, 3]],
+            }),
+            Some(CustomScanOutputRow::RemoteSkipped { vec_id: 13 }),
+        ];
+
+        assert!(take_stable_remote_output(&mut previous, 3, 0, 7).is_none());
+        assert!(matches!(
+            take_stable_remote_output(&mut previous, 3, 1, 11),
+            Some(CustomScanOutputRow::Remote { vec_id: 11, .. })
+        ));
+        assert!(matches!(
+            take_stable_remote_output(&mut previous, 3, 2, 13),
+            Some(CustomScanOutputRow::RemoteSkipped { vec_id: 13 })
+        ));
     }
 }

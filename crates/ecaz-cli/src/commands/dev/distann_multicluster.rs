@@ -720,11 +720,32 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     };
     let correctness_fixture = if coordinator && args.materialization_correctness {
         // Keep the benchmark/query vector non-null. A correctness-only payload
-        // column provides both genuine NULL datums and large toasted varlena
-        // datums in the immutable row tier without changing ordinary fixtures.
-        "UPDATE dm
+        // column provides both genuine NULL datums and forced, uncompressed
+        // out-of-line varlena datums in the immutable row tier without changing
+        // ordinary fixtures. EXTERNAL + >12 KiB cannot remain inline on an 8 KiB
+        // heap page; the DO block asserts every premise before index capture.
+        "ALTER TABLE dm ALTER COLUMN payload_note SET STORAGE EXTERNAL;
+         UPDATE dm
             SET payload_note = CASE WHEN id % 2 = 0 THEN NULL
-                                    ELSE repeat(md5(id::text), 400) END;"
+                                    ELSE (SELECT string_agg(md5(id::text || ':' || piece::text), '' ORDER BY piece)
+                                            FROM generate_series(1, 400) AS piece) END;
+         DO $fixture$
+         DECLARE external_storage boolean;
+         BEGIN
+             SELECT attstorage = 'e' INTO external_storage
+               FROM pg_attribute
+              WHERE attrelid = 'dm'::regclass AND attname = 'payload_note';
+             IF NOT COALESCE(external_storage, false)
+                OR EXISTS (
+                    SELECT 1 FROM dm
+                     WHERE payload_note IS NOT NULL
+                       AND (octet_length(payload_note) < 12800
+                            OR pg_column_compression(payload_note) IS NOT NULL)
+                ) THEN
+                 RAISE EXCEPTION 'materialization fixture is not forced external, uncompressed, and oversized';
+             END IF;
+         END
+         $fixture$;"
     } else {
         ""
     };
@@ -866,6 +887,19 @@ async fn run_physical_bench_child(args: Vec<String>) -> Result<String> {
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+fn append_materialization_benchmark_guc(
+    args: &mut Vec<String>,
+    arm: &str,
+    materialization_batch_size: u32,
+) {
+    if arm == "physical" {
+        args.extend([
+            "--session-guc".into(),
+            format!("ec_distann.benchmark_materialization_batch_size={materialization_batch_size}"),
+        ]);
+    }
+}
+
 #[derive(Clone, Debug)]
 struct BenchmarkSeedVariant {
     name: String,
@@ -987,7 +1021,7 @@ async fn materialization_result_json(
 ) -> Result<String> {
     coordinator
         .batch_execute(&format!(
-            "SET enable_seqscan = off; SET ec_distann.benchmark_materialization_batch_size = {batch_size};"
+            "SELECT ec_distann_stage_scoring_reset(); SET enable_seqscan = off; SET ec_distann.benchmark_materialization_batch_size = {batch_size};"
         ))
         .await?;
     coordinator
@@ -1016,6 +1050,8 @@ fn materialization_semantic_sql(
                     payload_note IS NULL AS payload_null,
                     CASE WHEN payload_note IS NULL THEN NULL ELSE md5(payload_note) END AS payload_digest,
                     CASE WHEN payload_note IS NULL THEN NULL ELSE octet_length(payload_note) END AS payload_octets,
+                    CASE WHEN payload_note IS NULL THEN NULL ELSE pg_column_compression(payload_note) END AS payload_compression,
+                    (SELECT attstorage::text FROM pg_attribute WHERE attrelid = '{corpus}'::regclass AND attname = 'payload_note') AS payload_storage,
                     embedding <#> (SELECT source FROM query_vector) AS distance
                FROM {corpus}
               WHERE {predicate}
@@ -1032,6 +1068,8 @@ async fn compare_materialization_scenario(
     sql: &str,
     require_null: bool,
     require_toast: bool,
+    expected_rows: usize,
+    qualified: bool,
 ) -> Result<String> {
     let eager = materialization_result_json(coordinator, 0, sql).await?;
     let candidate = materialization_result_json(coordinator, 10, sql).await?;
@@ -1045,23 +1083,60 @@ async fn compare_materialization_scenario(
         || eager_value
             .as_array()
             .is_some_and(|values| values.iter().all(|value| value["payload_null"] == true));
-    let toast_ok = !require_toast
+    let external_toast_ok = !require_toast
         || eager_value.as_array().is_some_and(|values| {
             values.iter().all(|value| {
                 value["payload_octets"]
                     .as_u64()
-                    .is_some_and(|octets| octets > 2_000)
+                    .is_some_and(|octets| octets >= 12_800)
+                    && value["payload_compression"].is_null()
+                    && value["payload_storage"] == "e"
             })
         });
-    let pass = eager_value == candidate_value && rows == 10 && null_ok && toast_ok;
+    let work = coordinator
+        .query(
+            "SELECT metric, value FROM ec_distann_materialization_work_snapshot()
+              WHERE metric IN ('remote_candidates_requested', 'duplicate_remote_candidates_requested', 'executor_local_rows_consumed')",
+            &[],
+        )
+        .await?;
+    let mut remote_requested = 0_i64;
+    let mut duplicate_requested = 0_i64;
+    let mut local_consumed = 0_i64;
+    for row in work {
+        match row.get::<_, String>(0).as_str() {
+            "remote_candidates_requested" => remote_requested = row.get(1),
+            "duplicate_remote_candidates_requested" => duplicate_requested = row.get(1),
+            "executor_local_rows_consumed" => local_consumed = row.get(1),
+            _ => {}
+        }
+    }
+    let configured_top_k = coordinator
+        .query_one("SELECT current_setting('ec_distann.top_k')::bigint", &[])
+        .await?
+        .get::<_, i64>(0);
+    let initial_bar = configured_top_k.max(expected_rows as i64);
+    let deepening_cap = initial_bar.saturating_mul(64).max(1024);
+    let payload_read_bound = if qualified {
+        deepening_cap
+    } else {
+        ((expected_rows as i64 + 9) / 10) * 10
+    };
+    let payload_reads = remote_requested.saturating_add(local_consumed);
+    let pass = eager_value == candidate_value
+        && rows == expected_rows
+        && null_ok
+        && external_toast_ok
+        && duplicate_requested == 0
+        && payload_reads <= payload_read_bound;
     if !pass {
         bail!(
-            "materialization correctness scenario {scenario} failed: rows={rows} identity={} null_ok={null_ok} toast_ok={toast_ok}",
+            "materialization correctness scenario {scenario} failed: rows={rows}/{expected_rows} identity={} null_ok={null_ok} external_toast_ok={external_toast_ok} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads}/{payload_read_bound} duplicate_requested={duplicate_requested}",
             eager_value == candidate_value
         );
     }
     Ok(format!(
-        "physical_materialization_correctness scale={scale} scenario={scenario} pass=true rows={rows} eager_digest={} candidate_digest={} null_ok={null_ok} toast_ok={toast_ok}",
+        "physical_materialization_correctness scale={scale} scenario={scenario} pass=true rows={rows} eager_digest={} candidate_digest={} null_ok={null_ok} external_toast_ok={external_toast_ok} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads} payload_read_bound={payload_read_bound} deepening_cap={deepening_cap} duplicate_requested={duplicate_requested}",
         hex::encode(Sha256::digest(eager.as_bytes())),
         hex::encode(Sha256::digest(candidate.as_bytes())),
     ))
@@ -1121,14 +1196,14 @@ async fn run_materialization_correctness(
             &format!(
                 "SELECT id FROM {corpus}
                   ORDER BY embedding <#> (SELECT source FROM {queries} ORDER BY id LIMIT 1)
-                  LIMIT 40"
+                  LIMIT 64"
             ),
             &[],
         )
         .await?;
-    if ranked_ids.len() < 30 {
+    if ranked_ids.len() < 50 {
         bail!(
-            "materialization correctness expected at least 30 ranked IDs, got {}",
+            "materialization correctness expected at least 50 ranked IDs, got {}",
             ranked_ids.len()
         );
     }
@@ -1137,37 +1212,68 @@ async fn run_materialization_correctness(
         .map(|row| row.get::<_, i64>(0).to_string())
         .collect::<Vec<_>>();
     let exclude_first = ranked_ids[..10].join(",");
-    let exclude_multiple = ranked_ids[..20].join(",");
+    let exclude_multiple = ranked_ids[..40].join(",");
 
     let mut lines = Vec::new();
-    for (scenario, predicate, require_null, require_toast) in [
-        ("unfiltered_identity", "TRUE".to_owned(), false, false),
+    for (scenario, predicate, limit, require_null, require_toast, qualified) in [
+        (
+            "fewer_than_window",
+            "TRUE".to_owned(),
+            5,
+            false,
+            false,
+            false,
+        ),
+        (
+            "exactly_one_window",
+            "TRUE".to_owned(),
+            10,
+            false,
+            false,
+            false,
+        ),
+        (
+            "more_than_window",
+            "TRUE".to_owned(),
+            15,
+            false,
+            false,
+            false,
+        ),
         (
             "reject_first_window",
             format!("id NOT IN ({exclude_first})"),
+            10,
             false,
             false,
+            true,
         ),
         (
             "reject_multiple_windows",
             format!("id NOT IN ({exclude_multiple})"),
+            10,
             false,
             false,
+            true,
         ),
         (
             "null_payload",
             "payload_note IS NULL".to_owned(),
+            10,
             true,
             false,
+            true,
         ),
         (
             "toasted_projection_qual",
             "payload_note IS NOT NULL AND id % 3 = 1".to_owned(),
+            10,
             false,
+            true,
             true,
         ),
     ] {
-        let sql = materialization_semantic_sql(corpus, queries, &predicate, 10, 0);
+        let sql = materialization_semantic_sql(corpus, queries, &predicate, limit, 0);
         lines.push(
             compare_materialization_scenario(
                 coordinator,
@@ -1176,6 +1282,8 @@ async fn run_materialization_correctness(
                 &sql,
                 require_null,
                 require_toast,
+                limit as usize,
+                qualified,
             )
             .await?,
         );
@@ -1315,7 +1423,7 @@ async fn run_physical_benchmarks(
                 .neighbor_score_mode
                 .clone()
                 .unwrap_or_else(|| "rabitq".to_owned()),
-            materialization_batch_size: 0,
+            materialization_batch_size: 10,
         }]
     } else {
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
@@ -1796,14 +1904,7 @@ async fn run_physical_benchmarks(
                     ),
                 ]);
             }
-            if materialization_batch_size > 0 {
-                recall_args.extend([
-                    "--session-guc".into(),
-                    format!(
-                        "ec_distann.benchmark_materialization_batch_size={materialization_batch_size}"
-                    ),
-                ]);
-            }
+            append_materialization_benchmark_guc(&mut recall_args, arm, materialization_batch_size);
         }
         let recall = run_physical_bench_child(recall_args).await?;
         let row = benchmark_table_row(&recall)?;
@@ -1865,14 +1966,7 @@ async fn run_physical_benchmarks(
                 ),
             ]);
         }
-        if arm == "physical" && materialization_batch_size > 0 {
-            latency_args.extend([
-                "--session-guc".into(),
-                format!(
-                    "ec_distann.benchmark_materialization_batch_size={materialization_batch_size}"
-                ),
-            ]);
-        }
+        append_materialization_benchmark_guc(&mut latency_args, arm, materialization_batch_size);
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
@@ -1909,9 +2003,9 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            if work_rows.len() != 13 {
+            if work_rows.len() != 14 {
                 bail!(
-                    "physical latency attribution expected 13 ec_distann materialization-work rows, got {}",
+                    "physical latency attribution expected 14 ec_distann materialization-work rows, got {}",
                     work_rows.len()
                 );
             }
@@ -4398,6 +4492,23 @@ mod tests {
     }
 
     #[test]
+    fn eager_materialization_control_is_forwarded_as_explicit_zero() {
+        let mut eager_args = Vec::new();
+        append_materialization_benchmark_guc(&mut eager_args, "physical", 0);
+        assert_eq!(
+            eager_args,
+            [
+                "--session-guc",
+                "ec_distann.benchmark_materialization_batch_size=0"
+            ]
+        );
+
+        let mut single_args = Vec::new();
+        append_materialization_benchmark_guc(&mut single_args, "single", 0);
+        assert!(single_args.is_empty());
+    }
+
+    #[test]
     fn materialization_semantic_sql_projects_null_and_varlena_evidence() {
         let sql = materialization_semantic_sql(
             "physical_corpus",
@@ -4409,6 +4520,8 @@ mod tests {
         assert!(sql.contains("payload_note IS NULL AS payload_null"));
         assert!(sql.contains("md5(payload_note)"));
         assert!(sql.contains("octet_length(payload_note)"));
+        assert!(sql.contains("pg_column_compression(payload_note)"));
+        assert!(sql.contains("attstorage::text"));
         assert!(sql.contains("WHERE payload_note IS NOT NULL AND id % 3 = 1"));
         assert!(sql.contains("LIMIT 10"));
     }

@@ -1,6 +1,14 @@
 # Task 191: ec_distann Lazy Payload Productionization
 
-Status: **proposed, unblocked by Task 184 PROMOTE** (2026-07-19). Priority: P1.
+Status: **complete — PROMOTE production lazy10** (2026-07-20). Priority: P1.
+
+Outcome: fixed global-ranked payload windows of 10 are now the normal physical
+scan path. Matched release A/B preserved 0.9990/0.9685/0.9625 recall at
+10k/50k/100k while improving warm mean latency by 36.2%/38.5%/39.2% and p95
+by 36.8%/40.7%/44.7%. The normal PG18 release binary contains no benchmark
+materialization GUC and passed a three-owner staged-10k serving smoke. Evidence:
+`reviews/task-191/001-production-contract/` through
+`reviews/task-191/004-closeout/`.
 
 Decision source: ADR-085 D12. Evidence source:
 `reviews/task-184/003-isolated-candidate/` and

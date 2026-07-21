@@ -152,8 +152,10 @@ Build `ec_distann` as a fifth access method:
   random-read storm — index-resident codes are forced by scan-fraction.
   distann has no scan-fraction: NFR-019 caps per-query work at BW×H expanded
   records independent of corpus size. Exact-vector row reads are bounded by
-  live expansions (tombstones may skip). For an unqualified LIMIT, final
-  payload reads are bounded by k; qual rejection can require additional proven
+  live expansions (tombstones may skip). For an unqualified LIMIT with no
+  tombstone or snapshot-visibility skips, final payload reads follow the fixed
+  window bound `min(D, W × ceil(k/W))`; `t` skipped ranked slots change it to
+  `min(D, W × ceil((k+t)/W))`. Qual rejection can require additional proven
   candidates under D12's fixed corpus-independent deepening ceiling. Task 191
   reconciles NFR-019's older unconditional `+ k` wording before D12 becomes the
   production default. An implementation may reuse a row read but correctness

@@ -1,0 +1,31 @@
+{
+  "name": "task191-production-build-isolation",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-191/004-closeout/artifacts/production-isolation-run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "normal-release-lazy10-smoke",
+      "tags": ["task191", "production", "feature_isolation", "pg18"],
+      "artifact_dir": "${artifact_dir}/normal-release-lazy10-smoke",
+      "run_dir": "target/task191-production-isolation",
+      "nodes": 3,
+      "base_port": 41680,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "production_head_policy": "training_landmarks_exact",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 20,
+      "top_k": 10,
+      "physical_benchmark": false,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}

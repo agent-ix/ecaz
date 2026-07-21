@@ -23,9 +23,18 @@ Each live expanded record incurs exactly one co-placed exact-rerank row-tier
 read; a tombstone may skip it
 ([FR-079](../functional/index/distann/FR-079-distann-remote-expansion-protocol.md),
 ADR-085 D11). Exact-rerank row reads are therefore no greater than expanded
-records and remain bounded by BW × H. Final payload materialization may read at
-most k selected live rows, so total row-tier reads per attempt are bounded by
-`BW × H + k` unless an implementation reuses an expansion read.
+records and remain bounded by BW × H. Final payload materialization is driven
+in fixed global-ranked windows of `W = 10`. Let `D = max(initial_search_bar ×
+64, 1024)`, fixed once when the scan begins. For an unqualified top-k scan in
+the absence of tombstone or snapshot-visibility skips, payload row-tier reads
+are bounded by `min(D, W × ceil(k / W))`; the final window may therefore
+over-read at most `W - 1` ranked slots. If `t` tombstone or snapshot-invisible
+slots are encountered while satisfying the request, the corresponding bound is
+`min(D, W × ceil((k + t) / W))`. When coordinator quals can reject candidates,
+payload row-tier reads are bounded by `D`. Total row-tier reads per attempt are
+consequently bounded by `BW × H + min(D, W × ceil((k + t) / W))` for an
+unqualified scan (with `t = 0` in the no-skip case) and `BW × H + D` with
+quals, unless an implementation reuses an expansion read.
 
 The scan SHALL report the per-query expanded-record count in EXPLAIN and in the
 bench pipeline step.
@@ -40,6 +49,9 @@ hide a second unbounded heap phase inside the expansion counter.
   benchmarked scale.
 - BW and H are the session GUCs of FR-075; the bound holds for whatever
   values a run configures.
+- The payload window `W = 10` and deepening ceiling `D` are internal policies,
+  not production GUCs or relation options. The eager control exists only in a
+  benchmark/test feature build and is outside the production bound.
 
 ## Rationale
 
@@ -57,17 +69,22 @@ comparison meaningful.
 |--------|--------|-----------|--------|
 | records expanded per query (per-query MAX across the cell, not mean) | < BW×H (early exit) | ≤ BW×H per attempt (restart per FR-082 resets accounting; max 2 attempts) | pipeline-step counter assertion, every cell |
 | exact-vector row-tier reads | live expansions | ≤ expanded records ≤ BW×H per attempt | expansion counters |
-| final payload row-tier reads | selected live output rows | ≤ k per attempt | materialization counters |
-| total row-tier reads | exact-vector + payload reads | ≤ BW×H + k per attempt | pipeline-step counter assertion |
+| final payload row-tier reads, no coordinator quals and no tombstone/visibility skips | demanded global-ranked windows | ≤ min(D, 10×ceil(k/10)) per attempt | materialization counters |
+| final payload row-tier reads, no coordinator quals, with `t` tombstone/visibility skips | demanded global-ranked windows plus skipped slots | ≤ min(D, 10×ceil((k+t)/10)) per attempt | materialization counters |
+| final payload row-tier reads, coordinator quals | demanded global-ranked windows | ≤ D per attempt | materialization counters |
+| duplicate final payload reads | stable-prefix remote vec_ids | zero vec_ids re-requested solely by deepening | per-vec-id request assertion |
+| total row-tier reads, no coordinator quals | exact-vector + payload reads | ≤ BW×H + min(D, 10×ceil((k+t)/10)) per attempt | pipeline-step counter assertion |
+| total row-tier reads, coordinator quals | exact-vector + payload reads | ≤ BW×H + D per attempt | pipeline-step counter assertion |
 | expanded-count ratio 100k ÷ 10k at fixed BW,H | ≈ 1.0 | ≤ 1.1 | bench counter comparison across scales |
 | minimum BW×H achieving distinct_recall@10 ≥ 0.999, per scale | flat across scales | ≤ 2× growth 10k→100k | gate-packet analysis row (guards against the budget-needed-for-recall growth failure mode that killed the partitioned lane) |
 
 ## Verification
 
 The pipeline bench step emits per-query expansion, exact-vector-read,
-tombstone-skip, and payload-materialization counters. The suite asserts every
-cap per cell, and the cross-scale ratio row appears in the gate packet manifest.
-Any breach fails the run.
+tombstone-skip, payload-materialization, and per-window request counters. The
+suite asserts every cap per cell, proves stable-prefix vec_ids are not
+re-requested after deepening, and emits the cross-scale ratio row in the gate
+packet manifest. Any breach fails the run.
 
 ## Dependencies
 

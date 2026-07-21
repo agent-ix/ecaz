@@ -1,6 +1,6 @@
 # ec_distann Recall and Latency Optimization Roadmap
 
-Status: active planning ledger (2026-07-19). This document records the option
+Status: active planning ledger (2026-07-20). This document records the option
 space after Tasks 180--183. It is not an ADR and does not authorize a production
 default, format, protocol, or placement change. Canonical execution scope lives
 in `plan/tasks/`; accepted architectural decisions live in an ADR.
@@ -69,11 +69,15 @@ recall and reduced warm latency as follows:
 The candidate also reduced remote payload bytes by 72–75%, passed the
 adversarial projection/qual/null/toast/mixed-owner/outage matrix, and changed no
 storage or construction cost. ADR-085 D12 records the selected semantics;
-Task 191 owns the production default. Task 187 waits for that retained baseline.
+Task 191 subsequently made this the production default and release-validated
+the retained baseline. Its matched A/B reproduced recall identity and improved
+warm mean by 36.2%/38.5%/39.2% and p95 by 36.8%/40.7%/44.7% at
+10k/50k/100k. At 100k the retained production point is 0.9625 recall and
+23.70 ms mean; traversal remains 7.849 ms (33.1%), so Task 187 is unblocked.
 Outside review accepted Task 184 on 2026-07-20 and carried four non-blocking
 hardening requirements into Task 191: a proven external-TOAST fixture,
 scan-local stable-prefix payload reuse across deepening, unambiguous stage
-accounting, and pre-output runner provenance capture.
+accounting, and pre-output runner provenance capture. Task 191 closed all four.
 
 NFR-017's `0.999` and `37.6 ms` values are aspirational comparison references,
 not hard acceptance thresholds. Decisions use complete relative Pareto evidence
@@ -87,14 +91,15 @@ validity requirements.
 | 184 | Remote payload materialization | complete — PROMOTE | fixed batch-10 winner; productionization in Task 191 |
 | 185 | Fixed-cap gateway landmarks | executable now, independent of 184 | at most one fixed-cap recall candidate |
 | 186 | Larger compressed/hierarchical head | after Task 185 disposition | at most one bounded routing/capacity candidate |
-| 187 | Traversal transport | after Task 191 lands Task 184's winner | at most one traversal-latency candidate |
+| 187 | Traversal transport | executable — Task 191 retained lazy10; traversal is 33.1% at 100k | at most one traversal-latency candidate |
 | 188 | Graph/search residual recall | after Tasks 185/186 establish the remaining entry gap | at most one graph or adaptive-work candidate |
 | 189 | Hybrid codec/distance | only after same-seed evidence identifies a codec opportunity | at most one codec candidate |
 | 190 | Architectural escalation | only if narrower tasks leave a material gap | reviewed architecture decision and follow-up, not a bundled rewrite |
-| 191 | Lazy payload productionization | Task 184 PROMOTE | normative contract, production default, and release A/B |
+| 191 | Lazy payload productionization | complete — PROMOTE | production lazy10; release A/B and feature isolation passed |
 
-Task 184 is complete. Task 191 productionization and Task 185 recall work may
-proceed independently. Tasks 186--190 remain gated to prevent expensive
+Tasks 184 and 191 are complete. Tasks 185 recall work and 187 traversal
+attribution may proceed independently. Tasks 186, 188--190 remain gated by
+their recorded prerequisites to prevent expensive
 architecture or codec work from outrunning the measured bottlenecks. Task 172
 retains broad throughput, injected-RTT, and capacity characterization; Task 167
 retains physical DML.
@@ -111,8 +116,8 @@ remain controls rather than new candidates.
 
 | ID | Candidate | Status / trigger |
 | --- | --- | --- |
-| MAT-01 | Lazy first payload batch followed by deterministic deepening | **selected** by Task 184; productionization Task 191 |
-| MAT-02 | Executor cursor-driven remote payload fetch | **selected mechanism**; adversarial qual/failure matrix passed |
+| MAT-01 | Lazy first payload batch followed by deterministic deepening | **production** via Task 191; fixed window 10 |
+| MAT-02 | Executor cursor-driven remote payload fetch | **production mechanism**; adversarial qual/failure matrix passed |
 | MAT-03 | Adaptive payload batch size from observed qual rejection | deferred; fixed 10 already matched consumed remote rows and won end to end |
 | MAT-04 | Fixed 10/20/40 bounded batches | **fixed 10 selected**; 20/40 not advanced |
 | MAT-05 | `k + margin` fast path for provably unfiltered queries | conditional on planner proof |
