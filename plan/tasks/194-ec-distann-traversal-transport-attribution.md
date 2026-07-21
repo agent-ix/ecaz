@@ -64,8 +64,10 @@ decode/repeat-read dominates. Do not choose before the counters say.
 ## Phases and evidence
 
 1. Counter slice: traversal hop/batch/request/response/frontier/repeat work
-   counters landed behind the measurement feature; owner timer decomposition
-   and reconciliation remain before candidate selection.
+   counters landed behind the measurement feature, together with coordinator
+   partition/request encode, owner graph-read/scoring, transport wait,
+   coordinator decode, and frontier-insert timers. Candidate selection still
+   requires a fresh attribution run and reconciliation review.
 2. Attribution run at 100k on a byte-identical fresh generation via a
    checked-in `ecaz bench suite` config; nine non-overlapping components
    published.
