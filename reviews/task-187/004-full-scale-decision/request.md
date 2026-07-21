@@ -15,6 +15,11 @@ accepted Task 191 packet 003 remains the full-scale production lazy10 evidence;
 this task adds the fresh 100k traversal attribution and records that remote
 owner transport is the next investigation target.
 
-Next task: add traversal-transport observability (per-owner request encode,
-wait, decode, and straggler attribution) and then evaluate exactly one bounded
-transport optimization with the standard 10k/50k/100k A/B suite.
+Next task: carry forward the complete nine-way Phase 1 contract: coordinator
+frontier/owner partitioning; connection/session/prepared-state; request encode
+and bytes; owner directory/graph reads and decode; owner approximate/exact
+scoring; response encode and bytes; transport wait and per-owner straggler
+distribution; coordinator receive/decode/frontier insertion; and hop count,
+batch widths, nodes requested/returned, cache hits, and repeated reads. Then
+evaluate exactly one bounded transport optimization with the standard
+10k/50k/100k A/B suite.

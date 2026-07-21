@@ -100,8 +100,8 @@ Advance at most one candidate with material end-to-end benefit, preserved
 recall/semantics, explicit work/cache/wire caps, and no unresolved protocol or
 fallback choice. Production protocol/format changes require a separate task
 and ADR review. Decision: STOP. No production code changed; the next task
-should add per-owner transport encode/wait/decode/straggler counters before
-attempting one isolated transport optimization.
+should carry forward the complete nine-way Phase 1 contract before attempting
+one isolated transport optimization.
 
 ## Required review packets
 

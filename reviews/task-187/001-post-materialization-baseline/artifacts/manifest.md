@@ -19,7 +19,9 @@
 - Result artifacts: `run/results.jsonl` SHA256
   `2f1bd8dd38090057751fd3905a5bae257aedd964193af466cc06384036a44168`;
   `run/suite-manifest.json` SHA256
-  `1a6cff49f2f4c3c6ea2416e0de5068a87d1c9b422ccc0572bb2785d59f5f75f5`;
+  `1a6cff49f4f2c3c6ea2416e0de5068a87d1c9b422ccc0572bb2785d59f5f75f5`;
+- The bespoke suite config is used because the canonical current lane configs
+  do not provide the required `distann-local-multinode` step.
   compact summary SHA256
   `134fc929f5c409f932841243e6f6ec7e82317b9c15ffe048252afca2cd1af332`.
 - Key results: recall `0.9625` (CI95 `0.9532–0.9700`); warm mean/p50/p95/p99/max
