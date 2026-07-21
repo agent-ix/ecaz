@@ -129,10 +129,16 @@ pub(crate) enum DistannMaterializationWork {
     ExecutorRemoteRowsConsumed,
     ExecutorLocalRowsConsumed,
     DuplicateRemoteCandidatesRequested,
+    TraversalHopRounds,
+    TraversalBatchWidth,
+    TraversalNodesRequested,
+    TraversalNodesReturned,
+    TraversalFrontierInsertions,
+    TraversalRepeatedNodes,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 13] = [
+    pub(crate) const ALL: [Self; 19] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -146,6 +152,12 @@ impl DistannMaterializationWork {
         Self::ExecutorRemoteRowsConsumed,
         Self::ExecutorLocalRowsConsumed,
         Self::DuplicateRemoteCandidatesRequested,
+        Self::TraversalHopRounds,
+        Self::TraversalBatchWidth,
+        Self::TraversalNodesRequested,
+        Self::TraversalNodesReturned,
+        Self::TraversalFrontierInsertions,
+        Self::TraversalRepeatedNodes,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -163,6 +175,12 @@ impl DistannMaterializationWork {
             Self::ExecutorRemoteRowsConsumed => "executor_remote_rows_consumed",
             Self::ExecutorLocalRowsConsumed => "executor_local_rows_consumed",
             Self::DuplicateRemoteCandidatesRequested => "duplicate_remote_candidates_requested",
+            Self::TraversalHopRounds => "traversal_hop_rounds",
+            Self::TraversalBatchWidth => "traversal_batch_width",
+            Self::TraversalNodesRequested => "traversal_nodes_requested",
+            Self::TraversalNodesReturned => "traversal_nodes_returned",
+            Self::TraversalFrontierInsertions => "traversal_frontier_insertions",
+            Self::TraversalRepeatedNodes => "traversal_repeated_nodes",
         }
     }
 
@@ -181,6 +199,12 @@ impl DistannMaterializationWork {
             Self::ExecutorRemoteRowsConsumed => 10,
             Self::ExecutorLocalRowsConsumed => 11,
             Self::DuplicateRemoteCandidatesRequested => 12,
+            Self::TraversalHopRounds => 13,
+            Self::TraversalBatchWidth => 14,
+            Self::TraversalNodesRequested => 15,
+            Self::TraversalNodesReturned => 16,
+            Self::TraversalFrontierInsertions => 17,
+            Self::TraversalRepeatedNodes => 18,
         }
     }
 }

@@ -202,6 +202,25 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
             )));
         }
         counters.rounds_executed += 1;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::TraversalHopRounds,
+                1,
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::TraversalBatchWidth,
+                batch.len(),
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::TraversalNodesRequested,
+                batch.len(),
+            );
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::TraversalNodesReturned,
+                responses.len(),
+            );
+        }
         for (requested, response) in batch.iter().zip(responses.iter()) {
             if response.vec_id != *requested {
                 return Err(DistannExpandError::Internal(format!(
@@ -209,7 +228,12 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
                     response.vec_id
                 )));
             }
-            expanded.insert(response.vec_id);
+            let inserted = expanded.insert(response.vec_id);
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::TraversalRepeatedNodes,
+                usize::from(!inserted),
+            );
             counters.records_expanded += 1;
 
             if !response.is_tombstone {
@@ -238,6 +262,11 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
                 .zip(response.neighbor_code_dists.iter())
             {
                 if enqueued.insert(*neighbor_vec_id) {
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    super::stage_counters::record_work(
+                        super::stage_counters::DistannMaterializationWork::TraversalFrontierInsertions,
+                        1,
+                    );
                     beam.push(BeamCandidate {
                         dist: *code_dist,
                         vec_id: *neighbor_vec_id,
