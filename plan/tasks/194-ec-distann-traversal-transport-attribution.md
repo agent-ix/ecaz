@@ -1,6 +1,6 @@
 # Task 194: ec_distann Traversal Transport Attribution and One Candidate
 
-Status: **proposed** (2026-07-21). Priority: P2. Inherits Task 187's
+Status: **in progress** (2026-07-21). Priority: P2. Inherits Task 187's
 complete nine-way Phase 1 contract. Roadmap candidates: `TRAV-01` (active
 prerequisite), then at most one of the families Task 187 listed.
 
@@ -63,7 +63,9 @@ decode/repeat-read dominates. Do not choose before the counters say.
 
 ## Phases and evidence
 
-1. Counter slice: implementation + reconciliation test, own review packet.
+1. Counter slice: traversal hop/batch/request/response/frontier/repeat work
+   counters landed behind the measurement feature; owner timer decomposition
+   and reconciliation remain before candidate selection.
 2. Attribution run at 100k on a byte-identical fresh generation via a
    checked-in `ecaz bench suite` config; nine non-overlapping components
    published.
