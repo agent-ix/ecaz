@@ -1,6 +1,6 @@
 # Task 194: ec_distann Traversal Transport Attribution and One Candidate
 
-Status: **in progress** (2026-07-21). Priority: P2. Inherits Task 187's
+Status: **complete — STOP, no candidate** (2026-07-21). Priority: P2. Inherits Task 187's
 complete nine-way Phase 1 contract. Roadmap candidates: `TRAV-01` (active
 prerequisite), then at most one of the families Task 187 listed.
 
