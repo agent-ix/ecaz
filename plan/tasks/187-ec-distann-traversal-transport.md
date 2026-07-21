@@ -1,6 +1,6 @@
 # Task 187: ec_distann Traversal Transport Optimization
 
-Status: **proposed, unblocked by Task 191** (2026-07-20). Priority: P2 latency
+Status: **complete — STOP, no candidate** (2026-07-21). Priority: P2 latency
 follow-up. Task 191 promoted and release-validated lazy10 as the retained
 production baseline.
 
@@ -47,9 +47,12 @@ skip does not apply and Phase 1 attribution is executable.
 - retained evidence:
   `reviews/task-191/003-production-full-scale/artifacts/full-run/production-ab-100k/distann-multinode-summary.log`.
 
-Phase 1 must refresh attribution on a fresh byte-identical generation rather
-than treating the Task 191 aggregate traversal timer as the requested
-decomposition.
+Phase 1 refreshed attribution on a fresh byte-identical generation. The 100k
+physical arm measured 7.468 ms traversal in a 22.40 ms warm mean; remote owner
+expansion was 6.174 ms, local expansion 1.230 ms, and derived coordinator /
+frontier remainder 0.065 ms. No bounded candidate was selected because the
+dominant remote transport path is not decomposed finely enough to attribute a
+cache, packing, hop, locality, or straggler change safely.
 
 ## Phase 1: attribution
 
@@ -96,7 +99,9 @@ does not improve end-to-end mean/tails is rejected.
 Advance at most one candidate with material end-to-end benefit, preserved
 recall/semantics, explicit work/cache/wire caps, and no unresolved protocol or
 fallback choice. Production protocol/format changes require a separate task
-and ADR review. Otherwise STOP.
+and ADR review. Decision: STOP. No production code changed; the next task
+should add per-owner transport encode/wait/decode/straggler counters before
+attempting one isolated transport optimization.
 
 ## Required review packets
 
