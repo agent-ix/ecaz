@@ -17,6 +17,9 @@ counters for coordinator partition/frontier, connection/session state,
 request encode/bytes, owner reads/decode, owner scoring, response
 encode/bytes, transport wait/owner stragglers, coordinator decode/frontier
 insert, and hop/batch/cache/repeat work. The hop/batch/request/response/
-frontier/repeat counters are now emitted as attribution-work rows; timer
-splitting remains the next instrumentation slice because the existing remote
-endpoint boundary does not expose non-overlapping owner sub-timers yet.
+frontier/repeat counters are emitted as attribution-work rows. The feature
+build now also exposes coordinator partition/request encode, owner graph-read
+and scoring, transport wait, coordinator decode, and frontier-insert timers.
+The owner endpoint's internal request encode/response encode split remains a
+follow-on refinement; these counters are explicitly labeled in the packet
+results rather than presented as a false exact reconciliation.
