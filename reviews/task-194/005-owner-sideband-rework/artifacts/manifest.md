@@ -3,4 +3,4 @@
 - Head SHA: `e555bc69b`
 - Validation: `cargo check --offline -p ecaz --lib --no-default-features --features 'pg18 distann-head-attribution-benchmark'`
 - Result: passed.
-- Benchmark: pending a fresh 50/10 `ecaz bench suite` run from this head.
+- Suite attempt: `artifacts/suite-attempt.md`; no measurement result is claimed because the corrected runtime stalled before emitting topology output.

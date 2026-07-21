@@ -16,4 +16,5 @@ sideband columns to physical expansion responses. The coordinator now records
 owner service and straggler spread separately; transport wait is measured as
 the post-service remainder. PG18 feature-gated compilation passes. A fresh
 50/10 `ecaz bench suite` run from this post-rework head is still required
-before candidate selection or disposition.
+before candidate selection or disposition. The corrected runtime attempt was
+stopped after a host-disk checkpoint stall; see `artifacts/suite-attempt.md`.
