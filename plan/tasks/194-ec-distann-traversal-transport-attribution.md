@@ -1,6 +1,6 @@
 # Task 194: ec_distann Traversal Transport Attribution and One Candidate
 
-Status: **complete — STOP, no candidate** (2026-07-21). Priority: P2. Inherits Task 187's
+Status: **in progress — reopened by review** (2026-07-21). Priority: P2. Inherits Task 187's
 complete nine-way Phase 1 contract. Roadmap candidates: `TRAV-01` (active
 prerequisite), then at most one of the families Task 187 listed.
 
@@ -63,16 +63,11 @@ decode/repeat-read dominates. Do not choose before the counters say.
 
 ## Phases and evidence
 
-1. Counter slice: traversal hop/batch/request/response/frontier/repeat work
-   counters landed behind the measurement feature, together with coordinator
-   partition/request encode, owner graph-read/scoring, transport wait,
-   coordinator decode, and frontier-insert timers. The fresh 100k run measured
-   8.523928 ms traversal in a 22.0 ms warm mean; remote wait was 6.870773 ms,
-   local expansion 1.521645 ms, and owner graph read/scoring 0.914054/0.057480
-   ms. No candidate passed the causal gate.
+1. Counter slice: feature-gated traversal work counters and the nine non-overlapping
+   attribution components above, including owner-side service and transport/straggler
+   derivation, must be landed and reviewed before disposition.
 2. Attribution run at 100k on a byte-identical fresh generation via a
-   checked-in `ecaz bench suite` config; the packet publishes the emitted
-   timer/work rows and records the stale-parser tooling mismatch.
+   checked-in `ecaz bench suite` config with complete provenance and the 50/10 protocol.
 3. At most one pre-registered candidate, isolated paired A/B at 100k; then
    the standard 10k/50k/100k recall + latency + storage matrix if
    end-to-end useful.

@@ -2357,10 +2357,6 @@ impl PhysicalMultiOwnerExpander<'_> {
                 super::stage_counters::DistannQueryStage::RemoteExpand,
                 remote_started.elapsed(),
             );
-            super::stage_counters::record(
-                super::stage_counters::DistannQueryStage::TraversalTransportWait,
-                remote_started.elapsed(),
-            );
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let decode_started = Instant::now();
@@ -2582,6 +2578,8 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                     heap_tid: node.heap_tid,
                     neighbor_vec_ids: node.neighbor_vec_ids[..count].to_vec(),
                     neighbor_code_dists: neighbor_dists,
+                    owner_total_ns: 0,
+                    owner_open_validate_ns: 0,
                 })
             })
             .collect()

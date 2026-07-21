@@ -1,6 +1,6 @@
 # Task 193: ec_distann Owner Payload Batch Fetch
 
-Status: **complete — STOP, batching already present** (2026-07-21).
+Status: **in progress — reopened by review** (2026-07-21).
 Priority: P2. Roadmap candidates: `MAT-19`, `MAT-23`, `MAT-24` (pick one).
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.

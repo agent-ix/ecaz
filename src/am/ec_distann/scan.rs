@@ -44,6 +44,10 @@ pub(crate) struct DistannExpandedNode {
     /// Code-approximated `-ip` per neighbor, index-aligned with
     /// `neighbor_vec_ids` (embedded-code scoring, FR-076).
     pub(crate) neighbor_code_dists: Vec<f32>,
+    /// Owner-side timing returned by the physical expansion endpoint. Zero
+    /// for coordinator-local expansions and test doubles.
+    pub(crate) owner_total_ns: i64,
+    pub(crate) owner_open_validate_ns: i64,
 }
 
 /// The frozen local/remote expansion seam (FR-079 shape; see module docs).

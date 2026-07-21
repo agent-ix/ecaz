@@ -33,13 +33,15 @@ pub(crate) enum DistannQueryStage {
     TraversalRequestEncode,
     TraversalOwnerGraphRead,
     TraversalOwnerScore,
+    TraversalOwnerService,
     TraversalTransportWait,
+    TraversalStragglerSpread,
     TraversalCoordinatorDecode,
     TraversalFrontierInsert,
 }
 
 impl DistannQueryStage {
-    pub(crate) const ALL: [Self; 28] = [
+    pub(crate) const ALL: [Self; 30] = [
         Self::QueryPrep,
         Self::HeadScore,
         Self::SeedSelect,
@@ -65,7 +67,9 @@ impl DistannQueryStage {
         Self::TraversalRequestEncode,
         Self::TraversalOwnerGraphRead,
         Self::TraversalOwnerScore,
+        Self::TraversalOwnerService,
         Self::TraversalTransportWait,
+        Self::TraversalStragglerSpread,
         Self::TraversalCoordinatorDecode,
         Self::TraversalFrontierInsert,
     ];
@@ -97,7 +101,9 @@ impl DistannQueryStage {
             Self::TraversalRequestEncode => "traversal_request_encode",
             Self::TraversalOwnerGraphRead => "traversal_owner_graph_read",
             Self::TraversalOwnerScore => "traversal_owner_score",
+            Self::TraversalOwnerService => "traversal_owner_service",
             Self::TraversalTransportWait => "traversal_transport_wait",
+            Self::TraversalStragglerSpread => "traversal_straggler_spread",
             Self::TraversalCoordinatorDecode => "traversal_coordinator_decode",
             Self::TraversalFrontierInsert => "traversal_frontier_insert",
         }
@@ -130,9 +136,11 @@ impl DistannQueryStage {
             Self::TraversalRequestEncode => 22,
             Self::TraversalOwnerGraphRead => 23,
             Self::TraversalOwnerScore => 24,
-            Self::TraversalTransportWait => 25,
-            Self::TraversalCoordinatorDecode => 26,
-            Self::TraversalFrontierInsert => 27,
+            Self::TraversalOwnerService => 25,
+            Self::TraversalTransportWait => 26,
+            Self::TraversalStragglerSpread => 27,
+            Self::TraversalCoordinatorDecode => 28,
+            Self::TraversalFrontierInsert => 29,
         }
     }
 }

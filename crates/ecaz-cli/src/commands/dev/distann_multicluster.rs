@@ -1988,9 +1988,9 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
                 .collect::<Vec<_>>();
-            if stage_rows.len() != 28 {
+            if stage_rows.len() != 30 {
                 bail!(
-                    "physical latency attribution expected 28 ec_distann stage rows, got {}",
+                    "physical latency attribution expected 30 ec_distann stage rows, got {}",
                     stage_rows.len()
                 );
             }

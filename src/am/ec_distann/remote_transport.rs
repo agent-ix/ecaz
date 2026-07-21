@@ -560,7 +560,7 @@ const PHYSICAL_SEED_SQL: &str = "SELECT vec_id, code_dist
        $1::text::regclass, $2::bytea, $3::real[], $4::integer)";
 
 const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
-        neighbor_vec_ids, neighbor_code_dists
+        neighbor_vec_ids, neighbor_code_dists, owner_total_ns, owner_open_validate_ns
    FROM ec_distann_expand_nodes(
        $1::text::regclass, $2::bytea, $3::real[],
        $4::bytea, $5::bigint[], $6::real)";
@@ -720,7 +720,33 @@ pub(crate) fn remote_physical_expand_batch(
                     &wire_ids[index],
                 )
             });
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let wait_started = std::time::Instant::now();
             let results = join_owner_futures(futures).await;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            {
+                let owner_totals = results
+                    .iter()
+                    .filter_map(|result| result.as_ref().ok())
+                    .filter_map(|nodes| nodes.first().map(|node| node.owner_total_ns.max(0)))
+                    .collect::<Vec<_>>();
+                if let (Some(min), Some(max)) = (owner_totals.iter().min(), owner_totals.iter().max()) {
+                    super::stage_counters::record(
+                        super::stage_counters::DistannQueryStage::TraversalOwnerService,
+                        Duration::from_nanos(u64::try_from(*max).unwrap_or(u64::MAX)),
+                    );
+                    super::stage_counters::record(
+                        super::stage_counters::DistannQueryStage::TraversalStragglerSpread,
+                        Duration::from_nanos(u64::try_from((*max - *min).max(0)).unwrap_or(u64::MAX)),
+                    );
+                    super::stage_counters::record(
+                        super::stage_counters::DistannQueryStage::TraversalTransportWait,
+                        wait_started.elapsed().saturating_sub(Duration::from_nanos(
+                            u64::try_from(*max).unwrap_or(u64::MAX),
+                        )),
+                    );
+                }
+            }
             for (index, result) in results.iter().enumerate() {
                 if result.is_ok() {
                     connections
@@ -762,6 +788,8 @@ async fn run_one_physical_expand(
             let is_tombstone: bool = row.try_get(2).map_err(row_err)?;
             let neighbor_vec_ids: Vec<i64> = row.try_get(3).map_err(row_err)?;
             let neighbor_code_dists: Vec<f32> = row.try_get(4).map_err(row_err)?;
+            let owner_total_ns: i64 = row.try_get(5).map_err(row_err)?;
+            let owner_open_validate_ns: i64 = row.try_get(6).map_err(row_err)?;
             Ok(DistannExpandedNode {
                 vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
                 exact_dist,
@@ -772,6 +800,8 @@ async fn run_one_physical_expand(
                     .map(|id| u64::from_le_bytes(id.to_le_bytes()))
                     .collect(),
                 neighbor_code_dists,
+                owner_total_ns,
+                owner_open_validate_ns,
             })
         })
         .collect()
@@ -1531,6 +1561,8 @@ async fn run_one_remote(
                 heap_tid: ItemPointer::INVALID,
                 neighbor_vec_ids: neighbor_vec_ids.into_iter().map(|v| v as u64).collect(),
                 neighbor_code_dists,
+                owner_total_ns: 0,
+                owner_open_validate_ns: 0,
             })
         })
         .collect::<Result<Vec<_>, DistannExpandError>>()

@@ -138,6 +138,8 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
                 heap_tid,
                 neighbor_vec_ids,
                 neighbor_code_dists,
+                owner_total_ns: 0,
+                owner_open_validate_ns: 0,
             });
         }
 
