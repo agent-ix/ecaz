@@ -1,6 +1,6 @@
 # Task 192: ec_distann Owner Endpoint Validation Amortization
 
-Status: **proposed** (2026-07-21). Priority: P1 latency follow-up to
+Status: **in progress** (2026-07-21). Priority: P1 latency follow-up to
 Task 187's STOP. Roadmap candidates: `MAT-37` and `MAT-38` (their
 "catalog/open share" trigger is now measured — see Entry gate).
 

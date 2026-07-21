@@ -1,6 +1,6 @@
 # Task 193: ec_distann Owner Payload Batch Fetch
 
-Status: **proposed, sequenced after Task 192's disposition** (2026-07-21).
+Status: **complete — STOP, batching already present** (2026-07-21).
 Priority: P2. Roadmap candidates: `MAT-19`, `MAT-23`, `MAT-24` (pick one).
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
@@ -29,6 +29,13 @@ pre-registration:
 Target the 8.34 ms/scan payload SQL component. Rank order, result identity,
 tombstone/visibility handling, and the lazy10 window contract (FR-079,
 ADR-085 D12, NFR-019 bounds including the `t`-skip qualifier) are unchanged.
+
+## Decision
+
+The proposed MAT-23/MAT-24 behavior is already implemented: one owner-window
+request carries an array of TIDs and one `unnest ... WITH ORDINALITY` SQL query
+returns rows in request order. No duplicate candidate is advanced. MAT-19
+prepared-plan caching remains a separate future experiment.
 
 ## Entry gate
 
