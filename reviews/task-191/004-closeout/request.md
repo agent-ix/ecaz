@@ -3,7 +3,7 @@ task: 191
 packet: 004-closeout
 role: coder
 status: review_requested
-head_sha: c8e77022e0939735431d4362babe759ff07aebc9
+head_sha: 0cd579da4e70d5656160f1d4d3501f1d22087568
 date: 2026-07-20
 decision: complete
 ---
@@ -59,9 +59,13 @@ seed, and query digests required to reproduce the baseline.
 
 ## Feedback disposition
 
-The coder inbox was refreshed after packets 002 and 003. No Task 191 feedback
-file exists as of this closeout, so there are no findings to disposition. The
-review requests remain available for outside review; this packet does not
+The outside review accepted packets 001–004 and identified one P2 precision
+finding: the no-qual payload bound omitted tombstone or snapshot-invisible
+ranked slots. Commit `0cd579da4` corrects NFR-019, ADR-085, the test matrix,
+and packet 001 to state the no-skip bound and the `t`-skip bound
+`min(D, W × ceil((k+t)/W))`. This is specification-only; the accepted
+benchmark and semantic evidence remain valid and require no rerun.
+The review requests remain available for outside review; this packet does not
 self-close them.
 
 Evidence and exact commands are indexed by

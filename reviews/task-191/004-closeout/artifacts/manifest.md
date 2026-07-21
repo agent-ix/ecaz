@@ -3,7 +3,7 @@
 - Task bucket: `reviews/task-191/`
 - Packet: `reviews/task-191/004-closeout/`
 - Closeout HEAD before packet commit:
-  `c8e77022e0939735431d4362babe759ff07aebc9`
+  `0cd579da4e70d5656160f1d4d3501f1d22087568`
 - Timestamp: 2026-07-20 PDT
 - Host/lane: Intel local, PG18 release, three loopback PostgreSQL owners
 - Fixture: staged `ec_real_10k`

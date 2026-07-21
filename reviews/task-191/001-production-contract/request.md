@@ -21,7 +21,9 @@ This packet replaces NFR-019's unsatisfiable unconditional `payload reads <= k`
 claim. With `W = 10` and the scan-start ceiling
 `D = max(initial_search_bar × 64, 1024)`:
 
-- unqualified reads are at most `min(D, W × ceil(k/W))`;
+- unqualified reads with no tombstone or snapshot-visibility skips are at most
+  `min(D, W × ceil(k/W))`; with `t` such skipped ranked slots, the bound is
+  `min(D, W × ceil((k+t)/W))`;
 - qual-driven reads are at most `D`; and
 - a stable-prefix remote vec_id is not re-requested solely because search
   deepening rebuilt the ranked outputs.
