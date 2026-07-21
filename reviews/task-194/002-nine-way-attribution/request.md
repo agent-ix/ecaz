@@ -12,6 +12,7 @@ seq: 1
 The feature-gated counter slice is implemented and the PG18 library and CLI
 compile checks pass. It adds traversal work rows and coordinator partition,
 request encode, owner graph-read/scoring, transport wait, coordinator decode,
-and frontier-insert timers. The physical fixture runner did not produce a
-completed fresh result artifact, so no numerical nine-way attribution is
-claimed and no candidate is selected.
+and frontier-insert timers. The physical fixture completed topology, serving,
+recall, and latency; the stale CLI rejected the new 28-row schema after
+emitting the measurements. The compact artifact records the numerical
+attribution. Remote wait remains dominant and no candidate is selected.

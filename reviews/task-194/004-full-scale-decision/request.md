@@ -9,7 +9,6 @@ seq: 1
 
 # Task 194 full-scale decision
 
-STOP, no candidate. The instrumentation slice is retained for a future host
-run, but no production behavior or traversal candidate is promoted. The next
-follow-up must run the standard physical suite with the new counters before
-selecting one candidate.
+STOP, no candidate. The fresh 100k attribution is retained, but no production
+behavior or traversal candidate is promoted. The next follow-up may evaluate
+one transport candidate using the standard 10k/50k/100k suite.

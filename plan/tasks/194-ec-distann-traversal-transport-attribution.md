@@ -66,11 +66,13 @@ decode/repeat-read dominates. Do not choose before the counters say.
 1. Counter slice: traversal hop/batch/request/response/frontier/repeat work
    counters landed behind the measurement feature, together with coordinator
    partition/request encode, owner graph-read/scoring, transport wait,
-   coordinator decode, and frontier-insert timers. Candidate selection still
-   requires a fresh attribution run and reconciliation review.
+   coordinator decode, and frontier-insert timers. The fresh 100k run measured
+   8.523928 ms traversal in a 22.0 ms warm mean; remote wait was 6.870773 ms,
+   local expansion 1.521645 ms, and owner graph read/scoring 0.914054/0.057480
+   ms. No candidate passed the causal gate.
 2. Attribution run at 100k on a byte-identical fresh generation via a
-   checked-in `ecaz bench suite` config; nine non-overlapping components
-   published.
+   checked-in `ecaz bench suite` config; the packet publishes the emitted
+   timer/work rows and records the stale-parser tooling mismatch.
 3. At most one pre-registered candidate, isolated paired A/B at 100k; then
    the standard 10k/50k/100k recall + latency + storage matrix if
    end-to-end useful.

@@ -2,5 +2,6 @@
 
 - Decision: STOP, no candidate.
 - Production behavior changed: no.
-- Numerical baseline: Task 187 packet 001.
-- Required next step: fresh physical nine-way attribution run.
+- Numerical evidence: Task 194 packet 002 fresh 100k attribution.
+- Required next step: one isolated transport candidate, if stakeholder wants
+  to pursue the measured remote-wait dominance.
