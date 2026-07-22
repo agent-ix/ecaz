@@ -379,7 +379,7 @@ struct CachedRetainedEpoch {
     generation: GenerationCatalogRow,
     source_attnum: i32,
     code_len: usize,
-    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
     row_schema: Arc<super::row_schema::ResolvedRowSchema>,
 }
 
@@ -466,9 +466,11 @@ fn cache_retained_epoch(entry: CachedRetainedEpoch) {
     }
     RETAINED_EPOCH_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        cache.retain(|candidate| {
-            candidate.index_oid != entry.index_oid || candidate.fingerprint != entry.fingerprint
-        });
+        // One backend may serve several physical indexes, but observing a new
+        // fingerprint for one index is an epoch transition for that endpoint.
+        // Discard the predecessor entry immediately instead of retaining two
+        // same-index schema snapshots until the global LRU cap is reached.
+        cache.retain(|candidate| candidate.index_oid != entry.index_oid);
         while cache.len() >= RETAINED_EPOCH_CACHE_CAPACITY {
             cache.pop_front();
         }
@@ -632,7 +634,7 @@ struct RetainedGenerationScan {
     graph_relation_name: String,
     source_attnum: i32,
     code_len: usize,
-    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
     row_schema: Arc<super::row_schema::ResolvedRowSchema>,
 }
 
@@ -701,7 +703,7 @@ impl RetainedGenerationScan {
             let code_len = binding
                 .code_len(usize::from(descriptor.dimensions))
                 .map_err(DistannExpandError::GenerationMissing)?;
-            #[cfg(feature = "distann-head-attribution-benchmark")]
+            #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
             let row_schema = Arc::new(
                 super::row_schema::resolve_relation_schema(generation.row_tier_relid)
                     .map_err(DistannExpandError::GenerationMissing)?,
@@ -713,7 +715,7 @@ impl RetainedGenerationScan {
                 generation,
                 source_attnum,
                 code_len,
-                #[cfg(feature = "distann-head-attribution-benchmark")]
+                #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
                 row_schema,
             };
             cache_retained_epoch(cached.clone());
@@ -724,7 +726,7 @@ impl RetainedGenerationScan {
             generation,
             source_attnum,
             code_len,
-            #[cfg(feature = "distann-head-attribution-benchmark")]
+            #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
             row_schema,
             ..
         } = cached;
@@ -763,7 +765,7 @@ impl RetainedGenerationScan {
             graph_relation_name,
             source_attnum,
             code_len,
-            #[cfg(feature = "distann-head-attribution-benchmark")]
+            #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
             row_schema,
         })
     }
@@ -961,9 +963,9 @@ impl RetainedGenerationScan {
                 expected_schema_fingerprint.len()
             ))
         })?;
-        #[cfg(feature = "distann-head-attribution-benchmark")]
+        #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
         let live_schema;
-        #[cfg(feature = "distann-head-attribution-benchmark")]
+        #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
         let resolved_schema = if use_cached_schema {
             self.row_schema.as_ref()
         } else {
@@ -972,7 +974,7 @@ impl RetainedGenerationScan {
                     .map_err(DistannExpandError::GenerationMissing)?;
             &live_schema
         };
-        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+        #[cfg(not(any(feature = "distann-head-attribution-benchmark", feature = "pg_test")))]
         let resolved_schema = {
             let _ = use_cached_schema;
             super::row_schema::resolve_relation_schema(self.generation.row_tier_relid)
@@ -1139,6 +1141,45 @@ impl RetainedGenerationScan {
             },
         })
     }
+}
+
+/// PG18 lifecycle-test surface for Task 192. This takes the exact production
+/// retained-generation lookup and payload-schema validation path while forcing
+/// the benchmark candidate's cached-schema arm. It is absent from extension
+/// builds that do not enable `pg_test`.
+#[cfg(feature = "pg_test")]
+#[pg_extern]
+fn ec_distann_debug_validate_cached_row_schema(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+) -> bool {
+    let store = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .unwrap_or_else(|error| error.raise());
+    let expected = store
+        .descriptor
+        .row_schema
+        .fingerprint()
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    store
+        .materialize_payloads(&[], &[], &expected, true)
+        .unwrap_or_else(|error| error.raise());
+    true
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern]
+fn ec_distann_debug_retained_epoch_cache_contains(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+) -> bool {
+    let Ok(fingerprint) = <[u8; 34]>::try_from(epoch_fingerprint) else {
+        return false;
+    };
+    RETAINED_EPOCH_CACHE.with(|cache| {
+        cache.borrow().iter().any(|entry| {
+            entry.index_oid == index_regclass.oid() && entry.fingerprint == fingerprint
+        })
+    })
 }
 
 type PhysicalExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
