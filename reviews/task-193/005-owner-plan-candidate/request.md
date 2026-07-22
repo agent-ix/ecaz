@@ -36,5 +36,18 @@ pre-registered usefulness gate and therefore cannot be promoted, the decision
 rerun omits those promotion-only drills and records the baseline failure as a
 separate follow-up rather than expanding this candidate's scope.
 
+## Decision: STOP
+
+The successful decision rerun completed at 100k with no failed, missing, or
+stale artifacts. Prepared-plan reuse preserved recall (`0.9625/0.9625`) and
+storage (`2,496,659,456` bytes both), but moved warm mean only
+`23.60 -> 23.50 ms` and p95 `26.80 -> 26.40 ms`. The intended stage moved
+only `8.746651 -> 8.599735 ms/scan` (0.147 ms, 1.7%).
+
+This fails the pre-registered usefulness gate, so MAT-19/MAT-20 do not advance
+to full scale or productionization. MAT-23/MAT-24 remain the already-existing
+production batching mechanism. Task 196 owns the independent cache-off lazy10
+duplicate follow-up.
+
 Implementation: `e444f6474`.
 Evidence metadata and the checked-in suite are in `artifacts/manifest.md`.
