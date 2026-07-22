@@ -1,6 +1,6 @@
 # Task 195: ec_distann Owner Schema Cache Productionization
 
-Status: **proposed** (2026-07-21). Priority: P1. Promotes Task 192's measured
+Status: **in progress** (2026-07-22). Priority: P1. Promotes Task 192's measured
 `MAT-37`/`MAT-38` winner without carrying benchmark controls into production.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.

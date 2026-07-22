@@ -1,0 +1,12 @@
+Script started on 2026-07-22 08:57:13-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/main.rs (target/debug/deps/ecaz-bd2d3290bf0a881d)
+
+running 2 tests
+test commands::dev::distann_multicluster::tests::owner_plan_and_fixed_work_variant_controls_are_explicit ... ok
+test commands::bench::suite::tests::distann_owner_plan_and_fixed_work_variants_are_suite_addressable ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 452 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-22 08:57:13-07:00 [COMMAND_EXIT_CODE="0"]
