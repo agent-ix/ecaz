@@ -1241,6 +1241,67 @@ fn ec_distann_expand_physical_nodes_cached(
     TableIterator::new(rows.into_iter())
 }
 
+/// Task 194 benchmark-only physical-generation endpoint.  The production
+/// transport uses the cached-query overload above; this sibling preserves its
+/// row contract while returning owner-side service timing as response
+/// sideband.  Keeping the profile endpoint separate avoids changing the
+/// production SQL ABI when the attribution feature is disabled.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_expand_physical_nodes_profile(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    query: Vec<f32>,
+    query_digest: Vec<u8>,
+    vec_ids: Vec<i64>,
+    code_threshold: default!(Option<f32>, "NULL"),
+) -> TableIterator<
+    'static,
+    (
+        name!(vec_id, i64),
+        name!(exact_dist, Option<f32>),
+        name!(is_tombstone, bool),
+        name!(neighbor_vec_ids, Vec<i64>),
+        name!(neighbor_code_dists, Vec<f32>),
+        name!(owner_total_ns, i64),
+        name!(owner_open_validate_ns, i64),
+    ),
+> {
+    let owner_started = Instant::now();
+    let (query, query_digest) =
+        resolve_cached_physical_query(query, query_digest).unwrap_or_else(|error| error.raise());
+    let ids = vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let open_started = Instant::now();
+    let store = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .unwrap_or_else(|error| error.raise());
+    let owner_open_validate_ns = duration_ns(open_started.elapsed());
+    let expanded = store
+        .expand(&query, query_digest, &ids, code_threshold)
+        .unwrap_or_else(|error| error.raise());
+    let owner_total_ns = duration_ns(owner_started.elapsed());
+    let owner_total_ns = i64::try_from(owner_total_ns).unwrap_or(i64::MAX);
+    let owner_open_validate_ns =
+        i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
+    TableIterator::new(expanded.into_iter().map(move |node| {
+        (
+            i64::from_le_bytes(node.vec_id.to_le_bytes()),
+            node.exact_dist,
+            node.is_tombstone,
+            node.neighbor_vec_ids
+                .into_iter()
+                .map(|id| i64::from_le_bytes(id.to_le_bytes()))
+                .collect(),
+            node.neighbor_code_dists,
+            owner_total_ns,
+            owner_open_validate_ns,
+        )
+    }))
+}
+
 /// Task 179 benchmark-only control endpoint. This is absent from normal
 /// production builds; the opt-in feature restores the removed owner-wide O(N)
 /// seed scan so persisted-head seeding can be measured on otherwise-current

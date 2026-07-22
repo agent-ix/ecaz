@@ -559,9 +559,17 @@ const PHYSICAL_SEED_SQL: &str = "SELECT vec_id, code_dist
    FROM ec_distann_physical_seed_candidates_benchmark(
        $1::text::regclass, $2::bytea, $3::real[], $4::integer)";
 
+#[cfg(not(feature = "distann-head-attribution-benchmark"))]
+const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
+        neighbor_vec_ids, neighbor_code_dists
+   FROM ec_distann_expand_nodes(
+       $1::text::regclass, $2::bytea, $3::real[],
+       $4::bytea, $5::bigint[], $6::real)";
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
         neighbor_vec_ids, neighbor_code_dists, owner_total_ns, owner_open_validate_ns
-   FROM ec_distann_expand_nodes(
+   FROM ec_distann_expand_physical_nodes_profile(
        $1::text::regclass, $2::bytea, $3::real[],
        $4::bytea, $5::bigint[], $6::real)";
 
