@@ -1,0 +1,11 @@
+task=196
+extension_sha=62820fc767f361e922298b5ed37d2382f9741e36
+profile=release
+features=pg18,distann-head-attribution-benchmark
+target=target/release/libecaz.so
+installed=/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+target_size=24269976
+installed_size=24269976
+target_sha256=b1ac1ac221c25a888e59e6cfec2ea3132ac83e65fafe3cd5d6e30304c4887e3a
+installed_sha256=b1ac1ac221c25a888e59e6cfec2ea3132ac83e65fafe3cd5d6e30304c4887e3a
+identity=match
