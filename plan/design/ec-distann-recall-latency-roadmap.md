@@ -97,11 +97,11 @@ validity requirements.
 | 190 | Architectural escalation | only if narrower tasks leave a material gap | reviewed architecture decision and follow-up, not a bundled rewrite |
 | 191 | Lazy payload productionization | complete — PROMOTE | production lazy10; release A/B and feature isolation passed |
 | 192 | Owner endpoint validation amortization | complete — PROMOTE | measured generation-keyed row-schema cache; productionization in Task 195 |
-| 193 | Owner payload batch fetch | after Task 192 disposition (attribution sequencing only) | at most one batched-fetch candidate (MAT-19/23/24) |
-| 194 | Traversal transport attribution | counters immediately; candidate after Tasks 192/193 dispositions | nine-way TRAV-01 counters, then at most one traversal candidate |
+| 193 | Owner payload batch fetch | complete — STOP | prepared-plan candidate was not useful end to end; Task 196 owns independent duplicate follow-up |
+| 194 | Traversal transport attribution | complete — STOP | reconciled nine-way TRAV-01 counters; fixed-work wider/fewer-round candidate was not useful end to end |
 | 195 | Owner schema cache productionization | Task 192 PROMOTE complete | normal release path, benchmark selector removed, release A/B |
 
-Tasks 184, 191, 187, and 192 are complete. Task 192 promoted its bounded
+Tasks 184, 191, 187, and 192--194 are complete. Task 192 promoted its bounded
 generation-keyed row-schema cache after identical recall/storage and warm mean
 wins of 21.9% / 15.7% / 16.9% at 10k / 50k / 100k; Task 195 owns the normal
 release change. Task 187 closed STOP on a fresh
@@ -220,7 +220,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 
 | ID | Candidate | Status / trigger |
 | --- | --- | --- |
-| TRAV-01 | Split owner execution, transport, decode, frontier, and graph-read timers | **active Task 194**; Task 187 delivered only the 3-way split and closed STOP |
+| TRAV-01 | Split owner execution, transport, decode, frontier, and graph-read timers | **complete Task 194 packet 008**; 34 stage / 26 work rows, remote/traversal reconciliation errors 1.17% / 1.32% |
 | TRAV-02 | Coordinator cache of immutable decoded graph records | conditional on repeat-read evidence |
 | TRAV-03 | Bounded per-generation remote-node cache | conditional on TRAV-02 |
 | TRAV-04 | Owner cache of decoded graph pages/nodes | conditional on owner decode share |

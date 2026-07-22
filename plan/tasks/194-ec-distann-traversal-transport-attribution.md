@@ -1,8 +1,8 @@
 # Task 194: ec_distann Traversal Transport Attribution and One Candidate
 
-Status: **in progress — reopened by completion audit** (2026-07-22). Priority: P2. Inherits Task 187's
-complete nine-way Phase 1 contract. Roadmap candidates: `TRAV-01` (active
-prerequisite), then at most one of the families Task 187 listed.
+Status: **complete — STOP** (2026-07-22). Priority: P2. Inherits Task 187's
+complete nine-way Phase 1 contract. Roadmap candidates: `TRAV-01` (complete),
+then at most one of the families Task 187 listed.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 
@@ -54,12 +54,20 @@ decode/repeat-read dominates. Do not choose before the counters say.
 
 ## Outcome
 
-The completed nine-way release attribution selected one isolated fixed-work
-candidate. At 100k, BW=8/H=50 improved recall and reduced hops, traversal, and
-transport wait versus BW=4/H=100, but warm mean moved only
-`24.30 -> 24.20 ms` and p95 regressed `27.80 -> 28.30 ms` as expanded nodes
-and straggler spread rose. TRAV-14/TRAV-15 therefore STOP without full-scale
-or productionization. Packet 007 is the decision evidence.
+The completion-audit release run delivered all 34 stage rows and 26 work rows
+and passed both automatic reconciliation gates: remote expansion decomposed
+within 1.17% and traversal total within 1.32%. At 100k, remote expansion was
+7.429 ms/scan: owner service 2.259 ms, transport wait 5.013 ms, and only 0.071
+ms combined connection/request-encode/client-decode work. Ten sequential
+rounds, zero repeated nodes, and the dominant transport remainder confirm the
+fixed-work wider/fewer-round family selected before the audit.
+
+Packet 007's paired A/B remains the candidate decision: BW=8/H=50 improved
+recall and reduced hops, traversal, and transport wait versus BW=4/H=100, but
+warm mean moved only `24.30 -> 24.20 ms` and p95 regressed
+`27.80 -> 28.30 ms` as expanded nodes and straggler spread rose.
+TRAV-14/TRAV-15 therefore STOP without full-scale or productionization.
+Packets 007 and 008 are the final decision and corrected-attribution evidence.
 
 ## Completion-audit reopening
 
@@ -69,9 +77,9 @@ the `traversal_owner_graph_read` / `traversal_owner_score` rows still measured
 coordinator-local expansion. Connection/prepared-state work, query-cache
 hits, request/response bytes, remote response encoding, and client receive
 decode were also absent, so the explicit nine-way Phase 1 contract was not
-complete. Packet 008 adds those feature-gated boundaries and an automatic
-remote/traversal reconciliation gate. A fresh canonical release run is
-required before the candidate disposition can be accepted or revised.
+complete. Packet 008 added those feature-gated boundaries and an automatic
+remote/traversal reconciliation gate. Its fresh canonical release run passed
+both gates and accepted packet 007's candidate disposition unchanged.
 
 ## Constraints
 
