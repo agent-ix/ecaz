@@ -1,6 +1,6 @@
 # Task 194: ec_distann Traversal Transport Attribution and One Candidate
 
-Status: **complete — STOP** (2026-07-21). Priority: P2. Inherits Task 187's
+Status: **in progress — reopened by completion audit** (2026-07-22). Priority: P2. Inherits Task 187's
 complete nine-way Phase 1 contract. Roadmap candidates: `TRAV-01` (active
 prerequisite), then at most one of the families Task 187 listed.
 
@@ -60,6 +60,18 @@ transport wait versus BW=4/H=100, but warm mean moved only
 `24.30 -> 24.20 ms` and p95 regressed `27.80 -> 28.30 ms` as expanded nodes
 and straggler spread rose. TRAV-14/TRAV-15 therefore STOP without full-scale
 or productionization. Packet 007 is the decision evidence.
+
+## Completion-audit reopening
+
+Packet 007's candidate result remains valid, but the task disposition was
+premature: the canonical run returned remote owner total service only, while
+the `traversal_owner_graph_read` / `traversal_owner_score` rows still measured
+coordinator-local expansion. Connection/prepared-state work, query-cache
+hits, request/response bytes, remote response encoding, and client receive
+decode were also absent, so the explicit nine-way Phase 1 contract was not
+complete. Packet 008 adds those feature-gated boundaries and an automatic
+remote/traversal reconciliation gate. A fresh canonical release run is
+required before the candidate disposition can be accepted or revised.
 
 ## Constraints
 
