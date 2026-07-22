@@ -1,6 +1,6 @@
 # Task 194: ec_distann Traversal Transport Attribution and One Candidate
 
-Status: **in progress — reopened by review** (2026-07-21). Priority: P2. Inherits Task 187's
+Status: **complete — STOP** (2026-07-21). Priority: P2. Inherits Task 187's
 complete nine-way Phase 1 contract. Roadmap candidates: `TRAV-01` (active
 prerequisite), then at most one of the families Task 187 listed.
 
@@ -51,6 +51,15 @@ decode/repeat-read dominates. Do not choose before the counters say.
 - The attribution run and any candidate A/B wait until Tasks 192/193 have
   recorded dispositions, so the traversal baseline is the then-current
   production binary and no two changes share an A/B window.
+
+## Outcome
+
+The completed nine-way release attribution selected one isolated fixed-work
+candidate. At 100k, BW=8/H=50 improved recall and reduced hops, traversal, and
+transport wait versus BW=4/H=100, but warm mean moved only
+`24.30 -> 24.20 ms` and p95 regressed `27.80 -> 28.30 ms` as expanded nodes
+and straggler spread rose. TRAV-14/TRAV-15 therefore STOP without full-scale
+or productionization. Packet 007 is the decision evidence.
 
 ## Constraints
 

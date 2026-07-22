@@ -233,8 +233,8 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-11 | Pipeline consecutive hop rounds | conditional on RTT/round dominance |
 | TRAV-12 | Bounded owner-local subsearch per RPC | conditional on hop-RTT dominance |
 | TRAV-13 | Baton-passing owner orchestration | deferred until ADR-085 RTT reopen trigger |
-| TRAV-14 | More nodes per round at fixed BW x H work | unmeasured |
-| TRAV-15 | Wider rounds with fewer hops | unmeasured |
+| TRAV-14 | More nodes per round at fixed BW x H work | measured STOP Task 194 packet 007: nodes 40.0→47.04; mean 24.30→24.20 ms; p95 regressed |
+| TRAV-15 | Wider rounds with fewer hops | measured STOP Task 194 packet 007: hops 10.0→5.88 and transport wait -0.744 ms, but no useful e2e win |
 | TRAV-16 | Confidence-based early termination for easy queries | conditional Task 188/187 |
 | TRAV-17 | Extra rounds for hard queries under a fixed maximum | conditional Task 188 |
 | TRAV-18 | Frontier-stability/score-gap adaptive work | conditional Task 188 |
