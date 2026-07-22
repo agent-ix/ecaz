@@ -1,6 +1,6 @@
 # Task 195: ec_distann Owner Schema Cache Productionization
 
-Status: **implementation complete — outside review requested** (2026-07-22).
+Status: **complete — outside-reviewed ACCEPT; PROMOTE** (2026-07-22).
 Priority: P1. Promotes Task 192's measured `MAT-37`/`MAT-38` winner without
 carrying benchmark controls into production.
 
@@ -61,8 +61,8 @@ production materialization work metrics. Warm mean latency improved from
 0.028 / 0.024 / 0.024 ms. Storage varied by at most three PostgreSQL pages
 (under 0.007%) across independent builds; the task changes no storage format.
 The final installed normal PG18 release binary has no attribution endpoint,
-removed selector, or neighboring benchmark controls. Merge awaits outside
-review of packets 001 and 002.
+removed selector, or neighboring benchmark controls. Outside review accepted
+packets 001 and 002 with no blockers and marked the task merge-ready.
 
 ## Required review packets
 
