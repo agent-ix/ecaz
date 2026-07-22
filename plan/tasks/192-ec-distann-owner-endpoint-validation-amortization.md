@@ -1,6 +1,6 @@
 # Task 192: ec_distann Owner Endpoint Validation Amortization
 
-Status: **in progress — reopened by review** (2026-07-21). Priority: P1 latency follow-up to
+Status: **complete — PROMOTE to Task 195** (2026-07-21). Priority: P1 latency follow-up to
 Task 187's STOP. Roadmap candidates: `MAT-37` and `MAT-38` (their
 "catalog/open share" trigger is now measured — see Entry gate).
 
@@ -91,6 +91,16 @@ every request and discard state on epoch change; it must not rely on epoch
 identity alone to cover an out-of-contract catalog mutation. The required A/A
 and cached-vs-uncached suite run will determine whether the remaining live
 validation is measurable before any disposition.
+
+## Outcome
+
+PROMOTE to Task 195. The feature-gated cache preserved exact recall and storage
+while reducing warm mean latency by 21.9% / 15.7% / 16.9% at 10k / 50k /
+100k. The targeted open/validate stage fell from 7.818 / 6.708 / 6.889 ms to
+0.026 / 0.023 / 0.024 ms. The real PG18 multi-epoch test proved successor
+replacement, retained-predecessor reads, reclaim eviction, and stale-generation
+failure. Packet `reviews/task-192/007-full-scale-decision/` records the matrix
+and decision; production remains unchanged until Task 195.
 
 ## Required review packets
 

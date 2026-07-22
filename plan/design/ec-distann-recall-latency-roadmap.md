@@ -96,11 +96,15 @@ validity requirements.
 | 189 | Hybrid codec/distance | only after same-seed evidence identifies a codec opportunity | at most one codec candidate |
 | 190 | Architectural escalation | only if narrower tasks leave a material gap | reviewed architecture decision and follow-up, not a bundled rewrite |
 | 191 | Lazy payload productionization | complete — PROMOTE | production lazy10; release A/B and feature isolation passed |
-| 192 | Owner endpoint validation amortization | executable now — open/validate share measured (MAT-37/MAT-38) | at most one owner-session caching candidate |
+| 192 | Owner endpoint validation amortization | complete — PROMOTE | measured generation-keyed row-schema cache; productionization in Task 195 |
 | 193 | Owner payload batch fetch | after Task 192 disposition (attribution sequencing only) | at most one batched-fetch candidate (MAT-19/23/24) |
 | 194 | Traversal transport attribution | counters immediately; candidate after Tasks 192/193 dispositions | nine-way TRAV-01 counters, then at most one traversal candidate |
+| 195 | Owner schema cache productionization | Task 192 PROMOTE complete | normal release path, benchmark selector removed, release A/B |
 
-Tasks 184, 191, and 187 are complete. Task 187 closed STOP on a fresh
+Tasks 184, 191, 187, and 192 are complete. Task 192 promoted its bounded
+generation-keyed row-schema cache after identical recall/storage and warm mean
+wins of 21.9% / 15.7% / 16.9% at 10k / 50k / 100k; Task 195 owns the normal
+release change. Task 187 closed STOP on a fresh
 byte-identical 100k generation: traversal 7.468 ms of a 22.40 ms warm mean
 (remote expansion 6.174 ms, local 1.230 ms, derived remainder 0.065 ms), with
 no per-owner traversal transport decomposition to attribute a candidate. Review
@@ -143,8 +147,8 @@ remain controls rather than new candidates.
 | MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | deferred after fixed-10 winner |
 | MAT-15 | Packed payload buffer with offsets and null bitmap | conditional on decode/copy share |
 | MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on wire/decode share |
-| MAT-17 | Cache resolved row schema per published generation | deferred; owner setup was not the selected target |
-| MAT-18 | Cache attnum-to-send-function resolution | deferred; owner setup was not the selected target |
+| MAT-17 | Cache resolved row schema per published generation | **measured winner Task 192; productionization Task 195** |
+| MAT-18 | Cache attnum-to-send-function resolution | included in Task 192's resolved immutable schema entry; productionization Task 195 |
 | MAT-19 | Cache the owner-side inner SPI plan | candidate pool Task 193; per-row payload SQL measured at ~1.26 ms/row |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | conditional on MAT-19 attribution |
 | MAT-21 | Replace textual `ctid` formatting with typed/binary locators | deferred after fixed-10 winner |
@@ -163,8 +167,8 @@ remain controls rather than new candidates.
 | MAT-34 | Streaming binary response instead of row/array results | deferred; protocol change |
 | MAT-35 | Combine final exact ranking and materialization in one owner endpoint | conditional on redundant owner work |
 | MAT-36 | Piggyback likely-winner payloads on final expansion | deferred; couples traversal and materialization |
-| MAT-37 | Cache safe frozen-generation lookup state owner-side | **active Task 192**; open/validate measured 6.722 ms/scan at 100k |
-| MAT-38 | Avoid repeated attested-generation validation on a hot connection | **active Task 192**; must preserve epoch fencing |
+| MAT-37 | Cache safe frozen-generation lookup state owner-side | **PROMOTE Task 195**; Task 192 reduced 100k warm mean 23.70 -> 19.70 ms |
+| MAT-38 | Avoid repeated attested-generation validation on a hot connection | **PROMOTE Task 195**; packet-006 epoch/reclaim fencing passed |
 | MAT-39 | Owner-side parallel heap fetch | conditional on owner CPU/IO dominance |
 | MAT-40 | Projection-shape payload cache/prepared portal | conditional on repeated projection shapes |
 
