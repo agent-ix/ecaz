@@ -1,0 +1,11 @@
+candidate_extension_sha=51e5d614501742cb9d5db4b6b7d39ebcfba5d7c0
+production_code_sha=65e746fc1a85f8efa8032a81aa2cc95b55c23503
+profile=release
+features=pg18,distann-head-attribution-benchmark
+target=/home/peter/dev/ecaz/.claude/worktrees/task-192-194/target/release/libecaz.so
+installed=/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+target_size=24269272
+installed_size=24269272
+target_sha256=ad4798a6e819aa8c7bfa6052ddae188cad90005c8be759b5b5932d6421490662
+installed_sha256=ad4798a6e819aa8c7bfa6052ddae188cad90005c8be759b5b5932d6421490662
+identity=match

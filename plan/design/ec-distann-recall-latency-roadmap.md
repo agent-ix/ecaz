@@ -99,14 +99,17 @@ validity requirements.
 | 192 | Owner endpoint validation amortization | complete — PROMOTE | measured generation-keyed row-schema cache; productionization in Task 195 |
 | 193 | Owner payload batch fetch | complete — STOP | prepared-plan candidate was not useful end to end; Task 196 owns independent duplicate follow-up |
 | 194 | Traversal transport attribution | complete — STOP | reconciled nine-way TRAV-01 counters; fixed-work wider/fewer-round candidate was not useful end to end |
-| 195 | Owner schema cache productionization | Task 192 PROMOTE complete | normal release path, benchmark selector removed, release A/B |
+| 195 | Owner schema cache productionization | implementation complete — outside review requested | exact recall; warm mean -8.33%/-13.28%/-18.11%; selector removed |
 | 196 | Lazy10 stable-prefix duplicate | proposed correctness follow-up | reproduce Task 193's cache-off duplicate request and fix only with attributed evidence |
 | 197 | Multinode release-profile preflight | proposed benchmark-integrity follow-up | fail before expensive self-hosted builds on debug/mixed extension provenance |
 
-Tasks 184, 191, 187, and 192--194 are complete. Task 192 promoted its bounded
-generation-keyed row-schema cache after identical recall/storage and warm mean
-wins of 21.9% / 15.7% / 16.9% at 10k / 50k / 100k; Task 195 owns the normal
-release change. Task 187 closed STOP on a fresh
+Tasks 184, 191, 187, and 192--194 are complete. Task 195's implementation and
+release matrix are complete and await outside review: exact recall held at all
+three scales while warm mean improved by 8.33% / 13.28% / 18.11%, and the
+normal release contains no benchmark selector or attribution surface. Task 192
+promoted its bounded generation-keyed row-schema cache after identical
+recall/storage and warm mean wins of 21.9% / 15.7% / 16.9% at 10k / 50k /
+100k; Task 195 owns the normal release change. Task 187 closed STOP on a fresh
 byte-identical 100k generation: traversal 7.468 ms of a 22.40 ms warm mean
 (remote expansion 6.174 ms, local 1.230 ms, derived remainder 0.065 ms), with
 no per-owner traversal transport decomposition to attribute a candidate. Review
@@ -149,8 +152,8 @@ remain controls rather than new candidates.
 | MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | deferred after fixed-10 winner |
 | MAT-15 | Packed payload buffer with offsets and null bitmap | conditional on decode/copy share |
 | MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on wire/decode share |
-| MAT-17 | Cache resolved row schema per published generation | **measured winner Task 192; productionization Task 195** |
-| MAT-18 | Cache attnum-to-send-function resolution | included in Task 192's resolved immutable schema entry; productionization Task 195 |
+| MAT-17 | Cache resolved row schema per published generation | **production candidate Task 195; exact-recall release A/B passed, outside review requested** |
+| MAT-18 | Cache attnum-to-send-function resolution | included in Task 195 production candidate; outside review requested |
 | MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
 | MAT-21 | Replace textual `ctid` formatting with typed/binary locators | deferred after fixed-10 winner |
@@ -169,8 +172,8 @@ remain controls rather than new candidates.
 | MAT-34 | Streaming binary response instead of row/array results | deferred; protocol change |
 | MAT-35 | Combine final exact ranking and materialization in one owner endpoint | conditional on redundant owner work |
 | MAT-36 | Piggyback likely-winner payloads on final expansion | deferred; couples traversal and materialization |
-| MAT-37 | Cache safe frozen-generation lookup state owner-side | **PROMOTE Task 195**; Task 192 reduced 100k warm mean 23.70 -> 19.70 ms |
-| MAT-38 | Avoid repeated attested-generation validation on a hot connection | **PROMOTE Task 195**; packet-006 epoch/reclaim fencing passed |
+| MAT-37 | Cache safe frozen-generation lookup state owner-side | **production candidate Task 195**; release A/B reduced 100k warm mean 24.30 -> 19.90 ms |
+| MAT-38 | Avoid repeated attested-generation validation on a hot connection | **production candidate Task 195**; epoch/reclaim fencing and release A/B passed |
 | MAT-39 | Owner-side parallel heap fetch | conditional on owner CPU/IO dominance |
 | MAT-40 | Projection-shape payload cache/prepared portal | conditional on repeated projection shapes |
 

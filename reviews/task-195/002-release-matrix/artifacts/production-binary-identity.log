@@ -1,0 +1,12 @@
+production_extension_sha=51e5d614501742cb9d5db4b6b7d39ebcfba5d7c0
+production_code_sha=65e746fc1a85f8efa8032a81aa2cc95b55c23503
+profile=release
+features=pg18
+attribution_instrumentation=false
+target=/home/peter/dev/ecaz/.claude/worktrees/task-192-194/target/release/libecaz.so
+installed=/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+target_size=23867056
+installed_size=23867056
+target_sha256=0967640b5c4aea2e43d5af2c4bb3a1d15d93f73ff6263bef79760cb16e1a8ceb
+installed_sha256=0967640b5c4aea2e43d5af2c4bb3a1d15d93f73ff6263bef79760cb16e1a8ceb
+identity=match

@@ -1,7 +1,8 @@
 # Task 195: ec_distann Owner Schema Cache Productionization
 
-Status: **in progress** (2026-07-22). Priority: P1. Promotes Task 192's measured
-`MAT-37`/`MAT-38` winner without carrying benchmark controls into production.
+Status: **implementation complete — outside review requested** (2026-07-22).
+Priority: P1. Promotes Task 192's measured `MAT-37`/`MAT-38` winner without
+carrying benchmark controls into production.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 
@@ -49,6 +50,19 @@ availability. Only the repeated live catalog reconstruction is amortized.
    the removed GUC.
 4. Request outside review and merge only after the production binary, suite
    provenance, and feature-isolation audit agree.
+
+## Measured outcome
+
+Packet 002's release-profile, one-index-per-table A/B preserved exact recall at
+0.9990 / 0.9685 / 0.9625 for 10k / 50k / 100k and matched all 78 compared
+production materialization work metrics. Warm mean latency improved from
+22.80 / 24.10 / 24.30 ms to 20.90 / 20.90 / 19.90 ms (8.33% / 13.28% /
+18.11%), while owner open/validate fell from 7.030 / 6.792 / 7.122 ms to
+0.028 / 0.024 / 0.024 ms. Storage varied by at most three PostgreSQL pages
+(under 0.007%) across independent builds; the task changes no storage format.
+The final installed normal PG18 release binary has no attribution endpoint,
+removed selector, or neighboring benchmark controls. Merge awaits outside
+review of packets 001 and 002.
 
 ## Required review packets
 
