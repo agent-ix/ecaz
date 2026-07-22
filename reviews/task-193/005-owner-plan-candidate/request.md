@@ -28,9 +28,13 @@ without an end-to-end latency improvement is a STOP. A useful 100k result
 advances to the required 10k/50k/100k matrix; otherwise the measured negative
 result closes the candidate.
 
-The same 100k suite also runs the projection/null/toast/qualification,
-tombstone, mixed-owner, and later-owner-outage correctness drills against the
-isolated plan-off/on pair.
+The first run attempted the optional promotion correctness drills after the
+performance A/B. The cache-off lazy10 control exposed a pre-existing
+stable-prefix duplicate-request invariant before the cache-on semantic arm;
+this is not attributable to MAT-19. Because the performance result failed the
+pre-registered usefulness gate and therefore cannot be promoted, the decision
+rerun omits those promotion-only drills and records the baseline failure as a
+separate follow-up rather than expanding this candidate's scope.
 
 Implementation: `e444f6474`.
 Evidence metadata and the checked-in suite are in `artifacts/manifest.md`.

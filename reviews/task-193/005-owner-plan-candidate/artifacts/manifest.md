@@ -11,8 +11,10 @@
   control explicitly disables and the candidate explicitly enables only the
   Task 193 owner payload plan cache.
 - Protocol: 200 recall queries / 2,000 trials and 10 warmups + 50 measured
-  latency iterations. Stage counters and materialization correctness drills
-  are enabled.
+  latency iterations. Stage counters are enabled. Promotion correctness drills
+  are omitted from the decision rerun after the cache-off baseline exposed a
+  pre-existing stable-prefix duplicate-request failure; the candidate already
+  failed its performance gate and cannot advance to promotion.
 - Corpus/query: `ec_real_100k`; corpus TSVs are intentionally not committed.
 - Suite config: `task193-owner-plan-100k.json`.
 - Suite audit: passed, one step.

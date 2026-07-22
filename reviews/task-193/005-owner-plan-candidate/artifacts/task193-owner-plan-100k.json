@@ -1,7 +1,7 @@
 {
   "name": "task193-owner-payload-plan-100k",
   "schema_version": 1,
-  "artifact_dir": "reviews/task-193/005-owner-plan-candidate/artifacts/run",
+  "artifact_dir": "reviews/task-193/005-owner-plan-candidate/artifacts/decision-run",
   "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
   "thresholds": [],
   "steps": [
@@ -25,7 +25,7 @@
       "benchmark_iterations": 50,
       "benchmark_warmup_iterations": 10,
       "distann_stage_counters": true,
-      "materialization_correctness": true,
+      "materialization_correctness": false,
       "skip_fault_drills": true,
       "compact_artifacts": true,
       "corpus_prefix": "ec_real_100k",
