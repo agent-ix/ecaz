@@ -2,8 +2,11 @@
 
 - Task bucket / packet: `reviews/task-194/008-nine-way-completion-audit/`.
 - Implementation SHA: `1b5e201a9`.
-- Canonical suite config:
+- Canonical source suite config:
   `reviews/task-194/002-nine-way-attribution/artifacts/suite/task194-suite.json`.
+- Immutable-output rerun config: `task194-nine-way-corrected.json`; it changes
+  only packet/run paths, base port, and identifying labels from the source
+  config so packet-002 evidence is not overwritten.
 - Lane: local Intel, three isolated PG18 owner instances; trained exact
   landmark head, RaBitQ stored neighbor values, exact co-located row rerank,
   lazy10, BW=4/H=100.
@@ -18,7 +21,7 @@
   24,271,128 bytes with SHA-256
   `1f08db214b8ed61e1197307754f343947d02327098a8b83190bea9fc5f21fdb7`.
 - Planned command: `target/debug/ecaz bench suite run --config
-  reviews/task-194/002-nine-way-attribution/artifacts/suite/task194-suite.json
+  reviews/task-194/008-nine-way-completion-audit/artifacts/task194-nine-way-corrected.json
   --database tqvector_bench --log-file
   reviews/task-194/008-nine-way-completion-audit/artifacts/suite-run.log`.
 

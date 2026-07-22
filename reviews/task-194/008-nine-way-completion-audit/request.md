@@ -32,6 +32,7 @@ warnings denied. The attribution-feature build and focused reconciliation
 parser test also pass. A fresh release install and canonical 100k 50/10 suite
 run are still required before Task 194 can be closed again.
 
-The rerun uses the existing checked-in canonical config at
-`reviews/task-194/002-nine-way-attribution/artifacts/suite/task194-suite.json`.
+The rerun copies the existing canonical config into packet 008 with only
+artifact/run paths, base port, and identifying labels changed, preserving the
+immutable packet-002 evidence.
 Artifact provenance and results will be recorded in `artifacts/manifest.md`.
