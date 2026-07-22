@@ -913,6 +913,18 @@ fn append_owner_validation_cache_guc(args: &mut Vec<String>, arm: &str, enabled:
     }
 }
 
+fn append_owner_payload_plan_cache_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
+    if arm == "physical" {
+        args.extend([
+            "--session-guc".into(),
+            format!(
+                "ec_distann.benchmark_owner_payload_plan_cache={}",
+                if enabled { "on" } else { "off" }
+            ),
+        ]);
+    }
+}
+
 #[derive(Clone, Debug)]
 struct BenchmarkSeedVariant {
     name: String,
@@ -922,6 +934,9 @@ struct BenchmarkSeedVariant {
     neighbor_score_mode: String,
     materialization_batch_size: u32,
     owner_validation_cache: bool,
+    owner_payload_plan_cache: bool,
+    beam_width: Option<u32>,
+    hop_rounds: Option<u32>,
 }
 
 fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedVariant>> {
@@ -930,9 +945,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
         .iter()
         .map(|value| {
             let fields = value.split(':').collect::<Vec<_>>();
-            if !(5..=7).contains(&fields.len()) {
+            if !(5..=10).contains(&fields.len()) {
                 bail!(
-                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_VALIDATION_CACHE]], got {value:?}"
+                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_VALIDATION_CACHE[:OWNER_PAYLOAD_PLAN_CACHE[:BEAM_WIDTH[:HOP_ROUNDS]]]]], got {value:?}"
                 );
             }
             let name = fields[0];
@@ -1001,6 +1016,43 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                 })
                 .transpose()?
                 .unwrap_or(false);
+            let owner_payload_plan_cache = fields
+                .get(7)
+                .map(|field| match *field {
+                    "on" => Ok(true),
+                    "off" => Ok(false),
+                    _ => bail!(
+                        "benchmark seed variant owner payload plan cache must be on or off, got {value:?}"
+                    ),
+                })
+                .transpose()?
+                .unwrap_or(false);
+            let beam_width = fields
+                .get(8)
+                .map(|field| {
+                    field.parse::<u32>().wrap_err_with(|| {
+                        format!("parsing beam width in benchmark seed variant {value:?}")
+                    })
+                })
+                .transpose()?;
+            if beam_width.is_some_and(|width| !(1..=64).contains(&width)) {
+                bail!(
+                    "benchmark seed variant beam width must be in 1..=64, got {value:?}"
+                );
+            }
+            let hop_rounds = fields
+                .get(9)
+                .map(|field| {
+                    field.parse::<u32>().wrap_err_with(|| {
+                        format!("parsing hop rounds in benchmark seed variant {value:?}")
+                    })
+                })
+                .transpose()?;
+            if hop_rounds.is_some_and(|rounds| !(1..=256).contains(&rounds)) {
+                bail!(
+                    "benchmark seed variant hop rounds must be in 1..=256, got {value:?}"
+                );
+            }
             Ok(BenchmarkSeedVariant {
                 name: name.to_owned(),
                 strategy: strategy.to_owned(),
@@ -1009,6 +1061,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                 neighbor_score_mode: neighbor_score_mode.to_owned(),
                 materialization_batch_size,
                 owner_validation_cache,
+                owner_payload_plan_cache,
+                beam_width,
+                hop_rounds,
             })
         })
         .collect()
@@ -1042,20 +1097,45 @@ fn register_same_seed_digest(
 
 async fn materialization_result_json(
     coordinator: &tokio_postgres::Client,
-    batch_size: u32,
+    variant: &BenchmarkSeedVariant,
     sql: &str,
 ) -> Result<String> {
     coordinator
         .batch_execute(&format!(
-            "SELECT ec_distann_stage_scoring_reset(); SET enable_seqscan = off; SET ec_distann.benchmark_materialization_batch_size = {batch_size};"
+            "SELECT ec_distann_stage_scoring_reset(); SET enable_seqscan = off; {}",
+            materialization_variant_settings_sql(variant),
         ))
         .await?;
     coordinator
         .query_one(sql, &[])
         .await
-        .wrap_err_with(|| format!("running materialization semantic query at batch {batch_size}"))?
+        .wrap_err_with(|| {
+            format!(
+                "running materialization semantic query for variant {}",
+                variant.name
+            )
+        })?
         .try_get::<_, String>(0)
         .wrap_err("decoding materialization semantic result")
+}
+
+fn materialization_variant_settings_sql(variant: &BenchmarkSeedVariant) -> String {
+    format!(
+        "SET ec_distann.benchmark_materialization_batch_size = {}; \
+         SET ec_distann.benchmark_owner_validation_cache = {}; \
+         SET ec_distann.benchmark_owner_payload_plan_cache = {};",
+        variant.materialization_batch_size,
+        if variant.owner_validation_cache {
+            "on"
+        } else {
+            "off"
+        },
+        if variant.owner_payload_plan_cache {
+            "on"
+        } else {
+            "off"
+        },
+    )
 }
 
 fn materialization_semantic_sql(
@@ -1089,6 +1169,8 @@ fn materialization_semantic_sql(
 
 async fn compare_materialization_scenario(
     coordinator: &tokio_postgres::Client,
+    control: &BenchmarkSeedVariant,
+    candidate: &BenchmarkSeedVariant,
     scale: &str,
     scenario: &str,
     sql: &str,
@@ -1097,10 +1179,10 @@ async fn compare_materialization_scenario(
     expected_rows: usize,
     qualified: bool,
 ) -> Result<String> {
-    let eager = materialization_result_json(coordinator, 0, sql).await?;
-    let candidate = materialization_result_json(coordinator, 10, sql).await?;
-    let eager_value: serde_json::Value = serde_json::from_str(&eager)?;
-    let candidate_value: serde_json::Value = serde_json::from_str(&candidate)?;
+    let control_json = materialization_result_json(coordinator, control, sql).await?;
+    let candidate_json = materialization_result_json(coordinator, candidate, sql).await?;
+    let eager_value: serde_json::Value = serde_json::from_str(&control_json)?;
+    let candidate_value: serde_json::Value = serde_json::from_str(&candidate_json)?;
     let rows = eager_value
         .as_array()
         .ok_or_else(|| color_eyre::eyre::eyre!("materialization result is not a JSON array"))?
@@ -1163,8 +1245,8 @@ async fn compare_materialization_scenario(
     }
     Ok(format!(
         "physical_materialization_correctness scale={scale} scenario={scenario} pass=true rows={rows} eager_digest={} candidate_digest={} null_ok={null_ok} external_toast_ok={external_toast_ok} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads} payload_read_bound={payload_read_bound} deepening_cap={deepening_cap} duplicate_requested={duplicate_requested}",
-        hex::encode(Sha256::digest(eager.as_bytes())),
-        hex::encode(Sha256::digest(candidate.as_bytes())),
+        hex::encode(Sha256::digest(control_json.as_bytes())),
+        hex::encode(Sha256::digest(candidate_json.as_bytes())),
     ))
 }
 
@@ -1181,21 +1263,49 @@ async fn run_materialization_correctness(
     if nodes.len() < 2 {
         bail!("materialization correctness requires at least two physical owners");
     }
-    let eager = seed_variants
+    let same_search = |left: &BenchmarkSeedVariant, right: &BenchmarkSeedVariant| {
+        left.strategy == right.strategy
+            && left.head_search_width == right.head_search_width
+            && left.head_seed_count == right.head_seed_count
+            && left.neighbor_score_mode == right.neighbor_score_mode
+            && left.beam_width == right.beam_width
+            && left.hop_rounds == right.hop_rounds
+    };
+    let plan_pair = seed_variants
         .iter()
-        .find(|variant| variant.materialization_batch_size == 0)
-        .ok_or_else(|| color_eyre::eyre::eyre!("materialization matrix has no eager variant"))?;
-    let candidate = seed_variants
+        .filter(|variant| !variant.owner_payload_plan_cache)
+        .find_map(|control| {
+            seed_variants
+                .iter()
+                .find(|candidate| {
+                    candidate.owner_payload_plan_cache
+                        && candidate.materialization_batch_size
+                            == control.materialization_batch_size
+                        && candidate.owner_validation_cache == control.owner_validation_cache
+                        && same_search(control, candidate)
+                })
+                .map(|candidate| (control, candidate))
+        });
+    let batch_pair = seed_variants
         .iter()
-        .find(|variant| variant.materialization_batch_size == 10)
-        .ok_or_else(|| color_eyre::eyre::eyre!("materialization matrix has no batch-10 variant"))?;
-    if eager.strategy != candidate.strategy
-        || eager.head_search_width != candidate.head_search_width
-        || eager.head_seed_count != candidate.head_seed_count
-        || eager.neighbor_score_mode != candidate.neighbor_score_mode
-    {
-        bail!("materialization correctness eager/candidate variants differ outside batch size");
-    }
+        .filter(|variant| variant.materialization_batch_size == 0)
+        .find_map(|control| {
+            seed_variants
+                .iter()
+                .find(|candidate| {
+                    candidate.materialization_batch_size == 10
+                        && candidate.owner_validation_cache == control.owner_validation_cache
+                        && candidate.owner_payload_plan_cache
+                            == control.owner_payload_plan_cache
+                        && same_search(control, candidate)
+                })
+                .map(|candidate| (control, candidate))
+        });
+    let (control, candidate) = plan_pair.or(batch_pair).ok_or_else(|| {
+        color_eyre::eyre::eyre!(
+            "materialization correctness requires either an isolated owner-plan off/on pair or an isolated eager/lazy10 pair"
+        )
+    })?;
 
     coordinator
         .batch_execute(&format!(
@@ -1203,10 +1313,10 @@ async fn run_materialization_correctness(
              SET ec_distann.benchmark_head_search_width = {};
              SET ec_distann.benchmark_head_seed_count = {};
              SET ec_distann.benchmark_exact_neighbor = {};",
-            eager.strategy.replace('\'', "''"),
-            eager.head_search_width,
-            eager.head_seed_count,
-            if eager.neighbor_score_mode == "exact_neighbor" {
+            control.strategy.replace('\'', "''"),
+            control.head_search_width,
+            control.head_seed_count,
+            if control.neighbor_score_mode == "exact_neighbor" {
                 "on"
             } else {
                 "off"
@@ -1215,7 +1325,7 @@ async fn run_materialization_correctness(
         .await?;
 
     coordinator
-        .batch_execute("SET ec_distann.benchmark_materialization_batch_size = 0")
+        .batch_execute(&materialization_variant_settings_sql(control))
         .await?;
     let ranked_ids = coordinator
         .query(
@@ -1303,6 +1413,8 @@ async fn run_materialization_correctness(
         lines.push(
             compare_materialization_scenario(
                 coordinator,
+                control,
+                candidate,
                 scale,
                 scenario,
                 &sql,
@@ -1318,7 +1430,10 @@ async fn run_materialization_correctness(
     let mut mixed = None;
     for query_offset in 0..10 {
         coordinator
-            .batch_execute("SELECT ec_distann_stage_scoring_reset(); SET ec_distann.benchmark_materialization_batch_size = 10")
+            .batch_execute(&format!(
+                "SELECT ec_distann_stage_scoring_reset(); {}",
+                materialization_variant_settings_sql(candidate),
+            ))
             .await?;
         let mixed_sql = materialization_semantic_sql(corpus, queries, "TRUE", 10, query_offset);
         let _ = coordinator.query_one(&mixed_sql, &[]).await?;
@@ -1353,13 +1468,14 @@ async fn run_materialization_correctness(
     coordinator
         .batch_execute(&format!(
             "SELECT ec_distann_stage_scoring_reset();
-             SET ec_distann.benchmark_materialization_batch_size = 10;
+             {}
              BEGIN;
              DECLARE task184_materialization_cursor NO SCROLL CURSOR FOR
              SELECT id, source_id, source, payload_note
                FROM {corpus}
               ORDER BY embedding <#> (SELECT source FROM {queries} ORDER BY id OFFSET {mixed_query_offset} LIMIT 1)
-              LIMIT 40;"
+              LIMIT 40;",
+            materialization_variant_settings_sql(candidate),
         ))
         .await?;
     let first_rows = coordinator
@@ -1451,6 +1567,9 @@ async fn run_physical_benchmarks(
                 .unwrap_or_else(|| "rabitq".to_owned()),
             materialization_batch_size: 10,
             owner_validation_cache: false,
+            owner_payload_plan_cache: false,
+            beam_width: None,
+            hop_rounds: None,
         }]
     } else {
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
@@ -1726,6 +1845,8 @@ async fn run_physical_benchmarks(
     let mut same_seed_digests =
         std::collections::HashMap::<(String, u32, u32), (String, String)>::new();
     for variant in &seed_variants {
+        let variant_beam_width = variant.beam_width.unwrap_or(beam_width);
+        let variant_hop_rounds = variant.hop_rounds.unwrap_or(hop_rounds);
         if explicit_seed_controls {
             coordinator
                 .batch_execute(&format!(
@@ -1827,7 +1948,7 @@ async fn run_physical_benchmarks(
                 register_same_seed_digest(&mut same_seed_digests, variant, &seed_id_digest)?
                     .unwrap_or_else(|| "none".to_owned());
             lines.push(format!(
-                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} neighbor_score_mode={} materialization_batch_size={} owner_validation_cache={} queries={} seed_id_digest={} compared_with={} same_seed=true",
+                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_validation_cache={} owner_payload_plan_cache={} queries={} seed_id_digest={} compared_with={} same_seed=true",
                 variant.name,
                 variant.strategy,
                 variant.head_search_width,
@@ -1835,6 +1956,7 @@ async fn run_physical_benchmarks(
                 variant.neighbor_score_mode,
                 variant.materialization_batch_size,
                 variant.owner_validation_cache,
+                variant.owner_payload_plan_cache,
                 args.queries,
                 seed_id_digest,
                 compared_with,
@@ -1850,9 +1972,12 @@ async fn run_physical_benchmarks(
             attested_neighbor_score,
             variant.materialization_batch_size,
             variant.owner_validation_cache,
+            variant.owner_payload_plan_cache,
+            variant_beam_width,
+            variant_hop_rounds,
         ));
         lines.push(format!(
-            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_validation_cache={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_validation_cache={} owner_payload_plan_cache={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
@@ -1861,6 +1986,7 @@ async fn run_physical_benchmarks(
             variant.neighbor_score_mode,
             variant.materialization_batch_size,
             variant.owner_validation_cache,
+            variant.owner_payload_plan_cache,
         ));
     }
     benchmark_arms.push((
@@ -1873,6 +1999,9 @@ async fn run_physical_benchmarks(
         "rabitq".to_owned(),
         0,
         false,
+        false,
+        beam_width,
+        hop_rounds,
     ));
 
     for (
@@ -1885,6 +2014,9 @@ async fn run_physical_benchmarks(
         neighbor_score_mode,
         materialization_batch_size,
         owner_validation_cache,
+        owner_payload_plan_cache,
+        arm_beam_width,
+        arm_hop_rounds,
     ) in benchmark_arms
     {
         let recall_log = log_dir.join(format!("{arm}-{variant}-recall.log"));
@@ -1908,9 +2040,9 @@ async fn run_physical_benchmarks(
             "--log-output".into(),
             recall_log.display().to_string(),
             "--session-guc".into(),
-            format!("ec_distann.beam_width={beam_width}"),
+            format!("ec_distann.beam_width={arm_beam_width}"),
             "--session-guc".into(),
-            format!("ec_distann.hop_rounds={hop_rounds}"),
+            format!("ec_distann.hop_rounds={arm_hop_rounds}"),
         ]);
         if arm == "physical" {
             recall_args.extend([
@@ -1942,6 +2074,11 @@ async fn run_physical_benchmarks(
                 arm,
                 owner_validation_cache,
             );
+            append_owner_payload_plan_cache_guc(
+                &mut recall_args,
+                arm,
+                owner_payload_plan_cache,
+            );
         }
         let recall = run_physical_bench_child(recall_args).await?;
         let row = benchmark_table_row(&recall)?;
@@ -1951,7 +2088,7 @@ async fn run_physical_benchmarks(
         let distinct_recall_ci95_high = row[14].parse::<f64>()?;
         let mean_ms = benchmark_ms(&row[11])?;
         lines.push(format!(
-            "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_validation_cache={owner_validation_cache} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
+            "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_validation_cache={owner_validation_cache} owner_payload_plan_cache={owner_payload_plan_cache} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
             args.head_index_cap, row[1], row[2]
         ));
 
@@ -1980,9 +2117,9 @@ async fn run_physical_benchmarks(
             "--log-output".into(),
             latency_log.display().to_string(),
             "--session-guc".into(),
-            format!("ec_distann.beam_width={beam_width}"),
+            format!("ec_distann.beam_width={arm_beam_width}"),
             "--session-guc".into(),
-            format!("ec_distann.hop_rounds={hop_rounds}"),
+            format!("ec_distann.hop_rounds={arm_hop_rounds}"),
         ]);
         if arm == "physical" && explicit_seed_controls {
             latency_args.extend([
@@ -2005,13 +2142,18 @@ async fn run_physical_benchmarks(
         }
         append_materialization_benchmark_guc(&mut latency_args, arm, materialization_batch_size);
         append_owner_validation_cache_guc(&mut latency_args, arm, owner_validation_cache);
+        append_owner_payload_plan_cache_guc(
+            &mut latency_args,
+            arm,
+            owner_payload_plan_cache,
+        );
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_validation_cache={owner_validation_cache} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_validation_cache={owner_validation_cache} owner_payload_plan_cache={owner_payload_plan_cache} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -2034,7 +2176,7 @@ async fn run_physical_benchmarks(
             }
             for stage in stage_rows {
                 lines.push(format!(
-                    "physical_benchmark_stage scale={scale} variant={variant} materialization_batch_size={materialization_batch_size} owner_validation_cache={owner_validation_cache} arm={arm} seed_strategy={seed_strategy} {stage}"
+                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_validation_cache={owner_validation_cache} owner_payload_plan_cache={owner_payload_plan_cache} arm={arm} seed_strategy={seed_strategy} {stage}"
                 ));
             }
             let work_rows = latency
@@ -2052,7 +2194,7 @@ async fn run_physical_benchmarks(
             }
             for work in work_rows {
                 lines.push(format!(
-                    "physical_benchmark_materialization_work scale={scale} variant={variant} materialization_batch_size={materialization_batch_size} owner_validation_cache={owner_validation_cache} arm={arm} seed_strategy={seed_strategy} {work}"
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_validation_cache={owner_validation_cache} owner_payload_plan_cache={owner_payload_plan_cache} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
         }
@@ -2110,8 +2252,10 @@ async fn run_physical_benchmarks(
         nodes.len().saturating_sub(1)
     };
     for variant in &seed_variants {
+        let variant_beam_width = variant.beam_width.unwrap_or(beam_width);
+        let variant_hop_rounds = variant.hop_rounds.unwrap_or(hop_rounds);
         let shared = format!(
-            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={beam_width} hop_rounds={hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_validation_cache={}",
+            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_validation_cache={} owner_payload_plan_cache={}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
@@ -2120,6 +2264,7 @@ async fn run_physical_benchmarks(
             variant.neighbor_score_mode,
             variant.materialization_batch_size,
             variant.owner_validation_cache,
+            variant.owner_payload_plan_cache,
         );
         lines.push(format!(
             "physical_benchmark_storage scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true owners={} physical_generation_bytes={physical_generation_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
@@ -4520,6 +4665,9 @@ mod tests {
             neighbor_score_mode: neighbor_score_mode.to_owned(),
             materialization_batch_size: 0,
             owner_validation_cache: false,
+            owner_payload_plan_cache: false,
+            beam_width: None,
+            hop_rounds: None,
         }
     }
 
@@ -4545,6 +4693,21 @@ mod tests {
         .expect("owner validation variants parse");
         assert!(!variants[0].owner_validation_cache);
         assert!(variants[1].owner_validation_cache);
+    }
+
+    #[test]
+    fn owner_plan_and_fixed_work_variant_controls_are_explicit() {
+        let variants = parse_benchmark_seed_variants(&[
+            "plan-off:persisted_head:32:32:rabitq:10:off:off:4:100".to_owned(),
+            "plan-on:persisted_head:32:32:rabitq:10:off:on:8:50".to_owned(),
+        ])
+        .expect("owner plan and traversal variants parse");
+        assert!(!variants[0].owner_payload_plan_cache);
+        assert!(variants[1].owner_payload_plan_cache);
+        assert_eq!(variants[0].beam_width, Some(4));
+        assert_eq!(variants[0].hop_rounds, Some(100));
+        assert_eq!(variants[1].beam_width, Some(8));
+        assert_eq!(variants[1].hop_rounds, Some(50));
     }
 
     #[test]

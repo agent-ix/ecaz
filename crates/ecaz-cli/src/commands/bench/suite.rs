@@ -497,6 +497,15 @@ struct DistannBenchmarkSeedVariant {
     /// Task 192 benchmark-only retained row-schema cache arm.
     #[serde(default)]
     owner_validation_cache: Option<bool>,
+    /// Task 193 benchmark-only generation/projection owner SPI-plan cache arm.
+    #[serde(default)]
+    owner_payload_plan_cache: Option<bool>,
+    /// Task 194 per-variant beam width for fixed-work A/B attribution.
+    #[serde(default)]
+    beam_width: Option<u32>,
+    /// Task 194 per-variant hop-round cap for fixed-work A/B attribution.
+    #[serde(default)]
+    hop_rounds: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3246,6 +3255,26 @@ impl SuiteStep {
                                 variant.name
                             )
                         }
+                        if variant
+                            .beam_width
+                            .is_some_and(|value| !(1..=64).contains(&value))
+                        {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} beam_width must be in 1..=64",
+                                step.name,
+                                variant.name
+                            )
+                        }
+                        if variant
+                            .hop_rounds
+                            .is_some_and(|value| !(1..=256).contains(&value))
+                        {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} hop_rounds must be in 1..=256",
+                                step.name,
+                                variant.name
+                            )
+                        }
                         if !matches!(
                             variant.neighbor_score_mode.as_str(),
                             "rabitq" | "exact_neighbor"
@@ -3277,14 +3306,40 @@ impl SuiteStep {
                             step.name
                         )
                     }
-                    let batch_sizes = step
-                        .benchmark_seed_variants
-                        .iter()
-                        .map(|variant| variant.materialization_batch_size)
-                        .collect::<std::collections::BTreeSet<_>>();
-                    if !batch_sizes.contains(&0) || !batch_sizes.contains(&10) {
+                    let same_search = |left: &DistannBenchmarkSeedVariant,
+                                       right: &DistannBenchmarkSeedVariant| {
+                        left.seed_strategy == right.seed_strategy
+                            && left.head_search_width == right.head_search_width
+                            && left.head_seed_count == right.head_seed_count
+                            && left.neighbor_score_mode == right.neighbor_score_mode
+                            && left.beam_width == right.beam_width
+                            && left.hop_rounds == right.hop_rounds
+                    };
+                    let has_plan_pair = step.benchmark_seed_variants.iter().any(|control| {
+                        control.owner_payload_plan_cache != Some(true)
+                            && step.benchmark_seed_variants.iter().any(|candidate| {
+                                candidate.owner_payload_plan_cache == Some(true)
+                                    && candidate.materialization_batch_size
+                                        == control.materialization_batch_size
+                                    && candidate.owner_validation_cache
+                                        == control.owner_validation_cache
+                                    && same_search(control, candidate)
+                            })
+                    });
+                    let has_batch_pair = step.benchmark_seed_variants.iter().any(|control| {
+                        control.materialization_batch_size == 0
+                            && step.benchmark_seed_variants.iter().any(|candidate| {
+                                candidate.materialization_batch_size == 10
+                                    && candidate.owner_validation_cache
+                                        == control.owner_validation_cache
+                                    && candidate.owner_payload_plan_cache
+                                        == control.owner_payload_plan_cache
+                                    && same_search(control, candidate)
+                            })
+                    });
+                    if !has_plan_pair && !has_batch_pair {
                         bail!(
-                            "distann-local-multinode step {:?} materialization_correctness requires eager batch 0 and candidate batch 10 variants",
+                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan off/on pair or eager/lazy10 pair",
                             step.name
                         )
                     }
@@ -4182,9 +4237,38 @@ fn expand_distann_local_multinode(
             variant.neighbor_score_mode,
             variant.materialization_batch_size
         );
-        if let Some(enabled) = variant.owner_validation_cache {
+        let has_extended_controls = variant.owner_payload_plan_cache.is_some()
+            || variant.beam_width.is_some()
+            || variant.hop_rounds.is_some();
+        if variant.owner_validation_cache.is_some() || has_extended_controls {
             encoded.push(':');
-            encoded.push_str(if enabled { "on" } else { "off" });
+            encoded.push_str(if variant.owner_validation_cache.unwrap_or(false) {
+                "on"
+            } else {
+                "off"
+            });
+        }
+        if has_extended_controls {
+            encoded.push(':');
+            encoded.push_str(if variant.owner_payload_plan_cache.unwrap_or(false) {
+                "on"
+            } else {
+                "off"
+            });
+        }
+        if variant.beam_width.is_some() || variant.hop_rounds.is_some() {
+            encoded.push(':');
+            encoded.push_str(
+                &variant
+                    .beam_width
+                    .or(step.beam_width)
+                    .unwrap_or(4)
+                    .to_string(),
+            );
+        }
+        if let Some(rounds) = variant.hop_rounds.or(step.hop_rounds) {
+            encoded.push(':');
+            encoded.push_str(&rounds.to_string());
         }
         push_arg(
             &mut args,
@@ -5659,6 +5743,71 @@ psql header noise\n\
             Some("null_payload")
         );
         assert_eq!(rows[0].1.get("pass_numeric").map(String::as_str), Some("1"));
+    }
+
+    #[test]
+    fn distann_owner_plan_and_fixed_work_variants_are_suite_addressable() {
+        let raw = r#"{
+          "name": "distann-owner-plan-fixed-work",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "candidate-100k",
+            "physical_benchmark": true,
+            "materialization_correctness": true,
+            "corpus_prefix": "ec_real_100k",
+            "beam_width": 4,
+            "hop_rounds": 100,
+            "benchmark_seed_variants": [
+              {
+                "name": "plan-off",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10,
+                "owner_payload_plan_cache": false,
+                "beam_width": 4,
+                "hop_rounds": 100
+              },
+              {
+                "name": "plan-on",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10,
+                "owner_payload_plan_cache": true,
+                "beam_width": 8,
+                "hop_rounds": 50
+              }
+            ]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        assert!(validate_config(&config).is_err(), "correctness pair must isolate plan cache");
+
+        let raw = raw.replace("\"beam_width\": 8", "\"beam_width\": 4")
+            .replace("\"hop_rounds\": 50", "\"hop_rounds\": 100");
+        let config: SuiteConfig = serde_json::from_str(&raw).expect("suite parses");
+        validate_config(&config).expect("isolated plan pair validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--benchmark-seed-variant",
+                    "plan-off:persisted_head:32:32:rabitq:10:off:off:4:100",
+                ]
+        }));
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--benchmark-seed-variant",
+                    "plan-on:persisted_head:32:32:rabitq:10:off:on:4:100",
+                ]
+        }));
     }
 
     #[test]

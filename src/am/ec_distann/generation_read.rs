@@ -8,6 +8,8 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::ptr;
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -15,6 +17,8 @@ use std::time::Instant;
 
 use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use pgrx::spi::OwnedPreparedStatement;
 use pgrx::{default, name, pg_extern, pg_sys, PgRelation, Spi};
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use sha2::{Digest, Sha256};
@@ -381,6 +385,18 @@ struct CachedRetainedEpoch {
     code_len: usize,
     #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
     row_schema: Arc<super::row_schema::ResolvedRowSchema>,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    owner_payload_plans: Rc<RefCell<VecDeque<CachedOwnerPayloadPlan>>>,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+const OWNER_PAYLOAD_PLAN_CACHE_CAPACITY: usize = 4;
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+struct CachedOwnerPayloadPlan {
+    generation_fingerprint: [u8; 34],
+    projection_fingerprint: [u8; 32],
+    statement: OwnedPreparedStatement,
 }
 
 thread_local! {
@@ -636,6 +652,8 @@ struct RetainedGenerationScan {
     code_len: usize,
     #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
     row_schema: Arc<super::row_schema::ResolvedRowSchema>,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    owner_payload_plans: Rc<RefCell<VecDeque<CachedOwnerPayloadPlan>>>,
 }
 
 impl RetainedGenerationScan {
@@ -717,6 +735,8 @@ impl RetainedGenerationScan {
                 code_len,
                 #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
                 row_schema,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                owner_payload_plans: Rc::new(RefCell::new(VecDeque::new())),
             };
             cache_retained_epoch(cached.clone());
             cached
@@ -728,6 +748,8 @@ impl RetainedGenerationScan {
             code_len,
             #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
             row_schema,
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            owner_payload_plans,
             ..
         } = cached;
         let row_relation = HeapRelationGuard::try_access_share(generation.row_tier_relid)
@@ -767,6 +789,8 @@ impl RetainedGenerationScan {
             code_len,
             #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
             row_schema,
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            owner_payload_plans,
         })
     }
 
@@ -954,6 +978,7 @@ impl RetainedGenerationScan {
         projection_attnums: &[i16],
         expected_schema_fingerprint: &[u8],
         use_cached_schema: bool,
+        use_cached_payload_plan: bool,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_started = Instant::now();
@@ -1059,9 +1084,75 @@ impl RetainedGenerationScan {
             .collect::<Vec<_>>();
         let ctid_refs = ctid_texts.iter().map(String::as_str).collect::<Vec<_>>();
         let column_count = columns.len();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let projection_fingerprint = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"ecaz/ec_distann/owner_payload_plan/v1\0");
+            hasher.update(expected);
+            hasher.update(
+                u32::try_from(projection_attnums.len())
+                    .unwrap_or(u32::MAX)
+                    .to_le_bytes(),
+            );
+            for attnum in projection_attnums {
+                hasher.update(attnum.to_le_bytes());
+            }
+            hasher.update(u64::try_from(sql.len()).unwrap_or(u64::MAX).to_le_bytes());
+            hasher.update(sql.as_bytes());
+            hasher.finalize().into()
+        };
         let payloads = Spi::connect(|client| {
-            client
-                .select(&sql, None, &[ctid_refs.as_slice().into()])
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let rows = if use_cached_payload_plan {
+                let mut plans = self.owner_payload_plans.borrow_mut();
+                let position = plans.iter().position(|entry| {
+                    entry.generation_fingerprint == self.fingerprint
+                        && entry.projection_fingerprint == projection_fingerprint
+                });
+                if let Some(position) = position {
+                    let entry = plans
+                        .remove(position)
+                        .expect("owner payload plan position disappeared");
+                    let rows = client.select(
+                        &entry.statement,
+                        None,
+                        &[ctid_refs.as_slice().into()],
+                    );
+                    plans.push_back(entry);
+                    rows
+                } else {
+                    let statement = client
+                        .prepare(sql.as_str(), &[pg_sys::BuiltinOid::TEXTARRAYOID.oid()])
+                        .map_err(|error| {
+                            DistannExpandError::VectorMissing(format!(
+                                "physical row payload plan preparation failed: {error}"
+                            ))
+                        })?
+                        .keep();
+                    let rows = client.select(
+                        &statement,
+                        None,
+                        &[ctid_refs.as_slice().into()],
+                    );
+                    while plans.len() >= OWNER_PAYLOAD_PLAN_CACHE_CAPACITY {
+                        plans.pop_front();
+                    }
+                    plans.push_back(CachedOwnerPayloadPlan {
+                        generation_fingerprint: self.fingerprint,
+                        projection_fingerprint,
+                        statement,
+                    });
+                    rows
+                }
+            } else {
+                client.select(&sql, None, &[ctid_refs.as_slice().into()])
+            };
+            #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+            let rows = {
+                let _ = use_cached_payload_plan;
+                client.select(&sql, None, &[ctid_refs.as_slice().into()])
+            };
+            rows
                 .map_err(|error| {
                     DistannExpandError::VectorMissing(format!(
                         "physical row payload fetch failed: {error}"
@@ -1161,7 +1252,7 @@ fn ec_distann_debug_validate_cached_row_schema(
         .fingerprint()
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     store
-        .materialize_payloads(&[], &[], &expected, true)
+        .materialize_payloads(&[], &[], &expected, true, false)
         .unwrap_or_else(|error| error.raise());
     true
 }
@@ -1706,6 +1797,7 @@ fn ec_distann_materialize_physical_row_payloads(
                 &projection_attnums,
                 &expected_schema_fingerprint,
                 false,
+                false,
             )
         })
         .map(|batch| batch.rows)
@@ -1727,6 +1819,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     projection_attnums: Vec<i16>,
     expected_schema_fingerprint: Vec<u8>,
     use_cached_schema: bool,
+    use_cached_payload_plan: bool,
 ) -> TableIterator<
     'static,
     (
@@ -1757,6 +1850,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             &projection_attnums,
             &expected_schema_fingerprint,
             use_cached_schema,
+            use_cached_payload_plan,
         )
         .unwrap_or_else(|error| error.raise());
     let owner_total_ns = duration_ns(total_started.elapsed());
@@ -2322,6 +2416,9 @@ impl PhysicalGenerationScan {
                     expected_schema_fingerprint: &schema_fingerprint,
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     use_cached_schema: super::options::benchmark_owner_validation_cache(),
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    use_cached_payload_plan:
+                        super::options::benchmark_owner_payload_plan_cache(),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
