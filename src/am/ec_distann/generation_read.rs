@@ -8,6 +8,8 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::ptr;
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -15,6 +17,8 @@ use std::time::Instant;
 
 use pgrx::datum::Uuid;
 use pgrx::iter::TableIterator;
+#[cfg(feature = "distann-head-attribution-benchmark")]
+use pgrx::spi::OwnedPreparedStatement;
 use pgrx::{default, name, pg_extern, pg_sys, PgRelation, Spi};
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use sha2::{Digest, Sha256};
@@ -379,6 +383,19 @@ struct CachedRetainedEpoch {
     generation: GenerationCatalogRow,
     source_attnum: i32,
     code_len: usize,
+    row_schema: Arc<super::row_schema::ResolvedRowSchema>,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    owner_payload_plans: Rc<RefCell<VecDeque<CachedOwnerPayloadPlan>>>,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+const OWNER_PAYLOAD_PLAN_CACHE_CAPACITY: usize = 4;
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+struct CachedOwnerPayloadPlan {
+    generation_fingerprint: [u8; 34],
+    projection_fingerprint: [u8; 32],
+    statement: OwnedPreparedStatement,
 }
 
 thread_local! {
@@ -464,9 +481,11 @@ fn cache_retained_epoch(entry: CachedRetainedEpoch) {
     }
     RETAINED_EPOCH_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
-        cache.retain(|candidate| {
-            candidate.index_oid != entry.index_oid || candidate.fingerprint != entry.fingerprint
-        });
+        // One backend may serve several physical indexes, but observing a new
+        // fingerprint for one index is an epoch transition for that endpoint.
+        // Discard the predecessor entry immediately instead of retaining two
+        // same-index schema snapshots until the global LRU cap is reached.
+        cache.retain(|candidate| candidate.index_oid != entry.index_oid);
         while cache.len() >= RETAINED_EPOCH_CACHE_CAPACITY {
             cache.pop_front();
         }
@@ -630,6 +649,9 @@ struct RetainedGenerationScan {
     graph_relation_name: String,
     source_attnum: i32,
     code_len: usize,
+    row_schema: Arc<super::row_schema::ResolvedRowSchema>,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    owner_payload_plans: Rc<RefCell<VecDeque<CachedOwnerPayloadPlan>>>,
 }
 
 impl RetainedGenerationScan {
@@ -697,6 +719,10 @@ impl RetainedGenerationScan {
             let code_len = binding
                 .code_len(usize::from(descriptor.dimensions))
                 .map_err(DistannExpandError::GenerationMissing)?;
+            let row_schema = Arc::new(
+                super::row_schema::resolve_relation_schema(generation.row_tier_relid)
+                    .map_err(DistannExpandError::GenerationMissing)?,
+            );
             let cached = CachedRetainedEpoch {
                 index_oid,
                 fingerprint,
@@ -704,6 +730,9 @@ impl RetainedGenerationScan {
                 generation,
                 source_attnum,
                 code_len,
+                row_schema,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                owner_payload_plans: Rc::new(RefCell::new(VecDeque::new())),
             };
             cache_retained_epoch(cached.clone());
             cached
@@ -713,6 +742,9 @@ impl RetainedGenerationScan {
             generation,
             source_attnum,
             code_len,
+            row_schema,
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            owner_payload_plans,
             ..
         } = cached;
         let row_relation = HeapRelationGuard::try_access_share(generation.row_tier_relid)
@@ -750,6 +782,9 @@ impl RetainedGenerationScan {
             graph_relation_name,
             source_attnum,
             code_len,
+            row_schema,
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            owner_payload_plans,
         })
     }
 
@@ -936,6 +971,7 @@ impl RetainedGenerationScan {
         vec_ids: &[u64],
         projection_attnums: &[i16],
         expected_schema_fingerprint: &[u8],
+        use_cached_payload_plan: bool,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_started = Instant::now();
@@ -945,9 +981,7 @@ impl RetainedGenerationScan {
                 expected_schema_fingerprint.len()
             ))
         })?;
-        let resolved_schema =
-            super::row_schema::resolve_relation_schema(self.generation.row_tier_relid)
-                .map_err(DistannExpandError::GenerationMissing)?;
+        let resolved_schema = self.row_schema.as_ref();
         if self
             .descriptor
             .row_schema
@@ -1027,9 +1061,75 @@ impl RetainedGenerationScan {
             .collect::<Vec<_>>();
         let ctid_refs = ctid_texts.iter().map(String::as_str).collect::<Vec<_>>();
         let column_count = columns.len();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let projection_fingerprint = {
+            let mut hasher = Sha256::new();
+            hasher.update(b"ecaz/ec_distann/owner_payload_plan/v1\0");
+            hasher.update(expected);
+            hasher.update(
+                u32::try_from(projection_attnums.len())
+                    .unwrap_or(u32::MAX)
+                    .to_le_bytes(),
+            );
+            for attnum in projection_attnums {
+                hasher.update(attnum.to_le_bytes());
+            }
+            hasher.update(u64::try_from(sql.len()).unwrap_or(u64::MAX).to_le_bytes());
+            hasher.update(sql.as_bytes());
+            hasher.finalize().into()
+        };
         let payloads = Spi::connect(|client| {
-            client
-                .select(&sql, None, &[ctid_refs.as_slice().into()])
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let rows = if use_cached_payload_plan {
+                let mut plans = self.owner_payload_plans.borrow_mut();
+                let position = plans.iter().position(|entry| {
+                    entry.generation_fingerprint == self.fingerprint
+                        && entry.projection_fingerprint == projection_fingerprint
+                });
+                if let Some(position) = position {
+                    let entry = plans
+                        .remove(position)
+                        .expect("owner payload plan position disappeared");
+                    let rows = client.select(
+                        &entry.statement,
+                        None,
+                        &[ctid_refs.as_slice().into()],
+                    );
+                    plans.push_back(entry);
+                    rows
+                } else {
+                    let statement = client
+                        .prepare(sql.as_str(), &[pg_sys::BuiltinOid::TEXTARRAYOID.oid()])
+                        .map_err(|error| {
+                            DistannExpandError::VectorMissing(format!(
+                                "physical row payload plan preparation failed: {error}"
+                            ))
+                        })?
+                        .keep();
+                    let rows = client.select(
+                        &statement,
+                        None,
+                        &[ctid_refs.as_slice().into()],
+                    );
+                    while plans.len() >= OWNER_PAYLOAD_PLAN_CACHE_CAPACITY {
+                        plans.pop_front();
+                    }
+                    plans.push_back(CachedOwnerPayloadPlan {
+                        generation_fingerprint: self.fingerprint,
+                        projection_fingerprint,
+                        statement,
+                    });
+                    rows
+                }
+            } else {
+                client.select(&sql, None, &[ctid_refs.as_slice().into()])
+            };
+            #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+            let rows = {
+                let _ = use_cached_payload_plan;
+                client.select(&sql, None, &[ctid_refs.as_slice().into()])
+            };
+            rows
                 .map_err(|error| {
                     DistannExpandError::VectorMissing(format!(
                         "physical row payload fetch failed: {error}"
@@ -1109,6 +1209,44 @@ impl RetainedGenerationScan {
             },
         })
     }
+}
+
+/// PG18 lifecycle-test surface for Tasks 192/195. This takes the exact
+/// production retained-generation lookup and cached payload-schema validation
+/// path. It is absent from extension builds that do not enable `pg_test`.
+#[cfg(feature = "pg_test")]
+#[pg_extern]
+fn ec_distann_debug_validate_cached_row_schema(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+) -> bool {
+    let store = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .unwrap_or_else(|error| error.raise());
+    let expected = store
+        .descriptor
+        .row_schema
+        .fingerprint()
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    store
+        .materialize_payloads(&[], &[], &expected, false)
+        .unwrap_or_else(|error| error.raise());
+    true
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern]
+fn ec_distann_debug_retained_epoch_cache_contains(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+) -> bool {
+    let Ok(fingerprint) = <[u8; 34]>::try_from(epoch_fingerprint) else {
+        return false;
+    };
+    RETAINED_EPOCH_CACHE.with(|cache| {
+        cache.borrow().iter().any(|entry| {
+            entry.index_oid == index_regclass.oid() && entry.fingerprint == fingerprint
+        })
+    })
 }
 
 type PhysicalExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
@@ -1239,6 +1377,100 @@ fn ec_distann_expand_physical_nodes_cached(
     )
     .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
+}
+
+/// Task 194 benchmark-only physical-generation endpoint.  The production
+/// transport uses the cached-query overload above; this sibling preserves its
+/// row contract while returning owner-side service timing as response
+/// sideband.  Keeping the profile endpoint separate avoids changing the
+/// production SQL ABI when the attribution feature is disabled.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_expand_physical_nodes_profile(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    query: Vec<f32>,
+    query_digest: Vec<u8>,
+    vec_ids: Vec<i64>,
+    code_threshold: default!(Option<f32>, "NULL"),
+) -> TableIterator<
+    'static,
+    (
+        name!(vec_id, i64),
+        name!(exact_dist, Option<f32>),
+        name!(is_tombstone, bool),
+        name!(neighbor_vec_ids, Vec<i64>),
+        name!(neighbor_code_dists, Vec<f32>),
+        name!(owner_total_ns, i64),
+        name!(owner_open_validate_ns, i64),
+        name!(owner_graph_read_ns, i64),
+        name!(owner_score_ns, i64),
+        name!(owner_response_encode_ns, i64),
+        name!(owner_response_bytes, i64),
+    ),
+> {
+    let owner_started = Instant::now();
+    let (query, query_digest) =
+        resolve_cached_physical_query(query, query_digest).unwrap_or_else(|error| error.raise());
+    let ids = vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let open_started = Instant::now();
+    let store = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .unwrap_or_else(|error| error.raise());
+    let owner_open_validate_ns = duration_ns(open_started.elapsed());
+    let expanded = store
+        .expand(&query, query_digest, &ids, code_threshold)
+        .unwrap_or_else(|error| error.raise());
+    let owner_open_validate_ns =
+        i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
+    let owner_graph_read_ns = expanded
+        .first()
+        .map_or(0, |node| node.owner_graph_read_ns);
+    let owner_score_ns = expanded.first().map_or(0, |node| node.owner_score_ns);
+    let response_started = Instant::now();
+    let owner_response_bytes = expanded.iter().fold(0_usize, |total, node| {
+        total.saturating_add(
+            22_usize.saturating_add(node.neighbor_vec_ids.len().saturating_mul(12)),
+        )
+    });
+    let rows = expanded
+        .into_iter()
+        .map(|node| {
+            (
+            i64::from_le_bytes(node.vec_id.to_le_bytes()),
+            node.exact_dist,
+            node.is_tombstone,
+            node.neighbor_vec_ids
+                .into_iter()
+                .map(|id| i64::from_le_bytes(id.to_le_bytes()))
+                .collect(),
+            node.neighbor_code_dists,
+            )
+        })
+        .collect::<Vec<_>>();
+    let owner_response_encode_ns =
+        i64::try_from(duration_ns(response_started.elapsed())).unwrap_or(i64::MAX);
+    let owner_response_bytes = i64::try_from(owner_response_bytes).unwrap_or(i64::MAX);
+    let owner_total_ns =
+        i64::try_from(duration_ns(owner_started.elapsed())).unwrap_or(i64::MAX);
+    TableIterator::new(rows.into_iter().map(move |row| {
+        (
+            row.0,
+            row.1,
+            row.2,
+            row.3,
+            row.4,
+            owner_total_ns,
+            owner_open_validate_ns,
+            owner_graph_read_ns,
+            owner_score_ns,
+            owner_response_encode_ns,
+            owner_response_bytes,
+        )
+    }))
 }
 
 /// Task 179 benchmark-only control endpoint. This is absent from normal
@@ -1569,7 +1801,12 @@ fn ec_distann_materialize_physical_row_payloads(
         .collect::<Vec<_>>();
     let rows = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
         .and_then(|store| {
-            store.materialize_payloads(&ids, &projection_attnums, &expected_schema_fingerprint)
+            store.materialize_payloads(
+                &ids,
+                &projection_attnums,
+                &expected_schema_fingerprint,
+                false,
+            )
         })
         .map(|batch| batch.rows)
         .unwrap_or_else(|error| error.raise());
@@ -1589,6 +1826,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     vec_ids: Vec<i64>,
     projection_attnums: Vec<i16>,
     expected_schema_fingerprint: Vec<u8>,
+    use_cached_payload_plan: bool,
 ) -> TableIterator<
     'static,
     (
@@ -1614,7 +1852,12 @@ fn ec_distann_materialize_physical_row_payloads_profile(
         .unwrap_or_else(|error| error.raise());
     let open_ns = duration_ns(open_started.elapsed());
     let batch = store
-        .materialize_payloads(&ids, &projection_attnums, &expected_schema_fingerprint)
+        .materialize_payloads(
+            &ids,
+            &projection_attnums,
+            &expected_schema_fingerprint,
+            use_cached_payload_plan,
+        )
         .unwrap_or_else(|error| error.raise());
     let owner_total_ns = duration_ns(total_started.elapsed());
     let owner_open_validate_ns = open_ns.saturating_add(batch.telemetry.validate_ns);
@@ -2177,6 +2420,9 @@ impl PhysicalGenerationScan {
                     vec_ids: ids,
                     projection_attnums: &projection_attnums,
                     expected_schema_fingerprint: &schema_fingerprint,
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    use_cached_payload_plan:
+                        super::options::benchmark_owner_payload_plan_cache(),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -2280,10 +2526,17 @@ impl PhysicalMultiOwnerExpander<'_> {
         vec_ids: &[u64],
         code_threshold: Option<f32>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let partition_started = Instant::now();
         let buckets = super::placement::group_by_owning_node(
             vec_ids,
             self.routes.len(),
             self.descriptor.placement_hash_version,
+        );
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::TraversalCoordinatorPartition,
+            partition_started.elapsed(),
         );
         let mut ordered = (0..vec_ids.len()).map(|_| None).collect::<Vec<_>>();
         let mut remote_work = Vec::new();
@@ -2344,9 +2597,16 @@ impl PhysicalMultiOwnerExpander<'_> {
                 remote_started.elapsed(),
             );
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let decode_started = Instant::now();
         for ((ordinal, _), response) in remote_work.into_iter().zip(responses) {
             place_physical_owner_responses(ordinal, &buckets[ordinal], response?, &mut ordered)?;
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::TraversalCoordinatorDecode,
+            decode_started.elapsed(),
+        );
         ordered
             .into_iter()
             .map(|node| {
@@ -2500,6 +2760,8 @@ impl DistannNodeExpander for GenerationExpander<'_> {
         vec_ids: &[u64],
         _code_threshold: Option<f32>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let graph_started = Instant::now();
         let records = lookup_graph_nodes(
             self.graph_relation,
             self.directory_relation,
@@ -2514,8 +2776,12 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                 ))
             },
         )?;
-
-        vec_ids
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let owner_graph_read_ns =
+            i64::try_from(duration_ns(graph_started.elapsed())).unwrap_or(i64::MAX);
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let score_started = Instant::now();
+        let responses = vec_ids
             .iter()
             .map(|vec_id| {
                 let node = records.get(vec_id).ok_or_else(|| {
@@ -2543,8 +2809,28 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                     heap_tid: node.heap_tid,
                     neighbor_vec_ids: node.neighbor_vec_ids[..count].to_vec(),
                     neighbor_code_dists: neighbor_dists,
+                    owner_total_ns: 0,
+                    owner_open_validate_ns: 0,
+                    owner_graph_read_ns: 0,
+                    owner_score_ns: 0,
+                    owner_response_encode_ns: 0,
+                    owner_response_bytes: 0,
+                    coordinator_rpc_ns: 0,
+                    coordinator_decode_ns: 0,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, DistannExpandError>>()?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let responses = {
+            let mut responses = responses;
+            let owner_score_ns =
+                i64::try_from(duration_ns(score_started.elapsed())).unwrap_or(i64::MAX);
+            for response in &mut responses {
+                response.owner_graph_read_ns = owner_graph_read_ns;
+                response.owner_score_ns = owner_score_ns;
+            }
+            responses
+        };
+        Ok(responses)
     }
 }

@@ -72,8 +72,9 @@ storage or construction cost. ADR-085 D12 records the selected semantics;
 Task 191 subsequently made this the production default and release-validated
 the retained baseline. Its matched A/B reproduced recall identity and improved
 warm mean by 36.2%/38.5%/39.2% and p95 by 36.8%/40.7%/44.7% at
-10k/50k/100k. At 100k the retained production point is 0.9625 recall and
-23.70 ms mean; traversal remains 7.849 ms (33.1%), so Task 187 is unblocked.
+10k/50k/100k. Task 195 then productionized the owner schema cache, retaining
+0.9625 recall while moving the current 100k production point to 19.90 ms mean.
+Traversal remains a separately attributed residual, so Task 187 is unblocked.
 Outside review accepted Task 184 on 2026-07-20 and carried four non-blocking
 hardening requirements into Task 191: a proven external-TOAST fixture,
 scan-local stable-prefix payload reuse across deepening, unambiguous stage
@@ -91,18 +92,38 @@ validity requirements.
 | 184 | Remote payload materialization | complete — PROMOTE | fixed batch-10 winner; productionization in Task 191 |
 | 185 | Fixed-cap gateway landmarks | executable now, independent of 184 | at most one fixed-cap recall candidate |
 | 186 | Larger compressed/hierarchical head | after Task 185 disposition | at most one bounded routing/capacity candidate |
-| 187 | Traversal transport | executable — Task 191 retained lazy10; traversal is 33.1% at 100k | at most one traversal-latency candidate |
+| 187 | Traversal transport | complete — STOP, no candidate | fresh 100k attribution; nine-way contract inherited by Task 194 |
 | 188 | Graph/search residual recall | after Tasks 185/186 establish the remaining entry gap | at most one graph or adaptive-work candidate |
 | 189 | Hybrid codec/distance | only after same-seed evidence identifies a codec opportunity | at most one codec candidate |
 | 190 | Architectural escalation | only if narrower tasks leave a material gap | reviewed architecture decision and follow-up, not a bundled rewrite |
 | 191 | Lazy payload productionization | complete — PROMOTE | production lazy10; release A/B and feature isolation passed |
+| 192 | Owner endpoint validation amortization | complete — PROMOTE | measured generation-keyed row-schema cache; productionization in Task 195 |
+| 193 | Owner payload batch fetch | complete — STOP | prepared-plan candidate was not useful end to end; Task 196 owns independent duplicate follow-up |
+| 194 | Traversal transport attribution | complete — STOP | reconciled nine-way TRAV-01 counters; fixed-work wider/fewer-round candidate was not useful end to end |
+| 195 | Owner schema cache productionization | complete — outside-reviewed ACCEPT; PROMOTE | exact recall; warm mean -8.33%/-13.28%/-18.11%; selector removed |
+| 196 | Lazy10 stable-prefix duplicate | proposed correctness follow-up | reproduce Task 193's cache-off duplicate request and fix only with attributed evidence |
+| 197 | Multinode release-profile preflight | proposed benchmark-integrity follow-up | fail before expensive self-hosted builds on debug/mixed extension provenance |
 
-Tasks 184 and 191 are complete. Tasks 185 recall work and 187 traversal
-attribution may proceed independently. Tasks 186, 188--190 remain gated by
-their recorded prerequisites to prevent expensive
-architecture or codec work from outrunning the measured bottlenecks. Task 172
-retains broad throughput, injected-RTT, and capacity characterization; Task 167
-retains physical DML.
+Tasks 184, 191, 187, and 192--195 are complete. Task 195's implementation and
+release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
+at all three scales while warm mean improved by 8.33% / 13.28% / 18.11%, and
+the normal release contains no benchmark selector or attribution surface. Task 192
+promoted its bounded generation-keyed row-schema cache after identical
+recall/storage and warm mean wins of 21.9% / 15.7% / 16.9% at 10k / 50k /
+100k; Task 195 owns the normal release change. Task 187 closed STOP on a fresh
+byte-identical 100k generation: traversal 7.468 ms of a 22.40 ms warm mean
+(remote expansion 6.174 ms, local 1.230 ms, derived remainder 0.065 ms), with
+no per-owner traversal transport decomposition to attribute a candidate. Review
+re-reading of the same run's materialization counters showed the 10.018 ms
+materialization stage is ~90% owner-side endpoint work
+(`owner_open_validate_work` 6.722 ms/scan, `owner_payload_sql_work`
+8.340 ms/scan for ~6.64 rows, wire/encode/decode ~1.68 ms/scan), which
+satisfies the recorded triggers for MAT-37/MAT-38 and motivates Tasks
+192–194 in that order. Tasks 185 recall work proceeds independently. Tasks
+186, 188--190 remain gated by their recorded prerequisites to prevent
+expensive architecture or codec work from outrunning the measured
+bottlenecks. Task 172 retains broad throughput, injected-RTT, and capacity
+characterization; Task 167 retains physical DML.
 
 Every production-affecting winner receives a separately numbered
 productionization task. A benchmark winner is not a default change.
@@ -132,14 +153,14 @@ remain controls rather than new candidates.
 | MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | deferred after fixed-10 winner |
 | MAT-15 | Packed payload buffer with offsets and null bitmap | conditional on decode/copy share |
 | MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on wire/decode share |
-| MAT-17 | Cache resolved row schema per published generation | deferred; owner setup was not the selected target |
-| MAT-18 | Cache attnum-to-send-function resolution | deferred; owner setup was not the selected target |
-| MAT-19 | Cache the owner-side inner SPI plan | deferred; outer statement is already prepared |
-| MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | conditional on MAT-19 attribution |
+| MAT-17 | Cache resolved row schema per published generation | **production behavior via accepted Task 195; exact-recall release A/B passed** |
+| MAT-18 | Cache attnum-to-send-function resolution | production behavior via accepted Task 195 |
+| MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
+| MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
 | MAT-21 | Replace textual `ctid` formatting with typed/binary locators | deferred after fixed-10 winner |
 | MAT-22 | Return row-tier locator with expanded candidates | conditional; changes expansion wire payload |
-| MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | deferred after fixed-10 winner |
-| MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | deferred after fixed-10 winner |
+| MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
+| MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
 | MAT-26 | Batch detoast/binary-send work by physical block | conditional on varlena/heap share |
 | MAT-27 | Covering row-tier layout for common scalar projections | deferred; format/storage decision |
@@ -152,8 +173,8 @@ remain controls rather than new candidates.
 | MAT-34 | Streaming binary response instead of row/array results | deferred; protocol change |
 | MAT-35 | Combine final exact ranking and materialization in one owner endpoint | conditional on redundant owner work |
 | MAT-36 | Piggyback likely-winner payloads on final expansion | deferred; couples traversal and materialization |
-| MAT-37 | Cache safe frozen-generation lookup state owner-side | conditional on catalog/open share |
-| MAT-38 | Avoid repeated attested-generation validation on a hot connection | conditional; must preserve epoch fencing |
+| MAT-37 | Cache safe frozen-generation lookup state owner-side | **production behavior via accepted Task 195**; release A/B reduced 100k warm mean 24.30 -> 19.90 ms |
+| MAT-38 | Avoid repeated attested-generation validation on a hot connection | **production behavior via accepted Task 195**; epoch/reclaim fencing and release A/B passed |
 | MAT-39 | Owner-side parallel heap fetch | conditional on owner CPU/IO dominance |
 | MAT-40 | Projection-shape payload cache/prepared portal | conditional on repeated projection shapes |
 
@@ -205,7 +226,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 
 | ID | Candidate | Status / trigger |
 | --- | --- | --- |
-| TRAV-01 | Split owner execution, transport, decode, frontier, and graph-read timers | active Task 187 prerequisite |
+| TRAV-01 | Split owner execution, transport, decode, frontier, and graph-read timers | **complete Task 194 packet 008**; 34 stage / 26 work rows, remote/traversal reconciliation errors 1.17% / 1.32% |
 | TRAV-02 | Coordinator cache of immutable decoded graph records | conditional on repeat-read evidence |
 | TRAV-03 | Bounded per-generation remote-node cache | conditional on TRAV-02 |
 | TRAV-04 | Owner cache of decoded graph pages/nodes | conditional on owner decode share |
@@ -218,8 +239,8 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-11 | Pipeline consecutive hop rounds | conditional on RTT/round dominance |
 | TRAV-12 | Bounded owner-local subsearch per RPC | conditional on hop-RTT dominance |
 | TRAV-13 | Baton-passing owner orchestration | deferred until ADR-085 RTT reopen trigger |
-| TRAV-14 | More nodes per round at fixed BW x H work | unmeasured |
-| TRAV-15 | Wider rounds with fewer hops | unmeasured |
+| TRAV-14 | More nodes per round at fixed BW x H work | measured STOP Task 194 packet 007: nodes 40.0→47.04; mean 24.30→24.20 ms; p95 regressed |
+| TRAV-15 | Wider rounds with fewer hops | measured STOP Task 194 packet 007: hops 10.0→5.88 and transport wait -0.744 ms, but no useful e2e win |
 | TRAV-16 | Confidence-based early termination for easy queries | conditional Task 188/187 |
 | TRAV-17 | Extra rounds for hard queries under a fixed maximum | conditional Task 188 |
 | TRAV-18 | Frontier-stability/score-gap adaptive work | conditional Task 188 |

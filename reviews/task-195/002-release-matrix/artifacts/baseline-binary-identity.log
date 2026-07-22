@@ -1,0 +1,10 @@
+baseline_extension_sha=cf862b950
+profile=release
+features=pg18,distann-head-attribution-benchmark
+target=/home/peter/dev/ecaz/.claude/worktrees/task-195-baseline/target/release/libecaz.so
+installed=/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+target_size=24271128
+installed_size=24271128
+target_sha256=34a1680e57ad63f4e5d8ba0a1c6dee03045ba5e6bf2c055d839392932c70a42e
+installed_sha256=34a1680e57ad63f4e5d8ba0a1c6dee03045ba5e6bf2c055d839392932c70a42e
+identity=match

@@ -2451,6 +2451,44 @@ fn test_distann_multi_epoch_publish() {
         "first epoch (no predecessor) records Applied"
     );
 
+    let first_fingerprint: [u8; 34] = client
+        .query_one(
+            &format!(
+                "SELECT epoch_fingerprint FROM ec_distann_publish_decision
+                  WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                    AND build_id = '{first}'::uuid"
+            ),
+            &[],
+        )
+        .expect("first fingerprint should be durable before successor publish")
+        .get::<_, Vec<u8>>(0)
+        .try_into()
+        .expect("first fingerprint must be 34 bytes");
+    let first_fingerprint_hex = hex::encode(first_fingerprint);
+    assert_eq!(
+        scalar(
+            &mut client,
+            &format!(
+                "SELECT ec_distann_debug_validate_cached_row_schema(
+                     'ec_distann_me_idx'::regclass,
+                     decode('{first_fingerprint_hex}', 'hex'))::text"
+            )
+        ),
+        "true",
+        "the first Published epoch must warm the cached row-schema path"
+    );
+    assert_eq!(
+        scalar(
+            &mut client,
+            &format!(
+                "SELECT ec_distann_debug_retained_epoch_cache_contains(
+                     'ec_distann_me_idx'::regclass,
+                     decode('{first_fingerprint_hex}', 'hex'))::text"
+            )
+        ),
+        "true"
+    );
+
     prepare_epoch(&mut client, 8, second);
     recover_epoch(&mut client, 8, second);
     assert_eq!(
@@ -2522,6 +2560,94 @@ fn test_distann_multi_epoch_publish() {
             )
         ),
         "Retired"
+    );
+
+    let successor_fingerprint: [u8; 34] = client
+        .query_one(
+            &format!(
+                "SELECT epoch_fingerprint FROM ec_distann_publish_decision
+                  WHERE index_oid = 'ec_distann_me_idx'::regclass::oid
+                    AND build_id = '{second}'::uuid"
+            ),
+            &[],
+        )
+        .expect("successor fingerprint should be durable")
+        .get::<_, Vec<u8>>(0)
+        .try_into()
+        .expect("successor fingerprint must be 34 bytes");
+    let successor_fingerprint_hex = hex::encode(successor_fingerprint);
+
+    // Re-prime the retained predecessor after publication in case unrelated
+    // catalog invalidations conservatively cleared the backend cache. The
+    // successor request must then replace, not coexist with, that same-index
+    // entry; the Retired predecessor remains live-addressable until reclaim.
+    for fingerprint_hex in [&first_fingerprint_hex, &successor_fingerprint_hex] {
+        assert_eq!(
+            scalar(
+                &mut client,
+                &format!(
+                    "SELECT ec_distann_debug_validate_cached_row_schema(
+                         'ec_distann_me_idx'::regclass,
+                         decode('{fingerprint_hex}', 'hex'))::text"
+                )
+            ),
+            "true"
+        );
+    }
+    assert_eq!(
+        scalar(
+            &mut client,
+            "SELECT ec_distann_debug_retained_epoch_cache_len()::text"
+        ),
+        "1",
+        "one backend keeps at most one observed fingerprint for an index"
+    );
+    assert_eq!(
+        scalar(
+            &mut client,
+            &format!(
+                "SELECT ec_distann_debug_retained_epoch_cache_contains(
+                     'ec_distann_me_idx'::regclass,
+                     decode('{first_fingerprint_hex}', 'hex'))::text"
+            )
+        ),
+        "false",
+        "observing the successor must discard the predecessor cache entry"
+    );
+    assert_eq!(
+        scalar(
+            &mut client,
+            &format!(
+                "SELECT ec_distann_debug_retained_epoch_cache_contains(
+                     'ec_distann_me_idx'::regclass,
+                     decode('{successor_fingerprint_hex}', 'hex'))::text"
+            )
+        ),
+        "true"
+    );
+    assert_eq!(
+        scalar(
+            &mut client,
+            &format!(
+                "SELECT ec_distann_debug_validate_cached_row_schema(
+                     'ec_distann_me_idx'::regclass,
+                     decode('{first_fingerprint_hex}', 'hex'))::text"
+            )
+        ),
+        "true",
+        "a retained Retired predecessor must still validate by its exact fingerprint"
+    );
+    assert_eq!(
+        scalar(
+            &mut client,
+            &format!(
+                "SELECT ec_distann_debug_retained_epoch_cache_contains(
+                     'ec_distann_me_idx'::regclass,
+                     decode('{successor_fingerprint_hex}', 'hex'))::text"
+            )
+        ),
+        "false",
+        "returning to the retained predecessor must symmetrically discard the successor entry"
     );
 
     let predecessor_identity = client
@@ -2682,6 +2808,20 @@ fn test_distann_multi_epoch_publish() {
         ),
         "0",
         "relcache invalidation from physical reclaim must evict the retained epoch"
+    );
+    let reclaimed_endpoint_error = client
+        .batch_execute(&format!(
+            "SELECT ec_distann_debug_validate_cached_row_schema(
+                 'ec_distann_me_idx'::regclass,
+                 decode('{first_fingerprint_hex}', 'hex'))"
+        ))
+        .expect_err("a reclaimed predecessor must fail the cached-schema endpoint");
+    assert!(
+        reclaimed_endpoint_error
+            .as_db_error()
+            .map(|error| error.message().contains("EC_GENERATION_MISSING"))
+            .unwrap_or(false),
+        "reclaimed cached-schema rejection must be classified: {reclaimed_endpoint_error}"
     );
     assert_eq!(
         scalar(

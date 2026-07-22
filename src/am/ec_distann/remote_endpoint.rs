@@ -52,9 +52,10 @@ use super::tuple::{
     DISTANN_NODE_TAG, DISTANN_NODE_TAG_OFFSET,
 };
 use crate::storage::page::ItemPointer;
+use std::time::Instant;
 
 /// One wire response row (no `heap_tid` — see module docs).
-type ExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
+type ExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>, i64, i64);
 
 /// Validate a raw node-record tuple and extract its heap ctid + tombstone flag.
 /// Guards the record tag and length before slicing fixed offsets (reviewer
@@ -178,6 +179,8 @@ fn ec_distann_expand_nodes(
         name!(is_tombstone, bool),
         name!(neighbor_vec_ids, Vec<i64>),
         name!(neighbor_code_dists, Vec<f32>),
+        name!(owner_total_ns, i64),
+        name!(owner_open_validate_ns, i64),
     ),
 > {
     let rows = expand_nodes_impl(
@@ -758,9 +761,12 @@ fn expand_nodes_impl(
     // Query-independent scan state (directory + codebooks). Reuses the head
     // cache; the head graph it also builds is unused by the endpoint (the
     // remote node never does head descent) — a known M2 first-call cost.
+    let open_validate_started = Instant::now();
     let entry = cached_index_entry(index_oid.into(), handle, &metadata)?;
     let prepared_query =
         DistannPreparedQuery::prepare(&metadata, entry.flat_codebooks.as_deref(), query)?;
+    let owner_open_validate_ns = i64::try_from(open_validate_started.elapsed().as_nanos())
+        .unwrap_or(i64::MAX);
     let code_len = metadata_code_len(&metadata)?;
 
     let heap_oid = index_heap_relation_oid_handle(handle);
@@ -797,7 +803,11 @@ fn expand_nodes_impl(
         pooled_node: DistannNodeTuple::placeholder(metadata.graph_degree_r, code_len),
     };
 
+    let owner_started = Instant::now();
     let responses = expander.expand_nodes(&vec_ids_u64, code_threshold)?;
+    let owner_total_ns = i64::try_from(owner_started.elapsed().as_nanos())
+        .unwrap_or(i64::MAX)
+        .saturating_add(owner_open_validate_ns);
     Ok(responses
         .into_iter()
         .map(|response| {
@@ -811,6 +821,8 @@ fn expand_nodes_impl(
                     .map(|&v| v as i64)
                     .collect::<Vec<i64>>(),
                 response.neighbor_code_dists,
+                owner_total_ns,
+                owner_open_validate_ns,
             )
         })
         .collect())

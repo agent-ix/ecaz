@@ -1,0 +1,79 @@
+{
+  "suite": "task194-nine-way-attribution-100k",
+  "schema_version": 1,
+  "config": "reviews/task-194/002-nine-way-attribution/artifacts/suite/task194-suite.json",
+  "config_sha256": "4d3270ebf61f360aba51e7ac1eb1dbccc449e22a3fc1f643658d27c8903210fd",
+  "dry_run": true,
+  "generated_at_unix_ms": 1784652831528,
+  "runner_git_commit": "985ffa07551a3ea610007dc9f074f6cfc5cf992e",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "nine-way-attribution-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-194/002-nine-way-attribution/artifacts/suite/run/nine-way-attribution-100k",
+        "--run-dir",
+        "target/task194-nine-way-attribution-100k",
+        "--log-file",
+        "reviews/task-194/002-nine-way-attribution/artifacts/suite/run/nine-way-attribution-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "41420",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--production-head-policy",
+        "training_landmarks_exact",
+        "--training-query-path",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task187",
+        "phase1",
+        "post_materialization",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-194/002-nine-way-attribution/artifacts/suite/run/nine-way-attribution-100k/distann-multinode-summary.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

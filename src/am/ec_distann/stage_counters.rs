@@ -29,10 +29,23 @@ pub(crate) enum DistannQueryStage {
     MaterializeCoordinatorDecode,
     MaterializeMapInsert,
     MaterializeOutputAssociate,
+    TraversalCoordinatorPartition,
+    TraversalConnectionReady,
+    TraversalRequestEncode,
+    TraversalOwnerOpenValidate,
+    TraversalOwnerGraphRead,
+    TraversalOwnerScore,
+    TraversalOwnerResponseEncode,
+    TraversalOwnerService,
+    TraversalTransportWait,
+    TraversalStragglerSpread,
+    TraversalCoordinatorReceiveDecode,
+    TraversalCoordinatorDecode,
+    TraversalFrontierInsert,
 }
 
 impl DistannQueryStage {
-    pub(crate) const ALL: [Self; 21] = [
+    pub(crate) const ALL: [Self; 34] = [
         Self::QueryPrep,
         Self::HeadScore,
         Self::SeedSelect,
@@ -54,6 +67,19 @@ impl DistannQueryStage {
         Self::MaterializeCoordinatorDecode,
         Self::MaterializeMapInsert,
         Self::MaterializeOutputAssociate,
+        Self::TraversalCoordinatorPartition,
+        Self::TraversalConnectionReady,
+        Self::TraversalRequestEncode,
+        Self::TraversalOwnerOpenValidate,
+        Self::TraversalOwnerGraphRead,
+        Self::TraversalOwnerScore,
+        Self::TraversalOwnerResponseEncode,
+        Self::TraversalOwnerService,
+        Self::TraversalTransportWait,
+        Self::TraversalStragglerSpread,
+        Self::TraversalCoordinatorReceiveDecode,
+        Self::TraversalCoordinatorDecode,
+        Self::TraversalFrontierInsert,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -79,6 +105,19 @@ impl DistannQueryStage {
             Self::MaterializeCoordinatorDecode => "materialize_coordinator_decode",
             Self::MaterializeMapInsert => "materialize_map_insert",
             Self::MaterializeOutputAssociate => "materialize_output_associate",
+            Self::TraversalCoordinatorPartition => "traversal_coordinator_partition",
+            Self::TraversalConnectionReady => "traversal_connection_ready",
+            Self::TraversalRequestEncode => "traversal_request_encode",
+            Self::TraversalOwnerOpenValidate => "traversal_owner_open_validate",
+            Self::TraversalOwnerGraphRead => "traversal_owner_graph_read",
+            Self::TraversalOwnerScore => "traversal_owner_score",
+            Self::TraversalOwnerResponseEncode => "traversal_owner_response_encode",
+            Self::TraversalOwnerService => "traversal_owner_service",
+            Self::TraversalTransportWait => "traversal_transport_wait",
+            Self::TraversalStragglerSpread => "traversal_straggler_spread",
+            Self::TraversalCoordinatorReceiveDecode => "traversal_coordinator_receive_decode",
+            Self::TraversalCoordinatorDecode => "traversal_coordinator_decode",
+            Self::TraversalFrontierInsert => "traversal_frontier_insert",
         }
     }
 
@@ -105,6 +144,19 @@ impl DistannQueryStage {
             Self::MaterializeCoordinatorDecode => 18,
             Self::MaterializeMapInsert => 19,
             Self::MaterializeOutputAssociate => 20,
+            Self::TraversalCoordinatorPartition => 21,
+            Self::TraversalConnectionReady => 22,
+            Self::TraversalRequestEncode => 23,
+            Self::TraversalOwnerOpenValidate => 24,
+            Self::TraversalOwnerGraphRead => 25,
+            Self::TraversalOwnerScore => 26,
+            Self::TraversalOwnerResponseEncode => 27,
+            Self::TraversalOwnerService => 28,
+            Self::TraversalTransportWait => 29,
+            Self::TraversalStragglerSpread => 30,
+            Self::TraversalCoordinatorReceiveDecode => 31,
+            Self::TraversalCoordinatorDecode => 32,
+            Self::TraversalFrontierInsert => 33,
         }
     }
 }
@@ -129,10 +181,22 @@ pub(crate) enum DistannMaterializationWork {
     ExecutorRemoteRowsConsumed,
     ExecutorLocalRowsConsumed,
     DuplicateRemoteCandidatesRequested,
+    TraversalHopRounds,
+    TraversalBatchWidth,
+    TraversalNodesRequested,
+    TraversalNodesReturned,
+    TraversalFrontierInsertions,
+    TraversalRepeatedNodes,
+    TraversalConnectionsOpened,
+    TraversalStatementsPrepared,
+    TraversalQueryCacheHits,
+    TraversalQueryCacheMisses,
+    TraversalRequestBytes,
+    TraversalResponseBytes,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 13] = [
+    pub(crate) const ALL: [Self; 25] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -146,6 +210,18 @@ impl DistannMaterializationWork {
         Self::ExecutorRemoteRowsConsumed,
         Self::ExecutorLocalRowsConsumed,
         Self::DuplicateRemoteCandidatesRequested,
+        Self::TraversalHopRounds,
+        Self::TraversalBatchWidth,
+        Self::TraversalNodesRequested,
+        Self::TraversalNodesReturned,
+        Self::TraversalFrontierInsertions,
+        Self::TraversalRepeatedNodes,
+        Self::TraversalConnectionsOpened,
+        Self::TraversalStatementsPrepared,
+        Self::TraversalQueryCacheHits,
+        Self::TraversalQueryCacheMisses,
+        Self::TraversalRequestBytes,
+        Self::TraversalResponseBytes,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -163,6 +239,18 @@ impl DistannMaterializationWork {
             Self::ExecutorRemoteRowsConsumed => "executor_remote_rows_consumed",
             Self::ExecutorLocalRowsConsumed => "executor_local_rows_consumed",
             Self::DuplicateRemoteCandidatesRequested => "duplicate_remote_candidates_requested",
+            Self::TraversalHopRounds => "traversal_hop_rounds",
+            Self::TraversalBatchWidth => "traversal_batch_width",
+            Self::TraversalNodesRequested => "traversal_nodes_requested",
+            Self::TraversalNodesReturned => "traversal_nodes_returned",
+            Self::TraversalFrontierInsertions => "traversal_frontier_insertions",
+            Self::TraversalRepeatedNodes => "traversal_repeated_nodes",
+            Self::TraversalConnectionsOpened => "traversal_connections_opened",
+            Self::TraversalStatementsPrepared => "traversal_statements_prepared",
+            Self::TraversalQueryCacheHits => "traversal_query_cache_hits",
+            Self::TraversalQueryCacheMisses => "traversal_query_cache_misses",
+            Self::TraversalRequestBytes => "traversal_request_bytes",
+            Self::TraversalResponseBytes => "traversal_response_bytes",
         }
     }
 
@@ -181,6 +269,18 @@ impl DistannMaterializationWork {
             Self::ExecutorRemoteRowsConsumed => 10,
             Self::ExecutorLocalRowsConsumed => 11,
             Self::DuplicateRemoteCandidatesRequested => 12,
+            Self::TraversalHopRounds => 13,
+            Self::TraversalBatchWidth => 14,
+            Self::TraversalNodesRequested => 15,
+            Self::TraversalNodesReturned => 16,
+            Self::TraversalFrontierInsertions => 17,
+            Self::TraversalRepeatedNodes => 18,
+            Self::TraversalConnectionsOpened => 19,
+            Self::TraversalStatementsPrepared => 20,
+            Self::TraversalQueryCacheHits => 21,
+            Self::TraversalQueryCacheMisses => 22,
+            Self::TraversalRequestBytes => 23,
+            Self::TraversalResponseBytes => 24,
         }
     }
 }

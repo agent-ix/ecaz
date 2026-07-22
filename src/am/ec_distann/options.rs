@@ -55,6 +55,9 @@ static ECDISTANN_BENCHMARK_TRAINING_QUERY_PATH_GUC: GucSetting<Option<CString>> 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(-1);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
 /// ADR-085 D12 production policy. This is deliberately not a GUC or reloption.
 pub(super) const PRODUCTION_MATERIALIZATION_BATCH_SIZE: usize = 10;
 const ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH: i32 = 4096;
@@ -292,6 +295,15 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_owner_payload_plan_cache",
+        c"Task 193 benchmark-only owner payload prepared-plan cache arm.",
+        c"When enabled, physical payload requests reuse a generation-owned, projection-fingerprinted SPI plan. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.hop_rounds",
         c"FR-081 hop-round budget (H) for ec_distann scans.",
@@ -463,6 +475,15 @@ pub(super) fn materialization_batch_size() -> usize {
     }
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     PRODUCTION_MATERIALIZATION_BATCH_SIZE
+}
+
+pub(super) fn benchmark_owner_payload_plan_cache() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    false
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

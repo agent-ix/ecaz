@@ -1,0 +1,13 @@
+Script started on 2026-07-22 08:56:14-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-192-194)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-192-194/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 52.43s
+     Running unittests src/main.rs (target/debug/deps/ecaz-bd2d3290bf0a881d)
+
+running 1 test
+test commands::bench::suite::tests::distann_variant_rejects_removed_owner_validation_selector ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 453 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-22 08:57:05-07:00 [COMMAND_EXIT_CODE="0"]

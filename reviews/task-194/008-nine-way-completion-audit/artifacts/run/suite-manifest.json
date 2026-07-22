@@ -1,0 +1,83 @@
+{
+  "suite": "task194-nine-way-completion-100k",
+  "schema_version": 1,
+  "config": "reviews/task-194/008-nine-way-completion-audit/artifacts/task194-nine-way-corrected.json",
+  "config_sha256": "ef93772b302044829cb715a62f63982cecf3321bf8067d87afbfbcd9b4995ab4",
+  "dry_run": false,
+  "generated_at_unix_ms": 1784714785184,
+  "runner_git_commit": "e5f3e5995375bd9de1850200de2189659d326bf7",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "nine-way-completion-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-194/008-nine-way-completion-audit/artifacts/run/nine-way-completion-100k",
+        "--run-dir",
+        "target/task194-nine-way-completion-100k",
+        "--log-file",
+        "reviews/task-194/008-nine-way-completion-audit/artifacts/run/nine-way-completion-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "41820",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--production-head-policy",
+        "training_landmarks_exact",
+        "--training-query-path",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task194",
+        "phase1",
+        "completion_audit",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-194/008-nine-way-completion-audit/artifacts/run/nine-way-completion-100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1784714785209,
+      "finished_at_unix_ms": 1784716790214,
+      "duration_ms": 2089063,
+      "exit_code": 0
+    }
+  ]
+}

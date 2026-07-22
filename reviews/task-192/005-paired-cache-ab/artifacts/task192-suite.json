@@ -1,0 +1,54 @@
+{
+  "name": "task192-endpoint-cache-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-192/002-isolated-ab-100k/artifacts/run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "endpoint-cache-100k",
+      "tags": ["task187", "phase1", "post_materialization", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/endpoint-cache-100k",
+      "run_dir": "target/task192-endpoint-cache-100k",
+      "nodes": 3,
+      "base_port": 41420,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "production_head_policy": "training_landmarks_exact",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "benchmark_seed_variants": [
+        {
+          "name": "owner-validation-uncached",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_validation_cache": false
+        },
+        {
+          "name": "owner-validation-cached",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_validation_cache": true
+        }
+      ],
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}
