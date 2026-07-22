@@ -13,11 +13,20 @@
   - strict normal PG18 clippy with warnings denied: passed;
   - strict PG18 attribution-feature clippy with warnings denied: passed;
   - focused reconciliation parser test: 1 passed.
+  - canonical suite audit: passed, one step.
+- Installed extension preflight: target and installed PG18 libraries are both
+  24,271,128 bytes with SHA-256
+  `1f08db214b8ed61e1197307754f343947d02327098a8b83190bea9fc5f21fdb7`.
 - Planned command: `target/debug/ecaz bench suite run --config
   reviews/task-194/002-nine-way-attribution/artifacts/suite/task194-suite.json
   --database tqvector_bench --log-file
   reviews/task-194/008-nine-way-completion-audit/artifacts/suite-run.log`.
 
-The release binary identity, suite audit, manifest/results, compact summary,
-and physical recall/latency logs will be added after the run. Operational node
-logs, fixture transcript, and single-control raw logs will not be committed.
+The manifest/results, compact summary, and physical recall/latency logs will be
+added after the run. Operational node logs, fixture transcript, and
+single-control raw logs will not be committed.
+
+## Pre-run files
+
+- `release-install.log`: release install transcript.
+- `suite-audit.log`: suite shape/input audit.
