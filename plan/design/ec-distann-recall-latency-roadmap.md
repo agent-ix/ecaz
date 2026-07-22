@@ -101,16 +101,16 @@ validity requirements.
 | 193 | Owner payload batch fetch | complete — STOP | prepared-plan candidate was not useful end to end; Task 196 owns independent duplicate follow-up |
 | 194 | Traversal transport attribution | complete — STOP | reconciled nine-way TRAV-01 counters; fixed-work wider/fewer-round candidate was not useful end to end |
 | 195 | Owner schema cache productionization | complete — outside-reviewed ACCEPT; PROMOTE | exact recall; warm mean -8.33%/-13.28%/-18.11%; selector removed |
-| 196 | Lazy10 stable-prefix duplicate | implementation complete — outside review requested | exact-distance rank shift attributed; identity-keyed reuse passes nine semantic cases and exact-recall/work 10k/50k/100k A/B |
+| 196 | Lazy10 stable-prefix duplicate | complete — outside-reviewed ACCEPT; PROMOTE | exact-distance rank shift attributed; identity-keyed reuse passes nine semantic cases and exact-recall/work 10k/50k/100k A/B |
 | 197 | Multinode release-profile preflight | proposed benchmark-integrity follow-up | fail before expensive self-hosted builds on debug/mixed extension provenance |
 
-Tasks 184, 191, 187, and 192--195 are complete. Task 195's implementation and
+Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
 at all three scales while warm mean improved by 8.33% / 13.28% / 18.11%, and
 the normal release contains no benchmark selector or attribution surface. Task
-196 awaits closeout after outside review of its attributed identity-keyed
-prefix reuse, nine 100k semantic cases with zero duplicate requests, and full
-exact-recall/work release matrix. Task 192
+196 also received an outside-reviewed ACCEPT/PROMOTE after its attributed
+identity-keyed prefix reuse passed nine 100k semantic cases with zero duplicate
+requests and the full exact-recall/work release matrix. Task 192
 promoted its bounded generation-keyed row-schema cache after identical
 recall/storage and warm mean wins of 21.9% / 15.7% / 16.9% at 10k / 50k /
 100k; Task 195 owns the normal release change. Task 187 closed STOP on a fresh

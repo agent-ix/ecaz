@@ -1,6 +1,6 @@
 # Task 196: ec_distann Lazy10 Stable-Prefix Duplicate Attribution
 
-Status: **implementation complete — outside review requested** (2026-07-22).
+Status: **complete — outside-reviewed ACCEPT; PROMOTE** (2026-07-22).
 Priority: P1 correctness/efficiency follow-up from Task 193 packet 005.
 
 Packet 001 reproduced and attributed the failure: equal exact distances can
@@ -11,8 +11,9 @@ already proven prefix. Its fixed release run passes all nine real-100k semantic
 scenarios with zero duplicate remote requests. Packet 003's isolated release
 A/B preserves exact 0.9990/0.9685/0.9625 recall and all 78 materialization work
 counters at 10k/50k/100k; storage is exact at 50k/100k with a two-page 10k
-independent-build variance, and normal-build feature isolation passes. Merge
-awaits outside review and parent Task 195.
+independent-build variance, and normal-build feature isolation passes. Outside
+review accepted the task with no blockers and confirmed it should merge after
+parent Task 195.
 
 ## Why
 
