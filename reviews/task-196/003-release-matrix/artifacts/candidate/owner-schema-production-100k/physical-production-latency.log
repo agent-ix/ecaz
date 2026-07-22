@@ -1,0 +1,65 @@
+┌───────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┐
+│ top_k ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state │
+╞═══════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╡
+│ 32    ┆ 50    ┆ 19.8 ms ┆ 1.78 ms ┆ 16.4 ms ┆ 19.7 ms ┆ 23.2 ms ┆ 23.8 ms ┆ 24.0 ms ┆ warm        │
+└───────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┘
+[distann-stage-counters] command=latency label=top_k=32 stage=custom_scan_total scans=50 samples=100 elapsed_ns=882685101 elapsed_ms=882.685101 mean_ms=17.653702
+[distann-stage-counters] command=latency label=top_k=32 stage=head_score scans=50 samples=50 elapsed_ns=114478805 elapsed_ms=114.478805 mean_ms=2.289576
+[distann-stage-counters] command=latency label=top_k=32 stage=local_expand scans=50 samples=398 elapsed_ns=65089006 elapsed_ms=65.089006 mean_ms=1.301780
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_connection_ready scans=50 samples=50 elapsed_ns=119280 elapsed_ms=0.119280 mean_ms=0.002386
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_coordinator_decode scans=50 samples=50 elapsed_ns=705008 elapsed_ms=0.705008 mean_ms=0.014100
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_map_insert scans=50 samples=50 elapsed_ns=57339 elapsed_ms=0.057339 mean_ms=0.001147
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_output_associate scans=50 samples=100 elapsed_ns=624197 elapsed_ms=0.624197 mean_ms=0.012484
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_endpoint_critical scans=50 samples=50 elapsed_ns=298093449 elapsed_ms=298.093449 mean_ms=5.961869
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_endpoint_work scans=50 samples=100 elapsed_ns=458255036 elapsed_ms=458.255036 mean_ms=9.165101
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_node_lookup_work scans=50 samples=100 elapsed_ns=14754063 elapsed_ms=14.754063 mean_ms=0.295081
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_open_validate_work scans=50 samples=100 elapsed_ns=1195769 elapsed_ms=1.195769 mean_ms=0.023915
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_owner_payload_sql_work scans=50 samples=100 elapsed_ns=442147445 elapsed_ms=442.147445 mean_ms=8.842949
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_prepare scans=50 samples=50 elapsed_ns=285210 elapsed_ms=0.285210 mean_ms=0.005704
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_request_roundtrip_work scans=50 samples=100 elapsed_ns=541078825 elapsed_ms=541.078825 mean_ms=10.821577
+[distann-stage-counters] command=latency label=top_k=32 stage=materialize_request_wait scans=50 samples=50 elapsed_ns=348511833 elapsed_ms=348.511833 mean_ms=6.970237
+[distann-stage-counters] command=latency label=top_k=32 stage=output_merge scans=50 samples=0 elapsed_ns=0 elapsed_ms=0.000000 mean_ms=0.000000
+[distann-stage-counters] command=latency label=top_k=32 stage=query_prep scans=50 samples=50 elapsed_ns=1485699 elapsed_ms=1.485699 mean_ms=0.029714
+[distann-stage-counters] command=latency label=top_k=32 stage=remote_expand scans=50 samples=493 elapsed_ns=306621490 elapsed_ms=306.621490 mean_ms=6.132430
+[distann-stage-counters] command=latency label=top_k=32 stage=remote_materialize scans=50 samples=50 elapsed_ns=349922794 elapsed_ms=349.922794 mean_ms=6.998456
+[distann-stage-counters] command=latency label=top_k=32 stage=seed_select scans=50 samples=50 elapsed_ns=5061062 elapsed_ms=5.061062 mean_ms=0.101221
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_connection_ready scans=50 samples=493 elapsed_ns=1458758 elapsed_ms=1.458758 mean_ms=0.029175
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_coordinator_decode scans=50 samples=500 elapsed_ns=160905 elapsed_ms=0.160905 mean_ms=0.003218
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_coordinator_partition scans=50 samples=500 elapsed_ns=166010 elapsed_ms=0.166010 mean_ms=0.003320
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_coordinator_receive_decode scans=50 samples=493 elapsed_ns=1032664 elapsed_ms=1.032664 mean_ms=0.020653
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_frontier_insert scans=50 samples=38683 elapsed_ns=1082904 elapsed_ms=1.082904 mean_ms=0.021658
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_graph_read scans=50 samples=493 elapsed_ns=53596710 elapsed_ms=53.596710 mean_ms=1.071934
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_open_validate scans=50 samples=493 elapsed_ns=2862382 elapsed_ms=2.862382 mean_ms=0.057248
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_response_encode scans=50 samples=493 elapsed_ns=21177 elapsed_ms=0.021177 mean_ms=0.000424
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_score scans=50 samples=493 elapsed_ns=39658435 elapsed_ms=39.658435 mean_ms=0.793169
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_owner_service scans=50 samples=493 elapsed_ns=99334074 elapsed_ms=99.334074 mean_ms=1.986681
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_request_encode scans=50 samples=493 elapsed_ns=154506 elapsed_ms=0.154506 mean_ms=0.003090
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_straggler_spread scans=50 samples=493 elapsed_ns=20711949 elapsed_ms=20.711949 mean_ms=0.414239
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_total scans=50 samples=50 elapsed_ns=377319443 elapsed_ms=377.319443 mean_ms=7.546389
+[distann-stage-counters] command=latency label=top_k=32 stage=traversal_transport_wait scans=50 samples=493 elapsed_ns=201687268 elapsed_ms=201.687268 mean_ms=4.033745
+[distann-materialization-work] command=latency label=top_k=32 metric=client_result_rows scans=50 value=500 mean_per_scan=10.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=duplicate_remote_candidates_requested scans=50 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=executor_local_rows_consumed scans=50 value=168 mean_per_scan=3.360000
+[distann-materialization-work] command=latency label=top_k=32 metric=executor_remote_rows_consumed scans=50 value=332 mean_per_scan=6.640000
+[distann-materialization-work] command=latency label=top_k=32 metric=executor_rows_consumed scans=50 value=500 mean_per_scan=10.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=output_rows_associated scans=50 value=2000 mean_per_scan=40.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_bytes_returned scans=50 value=6135360 mean_per_scan=122707.200000
+[distann-materialization-work] command=latency label=top_k=32 metric=payload_columns_requested scans=50 value=1328 mean_per_scan=26.560000
+[distann-materialization-work] command=latency label=top_k=32 metric=ranked_candidates scans=50 value=2000 mean_per_scan=40.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_candidates_requested scans=50 value=332 mean_per_scan=6.640000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_owners_requested scans=50 value=100 mean_per_scan=2.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_payloads_installed scans=50 value=332 mean_per_scan=6.640000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_rows_returned scans=50 value=332 mean_per_scan=6.640000
+[distann-materialization-work] command=latency label=top_k=32 metric=remote_tombstones scans=50 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_batch_width scans=50 value=2000 mean_per_scan=40.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_connections_opened scans=50 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_frontier_insertions scans=50 value=38683 mean_per_scan=773.660000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_hop_rounds scans=50 value=500 mean_per_scan=10.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_nodes_requested scans=50 value=2000 mean_per_scan=40.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_nodes_returned scans=50 value=2000 mean_per_scan=40.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_query_cache_hits scans=50 value=715 mean_per_scan=14.300000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_query_cache_misses scans=50 value=100 mean_per_scan=2.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_repeated_nodes scans=50 value=0 mean_per_scan=0.000000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_request_bytes scans=50 value=693596 mean_per_scan=13871.920000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_response_bytes scans=50 value=526516 mean_per_scan=10530.320000
+[distann-materialization-work] command=latency label=top_k=32 metric=traversal_statements_prepared scans=50 value=0 mean_per_scan=0.000000

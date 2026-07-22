@@ -1,0 +1,35 @@
+Task 196 production release A/B comparison
+
+baseline_packet=reviews/task-195/002-release-matrix/artifacts/candidate
+baseline_runner_extension_sha=51e5d614501742cb9d5db4b6b7d39ebcfba5d7c0
+baseline_production_code_sha=65e746fc1a85f8efa8032a81aa2cc95b55c23503
+task196_base_sha=adcd95623aae91d960ff2f884ff64a95b0f6406e
+candidate_packet=reviews/task-196/003-release-matrix/artifacts/candidate
+candidate_runner_extension_sha=a5e567c45a5c96f67a842163e2293843d0a3774a
+candidate_fix_sha=77adfb6b40430e4fb4684bb9403717e1e1a42f68
+suite_config_sha256=7b5ae0f28ca1979f5ad49fdd957fc70ed0cfdcd745a40086588ce774a81250bd
+baseline_to_task196_base_custom_scan_diff=none
+profile=release
+fixture=three independent PG18 physical owners, one index per table
+search=training_landmarks_exact,rabitq,lazy10,BW4,H100
+protocol=200 recall queries,2000 trials,10 warmups,50 measured iterations
+
+scale=10k recall_before=0.9990 recall_after=0.9990 warm_mean_before_ms=20.90 warm_mean_after_ms=19.10 warm_delta_pct=-8.61 p95_before_ms=25.50 p95_after_ms=22.40 storage_before_bytes=242745344 storage_after_bytes=242761728 storage_delta_bytes=16384 duplicate_requested_after=0
+scale=50k recall_before=0.9685 recall_after=0.9685 warm_mean_before_ms=20.90 warm_mean_after_ms=19.90 warm_delta_pct=-4.78 p95_before_ms=24.30 p95_after_ms=23.10 storage_before_bytes=1242750976 storage_after_bytes=1242750976 storage_delta_bytes=0 duplicate_requested_after=0
+scale=100k recall_before=0.9625 recall_after=0.9625 warm_mean_before_ms=19.90 warm_mean_after_ms=19.80 warm_delta_pct=-0.50 p95_before_ms=23.30 p95_after_ms=23.20 storage_before_bytes=2496626688 storage_after_bytes=2496626688 storage_delta_bytes=0 duplicate_requested_after=0
+
+recall_exact_match_scales=3/3
+materialization_work_rows_before=78
+materialization_work_rows_after=78
+materialization_work_mismatches=0
+query_digest_mismatches=0
+training_slice_digest_mismatches=0
+head_sample_digest_mismatches=0
+seed_id_digest_mismatches=0
+topology_gates_passed=3/3
+owner_engagement_gates_passed=3/3
+traversal_reconciliation_gates_passed=3/3
+suite_status=3_succeeded,0_failed,0_missing,0_stale
+
+decision=PROMOTE
+interpretation=identity-keyed reuse fixes rejected-prefix rank shifts without changing ordinary production work, recall, or stored format; observed latency is neutral-to-favorable and is not claimed as a causal speedup; the 10k two-page storage delta is independent-build page-layout variation.
