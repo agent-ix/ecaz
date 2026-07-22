@@ -379,6 +379,8 @@ struct CachedRetainedEpoch {
     generation: GenerationCatalogRow,
     source_attnum: i32,
     code_len: usize,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    row_schema: Arc<super::row_schema::ResolvedRowSchema>,
 }
 
 thread_local! {
@@ -630,6 +632,8 @@ struct RetainedGenerationScan {
     graph_relation_name: String,
     source_attnum: i32,
     code_len: usize,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    row_schema: Arc<super::row_schema::ResolvedRowSchema>,
 }
 
 impl RetainedGenerationScan {
@@ -697,6 +701,11 @@ impl RetainedGenerationScan {
             let code_len = binding
                 .code_len(usize::from(descriptor.dimensions))
                 .map_err(DistannExpandError::GenerationMissing)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let row_schema = Arc::new(
+                super::row_schema::resolve_relation_schema(generation.row_tier_relid)
+                    .map_err(DistannExpandError::GenerationMissing)?,
+            );
             let cached = CachedRetainedEpoch {
                 index_oid,
                 fingerprint,
@@ -704,6 +713,8 @@ impl RetainedGenerationScan {
                 generation,
                 source_attnum,
                 code_len,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                row_schema,
             };
             cache_retained_epoch(cached.clone());
             cached
@@ -713,6 +724,8 @@ impl RetainedGenerationScan {
             generation,
             source_attnum,
             code_len,
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            row_schema,
             ..
         } = cached;
         let row_relation = HeapRelationGuard::try_access_share(generation.row_tier_relid)
@@ -750,6 +763,8 @@ impl RetainedGenerationScan {
             graph_relation_name,
             source_attnum,
             code_len,
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            row_schema,
         })
     }
 
@@ -936,6 +951,7 @@ impl RetainedGenerationScan {
         vec_ids: &[u64],
         projection_attnums: &[i16],
         expected_schema_fingerprint: &[u8],
+        use_cached_schema: bool,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_started = Instant::now();
@@ -945,9 +961,23 @@ impl RetainedGenerationScan {
                 expected_schema_fingerprint.len()
             ))
         })?;
-        let resolved_schema =
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let live_schema;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let resolved_schema = if use_cached_schema {
+            self.row_schema.as_ref()
+        } else {
+            live_schema =
+                super::row_schema::resolve_relation_schema(self.generation.row_tier_relid)
+                    .map_err(DistannExpandError::GenerationMissing)?;
+            &live_schema
+        };
+        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+        let resolved_schema = {
+            let _ = use_cached_schema;
             super::row_schema::resolve_relation_schema(self.generation.row_tier_relid)
-                .map_err(DistannExpandError::GenerationMissing)?;
+                .map_err(DistannExpandError::GenerationMissing)?
+        };
         if self
             .descriptor
             .row_schema
@@ -1630,7 +1660,12 @@ fn ec_distann_materialize_physical_row_payloads(
         .collect::<Vec<_>>();
     let rows = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
         .and_then(|store| {
-            store.materialize_payloads(&ids, &projection_attnums, &expected_schema_fingerprint)
+            store.materialize_payloads(
+                &ids,
+                &projection_attnums,
+                &expected_schema_fingerprint,
+                false,
+            )
         })
         .map(|batch| batch.rows)
         .unwrap_or_else(|error| error.raise());
@@ -1650,6 +1685,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     vec_ids: Vec<i64>,
     projection_attnums: Vec<i16>,
     expected_schema_fingerprint: Vec<u8>,
+    use_cached_schema: bool,
 ) -> TableIterator<
     'static,
     (
@@ -1675,7 +1711,12 @@ fn ec_distann_materialize_physical_row_payloads_profile(
         .unwrap_or_else(|error| error.raise());
     let open_ns = duration_ns(open_started.elapsed());
     let batch = store
-        .materialize_payloads(&ids, &projection_attnums, &expected_schema_fingerprint)
+        .materialize_payloads(
+            &ids,
+            &projection_attnums,
+            &expected_schema_fingerprint,
+            use_cached_schema,
+        )
         .unwrap_or_else(|error| error.raise());
     let owner_total_ns = duration_ns(total_started.elapsed());
     let owner_open_validate_ns = open_ns.saturating_add(batch.telemetry.validate_ns);
@@ -2238,6 +2279,8 @@ impl PhysicalGenerationScan {
                     vec_ids: ids,
                     projection_attnums: &projection_attnums,
                     expected_schema_fingerprint: &schema_fingerprint,
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    use_cached_schema: super::options::benchmark_owner_validation_cache(),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;

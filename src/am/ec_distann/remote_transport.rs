@@ -586,7 +586,7 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
         owner_node_lookup_ns, owner_payload_sql_ns, payload_bytes
    FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
-       $4::smallint[], $5::bytea)";
+       $4::smallint[], $5::bytea, $6::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
@@ -822,6 +822,8 @@ pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
     pub(crate) vec_ids: &'a [u64],
     pub(crate) projection_attnums: &'a [i16],
     pub(crate) expected_schema_fingerprint: &'a [u8],
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) use_cached_schema: bool,
 }
 
 pub(crate) fn remote_physical_materialize_batch(
@@ -945,6 +947,7 @@ async fn run_one_physical_materialize_raw(
     wire_ids: &[i64],
 ) -> Result<(Vec<Row>, Duration), DistannExpandError> {
     let started = std::time::Instant::now();
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     let rows = physical_query(
         client,
         statement,
@@ -954,6 +957,20 @@ async fn run_one_physical_materialize_raw(
             &wire_ids,
             &request.projection_attnums,
             &request.expected_schema_fingerprint,
+        ],
+    )
+    .await?;
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let rows = physical_query(
+        client,
+        statement,
+        &[
+            &request.index_regclass,
+            &request.epoch_fingerprint,
+            &wire_ids,
+            &request.projection_attnums,
+            &request.expected_schema_fingerprint,
+            &request.use_cached_schema,
         ],
     )
     .await?;

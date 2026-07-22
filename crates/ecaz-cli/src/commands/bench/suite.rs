@@ -494,6 +494,9 @@ struct DistannBenchmarkSeedVariant {
     /// preserves eager materialization.
     #[serde(default)]
     materialization_batch_size: u32,
+    /// Task 192 benchmark-only retained row-schema cache arm.
+    #[serde(default)]
+    owner_validation_cache: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -4170,18 +4173,23 @@ fn expand_distann_local_multinode(
         step.training_query_path.as_deref(),
     );
     for variant in &step.benchmark_seed_variants {
+        let mut encoded = format!(
+            "{}:{}:{}:{}:{}:{}",
+            variant.name,
+            variant.seed_strategy,
+            variant.head_search_width,
+            variant.head_seed_count,
+            variant.neighbor_score_mode,
+            variant.materialization_batch_size
+        );
+        if let Some(enabled) = variant.owner_validation_cache {
+            encoded.push(':');
+            encoded.push_str(if enabled { "on" } else { "off" });
+        }
         push_arg(
             &mut args,
             "--benchmark-seed-variant",
-            &format!(
-                "{}:{}:{}:{}:{}:{}",
-                variant.name,
-                variant.seed_strategy,
-                variant.head_search_width,
-                variant.head_seed_count,
-                variant.neighbor_score_mode,
-                variant.materialization_batch_size
-            ),
+            &encoded,
         );
     }
     push_opt_arg(

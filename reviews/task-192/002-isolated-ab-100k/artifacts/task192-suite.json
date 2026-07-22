@@ -19,6 +19,26 @@
       "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
       "beam_width": 4,
       "hop_rounds": 100,
+      "benchmark_seed_variants": [
+        {
+          "name": "owner-validation-uncached",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_validation_cache": false
+        },
+        {
+          "name": "owner-validation-cached",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_validation_cache": true
+        }
+      ],
       "queries": 200,
       "top_k": 10,
       "physical_benchmark": true,
