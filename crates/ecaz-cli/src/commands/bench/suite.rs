@@ -484,6 +484,7 @@ struct SpireLocalMultinodeStep {
 /// exercises cross-process serving. The historical replicated-serving control
 /// has a separate explicit dev subcommand and is not topology evidence.
 #[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct DistannBenchmarkSeedVariant {
     name: String,
     seed_strategy: String,
@@ -494,9 +495,6 @@ struct DistannBenchmarkSeedVariant {
     /// preserves eager materialization.
     #[serde(default)]
     materialization_batch_size: u32,
-    /// Task 192 benchmark-only retained row-schema cache arm.
-    #[serde(default)]
-    owner_validation_cache: Option<bool>,
     /// Task 193 benchmark-only generation/projection owner SPI-plan cache arm.
     #[serde(default)]
     owner_payload_plan_cache: Option<bool>,
@@ -3306,23 +3304,22 @@ impl SuiteStep {
                             step.name
                         )
                     }
-                    let same_search = |left: &DistannBenchmarkSeedVariant,
-                                       right: &DistannBenchmarkSeedVariant| {
-                        left.seed_strategy == right.seed_strategy
-                            && left.head_search_width == right.head_search_width
-                            && left.head_seed_count == right.head_seed_count
-                            && left.neighbor_score_mode == right.neighbor_score_mode
-                            && left.beam_width == right.beam_width
-                            && left.hop_rounds == right.hop_rounds
-                    };
+                    let same_search =
+                        |left: &DistannBenchmarkSeedVariant,
+                         right: &DistannBenchmarkSeedVariant| {
+                            left.seed_strategy == right.seed_strategy
+                                && left.head_search_width == right.head_search_width
+                                && left.head_seed_count == right.head_seed_count
+                                && left.neighbor_score_mode == right.neighbor_score_mode
+                                && left.beam_width == right.beam_width
+                                && left.hop_rounds == right.hop_rounds
+                        };
                     let has_plan_pair = step.benchmark_seed_variants.iter().any(|control| {
                         control.owner_payload_plan_cache != Some(true)
                             && step.benchmark_seed_variants.iter().any(|candidate| {
                                 candidate.owner_payload_plan_cache == Some(true)
                                     && candidate.materialization_batch_size
                                         == control.materialization_batch_size
-                                    && candidate.owner_validation_cache
-                                        == control.owner_validation_cache
                                     && same_search(control, candidate)
                             })
                     });
@@ -3330,8 +3327,6 @@ impl SuiteStep {
                         control.materialization_batch_size == 0
                             && step.benchmark_seed_variants.iter().any(|candidate| {
                                 candidate.materialization_batch_size == 10
-                                    && candidate.owner_validation_cache
-                                        == control.owner_validation_cache
                                     && candidate.owner_payload_plan_cache
                                         == control.owner_payload_plan_cache
                                     && same_search(control, candidate)
@@ -4240,14 +4235,6 @@ fn expand_distann_local_multinode(
         let has_extended_controls = variant.owner_payload_plan_cache.is_some()
             || variant.beam_width.is_some()
             || variant.hop_rounds.is_some();
-        if variant.owner_validation_cache.is_some() || has_extended_controls {
-            encoded.push(':');
-            encoded.push_str(if variant.owner_validation_cache.unwrap_or(false) {
-                "on"
-            } else {
-                "off"
-            });
-        }
         if has_extended_controls {
             encoded.push(':');
             encoded.push_str(if variant.owner_payload_plan_cache.unwrap_or(false) {
@@ -4270,11 +4257,7 @@ fn expand_distann_local_multinode(
             encoded.push(':');
             encoded.push_str(&rounds.to_string());
         }
-        push_arg(
-            &mut args,
-            "--benchmark-seed-variant",
-            &encoded,
-        );
+        push_arg(&mut args, "--benchmark-seed-variant", &encoded);
     }
     push_opt_arg(
         &mut args,
@@ -5787,7 +5770,8 @@ psql header noise\n\
         let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
         assert!(validate_config(&config).is_err(), "correctness pair must isolate plan cache");
 
-        let raw = raw.replace("\"beam_width\": 8", "\"beam_width\": 4")
+        let raw = raw
+            .replace("\"beam_width\": 8", "\"beam_width\": 4")
             .replace("\"hop_rounds\": 50", "\"hop_rounds\": 100");
         let config: SuiteConfig = serde_json::from_str(&raw).expect("suite parses");
         validate_config(&config).expect("isolated plan pair validates");
@@ -5798,16 +5782,30 @@ psql header noise\n\
             window
                 == [
                     "--benchmark-seed-variant",
-                    "plan-off:persisted_head:32:32:rabitq:10:off:off:4:100",
+                    "plan-off:persisted_head:32:32:rabitq:10:off:4:100",
                 ]
         }));
         assert!(command.windows(2).any(|window| {
             window
                 == [
                     "--benchmark-seed-variant",
-                    "plan-on:persisted_head:32:32:rabitq:10:off:on:4:100",
+                    "plan-on:persisted_head:32:32:rabitq:10:on:4:100",
                 ]
         }));
+    }
+
+    #[test]
+    fn distann_variant_rejects_removed_owner_validation_selector() {
+        let raw = r#"{
+          "name": "production",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_validation_cache": true
+        }"#;
+        assert!(serde_json::from_str::<DistannBenchmarkSeedVariant>(raw).is_err());
     }
 
     #[test]

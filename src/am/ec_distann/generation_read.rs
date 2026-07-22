@@ -383,7 +383,6 @@ struct CachedRetainedEpoch {
     generation: GenerationCatalogRow,
     source_attnum: i32,
     code_len: usize,
-    #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
     row_schema: Arc<super::row_schema::ResolvedRowSchema>,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     owner_payload_plans: Rc<RefCell<VecDeque<CachedOwnerPayloadPlan>>>,
@@ -650,7 +649,6 @@ struct RetainedGenerationScan {
     graph_relation_name: String,
     source_attnum: i32,
     code_len: usize,
-    #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
     row_schema: Arc<super::row_schema::ResolvedRowSchema>,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     owner_payload_plans: Rc<RefCell<VecDeque<CachedOwnerPayloadPlan>>>,
@@ -721,7 +719,6 @@ impl RetainedGenerationScan {
             let code_len = binding
                 .code_len(usize::from(descriptor.dimensions))
                 .map_err(DistannExpandError::GenerationMissing)?;
-            #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
             let row_schema = Arc::new(
                 super::row_schema::resolve_relation_schema(generation.row_tier_relid)
                     .map_err(DistannExpandError::GenerationMissing)?,
@@ -733,7 +730,6 @@ impl RetainedGenerationScan {
                 generation,
                 source_attnum,
                 code_len,
-                #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
                 row_schema,
                 #[cfg(feature = "distann-head-attribution-benchmark")]
                 owner_payload_plans: Rc::new(RefCell::new(VecDeque::new())),
@@ -746,7 +742,6 @@ impl RetainedGenerationScan {
             generation,
             source_attnum,
             code_len,
-            #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
             row_schema,
             #[cfg(feature = "distann-head-attribution-benchmark")]
             owner_payload_plans,
@@ -787,7 +782,6 @@ impl RetainedGenerationScan {
             graph_relation_name,
             source_attnum,
             code_len,
-            #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
             row_schema,
             #[cfg(feature = "distann-head-attribution-benchmark")]
             owner_payload_plans,
@@ -977,7 +971,6 @@ impl RetainedGenerationScan {
         vec_ids: &[u64],
         projection_attnums: &[i16],
         expected_schema_fingerprint: &[u8],
-        use_cached_schema: bool,
         use_cached_payload_plan: bool,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -988,23 +981,7 @@ impl RetainedGenerationScan {
                 expected_schema_fingerprint.len()
             ))
         })?;
-        #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
-        let live_schema;
-        #[cfg(any(feature = "distann-head-attribution-benchmark", feature = "pg_test"))]
-        let resolved_schema = if use_cached_schema {
-            self.row_schema.as_ref()
-        } else {
-            live_schema =
-                super::row_schema::resolve_relation_schema(self.generation.row_tier_relid)
-                    .map_err(DistannExpandError::GenerationMissing)?;
-            &live_schema
-        };
-        #[cfg(not(any(feature = "distann-head-attribution-benchmark", feature = "pg_test")))]
-        let resolved_schema = {
-            let _ = use_cached_schema;
-            super::row_schema::resolve_relation_schema(self.generation.row_tier_relid)
-                .map_err(DistannExpandError::GenerationMissing)?
-        };
+        let resolved_schema = self.row_schema.as_ref();
         if self
             .descriptor
             .row_schema
@@ -1234,10 +1211,9 @@ impl RetainedGenerationScan {
     }
 }
 
-/// PG18 lifecycle-test surface for Task 192. This takes the exact production
-/// retained-generation lookup and payload-schema validation path while forcing
-/// the benchmark candidate's cached-schema arm. It is absent from extension
-/// builds that do not enable `pg_test`.
+/// PG18 lifecycle-test surface for Tasks 192/195. This takes the exact
+/// production retained-generation lookup and cached payload-schema validation
+/// path. It is absent from extension builds that do not enable `pg_test`.
 #[cfg(feature = "pg_test")]
 #[pg_extern]
 fn ec_distann_debug_validate_cached_row_schema(
@@ -1252,7 +1228,7 @@ fn ec_distann_debug_validate_cached_row_schema(
         .fingerprint()
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     store
-        .materialize_payloads(&[], &[], &expected, true, false)
+        .materialize_payloads(&[], &[], &expected, false)
         .unwrap_or_else(|error| error.raise());
     true
 }
@@ -1830,7 +1806,6 @@ fn ec_distann_materialize_physical_row_payloads(
                 &projection_attnums,
                 &expected_schema_fingerprint,
                 false,
-                false,
             )
         })
         .map(|batch| batch.rows)
@@ -1851,7 +1826,6 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     vec_ids: Vec<i64>,
     projection_attnums: Vec<i16>,
     expected_schema_fingerprint: Vec<u8>,
-    use_cached_schema: bool,
     use_cached_payload_plan: bool,
 ) -> TableIterator<
     'static,
@@ -1882,7 +1856,6 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             &ids,
             &projection_attnums,
             &expected_schema_fingerprint,
-            use_cached_schema,
             use_cached_payload_plan,
         )
         .unwrap_or_else(|error| error.raise());
@@ -2447,8 +2420,6 @@ impl PhysicalGenerationScan {
                     vec_ids: ids,
                     projection_attnums: &projection_attnums,
                     expected_schema_fingerprint: &schema_fingerprint,
-                    #[cfg(feature = "distann-head-attribution-benchmark")]
-                    use_cached_schema: super::options::benchmark_owner_validation_cache(),
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     use_cached_payload_plan:
                         super::options::benchmark_owner_payload_plan_cache(),
