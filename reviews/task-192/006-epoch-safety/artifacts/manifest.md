@@ -10,9 +10,9 @@
 
 | Artifact | SHA-256 | Command / result |
 |---|---|---|
-| `pg18-multi-epoch-cache.log` | `3a0675798413761ee24a60ef77356b773f033c5e100984f63fadf678229793e1` | `PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo pgrx test pg18 test_distann_multi_epoch_publish --no-default-features --features pg18`; 1 passed, 0 failed |
-| `production-pg18-check.log` | `f197bcaeca8722d8049efd29da94584b10795281fe990164a691a27555477068` | `cargo check --no-default-features --features pg18`; pass |
-| `attribution-pg18-check.log` | `f86c9d805ead36a72aa5c78c9273d94906437ea8f6a6173e085d6b7519c6bdc4` | `cargo check --no-default-features --features pg18,distann-head-attribution-benchmark`; pass |
+| `pg18-multi-epoch-cache.log` | `5903849bc485126900728aeb96561120a52cf0855f13ba932d702d281ffcc425` | `PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo pgrx test pg18 test_distann_multi_epoch_publish --no-default-features --features pg18`; 1 passed, 0 failed |
+| `production-pg18-check.log` | `39c18d7c424b74a7f276ff0d512b93b01d444595c37e1eadd71bde93364fc830` | `cargo check --no-default-features --features pg18`; pass |
+| `attribution-pg18-check.log` | `c8ab72b9ab6d39962e34d75374b30c93b969a562bdbe250863322c389f9de718` | `cargo check --no-default-features --features pg18,distann-head-attribution-benchmark`; pass |
 
 The pgrx test log also records that its debug install wrote
 `/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so`. Post-test size was
