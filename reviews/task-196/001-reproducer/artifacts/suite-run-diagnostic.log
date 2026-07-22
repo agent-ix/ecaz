@@ -1,0 +1,43 @@
+Script started on 2026-07-22 11:49:51-07:00 [<not executed on terminal>]
+[suite:task196-lazy10-stable-prefix-reproducer-100k] wrote reviews/task-196/001-reproducer/artifacts/diagnostic-run/suite-manifest.json
+[suite:task196-lazy10-stable-prefix-reproducer-100k] reject-multiple-windows-stable-prefix-100k -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-196/001-reproducer/artifacts/diagnostic-run/reject-multiple-windows-stable-prefix-100k --run-dir target/task196-stable-prefix-reproducer --log-file reviews/task-196/001-reproducer/artifacts/diagnostic-run/reject-multiple-windows-stable-prefix-100k/distann-local-multinode.log --nodes 3 --physical-benchmark --distann-stage-counters --materialization-correctness --benchmark-iterations 3 --benchmark-warmup-iterations 1 --base-port 41720 --graph-degree 32 --head-index-cap 4096 --beam-width 4 --hop-rounds 100 --production-head-policy training_landmarks_exact --training-query-path /home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv --benchmark-seed-variant eager-control:persisted_head:32:32:rabitq:0:off:4:100 --benchmark-seed-variant production-lazy10:persisted_head:32:32:rabitq:10:off:4:100 --queries 20 --top-k 10 --skip-fault-drills --corpus-prefix ec_real_100k --staged-dir /home/peter/dev/ecaz/data/staged-current
+[suite:task196-lazy10-stable-prefix-reproducer-100k] wrote reviews/task-196/001-reproducer/artifacts/diagnostic-run/suite-manifest.json
+[distann-multicluster] repo=/home/peter/dev/ecaz/.claude/worktrees/task-196
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=41720 rows=2000 dim=16 head_index_cap=4096
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=33195 rows=33195 non_owned=0 orphans=0 graph_bytes=274538496 row_bytes=780869632 directory_bytes=1056768 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=33432 rows=33432 non_owned=0 orphans=0 graph_bytes=276307968 row_bytes=787546112 directory_bytes=1064960 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=33373 rows=33373 non_owned=0 orphans=0 graph_bytes=276070400 row_bytes=789463040 directory_bytes=1073152 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=33195 rows=33195 non_owned=0 orphans=0 graph_bytes=274563072 row_bytes=780902400 directory_bytes=1056768 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=33432 rows=33432 non_owned=0 orphans=0 graph_bytes=276307968 row_bytes=787546112 directory_bytes=1064960 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=33373 rows=33373 non_owned=0 orphans=0 graph_bytes=276070400 row_bytes=789463040 directory_bytes=1073152 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=100000
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true expected_source_id=0002ac0d-7833-48cf-8ab0-b2bdbd872cda materialized_source_id=0002ac0d-7833-48cf-8ab0-b2bdbd872cda
+[distann-multicluster] physical_remote_owner node=3 custom_scan=true pass=true expected_source_id=00003e3b-9e53-4668-8200-ae85d21b4f5e materialized_source_id=00003e3b-9e53-4668-8200-ae85d21b4f5e
+NOTICE:  table "dm" does not exist, skipping
+NOTICE:  table "dm_queries" does not exist, skipping
+NOTICE:  table "dm" does not exist, skipping
+NOTICE:  table "dm_queries" does not exist, skipping
+NOTICE:  table "dm" does not exist, skipping
+NOTICE:  table "dm_queries" does not exist, skipping
+
+   0: [91mrunning materialization semantic query for variant production-lazy10[0m
+   1: [91mdb error[0m
+   2: [91mERROR: EC_INTERNAL: stable-prefix deepening re-requested 1 remote payloads (window_start=20 window_end=30 window_remote_ids=7 prefix_remote_rank_shifts=2 prefix_duplicate_ranked_ids=0)[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m1104[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+[suite:task196-lazy10-stable-prefix-reproducer-100k] wrote reviews/task-196/001-reproducer/artifacts/diagnostic-run/suite-manifest.json
+
+   0: [91msuite step "reject-multiple-windows-stable-prefix-100k" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1094[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
+
+Script done on 2026-07-22 12:22:45-07:00 [COMMAND_EXIT_CODE="1"]

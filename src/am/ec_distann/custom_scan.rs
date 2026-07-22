@@ -616,6 +616,15 @@ struct DistannCustomScanExecState {
     physical_generation: Option<super::generation_read::PhysicalGenerationScan>,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     materialized_remote_ids: std::collections::HashSet<u64>,
+    /// Feature-only diagnosis for Task 196. A deeper search may return the same
+    /// exact-distance remote candidate at a different raw rank because the
+    /// search deliberately retains its historical distance-only unstable sort.
+    /// The production fix must reuse by immutable vec_id without changing that
+    /// ordering contract.
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    last_prefix_remote_rank_shifts: usize,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    last_prefix_duplicate_ranked_ids: usize,
 }
 
 fn default_exec_state() -> DistannCustomScanExecState {
@@ -640,6 +649,10 @@ fn default_exec_state() -> DistannCustomScanExecState {
         physical_generation: None,
         #[cfg(feature = "distann-head-attribution-benchmark")]
         materialized_remote_ids: std::collections::HashSet::new(),
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        last_prefix_remote_rank_shifts: 0,
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        last_prefix_duplicate_ranked_ids: 0,
         query: Vec::new(),
         effective: 0,
         early_exit: false,
@@ -1101,7 +1114,13 @@ fn materialize_pending_physical_window(
         );
         if duplicate_requests > 0 {
             pgrx::error!(
-                "EC_INTERNAL: stable-prefix deepening re-requested {duplicate_requests} remote payloads"
+                "EC_INTERNAL: stable-prefix deepening re-requested {duplicate_requests} remote payloads \
+                 (window_start={window_start} window_end={window_end} \
+                 window_remote_ids={} prefix_remote_rank_shifts={} \
+                 prefix_duplicate_ranked_ids={})",
+                remote_ids.len(),
+                state.last_prefix_remote_rank_shifts,
+                state.last_prefix_duplicate_ranked_ids,
             );
         }
     }
@@ -1170,26 +1189,31 @@ fn pending_materialization_window(
     (output_index, end)
 }
 
-fn take_stable_remote_output(
+fn materialized_remote_output_vec_id(output: &CustomScanOutputRow) -> Option<u64> {
+    match output {
+        CustomScanOutputRow::Remote { vec_id, .. }
+        | CustomScanOutputRow::RemoteSkipped { vec_id } => Some(*vec_id),
+        CustomScanOutputRow::Local(_)
+        | CustomScanOutputRow::Frozen(_)
+        | CustomScanOutputRow::RemotePending { .. } => None,
+    }
+}
+
+fn take_materialized_remote_output_by_id(
     previous_outputs: &mut [Option<CustomScanOutputRow>],
     previous_proven: usize,
-    raw_rank: usize,
     vec_id: u64,
 ) -> Option<CustomScanOutputRow> {
-    if raw_rank >= previous_proven {
-        return None;
-    }
-    let previous = previous_outputs.get_mut(raw_rank)?.take()?;
-    match previous {
-        row @ CustomScanOutputRow::Remote {
-            vec_id: previous_id,
-            ..
-        }
-        | row @ CustomScanOutputRow::RemoteSkipped {
-            vec_id: previous_id,
-        } if previous_id == vec_id => Some(row),
-        _ => None,
-    }
+    let position = previous_outputs
+        .iter()
+        .take(previous_proven)
+        .position(|output| {
+            output
+                .as_ref()
+                .and_then(materialized_remote_output_vec_id)
+                == Some(vec_id)
+        })?;
+    previous_outputs.get_mut(position)?.take()
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1414,18 +1438,52 @@ unsafe fn run_physical_generation_search(
     if super::options::materialization_batch_size() > 0 {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let association_started = Instant::now();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            let previous_remote_ranks = previous_outputs
+                .iter()
+                .take(previous_proven)
+                .enumerate()
+                .filter_map(|(rank, output)| {
+                    output
+                        .as_ref()
+                        .and_then(materialized_remote_output_vec_id)
+                        .map(|vec_id| (vec_id, rank))
+                })
+                .collect::<std::collections::HashMap<_, _>>();
+            state.last_prefix_remote_rank_shifts = hits
+                .iter()
+                .take(hits.len().min(effective))
+                .enumerate()
+                .filter(|(rank, hit)| {
+                    previous_remote_ranks
+                        .get(&hit.vec_id)
+                        .is_some_and(|previous_rank| *previous_rank != *rank)
+                })
+                .count();
+            let mut ranked_ids = std::collections::HashSet::new();
+            state.last_prefix_duplicate_ranked_ids = hits
+                .iter()
+                .take(hits.len().min(effective))
+                .filter(|hit| !ranked_ids.insert(hit.vec_id))
+                .count();
+        }
         state.proven_outputs = hits.len().min(effective);
         state.outputs = hits
             .into_iter()
-            .enumerate()
-            .map(|(raw_rank, hit)| {
+            .map(|hit| {
                 if hit.heap_tid != crate::storage::page::ItemPointer::INVALID {
                     CustomScanOutputRow::Frozen(hit.heap_tid)
                 } else {
-                    take_stable_remote_output(
+                    // Distance-only sorting intentionally retains historical
+                    // single-node ordering semantics, so equal-distance IDs can
+                    // move raw rank when a deeper search admits more hits. The
+                    // generation is immutable: reuse an already fetched remote
+                    // payload by vec_id anywhere in the previously proven
+                    // prefix, while preserving the new search's output order.
+                    take_materialized_remote_output_by_id(
                         &mut previous_outputs,
                         previous_proven,
-                        raw_rank,
                         hit.vec_id,
                     )
                     .unwrap_or(CustomScanOutputRow::RemotePending { vec_id: hit.vec_id })
@@ -1690,6 +1748,11 @@ unsafe extern "C-unwind" fn rescan_custom_scan(node: *mut pg_sys::CustomScanStat
     state.outputs.clear();
     #[cfg(feature = "distann-head-attribution-benchmark")]
     state.materialized_remote_ids.clear();
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        state.last_prefix_remote_rank_shifts = 0;
+        state.last_prefix_duplicate_ranked_ids = 0;
+    }
     state.next_output = 0;
     state.loaded = false;
 }
@@ -1709,7 +1772,10 @@ unsafe extern "C-unwind" fn end_custom_scan(node: *mut pg_sys::CustomScanState) 
 
 #[cfg(test)]
 mod materialization_candidate_tests {
-    use super::{pending_materialization_window, take_stable_remote_output, CustomScanOutputRow};
+    use super::{
+        pending_materialization_window, take_materialized_remote_output_by_id,
+        CustomScanOutputRow,
+    };
 
     #[test]
     fn ranked_windows_are_deterministic_and_proven_bounded() {
@@ -1721,25 +1787,27 @@ mod materialization_candidate_tests {
     }
 
     #[test]
-    fn stable_ranked_payload_survives_deepening_without_refetch() {
+    fn materialized_payload_survives_rank_shift_without_refetch() {
         let mut previous = vec![
-            Some(CustomScanOutputRow::RemotePending { vec_id: 7 }),
             Some(CustomScanOutputRow::Remote {
                 vec_id: 11,
                 payload_nulls: vec![false],
                 payload_values: vec![vec![1, 2, 3]],
             }),
             Some(CustomScanOutputRow::RemoteSkipped { vec_id: 13 }),
+            Some(CustomScanOutputRow::RemotePending { vec_id: 7 }),
         ];
 
-        assert!(take_stable_remote_output(&mut previous, 3, 0, 7).is_none());
+        // A deeper distance-only sort moves vec_id 13 from rank 1 to rank 0.
+        // Taking it must not discard vec_id 11, which moved the other way.
         assert!(matches!(
-            take_stable_remote_output(&mut previous, 3, 1, 11),
-            Some(CustomScanOutputRow::Remote { vec_id: 11, .. })
-        ));
-        assert!(matches!(
-            take_stable_remote_output(&mut previous, 3, 2, 13),
+            take_materialized_remote_output_by_id(&mut previous, 3, 13),
             Some(CustomScanOutputRow::RemoteSkipped { vec_id: 13 })
         ));
+        assert!(matches!(
+            take_materialized_remote_output_by_id(&mut previous, 3, 11),
+            Some(CustomScanOutputRow::Remote { vec_id: 11, .. })
+        ));
+        assert!(take_materialized_remote_output_by_id(&mut previous, 3, 7).is_none());
     }
 }

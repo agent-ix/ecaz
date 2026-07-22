@@ -1423,29 +1423,32 @@ async fn run_materialization_correctness(
         let work = coordinator
             .query(
                 "SELECT metric, value FROM ec_distann_materialization_work_snapshot()
-                  WHERE metric IN ('executor_remote_rows_consumed', 'executor_local_rows_consumed')",
+                  WHERE metric IN ('executor_remote_rows_consumed', 'executor_local_rows_consumed',
+                                   'duplicate_remote_candidates_requested')",
                 &[],
             )
             .await?;
         let mut remote = 0_i64;
         let mut local = 0_i64;
+        let mut duplicate_requested = 0_i64;
         for row in work {
             match row.get::<_, String>(0).as_str() {
                 "executor_remote_rows_consumed" => remote = row.get(1),
                 "executor_local_rows_consumed" => local = row.get(1),
+                "duplicate_remote_candidates_requested" => duplicate_requested = row.get(1),
                 _ => {}
             }
         }
-        if remote > 0 && local > 0 && remote + local == 10 {
-            mixed = Some((query_offset, remote, local));
+        if remote > 0 && local > 0 && remote + local == 10 && duplicate_requested == 0 {
+            mixed = Some((query_offset, remote, local, duplicate_requested));
             break;
         }
     }
-    let (mixed_query_offset, remote, local) = mixed.ok_or_else(|| {
+    let (mixed_query_offset, remote, local, duplicate_requested) = mixed.ok_or_else(|| {
         color_eyre::eyre::eyre!("no mixed local/remote top-10 in first 10 queries")
     })?;
     lines.push(format!(
-        "physical_materialization_correctness scale={scale} scenario=mixed_local_remote pass=true rows=10 query_offset={mixed_query_offset} remote_consumed={remote} local_consumed={local}"
+        "physical_materialization_correctness scale={scale} scenario=mixed_local_remote pass=true rows=10 query_offset={mixed_query_offset} remote_consumed={remote} local_consumed={local} duplicate_requested={duplicate_requested}"
     ));
 
     coordinator
@@ -1504,11 +1507,24 @@ async fn run_materialization_correctness(
     for node in stopped {
         restart_physical_node(pg_ctl, socket_dir, node, nodes).await?;
     }
+    let duplicate_requested = coordinator
+        .query_one(
+            "SELECT value FROM ec_distann_materialization_work_snapshot()
+              WHERE metric = 'duplicate_remote_candidates_requested'",
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    if duplicate_requested != 0 {
+        bail!(
+            "post-first-batch remote-owner outage re-requested {duplicate_requested} remote payloads"
+        );
+    }
     let Some(later_error) = later_error else {
         bail!("post-first-batch remote-owner outage returned a complete prefix without error");
     };
     lines.push(format!(
-        "physical_materialization_correctness scale={scale} scenario=post_first_batch_remote_failure pass=true first_rows={} first_remote_requested={requested} error_digest={}",
+        "physical_materialization_correctness scale={scale} scenario=post_first_batch_remote_failure pass=true first_rows={} first_remote_requested={requested} duplicate_requested={duplicate_requested} error_digest={}",
         first_rows.len(),
         hex::encode(Sha256::digest(later_error.to_string().as_bytes())),
     ));

@@ -1,0 +1,114 @@
+{
+  "name": "task195-owner-schema-cache-release-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-195/002-release-matrix/artifacts/candidate",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "owner-schema-production-10k",
+      "tags": ["task195", "release_ab", "production", "ec_real_10k"],
+      "artifact_dir": "${artifact_dir}/owner-schema-production-10k",
+      "run_dir": "target/task195-owner-schema-release",
+      "nodes": 3,
+      "base_port": 41520,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "production_head_policy": "training_landmarks_exact",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "production",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "owner-schema-production-50k",
+      "tags": ["task195", "release_ab", "production", "ec_real_50k"],
+      "artifact_dir": "${artifact_dir}/owner-schema-production-50k",
+      "run_dir": "target/task195-owner-schema-release",
+      "nodes": 3,
+      "base_port": 41520,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "production_head_policy": "training_landmarks_exact",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_50k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "production",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "owner-schema-production-100k",
+      "tags": ["task195", "release_ab", "production", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/owner-schema-production-100k",
+      "run_dir": "target/task195-owner-schema-release",
+      "nodes": 3,
+      "base_port": 41520,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "production_head_policy": "training_landmarks_exact",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "production",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10
+        }
+      ]
+    }
+  ]
+}
