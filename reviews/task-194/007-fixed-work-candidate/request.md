@@ -29,3 +29,15 @@ step rather than separate, confounded builds.
 
 Implementation: `e444f6474`.
 Evidence metadata and the checked-in suite are in `artifacts/manifest.md`.
+
+## Decision: STOP
+
+The release 100k suite succeeded with identical storage and improved recall
+(`0.9625 -> 0.9675`). BW=8/H=50 reduced hop rounds `10.0 -> 5.88`, traversal
+`7.685 -> 7.082 ms/scan`, and transport wait `4.180 -> 3.435 ms/scan`, but
+expanded nodes rose `40.0 -> 47.04` and straggler spread rose
+`0.411 -> 0.736 ms/scan`. End-to-end mean moved only `24.30 -> 24.20 ms`
+and p95 regressed `27.80 -> 28.30 ms`.
+
+That fails the pre-registered usefulness gate. TRAV-14/TRAV-15 do not advance
+to a full-scale matrix or productionization task.
