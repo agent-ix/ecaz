@@ -1428,6 +1428,10 @@ fn ec_distann_expand_physical_nodes_profile(
         name!(neighbor_code_dists, Vec<f32>),
         name!(owner_total_ns, i64),
         name!(owner_open_validate_ns, i64),
+        name!(owner_graph_read_ns, i64),
+        name!(owner_score_ns, i64),
+        name!(owner_response_encode_ns, i64),
+        name!(owner_response_bytes, i64),
     ),
 > {
     let owner_started = Instant::now();
@@ -1444,12 +1448,22 @@ fn ec_distann_expand_physical_nodes_profile(
     let expanded = store
         .expand(&query, query_digest, &ids, code_threshold)
         .unwrap_or_else(|error| error.raise());
-    let owner_total_ns = duration_ns(owner_started.elapsed());
-    let owner_total_ns = i64::try_from(owner_total_ns).unwrap_or(i64::MAX);
     let owner_open_validate_ns =
         i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
-    TableIterator::new(expanded.into_iter().map(move |node| {
-        (
+    let owner_graph_read_ns = expanded
+        .first()
+        .map_or(0, |node| node.owner_graph_read_ns);
+    let owner_score_ns = expanded.first().map_or(0, |node| node.owner_score_ns);
+    let response_started = Instant::now();
+    let owner_response_bytes = expanded.iter().fold(0_usize, |total, node| {
+        total.saturating_add(
+            22_usize.saturating_add(node.neighbor_vec_ids.len().saturating_mul(12)),
+        )
+    });
+    let rows = expanded
+        .into_iter()
+        .map(|node| {
+            (
             i64::from_le_bytes(node.vec_id.to_le_bytes()),
             node.exact_dist,
             node.is_tombstone,
@@ -1458,8 +1472,27 @@ fn ec_distann_expand_physical_nodes_profile(
                 .map(|id| i64::from_le_bytes(id.to_le_bytes()))
                 .collect(),
             node.neighbor_code_dists,
+            )
+        })
+        .collect::<Vec<_>>();
+    let owner_response_encode_ns =
+        i64::try_from(duration_ns(response_started.elapsed())).unwrap_or(i64::MAX);
+    let owner_response_bytes = i64::try_from(owner_response_bytes).unwrap_or(i64::MAX);
+    let owner_total_ns =
+        i64::try_from(duration_ns(owner_started.elapsed())).unwrap_or(i64::MAX);
+    TableIterator::new(rows.into_iter().map(move |row| {
+        (
+            row.0,
+            row.1,
+            row.2,
+            row.3,
+            row.4,
             owner_total_ns,
             owner_open_validate_ns,
+            owner_graph_read_ns,
+            owner_score_ns,
+            owner_response_encode_ns,
+            owner_response_bytes,
         )
     }))
 }
@@ -2563,8 +2596,6 @@ impl PhysicalMultiOwnerExpander<'_> {
                 remote_work.push((ordinal, owned));
             }
         }
-        #[cfg(feature = "distann-head-attribution-benchmark")]
-        let request_started = Instant::now();
         let requests = remote_work
             .iter()
             .map(|(ordinal, owned)| {
@@ -2585,11 +2616,6 @@ impl PhysicalMultiOwnerExpander<'_> {
                 })
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
-        #[cfg(feature = "distann-head-attribution-benchmark")]
-        super::stage_counters::record(
-            super::stage_counters::DistannQueryStage::TraversalRequestEncode,
-            request_started.elapsed(),
-        );
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let remote_started = Instant::now();
         let responses = super::remote_transport::remote_physical_expand_batch(&requests);
@@ -2780,12 +2806,11 @@ impl DistannNodeExpander for GenerationExpander<'_> {
             },
         )?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
-        super::stage_counters::record(
-            super::stage_counters::DistannQueryStage::TraversalOwnerGraphRead,
-            graph_started.elapsed(),
-        );
-
-        vec_ids
+        let owner_graph_read_ns =
+            i64::try_from(duration_ns(graph_started.elapsed())).unwrap_or(i64::MAX);
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let score_started = Instant::now();
+        let responses = vec_ids
             .iter()
             .map(|vec_id| {
                 let node = records.get(vec_id).ok_or_else(|| {
@@ -2796,8 +2821,6 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                 })?;
                 let count = usize::from(node.neighbor_count);
                 let mut neighbor_dists = vec![0.0; count];
-                #[cfg(feature = "distann-head-attribution-benchmark")]
-                let score_started = Instant::now();
                 self.prepared
                     .score_dists_batch(
                         &node.neighbor_codes[..count * self.code_len],
@@ -2806,11 +2829,6 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                         &mut neighbor_dists,
                     )
                     .map_err(DistannExpandError::Internal)?;
-                #[cfg(feature = "distann-head-attribution-benchmark")]
-                super::stage_counters::record(
-                    super::stage_counters::DistannQueryStage::TraversalOwnerScore,
-                    score_started.elapsed(),
-                );
                 Ok(DistannExpandedNode {
                     vec_id: node.vec_id,
                     exact_dist: (!node.tombstoned)
@@ -2822,8 +2840,26 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                     neighbor_code_dists: neighbor_dists,
                     owner_total_ns: 0,
                     owner_open_validate_ns: 0,
+                    owner_graph_read_ns: 0,
+                    owner_score_ns: 0,
+                    owner_response_encode_ns: 0,
+                    owner_response_bytes: 0,
+                    coordinator_rpc_ns: 0,
+                    coordinator_decode_ns: 0,
                 })
             })
-            .collect()
+            .collect::<Result<Vec<_>, DistannExpandError>>()?;
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let responses = {
+            let mut responses = responses;
+            let owner_score_ns =
+                i64::try_from(duration_ns(score_started.elapsed())).unwrap_or(i64::MAX);
+            for response in &mut responses {
+                response.owner_graph_read_ns = owner_graph_read_ns;
+                response.owner_score_ns = owner_score_ns;
+            }
+            responses
+        };
+        Ok(responses)
     }
 }

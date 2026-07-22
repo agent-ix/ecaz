@@ -871,6 +871,20 @@ fn benchmark_ms(cell: &str) -> Result<f64> {
         .wrap_err_with(|| format!("decoding benchmark duration {cell:?}"))
 }
 
+fn attribution_stage_mean(stage_rows: &[&str], stage: &str) -> Result<f64> {
+    let row = stage_rows
+        .iter()
+        .find(|row| row.split_whitespace().any(|field| field == format!("stage={stage}")))
+        .ok_or_else(|| color_eyre::eyre::eyre!("missing attribution stage {stage}"))?;
+    let value = row
+        .split_whitespace()
+        .find_map(|field| field.strip_prefix("mean_ms="))
+        .ok_or_else(|| color_eyre::eyre::eyre!("attribution stage {stage} has no mean_ms"))?;
+    value
+        .parse::<f64>()
+        .wrap_err_with(|| format!("parsing mean_ms for attribution stage {stage}"))
+}
+
 async fn run_physical_bench_child(args: Vec<String>) -> Result<String> {
     let executable = std::env::current_exe().wrap_err("resolving benchmark executable")?;
     let output = Command::new(&executable)
@@ -2168,10 +2182,45 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
                 .collect::<Vec<_>>();
-            if stage_rows.len() != 30 {
+            if stage_rows.len() != 34 {
                 bail!(
-                    "physical latency attribution expected 30 ec_distann stage rows, got {}",
+                    "physical latency attribution expected 34 ec_distann stage rows, got {}",
                     stage_rows.len()
+                );
+            }
+            let remote_expand = attribution_stage_mean(&stage_rows, "remote_expand")?;
+            let remote_components = [
+                "traversal_connection_ready",
+                "traversal_request_encode",
+                "traversal_owner_service",
+                "traversal_transport_wait",
+                "traversal_coordinator_receive_decode",
+            ]
+            .iter()
+            .map(|stage| attribution_stage_mean(&stage_rows, stage))
+            .sum::<Result<f64>>()?;
+            let remote_error = (remote_components - remote_expand).abs()
+                / remote_expand.max(f64::EPSILON);
+            let traversal_total = attribution_stage_mean(&stage_rows, "traversal_total")?;
+            let traversal_components = [
+                "local_expand",
+                "remote_expand",
+                "traversal_coordinator_partition",
+                "traversal_coordinator_decode",
+                "traversal_frontier_insert",
+            ]
+            .iter()
+            .map(|stage| attribution_stage_mean(&stage_rows, stage))
+            .sum::<Result<f64>>()?;
+            let traversal_error = (traversal_components - traversal_total).abs()
+                / traversal_total.max(f64::EPSILON);
+            let reconciliation_pass = remote_error <= 0.05 && traversal_error <= 0.10;
+            lines.push(format!(
+                "physical_benchmark_traversal_reconciliation scale={scale} variant={variant} arm={arm} remote_expand_ms={remote_expand:.6} remote_components_ms={remote_components:.6} remote_relative_error={remote_error:.6} remote_tolerance=0.05 traversal_total_ms={traversal_total:.6} traversal_components_ms={traversal_components:.6} traversal_relative_error={traversal_error:.6} traversal_tolerance=0.10 pass={reconciliation_pass}"
+            ));
+            if !reconciliation_pass {
+                bail!(
+                    "physical traversal attribution failed reconciliation: remote relative error {remote_error:.4}, traversal relative error {traversal_error:.4}"
                 );
             }
             for stage in stage_rows {
@@ -2183,12 +2232,12 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 19 server-side work metrics. The bench
+            // The extension exposes 25 server-side work metrics. The bench
             // child appends one client_result_rows metric so the measured
             // result-consumption boundary is represented in the same stream.
-            if work_rows.len() != 20 {
+            if work_rows.len() != 26 {
                 bail!(
-                    "physical latency attribution expected 20 ec_distann attribution-work rows, got {}",
+                    "physical latency attribution expected 26 ec_distann attribution-work rows, got {}",
                     work_rows.len()
                 );
             }
@@ -4669,6 +4718,20 @@ mod tests {
             beam_width: None,
             hop_rounds: None,
         }
+    }
+
+    #[test]
+    fn traversal_reconciliation_reads_exact_stage_labels() {
+        let rows = [
+            "command=latency stage=remote_expand mean_ms=6.25",
+            "command=latency stage=traversal_owner_service mean_ms=2.00",
+        ];
+        assert_eq!(attribution_stage_mean(&rows, "remote_expand").unwrap(), 6.25);
+        assert_eq!(
+            attribution_stage_mean(&rows, "traversal_owner_service").unwrap(),
+            2.0
+        );
+        assert!(attribution_stage_mean(&rows, "remote").is_err());
     }
 
     #[test]

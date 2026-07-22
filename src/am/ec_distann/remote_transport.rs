@@ -568,7 +568,8 @@ const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
-        neighbor_vec_ids, neighbor_code_dists, owner_total_ns, owner_open_validate_ns
+        neighbor_vec_ids, neighbor_code_dists, owner_total_ns, owner_open_validate_ns,
+        owner_graph_read_ns, owner_score_ns, owner_response_encode_ns, owner_response_bytes
    FROM ec_distann_expand_physical_nodes_profile(
        $1::text::regclass, $2::bytea, $3::real[],
        $4::bytea, $5::bigint[], $6::real)";
@@ -673,6 +674,8 @@ pub(crate) fn remote_physical_expand_batch(
     if requests.is_empty() {
         return Vec::new();
     }
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let wire_ids_started = std::time::Instant::now();
     let wire_ids = requests
         .iter()
         .map(|request| {
@@ -683,6 +686,8 @@ pub(crate) fn remote_physical_expand_batch(
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let wire_ids_elapsed = wire_ids_started.elapsed();
     let conn_keys = requests
         .iter()
         .map(|request| lifecycle_connection_key(request.conninfo))
@@ -701,10 +706,43 @@ pub(crate) fn remote_physical_expand_batch(
                 .enumerate()
                 .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
                 .collect::<Vec<_>>();
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let connections_opened = conn_keys
+                .iter()
+                .filter(|key| !connections.contains_key(*key))
+                .count();
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let connection_started = std::time::Instant::now();
             ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
                 .await
                 .map_err(DistannExpandError::Internal)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let statements_prepared = conn_keys
+                .iter()
+                .filter(|key| {
+                    !connections[*key]
+                        .prepared_statements
+                        .contains_key(PHYSICAL_EXPAND_SQL)
+                })
+                .count();
             ensure_physical_statements(connections, &conn_keys, PHYSICAL_EXPAND_SQL).await?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            {
+                super::stage_counters::record(
+                    super::stage_counters::DistannQueryStage::TraversalConnectionReady,
+                    connection_started.elapsed(),
+                );
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::TraversalConnectionsOpened,
+                    connections_opened,
+                );
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::TraversalStatementsPrepared,
+                    statements_prepared,
+                );
+            }
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let encode_started = std::time::Instant::now();
             let wire_queries = requests
                 .iter()
                 .enumerate()
@@ -718,6 +756,40 @@ pub(crate) fn remote_physical_expand_batch(
                     }
                 })
                 .collect::<Vec<_>>();
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            {
+                let query_cache_hits = wire_queries.iter().filter(|query| query.is_empty()).count();
+                let request_bytes = requests
+                    .iter()
+                    .enumerate()
+                    .map(|(index, request)| {
+                        request
+                            .index_regclass
+                            .len()
+                            .saturating_add(request.epoch_fingerprint.len())
+                            .saturating_add(wire_queries[index].len().saturating_mul(4))
+                            .saturating_add(request.query_digest.len())
+                            .saturating_add(wire_ids[index].len().saturating_mul(8))
+                            .saturating_add(5)
+                    })
+                    .sum();
+                super::stage_counters::record(
+                    super::stage_counters::DistannQueryStage::TraversalRequestEncode,
+                    wire_ids_elapsed.saturating_add(encode_started.elapsed()),
+                );
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::TraversalQueryCacheHits,
+                    query_cache_hits,
+                );
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::TraversalQueryCacheMisses,
+                    wire_queries.len().saturating_sub(query_cache_hits),
+                );
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::TraversalRequestBytes,
+                    request_bytes,
+                );
+            }
             let futures = requests.iter().enumerate().map(|(index, request)| {
                 let pooled = &connections[&conn_keys[index]];
                 run_one_physical_expand(
@@ -728,30 +800,46 @@ pub(crate) fn remote_physical_expand_batch(
                     &wire_ids[index],
                 )
             });
-            #[cfg(feature = "distann-head-attribution-benchmark")]
-            let wait_started = std::time::Instant::now();
             let results = join_owner_futures(futures).await;
             #[cfg(feature = "distann-head-attribution-benchmark")]
             {
-                let owner_totals = results
+                let telemetry = results
                     .iter()
                     .filter_map(|result| result.as_ref().ok())
-                    .filter_map(|nodes| nodes.first().map(|node| node.owner_total_ns.max(0)))
+                    .filter_map(|nodes| nodes.first())
                     .collect::<Vec<_>>();
-                if let (Some(min), Some(max)) = (owner_totals.iter().min(), owner_totals.iter().max()) {
-                    super::stage_counters::record(
-                        super::stage_counters::DistannQueryStage::TraversalOwnerService,
-                        Duration::from_nanos(u64::try_from(*max).unwrap_or(u64::MAX)),
-                    );
+                if let Some(critical) = telemetry.iter().max_by_key(|node| node.coordinator_rpc_ns) {
+                    let rpc_ns = critical.coordinator_rpc_ns.max(0);
+                    let owner_ns = critical.owner_total_ns.max(0);
+                    let decode_ns = critical.coordinator_decode_ns.max(0);
+                    let transport_ns = rpc_ns.saturating_sub(owner_ns).saturating_sub(decode_ns);
+                    for (stage, nanos) in [
+                        (super::stage_counters::DistannQueryStage::TraversalOwnerOpenValidate, critical.owner_open_validate_ns),
+                        (super::stage_counters::DistannQueryStage::TraversalOwnerGraphRead, critical.owner_graph_read_ns),
+                        (super::stage_counters::DistannQueryStage::TraversalOwnerScore, critical.owner_score_ns),
+                        (super::stage_counters::DistannQueryStage::TraversalOwnerResponseEncode, critical.owner_response_encode_ns),
+                        (super::stage_counters::DistannQueryStage::TraversalOwnerService, critical.owner_total_ns),
+                        (super::stage_counters::DistannQueryStage::TraversalTransportWait, transport_ns),
+                        (super::stage_counters::DistannQueryStage::TraversalCoordinatorReceiveDecode, critical.coordinator_decode_ns),
+                    ] {
+                        super::stage_counters::record(
+                            stage,
+                            Duration::from_nanos(u64::try_from(nanos.max(0)).unwrap_or(u64::MAX)),
+                        );
+                    }
+                    let owner_totals = telemetry.iter().map(|node| node.owner_total_ns.max(0));
+                    let min = owner_totals.clone().min().unwrap_or(0);
+                    let max = owner_totals.max().unwrap_or(0);
                     super::stage_counters::record(
                         super::stage_counters::DistannQueryStage::TraversalStragglerSpread,
-                        Duration::from_nanos(u64::try_from((*max - *min).max(0)).unwrap_or(u64::MAX)),
+                        Duration::from_nanos(u64::try_from((max - min).max(0)).unwrap_or(u64::MAX)),
                     );
-                    super::stage_counters::record(
-                        super::stage_counters::DistannQueryStage::TraversalTransportWait,
-                        wait_started.elapsed().saturating_sub(Duration::from_nanos(
-                            u64::try_from(*max).unwrap_or(u64::MAX),
-                        )),
+                    let response_bytes = telemetry.iter().fold(0_usize, |total, node| {
+                        total.saturating_add(usize::try_from(node.owner_response_bytes.max(0)).unwrap_or(usize::MAX))
+                    });
+                    super::stage_counters::record_work(
+                        super::stage_counters::DistannMaterializationWork::TraversalResponseBytes,
+                        response_bytes,
                     );
                 }
             }
@@ -776,6 +864,8 @@ async fn run_one_physical_expand(
     wire_query: &[f32],
     wire_ids: &[i64],
 ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let rpc_started = std::time::Instant::now();
     let rows = physical_query(
         client,
         statement,
@@ -789,7 +879,9 @@ async fn run_one_physical_expand(
         ],
     )
     .await?;
-    rows.into_iter()
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let decode_started = std::time::Instant::now();
+    let nodes = rows.into_iter()
         .map(|row| {
             let vec_id: i64 = row.try_get(0).map_err(row_err)?;
             let exact_dist: Option<f32> = row.try_get(1).map_err(row_err)?;
@@ -798,6 +890,10 @@ async fn run_one_physical_expand(
             let neighbor_code_dists: Vec<f32> = row.try_get(4).map_err(row_err)?;
             let owner_total_ns: i64 = row.try_get(5).map_err(row_err)?;
             let owner_open_validate_ns: i64 = row.try_get(6).map_err(row_err)?;
+            let owner_graph_read_ns: i64 = row.try_get(7).map_err(row_err)?;
+            let owner_score_ns: i64 = row.try_get(8).map_err(row_err)?;
+            let owner_response_encode_ns: i64 = row.try_get(9).map_err(row_err)?;
+            let owner_response_bytes: i64 = row.try_get(10).map_err(row_err)?;
             Ok(DistannExpandedNode {
                 vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
                 exact_dist,
@@ -810,9 +906,29 @@ async fn run_one_physical_expand(
                 neighbor_code_dists,
                 owner_total_ns,
                 owner_open_validate_ns,
+                owner_graph_read_ns,
+                owner_score_ns,
+                owner_response_encode_ns,
+                owner_response_bytes,
+                coordinator_rpc_ns: 0,
+                coordinator_decode_ns: 0,
             })
         })
-        .collect()
+        .collect::<Result<Vec<_>, DistannExpandError>>()?;
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let nodes = {
+        let mut nodes = nodes;
+        let coordinator_decode_ns =
+            i64::try_from(decode_started.elapsed().as_nanos()).unwrap_or(i64::MAX);
+        let coordinator_rpc_ns =
+            i64::try_from(rpc_started.elapsed().as_nanos()).unwrap_or(i64::MAX);
+        for node in &mut nodes {
+            node.coordinator_decode_ns = coordinator_decode_ns;
+            node.coordinator_rpc_ns = coordinator_rpc_ns;
+        }
+        nodes
+    };
+    Ok(nodes)
 }
 
 pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
@@ -1591,6 +1707,12 @@ async fn run_one_remote(
                 neighbor_code_dists,
                 owner_total_ns: 0,
                 owner_open_validate_ns: 0,
+                owner_graph_read_ns: 0,
+                owner_score_ns: 0,
+                owner_response_encode_ns: 0,
+                owner_response_bytes: 0,
+                coordinator_rpc_ns: 0,
+                coordinator_decode_ns: 0,
             })
         })
         .collect::<Result<Vec<_>, DistannExpandError>>()
@@ -2144,6 +2266,12 @@ mod tests {
             neighbor_code_dists: vec![0.5],
             owner_total_ns: 0,
             owner_open_validate_ns: 0,
+            owner_graph_read_ns: 0,
+            owner_score_ns: 0,
+            owner_response_encode_ns: 0,
+            owner_response_bytes: 0,
+            coordinator_rpc_ns: 0,
+            coordinator_decode_ns: 0,
         }
     }
 

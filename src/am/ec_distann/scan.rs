@@ -48,6 +48,12 @@ pub(crate) struct DistannExpandedNode {
     /// for coordinator-local expansions and test doubles.
     pub(crate) owner_total_ns: i64,
     pub(crate) owner_open_validate_ns: i64,
+    pub(crate) owner_graph_read_ns: i64,
+    pub(crate) owner_score_ns: i64,
+    pub(crate) owner_response_encode_ns: i64,
+    pub(crate) owner_response_bytes: i64,
+    pub(crate) coordinator_rpc_ns: i64,
+    pub(crate) coordinator_decode_ns: i64,
 }
 
 /// The frozen local/remote expansion seam (FR-079 shape; see module docs).
@@ -427,6 +433,12 @@ mod tests {
                         neighbor_code_dists: neighbors.iter().map(|(_, d)| *d).collect(),
                         owner_total_ns: 0,
                         owner_open_validate_ns: 0,
+                        owner_graph_read_ns: 0,
+                        owner_score_ns: 0,
+                        owner_response_encode_ns: 0,
+                        owner_response_bytes: 0,
+                        coordinator_rpc_ns: 0,
+                        coordinator_decode_ns: 0,
                     })
                 })
                 .collect()
