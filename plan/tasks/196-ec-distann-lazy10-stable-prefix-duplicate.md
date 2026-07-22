@@ -5,6 +5,14 @@ follow-up from Task 193 packet 005. The first real-fixture reproducer targets
 the known `reject_multiple_windows` failure at 100k and records whether the
 same remote vec_id shifted raw rank across iterative deepening.
 
+Packet 001 reproduced and attributed the failure: equal exact distances can
+reorder two immutable vec_ids when iterative deepening expands the ranked set,
+while the accepted Task 191 implementation reused payloads by old raw rank.
+Packet 002 replaces that rank assumption with vec_id-keyed lookup inside the
+already proven prefix. Its fixed release run passes all nine real-100k semantic
+scenarios with zero duplicate remote requests. The required isolated
+10k/50k/100k recall, latency, and storage A/B remains in progress.
+
 ## Why
 
 Task 193's post-measurement correctness drill failed before exercising the
