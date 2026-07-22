@@ -14,12 +14,20 @@
   latency iterations. Nine-way stage/work counters are enabled.
 - Corpus/query: `ec_real_100k`; corpus TSVs are intentionally not committed.
 - Suite config: `task194-fixed-work-100k.json`.
+- Suite audit: passed, one step.
+- Validation: strict PG18 attribution-feature clippy passed with warnings
+  denied; the focused CLI variant tests passed; the runner build completed.
+- Installed extension preflight: release target and installed PG18 library are
+  both 24,244,984 bytes with SHA-256
+  `ec58009be20adf9db45af01fcc9bf0a947b9ec893ee6541f9c47d194f5ea8031`.
 - Planned command: `target/debug/ecaz bench suite run --config
   reviews/task-194/007-fixed-work-candidate/artifacts/task194-fixed-work-100k.json
   --database tqvector_bench --log-file
   reviews/task-194/007-fixed-work-candidate/artifacts/suite-run.log`.
 
-The release install identity, suite audit, structured results, summary, recall,
-latency, and storage artifacts will be added after the run. Operational node
-logs, fixture transcripts, single-control raw logs, and generated corpus/truth
-data will not be committed.
+The structured results, summary, recall, latency, and storage artifacts will be
+added after the run. The release-install transcript is owned by Task 193 packet
+005 because one verified install serves the sequential Task 193/194 run;
+`validation.md` records the identical preflight locally. Operational node logs,
+fixture transcripts, single-control raw logs, and generated corpus/truth data
+will not be committed.
