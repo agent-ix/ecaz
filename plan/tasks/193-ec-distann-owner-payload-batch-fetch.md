@@ -1,6 +1,6 @@
 # Task 193: ec_distann Owner Payload Batch Fetch
 
-Status: **in progress — reopened by review** (2026-07-21).
+Status: **complete — STOP** (2026-07-21).
 Priority: P2. Roadmap candidates: `MAT-19`, `MAT-23`, `MAT-24` (pick one).
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
@@ -39,6 +39,17 @@ candidate pool. The explicitly pre-registered experiment is the narrow
 owner-side prepared-plan cache for the `build_payload_sql` inner query,
 keyed by generation plus projection fingerprint and invalidated with the
 generation entry. It must be measured after the verified Task 194 A/A.
+
+## Outcome
+
+The isolated release 100k A/B preserved recall and storage but reduced warm
+mean only `23.60 -> 23.50 ms` and owner payload SQL only
+`8.746651 -> 8.599735 ms/scan`. MAT-19/MAT-20 therefore fail the
+pre-registered usefulness gate and do not advance to full scale or
+productionization. The packet-001 finding stands: MAT-23/MAT-24 batching is
+already the production mechanism. Packet 005 contains the decision evidence;
+Task 196 tracks the independent cache-off lazy10 duplicate found by the
+optional promotion drill.
 
 ## Entry gate
 

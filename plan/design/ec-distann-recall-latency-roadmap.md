@@ -149,12 +149,12 @@ remain controls rather than new candidates.
 | MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on wire/decode share |
 | MAT-17 | Cache resolved row schema per published generation | **measured winner Task 192; productionization Task 195** |
 | MAT-18 | Cache attnum-to-send-function resolution | included in Task 192's resolved immutable schema entry; productionization Task 195 |
-| MAT-19 | Cache the owner-side inner SPI plan | candidate pool Task 193; per-row payload SQL measured at ~1.26 ms/row |
-| MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | conditional on MAT-19 attribution |
+| MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
+| MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
 | MAT-21 | Replace textual `ctid` formatting with typed/binary locators | deferred after fixed-10 winner |
 | MAT-22 | Return row-tier locator with expanded candidates | conditional; changes expansion wire payload |
-| MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | candidate pool Task 193 |
-| MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | candidate pool Task 193 |
+| MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
+| MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
 | MAT-26 | Batch detoast/binary-send work by physical block | conditional on varlena/heap share |
 | MAT-27 | Covering row-tier layout for common scalar projections | deferred; format/storage decision |
