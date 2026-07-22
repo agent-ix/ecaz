@@ -61,3 +61,12 @@ end-to-end mean usefully and regressed p95. The corrected canonical attribution
 does not select a different candidate family, so no second candidate or
 duplicate A/B is warranted. Task 194 closes STOP with production behavior
 unchanged.
+
+The owner timers and clock reads are compiled only under the attribution
+feature. Row-side telemetry cannot represent an owner response containing zero
+rows; such a response is omitted from critical-owner/straggler aggregation.
+This healthy run did not encounter missing returns (`40.0` nodes requested and
+`40.0` returned per scan), but failure/empty-response attribution must use a
+future out-of-band response envelope rather than treating this packet as proof
+for that case. Task 197 records the reviewer's separate fail-fast release-build
+preflight recommendation.

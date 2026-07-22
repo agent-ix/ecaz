@@ -77,3 +77,15 @@ corpus/truth data, and the runner transcript are not committed.
 - Decision: accept packet 007's paired fixed-work candidate STOP. The completed
   attribution still selects round-trip reduction, and that candidate already
   failed to produce a useful end-to-end/tail win.
+
+## Measurement boundary notes
+
+- Request/response byte counters are logical payload sizes. PostgreSQL protocol
+  framing and executor serialization remain inside the transport residual.
+- Owner service sidebands are duplicated onto returned rows and sampled from
+  the first row. A zero-row response therefore contributes no owner-service or
+  straggler sample. Requested and returned nodes were identical in this healthy
+  run, so the limitation was not exercised; it remains explicit for future
+  failure/empty-response work.
+- All added clock reads and owner-side profile SQL are attribution-feature-only;
+  the normal PG18 build retains the production endpoint ABI and no new timers.

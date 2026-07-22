@@ -100,6 +100,8 @@ validity requirements.
 | 193 | Owner payload batch fetch | complete — STOP | prepared-plan candidate was not useful end to end; Task 196 owns independent duplicate follow-up |
 | 194 | Traversal transport attribution | complete — STOP | reconciled nine-way TRAV-01 counters; fixed-work wider/fewer-round candidate was not useful end to end |
 | 195 | Owner schema cache productionization | Task 192 PROMOTE complete | normal release path, benchmark selector removed, release A/B |
+| 196 | Lazy10 stable-prefix duplicate | proposed correctness follow-up | reproduce Task 193's cache-off duplicate request and fix only with attributed evidence |
+| 197 | Multinode release-profile preflight | proposed benchmark-integrity follow-up | fail before expensive self-hosted builds on debug/mixed extension provenance |
 
 Tasks 184, 191, 187, and 192--194 are complete. Task 192 promoted its bounded
 generation-keyed row-schema cache after identical recall/storage and warm mean
