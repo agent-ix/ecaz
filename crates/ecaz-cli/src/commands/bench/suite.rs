@@ -4253,7 +4253,7 @@ fn expand_distann_local_multinode(
                     .to_string(),
             );
         }
-        if let Some(rounds) = variant.hop_rounds.or(step.hop_rounds) {
+        if let Some(rounds) = variant.hop_rounds {
             encoded.push(':');
             encoded.push_str(&rounds.to_string());
         }
@@ -5806,6 +5806,43 @@ psql header noise\n\
           "owner_validation_cache": true
         }"#;
         assert!(serde_json::from_str::<DistannBenchmarkSeedVariant>(raw).is_err());
+    }
+
+    #[test]
+    fn distann_production_variant_does_not_encode_step_search_shape() {
+        let raw = r#"{
+          "name": "production",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "production-100k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_100k",
+            "beam_width": 4,
+            "hop_rounds": 100,
+            "benchmark_seed_variants": [{
+              "name": "production",
+              "seed_strategy": "persisted_head",
+              "head_search_width": 32,
+              "head_seed_count": 32,
+              "neighbor_score_mode": "rabitq",
+              "materialization_batch_size": 10
+            }]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--benchmark-seed-variant",
+                    "production:persisted_head:32:32:rabitq:10",
+                ]
+        }));
     }
 
     #[test]
