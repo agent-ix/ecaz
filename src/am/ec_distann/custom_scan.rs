@@ -616,6 +616,15 @@ struct DistannCustomScanExecState {
     physical_generation: Option<super::generation_read::PhysicalGenerationScan>,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     materialized_remote_ids: std::collections::HashSet<u64>,
+    /// Feature-only diagnosis for Task 196. A deeper search may return the same
+    /// exact-distance remote candidate at a different raw rank because the
+    /// search deliberately retains its historical distance-only unstable sort.
+    /// The production fix must reuse by immutable vec_id without changing that
+    /// ordering contract.
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    last_prefix_remote_rank_shifts: usize,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    last_prefix_duplicate_ranked_ids: usize,
 }
 
 fn default_exec_state() -> DistannCustomScanExecState {
@@ -640,6 +649,10 @@ fn default_exec_state() -> DistannCustomScanExecState {
         physical_generation: None,
         #[cfg(feature = "distann-head-attribution-benchmark")]
         materialized_remote_ids: std::collections::HashSet::new(),
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        last_prefix_remote_rank_shifts: 0,
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        last_prefix_duplicate_ranked_ids: 0,
         query: Vec::new(),
         effective: 0,
         early_exit: false,
@@ -1101,7 +1114,13 @@ fn materialize_pending_physical_window(
         );
         if duplicate_requests > 0 {
             pgrx::error!(
-                "EC_INTERNAL: stable-prefix deepening re-requested {duplicate_requests} remote payloads"
+                "EC_INTERNAL: stable-prefix deepening re-requested {duplicate_requests} remote payloads \
+                 (window_start={window_start} window_end={window_end} \
+                 window_remote_ids={} prefix_remote_rank_shifts={} \
+                 prefix_duplicate_ranked_ids={})",
+                remote_ids.len(),
+                state.last_prefix_remote_rank_shifts,
+                state.last_prefix_duplicate_ranked_ids,
             );
         }
     }
@@ -1168,6 +1187,16 @@ fn pending_materialization_window(
     // unconsumed slots in this window survive a stable-prefix rebuild, so only
     // still-pending rows are requested by the caller.
     (output_index, end)
+}
+
+fn materialized_remote_output_vec_id(output: &CustomScanOutputRow) -> Option<u64> {
+    match output {
+        CustomScanOutputRow::Remote { vec_id, .. }
+        | CustomScanOutputRow::RemoteSkipped { vec_id } => Some(*vec_id),
+        CustomScanOutputRow::Local(_)
+        | CustomScanOutputRow::Frozen(_)
+        | CustomScanOutputRow::RemotePending { .. } => None,
+    }
 }
 
 fn take_stable_remote_output(
@@ -1414,6 +1443,36 @@ unsafe fn run_physical_generation_search(
     if super::options::materialization_batch_size() > 0 {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let association_started = Instant::now();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            let previous_remote_ranks = previous_outputs
+                .iter()
+                .take(previous_proven)
+                .enumerate()
+                .filter_map(|(rank, output)| {
+                    output
+                        .as_ref()
+                        .and_then(materialized_remote_output_vec_id)
+                        .map(|vec_id| (vec_id, rank))
+                })
+                .collect::<std::collections::HashMap<_, _>>();
+            state.last_prefix_remote_rank_shifts = hits
+                .iter()
+                .take(hits.len().min(effective))
+                .enumerate()
+                .filter(|(rank, hit)| {
+                    previous_remote_ranks
+                        .get(&hit.vec_id)
+                        .is_some_and(|previous_rank| *previous_rank != *rank)
+                })
+                .count();
+            let mut ranked_ids = std::collections::HashSet::new();
+            state.last_prefix_duplicate_ranked_ids = hits
+                .iter()
+                .take(hits.len().min(effective))
+                .filter(|hit| !ranked_ids.insert(hit.vec_id))
+                .count();
+        }
         state.proven_outputs = hits.len().min(effective);
         state.outputs = hits
             .into_iter()
@@ -1690,6 +1749,11 @@ unsafe extern "C-unwind" fn rescan_custom_scan(node: *mut pg_sys::CustomScanStat
     state.outputs.clear();
     #[cfg(feature = "distann-head-attribution-benchmark")]
     state.materialized_remote_ids.clear();
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        state.last_prefix_remote_rank_shifts = 0;
+        state.last_prefix_duplicate_ranked_ids = 0;
+    }
     state.next_output = 0;
     state.loaded = false;
 }

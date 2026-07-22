@@ -1,7 +1,9 @@
 # Task 196: ec_distann Lazy10 Stable-Prefix Duplicate Attribution
 
-Status: **proposed** (2026-07-21). Priority: P1 correctness/efficiency
-follow-up from Task 193 packet 005.
+Status: **in progress** (2026-07-22). Priority: P1 correctness/efficiency
+follow-up from Task 193 packet 005. The first real-fixture reproducer targets
+the known `reject_multiple_windows` failure at 100k and records whether the
+same remote vec_id shifted raw rank across iterative deepening.
 
 ## Why
 
