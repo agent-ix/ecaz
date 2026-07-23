@@ -1,0 +1,12 @@
+Script started on 2026-07-23 10:42:19-07:00 [<not executed on terminal>]
+f86e33eaa62e6f2b32652524beae11d6da8f3bfe04244aa868ff392b7baba5b7  target/release/ecaz
+f77c2f0b50cd2a55aad1ecf186e3550ff64371d36415e1e00a4c1dfd50bbeec4  target/release/libecaz.so
+f77c2f0b50cd2a55aad1ecf186e3550ff64371d36415e1e00a4c1dfd50bbeec4  /home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+
+Script done on 2026-07-23 10:42:19-07:00 [COMMAND_EXIT_CODE="0"]
+Script started on 2026-07-23 10:42:24-07:00 [<not executed on terminal>]
+target/release/ecaz 23229680 bytes 2026-07-23 10:41:00.229222763 -0700
+target/release/libecaz.so 35342808 bytes 2026-07-23 09:43:20.629721343 -0700
+/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so 35342808 bytes 2026-07-23 09:43:20.976714474 -0700
+
+Script done on 2026-07-23 10:42:24-07:00 [COMMAND_EXIT_CODE="0"]

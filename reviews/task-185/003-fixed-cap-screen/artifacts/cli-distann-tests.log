@@ -1,0 +1,24 @@
+Script started on 2026-07-23 10:41:07-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-185-gateway-landmark-selection)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-185-gateway-landmark-selection/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.13s
+     Running unittests src/main.rs (target/debug/deps/ecaz-59df4fb3dab25d2a)
+
+running 12 tests
+test commands::dev::distann_multicluster::tests::eager_materialization_control_is_forwarded_as_explicit_zero ... ok
+test commands::dev::distann_multicluster::tests::extension_preflight_accepts_unanimous_release_nodes ... ok
+test commands::dev::distann_multicluster::tests::extension_preflight_rejects_mixed_node_provenance_even_with_override ... ok
+test commands::dev::distann_multicluster::tests::materialization_semantic_sql_projects_null_and_varlena_evidence ... ok
+test commands::dev::distann_multicluster::tests::extension_preflight_rejects_debug_without_override ... ok
+test commands::dev::distann_multicluster::tests::materialization_variant_parser_is_backward_compatible ... ok
+test commands::dev::distann_multicluster::tests::owner_plan_and_fixed_work_variant_controls_are_explicit ... ok
+test commands::dev::distann_multicluster::tests::production_schema_cache_has_no_variant_setting ... ok
+test commands::dev::distann_multicluster::tests::extension_preflight_allows_unanimous_debug_with_explicit_override ... ok
+test commands::dev::distann_multicluster::tests::same_seed_digest_accepts_equal_neighbor_score_arms ... ok
+test commands::dev::distann_multicluster::tests::same_seed_digest_rejects_different_neighbor_score_arms ... ok
+test commands::dev::distann_multicluster::tests::traversal_reconciliation_reads_exact_stage_labels ... ok
+
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 448 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-23 10:41:54-07:00 [COMMAND_EXIT_CODE="0"]
