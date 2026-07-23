@@ -28,6 +28,9 @@ See `artifacts/manifest.md`. In summary:
 - suite audit and dry-run pass;
 - the suite-driven physical smoke succeeds, with the release preflight at log
   line 4, `physical_setup_start` at line 5, and a structured passing result;
+- a supplemental two-node replicated-control smoke uses the same helper,
+  reports unanimous release/SHA provenance before either node loads rows, and
+  ends with its direct distinct-recall gate passing;
 - no corpus TSV, PostgreSQL node log, truth cache, or polling exhaust is
   committed.
 

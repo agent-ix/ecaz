@@ -4,7 +4,9 @@
 - Task bucket / packet: `reviews/task-197/001-multinode-release-preflight/`
 - Timestamp: 2026-07-22 19:12 America/Los_Angeles
 - Lane: local PG18 self-hosted `distann-local-multinode`
-- Fixture: synthetic 32-row, 16-dimension physical fixture; one owner; port 39970
+- Fixtures: synthetic 32-row, 16-dimension physical fixture with one owner on
+  port 39970, plus the existing two-node replicated-serving control on ports
+  39980--39981 to exercise live unanimous node enumeration
 - Storage / quantizer: normal `ec_distann` physical generation / RaBitQ
 - Rerank mode: normal physical exact rerank; performance measurement not in scope
 - Isolation: one index per table; the run directory is outside the review packet
@@ -24,11 +26,15 @@
 | `suite-run.log`, `suite-manifest.json`, `results.jsonl` | `target/debug/ecaz --database tqvector_bench --log-file .../suite-run.log bench suite run --config .../task197-suite.json --manifest-output .../suite-manifest.json --results-output .../results.jsonl`; step succeeded in 2278 ms and manifest runner SHA is the evidence head. |
 | `suite/release-preflight-smoke/distann-local-multinode.log` | Full compact fixture log. Line 4 is the passed release preflight; line 5 is `physical_setup_start`; ready/published topology and serving subsequently pass. |
 | `suite/release-preflight-smoke/distann-multinode-summary.log` | Compact successful fixture summary. Regenerable PostgreSQL node logs were pruned and are not committed. |
+| `replicated-control-smoke.log`, `replicated-control-smoke/distann-multinode-summary.log` | `target/debug/ecaz --log-file .../replicated-control-smoke.log dev distann-multicluster replicated-serving-control-pg18 --pg 18 --pgbin /home/peter/.pgrx/18.3/pgrx-install/bin --artifact-dir .../replicated-control-smoke --run-dir target/task197-replicated-control-smoke --nodes 2 --base-port 39980 --rows 32 --dim 16 --graph-degree 8 --head-index-cap 64 --queries 2 --top-k 2 --skip-fault-drills`; the shared preflight passes across two live nodes before either node loads/indexes rows, and the control ends `GATE PASS`. Its optional child `ecaz bench recall` table is inconclusive and is not used as Task 197 evidence; the fixture's direct distinct-ID, qual, and lifecycle gates pass. Regenerable node logs were pruned. |
 
 ## Key results
 
 - `release_profile_preflight status=passed nodes=1 unanimous=true ... extension_build_profile=release debug_override=false`
 - The accepted preflight is line 4 and `physical_setup_start` is line 5, proving the gate was flushed before corpus/generation setup.
+- The supplemental replicated-control log reports `nodes=2 unanimous=true`
+  before either `node 1 loaded + indexed` or `node 2 loaded + indexed`, proving
+  the shared helper queries a real multi-instance roster before corpus work.
 - `results.jsonl` records `metric=multinode_release_preflight`, `pass_numeric=1`, `unanimous=true`, and `debug_override=false`.
 - All four provenance-validator cases pass; the mixed-node case exercises two different node/port observations and remains rejected under the diagnostic override.
 - The task changes only CLI fixture/suite tooling. It does not change quantizer, index, scan, rerank, posting, or storage behavior, so the task-defined 10k/50k/100k performance-matrix exemption applies.

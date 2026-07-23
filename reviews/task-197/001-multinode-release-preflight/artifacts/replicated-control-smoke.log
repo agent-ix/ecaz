@@ -1,0 +1,17 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz/.claude/worktrees/task-197
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=replicated-serving-control owners=2 instances=2 coordinator_outside_roster=false base_port=39980 rows=32 dim=16 head_index_cap=64
+[distann-multicluster] release_profile_preflight status=passed nodes=2 unanimous=true extension_git_sha=a5e567c45a5c96f67a842163e2293843d0a3774a extension_build_profile=release debug_override=false
+[distann-multicluster] node 1 loaded + indexed
+[distann-multicluster] node 2 loaded + indexed
+[distann-multicluster] RECALL_RESULT n_queries=2 identical=2 mismatched_ids=0
+[distann-multicluster] bench recall (roster=false) exit=Some(1) stderr=Run with RUST_BACKTRACE=full to include source snippets. | Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it. | 
+[distann-multicluster] bench recall (roster=true) exit=Some(1) stderr=Run with RUST_BACKTRACE=full to include source snippets. | Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it. | 
+[distann-multicluster] suite_recall_gate=INCONCLUSIVE(recall parse/connect failed)
+[distann-multicluster] qual_correctness single_n=2 multi_n=2 mismatch=0 pass=true
+[distann-multicluster] fr082_published_epoch base_ok=true coord_only_publish_errored=true all_publish_swap_ok=true pass=true
+[distann-multicluster] storage_node node=1 index_bytes=16384 heap_bytes=32768 rows=32 dim=16
+[distann-multicluster] storage_node node=2 index_bytes=16384 heap_bytes=32768 rows=32 dim=16
+[distann-multicluster] storage_summation nodes=2 coord_index_bytes=16384 cluster_index_bytes=32768 cluster_heap_bytes=65536 corpus_rows=32 dim=16 raw_vector_bytes=2048 cluster_index_space_amplification=16.0000
+[distann-multicluster] summary written to /home/peter/dev/ecaz/.claude/worktrees/task-197/reviews/task-197/001-multinode-release-preflight/artifacts/replicated-control-smoke/distann-multinode-summary.log
+[distann-multicluster] GATE PASS (recall-only): multi-node distinct-recall identical to single-node
