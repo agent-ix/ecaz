@@ -3254,6 +3254,7 @@ impl SuiteStep {
                             variant.seed_strategy.as_str(),
                             "persisted_head"
                                 | "head_sample_exact"
+                                | "head_basin_diverse"
                                 | "head_hierarchy"
                                 | "owner_scan"
                         ) {
@@ -5941,7 +5942,15 @@ psql header noise\n\
                     "corpus_prefix": "ec_real_100k",
                     "head_index_cap": 4096,
                     "head_policy": "{policy}",
-                    "training_query_path": "/staged/ec_real_100k_queries.tsv"
+                    "training_query_path": "/staged/ec_real_100k_queries.tsv",
+                    "benchmark_seed_variants": [{{
+                      "name": "basin",
+                      "seed_strategy": "head_basin_diverse",
+                      "head_search_width": 32,
+                      "head_seed_count": 32,
+                      "neighbor_score_mode": "rabitq",
+                      "materialization_batch_size": 10
+                    }}]
                   }}]
                 }}"#
             );
@@ -5955,6 +5964,13 @@ psql header noise\n\
                 .any(|window| { window == ["--head-policy", policy] }));
             assert!(command.windows(2).any(|window| {
                 window == ["--training-query-path", "/staged/ec_real_100k_queries.tsv"]
+            }));
+            assert!(command.windows(2).any(|window| {
+                window
+                    == [
+                        "--benchmark-seed-variant",
+                        "basin:head_basin_diverse:32:32:rabitq:10",
+                    ]
             }));
         }
     }
