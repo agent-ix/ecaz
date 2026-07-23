@@ -1,6 +1,6 @@
 # Task 197: DistANN Multinode Release-Profile Preflight
 
-Status: **implementation complete — outside review requested** (2026-07-22).
+Status: **complete — outside-reviewed ACCEPT; PROMOTE** (2026-07-23).
 Priority: P1 benchmark-integrity follow-up.
 
 ## Why
@@ -57,7 +57,8 @@ Packet 001 contains the focused release/debug/mixed/override tests, suite
 expansion and structured-result tests, audit/dry-run manifests, and a successful
 physical fixture smoke. Its log records the flushed release preflight before
 `physical_setup_start`, and `results.jsonl` contains the corresponding
-`multinode_release_preflight` row. Merge awaits outside review.
+`multinode_release_preflight` row. Outside review accepted the implementation
+and evidence with no findings and marked the task merge-ready.
 
 ## Review packet
 
