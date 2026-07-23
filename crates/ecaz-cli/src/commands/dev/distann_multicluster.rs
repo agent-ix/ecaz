@@ -141,6 +141,10 @@ pub struct LocalMultinodePg18Args {
     /// (expensive at scale) per-drill re-setups.
     #[arg(long, default_value_t = false)]
     pub skip_fault_drills: bool,
+    /// Permit a unanimous non-release extension profile for intentional short
+    /// diagnostic fixtures. The default benchmark contract requires release.
+    #[arg(long, default_value_t = false)]
+    pub allow_debug_extension: bool,
     /// After the physical fixture passes, drop the extension on every owner
     /// and prove AM-owned generation relations are dependency-cleaned and the
     /// preloaded hooks pass through ordinary DML without the extension.
@@ -178,6 +182,125 @@ struct Node {
     port: u16,
     data_dir: PathBuf,
     log_file: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ExtensionProvenance {
+    node_id: u32,
+    port: u16,
+    git_sha: String,
+    build_profile: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ExtensionPreflight {
+    git_sha: String,
+    build_profile: String,
+    nodes: usize,
+    debug_override: bool,
+}
+
+fn validate_extension_preflight(
+    observed: &[ExtensionProvenance],
+    allow_debug_extension: bool,
+) -> Result<ExtensionPreflight> {
+    let expected = observed
+        .first()
+        .ok_or_else(|| color_eyre::eyre::eyre!("extension preflight observed no nodes"))?;
+    if expected.git_sha.trim().is_empty() {
+        bail!(
+            "extension preflight returned an empty git SHA on node {} port {}",
+            expected.node_id,
+            expected.port
+        );
+    }
+    for node in observed.iter().skip(1) {
+        if node.git_sha != expected.git_sha || node.build_profile != expected.build_profile {
+            bail!(
+                "extension provenance mismatch on node {} port {}: expected {}/{}, observed {}/{}",
+                node.node_id,
+                node.port,
+                expected.git_sha,
+                expected.build_profile,
+                node.git_sha,
+                node.build_profile
+            );
+        }
+    }
+    if expected.build_profile != "release" && !allow_debug_extension {
+        bail!(
+            "extension preflight rejected non-release profile on node {} port {}: observed {}/{}; reinstall a release extension or set the suite step's allow_debug_extension=true for an intentional diagnostic run",
+            expected.node_id,
+            expected.port,
+            expected.git_sha,
+            expected.build_profile
+        );
+    }
+    Ok(ExtensionPreflight {
+        git_sha: expected.git_sha.clone(),
+        build_profile: expected.build_profile.clone(),
+        nodes: observed.len(),
+        debug_override: allow_debug_extension && expected.build_profile != "release",
+    })
+}
+
+async fn preflight_fixture_extensions(
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    allow_debug_extension: bool,
+) -> Result<ExtensionPreflight> {
+    let mut observed = Vec::with_capacity(nodes.len());
+    for node in nodes {
+        run_psql_file(
+            psql,
+            socket_dir,
+            node.port,
+            "CREATE EXTENSION IF NOT EXISTS ecaz",
+        )
+        .await
+        .wrap_err_with(|| {
+            format!(
+                "loading extension on node {} port {}",
+                node.node_id, node.port
+            )
+        })?;
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "connecting to node {} port {} for extension preflight",
+                        node.node_id, node.port
+                    )
+                })?;
+        let connection_task = tokio::spawn(async move { connection.await });
+        let row = client
+            .query_one("SELECT ecaz_build_git_sha(), ecaz_build_profile()", &[])
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "querying extension provenance on node {} port {}",
+                    node.node_id, node.port
+                )
+            })?;
+        observed.push(ExtensionProvenance {
+            node_id: node.node_id,
+            port: node.port,
+            git_sha: row.get(0),
+            build_profile: row.get(1),
+        });
+        connection_task.abort();
+    }
+    let preflight = validate_extension_preflight(&observed, allow_debug_extension)?;
+    crate::ecaz_println!(
+        "[distann-multicluster] release_profile_preflight status=passed nodes={} unanimous=true extension_git_sha={} extension_build_profile={} debug_override={}",
+        preflight.nodes,
+        preflight.git_sha,
+        preflight.build_profile,
+        preflight.debug_override
+    );
+    Ok(preflight)
 }
 
 async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMode) -> Result<()> {
@@ -435,15 +558,33 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             .wrap_err_with(|| format!("start node {}", node.node_id))?;
     }
 
-    let result = match mode {
-        FixtureMode::Physical => {
-            drive_physical_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path())
+    let result = async {
+        // Task 197: extension load and release/SHA validation must precede all
+        // corpus loading and physical generation construction. ecaz_println!
+        // flushes stdout and the optional packet-local mirror on every line.
+        let extension_preflight =
+            preflight_fixture_extensions(&psql, &socket_dir, &nodes, args.allow_debug_extension)
+                .await?;
+
+        match mode {
+            FixtureMode::Physical => {
+                drive_physical_fixture(
+                    args,
+                    &pg_ctl,
+                    &psql,
+                    &socket_dir,
+                    &nodes,
+                    log_dir.as_path(),
+                    &extension_preflight,
+                )
                 .await
+            }
+            FixtureMode::ReplicatedServingControl => {
+                drive_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path()).await
+            }
         }
-        FixtureMode::ReplicatedServingControl => {
-            drive_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path()).await
-        }
-    };
+    }
+    .await;
 
     if !args.keep_running {
         for node in &nodes {
@@ -539,8 +680,7 @@ fn real_setup_sql(
     let corpus = corpus_path.display().to_string().replace('\'', "''");
     let queries = queries_path.display().to_string().replace('\'', "''");
     format!(
-        "CREATE EXTENSION IF NOT EXISTS ecaz;\n\
-         DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'peter') THEN CREATE ROLE peter LOGIN SUPERUSER; END IF; END $$;\n\
+        "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'peter') THEN CREATE ROLE peter LOGIN SUPERUSER; END IF; END $$;\n\
          DROP TABLE IF EXISTS dm; DROP TABLE IF EXISTS dm_queries;\n\
          CREATE TABLE dm (id bigint, source real[], embedding ecvector);\n\
          CREATE TEMP TABLE dm_stage (id bigint, vec text);\n\
@@ -564,8 +704,7 @@ fn real_setup_sql(
 
 fn setup_sql(args: &LocalMultinodePg18Args) -> String {
     format!(
-        "CREATE EXTENSION IF NOT EXISTS ecaz;\n\
-         DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'peter') THEN CREATE ROLE peter LOGIN SUPERUSER; END IF; END $$;\n\
+        "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'peter') THEN CREATE ROLE peter LOGIN SUPERUSER; END IF; END $$;\n\
          DROP TABLE IF EXISTS dm;\n\
          CREATE TABLE dm (id bigint, source real[], embedding ecvector);\n\
          INSERT INTO dm\n\
@@ -655,8 +794,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
         ""
     };
     let prefix = format!(
-        "CREATE EXTENSION IF NOT EXISTS ecaz;
-        DROP TABLE IF EXISTS dm CASCADE;
+        "DROP TABLE IF EXISTS dm CASCADE;
         DROP TABLE IF EXISTS dm_queries;
         CREATE TABLE dm (
             id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({}){}
@@ -1542,6 +1680,7 @@ async fn run_physical_benchmarks(
     log_dir: &Path,
     build_ms: u128,
     publish_ms: u128,
+    extension_preflight: &ExtensionPreflight,
 ) -> Result<Vec<String>> {
     let beam_width = args.beam_width.unwrap_or(4);
     let hop_rounds = args.hop_rounds.unwrap_or(100);
@@ -1585,12 +1724,8 @@ async fn run_physical_benchmarks(
     let scale = corpus_prefix
         .strip_prefix("ec_real_")
         .unwrap_or(corpus_prefix);
-    let coordinator_provenance = coordinator
-        .query_one("SELECT ecaz_build_git_sha(), ecaz_build_profile()", &[])
-        .await
-        .wrap_err("querying installed coordinator extension provenance")?;
-    let expected_sha = coordinator_provenance.get::<_, String>(0);
-    let expected_profile = coordinator_provenance.get::<_, String>(1);
+    let expected_sha = &extension_preflight.git_sha;
+    let expected_profile = &extension_preflight.build_profile;
     let requested_head_policy = args
         .production_head_policy
         .as_deref()
@@ -1657,33 +1792,6 @@ async fn run_physical_benchmarks(
         .production_head_policy
         .clone()
         .unwrap_or(benchmark_head_policy);
-    let mut provenance_ports = std::collections::BTreeSet::from([coordinator_port]);
-    provenance_ports.extend(nodes.iter().map(|node| node.port));
-    for port in provenance_ports
-        .iter()
-        .copied()
-        .filter(|port| *port != coordinator_port)
-    {
-        let (client, connection) = tokio_postgres::connect(
-            &format!("host=127.0.0.1 port={port} dbname=postgres user=postgres"),
-            tokio_postgres::NoTls,
-        )
-        .await
-        .wrap_err_with(|| format!("connecting to node on port {port} for provenance"))?;
-        let task = tokio::spawn(async move { connection.await });
-        let row = client
-            .query_one("SELECT ecaz_build_git_sha(), ecaz_build_profile()", &[])
-            .await
-            .wrap_err_with(|| format!("querying installed extension provenance on port {port}"))?;
-        let sha = row.get::<_, String>(0);
-        let profile = row.get::<_, String>(1);
-        task.abort();
-        if sha != expected_sha || profile != expected_profile {
-            bail!(
-                "installed extension provenance mismatch on port {port}: expected {expected_sha}/{expected_profile}, got {sha}/{profile}"
-            );
-        }
-    }
     let physical_prefix = format!("task179_physical_{scale}");
     let single_prefix = format!("task179_single_{scale}");
     let physical_corpus = format!("{physical_prefix}_corpus");
@@ -1775,7 +1883,7 @@ async fn run_physical_benchmarks(
     ];
     let mut lines = vec![format!(
         "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true",
-        provenance_ports.len()
+        extension_preflight.nodes
     )];
     if let Some(attestation) = production_head_attestation {
         lines.push(attestation);
@@ -2321,7 +2429,13 @@ async fn drive_physical_fixture(
     socket_dir: &Path,
     nodes: &[Node],
     log_dir: &Path,
+    extension_preflight: &ExtensionPreflight,
 ) -> Result<()> {
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_setup_start rows={} nodes={}",
+        args.rows,
+        nodes.len()
+    );
     for (ordinal, node) in nodes.iter().enumerate() {
         let setup = physical_setup_sql(args, ordinal == 0)?;
         run_psql_file(psql, socket_dir, node.port, &setup)
@@ -2669,6 +2783,7 @@ async fn drive_physical_fixture(
             log_dir,
             physical_build_ms,
             physical_publish_ms,
+            extension_preflight,
         )
         .await?
     } else {
@@ -4668,6 +4783,72 @@ async fn capture_psql_allow_error(psql: &Path, socket_dir: &Path, port: u16, sql
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn provenance(node_id: u32, port: u16, sha: &str, profile: &str) -> ExtensionProvenance {
+        ExtensionProvenance {
+            node_id,
+            port,
+            git_sha: sha.to_owned(),
+            build_profile: profile.to_owned(),
+        }
+    }
+
+    #[test]
+    fn extension_preflight_accepts_unanimous_release_nodes() {
+        let observed = [
+            provenance(1, 39710, "abc123", "release"),
+            provenance(2, 39711, "abc123", "release"),
+            provenance(3, 39712, "abc123", "release"),
+        ];
+        let preflight = validate_extension_preflight(&observed, false).unwrap();
+        assert_eq!(preflight.git_sha, "abc123");
+        assert_eq!(preflight.build_profile, "release");
+        assert_eq!(preflight.nodes, 3);
+        assert!(!preflight.debug_override);
+    }
+
+    #[test]
+    fn extension_preflight_rejects_debug_without_override() {
+        let error = validate_extension_preflight(
+            &[
+                provenance(1, 39710, "abc123", "debug"),
+                provenance(2, 39711, "abc123", "debug"),
+            ],
+            false,
+        )
+        .unwrap_err();
+        let rendered = error.to_string();
+        assert!(rendered.contains("node 1 port 39710"));
+        assert!(rendered.contains("observed abc123/debug"));
+        assert!(rendered.contains("allow_debug_extension=true"));
+    }
+
+    #[test]
+    fn extension_preflight_rejects_mixed_node_provenance_even_with_override() {
+        let error = validate_extension_preflight(
+            &[
+                provenance(1, 39710, "abc123", "debug"),
+                provenance(2, 39711, "abc123", "release"),
+            ],
+            true,
+        )
+        .unwrap_err();
+        let rendered = error.to_string();
+        assert!(rendered.contains("node 2 port 39711"));
+        assert!(rendered.contains("expected abc123/debug"));
+        assert!(rendered.contains("observed abc123/release"));
+    }
+
+    #[test]
+    fn extension_preflight_allows_unanimous_debug_with_explicit_override() {
+        let observed = [
+            provenance(1, 39710, "abc123", "debug"),
+            provenance(2, 39711, "abc123", "debug"),
+        ];
+        let preflight = validate_extension_preflight(&observed, true).unwrap();
+        assert_eq!(preflight.build_profile, "debug");
+        assert!(preflight.debug_override);
+    }
 
     fn seed_variant(name: &str, neighbor_score_mode: &str) -> BenchmarkSeedVariant {
         BenchmarkSeedVariant {
