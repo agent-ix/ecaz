@@ -3,7 +3,7 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::collections::{HashMap, HashSet};
 #[cfg(feature = "distann-head-attribution-benchmark")]
-use std::time::Instant;
+use std::{cell::RefCell, cmp::Reverse, collections::BinaryHeap, time::Instant};
 
 use pgrx::datum::Uuid;
 use pgrx::{pg_sys, Spi};
@@ -18,6 +18,16 @@ const TRAINING_QUERY_DOMAIN: &[u8] = b"ec_distann_head_training_queries_v1\0";
 const HEAD_SAMPLE_VERSION: u16 = 1;
 const HEAD_GRAPH_SEED_WRAP: u64 = 0x6469_7374_5f74_6721;
 pub(crate) const TRAINED_HEAD_SEED_COUNT: usize = 32;
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+thread_local! {
+    static LAST_GATEWAY_ATTRIBUTION: RefCell<Option<String>> = const { RefCell::new(None) };
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+pub(crate) fn gateway_attribution_snapshot() -> Option<String> {
+    LAST_GATEWAY_ATTRIBUTION.with(|snapshot| snapshot.borrow().clone())
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DistannHeadSampleEntry {
@@ -407,40 +417,87 @@ fn graph_landmark_nodes(
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
-fn load_training_queries(path: &str, dimensions: usize) -> Result<Vec<Vec<f32>>, String> {
-    let contents = std::fs::read_to_string(path)
-        .map_err(|error| format!("EC_HEAD_SAMPLE: cannot read training queries: {error}"))?;
+#[derive(Debug)]
+struct BenchmarkQuerySplits {
+    training: Vec<Vec<f32>>,
+    validation: Vec<Vec<f32>>,
+    training_digest: String,
+    validation_digest: String,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn load_query_split(
+    lines: &[&str],
+    start: usize,
+    dimensions: usize,
+    label: &str,
+) -> Result<(Vec<Vec<f32>>, String), String> {
+    let selected = lines
+        .iter()
+        .skip(start)
+        .take(200)
+        .copied()
+        .collect::<Vec<_>>();
+    if selected.len() != 200 {
+        return Err(format!(
+            "EC_HEAD_SAMPLE: {label} slice requires 200 rows, found {}",
+            selected.len()
+        ));
+    }
     let mut queries = Vec::with_capacity(200);
-    // Evaluation is the immutable first 200 rows used by Tasks 180/181.  The
-    // next 200 rows are the declared disjoint training slice.
-    for (line_index, line) in contents.lines().enumerate().skip(200).take(200) {
+    for (offset, line) in selected.iter().enumerate() {
+        let line_index = start + offset;
         let (_, encoded) = line.split_once('\t').ok_or_else(|| {
             format!(
-                "EC_HEAD_SAMPLE: malformed training TSV row {}",
+                "EC_HEAD_SAMPLE: malformed {label} TSV row {}",
                 line_index + 1
             )
         })?;
         let vector: Vec<f32> = serde_json::from_str(encoded).map_err(|error| {
             format!(
-                "EC_HEAD_SAMPLE: invalid training vector at row {}: {error}",
+                "EC_HEAD_SAMPLE: invalid {label} vector at row {}: {error}",
                 line_index + 1
             )
         })?;
         if vector.len() != dimensions || vector.iter().any(|value| !value.is_finite()) {
             return Err(format!(
-                "EC_HEAD_SAMPLE: training vector at row {} has invalid shape/value",
+                "EC_HEAD_SAMPLE: {label} vector at row {} has invalid shape/value",
                 line_index + 1
             ));
         }
         queries.push(vector);
     }
-    if queries.len() != 200 {
-        return Err(format!(
-            "EC_HEAD_SAMPLE: training slice requires 200 rows, found {}",
-            queries.len()
-        ));
-    }
-    Ok(queries)
+    let digest = hex::encode(Sha256::digest(selected.join("\n").as_bytes()));
+    Ok((queries, digest))
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn load_benchmark_query_splits(
+    path: &str,
+    dimensions: usize,
+) -> Result<BenchmarkQuerySplits, String> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|error| format!("EC_HEAD_SAMPLE: cannot read training queries: {error}"))?;
+    let lines = contents.lines().collect::<Vec<_>>();
+    // Rows 1-200 are immutable evaluation inputs. Rows 201-400 train the
+    // policy, and rows 401-600 are the disjoint policy-selection validation
+    // slice. No evaluation outcome enters either builder.
+    let (training, training_digest) = load_query_split(&lines, 200, dimensions, "training")?;
+    let (validation, validation_digest) = load_query_split(&lines, 400, dimensions, "validation")?;
+    Ok(BenchmarkQuerySplits {
+        training,
+        validation,
+        training_digest,
+        validation_digest,
+    })
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn load_training_queries(path: &str, dimensions: usize) -> Result<Vec<Vec<f32>>, String> {
+    let contents = std::fs::read_to_string(path)
+        .map_err(|error| format!("EC_HEAD_SAMPLE: cannot read training queries: {error}"))?;
+    let lines = contents.lines().collect::<Vec<_>>();
+    load_query_split(&lines, 200, dimensions, "training").map(|(queries, _)| queries)
 }
 
 #[derive(Debug, Clone)]
@@ -494,6 +551,607 @@ fn rank_training_candidates(
         per_query,
         frequency,
     })
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+struct GatewayBuildExpander<'a> {
+    graph: &'a crate::am::VamanaGraph,
+    vec_ids: &'a [u64],
+    node_by_vec_id: &'a HashMap<u64, usize>,
+    vectors: &'a [Vec<f32>],
+    codes: &'a [Vec<u8>],
+    query: &'a [f32],
+    prepared: &'a super::quantizer::DistannPreparedQuery,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+impl super::scan::DistannNodeExpander for GatewayBuildExpander<'_> {
+    fn expand_nodes(
+        &mut self,
+        vec_ids: &[u64],
+        _code_threshold: Option<f32>,
+    ) -> Result<Vec<super::scan::DistannExpandedNode>, super::expand_error::DistannExpandError>
+    {
+        vec_ids
+            .iter()
+            .map(|vec_id| {
+                let node = *self.node_by_vec_id.get(vec_id).ok_or_else(|| {
+                    super::expand_error::DistannExpandError::Internal(format!(
+                        "gateway attribution cannot resolve vec_id {vec_id:#x}"
+                    ))
+                })?;
+                let neighbors = self.graph.neighbors.get(node).ok_or_else(|| {
+                    super::expand_error::DistannExpandError::Internal(
+                        "gateway attribution graph node is absent".to_owned(),
+                    )
+                })?;
+                let mut neighbor_vec_ids = Vec::with_capacity(neighbors.len());
+                let mut neighbor_code_dists = Vec::with_capacity(neighbors.len());
+                for neighbor in neighbors {
+                    let neighbor = *neighbor as usize;
+                    let neighbor_vec_id = *self.vec_ids.get(neighbor).ok_or_else(|| {
+                        super::expand_error::DistannExpandError::Internal(
+                            "gateway attribution neighbor is outside the graph".to_owned(),
+                        )
+                    })?;
+                    let code = self.codes.get(neighbor).ok_or_else(|| {
+                        super::expand_error::DistannExpandError::Internal(
+                            "gateway attribution neighbor code is absent".to_owned(),
+                        )
+                    })?;
+                    neighbor_vec_ids.push(neighbor_vec_id);
+                    neighbor_code_dists.push(self.prepared.score_dist(code));
+                }
+                Ok(super::scan::DistannExpandedNode {
+                    vec_id: *vec_id,
+                    exact_dist: Some(-crate::am::ec_diskann::source_inner_product(
+                        self.query,
+                        &self.vectors[node],
+                    )),
+                    is_tombstone: false,
+                    heap_tid: crate::storage::page::ItemPointer::INVALID,
+                    neighbor_vec_ids,
+                    neighbor_code_dists,
+                    owner_total_ns: 0,
+                    owner_open_validate_ns: 0,
+                    owner_graph_read_ns: 0,
+                    owner_score_ns: 0,
+                    owner_response_encode_ns: 0,
+                    owner_response_bytes: 0,
+                    coordinator_rpc_ns: 0,
+                    coordinator_decode_ns: 0,
+                })
+            })
+            .collect()
+    }
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn exact_truth_nodes(
+    query: &[f32],
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    top_k: usize,
+) -> Vec<usize> {
+    let mut ranked = vectors
+        .iter()
+        .enumerate()
+        .map(|(node, vector)| {
+            (
+                -crate::am::ec_diskann::source_inner_product(query, vector),
+                vec_ids[node],
+                node,
+            )
+        })
+        .collect::<Vec<_>>();
+    let keep = top_k.min(ranked.len());
+    if keep < ranked.len() {
+        ranked.select_nth_unstable_by(keep, |left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        ranked.truncate(keep);
+    }
+    ranked.sort_unstable_by(|left, right| {
+        left.0
+            .total_cmp(&right.0)
+            .then_with(|| left.1.cmp(&right.1))
+    });
+    ranked.into_iter().map(|(_, _, node)| node).collect()
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn run_gateway_traversal(
+    seed_nodes: &[usize],
+    query: &[f32],
+    graph: &crate::am::VamanaGraph,
+    vec_ids: &[u64],
+    node_by_vec_id: &HashMap<u64, usize>,
+    vectors: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    prepared: &super::quantizer::DistannPreparedQuery,
+) -> Result<(Vec<u64>, super::scan::DistannScanCounters), String> {
+    let seeds = seed_nodes
+        .iter()
+        .map(|node| super::scan::DistannSeedCandidate {
+            vec_id: vec_ids[*node],
+            dist: -crate::am::ec_diskann::source_inner_product(query, &vectors[*node]),
+        })
+        .collect::<Vec<_>>();
+    let mut expander = GatewayBuildExpander {
+        graph,
+        vec_ids,
+        node_by_vec_id,
+        vectors,
+        codes,
+        query,
+        prepared,
+    };
+    let (hits, counters) = super::scan::distann_orchestrated_search(
+        &seeds,
+        &mut expander,
+        super::scan::DistannOrchestrationParams {
+            beam_width: 4,
+            hop_rounds: 100,
+            top_k: 10,
+            debug_fail_hop_round: None,
+        },
+    )
+    .map_err(|error| format!("EC_HEAD_SAMPLE: gateway traversal failed: {error}"))?;
+    Ok((hits.into_iter().map(|hit| hit.vec_id).collect(), counters))
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn intersection_count(left: &[u64], right: &[u64]) -> usize {
+    let mut left_index = 0;
+    let mut right_index = 0;
+    let mut intersection = 0;
+    while left_index < left.len() && right_index < right.len() {
+        match left[left_index].cmp(&right[right_index]) {
+            std::cmp::Ordering::Less => left_index += 1,
+            std::cmp::Ordering::Greater => right_index += 1,
+            std::cmp::Ordering::Equal => {
+                intersection += 1;
+                left_index += 1;
+                right_index += 1;
+            }
+        }
+    }
+    intersection
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn gateway_set_cover_nodes(
+    coverage: &HashMap<usize, Vec<usize>>,
+    fallback: &[usize],
+    vec_ids: &[u64],
+    sample_cap: usize,
+    universe_size: usize,
+) -> (Vec<usize>, Vec<usize>) {
+    let mut heap = BinaryHeap::<(usize, Reverse<u64>, usize)>::new();
+    for (node, tokens) in coverage {
+        heap.push((tokens.len(), Reverse(vec_ids[*node]), *node));
+    }
+    let mut covered = vec![false; universe_size];
+    let mut selected = Vec::with_capacity(sample_cap);
+    let mut selected_set = HashSet::with_capacity(sample_cap);
+    let mut marginal_gains = Vec::with_capacity(sample_cap);
+    while selected.len() < sample_cap {
+        let Some((cached_gain, _, node)) = heap.pop() else {
+            break;
+        };
+        if selected_set.contains(&node) {
+            continue;
+        }
+        let gain = coverage[&node]
+            .iter()
+            .filter(|token| !covered[**token])
+            .count();
+        if gain < cached_gain {
+            heap.push((gain, Reverse(vec_ids[node]), node));
+            continue;
+        }
+        if gain == 0 {
+            break;
+        }
+        selected.push(node);
+        selected_set.insert(node);
+        marginal_gains.push(gain);
+        for token in &coverage[&node] {
+            covered[*token] = true;
+        }
+    }
+    for node in fallback {
+        if selected.len() == sample_cap {
+            break;
+        }
+        if selected_set.insert(*node) {
+            selected.push(*node);
+            marginal_gains.push(0);
+        }
+    }
+    (selected, marginal_gains)
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[derive(Debug)]
+struct GatewaySplitAnalysis {
+    selected: Vec<usize>,
+    candidate_count: usize,
+    traversal_count: usize,
+    truth_pairs_reached: usize,
+    zero_success_queries: usize,
+    same_basin_pairs: usize,
+    basin_pair_count: usize,
+    expanded_jaccard_sum: f64,
+    truth_hits: usize,
+    records_expanded: usize,
+    neighbors_scored: usize,
+    max_records_expanded: usize,
+    marginal_gains: Vec<usize>,
+    hard_regions: BTreeMap<u16, usize>,
+    coverage_entries: usize,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[allow(clippy::too_many_arguments)]
+fn analyze_gateway_split(
+    queries: &[Vec<f32>],
+    ranking: &TrainingCandidateRanking,
+    graph: &crate::am::VamanaGraph,
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    codec_artifact: &super::generation_descriptor::DistannCodecArtifact,
+    sample_cap: usize,
+) -> Result<GatewaySplitAnalysis, String> {
+    let node_by_vec_id = vec_ids
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(node, vec_id)| (vec_id, node))
+        .collect::<HashMap<_, _>>();
+    let mut coverage = HashMap::<usize, Vec<usize>>::new();
+    let mut traversal_count = 0;
+    let mut truth_pairs_reached = 0;
+    let mut zero_success_queries = 0;
+    let mut same_basin_pairs = 0;
+    let mut basin_pair_count = 0;
+    let mut expanded_jaccard_sum = 0.0;
+    let mut truth_hits = 0;
+    let mut records_expanded = 0;
+    let mut neighbors_scored = 0;
+    let mut max_records_expanded = 0;
+    let mut hard_regions = BTreeMap::<u16, usize>::new();
+
+    for (query_index, query) in queries.iter().enumerate() {
+        let prepared =
+            super::quantizer::DistannPreparedQuery::prepare_artifact(codec_artifact, query)?;
+        let truth = exact_truth_nodes(query, vec_ids, vectors, 10);
+        let truth_rank = truth
+            .iter()
+            .enumerate()
+            .map(|(rank, node)| (vec_ids[*node], rank))
+            .collect::<HashMap<_, _>>();
+        let mut query_truth = vec![false; truth.len()];
+        let mut expanded_sets = Vec::with_capacity(ranking.per_query[query_index].len());
+        for seed_node in &ranking.per_query[query_index] {
+            let (hits, counters) = run_gateway_traversal(
+                &[*seed_node],
+                query,
+                graph,
+                vec_ids,
+                &node_by_vec_id,
+                vectors,
+                codes,
+                &prepared,
+            )?;
+            traversal_count += 1;
+            records_expanded += counters.records_expanded;
+            neighbors_scored += counters.neighbors_code_scored;
+            max_records_expanded = max_records_expanded.max(counters.records_expanded);
+            let mut expanded = hits;
+            for vec_id in &expanded {
+                if let Some(rank) = truth_rank.get(vec_id) {
+                    coverage
+                        .entry(*seed_node)
+                        .or_default()
+                        .push(query_index * 10 + rank);
+                    query_truth[*rank] = true;
+                    truth_hits += 1;
+                }
+            }
+            expanded.sort_unstable();
+            expanded.dedup();
+            expanded_sets.push(expanded);
+        }
+        let reached = query_truth.iter().filter(|reached| **reached).count();
+        truth_pairs_reached += reached;
+        if reached == 0 {
+            zero_success_queries += 1;
+            *hard_regions
+                .entry(benchmark_geometry_region(query))
+                .or_default() += 1;
+        }
+        for left_index in 0..expanded_sets.len() {
+            for right_index in left_index + 1..expanded_sets.len() {
+                let left = &expanded_sets[left_index];
+                let right = &expanded_sets[right_index];
+                let intersection = intersection_count(left, right);
+                let union = left.len() + right.len() - intersection;
+                let jaccard = if union == 0 {
+                    0.0
+                } else {
+                    intersection as f64 / union as f64
+                };
+                expanded_jaccard_sum += jaccard;
+                basin_pair_count += 1;
+                if jaccard >= 0.5 {
+                    same_basin_pairs += 1;
+                }
+            }
+        }
+    }
+    for tokens in coverage.values_mut() {
+        tokens.sort_unstable();
+        tokens.dedup();
+    }
+    let fallback = frequency_landmark_nodes(ranking.clone(), vec_ids, vectors, sample_cap);
+    let coverage_entries = coverage.values().map(Vec::len).sum();
+    let candidate_count = coverage.len();
+    let (selected, marginal_gains) = gateway_set_cover_nodes(
+        &coverage,
+        &fallback,
+        vec_ids,
+        sample_cap,
+        queries.len() * 10,
+    );
+    Ok(GatewaySplitAnalysis {
+        selected,
+        candidate_count,
+        traversal_count,
+        truth_pairs_reached,
+        zero_success_queries,
+        same_basin_pairs,
+        basin_pair_count,
+        expanded_jaccard_sum,
+        truth_hits,
+        records_expanded,
+        neighbors_scored,
+        max_records_expanded,
+        marginal_gains,
+        hard_regions,
+        coverage_entries,
+    })
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn selection_jaccard(left: &[usize], right: &[usize]) -> f64 {
+    let left = left.iter().copied().collect::<HashSet<_>>();
+    let right = right.iter().copied().collect::<HashSet<_>>();
+    let intersection = left.intersection(&right).count();
+    let union = left.union(&right).count();
+    if union == 0 {
+        1.0
+    } else {
+        intersection as f64 / union as f64
+    }
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[allow(clippy::too_many_arguments)]
+fn held_out_traversal_recall(
+    queries: &[Vec<f32>],
+    selected: &[usize],
+    graph: &crate::am::VamanaGraph,
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    codec_artifact: &super::generation_descriptor::DistannCodecArtifact,
+) -> Result<f64, String> {
+    let node_by_vec_id = vec_ids
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(node, vec_id)| (vec_id, node))
+        .collect::<HashMap<_, _>>();
+    let mut matches = 0;
+    let mut possible = 0;
+    for query in queries {
+        let prepared =
+            super::quantizer::DistannPreparedQuery::prepare_artifact(codec_artifact, query)?;
+        let truth = exact_truth_nodes(query, vec_ids, vectors, 10)
+            .into_iter()
+            .map(|node| vec_ids[node])
+            .collect::<HashSet<_>>();
+        let mut ranked = selected
+            .iter()
+            .map(|node| {
+                (
+                    -crate::am::ec_diskann::source_inner_product(query, &vectors[*node]),
+                    vec_ids[*node],
+                    *node,
+                )
+            })
+            .collect::<Vec<_>>();
+        ranked.sort_unstable_by(|left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| left.1.cmp(&right.1))
+        });
+        let seeds = ranked
+            .into_iter()
+            .take(TRAINED_HEAD_SEED_COUNT)
+            .map(|(_, _, node)| node)
+            .collect::<Vec<_>>();
+        let (hits, _) = run_gateway_traversal(
+            &seeds,
+            query,
+            graph,
+            vec_ids,
+            &node_by_vec_id,
+            vectors,
+            codes,
+            &prepared,
+        )?;
+        matches += hits
+            .into_iter()
+            .take(10)
+            .filter(|vec_id| truth.contains(vec_id))
+            .count();
+        possible += truth.len();
+    }
+    Ok(if possible == 0 {
+        0.0
+    } else {
+        matches as f64 / possible as f64
+    })
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[allow(clippy::too_many_arguments)]
+fn training_gateway_set_cover_nodes(
+    splits: &BenchmarkQuerySplits,
+    graph: &crate::am::VamanaGraph,
+    vec_ids: &[u64],
+    vectors: &[Vec<f32>],
+    codes: &[Vec<u8>],
+    codec_artifact: &super::generation_descriptor::DistannCodecArtifact,
+    sample_cap: usize,
+) -> Result<Vec<usize>, String> {
+    let started = Instant::now();
+    let training_ranking =
+        rank_training_candidates(&splits.training, vec_ids, codes, codec_artifact)?;
+    let validation_ranking =
+        rank_training_candidates(&splits.validation, vec_ids, codes, codec_artifact)?;
+    let training = analyze_gateway_split(
+        &splits.training,
+        &training_ranking,
+        graph,
+        vec_ids,
+        vectors,
+        codes,
+        codec_artifact,
+        sample_cap,
+    )?;
+    let validation = analyze_gateway_split(
+        &splits.validation,
+        &validation_ranking,
+        graph,
+        vec_ids,
+        vectors,
+        codes,
+        codec_artifact,
+        sample_cap,
+    )?;
+    if training.selected.len() != sample_cap || validation.selected.len() != sample_cap {
+        return Err(format!(
+            "EC_HEAD_SAMPLE: gateway set-cover selected {}/{} training/validation landmarks, expected {sample_cap}",
+            training.selected.len(),
+            validation.selected.len()
+        ));
+    }
+    let control = frequency_landmark_nodes(training_ranking, vec_ids, vectors, sample_cap);
+    let control_validation_recall = held_out_traversal_recall(
+        &splits.validation,
+        &control,
+        graph,
+        vec_ids,
+        vectors,
+        codes,
+        codec_artifact,
+    )?;
+    let gateway_validation_recall = held_out_traversal_recall(
+        &splits.validation,
+        &training.selected,
+        graph,
+        vec_ids,
+        vectors,
+        codes,
+        codec_artifact,
+    )?;
+    let positive_marginals = training
+        .marginal_gains
+        .iter()
+        .copied()
+        .filter(|gain| *gain > 0)
+        .collect::<Vec<_>>();
+    let estimated_bytes = training
+        .coverage_entries
+        .saturating_mul(std::mem::size_of::<usize>())
+        .saturating_add(
+            training
+                .candidate_count
+                .saturating_mul(std::mem::size_of::<(usize, usize)>()),
+        )
+        .saturating_add(
+            training
+                .selected
+                .len()
+                .saturating_mul(std::mem::size_of::<usize>()),
+        );
+    let report = serde_json::json!({
+        "schema_version": 1,
+        "policy": "training_gateway_set_cover",
+        "frozen": {
+            "sample_cap": sample_cap,
+            "returned_seed_count": TRAINED_HEAD_SEED_COUNT,
+            "beam_width": 4,
+            "hop_rounds": 100,
+            "top_k": 10,
+            "candidate_width": 32,
+            "training_prefix": "rows_201_400",
+            "validation_prefix": "rows_401_600",
+            "evaluation_prefix": "rows_1_200",
+            "training_digest": splits.training_digest,
+            "validation_digest": splits.validation_digest,
+        },
+        "training": {
+            "queries": splits.training.len(),
+            "candidate_seeds": training.candidate_count,
+            "seed_traversals": training.traversal_count,
+            "truth_pairs_reached": training.truth_pairs_reached,
+            "truth_pairs_possible": splits.training.len() * 10,
+            "seed_truth_hits": training.truth_hits,
+            "zero_success_queries": training.zero_success_queries,
+            "hard_query_regions": training.hard_regions,
+            "same_basin_pairs": training.same_basin_pairs,
+            "basin_pair_count": training.basin_pair_count,
+            "mean_expanded_region_jaccard": if training.basin_pair_count == 0 { 0.0 } else { training.expanded_jaccard_sum / training.basin_pair_count as f64 },
+            "records_expanded": training.records_expanded,
+            "neighbors_code_scored": training.neighbors_scored,
+            "max_records_expanded_per_seed": training.max_records_expanded,
+            "positive_set_cover_seeds": positive_marginals.len(),
+            "max_marginal_truth_pairs": positive_marginals.iter().copied().max().unwrap_or(0),
+            "mean_positive_marginal_truth_pairs": if positive_marginals.is_empty() { 0.0 } else { positive_marginals.iter().sum::<usize>() as f64 / positive_marginals.len() as f64 },
+        },
+        "validation": {
+            "queries": splits.validation.len(),
+            "candidate_seeds": validation.candidate_count,
+            "seed_traversals": validation.traversal_count,
+            "truth_pairs_reached": validation.truth_pairs_reached,
+            "truth_pairs_possible": splits.validation.len() * 10,
+            "zero_success_queries": validation.zero_success_queries,
+            "training_validation_selection_jaccard": selection_jaccard(&training.selected, &validation.selected),
+            "control_held_out_recall_proxy": control_validation_recall,
+            "gateway_held_out_recall_proxy": gateway_validation_recall,
+        },
+        "membership": {
+            "control_gateway_jaccard": selection_jaccard(&control, &training.selected),
+            "selected_count": training.selected.len(),
+        },
+        "bounded_work": {
+            "estimated_peak_extra_bytes": estimated_bytes,
+            "construction_ms": started.elapsed().as_millis(),
+            "per_seed_expansion_cap": 400,
+        }
+    })
+    .to_string();
+    LAST_GATEWAY_ATTRIBUTION.with(|snapshot| {
+        *snapshot.borrow_mut() = Some(report);
+    });
+    Ok(training.selected)
 }
 
 fn fill_with_geometry(
@@ -692,23 +1350,37 @@ pub(crate) fn build_benchmark_head_sample(
         }
         super::options::BenchmarkHeadPolicy::TrainingLandmarks
         | super::options::BenchmarkHeadPolicy::TrainingRegionBalanced
-        | super::options::BenchmarkHeadPolicy::TrainingQueryFacility => {
+        | super::options::BenchmarkHeadPolicy::TrainingQueryFacility
+        | super::options::BenchmarkHeadPolicy::TrainingGatewaySetCover => {
             let path = training_query_path.ok_or_else(|| {
                 "EC_HEAD_SAMPLE: training policy requires benchmark_training_query_path".to_owned()
             })?;
-            let queries = load_training_queries(path, usize::from(dimensions))?;
-            let ranking = rank_training_candidates(&queries, vec_ids, codes, codec_artifact)?;
-            match policy {
-                super::options::BenchmarkHeadPolicy::TrainingLandmarks => {
-                    frequency_landmark_nodes(ranking, vec_ids, vectors, sample_cap)
+            if policy == super::options::BenchmarkHeadPolicy::TrainingGatewaySetCover {
+                let splits = load_benchmark_query_splits(path, usize::from(dimensions))?;
+                training_gateway_set_cover_nodes(
+                    &splits,
+                    graph,
+                    vec_ids,
+                    vectors,
+                    codes,
+                    codec_artifact,
+                    sample_cap,
+                )?
+            } else {
+                let queries = load_training_queries(path, usize::from(dimensions))?;
+                let ranking = rank_training_candidates(&queries, vec_ids, codes, codec_artifact)?;
+                match policy {
+                    super::options::BenchmarkHeadPolicy::TrainingLandmarks => {
+                        frequency_landmark_nodes(ranking, vec_ids, vectors, sample_cap)
+                    }
+                    super::options::BenchmarkHeadPolicy::TrainingRegionBalanced => {
+                        training_region_balanced_nodes(ranking, vec_ids, vectors, sample_cap)
+                    }
+                    super::options::BenchmarkHeadPolicy::TrainingQueryFacility => {
+                        training_query_facility_nodes(ranking, vec_ids, vectors, sample_cap)
+                    }
+                    _ => unreachable!(),
                 }
-                super::options::BenchmarkHeadPolicy::TrainingRegionBalanced => {
-                    training_region_balanced_nodes(ranking, vec_ids, vectors, sample_cap)
-                }
-                super::options::BenchmarkHeadPolicy::TrainingQueryFacility => {
-                    training_query_facility_nodes(ranking, vec_ids, vectors, sample_cap)
-                }
-                _ => unreachable!(),
             }
         }
     };
@@ -1164,6 +1836,171 @@ impl DistannPhysicalHeadIndex {
         seeds
     }
 
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    fn head_basin(&self, query: &[f32], node: usize) -> Vec<u32> {
+        let mut visited = crate::am::greedy_search(
+            &self.graph,
+            node as u32,
+            32.min(self.vectors.len()).max(1),
+            |candidate| {
+                -crate::am::ec_diskann::source_inner_product(
+                    query,
+                    &self.vectors[candidate as usize],
+                )
+            },
+        )
+        .visited;
+        visited.sort_unstable();
+        visited.dedup();
+        visited
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    fn basin_overlap(left: &[u32], right: &[u32]) -> f64 {
+        let mut left_index = 0;
+        let mut right_index = 0;
+        let mut intersection = 0;
+        while left_index < left.len() && right_index < right.len() {
+            match left[left_index].cmp(&right[right_index]) {
+                std::cmp::Ordering::Less => left_index += 1,
+                std::cmp::Ordering::Greater => right_index += 1,
+                std::cmp::Ordering::Equal => {
+                    intersection += 1;
+                    left_index += 1;
+                    right_index += 1;
+                }
+            }
+        }
+        let union = left.len() + right.len() - intersection;
+        if union == 0 {
+            0.0
+        } else {
+            intersection as f64 / union as f64
+        }
+    }
+
+    /// Task 185 benchmark-only returned-seed policy. It exact-scores the same
+    /// 4,096-row head, freezes a top-8x candidate window, then applies a
+    /// deterministic rank penalty of up to 32 positions for overlap with
+    /// already selected query-conditioned head-graph traversal basins.
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) fn search_exact_basin_diverse(
+        &self,
+        query: &[f32],
+        seed_count: usize,
+    ) -> Vec<super::scan::DistannSeedCandidate> {
+        let score_started = Instant::now();
+        let mut ranked = self
+            .vectors
+            .iter()
+            .enumerate()
+            .map(|(node, vector)| {
+                (
+                    node,
+                    -crate::am::ec_diskann::source_inner_product(query, vector),
+                    self.vec_ids[node],
+                )
+            })
+            .collect::<Vec<_>>();
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::HeadScore,
+            score_started.elapsed(),
+        );
+        let select_started = Instant::now();
+        ranked.sort_unstable_by(|left, right| {
+            left.1
+                .total_cmp(&right.1)
+                .then_with(|| left.2.cmp(&right.2))
+        });
+        ranked.truncate(
+            seed_count
+                .saturating_mul(8)
+                .max(seed_count)
+                .min(ranked.len()),
+        );
+        let basins = ranked
+            .iter()
+            .map(|(node, _, _)| self.head_basin(query, *node))
+            .collect::<Vec<_>>();
+        let mut selected = Vec::<usize>::with_capacity(seed_count.min(ranked.len()));
+        let mut used = vec![false; ranked.len()];
+        while selected.len() < seed_count.min(ranked.len()) {
+            let mut best = None::<(f64, u64, usize)>;
+            for candidate in 0..ranked.len() {
+                if used[candidate] {
+                    continue;
+                }
+                let max_overlap = selected
+                    .iter()
+                    .map(|selected| Self::basin_overlap(&basins[candidate], &basins[*selected]))
+                    .fold(0.0_f64, f64::max);
+                let penalized_rank = candidate as f64 + 32.0 * max_overlap;
+                let key = (penalized_rank, ranked[candidate].2, candidate);
+                let replace = match best.as_ref() {
+                    None => true,
+                    Some(current) => {
+                        key.0.total_cmp(&current.0).is_lt()
+                            || (key.0.total_cmp(&current.0).is_eq()
+                                && (key.1, key.2) < (current.1, current.2))
+                    }
+                };
+                if replace {
+                    best = Some(key);
+                }
+            }
+            let Some((_, _, candidate)) = best else {
+                break;
+            };
+            used[candidate] = true;
+            selected.push(candidate);
+        }
+        let seeds = selected
+            .into_iter()
+            .map(|candidate| super::scan::DistannSeedCandidate {
+                vec_id: ranked[candidate].2,
+                dist: ranked[candidate].1,
+            })
+            .collect();
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::SeedSelect,
+            select_started.elapsed(),
+        );
+        seeds
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) fn basin_overlap_for_seeds(
+        &self,
+        query: &[f32],
+        seeds: &[super::scan::DistannSeedCandidate],
+    ) -> f64 {
+        let node_by_vec_id = self
+            .vec_ids
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(node, vec_id)| (vec_id, node))
+            .collect::<HashMap<_, _>>();
+        let basins = seeds
+            .iter()
+            .filter_map(|seed| node_by_vec_id.get(&seed.vec_id).copied())
+            .map(|node| self.head_basin(query, node))
+            .collect::<Vec<_>>();
+        let mut overlap = 0.0;
+        let mut pairs = 0;
+        for left in 0..basins.len() {
+            for right in left + 1..basins.len() {
+                overlap += Self::basin_overlap(&basins[left], &basins[right]);
+                pairs += 1;
+            }
+        }
+        if pairs == 0 {
+            0.0
+        } else {
+            overlap / pairs as f64
+        }
+    }
+
     /// Task 181 pre-registered two-level bounded hierarchy: score at most one
     /// representative for each of 256 deterministic geometric regions, open
     /// at most 16 regions, score at most 512 second-level landmarks, and return
@@ -1357,6 +2194,74 @@ mod tests {
             assert_eq!(selected.len(), 8);
             assert_eq!(selected.iter().copied().collect::<HashSet<_>>().len(), 8);
         }
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn gateway_set_cover_is_deterministic_and_uses_marginal_gain() {
+        let vec_ids = vec![10, 20, 30, 40];
+        let coverage = HashMap::from([
+            (0, vec![0, 1]),
+            (1, vec![1, 2]),
+            (2, vec![3]),
+            (3, Vec::new()),
+        ]);
+        let fallback = vec![3, 2, 1, 0];
+
+        let first = gateway_set_cover_nodes(&coverage, &fallback, &vec_ids, 3, 4);
+        let second = gateway_set_cover_nodes(&coverage, &fallback, &vec_ids, 3, 4);
+
+        assert_eq!(first, second);
+        assert_eq!(first.0, vec![0, 1, 2]);
+        assert_eq!(first.1, vec![2, 1, 1]);
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn basin_diverse_selector_reduces_same_component_overlap() {
+        let sample = DistannHeadSample {
+            dimensions: 2,
+            entries: vec![
+                DistannHeadSampleEntry {
+                    vec_id: 10,
+                    vector: vec![1.0, 0.0],
+                },
+                DistannHeadSampleEntry {
+                    vec_id: 20,
+                    vector: vec![0.9, 0.0],
+                },
+                DistannHeadSampleEntry {
+                    vec_id: 30,
+                    vector: vec![0.8, 0.0],
+                },
+                DistannHeadSampleEntry {
+                    vec_id: 40,
+                    vector: vec![0.7, 0.0],
+                },
+            ],
+        };
+        let graph = DistannPersistedHeadGraph {
+            entry: 0,
+            neighbors: vec![vec![1], vec![0], vec![3], vec![2]],
+        };
+        let index =
+            DistannPhysicalHeadIndex::load(sample, graph, 1, DistannHeadPolicy::CurrentSampleGraph)
+                .unwrap()
+                .unwrap();
+        let query = [1.0, 0.0];
+        let control = index.search_exact(&query, 2);
+        let first = index.search_exact_basin_diverse(&query, 2);
+        let second = index.search_exact_basin_diverse(&query, 2);
+
+        assert_eq!(first, second);
+        assert_eq!(
+            first.iter().map(|seed| seed.vec_id).collect::<Vec<_>>(),
+            vec![10, 30]
+        );
+        assert!(
+            index.basin_overlap_for_seeds(&query, &first)
+                < index.basin_overlap_for_seeds(&query, &control)
+        );
     }
 
     #[test]

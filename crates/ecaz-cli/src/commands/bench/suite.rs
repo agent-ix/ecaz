@@ -2361,6 +2361,14 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_coverage".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_gateway ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_gateway".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_basin ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_basin".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_engagement ") {
             if let Some(mut values) = parse_space_key_values(rest.trim()) {
                 if let Some(pass) = values.get("pass").map(|value| value == "true") {
@@ -3098,10 +3106,14 @@ impl SuiteStep {
                 if let Some(strategy) = step.seed_strategy.as_deref() {
                     if !matches!(
                         strategy,
-                        "persisted_head" | "head_sample_exact" | "head_hierarchy" | "owner_scan"
+                        "persisted_head"
+                            | "head_sample_exact"
+                            | "head_basin_diverse"
+                            | "head_hierarchy"
+                            | "owner_scan"
                     ) {
                         bail!(
-                            "distann-local-multinode step {:?} seed_strategy must be persisted_head, head_sample_exact, head_hierarchy, or owner_scan",
+                            "distann-local-multinode step {:?} seed_strategy must be persisted_head, head_sample_exact, head_basin_diverse, head_hierarchy, or owner_scan",
                             step.name
                         )
                     }
@@ -3153,6 +3165,7 @@ impl SuiteStep {
                             | "training_landmarks"
                             | "training_region_balanced"
                             | "training_query_facility"
+                            | "training_gateway_set_cover"
                     ) {
                         bail!(
                             "distann-local-multinode step {:?} has invalid head_policy {:?}",
@@ -5911,8 +5924,12 @@ psql header noise\n\
     }
 
     #[test]
-    fn distann_local_multinode_expands_task183_training_policies() {
-        for policy in ["training_region_balanced", "training_query_facility"] {
+    fn distann_local_multinode_expands_benchmark_training_policies() {
+        for policy in [
+            "training_region_balanced",
+            "training_query_facility",
+            "training_gateway_set_cover",
+        ] {
             let raw = format!(
                 r#"{{
                   "name": "distann-task183-head",
@@ -5940,6 +5957,21 @@ psql header noise\n\
                 window == ["--training-query-path", "/staged/ec_real_100k_queries.tsv"]
             }));
         }
+    }
+
+    #[test]
+    fn distann_task185_attribution_rows_are_structured() {
+        let raw = "\
+[distann-multicluster] physical_benchmark_gateway scale=100k head_policy=training_gateway_set_cover attribution_json={\"schema_version\":1}\n\
+[distann-multicluster] physical_benchmark_basin scale=100k head_policy=training_gateway_set_cover basin_json={\"queries\":200}\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].0, "physical_benchmark_gateway");
+        assert_eq!(rows[1].0, "physical_benchmark_basin");
+        assert_eq!(
+            rows[0].1.get("head_policy").map(String::as_str),
+            Some("training_gateway_set_cover")
+        );
     }
 
     #[test]

@@ -349,9 +349,13 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if let Some(strategy) = args.seed_strategy.as_deref() {
         if !matches!(
             strategy,
-            "persisted_head" | "head_sample_exact" | "head_hierarchy" | "owner_scan"
+            "persisted_head"
+                | "head_sample_exact"
+                | "head_basin_diverse"
+                | "head_hierarchy"
+                | "owner_scan"
         ) {
-            bail!("--seed-strategy must be persisted_head, head_sample_exact, head_hierarchy, or owner_scan");
+            bail!("--seed-strategy must be persisted_head, head_sample_exact, head_basin_diverse, head_hierarchy, or owner_scan");
         }
         if !args.physical_benchmark {
             bail!("--seed-strategy requires --physical-benchmark");
@@ -386,8 +390,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
                 | "training_landmarks"
                 | "training_region_balanced"
                 | "training_query_facility"
+                | "training_gateway_set_cover"
         ) {
-            bail!("--head-policy must be current_sample, geometry_landmarks, graph_landmarks, training_landmarks, training_region_balanced, or training_query_facility");
+            bail!("--head-policy must be current_sample, geometry_landmarks, graph_landmarks, training_landmarks, training_region_balanced, training_query_facility, or training_gateway_set_cover");
         }
         if !args.physical_benchmark {
             bail!("--head-policy requires --physical-benchmark");
@@ -1106,10 +1111,14 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
             let strategy = fields[1];
             if !matches!(
                 strategy,
-                "persisted_head" | "head_sample_exact" | "head_hierarchy" | "owner_scan"
+                "persisted_head"
+                    | "head_sample_exact"
+                    | "head_basin_diverse"
+                    | "head_hierarchy"
+                    | "owner_scan"
             ) {
                 bail!(
-                    "benchmark seed variant mode must be persisted_head, head_sample_exact, head_hierarchy, or owner_scan, got {strategy:?}"
+                    "benchmark seed variant mode must be persisted_head, head_sample_exact, head_basin_diverse, head_hierarchy, or owner_scan, got {strategy:?}"
                 );
             }
             let head_search_width = fields[2]
@@ -1945,6 +1954,56 @@ async fn run_physical_benchmarks(
         lines.push(format!(
             "physical_benchmark_coverage scale={scale} head_policy={attested_head_policy} coverage_json={}",
             coverage.replace(' ', "")
+        ));
+    }
+    if args.head_policy.as_deref() == Some("training_gateway_set_cover") {
+        let attribution = coordinator
+            .query_one("SELECT ec_distann_gateway_attribution_benchmark()", &[])
+            .await
+            .wrap_err("collecting Task 185 gateway attribution")?
+            .get::<_, String>(0);
+        lines.push(format!(
+            "physical_benchmark_gateway scale={scale} head_policy={attested_head_policy} attribution_json={}",
+            attribution.replace(' ', "")
+        ));
+    }
+    if seed_variants
+        .iter()
+        .any(|variant| variant.strategy == "head_basin_diverse")
+    {
+        let basin = coordinator
+            .query_one(
+                &format!(
+                    "WITH basins AS (
+                         SELECT q.id, b.*
+                           FROM {physical_queries} q
+                           CROSS JOIN LATERAL ec_distann_physical_seed_basin_benchmark(
+                               'dm_idx'::regclass, q.source, 32) b
+                          ORDER BY q.id LIMIT 200
+                     )
+                     SELECT jsonb_build_object(
+                         'queries', count(*),
+                         'control_mean_overlap', avg(control_mean_overlap),
+                         'diverse_mean_overlap', avg(diverse_mean_overlap),
+                         'changed_query_fraction',
+                             count(*) FILTER (
+                                 WHERE control_seed_digest <> diverse_seed_digest
+                             )::double precision / NULLIF(count(*), 0),
+                         'overlap_reduced_fraction',
+                             count(*) FILTER (
+                                 WHERE diverse_mean_overlap < control_mean_overlap
+                             )::double precision / NULLIF(count(*), 0)
+                     )::text
+                       FROM basins"
+                ),
+                &[],
+            )
+            .await
+            .wrap_err("collecting Task 185 head-basin diagnostics")?
+            .get::<_, String>(0);
+        lines.push(format!(
+            "physical_benchmark_basin scale={scale} head_policy={attested_head_policy} basin_json={}",
+            basin.replace(' ', "")
         ));
     }
     let mut benchmark_arms = Vec::with_capacity(seed_variants.len() + 1);
@@ -4886,10 +4945,12 @@ mod tests {
         let variants = parse_benchmark_seed_variants(&[
             "eager:persisted_head:32:32:rabitq".to_owned(),
             "lazy:persisted_head:32:32:rabitq:10".to_owned(),
+            "diverse:head_basin_diverse:32:32:rabitq:10".to_owned(),
         ])
         .expect("variants parse");
         assert_eq!(variants[0].materialization_batch_size, 0);
         assert_eq!(variants[1].materialization_batch_size, 10);
+        assert_eq!(variants[2].strategy, "head_basin_diverse");
     }
 
     #[test]

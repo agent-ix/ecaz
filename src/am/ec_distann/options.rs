@@ -261,7 +261,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_string_guc(
         c"ec_distann.benchmark_head_policy",
         c"Task 181 benchmark-only head landmark builder.",
-        c"Accepted values are current_sample, geometry_landmarks, graph_landmarks, training_landmarks, training_region_balanced, and training_query_facility. This GUC is absent from normal production builds.",
+        c"Accepted values are current_sample, geometry_landmarks, graph_landmarks, training_landmarks, training_region_balanced, training_query_facility, and training_gateway_set_cover. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_HEAD_POLICY_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -344,7 +344,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_string_guc(
         c"ec_distann.benchmark_seed_mode",
         c"Task 180 benchmark-only physical seed attribution mode.",
-        c"Accepted values are persisted_head, head_sample_exact, head_hierarchy, and owner_scan. This GUC is absent from normal production builds.",
+        c"Accepted values are persisted_head, head_sample_exact, head_basin_diverse, head_hierarchy, and owner_scan. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_SEED_MODE_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -490,6 +490,7 @@ pub(super) fn benchmark_owner_payload_plan_cache() -> bool {
 pub(super) enum PhysicalSeedMode {
     PersistedHead,
     HeadSampleExact,
+    HeadBasinDiverse,
     HeadHierarchy,
     OwnerScan,
 }
@@ -499,6 +500,7 @@ impl PhysicalSeedMode {
         match self {
             Self::PersistedHead => "persisted_head",
             Self::HeadSampleExact => "head_sample_exact",
+            Self::HeadBasinDiverse => "head_basin_diverse",
             Self::HeadHierarchy => "head_hierarchy",
             Self::OwnerScan => "owner_scan",
         }
@@ -523,10 +525,11 @@ pub(super) fn current_physical_seed_mode() -> Result<PhysicalSeedMode, String> {
         return match configured {
             "persisted_head" => Ok(PhysicalSeedMode::PersistedHead),
             "head_sample_exact" => Ok(PhysicalSeedMode::HeadSampleExact),
+            "head_basin_diverse" => Ok(PhysicalSeedMode::HeadBasinDiverse),
             "head_hierarchy" => Ok(PhysicalSeedMode::HeadHierarchy),
             "owner_scan" => Ok(PhysicalSeedMode::OwnerScan),
             other => Err(format!(
-                "EC_BAD_INPUT: ec_distann.benchmark_seed_mode must be persisted_head, head_sample_exact, head_hierarchy, or owner_scan; got {other:?}"
+                "EC_BAD_INPUT: ec_distann.benchmark_seed_mode must be persisted_head, head_sample_exact, head_basin_diverse, head_hierarchy, or owner_scan; got {other:?}"
             )),
         };
     }
@@ -572,6 +575,7 @@ pub(crate) enum BenchmarkHeadPolicy {
     TrainingLandmarks,
     TrainingRegionBalanced,
     TrainingQueryFacility,
+    TrainingGatewaySetCover,
 }
 
 impl BenchmarkHeadPolicy {
@@ -583,6 +587,7 @@ impl BenchmarkHeadPolicy {
             Self::TrainingLandmarks => "training_landmarks",
             Self::TrainingRegionBalanced => "training_region_balanced",
             Self::TrainingQueryFacility => "training_query_facility",
+            Self::TrainingGatewaySetCover => "training_gateway_set_cover",
         }
     }
 }
@@ -601,6 +606,7 @@ pub(crate) fn current_benchmark_head_policy() -> Result<BenchmarkHeadPolicy, Str
             "training_landmarks" => Ok(BenchmarkHeadPolicy::TrainingLandmarks),
             "training_region_balanced" => Ok(BenchmarkHeadPolicy::TrainingRegionBalanced),
             "training_query_facility" => Ok(BenchmarkHeadPolicy::TrainingQueryFacility),
+            "training_gateway_set_cover" => Ok(BenchmarkHeadPolicy::TrainingGatewaySetCover),
             other => Err(format!(
                 "EC_BAD_INPUT: ec_distann.benchmark_head_policy has unsupported value {other:?}"
             )),

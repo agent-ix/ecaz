@@ -1586,6 +1586,64 @@ fn ec_distann_physical_seed_coverage_benchmark(
     TableIterator::once(row)
 }
 
+/// Task 185 build-time gateway/basin attribution captured before the
+/// benchmark-only head sample is persisted. The snapshot contains only compact
+/// aggregates and disjoint-split digests, never evaluation-query outcomes.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(stable, parallel_restricted)]
+fn ec_distann_gateway_attribution_benchmark() -> String {
+    super::head_sample::gateway_attribution_snapshot()
+        .unwrap_or_else(|| pgrx::error!("EC_HEAD_SAMPLE: gateway attribution snapshot is absent"))
+}
+
+/// Task 185 query-conditioned head-basin diagnostic. It compares exact
+/// nearest-seed selection with the pre-registered overlap-penalized selector on
+/// the same immutable head membership.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, strict, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_physical_seed_basin_benchmark(
+    index_regclass: PgRelation,
+    query: Vec<f32>,
+    seed_count: i32,
+) -> TableIterator<
+    'static,
+    (
+        name!(control_mean_overlap, f64),
+        name!(diverse_mean_overlap, f64),
+        name!(control_seed_digest, Vec<u8>),
+        name!(diverse_seed_digest, Vec<u8>),
+    ),
+> {
+    let seed_count = usize::try_from(seed_count)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("head seed count must be in 1..=4096"));
+    let scan = PhysicalGenerationScan::open(index_regclass.oid())
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let head = scan
+        .head_index
+        .as_ref()
+        .unwrap_or_else(|| pgrx::error!("EC_HEAD_SAMPLE: active generation has no head"));
+    let control = head.search_exact(&query, seed_count);
+    let diverse = head.search_exact_basin_diverse(&query, seed_count);
+    let digest = |domain: &[u8], seeds: &[DistannSeedCandidate]| {
+        let mut hasher = Sha256::new();
+        hasher.update(domain);
+        for seed in seeds {
+            hasher.update(seed.vec_id.to_le_bytes());
+        }
+        hasher.finalize().to_vec()
+    };
+    let row = (
+        head.basin_overlap_for_seeds(&query, &control),
+        head.basin_overlap_for_seeds(&query, &diverse),
+        digest(b"ec_distann_task185_control_seeds_v1\0", &control),
+        digest(b"ec_distann_task185_diverse_seeds_v1\0", &diverse),
+    );
+    TableIterator::once(row)
+}
+
 /// Task 183 same-seed attribution helper. The digest covers the ordered seed
 /// IDs selected by the exact production seed-selection path under the active
 /// benchmark controls. Neighbor scoring is intentionally absent from the
@@ -2278,6 +2336,22 @@ impl PhysicalGenerationScan {
                 .as_ref()
                 .map(|head| head.search_exact(query, seed_count))
                 .unwrap_or_default(),
+            super::options::PhysicalSeedMode::HeadBasinDiverse => {
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                {
+                    self.head_index
+                        .as_ref()
+                        .map(|head| head.search_exact_basin_diverse(query, seed_count))
+                        .unwrap_or_default()
+                }
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                {
+                    return Err(
+                        "EC_BAD_INPUT: head_basin_diverse is unavailable in production builds"
+                            .to_owned(),
+                    );
+                }
+            }
             super::options::PhysicalSeedMode::HeadHierarchy => self
                 .head_index
                 .as_ref()
