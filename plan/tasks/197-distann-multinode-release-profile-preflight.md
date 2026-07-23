@@ -1,6 +1,7 @@
 # Task 197: DistANN Multinode Release-Profile Preflight
 
-Status: **proposed** (2026-07-22). Priority: P1 benchmark-integrity follow-up.
+Status: **complete — outside-reviewed ACCEPT; PROMOTE** (2026-07-23).
+Priority: P1 benchmark-integrity follow-up.
 
 ## Why
 
@@ -42,6 +43,22 @@ extension.
   construction starts. This tooling-only change does not alter quantizer,
   index, scan, rerank, posting, or storage behavior and therefore does not
   require a 10k/50k/100k performance matrix.
+
+## Implementation outcome
+
+The fixture now creates the extension and validates every node before entering
+either the physical or replicated-serving setup path. The validator requires a
+non-empty unanimous git SHA and build profile, rejects every non-release
+profile by default with node/port diagnostics, and accepts a non-release
+profile only through the suite-serialized `allow_debug_extension` field. The
+accepted attestation is reused by the later physical benchmark provenance row.
+
+Packet 001 contains the focused release/debug/mixed/override tests, suite
+expansion and structured-result tests, audit/dry-run manifests, and a successful
+physical fixture smoke. Its log records the flushed release preflight before
+`physical_setup_start`, and `results.jsonl` contains the corresponding
+`multinode_release_preflight` row. Outside review accepted the implementation
+and evidence with no findings and marked the task merge-ready.
 
 ## Review packet
 

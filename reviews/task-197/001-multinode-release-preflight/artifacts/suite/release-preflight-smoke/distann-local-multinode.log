@@ -1,0 +1,10 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz/.claude/worktrees/task-197
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=1 instances=1 coordinator_outside_roster=false base_port=39970 rows=32 dim=16 head_index_cap=64
+[distann-multicluster] release_profile_preflight status=passed nodes=1 unanimous=true extension_git_sha=a5e567c45a5c96f67a842163e2293843d0a3774a extension_build_profile=release debug_override=false
+[distann-multicluster] physical_setup_start rows=32 nodes=1
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=32 rows=32 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=32 rows=32 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=2 owners=1 source_rows=32
+[distann-multicluster] physical_topology_gate pass=true owners=1 remote_verified=0 source_rows=32
+[distann-multicluster] summary written to /home/peter/dev/ecaz/.claude/worktrees/task-197/reviews/task-197/001-multinode-release-preflight/artifacts/suite/release-preflight-smoke/distann-multinode-summary.log

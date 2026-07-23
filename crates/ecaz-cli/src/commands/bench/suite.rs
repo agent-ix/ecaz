@@ -523,6 +523,10 @@ struct DistannLocalMultinodeStep {
     /// per-arm logs may be pruned after results.jsonl has been materialized.
     #[serde(default)]
     compact_artifacts: bool,
+    /// Intentional diagnostic override for a unanimous non-release extension.
+    /// Production benchmark suites must leave this false.
+    #[serde(default)]
+    allow_debug_extension: bool,
     #[serde(default)]
     pg: Option<u16>,
     #[serde(default)]
@@ -2241,9 +2245,11 @@ fn parse_load_rows(raw: &str) -> Vec<(String, BTreeMap<String, String>)> {
 
 /// Parse the `ecaz dev distann-multicluster` fixture log emitted by a
 /// `distann-local-multinode` suite step into structured result rows. The
-/// fixture prints `[distann-multicluster] ...` lines; three shapes carry
+/// fixture prints `[distann-multicluster] ...` lines; these shapes carry
 /// decision-grade signal (027-P1 — the empty-`results.jsonl` fix):
 ///
+/// - `release_profile_preflight status=passed ...` — the unanimous extension
+///   provenance gate emitted and flushed before expensive fixture setup.
 /// - `RECALL_RESULT n_queries=.. identical=.. mismatched_ids=..` — the
 ///   byte-identical single-vs-multi top-k distinct-recall identity. Emits a
 ///   `distinct_recall_identity` row with an `identity_ok` threshold
@@ -2263,7 +2269,14 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             continue;
         };
         let body = body.trim();
-        if let Some(rest) = body.strip_prefix("RECALL_RESULT") {
+        if let Some(rest) = body.strip_prefix("release_profile_preflight ") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                let passed = values.get("status").is_some_and(|value| value == "passed")
+                    && values.get("unanimous").is_some_and(|value| value == "true");
+                values.insert("pass_numeric".into(), if passed { "1" } else { "0" }.into());
+                rows.push(("multinode_release_preflight".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("RECALL_RESULT") {
             if let Some(mut values) = parse_space_key_values(rest.trim()) {
                 let identity_ok = values
                     .get("mismatched_ids")
@@ -4143,6 +4156,9 @@ fn expand_distann_local_multinode(
     if step.coordinator_outside_roster {
         args.push("--coordinator-outside-roster".into());
     }
+    if step.allow_debug_extension {
+        args.push("--allow-debug-extension".into());
+    }
     if step.physical_benchmark {
         args.push("--physical-benchmark".into());
     }
@@ -5082,12 +5098,29 @@ psql header noise\n\
         // three decision-grade shapes the fixture emits.
         let raw = "\
 [distann-multicluster] node 1 loaded + indexed\n\
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=abc123 extension_build_profile=release debug_override=false\n\
 [distann-multicluster] RECALL_RESULT n_queries=50 identical=50 mismatched_ids=0\n\
 [distann-multicluster] suite_recall_gate single=0.9950 multi=0.9950 delta=0.0000 pass=true\n\
 [distann-multicluster] qual_correctness mismatched_ids=0 pass=true\n\
 [distann-multicluster] fault_drill remote_statement_timeout pass=true\n\
 [distann-multicluster] suite_recall_gate=SKIPPED(no exe)\n";
         let rows = parse_distann_multinode_rows(raw);
+
+        let preflight = rows
+            .iter()
+            .find(|(m, _)| m == "multinode_release_preflight")
+            .expect("release preflight row");
+        assert_eq!(
+            preflight
+                .1
+                .get("extension_build_profile")
+                .map(String::as_str),
+            Some("release")
+        );
+        assert_eq!(
+            preflight.1.get("pass_numeric").map(String::as_str),
+            Some("1")
+        );
 
         let identity = rows
             .iter()
@@ -5547,6 +5580,7 @@ psql header noise\n\
             "head_seed_count": 64,
             "physical_benchmark": true,
             "compact_artifacts": true,
+            "allow_debug_extension": true,
             "artifact_dir": "artifacts/cap-256",
             "benchmark_warmup_iterations": 7,
             "drop_extension_cleanup_drill": true,
@@ -5581,6 +5615,7 @@ psql header noise\n\
             .windows(2)
             .any(|window| window == ["--benchmark-warmup-iterations", "7"]));
         assert!(command.contains(&"--drop-extension-cleanup-drill".into()));
+        assert!(command.contains(&"--allow-debug-extension".into()));
         assert_eq!(
             config.steps[0].expected_artifacts(),
             vec![PathBuf::from(
