@@ -1,0 +1,66 @@
+{
+  "suite": "task197-multinode-release-preflight",
+  "schema_version": 1,
+  "config": "reviews/task-197/001-multinode-release-preflight/artifacts/task197-suite.json",
+  "config_sha256": "16c5514056a8c2769bb5c183b68d5d7ec2bb9fd78d65d49849394a9d8e285e00",
+  "dry_run": true,
+  "generated_at_unix_ms": 1784772645336,
+  "runner_git_commit": "be2f3497f0bbae16a861bcbb91ac44bab7595e92",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "release-preflight-smoke",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--pgbin",
+        "/home/peter/.pgrx/18.3/pgrx-install/bin",
+        "--artifact-dir",
+        "reviews/task-197/001-multinode-release-preflight/artifacts/suite/release-preflight-smoke",
+        "--run-dir",
+        "target/task197-release-preflight-smoke",
+        "--log-file",
+        "reviews/task-197/001-multinode-release-preflight/artifacts/suite/release-preflight-smoke/distann-local-multinode.log",
+        "--nodes",
+        "1",
+        "--base-port",
+        "39970",
+        "--rows",
+        "32",
+        "--dim",
+        "16",
+        "--graph-degree",
+        "8",
+        "--head-index-cap",
+        "64",
+        "--queries",
+        "2",
+        "--top-k",
+        "2",
+        "--skip-fault-drills"
+      ],
+      "selected": true,
+      "tags": [
+        "task197",
+        "diagnostic-smoke"
+      ],
+      "expected_artifacts": [
+        "reviews/task-197/001-multinode-release-preflight/artifacts/suite/release-preflight-smoke/distann-local-multinode.log",
+        "reviews/task-197/001-multinode-release-preflight/artifacts/suite/release-preflight-smoke/distann-multinode-summary.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}

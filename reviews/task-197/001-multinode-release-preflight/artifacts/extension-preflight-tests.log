@@ -1,0 +1,15 @@
+Script started on 2026-07-22 19:11:08-07:00 [<not executed on terminal>]
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-197/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 33.13s
+     Running unittests src/main.rs (target/debug/deps/ecaz-bd2d3290bf0a881d)
+
+running 4 tests
+test commands::dev::distann_multicluster::tests::extension_preflight_allows_unanimous_debug_with_explicit_override ... ok
+test commands::dev::distann_multicluster::tests::extension_preflight_accepts_unanimous_release_nodes ... ok
+test commands::dev::distann_multicluster::tests::extension_preflight_rejects_mixed_node_provenance_even_with_override ... ok
+test commands::dev::distann_multicluster::tests::extension_preflight_rejects_debug_without_override ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 455 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-22 19:11:40-07:00 [COMMAND_EXIT_CODE="0"]

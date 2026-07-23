@@ -1,0 +1,27 @@
+{
+  "name": "task197-multinode-release-preflight",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-197/001-multinode-release-preflight/artifacts/suite",
+  "defaults": {
+    "pg": 18
+  },
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "release-preflight-smoke",
+      "tags": ["task197", "diagnostic-smoke"],
+      "pg": 18,
+      "pgbin": "/home/peter/.pgrx/18.3/pgrx-install/bin",
+      "nodes": 1,
+      "rows": 32,
+      "dim": 16,
+      "graph_degree": 8,
+      "head_index_cap": 64,
+      "queries": 2,
+      "top_k": 2,
+      "base_port": 39970,
+      "skip_fault_drills": true,
+      "run_dir": "target/task197-release-preflight-smoke"
+    }
+  ]
+}

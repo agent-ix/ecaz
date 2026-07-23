@@ -102,7 +102,7 @@ validity requirements.
 | 194 | Traversal transport attribution | complete — STOP | reconciled nine-way TRAV-01 counters; fixed-work wider/fewer-round candidate was not useful end to end |
 | 195 | Owner schema cache productionization | complete — outside-reviewed ACCEPT; PROMOTE | exact recall; warm mean -8.33%/-13.28%/-18.11%; selector removed |
 | 196 | Lazy10 stable-prefix duplicate | complete — outside-reviewed ACCEPT; PROMOTE | exact-distance rank shift attributed; identity-keyed reuse passes nine semantic cases and exact-recall/work 10k/50k/100k A/B |
-| 197 | Multinode release-profile preflight | proposed benchmark-integrity follow-up | fail before expensive self-hosted builds on debug/mixed extension provenance |
+| 197 | Multinode release-profile preflight | implementation complete — outside review requested | pre-setup unanimous release/SHA gate, explicit suite diagnostic override, structured evidence |
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
