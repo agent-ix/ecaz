@@ -1,0 +1,11 @@
+Script started on 2026-07-23 07:58:38-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.18s
+     Running unittests src/main.rs (target/debug/deps/ecaz-59df4fb3dab25d2a)
+
+running 1 test
+test commands::bench::suite::tests::distann_task185_attribution_rows_are_structured ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-23 07:58:38-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,13 @@
+Script started on 2026-07-23 07:56:13-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-185-gateway-landmark-selection)
+   Compiling pgrx-tests v0.17.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 24s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-4086de47a6d57a93)
+
+running 1 test
+test am::ec_distann::head_sample::tests::gateway_set_cover_is_deterministic_and_uses_marginal_gain ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2524 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-23 07:57:34-07:00 [COMMAND_EXIT_CODE="0"]
