@@ -2,7 +2,7 @@
 type: ADR
 id: ADR-086
 title: "ec_distann: Fingerprint-Bound Coordinator Traversal Replica"
-status: PROPOSED
+status: ACCEPTED
 impact: Adds an optional derived traversal copy at the coordinator to remove serial owner expansion round trips while retaining hash-owned rows, owner-authoritative generations, lazy payload materialization, and the existing remote traversal fallback.
 date: 2026-07-23
 ---
@@ -21,8 +21,10 @@ records ten hop rounds, 40 requested/returned nodes, zero repeated nodes,
 transport wait. A lighter-observer release run records 4.078 ms of transport
 wait. Connection readiness, request encoding, and coordinator receive/decode
 together cost only 0.071 ms/scan, and logical traffic is only 13.9 KiB request
-plus 10.5 KiB response per scan. This is latency/round-trip pressure, not
-bandwidth or codec pressure.
+plus 10.5 KiB response per scan. This is serial remote/backend-boundary
+pressure, not bandwidth or codec pressure. On the same-host benchmark lane,
+backend scheduling and IPC dominate wire RTT; a genuinely remote deployment
+adds network latency to the same boundary.
 
 The retained post-Task-195 production point is 0.9990 / 0.9685 / 0.9625
 distinct recall and 20.90 / 20.90 / 19.90 ms warm mean at 10k / 50k / 100k.
@@ -42,11 +44,13 @@ Task 190 compared two architecture families:
 Build a **fingerprint-bound, coordinator-resident traversal replica** as an
 optional, rebuildable derivative of one Published physical generation.
 
-The replica contains exactly the data needed to execute the existing
-production traversal and exact ranking locally. It does not contain projected
+The replica contains exactly the graph and exact-vector data needed to execute
+the existing production traversal and exact ranking locally. It does not copy
 payload columns and does not become the generation or row-tier source of
-truth. Final executor-driven lazy10 payload materialization remains routed to
-hash owners under the existing epoch/failure contract.
+truth. "Faithful" means identical logical traversal inputs and results, not a
+physical copy of the full row tier. Final executor-driven lazy10 payload
+materialization remains routed to hash owners under the existing epoch/failure
+contract.
 
 The implementation must preserve the current algorithm byte-for-byte in its
 logical inputs and outputs:
@@ -64,28 +68,40 @@ coverage, descriptor identity, and a deterministic content digest have all
 verified. Activation is atomic by `(logical_index_uuid, build_id,
 epoch_fingerprint)`. A scan pins the active epoch before selecting a replica.
 Missing, partial, stale, retiring, digest-mismatched, or otherwise unusable
-replicas take the existing owner traversal path; they never produce partial
-results.
+replicas take the existing owner traversal path. A failure discovered after
+replica traversal starts discards the entire local frontier/result state and
+restarts from the beginning on the owner path under the same pinned epoch; it
+never reuses or returns a partial prefix.
 
-The first implementation may faithfully copy the current graph and exact
-vector tier. Compact packing is not a prerequisite and cannot be combined
+The first implementation copies the current graph and exact vectors but no
+payload columns. Compact packing is not a prerequisite and cannot be combined
 post-hoc with the initial causal A/B. At 100k the current physical generation
-is 2,496,626,688 bytes, so a faithful per-coordinator replica has a known
-worst-case 1.0× generation storage cost. The current owner graph relations
-total 826,925,056 bytes. Adding one raw f32 vector per 1,536-dimensional row
-and the current directory gives a lower-envelope estimate around 1.445 GB
-(about 57.9% of the generation), but PostgreSQL/layout overhead and a real
-implementation decide the actual number. Task 198 must report measured bytes,
-build time, peak memory, bytes copied, and cache residency; the estimate is
-not a gate result.
+is 2,496,626,688 bytes; that is the hard per-coordinator storage ceiling, not
+permission to copy the full payload-bearing row tier. The current owner graph
+relations total 826,925,056 bytes. Adding one raw f32 vector per
+1,536-dimensional row and the current directory gives a lower-envelope
+estimate around 1.445 GB (about 57.9% of the generation), but PostgreSQL/layout
+overhead and a real implementation decide the actual number. Task 198 must
+report measured bytes, build time, peak memory, bytes copied, and cache
+residency; the estimate is not a gate result.
 
-Published-generation mutation remains owner-authoritative. Until a separate
-reviewed coherence protocol exists, any tombstone, insert, update, or
-back-edge amendment that changes traversal-visible state marks the replica
-stale before the mutation can become visible and forces owner traversal.
-Task 198 may implement invalidation and fallback; it may not invent replica
-mutation propagation inside this architecture slice. A new epoch builds a new
-replica and cannot reuse one across fingerprints.
+Published-generation mutation remains owner-authoritative. Replica state has
+one durable authority in the control coordinator's epoch catalog and is read
+during the scan's existing active-epoch pin/revalidation. The supported
+topology is one authoritative coordinator per logical index. Multi-coordinator
+replicas are rejected until a shared invalidation authority is separately
+designed.
+
+A tombstone, insert, update, or back-edge amendment cannot dispatch while the
+replica is Ready. Its first attempt durably changes Ready to Stale and returns
+a stable retryable error without sending an owner mutation; a retry observes
+Stale and uses the owner path. This avoids a distributed-commit requirement,
+and a crash after invalidation is fail-safe. A scan that pinned Ready before
+the transition completes on the pinned immutable image, representing the
+permitted pre-mutation view; new scans observe Stale. Task 198 may implement
+this invalidation/fallback contract but may not add replica mutation
+propagation. A new epoch builds a new replica and cannot reuse one across
+fingerprints.
 
 ## Expected ceiling and gates
 
@@ -133,11 +149,21 @@ Rejected for this escalation. The measured serialization-adjacent work
 (connection, request encode, receive/decode) is only 0.071 ms/scan, and traffic
 is small. Replacing row/array encoding alone has negligible ceiling. An
 always-on binary service might reduce backend scheduling overhead, but still
-crosses ten sequential round trips and introduces a new service, authentication
-boundary, snapshot/epoch protocol, cancellation path, backpressure model,
-deployment surface, and rollback mode without an attributed estimate of the
-portion it removes. It may be reconsidered only after a separate feasibility
-measurement isolates service/protocol overhead from RTT.
+crosses ten sequential remote/backend boundaries and introduces a new service,
+authentication boundary, snapshot/epoch protocol, cancellation path,
+backpressure model, deployment surface, and rollback mode without an
+attributed estimate of the portion it removes. It may be reconsidered only
+after a separate feasibility measurement isolates service/protocol overhead
+from network RTT. Task 198 retains per-round wait, round-count, and straggler
+decomposition so that premise remains testable.
+
+### Shared-memory or Unix-domain transport (`ARCH-08`)
+
+Rejected for this escalation. It targets the same-host benchmark topology and
+could reduce local IPC/service overhead, but it neither serves genuinely
+remote owners nor removes the sequential owner boundaries. Selecting it would
+optimize a lane-specific deployment artifact rather than the distributed
+architecture. Reopen only for an explicitly same-host product topology.
 
 ### Sparse top-layer or bridge replication (`TRAV-28`--`TRAV-30`)
 

@@ -33,13 +33,20 @@ This task does not promote a default merely because the prototype works.
   final owner payload path; and
 - Task 195 query identities and exact/disjoint three-owner topology.
 
+If Tasks 185/186/188/189 change a production default before Phase 3 or 4,
+re-pin this control and its query/work identities to the then-current
+production point before interpreting a replica delta.
+
 ## Phase 1: contract and faithful prototype
 
-1. Define replica catalog/state keyed by logical index UUID, build id, epoch
-   fingerprint, descriptor digest, and deterministic content digest.
+1. Define replica catalog/state at the authoritative control coordinator,
+   keyed by logical index UUID, build id, epoch fingerprint, descriptor
+   digest, and deterministic content digest. Scans observe that state during
+   the existing active-epoch pin/revalidation, with no additional owner RPC.
 2. Stream the traversal-required graph and exact-vector state from all owners
-   into a coordinator-local derived relation/image. Do not copy arbitrary
-   payload columns.
+   into a coordinator-local derived relation/image. Payload columns are not
+   copied. "Faithful" means identical traversal inputs/results, not a physical
+   copy of the full row tier.
 3. Validate cardinality, every owner partition, vec_id uniqueness, dimensions,
    codec/degree/options, digests, and complete coverage before `Ready`.
 4. Atomically select only a `Ready` replica after the scan pins and revalidates
@@ -47,7 +54,10 @@ This task does not promote a default merely because the prototype works.
 5. Execute the same traversal core and exact ordering locally. Final lazy10
    payload reads still use owners.
 6. Missing/stale/partial/corrupt/retiring replicas use the existing remote
-   traversal path. A replica error cannot return a partial prefix.
+   traversal path. A replica failure after traversal starts discards all
+   replica frontier/hit state and restarts from the beginning on the owner
+   path under the same pinned epoch; it cannot return or reuse a partial
+   prefix.
 
 The faithful prototype is one candidate. Do not stack compact packing, sparse
 replication, a new codec, changed BW/H, or payload replication into its A/B.
@@ -57,11 +67,21 @@ replication, a new codec, changed BW/H, or payload replication into its A/B.
 - Build/activate/retire/reclaim are crash-safe and idempotent.
 - Replica scan pins participate in retirement fencing.
 - New-epoch publication cannot bind an older fingerprint's replica.
-- Tombstone, insert, update, and back-edge amendment invalidate the replica
-  before traversal-visible mutation and force remote fallback.
+- Replica eligibility has one durable authority at the control coordinator.
+  The currently supported topology is one authoritative coordinator per
+  logical index; multiple independent query-coordinator replicas are rejected
+  until a shared invalidation protocol is separately accepted.
+- Tombstone, insert, update, and back-edge amendment cannot dispatch while a
+  replica is Ready. The first attempt durably transitions Ready to Stale and
+  returns a stable retryable error without owner mutation; a retry observes
+  Stale and uses the owner path. A crash after invalidation is fail-safe.
+- A scan that pinned a Ready replica before invalidation completes against
+  that pinned immutable image. New scans observe Stale. This is the permitted
+  pre-mutation view under FR-082's concurrent-mutation model.
 - Coordinator restart, owner outage during build, partial copy, digest
-  mismatch, activation race, retirement race, disk exhaustion, and manual
-  replica removal have explicit drills.
+  mismatch, activation race, retirement race, disk exhaustion, manual replica
+  removal, mid-scan replica failure with full owner restart, and an
+  in-flight-scan/invalidation/mutation race have explicit drills.
 - Multi-coordinator deployment treats each replica independently and reports
   amplification per coordinator.
 
@@ -77,7 +97,8 @@ Use one fresh generation and a checked-in `ecaz bench suite` with:
 - 200 held-out queries / 2,000 top-10 trials;
 - 50 warm concurrency-1 latency samples after 10 warmups;
 - complete Task 194 traversal reconciliation, including remote wait removed,
-  local graph/vector work, remaining payload transport, and fallback count;
+  local graph/vector work, remaining payload transport, fallback count,
+  per-round wait, round count, and straggler spread;
 - physical replica bytes, WAL if any, build time, peak memory, bytes copied,
   cache residency, and source generation bytes;
 - exact/disjoint topology, remote payload engagement, release profile, and
@@ -106,6 +127,8 @@ Output either:
 1. Same-query ordered result identity and recall parity across normal, fallback,
    tombstone, qual/projection/null/toast, and owner-failure cases.
 2. No scan can select a replica for a different or mutation-stale fingerprint.
+   A scan already pinned before invalidation may complete on that immutable
+   image and is covered by the concurrent-mutation identity drill.
 3. Work remains corpus-independent and no payload or owner scan becomes
    unbounded.
 4. 100k paired A/B causally reconciles the expected round-trip movement.
@@ -127,6 +150,8 @@ Output either:
   changed placement in the same causal A/B.
 - Owner payload replication.
 - Replica mutation propagation/coherence.
+- Multiple query coordinators before a single shared invalidation authority
+  exists.
 - Task 167's full physical incremental-DML implementation.
 - More than one coordinator replica candidate.
 

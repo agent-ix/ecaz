@@ -16,8 +16,10 @@ Decision outputs:
 The ADR selects a rebuildable, fingerprint-bound derived traversal replica,
 not payload replication or a new source of truth. It requires active-epoch
 pin/revalidation, complete digest/cardinality/owner coverage before Ready,
-mutation invalidation, unchanged owner traversal fallback, and no partial
-success.
+single-authority mutation invalidation, unchanged owner traversal fallback,
+full restart after a mid-scan replica failure, and no partial success. An
+in-flight scan that pinned Ready may complete on its immutable image; new scans
+observe Stale.
 
 Task 198 separates faithful prototype, lifecycle/fault work, isolated paired
 100k A/B, and conditional 10k/50k/100k confirmation. Compact packing, sparse

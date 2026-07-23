@@ -9,9 +9,9 @@ measurement is claimed here.
 
 | Dimension | Coordinator traversal replica (`ARCH-02` / `TRAV-28`) | Dedicated binary traversal RPC (`ARCH-07`) |
 |---|---|---|
-| Measured component addressed | Removes serial owner expansion round trips; local traversal replaces remote service | Serialization/service path around the same serial round trips |
+| Measured component addressed | Removes serial owner-expansion remote/backend boundaries; local traversal replaces remote service | Serialization/service path around the same serial boundaries |
 | Direct measured ceiling | 4.078--5.013 ms/scan wait; owner work is not counted as guaranteed saving | 0.071 ms/scan measured connection/encode/decode; unknown share of wait may be backend/service overhead |
-| Round-trip count | Can remove traversal RPCs; final lazy payload RPC remains | Ten traversal round trips remain unless it also becomes a new orchestration architecture |
+| Boundary count | Can remove traversal RPCs; final lazy payload RPC remains | Ten traversal remote/backend boundaries remain unless it also becomes a new orchestration architecture |
 | Logical bytes | Avoids about 24.4 KiB traversal traffic/scan | Bytes already small; binary packing is not bandwidth-motivated |
 | 100k storage | Faithful upper bound +2,496,626,688 bytes per coordinator; compact lower-envelope estimate about 1.445 GB, unmeasured | No generation replica |
 | Build/network | Full per-epoch copy and validation; multiplied by coordinator count | New service deployment but no epoch bulk copy |
@@ -49,7 +49,12 @@ remote traversal boundary while keeping final payloads hash-owned. Dedicated
 binary RPC is rejected for this escalation because its directly attributed
 serialization-adjacent ceiling is negligible and a service capable of
 attacking the remaining wait would introduce a new failure/deployment model
-without removing the sequential network dependency.
+without removing the sequential remote/backend boundaries.
+
+`ARCH-08` shared-memory/Unix-domain transport is also not selected. It could
+reduce same-host IPC/service overhead on this benchmark lane, but does not
+serve genuinely remote owners or remove the sequential owner boundaries; it
+would make the decision topology-specific.
 
 The selection is conditional on Task 198 proving same-result semantics and a
 material end-to-end win at an explicitly accepted measured storage/build cost.

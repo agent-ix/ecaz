@@ -1,7 +1,7 @@
 # Task 190: ec_distann Architecture Escalation Gate
 
-Status: **decision authored — select coordinator traversal replica for Task
-198; awaiting outside review** (2026-07-23). Priority: P3 decision task.
+Status: **complete — outside-reviewed ACCEPT; select coordinator traversal
+replica for Task 198** (2026-07-23). Priority: P3 decision task.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 families `ARCH-01` through `ARCH-15` and deferred `TRAV-28` through `TRAV-30`.
@@ -111,16 +111,21 @@ measured per-round wait rather than merely changing serialization around it.
 The replica is a rebuildable derived artifact, never an owner/source of truth,
 and retains owner-side lazy payload materialization.
 
-The first faithful implementation may cost up to one additional physical
-generation per coordinator (2,496,626,688 bytes at 100k). A later compact
-traversal image has a measured-byte lower envelope of about 1.445 GB at the
-same corpus/dimension/degree, but that is a design estimate, not benchmark
-evidence. Task 198 must measure actual bytes and may not claim the estimate.
+The first faithful implementation has a hard storage budget of no more than
+one additional physical generation per coordinator (2,496,626,688 bytes at
+100k). Its graph-plus-exact-vector design has a computed lower envelope of
+about 1.445 GB at the same corpus/dimension/degree, but that is a design
+estimate, not benchmark evidence. Task 198 must measure actual bytes and may
+not claim the estimate.
 
-Incremental graph mutation invalidates the replica and forces the existing
-owner traversal path until a later task supplies a reviewed coherence
-protocol. Missing, stale, partial, or digest-mismatched replicas also fall
-back; no partial-result success is permitted.
+Incremental graph mutation is not permitted while the replica is Ready. A
+single authoritative coordinator catalog state is read during the existing
+epoch pin. The first attempted mutation durably transitions the replica to
+Stale and fails before dispatching owner writes; a retry uses the existing
+owner traversal/mutation path. Multi-coordinator replicas remain unsupported
+until a shared invalidation authority is separately designed. Missing, stale,
+partial, or digest-mismatched replicas also fall back; no partial-result
+success is permitted.
 
 ADR-086 records the decision. Task 198 owns prototype, lifecycle/failure
 semantics, same-query identity, and 10k/50k/100k promotion gates. Task 190

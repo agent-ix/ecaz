@@ -317,8 +317,8 @@ Task 190 may compare architectures but may not implement several together.
 | ARCH-04 | Hash ownership plus replicated boundary nodes | deferred Task 190 |
 | ARCH-05 | Columnar/packed immutable row tier | deferred; storage format decision |
 | ARCH-06 | Covering payload sidecars for common projections | deferred; workload/storage decision |
-| ARCH-07 | Dedicated binary RPC instead of SQL-function transport | rejected for this escalation: measured encode/decode/connection work is only 0.071 ms/scan and the ten sequential RTTs remain; reopen only with an independently measured transport-service premise |
-| ARCH-08 | Shared-memory or Unix-domain same-host transport | deferred topology-specific path |
+| ARCH-07 | Dedicated binary RPC instead of SQL-function transport | rejected for this escalation: measured encode/decode/connection work is only 0.071 ms/scan and the ten sequential remote/backend boundaries remain; reopen only with an independently measured transport-service premise |
+| ARCH-08 | Shared-memory or Unix-domain same-host transport | rejected for this escalation: it optimizes the same-host benchmark topology but neither serves genuinely remote owners nor removes sequential owner boundaries; reopen only for an explicitly same-host deployment product |
 | ARCH-09 | GPU/SIMD exhaustive compact-head scoring | deferred accelerator path |
 | ARCH-10 | GPU-batched head and traversal scoring | deferred throughput architecture |
 | ARCH-11 | Cross-query batching to amortize transport/scoring | deferred throughput task |
