@@ -1971,36 +1971,65 @@ async fn run_physical_benchmarks(
         .iter()
         .any(|variant| variant.strategy == "head_basin_diverse")
     {
-        let basin = coordinator
-            .query_one(
-                &format!(
-                    "WITH basins AS (
-                         SELECT q.id, b.*
-                           FROM {physical_queries} q
+        // Run one diagnostic call per statement. pgrx allocations made by the
+        // benchmark-only function live in PostgreSQL's statement context; a
+        // single 200-row LATERAL statement therefore retains every candidate
+        // basin until the statement ends and can consume tens of GiB. Separate
+        // statements bound the backend's live memory to one query while
+        // preserving the same deterministic ordered 200-query population.
+        let mut basin_queries = 0_u64;
+        let mut control_overlap_sum = 0.0_f64;
+        let mut diverse_overlap_sum = 0.0_f64;
+        let mut changed_queries = 0_u64;
+        let mut overlap_reduced_queries = 0_u64;
+        for offset in 0..200 {
+            let Some(row) = coordinator
+                .query_opt(
+                    &format!(
+                        "SELECT b.control_mean_overlap,
+                                b.diverse_mean_overlap,
+                                b.control_seed_digest,
+                                b.diverse_seed_digest
+                           FROM (
+                               SELECT source
+                                 FROM {physical_queries}
+                                ORDER BY id
+                                LIMIT 1 OFFSET {offset}
+                           ) q
                            CROSS JOIN LATERAL ec_distann_physical_seed_basin_benchmark(
-                               'dm_idx'::regclass, q.source, 32) b
-                          ORDER BY q.id LIMIT 200
-                     )
-                     SELECT jsonb_build_object(
-                         'queries', count(*),
-                         'control_mean_overlap', avg(control_mean_overlap),
-                         'diverse_mean_overlap', avg(diverse_mean_overlap),
-                         'changed_query_fraction',
-                             count(*) FILTER (
-                                 WHERE control_seed_digest <> diverse_seed_digest
-                             )::double precision / NULLIF(count(*), 0),
-                         'overlap_reduced_fraction',
-                             count(*) FILTER (
-                                 WHERE diverse_mean_overlap < control_mean_overlap
-                             )::double precision / NULLIF(count(*), 0)
-                     )::text
-                       FROM basins"
-                ),
-                &[],
-            )
-            .await
-            .wrap_err("collecting Task 185 head-basin diagnostics")?
-            .get::<_, String>(0);
+                               'dm_idx'::regclass, q.source, 32) b"
+                    ),
+                    &[],
+                )
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "collecting Task 185 head-basin diagnostic query {}",
+                        offset + 1
+                    )
+                })?
+            else {
+                break;
+            };
+            let control_overlap = row.get::<_, f64>(0);
+            let diverse_overlap = row.get::<_, f64>(1);
+            let control_digest = row.get::<_, Vec<u8>>(2);
+            let diverse_digest = row.get::<_, Vec<u8>>(3);
+            basin_queries += 1;
+            control_overlap_sum += control_overlap;
+            diverse_overlap_sum += diverse_overlap;
+            changed_queries += u64::from(control_digest != diverse_digest);
+            overlap_reduced_queries += u64::from(diverse_overlap < control_overlap);
+        }
+        let denominator = basin_queries.max(1) as f64;
+        let basin = serde_json::json!({
+            "queries": basin_queries,
+            "control_mean_overlap": control_overlap_sum / denominator,
+            "diverse_mean_overlap": diverse_overlap_sum / denominator,
+            "changed_query_fraction": changed_queries as f64 / denominator,
+            "overlap_reduced_fraction": overlap_reduced_queries as f64 / denominator,
+        })
+        .to_string();
         lines.push(format!(
             "physical_benchmark_basin scale={scale} head_policy={attested_head_policy} basin_json={}",
             basin.replace(' ', "")
