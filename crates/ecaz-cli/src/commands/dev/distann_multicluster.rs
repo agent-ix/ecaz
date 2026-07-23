@@ -1920,37 +1920,100 @@ async fn run_physical_benchmarks(
         args.head_index_cap,
     ));
     if args.head_policy.is_some() {
-        let coverage = coordinator
-            .query_one(
-                &format!(
-                    "WITH coverage AS (
-                         SELECT q.id, c.* FROM {physical_queries} q
-                         CROSS JOIN LATERAL ec_distann_physical_seed_coverage_benchmark(
-                             'dm_idx'::regclass, q.source, 32, 32) c
-                         ORDER BY q.id LIMIT 200
-                     ), regions AS (
-                         SELECT query_region, count(*) AS queries,
-                                count(*) FILTER (WHERE zero_owner_represented) AS zero_queries
-                         FROM coverage GROUP BY query_region
-                     )
-                     SELECT jsonb_build_object(
-                         'queries', (SELECT count(*) FROM coverage),
-                         'owner_membership_rate', (SELECT sum(owner_in_head)::double precision / NULLIF(sum(owner_seed_count), 0) FROM coverage),
-                         'bounded_overlap_rate', (SELECT sum(bounded_owner_overlap)::double precision / NULLIF(sum(owner_seed_count), 0) FROM coverage),
-                         'exact_overlap_rate', (SELECT sum(exact_owner_overlap)::double precision / NULLIF(sum(owner_seed_count), 0) FROM coverage),
-                         'zero_fraction', (SELECT count(*) FILTER (WHERE zero_owner_represented)::double precision / NULLIF(count(*), 0) FROM coverage),
-                         'mean_best_score_gap', (SELECT avg(best_score_gap) FROM coverage),
-                         'p50_best_score_gap', (SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY best_score_gap) FROM coverage),
-                         'p95_best_score_gap', (SELECT percentile_cont(0.95) WITHIN GROUP (ORDER BY best_score_gap) FROM coverage),
-                         'represented_query_regions', (SELECT count(*) FROM regions),
-                         'region_histogram', (SELECT jsonb_object_agg(query_region, jsonb_build_object('queries', queries, 'zero', zero_queries)) FROM regions)
-                     )::text"
-                ),
-                &[],
-            )
-            .await
-            .wrap_err("collecting Task 181 seed coverage diagnostics")?
-            .get::<_, String>(0);
+        // The coverage helper performs an owner scan and allocates its result
+        // in the current PostgreSQL statement context. Keep one helper call
+        // per statement so the 200-query diagnostic cannot retain every owner
+        // result until a single LATERAL statement finishes.
+        let mut coverage_queries = 0_u64;
+        let mut owner_seed_count = 0_u64;
+        let mut owner_in_head = 0_u64;
+        let mut bounded_owner_overlap = 0_u64;
+        let mut exact_owner_overlap = 0_u64;
+        let mut zero_owner_represented = 0_u64;
+        let mut score_gaps = Vec::<f64>::with_capacity(200);
+        let mut regions = std::collections::BTreeMap::<i32, (u64, u64)>::new();
+        for offset in 0..200 {
+            let Some(row) = coordinator
+                .query_opt(
+                    &format!(
+                        "SELECT c.query_region,
+                                c.owner_seed_count,
+                                c.owner_in_head,
+                                c.bounded_owner_overlap,
+                                c.exact_owner_overlap,
+                                c.zero_owner_represented,
+                                c.best_score_gap
+                           FROM (
+                               SELECT source
+                                 FROM {physical_queries}
+                                ORDER BY id
+                                LIMIT 1 OFFSET {offset}
+                           ) q
+                           CROSS JOIN LATERAL ec_distann_physical_seed_coverage_benchmark(
+                               'dm_idx'::regclass, q.source, 32, 32) c"
+                    ),
+                    &[],
+                )
+                .await
+                .wrap_err_with(|| {
+                    format!(
+                        "collecting Task 181 seed coverage diagnostic query {}",
+                        offset + 1
+                    )
+                })?
+            else {
+                break;
+            };
+            let query_region = row.get::<_, i32>(0);
+            let row_owner_seed_count = row.get::<_, i32>(1).max(0) as u64;
+            let row_owner_in_head = row.get::<_, i32>(2).max(0) as u64;
+            let row_bounded_overlap = row.get::<_, i32>(3).max(0) as u64;
+            let row_exact_overlap = row.get::<_, i32>(4).max(0) as u64;
+            let row_zero = row.get::<_, bool>(5);
+            coverage_queries += 1;
+            owner_seed_count += row_owner_seed_count;
+            owner_in_head += row_owner_in_head;
+            bounded_owner_overlap += row_bounded_overlap;
+            exact_owner_overlap += row_exact_overlap;
+            zero_owner_represented += u64::from(row_zero);
+            score_gaps.push(f64::from(row.get::<_, f32>(6)));
+            let region = regions.entry(query_region).or_default();
+            region.0 += 1;
+            region.1 += u64::from(row_zero);
+        }
+        if coverage_queries == 0 {
+            bail!("Task 181 seed coverage diagnostic returned zero queries");
+        }
+        score_gaps.sort_unstable_by(f64::total_cmp);
+        let percentile = |fraction: f64| {
+            let rank = fraction * (score_gaps.len() - 1) as f64;
+            let lower = rank.floor() as usize;
+            let upper = rank.ceil() as usize;
+            score_gaps[lower] + (score_gaps[upper] - score_gaps[lower]) * rank.fract()
+        };
+        let mut region_histogram = serde_json::Map::new();
+        for (region, (queries, zero)) in &regions {
+            region_histogram.insert(
+                region.to_string(),
+                serde_json::json!({"queries": queries, "zero": zero}),
+            );
+        }
+        let coverage = serde_json::json!({
+            "queries": coverage_queries,
+            "owner_membership_rate": owner_in_head as f64 / owner_seed_count.max(1) as f64,
+            "bounded_overlap_rate":
+                bounded_owner_overlap as f64 / owner_seed_count.max(1) as f64,
+            "exact_overlap_rate":
+                exact_owner_overlap as f64 / owner_seed_count.max(1) as f64,
+            "zero_fraction": zero_owner_represented as f64 / coverage_queries as f64,
+            "mean_best_score_gap":
+                score_gaps.iter().sum::<f64>() / coverage_queries as f64,
+            "p50_best_score_gap": percentile(0.5),
+            "p95_best_score_gap": percentile(0.95),
+            "represented_query_regions": regions.len(),
+            "region_histogram": region_histogram,
+        })
+        .to_string();
         lines.push(format!(
             "physical_benchmark_coverage scale={scale} head_policy={attested_head_policy} coverage_json={}",
             coverage.replace(' ', "")
