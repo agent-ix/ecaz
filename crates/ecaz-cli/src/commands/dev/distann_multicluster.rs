@@ -1328,6 +1328,7 @@ async fn task198_replica_semantic_result(
     queries: &str,
     replica: bool,
     fail_batch: i32,
+    query_offset: u32,
 ) -> Result<String> {
     coordinator
         .batch_execute(&format!(
@@ -1357,11 +1358,11 @@ async fn task198_replica_semantic_result(
         .await?
         .get::<_, bool>(0);
     let sql = if has_payload {
-        materialization_semantic_sql(corpus, queries, "TRUE", 20, 0)
+        materialization_semantic_sql(corpus, queries, "TRUE", 20, query_offset)
     } else {
         format!(
             "WITH query_vector AS (
-                 SELECT source FROM {queries} ORDER BY id LIMIT 1
+                 SELECT source FROM {queries} ORDER BY id OFFSET {query_offset} LIMIT 1
              )
              SELECT COALESCE(
                         jsonb_agg(to_jsonb(result) ORDER BY result.distance, result.id)::text,
@@ -1390,8 +1391,9 @@ async fn run_task198_replica_lifecycle_drills(
     queries: &str,
     content_digest: &str,
 ) -> Result<Vec<String>> {
-    let owner = task198_replica_semantic_result(coordinator, corpus, queries, false, -1).await?;
-    let replica = task198_replica_semantic_result(coordinator, corpus, queries, true, -1).await?;
+    let owner = task198_replica_semantic_result(coordinator, corpus, queries, false, -1, 0).await?;
+    let replica =
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0).await?;
     if replica != owner {
         bail!("Task 198 Ready replica changed ordered semantic results");
     }
@@ -1399,24 +1401,42 @@ async fn run_task198_replica_lifecycle_drills(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=ready_semantic_identity pass=true content_digest={content_digest}"
     )];
 
-    let restarted = task198_replica_semantic_result(coordinator, corpus, queries, true, 1).await?;
-    if restarted != owner {
-        bail!("Task 198 mid-replica failure did not fully restart to identical owner results");
+    let mut exercised_offset = None;
+    let mut fallback_count = 0;
+    for query_offset in 0..32 {
+        let expected =
+            task198_replica_semantic_result(coordinator, corpus, queries, false, -1, query_offset)
+                .await?;
+        let restarted =
+            task198_replica_semantic_result(coordinator, corpus, queries, true, 1, query_offset)
+                .await?;
+        if restarted != expected {
+            bail!(
+                "Task 198 mid-replica failure did not fully restart to identical owner results \
+                 for query offset {query_offset}"
+            );
+        }
+        fallback_count = coordinator
+            .query_one(
+                "SELECT value
+                   FROM ec_distann_materialization_work_snapshot()
+                  WHERE metric = 'replica_fallbacks'",
+                &[],
+            )
+            .await
+            .ok()
+            .map(|row| row.get::<_, i64>(0))
+            .unwrap_or(1);
+        if fallback_count > 0 {
+            exercised_offset = Some(query_offset);
+            break;
+        }
     }
-    let fallback_count = coordinator
-        .query_one(
-            "SELECT value
-               FROM ec_distann_materialization_work_snapshot()
-              WHERE metric = 'replica_fallbacks'",
-            &[],
-        )
-        .await
-        .ok()
-        .map(|row| row.get::<_, i64>(0))
-        .unwrap_or(1);
+    let exercised_offset = exercised_offset.ok_or_else(|| {
+        color_eyre::eyre::eyre!("Task 198 could not exercise a second replica expansion batch")
+    })?;
     lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=mid_scan_full_restart pass={} fallback_count={fallback_count}",
-        fallback_count > 0
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=mid_scan_full_restart pass=true fallback_count={fallback_count} query_offset={exercised_offset}"
     ));
 
     let replica_relation = coordinator
@@ -1436,7 +1456,7 @@ async fn run_task198_replica_lifecycle_drills(
         .await
         .wrap_err("truncating Task 198 replica for corruption fallback drill")?;
     let corrupt_fallback =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1).await?;
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0).await?;
     if corrupt_fallback != owner {
         bail!("Task 198 corrupt replica did not fall back to identical owner results");
     }
@@ -1474,7 +1494,7 @@ async fn run_task198_replica_lifecycle_drills(
         .await?
         .get::<_, bool>(0);
     let stale_fallback =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1).await?;
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0).await?;
     let mutation_pass = first_retryable && state == "Stale" && !retry && stale_fallback == owner;
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=durable_mutation_invalidation pass={mutation_pass} first_sqlstate={} state_after_error={state} retry_guard={retry} owner_fallback_identity={}",
@@ -1515,7 +1535,7 @@ async fn run_task198_replica_lifecycle_drills(
         .await?
         .get::<_, i64>(0);
     let removed_fallback =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1).await?;
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0).await?;
     let reclaim_pass = retired && reclaimed && !replay && residue == 0 && removed_fallback == owner;
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=retire_reclaim_and_removed_fallback pass={reclaim_pass} retired={retired} reclaimed={reclaimed} replay={replay} catalog_residue={residue} owner_fallback_identity={}",
