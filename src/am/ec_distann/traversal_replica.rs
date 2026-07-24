@@ -537,6 +537,7 @@ fn build_traversal_replica(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
     let code_len = binding.code_len(usize::from(descriptor.dimensions))?;
     let mut total_count = 0_u64;
     let mut copied_bytes = 0_u64;
+    let mut peak_copy_batch_bytes = 0_u64;
     for (ordinal, route) in routes.iter().enumerate() {
         let owner_ordinal = u32::try_from(ordinal)
             .map_err(|_| "EC_REPLICA_CONTENT: owner ordinal exceeds u32".to_owned())?;
@@ -589,6 +590,7 @@ fn build_traversal_replica(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
                 break;
             }
             let previous = after_vec_id;
+            let mut chunk_bytes = 0_u64;
             for row in &rows {
                 if row.owner_ordinal != owner_ordinal
                     || super::placement::owning_node(
@@ -644,7 +646,11 @@ fn build_traversal_replica(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
                 owner_bytes = owner_bytes
                     .checked_add(row_bytes)
                     .ok_or_else(|| "EC_REPLICA_CONTENT: owner byte count overflow".to_owned())?;
+                chunk_bytes = chunk_bytes
+                    .checked_add(row_bytes)
+                    .ok_or_else(|| "EC_REPLICA_CONTENT: chunk byte count overflow".to_owned())?;
             }
+            peak_copy_batch_bytes = peak_copy_batch_bytes.max(chunk_bytes);
             insert_replica_chunk(relations.replica_relid, &rows)?;
             after_vec_id = rows
                 .last()
@@ -748,8 +754,9 @@ fn build_traversal_replica(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
                             content_digest = $4::bytea,
                             copied_record_count = $5::bigint,
                             copied_bytes = $6::bigint,
-                            relation_bytes = $7::bigint,
-                            wal_bytes = $8::bigint,
+                            peak_copy_batch_bytes = $7::bigint,
+                            relation_bytes = $8::bigint,
+                            wal_bytes = $9::bigint,
                             ready_at = clock_timestamp()
                       WHERE index_oid = $1::oid
                         AND logical_index_uuid = $2::uuid
@@ -767,6 +774,11 @@ fn build_traversal_replica(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
                         .into(),
                     i64::try_from(copied_bytes)
                         .map_err(|_| "EC_REPLICA_CONTENT: copied bytes exceed bigint".to_owned())?
+                        .into(),
+                    i64::try_from(peak_copy_batch_bytes)
+                        .map_err(|_| {
+                            "EC_REPLICA_CONTENT: peak batch bytes exceed bigint".to_owned()
+                        })?
                         .into(),
                     replica_bytes.into(),
                     wal_bytes.into(),
@@ -864,13 +876,9 @@ fn loopback_connection_config() -> Result<postgres::Config, String> {
     let socket = socket_directories
         .split(',')
         .map(str::trim)
-        .find(|entry| entry.starts_with('/'))
-        .ok_or_else(|| {
-            "EC_REPLICA_INVALIDATION: no Unix socket directory is configured".to_owned()
-        })?;
+        .find(|entry| entry.starts_with('/'));
     let mut config = postgres::Config::new();
     config
-        .host_path(Path::new(socket))
         .port(
             u16::try_from(port)
                 .map_err(|_| "EC_REPLICA_INVALIDATION: port is outside u16".to_owned())?,
@@ -879,6 +887,11 @@ fn loopback_connection_config() -> Result<postgres::Config, String> {
         .user(&user)
         .application_name("ec_distann_replica_invalidation")
         .connect_timeout(Duration::from_secs(5));
+    if let Some(socket) = socket {
+        config.host_path(Path::new(socket));
+    } else {
+        config.host("127.0.0.1");
+    }
     Ok(config)
 }
 
@@ -1059,6 +1072,7 @@ fn ec_distann_traversal_replica_status(
         name!(expected_record_count, i64),
         name!(copied_record_count, i64),
         name!(copied_bytes, i64),
+        name!(peak_copy_batch_bytes, i64),
         name!(relation_bytes, Option<i64>),
         name!(wal_bytes, Option<i64>),
         name!(replica_relid, pg_sys::Oid),
@@ -1087,7 +1101,8 @@ fn ec_distann_traversal_replica_status(
                     "SELECT build_id, epoch_fingerprint,
                             generation_descriptor_digest, state, content_digest,
                             owner_count, expected_record_count,
-                            copied_record_count, copied_bytes, relation_bytes,
+                            copied_record_count, copied_bytes,
+                            peak_copy_batch_bytes, relation_bytes,
                             wal_bytes,
                             replica_relid, directory_relid,
                             build_started_at, ready_at, stale_at, retiring_at
@@ -1132,6 +1147,7 @@ fn ec_distann_traversal_replica_status(
                     required!("expected_record_count", i64),
                     required!("copied_record_count", i64),
                     required!("copied_bytes", i64),
+                    required!("peak_copy_batch_bytes", i64),
                     row["relation_bytes"]
                         .value::<i64>()
                         .unwrap_or_else(|error| {
