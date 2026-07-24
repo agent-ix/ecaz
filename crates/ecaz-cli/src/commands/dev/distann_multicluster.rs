@@ -1277,9 +1277,15 @@ async fn materialization_result_json(
 fn materialization_variant_settings_sql(variant: &BenchmarkSeedVariant) -> String {
     format!(
         "SET ec_distann.benchmark_materialization_batch_size = {}; \
-         SET ec_distann.benchmark_owner_payload_plan_cache = {};",
+         SET ec_distann.benchmark_owner_payload_plan_cache = {}; \
+         SET ec_distann.benchmark_traversal_replica = {};",
         variant.materialization_batch_size,
         if variant.owner_payload_plan_cache {
+            "on"
+        } else {
+            "off"
+        },
+        if variant.traversal_replica {
             "on"
         } else {
             "off"
@@ -1342,7 +1348,7 @@ async fn task198_replica_semantic_result(
         .query_one(
             "SELECT EXISTS (
                  SELECT 1 FROM pg_attribute
-                  WHERE attrelid = $1::regclass
+                  WHERE attrelid = $1::text::regclass
                     AND attname = 'payload_note'
                     AND NOT attisdropped
              )",
@@ -1635,6 +1641,7 @@ async fn run_materialization_correctness(
                     candidate.owner_payload_plan_cache
                         && candidate.materialization_batch_size
                             == control.materialization_batch_size
+                        && candidate.traversal_replica == control.traversal_replica
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
@@ -1648,13 +1655,29 @@ async fn run_materialization_correctness(
                 .find(|candidate| {
                     candidate.materialization_batch_size == 10
                         && candidate.owner_payload_plan_cache == control.owner_payload_plan_cache
+                        && candidate.traversal_replica == control.traversal_replica
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
         });
-    let (control, candidate) = plan_pair.or(batch_pair).ok_or_else(|| {
+    let traversal_pair = seed_variants
+        .iter()
+        .filter(|variant| !variant.traversal_replica)
+        .find_map(|control| {
+            seed_variants
+                .iter()
+                .find(|candidate| {
+                    candidate.traversal_replica
+                        && candidate.materialization_batch_size
+                            == control.materialization_batch_size
+                        && candidate.owner_payload_plan_cache == control.owner_payload_plan_cache
+                        && same_search(control, candidate)
+                })
+                .map(|candidate| (control, candidate))
+        });
+    let (control, candidate) = plan_pair.or(batch_pair).or(traversal_pair).ok_or_else(|| {
         color_eyre::eyre::eyre!(
-            "materialization correctness requires either an isolated owner-plan off/on pair or an isolated eager/lazy10 pair"
+            "materialization correctness requires an isolated owner-plan, eager/lazy10, or owner/replica pair"
         )
     })?;
 
