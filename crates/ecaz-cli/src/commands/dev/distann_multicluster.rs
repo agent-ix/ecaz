@@ -1068,6 +1068,18 @@ fn append_owner_payload_plan_cache_guc(args: &mut Vec<String>, arm: &str, enable
     }
 }
 
+fn append_traversal_replica_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
+    if arm == "physical" {
+        args.extend([
+            "--session-guc".into(),
+            format!(
+                "ec_distann.benchmark_traversal_replica={}",
+                if enabled { "on" } else { "off" }
+            ),
+        ]);
+    }
+}
+
 #[derive(Clone, Debug)]
 struct BenchmarkSeedVariant {
     name: String,
@@ -1079,6 +1091,7 @@ struct BenchmarkSeedVariant {
     owner_payload_plan_cache: bool,
     beam_width: Option<u32>,
     hop_rounds: Option<u32>,
+    traversal_replica: bool,
 }
 
 fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedVariant>> {
@@ -1087,9 +1100,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
         .iter()
         .map(|value| {
             let fields = value.split(':').collect::<Vec<_>>();
-            if !(5..=9).contains(&fields.len()) {
+            if !(5..=10).contains(&fields.len()) {
                 bail!(
-                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_PAYLOAD_PLAN_CACHE[:BEAM_WIDTH[:HOP_ROUNDS]]]], got {value:?}"
+                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_PAYLOAD_PLAN_CACHE[:BEAM_WIDTH[:HOP_ROUNDS[:TRAVERSAL_REPLICA]]]]], got {value:?}"
                 );
             }
             let name = fields[0];
@@ -1184,6 +1197,17 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                     "benchmark seed variant hop rounds must be in 1..=256, got {value:?}"
                 );
             }
+            let traversal_replica = fields
+                .get(9)
+                .map(|field| match *field {
+                    "on" => Ok(true),
+                    "off" => Ok(false),
+                    _ => bail!(
+                        "benchmark seed variant traversal replica must be on or off, got {value:?}"
+                    ),
+                })
+                .transpose()?
+                .unwrap_or(false);
             Ok(BenchmarkSeedVariant {
                 name: name.to_owned(),
                 strategy: strategy.to_owned(),
@@ -1194,6 +1218,7 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                 owner_payload_plan_cache,
                 beam_width,
                 hop_rounds,
+                traversal_replica,
             })
         })
         .collect()
@@ -1252,9 +1277,15 @@ async fn materialization_result_json(
 fn materialization_variant_settings_sql(variant: &BenchmarkSeedVariant) -> String {
     format!(
         "SET ec_distann.benchmark_materialization_batch_size = {}; \
-         SET ec_distann.benchmark_owner_payload_plan_cache = {};",
+         SET ec_distann.benchmark_owner_payload_plan_cache = {}; \
+         SET ec_distann.benchmark_traversal_replica = {};",
         variant.materialization_batch_size,
         if variant.owner_payload_plan_cache {
+            "on"
+        } else {
+            "off"
+        },
+        if variant.traversal_replica {
             "on"
         } else {
             "off"
@@ -1289,6 +1320,248 @@ fn materialization_semantic_sql(
               LIMIT {limit}
            ) result"
     )
+}
+
+async fn task198_replica_semantic_result(
+    coordinator: &tokio_postgres::Client,
+    corpus: &str,
+    queries: &str,
+    replica: bool,
+    fail_batch: i32,
+    query_offset: u32,
+    result_limit: u32,
+) -> Result<String> {
+    coordinator
+        .batch_execute(&format!(
+            "SET ec_distann.benchmark_seed_mode = 'persisted_head';
+             SET enable_seqscan = off;
+             SET ec_distann.benchmark_head_search_width = 32;
+             SET ec_distann.benchmark_head_seed_count = 32;
+             SET ec_distann.benchmark_exact_neighbor = off;
+             SET ec_distann.beam_width = 4;
+             SET ec_distann.hop_rounds = 100;
+             SET ec_distann.benchmark_materialization_batch_size = 10;
+             SET ec_distann.benchmark_owner_payload_plan_cache = off;
+             SET ec_distann.benchmark_traversal_replica = {};
+             SET ec_distann.benchmark_traversal_replica_fail_batch = {fail_batch};",
+            if replica { "on" } else { "off" },
+        ))
+        .await?;
+    let has_payload = coordinator
+        .query_one(
+            "SELECT EXISTS (
+                 SELECT 1 FROM pg_attribute
+                  WHERE attrelid = $1::text::regclass
+                    AND attname = 'payload_note'
+                    AND NOT attisdropped
+             )",
+            &[&corpus],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let sql = if has_payload {
+        materialization_semantic_sql(corpus, queries, "TRUE", result_limit, query_offset)
+    } else {
+        format!(
+            "WITH query_vector AS (
+                 SELECT source FROM {queries} ORDER BY id OFFSET {query_offset} LIMIT 1
+             )
+             SELECT COALESCE(
+                        jsonb_agg(to_jsonb(result) ORDER BY result.distance, result.id)::text,
+                        '[]'
+                    )
+               FROM (
+                 SELECT id, source_id::text AS source_id,
+                        embedding <#> (SELECT source FROM query_vector) AS distance
+                   FROM {corpus}
+                  ORDER BY embedding <#> (SELECT source FROM query_vector)
+                  LIMIT {result_limit}
+               ) result"
+        )
+    };
+    coordinator
+        .query_one(&sql, &[])
+        .await?
+        .try_get::<_, String>(0)
+        .wrap_err("decoding Task 198 semantic result")
+}
+
+async fn run_task198_replica_lifecycle_drills(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    corpus: &str,
+    queries: &str,
+    content_digest: &str,
+) -> Result<Vec<String>> {
+    let owner =
+        task198_replica_semantic_result(coordinator, corpus, queries, false, -1, 0, 20).await?;
+    let replica =
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
+    if replica != owner {
+        bail!("Task 198 Ready replica changed ordered semantic results");
+    }
+    let mut lines = vec![format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=ready_semantic_identity pass=true content_digest={content_digest}"
+    )];
+
+    let mut exercised_offset = None;
+    let mut fallback_count = 0;
+    for query_offset in 0..32 {
+        let expected = task198_replica_semantic_result(
+            coordinator,
+            corpus,
+            queries,
+            false,
+            -1,
+            query_offset,
+            64,
+        )
+        .await?;
+        let restarted = task198_replica_semantic_result(
+            coordinator,
+            corpus,
+            queries,
+            true,
+            1,
+            query_offset,
+            64,
+        )
+        .await?;
+        if restarted != expected {
+            bail!(
+                "Task 198 mid-replica failure did not fully restart to identical owner results \
+                 for query offset {query_offset}"
+            );
+        }
+        fallback_count = coordinator
+            .query_one(
+                "SELECT value
+                   FROM ec_distann_materialization_work_snapshot()
+                  WHERE metric = 'replica_fallbacks'",
+                &[],
+            )
+            .await
+            .ok()
+            .map(|row| row.get::<_, i64>(0))
+            .unwrap_or(1);
+        if fallback_count > 0 {
+            exercised_offset = Some(query_offset);
+            break;
+        }
+    }
+    let exercised_offset = exercised_offset.ok_or_else(|| {
+        color_eyre::eyre::eyre!("Task 198 could not exercise a second replica expansion batch")
+    })?;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=mid_scan_full_restart pass=true fallback_count={fallback_count} query_offset={exercised_offset}"
+    ));
+
+    let replica_relation = coordinator
+        .query_one(
+            "SELECT format('%I.%I', namespace.nspname, relation.relname)
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass) status
+               JOIN pg_class relation ON relation.oid = status.replica_relid
+               JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+              WHERE status.state = 'Ready'
+              ORDER BY status.ready_at DESC LIMIT 1",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    coordinator
+        .batch_execute(&format!("TRUNCATE TABLE {replica_relation}"))
+        .await
+        .wrap_err("truncating Task 198 replica for corruption fallback drill")?;
+    let corrupt_fallback =
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
+    if corrupt_fallback != owner {
+        bail!("Task 198 corrupt replica did not fall back to identical owner results");
+    }
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=corrupt_partial_image_fallback pass=true"
+    ));
+
+    let first_error = coordinator
+        .query_one(
+            "SELECT ec_distann_guard_traversal_replica_mutation('dm_idx'::regclass)",
+            &[],
+        )
+        .await
+        .expect_err("Ready replica mutation guard must fail the first attempt");
+    let first_retryable = first_error
+        .code()
+        .is_some_and(|code| code.code() == "40001")
+        && first_error
+            .as_db_error()
+            .is_some_and(|error| error.message().contains("EC_REPLICA_INVALIDATED_RETRY"));
+    let state = coordinator
+        .query_one(
+            "SELECT state
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              ORDER BY build_started_at DESC LIMIT 1",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    let retry = coordinator
+        .query_one(
+            "SELECT ec_distann_guard_traversal_replica_mutation('dm_idx'::regclass)",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let stale_fallback =
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
+    let mutation_pass = first_retryable && state == "Stale" && !retry && stale_fallback == owner;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=durable_mutation_invalidation pass={mutation_pass} first_sqlstate={} state_after_error={state} retry_guard={retry} owner_fallback_identity={}",
+        first_error.code().map(|code| code.code()).unwrap_or("none"),
+        stale_fallback == owner,
+    ));
+    if !mutation_pass {
+        bail!("Task 198 durable mutation invalidation drill failed");
+    }
+
+    let retired = coordinator
+        .query_one(
+            "SELECT ec_distann_retire_traversal_replica('dm_idx'::regclass)",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let reclaimed = coordinator
+        .query_one(
+            "SELECT ec_distann_reclaim_traversal_replica('dm_idx'::regclass)",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let replay = coordinator
+        .query_one(
+            "SELECT ec_distann_reclaim_traversal_replica('dm_idx'::regclass)",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let residue = coordinator
+        .query_one(
+            "SELECT count(*)::bigint
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)",
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let removed_fallback =
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
+    let reclaim_pass = retired && reclaimed && !replay && residue == 0 && removed_fallback == owner;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=retire_reclaim_and_removed_fallback pass={reclaim_pass} retired={retired} reclaimed={reclaimed} replay={replay} catalog_residue={residue} owner_fallback_identity={}",
+        removed_fallback == owner,
+    ));
+    if !reclaim_pass {
+        bail!("Task 198 retirement/reclaim drill failed");
+    }
+    Ok(lines)
 }
 
 async fn compare_materialization_scenario(
@@ -1405,6 +1678,7 @@ async fn run_materialization_correctness(
                     candidate.owner_payload_plan_cache
                         && candidate.materialization_batch_size
                             == control.materialization_batch_size
+                        && candidate.traversal_replica == control.traversal_replica
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
@@ -1418,13 +1692,29 @@ async fn run_materialization_correctness(
                 .find(|candidate| {
                     candidate.materialization_batch_size == 10
                         && candidate.owner_payload_plan_cache == control.owner_payload_plan_cache
+                        && candidate.traversal_replica == control.traversal_replica
                         && same_search(control, candidate)
                 })
                 .map(|candidate| (control, candidate))
         });
-    let (control, candidate) = plan_pair.or(batch_pair).ok_or_else(|| {
+    let traversal_pair = seed_variants
+        .iter()
+        .filter(|variant| !variant.traversal_replica)
+        .find_map(|control| {
+            seed_variants
+                .iter()
+                .find(|candidate| {
+                    candidate.traversal_replica
+                        && candidate.materialization_batch_size
+                            == control.materialization_batch_size
+                        && candidate.owner_payload_plan_cache == control.owner_payload_plan_cache
+                        && same_search(control, candidate)
+                })
+                .map(|candidate| (control, candidate))
+        });
+    let (control, candidate) = plan_pair.or(batch_pair).or(traversal_pair).ok_or_else(|| {
         color_eyre::eyre::eyre!(
-            "materialization correctness requires either an isolated owner-plan off/on pair or an isolated eager/lazy10 pair"
+            "materialization correctness requires an isolated owner-plan, eager/lazy10, or owner/replica pair"
         )
     })?;
 
@@ -1707,6 +1997,7 @@ async fn run_physical_benchmarks(
             owner_payload_plan_cache: false,
             beam_width: None,
             hop_rounds: None,
+            traversal_replica: false,
         }]
     } else {
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
@@ -1948,6 +2239,110 @@ async fn run_physical_benchmarks(
         ));
     }
     let mut benchmark_arms = Vec::with_capacity(seed_variants.len() + 1);
+    let traversal_replica_requested = seed_variants
+        .iter()
+        .any(|variant| variant.traversal_replica);
+    let mut traversal_replica_digest = None;
+    if traversal_replica_requested {
+        let unavailable = nodes
+            .last()
+            .ok_or_else(|| color_eyre::eyre::eyre!("Task 198 fixture has no owner"))?;
+        let mut stop = Command::new(pg_ctl);
+        stop.arg("-w")
+            .arg("-D")
+            .arg(&unavailable.data_dir)
+            .arg("-m")
+            .arg("immediate")
+            .arg("stop")
+            .stdout(Stdio::null())
+            .stderr(Stdio::inherit());
+        run_status(stop)
+            .await
+            .wrap_err("stopping one owner for Task 198 partial-build drill")?;
+        let outage_error = coordinator
+            .query_one(
+                "SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)",
+                &[],
+            )
+            .await
+            .err();
+        restart_physical_node(pg_ctl, socket_dir, unavailable, nodes).await?;
+        let residue = coordinator
+            .query_one(
+                "SELECT count(*)::bigint
+                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass)",
+                &[],
+            )
+            .await?
+            .get::<_, i64>(0);
+        let outage_pass = outage_error.is_some() && residue == 0;
+        lines.push(format!(
+            "physical_benchmark_traversal_replica_fault scale={scale} scenario=owner_outage_partial_build pass={outage_pass} owner={} error={} catalog_residue={residue}",
+            unavailable.node_id,
+            outage_error
+                .as_ref()
+                .and_then(tokio_postgres::Error::as_db_error)
+                .map(|error| error.message().replace(' ', "_"))
+                .unwrap_or_else(|| "none".to_owned()),
+        ));
+        if !outage_pass {
+            bail!("Task 198 owner-outage build drill left residue or did not fail");
+        }
+        let replica_started = Instant::now();
+        let replica = coordinator
+            .query_one(
+                "SELECT encode(ec_distann_build_traversal_replica('dm_idx'::regclass), 'hex')",
+                &[],
+            )
+            .await
+            .wrap_err("building Task 198 coordinator traversal replica")?
+            .get::<_, String>(0);
+        let status = coordinator
+            .query_one(
+                "SELECT state, owner_count, expected_record_count,
+                        copied_record_count, copied_bytes, peak_copy_batch_bytes,
+                        relation_bytes,
+                        coalesce(wal_bytes, 0),
+                        encode(content_digest, 'hex')
+                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+                  WHERE state = 'Ready'
+                  ORDER BY ready_at DESC
+                  LIMIT 1",
+                &[],
+            )
+            .await
+            .wrap_err("attesting Task 198 coordinator traversal replica")?;
+        let attested_digest = status.get::<_, String>(8);
+        if status.get::<_, String>(0) != "Ready" || attested_digest != replica {
+            bail!("Task 198 traversal replica build did not attest one matching Ready image");
+        }
+        lines.push(format!(
+            "physical_benchmark_traversal_replica scale={scale} state=Ready owners={} expected_records={} copied_records={} copied_bytes={} peak_copy_batch_bytes={} relation_bytes={} wal_bytes={} build_ms={} content_digest={replica}",
+            status.get::<_, i32>(1),
+            status.get::<_, i64>(2),
+            status.get::<_, i64>(3),
+            status.get::<_, i64>(4),
+            status.get::<_, i64>(5),
+            status.get::<_, i64>(6),
+            status.get::<_, i64>(7),
+            replica_started.elapsed().as_millis(),
+        ));
+        let replay = coordinator
+            .query_one(
+                "SELECT encode(ec_distann_build_traversal_replica('dm_idx'::regclass), 'hex')",
+                &[],
+            )
+            .await
+            .wrap_err("replaying Task 198 coordinator traversal replica build")?
+            .get::<_, String>(0);
+        if replay != replica {
+            bail!("Task 198 idempotent build replay returned a different digest");
+        }
+        lines.push(format!(
+            "physical_benchmark_traversal_replica_fault scale={scale} scenario=idempotent_build_replay pass=true content_digest={replica}"
+        ));
+        traversal_replica_digest = Some(replica);
+    }
     let mut same_seed_digests =
         std::collections::HashMap::<(String, u32, u32), (String, String)>::new();
     for variant in &seed_variants {
@@ -2054,7 +2449,7 @@ async fn run_physical_benchmarks(
                 register_same_seed_digest(&mut same_seed_digests, variant, &seed_id_digest)?
                     .unwrap_or_else(|| "none".to_owned());
             lines.push(format!(
-                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} queries={} seed_id_digest={} compared_with={} same_seed=true",
+                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} queries={} seed_id_digest={} compared_with={} same_seed=true",
                 variant.name,
                 variant.strategy,
                 variant.head_search_width,
@@ -2062,6 +2457,7 @@ async fn run_physical_benchmarks(
                 variant.neighbor_score_mode,
                 variant.materialization_batch_size,
                 variant.owner_payload_plan_cache,
+                variant.traversal_replica,
                 args.queries,
                 seed_id_digest,
                 compared_with,
@@ -2077,11 +2473,12 @@ async fn run_physical_benchmarks(
             attested_neighbor_score,
             variant.materialization_batch_size,
             variant.owner_payload_plan_cache,
+            variant.traversal_replica,
             variant_beam_width,
             variant_hop_rounds,
         ));
         lines.push(format!(
-            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
@@ -2090,6 +2487,7 @@ async fn run_physical_benchmarks(
             variant.neighbor_score_mode,
             variant.materialization_batch_size,
             variant.owner_payload_plan_cache,
+            variant.traversal_replica,
         ));
     }
     benchmark_arms.push((
@@ -2101,6 +2499,7 @@ async fn run_physical_benchmarks(
         production_head_width,
         "rabitq".to_owned(),
         0,
+        false,
         false,
         beam_width,
         hop_rounds,
@@ -2116,6 +2515,7 @@ async fn run_physical_benchmarks(
         neighbor_score_mode,
         materialization_batch_size,
         owner_payload_plan_cache,
+        traversal_replica,
         arm_beam_width,
         arm_hop_rounds,
     ) in benchmark_arms
@@ -2171,6 +2571,7 @@ async fn run_physical_benchmarks(
             }
             append_materialization_benchmark_guc(&mut recall_args, arm, materialization_batch_size);
             append_owner_payload_plan_cache_guc(&mut recall_args, arm, owner_payload_plan_cache);
+            append_traversal_replica_guc(&mut recall_args, arm, traversal_replica);
         }
         let recall = run_physical_bench_child(recall_args).await?;
         let row = benchmark_table_row(&recall)?;
@@ -2180,7 +2581,7 @@ async fn run_physical_benchmarks(
         let distinct_recall_ci95_high = row[14].parse::<f64>()?;
         let mean_ms = benchmark_ms(&row[11])?;
         lines.push(format!(
-            "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
+            "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
             args.head_index_cap, row[1], row[2]
         ));
 
@@ -2234,13 +2635,14 @@ async fn run_physical_benchmarks(
         }
         append_materialization_benchmark_guc(&mut latency_args, arm, materialization_batch_size);
         append_owner_payload_plan_cache_guc(&mut latency_args, arm, owner_payload_plan_cache);
+        append_traversal_replica_guc(&mut latency_args, arm, traversal_replica);
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -2255,9 +2657,9 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
                 .collect::<Vec<_>>();
-            if stage_rows.len() != 34 {
+            if stage_rows.len() != 37 {
                 bail!(
-                    "physical latency attribution expected 34 ec_distann stage rows, got {}",
+                    "physical latency attribution expected 37 ec_distann stage rows, got {}",
                     stage_rows.len()
                 );
             }
@@ -2275,21 +2677,30 @@ async fn run_physical_benchmarks(
             let remote_error =
                 (remote_components - remote_expand).abs() / remote_expand.max(f64::EPSILON);
             let traversal_total = attribution_stage_mean(&stage_rows, "traversal_total")?;
-            let traversal_components = [
-                "local_expand",
-                "remote_expand",
-                "traversal_coordinator_partition",
-                "traversal_coordinator_decode",
-                "traversal_frontier_insert",
-            ]
-            .iter()
-            .map(|stage| attribution_stage_mean(&stage_rows, stage))
-            .sum::<Result<f64>>()?;
+            let traversal_component_names: &[&str] = if traversal_replica {
+                &[
+                    "replica_graph_vector_read",
+                    "replica_score",
+                    "traversal_frontier_insert",
+                ]
+            } else {
+                &[
+                    "local_expand",
+                    "remote_expand",
+                    "traversal_coordinator_partition",
+                    "traversal_coordinator_decode",
+                    "traversal_frontier_insert",
+                ]
+            };
+            let traversal_components = traversal_component_names
+                .iter()
+                .map(|stage| attribution_stage_mean(&stage_rows, stage))
+                .sum::<Result<f64>>()?;
             let traversal_error =
                 (traversal_components - traversal_total).abs() / traversal_total.max(f64::EPSILON);
             let reconciliation_pass = remote_error <= 0.05 && traversal_error <= 0.10;
             lines.push(format!(
-                "physical_benchmark_traversal_reconciliation scale={scale} variant={variant} arm={arm} remote_expand_ms={remote_expand:.6} remote_components_ms={remote_components:.6} remote_relative_error={remote_error:.6} remote_tolerance=0.05 traversal_total_ms={traversal_total:.6} traversal_components_ms={traversal_components:.6} traversal_relative_error={traversal_error:.6} traversal_tolerance=0.10 pass={reconciliation_pass}"
+                "physical_benchmark_traversal_reconciliation scale={scale} variant={variant} traversal_replica={traversal_replica} arm={arm} remote_expand_ms={remote_expand:.6} remote_components_ms={remote_components:.6} remote_relative_error={remote_error:.6} remote_tolerance=0.05 traversal_total_ms={traversal_total:.6} traversal_components_ms={traversal_components:.6} traversal_relative_error={traversal_error:.6} traversal_tolerance=0.10 pass={reconciliation_pass}"
             ));
             if !reconciliation_pass {
                 bail!(
@@ -2298,28 +2709,61 @@ async fn run_physical_benchmarks(
             }
             for stage in stage_rows {
                 lines.push(format!(
-                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} arm={arm} seed_strategy={seed_strategy} {stage}"
+                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
                 ));
             }
             let work_rows = latency
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 25 server-side work metrics. The bench
+            // The extension exposes 27 server-side work metrics. The bench
             // child appends one client_result_rows metric so the measured
             // result-consumption boundary is represented in the same stream.
-            if work_rows.len() != 26 {
+            if work_rows.len() != 28 {
                 bail!(
-                    "physical latency attribution expected 26 ec_distann attribution-work rows, got {}",
+                    "physical latency attribution expected 28 ec_distann attribution-work rows, got {}",
                     work_rows.len()
                 );
             }
             for work in work_rows {
                 lines.push(format!(
-                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} arm={arm} seed_strategy={seed_strategy} {work}"
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
         }
+    }
+
+    if let Some(content_digest) = traversal_replica_digest.as_deref() {
+        let cache = coordinator
+            .query_one(
+                "SELECT coalesce(io.heap_blks_read, 0)::bigint,
+                        coalesce(io.heap_blks_hit, 0)::bigint,
+                        pg_relation_size(status.replica_relid)::bigint
+                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass) status
+                   LEFT JOIN pg_statio_all_tables io
+                     ON io.relid = status.replica_relid
+                  WHERE status.state = 'Ready'
+                  ORDER BY status.ready_at DESC LIMIT 1",
+                &[],
+            )
+            .await
+            .wrap_err("collecting Task 198 replica cache residency counters")?;
+        lines.push(format!(
+            "physical_benchmark_traversal_replica_cache scale={scale} heap_blocks_read={} heap_blocks_hit={} heap_bytes={} cache_residency_proxy=pg_statio",
+            cache.get::<_, i64>(0),
+            cache.get::<_, i64>(1),
+            cache.get::<_, i64>(2),
+        ));
+        lines.extend(
+            run_task198_replica_lifecycle_drills(
+                coordinator,
+                scale,
+                &physical_corpus,
+                &physical_queries,
+                content_digest,
+            )
+            .await?,
+        );
     }
 
     let sizes = coordinator
@@ -2377,7 +2821,7 @@ async fn run_physical_benchmarks(
         let variant_beam_width = variant.beam_width.unwrap_or(beam_width);
         let variant_hop_rounds = variant.hop_rounds.unwrap_or(hop_rounds);
         let shared = format!(
-            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={}",
+            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
@@ -2386,6 +2830,7 @@ async fn run_physical_benchmarks(
             variant.neighbor_score_mode,
             variant.materialization_batch_size,
             variant.owner_payload_plan_cache,
+            variant.traversal_replica,
         );
         lines.push(format!(
             "physical_benchmark_storage scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true owners={} physical_generation_bytes={physical_generation_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
@@ -4861,6 +5306,7 @@ mod tests {
             owner_payload_plan_cache: false,
             beam_width: None,
             hop_rounds: None,
+            traversal_replica: false,
         }
     }
 
@@ -4903,7 +5349,7 @@ mod tests {
     fn owner_plan_and_fixed_work_variant_controls_are_explicit() {
         let variants = parse_benchmark_seed_variants(&[
             "plan-off:persisted_head:32:32:rabitq:10:off:4:100".to_owned(),
-            "plan-on:persisted_head:32:32:rabitq:10:on:8:50".to_owned(),
+            "plan-on:persisted_head:32:32:rabitq:10:on:8:50:on".to_owned(),
         ])
         .expect("owner plan and traversal variants parse");
         assert!(!variants[0].owner_payload_plan_cache);
@@ -4912,6 +5358,7 @@ mod tests {
         assert_eq!(variants[0].hop_rounds, Some(100));
         assert_eq!(variants[1].beam_width, Some(8));
         assert_eq!(variants[1].hop_rounds, Some(50));
+        assert!(variants[1].traversal_replica);
     }
 
     #[test]

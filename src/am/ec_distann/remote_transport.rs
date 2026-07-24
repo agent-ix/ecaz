@@ -559,6 +559,11 @@ const PHYSICAL_SEED_SQL: &str = "SELECT vec_id, code_dist
    FROM ec_distann_physical_seed_candidates_benchmark(
        $1::text::regclass, $2::bytea, $3::real[], $4::integer)";
 
+#[cfg(feature = "distann-head-attribution-benchmark")]
+const TRAVERSAL_REPLICA_CHUNK_SQL: &str = "SELECT owner_ordinal, vec_id, graph_record, exact_vector
+       FROM ec_distann_stream_traversal_replica_chunk(
+           $1::text::regclass, $2::bytea, $3::bigint, $4::integer)";
+
 #[cfg(not(feature = "distann-head-attribution-benchmark"))]
 const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
         neighbor_vec_ids, neighbor_code_dists
@@ -656,6 +661,73 @@ async fn run_one_physical_seed(
             })
         })
         .collect()
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+pub(crate) struct DistannTraversalReplicaChunkRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) after_vec_id: Option<i64>,
+    pub(crate) limit: i32,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+pub(crate) fn remote_traversal_replica_chunk(
+    request: &DistannTraversalReplicaChunkRequest<'_>,
+) -> Result<Vec<super::generation_read::TraversalReplicaChunkRow>, DistannExpandError> {
+    let conn_key = lifecycle_connection_key(request.conninfo);
+    with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            ensure_pooled_connections(
+                connections,
+                &[(conn_key.clone(), request.conninfo)],
+                "EC_BUILD_INCOMPLETE",
+            )
+            .await
+            .map_err(DistannExpandError::Internal)?;
+            ensure_physical_statements(
+                connections,
+                std::slice::from_ref(&conn_key),
+                TRAVERSAL_REPLICA_CHUNK_SQL,
+            )
+            .await?;
+            let pooled = &connections[&conn_key];
+            let rows = physical_query(
+                &pooled.client,
+                &pooled.prepared_statements[TRAVERSAL_REPLICA_CHUNK_SQL],
+                &[
+                    &request.index_regclass,
+                    &request.epoch_fingerprint,
+                    &request.after_vec_id,
+                    &request.limit,
+                ],
+            )
+            .await?;
+            rows.into_iter()
+                .map(|row| {
+                    let owner_ordinal: i32 = row.try_get(0).map_err(row_err)?;
+                    let vec_id: i64 = row.try_get(1).map_err(row_err)?;
+                    let graph_record: Vec<u8> = row.try_get(2).map_err(row_err)?;
+                    let exact_vector: Vec<u8> = row.try_get(3).map_err(row_err)?;
+                    Ok(super::generation_read::TraversalReplicaChunkRow {
+                        owner_ordinal: u32::try_from(owner_ordinal).map_err(|_| {
+                            DistannExpandError::Internal(
+                                "traversal replica owner ordinal is negative".to_owned(),
+                            )
+                        })?,
+                        vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
+                        graph_record,
+                        exact_vector,
+                    })
+                })
+                .collect()
+        })
+    })
 }
 
 pub(crate) struct DistannPhysicalExpandRequest<'a> {
@@ -881,7 +953,8 @@ async fn run_one_physical_expand(
     .await?;
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let decode_started = std::time::Instant::now();
-    let nodes = rows.into_iter()
+    let nodes = rows
+        .into_iter()
         .map(|row| {
             let vec_id: i64 = row.try_get(0).map_err(row_err)?;
             let exact_dist: Option<f32> = row.try_get(1).map_err(row_err)?;

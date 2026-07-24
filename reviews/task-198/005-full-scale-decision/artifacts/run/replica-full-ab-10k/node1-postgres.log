@@ -1,0 +1,83 @@
+2026-07-23 21:29:18.338 PDT [1865039] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-23 21:29:18.352 PDT [1865039] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-23 21:29:18.352 PDT [1865039] LOG:  listening on IPv4 address "127.0.0.1", port 42020
+2026-07-23 21:29:18.363 PDT [1865045] LOG:  database system was shut down at 2026-07-23 21:29:14 PDT
+2026-07-23 21:29:18.370 PDT [1865039] LOG:  database system is ready to accept connections
+2026-07-23 21:31:51.562 PDT [1865043] LOG:  checkpoint starting: wal
+2026-07-23 21:31:52.243 PDT [1865178] ERROR:  [EC_INTERNAL] EC_BUILD_INCOMPLETE: could not connect to participant: error connecting to server
+2026-07-23 21:31:52.243 PDT [1865178] STATEMENT:  SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)
+2026-07-23 21:33:31.317 PDT [1865039] LOG:  received fast shutdown request
+2026-07-23 21:33:31.328 PDT [1865039] LOG:  aborting any active transactions
+2026-07-23 21:33:31.329 PDT [1865039] LOG:  background worker "logical replication launcher" (PID 1865048) exited with exit code 1
+2026-07-23 21:33:31.577 PDT [1865043] LOG:  checkpoint complete: wrote 286 buffers (1.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=99.763 s, sync=0.081 s, total=100.015 s; sync files=306, longest=0.004 s, average=0.001 s; distance=533878 kB, estimate=533878 kB; lsn=0/38CF1018, redo lsn=0/220B20C0
+2026-07-23 21:33:31.577 PDT [1865043] LOG:  shutting down
+2026-07-23 21:33:31.581 PDT [1865043] LOG:  checkpoint starting: shutdown immediate
+2026-07-23 21:33:31.738 PDT [1865043] LOG:  checkpoint complete: wrote 1225 buffers (7.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 22 recycled; write=0.015 s, sync=0.022 s, total=0.162 s; sync files=22, longest=0.014 s, average=0.001 s; distance=372987 kB, estimate=517789 kB; lsn=0/38CF1090, redo lsn=0/38CF1090
+2026-07-23 21:33:31.768 PDT [1865039] LOG:  database system is shut down
+2026-07-23 21:36:28.193 PDT [1869129] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-23 21:36:28.208 PDT [1869129] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-23 21:36:28.208 PDT [1869129] LOG:  listening on IPv4 address "127.0.0.1", port 42020
+2026-07-23 21:36:28.219 PDT [1869135] LOG:  database system was shut down at 2026-07-23 21:36:26 PDT
+2026-07-23 21:36:28.226 PDT [1869129] LOG:  database system is ready to accept connections
+2026-07-23 21:39:00.026 PDT [1869133] LOG:  checkpoint starting: wal
+2026-07-23 21:39:00.552 PDT [1869257] ERROR:  [EC_INTERNAL] EC_BUILD_INCOMPLETE: could not connect to participant: error connecting to server
+2026-07-23 21:39:00.552 PDT [1869257] STATEMENT:  SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)
+2026-07-23 21:40:39.931 PDT [1869129] LOG:  received fast shutdown request
+2026-07-23 21:40:39.940 PDT [1869129] LOG:  aborting any active transactions
+2026-07-23 21:40:39.940 PDT [1869129] LOG:  background worker "logical replication launcher" (PID 1869138) exited with exit code 1
+2026-07-23 21:40:40.191 PDT [1869133] LOG:  checkpoint complete: wrote 325 buffers (2.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=99.915 s, sync=0.081 s, total=100.166 s; sync files=306, longest=0.003 s, average=0.001 s; distance=537212 kB, estimate=537212 kB; lsn=0/38DE2D20, redo lsn=0/223F3690
+2026-07-23 21:40:40.191 PDT [1869133] LOG:  shutting down
+2026-07-23 21:40:40.196 PDT [1869133] LOG:  checkpoint starting: shutdown immediate
+2026-07-23 21:40:40.363 PDT [1869133] LOG:  checkpoint complete: wrote 1664 buffers (10.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 22 recycled; write=0.018 s, sync=0.029 s, total=0.172 s; sync files=23, longest=0.021 s, average=0.002 s; distance=370621 kB, estimate=520553 kB; lsn=0/38DE2D98, redo lsn=0/38DE2D98
+2026-07-23 21:40:40.392 PDT [1869129] LOG:  database system is shut down
+2026-07-23 21:43:09.129 PDT [1872875] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-23 21:43:09.143 PDT [1872875] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-23 21:43:09.144 PDT [1872875] LOG:  listening on IPv4 address "127.0.0.1", port 42020
+2026-07-23 21:43:09.155 PDT [1872881] LOG:  database system was shut down at 2026-07-23 21:43:05 PDT
+2026-07-23 21:43:09.162 PDT [1872875] LOG:  database system is ready to accept connections
+2026-07-23 21:45:45.122 PDT [1872879] LOG:  checkpoint starting: wal
+2026-07-23 21:45:45.788 PDT [1872998] ERROR:  [EC_INTERNAL] EC_BUILD_INCOMPLETE: could not connect to participant: error connecting to server
+2026-07-23 21:45:45.788 PDT [1872998] STATEMENT:  SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)
+2026-07-23 21:46:43.176 PDT [1872998] ERROR:  EC_DISTANN_CONTROL_SCAN: a distributed-control index is CustomScan-only and cannot be scanned through amgettuple
+2026-07-23 21:46:43.176 PDT [1872998] STATEMENT:  WITH query_vector AS (
+	                 SELECT source FROM task179_physical_10k_queries ORDER BY id OFFSET 0 LIMIT 1
+	             )
+	             SELECT COALESCE(
+	                        jsonb_agg(to_jsonb(result) ORDER BY result.distance, result.id)::text,
+	                        '[]'
+	                    )
+	               FROM (
+	                 SELECT id, source_id::text AS source_id,
+	                        embedding <#> (SELECT source FROM query_vector) AS distance
+	                   FROM task179_physical_10k_corpus
+	                  ORDER BY embedding <#> (SELECT source FROM query_vector), id
+	                  LIMIT 20
+	               ) result
+2026-07-23 21:46:43.178 PDT [1872875] LOG:  received fast shutdown request
+2026-07-23 21:46:43.184 PDT [1872875] LOG:  aborting any active transactions
+2026-07-23 21:46:43.184 PDT [1873610] FATAL:  terminating autovacuum process due to administrator command
+2026-07-23 21:46:43.184 PDT [1872875] LOG:  background worker "logical replication launcher" (PID 1872884) exited with exit code 1
+2026-07-23 21:46:43.428 PDT [1872879] LOG:  checkpoint complete: wrote 332 buffers (2.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=58.062 s, sync=0.086 s, total=58.307 s; sync files=302, longest=0.005 s, average=0.001 s; distance=534467 kB, estimate=534467 kB; lsn=0/2D2CD940, redo lsn=0/22145550
+2026-07-23 21:46:43.428 PDT [1872879] LOG:  shutting down
+2026-07-23 21:46:43.433 PDT [1872879] LOG:  checkpoint starting: shutdown immediate
+2026-07-23 21:46:43.528 PDT [1872879] LOG:  checkpoint complete: wrote 1230 buffers (7.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 11 recycled; write=0.014 s, sync=0.018 s, total=0.100 s; sync files=24, longest=0.010 s, average=0.001 s; distance=181793 kB, estimate=499200 kB; lsn=0/2D2CD9B8, redo lsn=0/2D2CD9B8
+2026-07-23 21:46:43.553 PDT [1872875] LOG:  database system is shut down
+2026-07-23 21:49:08.220 PDT [1876566] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-23 21:49:08.234 PDT [1876566] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-23 21:49:08.234 PDT [1876566] LOG:  listening on IPv4 address "127.0.0.1", port 42020
+2026-07-23 21:49:08.245 PDT [1876572] LOG:  database system was shut down at 2026-07-23 21:49:06 PDT
+2026-07-23 21:49:08.254 PDT [1876566] LOG:  database system is ready to accept connections
+2026-07-23 21:51:44.229 PDT [1876570] LOG:  checkpoint starting: wal
+2026-07-23 21:51:44.901 PDT [1876672] ERROR:  [EC_INTERNAL] EC_BUILD_INCOMPLETE: could not connect to participant: error connecting to server
+2026-07-23 21:51:44.901 PDT [1876672] STATEMENT:  SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)
+2026-07-23 21:52:42.891 PDT [1876672] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED_RETRY: Ready coordinator traversal replica was durably marked Stale; retry the mutation on the owner path
+2026-07-23 21:52:42.891 PDT [1876672] STATEMENT:  SELECT ec_distann_guard_traversal_replica_mutation('dm_idx'::regclass)
+2026-07-23 21:52:42.980 PDT [1876566] LOG:  received fast shutdown request
+2026-07-23 21:52:42.986 PDT [1876566] LOG:  aborting any active transactions
+2026-07-23 21:52:42.986 PDT [1877273] FATAL:  terminating autovacuum process due to administrator command
+2026-07-23 21:52:42.987 PDT [1876566] LOG:  background worker "logical replication launcher" (PID 1876575) exited with exit code 1
+2026-07-23 21:52:43.264 PDT [1876570] LOG:  checkpoint complete: wrote 428 buffers (2.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=58.754 s, sync=0.082 s, total=59.035 s; sync files=304, longest=0.005 s, average=0.001 s; distance=534482 kB, estimate=534482 kB; lsn=0/2D15E438, redo lsn=0/22148FF8
+2026-07-23 21:52:43.264 PDT [1876570] LOG:  shutting down
+2026-07-23 21:52:43.268 PDT [1876570] LOG:  checkpoint starting: shutdown immediate
+2026-07-23 21:52:43.360 PDT [1876570] LOG:  checkpoint complete: wrote 111 buffers (0.7%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 11 recycled; write=0.006 s, sync=0.016 s, total=0.097 s; sync files=24, longest=0.007 s, average=0.001 s; distance=180309 kB, estimate=499065 kB; lsn=0/2D15E4B0, redo lsn=0/2D15E4B0
+2026-07-23 21:52:43.388 PDT [1876566] LOG:  database system is shut down

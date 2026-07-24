@@ -131,6 +131,31 @@ Production remains unchanged until a later promotion decision accepts those
 results. Rollback is removal/invalidation of the derived replica and immediate
 use of the existing owner traversal path.
 
+## Task 198 measured decision
+
+Task 198 completed the faithful feature-gated implementation and matched
+10k/50k/100k evidence. Owner and replica arms had identical recall at
+0.9990/0.9685/0.9625. Warm mean improved from 19.50/20.70/20.60 ms to
+16.40/17.80/17.10 ms, and p95 from 23.10/24.00/23.80 ms to
+20.10/20.10/20.00 ms. Reconciled 100k traversal moved from 7.866 ms with
+6.405 ms remote expansion to 3.617 ms with zero remote traversal; final owner
+payload work remained.
+
+Measured replica relation size was 158 MB/824 MB/1.660 GB, about
+65.2%/66.3%/66.5% of the physical generation. Build time was
+5.208/24.736/51.995 seconds, peak copy-batch memory stayed at 3.367 MB, and
+100k emitted 1.926 GB WAL. These costs are close to the design's predicted
+raw-vector envelope and below its physical-generation storage ceiling, but
+they are too consequential for an implicit build or an unreviewed default.
+
+The decision is therefore **PROMOTE to Task 199 productionization**, not make
+the prototype a production default. Task 199 must preserve explicit operator
+construction and single-authority scope, make Ready-replica preference the
+normal path without benchmark selectors, remove benchmark-only controls from
+normal builds, document capacity and the first-mutation retry contract, and
+repeat the release-profile full-scale gate. Production remains unchanged
+until that task is accepted.
+
 ## Consequences
 
 - The design can remove serial traversal RPCs without moving payload

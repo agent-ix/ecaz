@@ -312,7 +312,7 @@ Task 190 may compare architectures but may not implement several together.
 | ID | Candidate | Status / trigger |
 | --- | --- | --- |
 | ARCH-01 | Compact global seed index resident at coordinator | deferred Task 190 |
-| ARCH-02 | Replicated global routing layer over sharded lower graph | **selected by Task 190 for Task 198**, as a rebuildable coordinator traversal replica; no production promotion yet |
+| ARCH-02 | Replicated global routing layer over sharded lower graph | **measured useful by Task 198; promoted to Task 199 productionization**: exact recall, 14–17% warm-mean win, about 65–66% extra generation storage; production unchanged pending normal-build/operator gate |
 | ARCH-03 | Graph/community-aware placement instead of hash placement | deferred; FR-078/ADR-085 replacement |
 | ARCH-04 | Hash ownership plus replicated boundary nodes | deferred Task 190 |
 | ARCH-05 | Columnar/packed immutable row tier | deferred; storage format decision |

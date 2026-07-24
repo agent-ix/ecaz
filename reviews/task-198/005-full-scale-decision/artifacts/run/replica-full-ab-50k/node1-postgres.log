@@ -1,0 +1,42 @@
+2026-07-23 21:52:48.124 PDT [1877386] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-23 21:52:48.137 PDT [1877386] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-23 21:52:48.137 PDT [1877386] LOG:  listening on IPv4 address "127.0.0.1", port 42020
+2026-07-23 21:52:48.148 PDT [1877392] LOG:  database system was shut down at 2026-07-23 21:52:45 PDT
+2026-07-23 21:52:48.155 PDT [1877386] LOG:  database system is ready to accept connections
+2026-07-23 21:54:55.344 PDT [1877390] LOG:  checkpoint starting: wal
+2026-07-23 21:59:25.265 PDT [1877390] LOG:  checkpoint complete: wrote 94 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.686 s, sync=0.147 s, total=269.921 s; sync files=275, longest=0.017 s, average=0.001 s; distance=537256 kB, estimate=537256 kB; lsn=0/2EA18618, redo lsn=0/223FE690
+2026-07-23 21:59:55.418 PDT [1877390] LOG:  checkpoint starting: time
+2026-07-23 22:04:12.159 PDT [1877390] LOG:  checkpoint complete: wrote 84 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 19 recycled; write=256.455 s, sync=0.098 s, total=256.741 s; sync files=101, longest=0.043 s, average=0.001 s; distance=319584 kB, estimate=515489 kB; lsn=0/53C63030, redo lsn=0/35C167E0
+2026-07-23 22:04:12.730 PDT [1877390] LOG:  checkpoint starting: wal
+2026-07-23 22:04:22.601 PDT [1877390] LOG:  checkpoint complete: wrote 31 buffers (0.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=9.470 s, sync=0.052 s, total=9.872 s; sync files=4, longest=0.031 s, average=0.013 s; distance=532386 kB, estimate=532386 kB; lsn=0/7419F310, redo lsn=0/563FF250
+2026-07-23 22:06:49.336 PDT [1877390] LOG:  checkpoint starting: wal
+2026-07-23 22:06:59.172 PDT [1877390] LOG:  checkpoint complete: wrote 784 buffers (4.8%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=9.109 s, sync=0.473 s, total=9.842 s; sync files=47, longest=0.327 s, average=0.011 s; distance=540677 kB, estimate=540677 kB; lsn=0/95B27230, redo lsn=0/77400758
+2026-07-23 22:07:00.210 PDT [1877390] LOG:  checkpoints are occurring too frequently (11 seconds apart)
+2026-07-23 22:07:00.210 PDT [1877390] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-23 22:07:00.210 PDT [1877390] LOG:  checkpoint starting: wal
+2026-07-23 22:07:09.425 PDT [1877737] ERROR:  [EC_INTERNAL] EC_BUILD_INCOMPLETE: could not connect to participant: error connecting to server
+2026-07-23 22:07:09.425 PDT [1877737] STATEMENT:  SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)
+2026-07-23 22:07:17.460 PDT [1877390] LOG:  checkpoint complete: wrote 54 buffers (0.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.810 s, sync=0.224 s, total=17.250 s; sync files=46, longest=0.134 s, average=0.005 s; distance=540670 kB, estimate=540676 kB; lsn=0/B64B3748, redo lsn=0/98400270
+2026-07-23 22:07:18.878 PDT [1877390] LOG:  checkpoints are occurring too frequently (18 seconds apart)
+2026-07-23 22:07:18.878 PDT [1877390] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-23 22:07:18.878 PDT [1877390] LOG:  checkpoint starting: wal
+2026-07-23 22:07:32.848 PDT [1877390] LOG:  checkpoint complete: wrote 82 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=13.323 s, sync=0.276 s, total=13.971 s; sync files=24, longest=0.122 s, average=0.012 s; distance=540675 kB, estimate=540676 kB; lsn=0/D7A34C60, redo lsn=0/B9400F68
+2026-07-23 22:07:34.107 PDT [1877390] LOG:  checkpoints are occurring too frequently (16 seconds apart)
+2026-07-23 22:07:34.107 PDT [1877390] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-23 22:07:34.107 PDT [1877390] LOG:  checkpoint starting: wal
+2026-07-23 22:08:02.667 PDT [1877390] LOG:  checkpoint complete: wrote 14729 buffers (89.9%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=27.026 s, sync=1.216 s, total=28.561 s; sync files=17, longest=1.165 s, average=0.072 s; distance=536895 kB, estimate=540298 kB; lsn=0/F808D838, redo lsn=0/DA050E98
+2026-07-23 22:08:19.257 PDT [1877390] LOG:  checkpoint starting: wal
+2026-07-23 22:08:38.767 PDT [1877390] LOG:  checkpoint complete: wrote 366 buffers (2.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.952 s, sync=0.250 s, total=19.511 s; sync files=14, longest=0.236 s, average=0.018 s; distance=541518 kB, estimate=541518 kB; lsn=1/18EBF630, redo lsn=0/FB124998
+2026-07-23 22:08:40.884 PDT [1877390] LOG:  checkpoints are occurring too frequently (21 seconds apart)
+2026-07-23 22:08:40.884 PDT [1877390] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-23 22:08:40.884 PDT [1877390] LOG:  checkpoint starting: wal
+2026-07-23 22:08:57.491 PDT [1877390] LOG:  checkpoint complete: wrote 5 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.379 s, sync=0.011 s, total=16.607 s; sync files=6, longest=0.005 s, average=0.002 s; distance=540109 kB, estimate=541377 kB; lsn=1/233B6118, redo lsn=1/1C097EA0
+2026-07-23 22:09:37.026 PDT [1877737] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED_RETRY: Ready coordinator traversal replica was durably marked Stale; retry the mutation on the owner path
+2026-07-23 22:09:37.026 PDT [1877737] STATEMENT:  SELECT ec_distann_guard_traversal_replica_mutation('dm_idx'::regclass)
+2026-07-23 22:09:37.119 PDT [1877386] LOG:  received fast shutdown request
+2026-07-23 22:09:37.125 PDT [1877386] LOG:  aborting any active transactions
+2026-07-23 22:09:37.126 PDT [1877386] LOG:  background worker "logical replication launcher" (PID 1877395) exited with exit code 1
+2026-07-23 22:09:37.187 PDT [1877390] LOG:  shutting down
+2026-07-23 22:09:37.192 PDT [1877390] LOG:  checkpoint starting: shutdown immediate
+2026-07-23 22:09:37.269 PDT [1877390] LOG:  checkpoint complete: wrote 20 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 7 recycled; write=0.008 s, sync=0.016 s, total=0.082 s; sync files=22, longest=0.004 s, average=0.001 s; distance=117982 kB, estimate=499038 kB; lsn=1/233CF9D0, redo lsn=1/233CF9D0
+2026-07-23 22:09:37.310 PDT [1877386] LOG:  database system is shut down

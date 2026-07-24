@@ -40,9 +40,9 @@ use super::scan::{
 use super::scan_registry::ScanTokenGuard;
 use super::tuple::DistannNodeTuple;
 
-struct ActiveGenerationIdentity {
-    build_id: Uuid,
-    fingerprint: [u8; 34],
+pub(crate) struct ActiveGenerationIdentity {
+    pub(crate) build_id: Uuid,
+    pub(crate) fingerprint: [u8; 34],
 }
 
 fn graph_slot_attr(
@@ -555,14 +555,14 @@ fn resolve_cached_physical_query(
 }
 
 #[derive(Debug)]
-struct PhysicalOwnerRoute {
-    roster_ordinal: usize,
-    is_local: bool,
-    remote_index_regclass: String,
-    conninfo: Option<String>,
+pub(crate) struct PhysicalOwnerRoute {
+    pub(crate) roster_ordinal: usize,
+    pub(crate) is_local: bool,
+    pub(crate) remote_index_regclass: String,
+    pub(crate) conninfo: Option<String>,
 }
 
-fn physical_owner_routes(
+pub(crate) fn physical_owner_routes(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
     build_id: Uuid,
@@ -652,6 +652,15 @@ struct RetainedGenerationScan {
     row_schema: Arc<super::row_schema::ResolvedRowSchema>,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     owner_payload_plans: Rc<RefCell<VecDeque<CachedOwnerPayloadPlan>>>,
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[derive(Debug)]
+pub(crate) struct TraversalReplicaChunkRow {
+    pub(crate) owner_ordinal: u32,
+    pub(crate) vec_id: u64,
+    pub(crate) graph_record: Vec<u8>,
+    pub(crate) exact_vector: Vec<u8>,
 }
 
 impl RetainedGenerationScan {
@@ -814,6 +823,157 @@ impl RetainedGenerationScan {
             }
         }
         Ok(())
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    fn traversal_replica_chunk(
+        &self,
+        after_vec_id: Option<i64>,
+        limit: usize,
+    ) -> Result<Vec<TraversalReplicaChunkRow>, DistannExpandError> {
+        if limit == 0 || limit > 4096 {
+            return Err(DistannExpandError::BadInput(
+                "traversal replica chunk limit must be in 1..=4096".to_owned(),
+            ));
+        }
+        let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+        if snapshot.is_null() {
+            return Err(DistannExpandError::Internal(
+                "traversal replica stream has no active snapshot".to_owned(),
+            ));
+        }
+        let key_count = usize::from(after_vec_id.is_some());
+        let scan = unsafe {
+            IndexScanGuard::begin_from_raw(
+                self.graph_relation.as_ptr(),
+                self.directory_relation.as_ptr(),
+                snapshot,
+                key_count as i32,
+                0,
+            )
+        }
+        .ok_or_else(|| {
+            DistannExpandError::Internal("could not begin traversal replica graph scan".to_owned())
+        })?;
+        let graph_slot = TupleTableSlotGuard::create_for_heap_guard(&self.graph_relation)
+            .ok_or_else(|| {
+                DistannExpandError::Internal(
+                    "could not allocate traversal replica graph slot".to_owned(),
+                )
+            })?;
+        let row_slot =
+            TupleTableSlotGuard::single_for_heap_guard(&self.row_relation).ok_or_else(|| {
+                DistannExpandError::Internal(
+                    "could not allocate traversal replica row slot".to_owned(),
+                )
+            })?;
+        let mut scan_key =
+            unsafe { std::mem::MaybeUninit::<pg_sys::ScanKeyData>::zeroed().assume_init() };
+        unsafe {
+            if let Some(after) = after_vec_id {
+                pg_sys::ScanKeyInit(
+                    &mut scan_key,
+                    1,
+                    pg_sys::BTGreaterStrategyNumber as pg_sys::StrategyNumber,
+                    pg_sys::Oid::from(pg_sys::F_INT8GT),
+                    pg_sys::Datum::from(after),
+                );
+                pg_sys::index_rescan(scan.as_ptr(), &mut scan_key, 1, ptr::null_mut(), 0);
+            } else {
+                pg_sys::index_rescan(scan.as_ptr(), ptr::null_mut(), 0, ptr::null_mut(), 0);
+            }
+        }
+
+        let mut rows = Vec::with_capacity(limit);
+        while rows.len() < limit {
+            unsafe { pg_sys::ExecClearTuple(graph_slot.as_ptr()) };
+            let found = unsafe {
+                pg_sys::index_getnext_slot(
+                    scan.as_ptr(),
+                    pg_sys::ScanDirection::ForwardScanDirection,
+                    graph_slot.as_ptr(),
+                )
+            };
+            if !found {
+                break;
+            }
+            let stored_id =
+                unsafe { pg_sys::DatumGetInt64(graph_slot_attr(&graph_slot, 1, "vec_id")?) };
+            let record =
+                unsafe {
+                    crate::am::common::detoast::DetoastedVarlena::packed_from_datum(
+                        graph_slot_attr(&graph_slot, 2, "record")?,
+                    )
+                }
+                .ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(
+                        "traversal replica graph record could not be detoasted".to_owned(),
+                    )
+                })?;
+            let graph_record = record.as_bytes().to_vec();
+            let node = DistannNodeTuple::decode_physical_v1(
+                &graph_record,
+                self.descriptor.graph_degree,
+                self.code_len,
+            )
+            .map_err(DistannExpandError::GenerationMissing)?;
+            let vec_id = u64::from_le_bytes(stored_id.to_le_bytes());
+            if node.vec_id != vec_id {
+                return Err(DistannExpandError::GenerationMissing(
+                    "traversal replica graph vec_id does not match its directory key".to_owned(),
+                ));
+            }
+            self.validate_ownership(&[vec_id])?;
+
+            let mut row_tid = pg_sys::ItemPointerData::default();
+            pgrx::itemptr::item_pointer_set_all(
+                &mut row_tid,
+                node.heap_tid.block_number,
+                node.heap_tid.offset_number,
+            );
+            unsafe { pg_sys::ExecClearTuple(row_slot.as_ptr()) };
+            let row_found = unsafe {
+                pg_sys::table_tuple_fetch_row_version(
+                    self.row_relation.as_ptr(),
+                    &mut row_tid,
+                    snapshot,
+                    row_slot.as_ptr(),
+                )
+            };
+            if !row_found {
+                return Err(DistannExpandError::GenerationMissing(format!(
+                    "traversal replica source row is absent for vec_id {vec_id:#018x}"
+                )));
+            }
+            let mut is_null = false;
+            let datum = unsafe {
+                pg_sys::slot_getattr(row_slot.as_ptr(), self.source_attnum, &mut is_null)
+            };
+            if is_null {
+                return Err(DistannExpandError::GenerationMissing(
+                    "traversal replica source vector is NULL".to_owned(),
+                ));
+            }
+            let vector = unsafe { crate::am::ec_diskann::ecvector_datum_to_vec(datum) };
+            if vector.len() != usize::from(self.descriptor.dimensions)
+                || vector.iter().any(|value| !value.is_finite())
+            {
+                return Err(DistannExpandError::GenerationMissing(
+                    "traversal replica source vector has invalid dimensions or values".to_owned(),
+                ));
+            }
+            let exact_vector = vector
+                .iter()
+                .flat_map(|value| value.to_le_bytes())
+                .collect::<Vec<_>>();
+            rows.push(TraversalReplicaChunkRow {
+                owner_ordinal: self.generation.owner_ordinal,
+                vec_id,
+                graph_record,
+                exact_vector,
+            });
+        }
+        Ok(rows)
     }
 
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1090,11 +1250,8 @@ impl RetainedGenerationScan {
                     let entry = plans
                         .remove(position)
                         .expect("owner payload plan position disappeared");
-                    let rows = client.select(
-                        &entry.statement,
-                        None,
-                        &[ctid_refs.as_slice().into()],
-                    );
+                    let rows =
+                        client.select(&entry.statement, None, &[ctid_refs.as_slice().into()]);
                     plans.push_back(entry);
                     rows
                 } else {
@@ -1106,11 +1263,7 @@ impl RetainedGenerationScan {
                             ))
                         })?
                         .keep();
-                    let rows = client.select(
-                        &statement,
-                        None,
-                        &[ctid_refs.as_slice().into()],
-                    );
+                    let rows = client.select(&statement, None, &[ctid_refs.as_slice().into()]);
                     while plans.len() >= OWNER_PAYLOAD_PLAN_CACHE_CAPACITY {
                         plans.pop_front();
                     }
@@ -1129,55 +1282,54 @@ impl RetainedGenerationScan {
                 let _ = use_cached_payload_plan;
                 client.select(&sql, None, &[ctid_refs.as_slice().into()])
             };
-            rows
-                .map_err(|error| {
-                    DistannExpandError::VectorMissing(format!(
-                        "physical row payload fetch failed: {error}"
-                    ))
-                })?
-                .map(|row| {
-                    let missing = row["tuple_payload_missing"]
-                        .value::<bool>()
-                        .map_err(|error| {
-                            DistannExpandError::Internal(format!(
-                                "physical payload missing flag decode failed: {error}"
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            DistannExpandError::Internal(
-                                "physical payload missing flag is NULL".to_owned(),
-                            )
-                        })?;
-                    let nulls = row["payload_nulls"]
-                        .value::<Vec<bool>>()
-                        .map_err(|error| {
-                            DistannExpandError::Internal(format!(
-                                "physical payload null flags decode failed: {error}"
-                            ))
-                        })?
-                        .unwrap_or_default();
-                    let values = row["payload_values"]
-                        .value::<pgrx::datum::Array<&[u8]>>()
-                        .map_err(|error| {
-                            DistannExpandError::Internal(format!(
-                                "physical payload values decode failed: {error}"
-                            ))
-                        })?
-                        .map(|array| {
-                            array
-                                .iter_deny_null()
-                                .map(<[u8]>::to_vec)
-                                .collect::<Vec<_>>()
-                        })
-                        .unwrap_or_default();
-                    if nulls.len() != column_count || values.len() != column_count {
-                        return Err(DistannExpandError::Internal(
-                            "physical payload column count mismatch".to_owned(),
-                        ));
-                    }
-                    Ok((missing, nulls, values))
-                })
-                .collect::<Result<Vec<_>, DistannExpandError>>()
+            rows.map_err(|error| {
+                DistannExpandError::VectorMissing(format!(
+                    "physical row payload fetch failed: {error}"
+                ))
+            })?
+            .map(|row| {
+                let missing = row["tuple_payload_missing"]
+                    .value::<bool>()
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "physical payload missing flag decode failed: {error}"
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        DistannExpandError::Internal(
+                            "physical payload missing flag is NULL".to_owned(),
+                        )
+                    })?;
+                let nulls = row["payload_nulls"]
+                    .value::<Vec<bool>>()
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "physical payload null flags decode failed: {error}"
+                        ))
+                    })?
+                    .unwrap_or_default();
+                let values = row["payload_values"]
+                    .value::<pgrx::datum::Array<&[u8]>>()
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "physical payload values decode failed: {error}"
+                        ))
+                    })?
+                    .map(|array| {
+                        array
+                            .iter_deny_null()
+                            .map(<[u8]>::to_vec)
+                            .collect::<Vec<_>>()
+                    })
+                    .unwrap_or_default();
+                if nulls.len() != column_count || values.len() != column_count {
+                    return Err(DistannExpandError::Internal(
+                        "physical payload column count mismatch".to_owned(),
+                    ));
+                }
+                Ok((missing, nulls, values))
+            })
+            .collect::<Result<Vec<_>, DistannExpandError>>()
         })?;
         if payloads.len() != nodes.len() {
             return Err(DistannExpandError::Internal(
@@ -1269,6 +1421,54 @@ struct OwnerMaterializationTelemetry {
 #[cfg(feature = "distann-head-attribution-benchmark")]
 fn duration_ns(duration: std::time::Duration) -> u64 {
     u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+pub(crate) fn local_traversal_replica_chunk(
+    index_oid: pg_sys::Oid,
+    epoch_fingerprint: &[u8],
+    after_vec_id: Option<i64>,
+    limit: usize,
+) -> Result<Vec<TraversalReplicaChunkRow>, DistannExpandError> {
+    RetainedGenerationScan::open(index_oid, epoch_fingerprint)?
+        .traversal_replica_chunk(after_vec_id, limit)
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_stream_traversal_replica_chunk(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    after_vec_id: default!(Option<i64>, "NULL"),
+    chunk_limit: default!(i32, 256),
+) -> TableIterator<
+    'static,
+    (
+        name!(owner_ordinal, i32),
+        name!(vec_id, i64),
+        name!(graph_record, Vec<u8>),
+        name!(exact_vector, Vec<u8>),
+    ),
+> {
+    let limit = usize::try_from(chunk_limit).unwrap_or_else(|_| {
+        DistannExpandError::BadInput("traversal replica chunk limit must be in 1..=4096".to_owned())
+            .raise()
+    });
+    let rows = local_traversal_replica_chunk(
+        index_regclass.oid(),
+        &epoch_fingerprint,
+        after_vec_id,
+        limit,
+    )
+    .unwrap_or_else(|error| error.raise());
+    TableIterator::new(rows.into_iter().map(|row| {
+        (
+            i32::try_from(row.owner_ordinal).expect("owner ordinal fits integer"),
+            i64::from_le_bytes(row.vec_id.to_le_bytes()),
+            row.graph_record,
+            row.exact_vector,
+        )
+    }))
 }
 
 fn expand_physical_nodes_impl(
@@ -1424,38 +1624,33 @@ fn ec_distann_expand_physical_nodes_profile(
     let expanded = store
         .expand(&query, query_digest, &ids, code_threshold)
         .unwrap_or_else(|error| error.raise());
-    let owner_open_validate_ns =
-        i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
-    let owner_graph_read_ns = expanded
-        .first()
-        .map_or(0, |node| node.owner_graph_read_ns);
+    let owner_open_validate_ns = i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
+    let owner_graph_read_ns = expanded.first().map_or(0, |node| node.owner_graph_read_ns);
     let owner_score_ns = expanded.first().map_or(0, |node| node.owner_score_ns);
     let response_started = Instant::now();
     let owner_response_bytes = expanded.iter().fold(0_usize, |total, node| {
-        total.saturating_add(
-            22_usize.saturating_add(node.neighbor_vec_ids.len().saturating_mul(12)),
-        )
+        total
+            .saturating_add(22_usize.saturating_add(node.neighbor_vec_ids.len().saturating_mul(12)))
     });
     let rows = expanded
         .into_iter()
         .map(|node| {
             (
-            i64::from_le_bytes(node.vec_id.to_le_bytes()),
-            node.exact_dist,
-            node.is_tombstone,
-            node.neighbor_vec_ids
-                .into_iter()
-                .map(|id| i64::from_le_bytes(id.to_le_bytes()))
-                .collect(),
-            node.neighbor_code_dists,
+                i64::from_le_bytes(node.vec_id.to_le_bytes()),
+                node.exact_dist,
+                node.is_tombstone,
+                node.neighbor_vec_ids
+                    .into_iter()
+                    .map(|id| i64::from_le_bytes(id.to_le_bytes()))
+                    .collect(),
+                node.neighbor_code_dists,
             )
         })
         .collect::<Vec<_>>();
     let owner_response_encode_ns =
         i64::try_from(duration_ns(response_started.elapsed())).unwrap_or(i64::MAX);
     let owner_response_bytes = i64::try_from(owner_response_bytes).unwrap_or(i64::MAX);
-    let owner_total_ns =
-        i64::try_from(duration_ns(owner_started.elapsed())).unwrap_or(i64::MAX);
+    let owner_total_ns = i64::try_from(duration_ns(owner_started.elapsed())).unwrap_or(i64::MAX);
     TableIterator::new(rows.into_iter().map(move |row| {
         (
             row.0,
@@ -1901,7 +2096,9 @@ pub(crate) struct PhysicalGenerationScan {
     row_relation: Option<HeapRelationGuard>,
     graph_relation: Option<HeapRelationGuard>,
     directory_relation: Option<IndexRelationGuard>,
+    build_id: Uuid,
     fingerprint: [u8; 34],
+    descriptor_digest: [u8; 32],
     routes: Vec<PhysicalOwnerRoute>,
     head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
     _scan_token: ScanTokenGuard,
@@ -1912,7 +2109,7 @@ pub(crate) struct PhysicalRemotePayload {
     pub(crate) payload_values: Vec<Vec<u8>>,
 }
 
-fn active_generation_identity(
+pub(crate) fn active_generation_identity(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
 ) -> Result<Option<ActiveGenerationIdentity>, String> {
@@ -2134,7 +2331,9 @@ impl PhysicalGenerationScan {
             row_relation,
             graph_relation,
             directory_relation,
+            build_id: active.build_id,
             fingerprint: active.fingerprint,
+            descriptor_digest,
             routes,
             head_index,
             _scan_token: scan_token,
@@ -2143,6 +2342,25 @@ impl PhysicalGenerationScan {
 
     pub(crate) fn row_relation(&self) -> Option<pg_sys::Relation> {
         self.row_relation.as_ref().map(HeapRelationGuard::as_ptr)
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) fn traversal_replica_source(
+        &self,
+    ) -> (
+        Uuid,
+        Uuid,
+        [u8; 34],
+        Arc<DistannGenerationDescriptor>,
+        &[PhysicalOwnerRoute],
+    ) {
+        (
+            Uuid::from_bytes(self.descriptor.coordinator_logical_index_uuid),
+            self.build_id,
+            self.fingerprint,
+            Arc::clone(&self.descriptor),
+            &self.routes,
+        )
     }
 
     pub(crate) fn search(
@@ -2192,6 +2410,61 @@ impl PhysicalGenerationScan {
             });
         }
 
+        let params = DistannOrchestrationParams {
+            beam_width: super::options::current_beam_width(),
+            hop_rounds: super::options::current_hop_rounds(),
+            top_k: effective_top_k,
+            debug_fail_hop_round: super::options::debug_fail_hop_round(),
+        };
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        if super::options::benchmark_traversal_replica() {
+            let replica_open_started = Instant::now();
+            let logical_index_uuid =
+                Uuid::from_bytes(self.descriptor.coordinator_logical_index_uuid);
+            let local_ordinal = self
+                .generation
+                .as_ref()
+                .map(|generation| generation.owner_ordinal as usize);
+            let replica = super::traversal_replica::ReadyTraversalReplica::open(
+                self.index_oid,
+                logical_index_uuid,
+                self.build_id,
+                &self.fingerprint,
+                &self.descriptor,
+                self.descriptor_digest,
+                local_ordinal,
+                snapshot,
+                query,
+                &prepared,
+            );
+            super::stage_counters::record(
+                super::stage_counters::DistannQueryStage::ReplicaOpenValidate,
+                replica_open_started.elapsed(),
+            );
+            if let Ok(Some(mut replica)) = replica {
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::ReplicaScans,
+                    1,
+                );
+                let traversal_started = Instant::now();
+                if let Ok((hits, counters)) = replica.search(&all_seeds, params) {
+                    super::stage_counters::record(
+                        super::stage_counters::DistannQueryStage::TraversalTotal,
+                        traversal_started.elapsed(),
+                    );
+                    return Ok(DistannHitCollection {
+                        hits,
+                        counters,
+                        multi_node: self.routes.len() > 1,
+                    });
+                }
+            }
+            super::stage_counters::record_work(
+                super::stage_counters::DistannMaterializationWork::ReplicaFallbacks,
+                1,
+            );
+        }
+
         let local_expander = match (
             self.generation.as_ref(),
             self.row_relation.as_ref(),
@@ -2232,12 +2505,6 @@ impl PhysicalGenerationScan {
             fingerprint: &self.fingerprint,
             query,
             query_digest: &query_digest,
-        };
-        let params = DistannOrchestrationParams {
-            beam_width: super::options::current_beam_width(),
-            hop_rounds: super::options::current_hop_rounds(),
-            top_k: effective_top_k,
-            debug_fail_hop_round: super::options::debug_fail_hop_round(),
         };
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let traversal_started = Instant::now();

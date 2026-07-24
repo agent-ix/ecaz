@@ -80,6 +80,7 @@ pub(crate) use self::scan_registry::{
 pub(crate) mod scan;
 mod shard_build;
 mod source_spool;
+mod traversal_replica;
 #[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) mod stage_counters;
 pub mod tuple;

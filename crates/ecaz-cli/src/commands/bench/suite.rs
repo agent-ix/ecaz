@@ -504,6 +504,9 @@ struct DistannBenchmarkSeedVariant {
     /// Task 194 per-variant hop-round cap for fixed-work A/B attribution.
     #[serde(default)]
     hop_rounds: Option<u32>,
+    /// Task 198 benchmark-only coordinator traversal replica arm.
+    #[serde(default)]
+    traversal_replica: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -3326,6 +3329,7 @@ impl SuiteStep {
                                 && left.neighbor_score_mode == right.neighbor_score_mode
                                 && left.beam_width == right.beam_width
                                 && left.hop_rounds == right.hop_rounds
+                                && left.traversal_replica == right.traversal_replica
                         };
                     let has_plan_pair = step.benchmark_seed_variants.iter().any(|control| {
                         control.owner_payload_plan_cache != Some(true)
@@ -3345,9 +3349,25 @@ impl SuiteStep {
                                     && same_search(control, candidate)
                             })
                     });
-                    if !has_plan_pair && !has_batch_pair {
+                    let has_traversal_pair = step.benchmark_seed_variants.iter().any(|control| {
+                        !control.traversal_replica
+                            && step.benchmark_seed_variants.iter().any(|candidate| {
+                                candidate.traversal_replica
+                                    && candidate.materialization_batch_size
+                                        == control.materialization_batch_size
+                                    && candidate.owner_payload_plan_cache
+                                        == control.owner_payload_plan_cache
+                                    && candidate.seed_strategy == control.seed_strategy
+                                    && candidate.head_search_width == control.head_search_width
+                                    && candidate.head_seed_count == control.head_seed_count
+                                    && candidate.neighbor_score_mode == control.neighbor_score_mode
+                                    && candidate.beam_width == control.beam_width
+                                    && candidate.hop_rounds == control.hop_rounds
+                            })
+                    });
+                    if !has_plan_pair && !has_batch_pair && !has_traversal_pair {
                         bail!(
-                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan off/on pair or eager/lazy10 pair",
+                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan off/on, eager/lazy10, or owner/replica pair",
                             step.name
                         )
                     }
@@ -4250,7 +4270,8 @@ fn expand_distann_local_multinode(
         );
         let has_extended_controls = variant.owner_payload_plan_cache.is_some()
             || variant.beam_width.is_some()
-            || variant.hop_rounds.is_some();
+            || variant.hop_rounds.is_some()
+            || variant.traversal_replica;
         if has_extended_controls {
             encoded.push(':');
             encoded.push_str(if variant.owner_payload_plan_cache.unwrap_or(false) {
@@ -4259,7 +4280,8 @@ fn expand_distann_local_multinode(
                 "off"
             });
         }
-        if variant.beam_width.is_some() || variant.hop_rounds.is_some() {
+        if variant.beam_width.is_some() || variant.hop_rounds.is_some() || variant.traversal_replica
+        {
             encoded.push(':');
             encoded.push_str(
                 &variant
@@ -4269,9 +4291,19 @@ fn expand_distann_local_multinode(
                     .to_string(),
             );
         }
-        if let Some(rounds) = variant.hop_rounds {
+        if variant.hop_rounds.is_some() || variant.traversal_replica {
             encoded.push(':');
-            encoded.push_str(&rounds.to_string());
+            encoded.push_str(
+                &variant
+                    .hop_rounds
+                    .or(step.hop_rounds)
+                    .unwrap_or(100)
+                    .to_string(),
+            );
+        }
+        if variant.traversal_replica {
+            encoded.push(':');
+            encoded.push_str("on");
         }
         push_arg(&mut args, "--benchmark-seed-variant", &encoded);
     }
@@ -5803,7 +5835,10 @@ psql header noise\n\
           }]
         }"#;
         let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
-        assert!(validate_config(&config).is_err(), "correctness pair must isolate plan cache");
+        assert!(
+            validate_config(&config).is_err(),
+            "correctness pair must isolate plan cache"
+        );
 
         let raw = raw
             .replace("\"beam_width\": 8", "\"beam_width\": 4")
