@@ -1,7 +1,7 @@
 # Task 198: ec_distann Coordinator Traversal Replica
 
-Status: **in progress** (2026-07-23; Phase 1 contract and format). Priority:
-P2 architecture implementation and measurement.
+Status: **complete — PROMOTE to Task 199 productionization** (2026-07-23).
+Priority: P2 architecture implementation and measurement.
 
 ## Why
 
@@ -131,6 +131,34 @@ Output either:
   the first mutation against a Ready replica disclosed as a user-visible
   retryable failure; or
 - STOP and retain ADR-085 owner traversal unchanged.
+
+## Measured outcome
+
+The feature-gated faithful replica preserved exact owner-arm recall at
+`0.9990 / 0.9685 / 0.9625` for 10k / 50k / 100k. Warm mean latency improved
+from `19.50 / 20.70 / 20.60` ms to `16.40 / 17.80 / 17.10` ms
+(`15.9% / 14.0% / 17.0%`), and p95 improved from
+`23.10 / 24.00 / 23.80` ms to `20.10 / 20.10 / 20.00` ms. The 100k
+attribution reduced traversal from `7.866` to `3.617` ms, replaced
+`6.405` ms of remote expansion with `3.386` ms of local graph/vector reads
+plus `0.140` ms of RaBitQ scoring, and left final owner payload work in place.
+
+The operating cost is substantial and explicit. Replica relations occupy
+`158,326,784 / 823,705,600 / 1,659,518,976` bytes, or roughly
+`65.2% / 66.3% / 66.5%` of the physical generation. Builds copy
+`131,520,000 / 657,600,000 / 1,315,200,000` bytes and take
+`5.208 / 24.736 / 51.995` seconds; 100k emits 1.926 GB WAL. Peak copy-batch
+memory stays bounded at 3,366,912 bytes. Exact/digest identity, owner-outage
+rollback, corrupt-image fallback, genuine second-batch full restart,
+retryable `Ready -> Stale` invalidation, owner fallback, and idempotent
+retire/reclaim pass.
+
+Decision: **PROMOTE to Task 199**, not directly to a production default.
+Task 199 owns normal-build feature isolation, operator API/privilege and
+capacity policy, explicit-build/read-mostly rollout, removal of benchmark
+selection controls, production lifecycle drills, and a fresh release-profile
+10k/50k/100k gate. Until that task is accepted, production owner traversal is
+unchanged and this implementation remains feature-gated.
 
 ## Acceptance criteria
 
