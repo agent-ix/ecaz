@@ -839,6 +839,16 @@ fn source_inner_product_scalar(left: &[f32], right: &[f32]) -> f32 {
     ip
 }
 
+/// Architecture-independent accumulation order for distributed exact scoring.
+///
+/// The regular DiskANN kernel may use FMA/NEON. ec_distann evaluates exact
+/// distances on whichever owner holds a row, while a traversal replica
+/// evaluates the same row on the coordinator. Keeping this scalar order
+/// available to both paths prevents host ISA from changing ordered results.
+pub(crate) fn source_inner_product_deterministic(left: &[f32], right: &[f32]) -> f32 {
+    source_inner_product_scalar(left, right)
+}
+
 #[cfg(any(test, feature = "bench"))]
 pub(super) fn source_inner_product_scalar_reference(left: &[f32], right: &[f32]) -> f32 {
     source_inner_product_scalar(left, right)
@@ -1161,7 +1171,10 @@ pub(crate) unsafe fn ecvector_datum_to_vec(datum: pg_sys::Datum) -> Vec<f32> {
 
 #[cfg(test)]
 mod tests {
-    use super::{source_inner_product, source_inner_product_distance, source_inner_product_scalar};
+    use super::{
+        source_inner_product, source_inner_product_deterministic, source_inner_product_distance,
+        source_inner_product_scalar,
+    };
 
     #[test]
     fn source_inner_product_distance_keeps_positive_ip_pairs_distinct() {
@@ -1188,6 +1201,20 @@ mod tests {
         assert!(
             (scalar - dispatched).abs() <= 0.0001,
             "scalar={scalar} dispatched={dispatched}"
+        );
+    }
+
+    #[test]
+    fn distributed_inner_product_uses_scalar_bit_order() {
+        let left = (0..1536)
+            .map(|i| ((i as f32) * 0.013).sin())
+            .collect::<Vec<_>>();
+        let right = (0..1536)
+            .map(|i| ((i as f32) * 0.017).cos())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            source_inner_product_deterministic(&left, &right).to_bits(),
+            source_inner_product_scalar(&left, &right).to_bits()
         );
     }
 

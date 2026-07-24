@@ -3299,6 +3299,15 @@ impl SuiteStep {
                                 variant.name
                             )
                         }
+                        if variant.traversal_replica
+                            && variant.neighbor_score_mode == "exact_neighbor"
+                        {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} cannot combine traversal_replica with exact_neighbor",
+                                step.name,
+                                variant.name
+                            )
+                        }
                     }
                 }
                 if step.benchmark_iterations == Some(0) {
@@ -5939,9 +5948,9 @@ psql header noise\n\
             "owner:persisted_head:32:32:rabitq:10:off:4:100:off",
             "replica:persisted_head:32:32:rabitq:10:off:4:100:on",
         ] {
-            assert!(command.windows(2).any(|window| {
-                window == ["--benchmark-seed-variant", expected]
-            }));
+            assert!(command
+                .windows(2)
+                .any(|window| { window == ["--benchmark-seed-variant", expected] }));
         }
     }
 

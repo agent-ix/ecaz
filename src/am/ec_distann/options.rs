@@ -1,4 +1,3 @@
-#[cfg(feature = "distann-head-attribution-benchmark")]
 use std::ffi::CString;
 use std::mem::{offset_of, size_of};
 use std::ptr;
@@ -59,8 +58,6 @@ static ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC: GucSetting<i32> =
 static ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(false);
 #[cfg(feature = "distann-head-attribution-benchmark")]
-static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
-#[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(-1);
 /// ADR-085 D12 production policy. This is deliberately not a GUC or reloption.
@@ -73,6 +70,8 @@ static ECDISTANN_REMOTE_CONNECT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISTANN_DEFAULT_REMOTE_CONNECT_TIMEOUT_MS);
 static ECDISTANN_REMOTE_STATEMENT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS);
+static ECDISTANN_REPLICA_CONTROL_PASSWORD_FILE_GUC: GucSetting<Option<CString>> =
+    GucSetting::<Option<CString>>::new(None);
 
 /// NFR-020 fault-injection hook (debug only): when >= 0, an ec_distann scan
 /// raises an error at the start of the hop round with this 0-based index, after
@@ -320,15 +319,6 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
-    #[cfg(feature = "distann-head-attribution-benchmark")]
-    GucRegistry::define_bool_guc(
-        c"ec_distann.benchmark_traversal_replica",
-        c"Task 198 benchmark-only coordinator traversal replica selector.",
-        c"When enabled, a matching Ready fingerprint-bound coordinator replica executes graph traversal locally while final payloads remain owner-side. Missing, stale, or invalid replicas fall back to owner traversal. This GUC is absent from normal production builds.",
-        &ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_GUC,
-        GucContext::Userset,
-        GucFlags::default(),
-    );
     GucRegistry::define_int_guc(
         c"ec_distann.hop_rounds",
         c"FR-081 hop-round budget (H) for ec_distann scans.",
@@ -363,6 +353,14 @@ pub(super) fn register_gucs() {
         c"Avoids rebuilding the bounded Vamana head graph and revalidating immutable candidate bytes on every scan open. The cache is bounded and keyed by control OID, logical UUID, build id, and fingerprint. Disable only for A/B measurement or diagnosis.",
         &ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC,
         GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_string_guc(
+        c"ec_distann.replica_control_password_file",
+        c"Server-side password file for the dedicated traversal-replica control connection.",
+        c"Optional absolute path to a server-owner-readable mode-0600 file containing only the extension-owner password. The control connection never authenticates as the invoking DML user. Leave unset when local peer or certificate authentication is configured. Changes require a configuration reload.",
+        &ECDISTANN_REPLICA_CONTROL_PASSWORD_FILE_GUC,
+        GucContext::Sighup,
         GucFlags::default(),
     );
     #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -506,15 +504,6 @@ pub(super) fn benchmark_owner_payload_plan_cache() -> bool {
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
         return ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC.get();
-    }
-    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
-    false
-}
-
-pub(super) fn benchmark_traversal_replica() -> bool {
-    #[cfg(feature = "distann-head-attribution-benchmark")]
-    {
-        return ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_GUC.get();
     }
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     false
@@ -690,6 +679,13 @@ pub(super) fn remote_statement_timeout_ms() -> u64 {
     u64::try_from(ECDISTANN_REMOTE_STATEMENT_TIMEOUT_MS_GUC.get())
         .unwrap_or(ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS as u64)
         .max(1)
+}
+
+pub(super) fn replica_control_password_file() -> Option<String> {
+    ECDISTANN_REPLICA_CONTROL_PASSWORD_FILE_GUC
+        .get()
+        .and_then(|value| value.into_string().ok())
+        .filter(|value| !value.is_empty())
 }
 
 pub(super) fn current_beam_width() -> usize {

@@ -71,7 +71,6 @@ pub(crate) struct GenerationRelations {
     pub(crate) directory_relid: pg_sys::Oid,
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct TraversalReplicaRelations {
     pub(crate) replica_relid: pg_sys::Oid,
@@ -325,7 +324,6 @@ fn generation_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String,
     )
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 fn traversal_replica_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String, String) {
     let suffix = hex::encode(build_id.as_bytes());
     let oid = u32::from(index_oid);
@@ -507,7 +505,6 @@ fn create_generation_relations(
     Ok(relations)
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn create_traversal_replica_relations(
     index_oid: pg_sys::Oid,
     build_id: Uuid,
@@ -620,7 +617,6 @@ pub(crate) fn drop_generation_relations(
     Ok(())
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn drop_traversal_replica_relations(
     control_oid: pg_sys::Oid,
     relations: TraversalReplicaRelations,

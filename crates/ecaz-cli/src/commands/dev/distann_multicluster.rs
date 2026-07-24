@@ -1048,7 +1048,7 @@ fn append_materialization_benchmark_guc(
     arm: &str,
     materialization_batch_size: u32,
 ) {
-    if arm == "physical" {
+    if arm == "physical" && materialization_batch_size != 10 {
         args.extend([
             "--session-guc".into(),
             format!("ec_distann.benchmark_materialization_batch_size={materialization_batch_size}"),
@@ -1057,23 +1057,11 @@ fn append_materialization_benchmark_guc(
 }
 
 fn append_owner_payload_plan_cache_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
-    if arm == "physical" {
+    if arm == "physical" && enabled {
         args.extend([
             "--session-guc".into(),
             format!(
                 "ec_distann.benchmark_owner_payload_plan_cache={}",
-                if enabled { "on" } else { "off" }
-            ),
-        ]);
-    }
-}
-
-fn append_traversal_replica_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
-    if arm == "physical" {
-        args.extend([
-            "--session-guc".into(),
-            format!(
-                "ec_distann.benchmark_traversal_replica={}",
                 if enabled { "on" } else { "off" }
             ),
         ]);
@@ -1208,6 +1196,11 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                 })
                 .transpose()?
                 .unwrap_or(false);
+            if traversal_replica && neighbor_score_mode == "exact_neighbor" {
+                bail!(
+                    "benchmark seed variant cannot combine traversal replica with exact_neighbor, got {value:?}"
+                );
+            }
             Ok(BenchmarkSeedVariant {
                 name: name.to_owned(),
                 strategy: strategy.to_owned(),
@@ -1275,22 +1268,21 @@ async fn materialization_result_json(
 }
 
 fn materialization_variant_settings_sql(variant: &BenchmarkSeedVariant) -> String {
-    format!(
-        "SET ec_distann.benchmark_materialization_batch_size = {}; \
-         SET ec_distann.benchmark_owner_payload_plan_cache = {}; \
-         SET ec_distann.benchmark_traversal_replica = {};",
-        variant.materialization_batch_size,
-        if variant.owner_payload_plan_cache {
-            "on"
-        } else {
-            "off"
-        },
-        if variant.traversal_replica {
-            "on"
-        } else {
-            "off"
-        },
-    )
+    let mut settings = Vec::new();
+    if variant.materialization_batch_size != 10 {
+        settings.push(format!(
+            "SET ec_distann.benchmark_materialization_batch_size = {}",
+            variant.materialization_batch_size
+        ));
+    }
+    if variant.owner_payload_plan_cache {
+        settings.push("SET ec_distann.benchmark_owner_payload_plan_cache = on".to_owned());
+    }
+    if settings.is_empty() {
+        String::new()
+    } else {
+        format!("{};", settings.join("; "))
+    }
 }
 
 fn materialization_semantic_sql(
@@ -1326,25 +1318,43 @@ async fn task198_replica_semantic_result(
     coordinator: &tokio_postgres::Client,
     corpus: &str,
     queries: &str,
-    replica: bool,
     fail_batch: i32,
     query_offset: u32,
     result_limit: u32,
 ) -> Result<String> {
-    coordinator
-        .batch_execute(&format!(
-            "SET ec_distann.benchmark_seed_mode = 'persisted_head';
-             SET enable_seqscan = off;
+    let has_fault_hooks = coordinator
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_stage_scoring_reset()') IS NOT NULL
+                    AND current_setting(
+                        'ec_distann.benchmark_traversal_replica_fail_batch', true
+                    ) IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if fail_batch >= 0 && !has_fault_hooks {
+        bail!("traversal-replica fault injection is absent from the normal release build");
+    }
+    let benchmark_settings = if has_fault_hooks {
+        format!(
+            "SELECT ec_distann_stage_scoring_reset();
+             SET ec_distann.benchmark_seed_mode = 'persisted_head';
              SET ec_distann.benchmark_head_search_width = 32;
              SET ec_distann.benchmark_head_seed_count = 32;
              SET ec_distann.benchmark_exact_neighbor = off;
-             SET ec_distann.beam_width = 4;
-             SET ec_distann.hop_rounds = 100;
              SET ec_distann.benchmark_materialization_batch_size = 10;
              SET ec_distann.benchmark_owner_payload_plan_cache = off;
-             SET ec_distann.benchmark_traversal_replica = {};
-             SET ec_distann.benchmark_traversal_replica_fail_batch = {fail_batch};",
-            if replica { "on" } else { "off" },
+             SET ec_distann.benchmark_traversal_replica_fail_batch = {fail_batch};"
+        )
+    } else {
+        String::new()
+    };
+    coordinator
+        .batch_execute(&format!(
+            "{benchmark_settings}
+             SET enable_seqscan = off;
+             SET ec_distann.beam_width = 4;
+             SET ec_distann.hop_rounds = 100;"
         ))
         .await?;
     let has_payload = coordinator
@@ -1386,75 +1396,233 @@ async fn task198_replica_semantic_result(
         .wrap_err("decoding Task 198 semantic result")
 }
 
-async fn run_task198_replica_lifecycle_drills(
+async fn build_and_attest_traversal_replica(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    lines: &mut Vec<String>,
+) -> Result<String> {
+    coordinator
+        .query_one(
+            "SELECT ec_distann_traversal_replica_control_preflight('dm_idx'::regclass)",
+            &[],
+        )
+        .await
+        .wrap_err("preflighting traversal-replica control connection")?;
+    let replica_started = Instant::now();
+    let replica = coordinator
+        .query_one(
+            "SELECT encode(ec_distann_build_traversal_replica('dm_idx'::regclass), 'hex')",
+            &[],
+        )
+        .await
+        .wrap_err("building coordinator traversal replica")?
+        .get::<_, String>(0);
+    let status = coordinator
+        .query_one(
+            "SELECT state, owner_count, expected_record_count,
+                    copied_record_count, copied_bytes, peak_copy_batch_bytes,
+                    relation_bytes, coalesce(wal_bytes, 0),
+                    encode(content_digest, 'hex'), state_reason,
+                    coalesce(build_duration_ms, 0), active_pins, reclaim_eligible
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Ready'
+              ORDER BY ready_at DESC
+              LIMIT 1",
+            &[],
+        )
+        .await
+        .wrap_err("attesting coordinator traversal replica")?;
+    let attested_digest = status.get::<_, String>(8);
+    if status.get::<_, String>(0) != "Ready"
+        || status.get::<_, String>(9) != "ready"
+        || status.get::<_, i64>(11) != 0
+        || status.get::<_, bool>(12)
+        || attested_digest != replica
+    {
+        bail!("traversal replica build did not attest one matching unpinned Ready image");
+    }
+    lines.push(format!(
+        "physical_benchmark_traversal_replica scale={scale} state=Ready owners={} expected_records={} copied_records={} copied_bytes={} peak_copy_batch_bytes={} relation_bytes={} wal_bytes={} build_ms={} catalog_build_ms={} active_pins=0 reclaim_eligible=false content_digest={replica}",
+        status.get::<_, i32>(1),
+        status.get::<_, i64>(2),
+        status.get::<_, i64>(3),
+        status.get::<_, i64>(4),
+        status.get::<_, i64>(5),
+        status.get::<_, i64>(6),
+        status.get::<_, i64>(7),
+        replica_started.elapsed().as_millis(),
+        status.get::<_, i64>(10),
+    ));
+    let replay = coordinator
+        .query_one(
+            "SELECT encode(ec_distann_build_traversal_replica('dm_idx'::regclass), 'hex')",
+            &[],
+        )
+        .await
+        .wrap_err("replaying coordinator traversal replica build")?
+        .get::<_, String>(0);
+    if replay != replica {
+        bail!("idempotent traversal replica build returned a different digest");
+    }
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=idempotent_build_replay pass=true content_digest={replica}"
+    ));
+    Ok(replica)
+}
+
+async fn retire_and_reclaim_traversal_replica(
+    coordinator: &tokio_postgres::Client,
+) -> Result<(bool, bool)> {
+    coordinator
+        .execute(
+            "SELECT ec_distann_retire_traversal_replica('dm_idx'::regclass)",
+            &[],
+        )
+        .await?;
+    let retired = coordinator
+        .query_one(
+            "SELECT count(*) = 1
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Retiring' AND state_reason = 'explicit_retire'",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let reclaimed = coordinator
+        .query_one(
+            "SELECT ec_distann_reclaim_traversal_replica('dm_idx'::regclass)",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    Ok((retired, reclaimed))
+}
+
+async fn run_task199_replica_lifecycle_drills(
     coordinator: &tokio_postgres::Client,
     scale: &str,
     corpus: &str,
     queries: &str,
     content_digest: &str,
+    owner_baseline: &str,
 ) -> Result<Vec<String>> {
-    let owner =
-        task198_replica_semantic_result(coordinator, corpus, queries, false, -1, 0, 20).await?;
-    let replica =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
-    if replica != owner {
-        bail!("Task 198 Ready replica changed ordered semantic results");
+    let replica = task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+    if replica != owner_baseline {
+        bail!("Task 199 Ready replica changed ordered semantic results");
     }
     let mut lines = vec![format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=ready_semantic_identity pass=true content_digest={content_digest}"
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=normal_ready_semantic_identity pass=true content_digest={content_digest}"
     )];
 
-    let mut exercised_offset = None;
-    let mut fallback_count = 0;
-    for query_offset in 0..32 {
-        let expected = task198_replica_semantic_result(
-            coordinator,
-            corpus,
-            queries,
-            false,
-            -1,
-            query_offset,
-            64,
-        )
+    coordinator
+        .batch_execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
         .await?;
-        let restarted = task198_replica_semantic_result(
-            coordinator,
-            corpus,
-            queries,
-            true,
-            1,
-            query_offset,
-            64,
-        )
-        .await?;
-        if restarted != expected {
-            bail!(
-                "Task 198 mid-replica failure did not fully restart to identical owner results \
-                 for query offset {query_offset}"
-            );
-        }
-        fallback_count = coordinator
+    let isolation_error = task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20)
+        .await
+        .expect_err("Ready replica scan must reject REPEATABLE READ");
+    let _ = coordinator.batch_execute("ROLLBACK").await;
+    let isolation_pass = isolation_error
+        .to_string()
+        .contains("EC_TRANSACTION_ISOLATION")
+        && coordinator
             .query_one(
-                "SELECT value
-                   FROM ec_distann_materialization_work_snapshot()
-                  WHERE metric = 'replica_fallbacks'",
+                "SELECT count(*) = 1
+                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+                  WHERE state = 'Ready'",
                 &[],
             )
-            .await
-            .ok()
-            .map(|row| row.get::<_, i64>(0))
-            .unwrap_or(1);
-        if fallback_count > 0 {
-            exercised_offset = Some(query_offset);
-            break;
-        }
+            .await?
+            .get::<_, bool>(0);
+    if !isolation_pass {
+        bail!("Task 199 Ready replica isolation drill failed");
     }
-    let exercised_offset = exercised_offset.ok_or_else(|| {
-        color_eyre::eyre::eyre!("Task 198 could not exercise a second replica expansion batch")
-    })?;
     lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=mid_scan_full_restart pass=true fallback_count={fallback_count} query_offset={exercised_offset}"
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=repeatable_read_rejected_without_demotion pass=true token=EC_TRANSACTION_ISOLATION"
     ));
+
+    let has_fault_hooks = coordinator
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_stage_scoring_reset()') IS NOT NULL
+                    AND current_setting(
+                        'ec_distann.benchmark_traversal_replica_fail_batch', true
+                    ) IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let replacement_digest = if has_fault_hooks {
+        let mut exercised_offset = None;
+        let mut fallback_count = 0;
+        for query_offset in 0..32 {
+            let expected =
+                task198_replica_semantic_result(coordinator, corpus, queries, -1, query_offset, 64)
+                    .await?;
+            let restarted =
+                task198_replica_semantic_result(coordinator, corpus, queries, 1, query_offset, 64)
+                    .await?;
+            if restarted != expected {
+                bail!(
+                "Task 199 mid-replica failure did not fully restart to identical owner results \
+                 for query offset {query_offset}"
+            );
+            }
+            let row = coordinator
+                .query_one(
+                    "SELECT value
+                   FROM ec_distann_materialization_work_snapshot()
+                  WHERE metric = 'replica_fallbacks'",
+                    &[],
+                )
+                .await
+                .wrap_err("reading replica_fallbacks after the injected mid-scan failure")?;
+            fallback_count = row
+                .try_get::<_, i64>(0)
+                .wrap_err("decoding replica_fallbacks after the injected mid-scan failure")?;
+            if fallback_count == 1 {
+                exercised_offset = Some(query_offset);
+                break;
+            }
+            if fallback_count > 1 {
+                bail!("Task 199 mid-scan drill recorded more than one fallback");
+            }
+        }
+        let exercised_offset = exercised_offset.ok_or_else(|| {
+            color_eyre::eyre::eyre!("Task 199 could not exercise a second replica expansion batch")
+        })?;
+        let midscan_status = coordinator
+            .query_one(
+                "SELECT state, state_reason, last_error
+                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+                  ORDER BY build_started_at DESC LIMIT 1",
+                &[],
+            )
+            .await?;
+        if midscan_status.get::<_, String>(0) != "Stale"
+            || !midscan_status
+                .get::<_, String>(1)
+                .contains("replica traversal failed")
+            || !midscan_status
+                .get::<_, String>(2)
+                .contains("injected traversal replica failure")
+        {
+            bail!("Task 199 mid-scan failure was not durably diagnosed and demoted");
+        }
+        lines.push(format!(
+            "physical_benchmark_traversal_replica_fault scale={scale} scenario=mid_scan_full_restart pass=true fallback_count={fallback_count} query_offset={exercised_offset} state=Stale diagnosed=true"
+        ));
+
+        let (retired_after_fault, reclaimed_after_fault) =
+            retire_and_reclaim_traversal_replica(coordinator).await?;
+        if !retired_after_fault || !reclaimed_after_fault {
+            bail!("Task 199 could not reclaim the mid-scan failed replica");
+        }
+        build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?
+    } else {
+        lines.push(format!(
+            "physical_benchmark_traversal_replica_feature_isolation scale={scale} normal_release=true fault_hooks_absent=true selector_absent=true"
+        ));
+        content_digest.to_owned()
+    };
 
     let replica_relation = coordinator
         .query_one(
@@ -1471,30 +1639,66 @@ async fn run_task198_replica_lifecycle_drills(
     coordinator
         .batch_execute(&format!("TRUNCATE TABLE {replica_relation}"))
         .await
-        .wrap_err("truncating Task 198 replica for corruption fallback drill")?;
+        .wrap_err("truncating Task 199 replica for corruption fallback drill")?;
     let corrupt_fallback =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
-    if corrupt_fallback != owner {
-        bail!("Task 198 corrupt replica did not fall back to identical owner results");
+        task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+    if corrupt_fallback != owner_baseline {
+        bail!("Task 199 corrupt replica did not fall back to identical owner results");
     }
-    lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=corrupt_partial_image_fallback pass=true"
-    ));
-
-    let first_error = coordinator
+    let corrupt_status = coordinator
         .query_one(
-            "SELECT ec_distann_guard_traversal_replica_mutation('dm_idx'::regclass)",
+            "SELECT state, state_reason, last_error
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              ORDER BY build_started_at DESC LIMIT 1",
             &[],
         )
+        .await?;
+    if corrupt_status.get::<_, String>(0) != "Stale"
+        || !corrupt_status
+            .get::<_, String>(2)
+            .contains("replica traversal failed")
+    {
+        bail!("Task 199 corrupt Ready image was not diagnosed and demoted");
+    }
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=corrupt_partial_image_fallback pass=true state=Stale diagnosed=true replacement_digest={replacement_digest}"
+    ));
+
+    let (retired_after_corruption, reclaimed_after_corruption) =
+        retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired_after_corruption || !reclaimed_after_corruption {
+        bail!("Task 199 could not reclaim the corrupt replica");
+    }
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
+
+    let insert_sql = format!(
+        "WITH next_row AS (
+             SELECT coalesce(max(id), 0) + 1 AS id FROM {corpus}
+         ), seed AS (
+             SELECT source, embedding FROM {corpus} ORDER BY id LIMIT 1
+         )
+         INSERT INTO {corpus} (id, source_id, source, embedding)
+         SELECT next_row.id,
+                (substr(md5(next_row.id::text),1,8)||'-'||
+                 substr(md5(next_row.id::text),9,4)||'-4'||
+                 substr(md5(next_row.id::text),14,3)||'-8'||
+                 substr(md5(next_row.id::text),18,3)||'-'||
+                 substr(md5(next_row.id::text),21,12))::uuid,
+                seed.source, seed.embedding
+           FROM next_row CROSS JOIN seed
+         RETURNING id"
+    );
+    let first_error = coordinator
+        .query_one(&insert_sql, &[])
         .await
-        .expect_err("Ready replica mutation guard must fail the first attempt");
+        .expect_err("real INSERT must fail the first attempt while replica is Ready");
     let first_retryable = first_error
         .code()
         .is_some_and(|code| code.code() == "40001")
         && first_error
             .as_db_error()
-            .is_some_and(|error| error.message().contains("EC_REPLICA_INVALIDATED_RETRY"));
-    let state = coordinator
+            .is_some_and(|error| error.message().contains("EC_REPLICA_INVALIDATED"));
+    let state_after_error = coordinator
         .query_one(
             "SELECT state
                FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
@@ -1503,39 +1707,27 @@ async fn run_task198_replica_lifecycle_drills(
         )
         .await?
         .get::<_, String>(0);
-    let retry = coordinator
+    let inserted_id = coordinator
+        .query_one(&insert_sql, &[])
+        .await?
+        .get::<_, i64>(0);
+    let inserted_count = coordinator
         .query_one(
-            "SELECT ec_distann_guard_traversal_replica_mutation('dm_idx'::regclass)",
-            &[],
+            &format!("SELECT count(*)::bigint FROM {corpus} WHERE id = $1"),
+            &[&inserted_id],
         )
         .await?
-        .get::<_, bool>(0);
-    let stale_fallback =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
-    let mutation_pass = first_retryable && state == "Stale" && !retry && stale_fallback == owner;
+        .get::<_, i64>(0);
+    let mutation_pass = first_retryable && state_after_error == "Stale" && inserted_count == 1;
     lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=durable_mutation_invalidation pass={mutation_pass} first_sqlstate={} state_after_error={state} retry_guard={retry} owner_fallback_identity={}",
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=real_insert_durable_invalidation pass={mutation_pass} first_sqlstate={} token=EC_REPLICA_INVALIDATED state_after_error={state_after_error} retry_inserted_rows={inserted_count}",
         first_error.code().map(|code| code.code()).unwrap_or("none"),
-        stale_fallback == owner,
     ));
     if !mutation_pass {
-        bail!("Task 198 durable mutation invalidation drill failed");
+        bail!("Task 199 real INSERT invalidation drill failed");
     }
 
-    let retired = coordinator
-        .query_one(
-            "SELECT ec_distann_retire_traversal_replica('dm_idx'::regclass)",
-            &[],
-        )
-        .await?
-        .get::<_, bool>(0);
-    let reclaimed = coordinator
-        .query_one(
-            "SELECT ec_distann_reclaim_traversal_replica('dm_idx'::regclass)",
-            &[],
-        )
-        .await?
-        .get::<_, bool>(0);
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
     let replay = coordinator
         .query_one(
             "SELECT ec_distann_reclaim_traversal_replica('dm_idx'::regclass)",
@@ -1543,6 +1735,15 @@ async fn run_task198_replica_lifecycle_drills(
         )
         .await?
         .get::<_, bool>(0);
+    coordinator
+        .execute(
+            &format!("DELETE FROM {corpus} WHERE id = $1"),
+            &[&inserted_id],
+        )
+        .await?;
+    coordinator
+        .batch_execute(&format!("VACUUM {corpus}"))
+        .await?;
     let residue = coordinator
         .query_one(
             "SELECT count(*)::bigint
@@ -1552,14 +1753,15 @@ async fn run_task198_replica_lifecycle_drills(
         .await?
         .get::<_, i64>(0);
     let removed_fallback =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
-    let reclaim_pass = retired && reclaimed && !replay && residue == 0 && removed_fallback == owner;
+        task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+    let reclaim_pass =
+        retired && reclaimed && !replay && residue == 0 && removed_fallback == owner_baseline;
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=retire_reclaim_and_removed_fallback pass={reclaim_pass} retired={retired} reclaimed={reclaimed} replay={replay} catalog_residue={residue} owner_fallback_identity={}",
-        removed_fallback == owner,
+        removed_fallback == owner_baseline,
     ));
     if !reclaim_pass {
-        bail!("Task 198 retirement/reclaim drill failed");
+        bail!("Task 199 retirement/reclaim drill failed");
     }
     Ok(lines)
 }
@@ -1975,11 +2177,6 @@ async fn run_physical_benchmarks(
     let beam_width = args.beam_width.unwrap_or(4);
     let hop_rounds = args.hop_rounds.unwrap_or(100);
     let production_head_width = (beam_width * 2).max(32);
-    let explicit_seed_controls = args.seed_strategy.is_some()
-        || args.head_search_width.is_some()
-        || args.head_seed_count.is_some()
-        || args.neighbor_score_mode.is_some()
-        || !args.benchmark_seed_variants.is_empty();
     let seed_variants = if args.benchmark_seed_variants.is_empty() {
         vec![BenchmarkSeedVariant {
             name: "production".to_owned(),
@@ -2002,6 +2199,18 @@ async fn run_physical_benchmarks(
     } else {
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
     };
+    let explicit_seed_controls = args.seed_strategy.is_some()
+        || args.head_search_width.is_some()
+        || args.head_seed_count.is_some()
+        || args.neighbor_score_mode.is_some()
+        || seed_variants.iter().any(|variant| {
+            variant.strategy != "persisted_head"
+                || variant.head_search_width != production_head_width
+                || variant.head_seed_count != production_head_width
+                || variant.neighbor_score_mode != "rabitq"
+                || variant.materialization_batch_size != 10
+                || variant.owner_payload_plan_cache
+        });
     let corpus_prefix = args
         .corpus_prefix
         .as_deref()
@@ -2243,6 +2452,7 @@ async fn run_physical_benchmarks(
         .iter()
         .any(|variant| variant.traversal_replica);
     let mut traversal_replica_digest = None;
+    let mut traversal_owner_baseline = None;
     if traversal_replica_requested {
         let unavailable = nodes
             .last()
@@ -2288,60 +2498,6 @@ async fn run_physical_benchmarks(
         if !outage_pass {
             bail!("Task 198 owner-outage build drill left residue or did not fail");
         }
-        let replica_started = Instant::now();
-        let replica = coordinator
-            .query_one(
-                "SELECT encode(ec_distann_build_traversal_replica('dm_idx'::regclass), 'hex')",
-                &[],
-            )
-            .await
-            .wrap_err("building Task 198 coordinator traversal replica")?
-            .get::<_, String>(0);
-        let status = coordinator
-            .query_one(
-                "SELECT state, owner_count, expected_record_count,
-                        copied_record_count, copied_bytes, peak_copy_batch_bytes,
-                        relation_bytes,
-                        coalesce(wal_bytes, 0),
-                        encode(content_digest, 'hex')
-                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
-                  WHERE state = 'Ready'
-                  ORDER BY ready_at DESC
-                  LIMIT 1",
-                &[],
-            )
-            .await
-            .wrap_err("attesting Task 198 coordinator traversal replica")?;
-        let attested_digest = status.get::<_, String>(8);
-        if status.get::<_, String>(0) != "Ready" || attested_digest != replica {
-            bail!("Task 198 traversal replica build did not attest one matching Ready image");
-        }
-        lines.push(format!(
-            "physical_benchmark_traversal_replica scale={scale} state=Ready owners={} expected_records={} copied_records={} copied_bytes={} peak_copy_batch_bytes={} relation_bytes={} wal_bytes={} build_ms={} content_digest={replica}",
-            status.get::<_, i32>(1),
-            status.get::<_, i64>(2),
-            status.get::<_, i64>(3),
-            status.get::<_, i64>(4),
-            status.get::<_, i64>(5),
-            status.get::<_, i64>(6),
-            status.get::<_, i64>(7),
-            replica_started.elapsed().as_millis(),
-        ));
-        let replay = coordinator
-            .query_one(
-                "SELECT encode(ec_distann_build_traversal_replica('dm_idx'::regclass), 'hex')",
-                &[],
-            )
-            .await
-            .wrap_err("replaying Task 198 coordinator traversal replica build")?
-            .get::<_, String>(0);
-        if replay != replica {
-            bail!("Task 198 idempotent build replay returned a different digest");
-        }
-        lines.push(format!(
-            "physical_benchmark_traversal_replica_fault scale={scale} scenario=idempotent_build_replay pass=true content_digest={replica}"
-        ));
-        traversal_replica_digest = Some(replica);
     }
     let mut same_seed_digests =
         std::collections::HashMap::<(String, u32, u32), (String, String)>::new();
@@ -2504,6 +2660,11 @@ async fn run_physical_benchmarks(
         beam_width,
         hop_rounds,
     ));
+    // A traversal_replica=false arm is measured while no Ready image exists.
+    // Only after every owner/single control has completed do we build Ready and
+    // run the traversal_replica=true arms. This makes the production lifecycle,
+    // not a scan-path selector GUC, the A/B boundary.
+    benchmark_arms.sort_by_key(|arm| arm.9);
 
     for (
         arm,
@@ -2520,6 +2681,21 @@ async fn run_physical_benchmarks(
         arm_hop_rounds,
     ) in benchmark_arms
     {
+        if traversal_replica && traversal_replica_digest.is_none() {
+            traversal_owner_baseline = Some(
+                task198_replica_semantic_result(
+                    coordinator,
+                    &physical_corpus,
+                    &physical_queries,
+                    -1,
+                    0,
+                    20,
+                )
+                .await?,
+            );
+            traversal_replica_digest =
+                Some(build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?);
+        }
         let recall_log = log_dir.join(format!("{arm}-{variant}-recall.log"));
         let mut recall_args = common.clone();
         recall_args.extend([
@@ -2571,7 +2747,6 @@ async fn run_physical_benchmarks(
             }
             append_materialization_benchmark_guc(&mut recall_args, arm, materialization_batch_size);
             append_owner_payload_plan_cache_guc(&mut recall_args, arm, owner_payload_plan_cache);
-            append_traversal_replica_guc(&mut recall_args, arm, traversal_replica);
         }
         let recall = run_physical_bench_child(recall_args).await?;
         let row = benchmark_table_row(&recall)?;
@@ -2635,7 +2810,6 @@ async fn run_physical_benchmarks(
         }
         append_materialization_benchmark_guc(&mut latency_args, arm, materialization_batch_size);
         append_owner_payload_plan_cache_guc(&mut latency_args, arm, owner_payload_plan_cache);
-        append_traversal_replica_guc(&mut latency_args, arm, traversal_replica);
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
@@ -2755,12 +2929,15 @@ async fn run_physical_benchmarks(
             cache.get::<_, i64>(2),
         ));
         lines.extend(
-            run_task198_replica_lifecycle_drills(
+            run_task199_replica_lifecycle_drills(
                 coordinator,
                 scale,
                 &physical_corpus,
                 &physical_queries,
                 content_digest,
+                traversal_owner_baseline.as_deref().ok_or_else(|| {
+                    color_eyre::eyre::eyre!("traversal replica lifecycle has no owner baseline")
+                })?,
             )
             .await?,
         );

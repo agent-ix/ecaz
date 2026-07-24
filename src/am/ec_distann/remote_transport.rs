@@ -559,7 +559,6 @@ const PHYSICAL_SEED_SQL: &str = "SELECT vec_id, code_dist
    FROM ec_distann_physical_seed_candidates_benchmark(
        $1::text::regclass, $2::bytea, $3::real[], $4::integer)";
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 const TRAVERSAL_REPLICA_CHUNK_SQL: &str = "SELECT owner_ordinal, vec_id, graph_record, exact_vector
        FROM ec_distann_stream_traversal_replica_chunk(
            $1::text::regclass, $2::bytea, $3::bigint, $4::integer)";
@@ -663,7 +662,6 @@ async fn run_one_physical_seed(
         .collect()
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) struct DistannTraversalReplicaChunkRequest<'a> {
     pub(crate) conninfo: &'a str,
     pub(crate) index_regclass: &'a str,
@@ -672,7 +670,6 @@ pub(crate) struct DistannTraversalReplicaChunkRequest<'a> {
     pub(crate) limit: i32,
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_traversal_replica_chunk(
     request: &DistannTraversalReplicaChunkRequest<'_>,
 ) -> Result<Vec<super::generation_read::TraversalReplicaChunkRow>, DistannExpandError> {

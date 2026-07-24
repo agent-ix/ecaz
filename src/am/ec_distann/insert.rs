@@ -100,8 +100,10 @@ pub(super) fn select_insert_forward_neighbors(
     let mut pairwise = vec![vec![0.0_f32; n]; n];
     for left in 0..n {
         for right in (left + 1)..n {
-            let distance =
-                exact_distance(&candidates[left].source_vector, &candidates[right].source_vector);
+            let distance = exact_distance(
+                &candidates[left].source_vector,
+                &candidates[right].source_vector,
+            );
             pairwise[left][right] = distance;
             pairwise[right][left] = distance;
         }
@@ -183,7 +185,11 @@ pub(super) fn plan_insert_backlink(
         return Err("ec_distann backlink planning max_degree must be > 0".to_owned());
     }
     // Already linked (idempotent — a re-inserted/duplicate edge is a no-op).
-    if target.current_neighbors.iter().any(|n| n.vec_id == new_vec_id) {
+    if target
+        .current_neighbors
+        .iter()
+        .any(|n| n.vec_id == new_vec_id)
+    {
         return Ok(target.current_neighbors.iter().map(|n| n.vec_id).collect());
     }
     // Free slot: append, preserving existing edges.
@@ -306,8 +312,11 @@ pub(super) unsafe fn graph_insert_record(
     let new_code = binding.encode(new_source_vector);
 
     // Directory first — the descent and the collision guard both need it.
-    let directory =
-        read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)?;
+    let directory = read_directory_from_relation(
+        handle,
+        metadata.directory_head,
+        metadata.node_count as usize,
+    )?;
     // 167-003-P2: reject a vec_id collision BEFORE appending. The directory is a
     // strict-ascending vec_id set (the reader rejects duplicates); a duplicate
     // insert (e.g. a retried fold) must error, never append a second record for
@@ -395,7 +404,10 @@ pub(super) unsafe fn graph_insert_record(
         })?;
         let raw = read_raw_tuple_bytes_from_relation(handle, tid, "ec_distann insert forward")?;
         let node = DistannNodeTuple::decode(&raw, graph_degree_r, code_len)?;
-        forward.push(DistannInsertNeighbor { vec_id: fid, code: node.search_code });
+        forward.push(DistannInsertNeighbor {
+            vec_id: fid,
+            code: node.search_code,
+        });
         forward_tids.push(tid);
     }
 
@@ -474,6 +486,7 @@ fn ec_distann_fold_delta_into_graph(index_regclass: pg_sys::Oid) -> i64 {
 
 fn fold_delta_into_graph_impl(index_oid: pg_sys::Oid) -> Result<i64, String> {
     super::lifecycle_guard::require_read_committed("ec_distann_fold_delta_into_graph")?;
+    super::traversal_replica::guard_traversal_replica_mutation(index_oid);
     let guard = IndexRelationGuard::open(
         index_oid,
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
@@ -527,7 +540,10 @@ fn append_node_record(handle: RelationHandle, payload: Vec<u8>) -> Result<ItemPo
             .map_err(|e| format!("ec_distann graph insert node add failed: {e:?}"))?
     };
     wal_txn.finish();
-    Ok(ItemPointer { block_number, offset_number })
+    Ok(ItemPointer {
+        block_number,
+        offset_number,
+    })
 }
 
 /// Amend a forward neighbor's adjacency to include `new_vec_id`, WAL-logged in
@@ -556,7 +572,10 @@ fn add_backlink(
         pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
     )
     .ok_or_else(|| {
-        format!("ec_distann backlink: could not open block {}", neighbor_tid.block_number)
+        format!(
+            "ec_distann backlink: could not open block {}",
+            neighbor_tid.block_number
+        )
     })?;
     let r = usize::from(graph_degree_r);
     let vec_ids_off = distann_node_neighbor_vec_ids_offset(code_len);
@@ -716,8 +735,8 @@ mod tests {
         let samples = vec![
             (10_u64, vec![0.99, 0.01, 0.0]), // closest
             (20, vec![0.0, 1.0, 0.0]),
-            (30, vec![0.9, 0.1, 0.0]),   // 2nd closest
-            (40, vec![-1.0, 0.0, 0.0]),  // farthest
+            (30, vec![0.9, 0.1, 0.0]),  // 2nd closest
+            (40, vec![-1.0, 0.0, 0.0]), // farthest
         ];
         let ranked = rank_insert_candidates(&new_vec, &samples, 2).unwrap();
         assert_eq!(ranked.len(), 2, "limit respected");
@@ -743,12 +762,21 @@ mod tests {
         let r: u16 = 4;
         let code_len = 8;
         let fwd = vec![
-            DistannInsertNeighbor { vec_id: 111, code: vec![1_u8; code_len] },
-            DistannInsertNeighbor { vec_id: 222, code: vec![2_u8; code_len] },
+            DistannInsertNeighbor {
+                vec_id: 111,
+                code: vec![1_u8; code_len],
+            },
+            DistannInsertNeighbor {
+                vec_id: 222,
+                code: vec![2_u8; code_len],
+            },
         ];
         let node = build_insert_node_tuple(
             999,
-            ItemPointer { block_number: 3, offset_number: 7 },
+            ItemPointer {
+                block_number: 3,
+                offset_number: 7,
+            },
             vec![9_u8; code_len],
             &fwd,
             r,
@@ -756,15 +784,24 @@ mod tests {
         )
         .unwrap();
         assert_eq!(node.vec_id, 999);
-        assert_eq!(node.neighbor_count, 2, "count = real neighbors, not padding");
+        assert_eq!(
+            node.neighbor_count, 2,
+            "count = real neighbors, not padding"
+        );
         assert_eq!(node.neighbor_vec_ids.len(), r as usize, "fixed R slots");
         assert_eq!(node.neighbor_vec_ids[0], 111);
-        assert_eq!(node.neighbor_vec_ids[2], 0, "slots past count are zero-padded");
+        assert_eq!(
+            node.neighbor_vec_ids[2], 0,
+            "slots past count are zero-padded"
+        );
         assert!(!node.tombstoned);
         // Round-trips through the on-disk encoding at fixed length.
         let encoded = node.encode(r, code_len).unwrap();
         assert_eq!(encoded.len(), DistannNodeTuple::encoded_len(r, code_len));
-        assert_eq!(DistannNodeTuple::decode(&encoded, r, code_len).unwrap(), node);
+        assert_eq!(
+            DistannNodeTuple::decode(&encoded, r, code_len).unwrap(),
+            node
+        );
     }
 
     #[test]
@@ -772,11 +809,21 @@ mod tests {
         let code_len = 8;
         // Too many neighbors for R.
         let many: Vec<_> = (0..5)
-            .map(|i| DistannInsertNeighbor { vec_id: i, code: vec![0_u8; code_len] })
+            .map(|i| DistannInsertNeighbor {
+                vec_id: i,
+                code: vec![0_u8; code_len],
+            })
             .collect();
         assert!(
-            build_insert_node_tuple(1, ItemPointer::INVALID, vec![0; code_len], &many, 4, code_len)
-                .is_err(),
+            build_insert_node_tuple(
+                1,
+                ItemPointer::INVALID,
+                vec![0; code_len],
+                &many,
+                4,
+                code_len
+            )
+            .is_err(),
             "neighbors > R rejected"
         );
         // Wrong search_code length.
@@ -785,10 +832,20 @@ mod tests {
             "search_code len mismatch rejected"
         );
         // Wrong neighbor code length.
-        let bad = vec![DistannInsertNeighbor { vec_id: 1, code: vec![0_u8; 4] }];
+        let bad = vec![DistannInsertNeighbor {
+            vec_id: 1,
+            code: vec![0_u8; 4],
+        }];
         assert!(
-            build_insert_node_tuple(1, ItemPointer::INVALID, vec![0; code_len], &bad, 4, code_len)
-                .is_err(),
+            build_insert_node_tuple(
+                1,
+                ItemPointer::INVALID,
+                vec![0; code_len],
+                &bad,
+                4,
+                code_len
+            )
+            .is_err(),
             "neighbor code len mismatch rejected"
         );
     }
@@ -805,7 +862,11 @@ mod tests {
             ],
         };
         let kept = plan_insert_backlink(&target, 999, &[0.95, 0.05, 0.0], 1.2, 4).unwrap();
-        assert_eq!(kept, vec![10, 20, 999], "free slot -> append, edges preserved");
+        assert_eq!(
+            kept,
+            vec![10, 20, 999],
+            "free slot -> append, edges preserved"
+        );
     }
 
     #[test]
@@ -831,16 +892,26 @@ mod tests {
         let target = DistannBacklinkTarget {
             vec_id: 100,
             source_vector: vec![1.0, 0.0, 0.0],
-            current_neighbors: vec![candidate(999, &[0.9, 0.1, 0.0]), candidate(10, &[0.8, 0.2, 0.0])],
+            current_neighbors: vec![
+                candidate(999, &[0.9, 0.1, 0.0]),
+                candidate(10, &[0.8, 0.2, 0.0]),
+            ],
         };
         let kept = plan_insert_backlink(&target, 999, &[0.9, 0.1, 0.0], 1.2, 4).unwrap();
-        assert_eq!(kept, vec![999, 10], "already-linked -> unchanged (idempotent)");
+        assert_eq!(
+            kept,
+            vec![999, 10],
+            "already-linked -> unchanged (idempotent)"
+        );
     }
 
     #[test]
     fn select_rejects_bad_input() {
         let source = [1.0_f32, 0.0];
-        assert!(select_insert_forward_neighbors(&[], &[], 1.2, 3).is_err(), "empty source");
+        assert!(
+            select_insert_forward_neighbors(&[], &[], 1.2, 3).is_err(),
+            "empty source"
+        );
         assert!(
             select_insert_forward_neighbors(&source, &[], 0.5, 3).is_err(),
             "alpha < 1.0"

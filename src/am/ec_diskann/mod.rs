@@ -11,7 +11,7 @@ pub(crate) use self::ambuild::{debug_last_build_timing, BuildTimingSnapshot};
 // reuse posture: shared Vamana-family machinery lives here, not forked).
 pub(crate) use self::ambuild::{
     decode_heap_tid, default_group_size, ecvector_datum_to_vec, source_inner_product,
-    source_inner_product_distance, write_data_pages,
+    source_inner_product_deterministic, source_inner_product_distance, write_data_pages,
 };
 pub(crate) use self::routine::{exact_heap_rerank_distance, fetch_heap_source_vector};
 pub(crate) use self::scan_state::{set_scan_heap_tid, DiskannScanDescView};
