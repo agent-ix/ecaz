@@ -27,8 +27,8 @@ as a production default.
 
 The packet also records a harness gap: the 20-row fault query did not reach
 the injected second batch, and packet 003's apparent pass was a stale-counter
-false positive. `cd47011d1` and `446f4c581` use a bounded 64-row request,
-deterministic offset selection, and access-method planner forcing to require a
-genuine failure after one completed replica expansion, preserving
-owner-result identity throughout. Packet 005 owns the corrected completion
-run.
+false positive. `cd47011d1`, `446f4c581`, and `f5b6653de` use a bounded
+64-row request, deterministic offset selection, access-method planner
+forcing, and the actual production CustomScan query shape to require a genuine
+failure after one completed replica expansion, preserving owner-result
+identity throughout. Packet 005 owns the corrected completion run.

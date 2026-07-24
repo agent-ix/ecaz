@@ -1,7 +1,7 @@
 # Task 198 packet 004 artifact manifest
 
 - Branch head at measurement: `c2e158042a49406fa934655efba1fb34f5736577`
-- Branch head including the final fixture correction: `446f4c581`
+- Branch head including the final fixture correction: `f5b6653de`
 - Installed extension SHA: `2ff72b3e49609c44cec881f72edf183a83554412`
 - Task bucket: `reviews/task-198/004-isolated-100k/`
 - Lane: Intel local, three independent PG18 owner processes; owner zero is
@@ -67,10 +67,12 @@ packet 003's apparent pass had read a stale counter from its preceding
 correctness scenario. A first bounded 64-row correction then exposed the
 planner selecting a sequential scan at 10k. Commits `cd47011d1` and
 `446f4c581` therefore combine that bounded request with `enable_seqscan=off`
-in both semantic arms, requiring the dedicated drill to enter the access
-method and reach a second expansion while checking owner-result identity on
-every attempted query. Packet 005 reruns the corrected drill as part of the
-completion matrix.
+in both semantic arms. That forcing exposed an extra `id` tie-break in the
+inner query that bypassed the production CustomScan shape; `f5b6653de`
+removes the inner tie-break while retaining deterministic outer aggregation.
+The dedicated drill must now enter the same CustomScan path and reach a
+second expansion while checking owner-result identity on every attempted
+query. Packet 005 reruns the corrected drill as part of the completion matrix.
 
 ## Decision
 
