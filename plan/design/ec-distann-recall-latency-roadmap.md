@@ -256,7 +256,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-25 | Reduce async runtime/context transitions | conditional on client/runtime share |
 | TRAV-26 | Persist owner query-preparation state | unmeasured; query-digest reuse already exists |
 | TRAV-27 | Straggler-aware owner scheduling and tail accounting | active diagnostic |
-| TRAV-28 | Replicated coordinator top-layer graph | deferred Task 190 architecture |
+| TRAV-28 | Replicated coordinator top-layer graph | selected by Task 190 as the broader fingerprint-bound traversal-replica direction; Task 198 gates feasibility and full replica scope |
 | TRAV-29 | Replicated frequently traversed bridge nodes | deferred Task 190 architecture |
 | TRAV-30 | Routing-only gateway copies without full graph replication | deferred Task 190 architecture |
 
@@ -312,13 +312,13 @@ Task 190 may compare architectures but may not implement several together.
 | ID | Candidate | Status / trigger |
 | --- | --- | --- |
 | ARCH-01 | Compact global seed index resident at coordinator | deferred Task 190 |
-| ARCH-02 | Replicated global routing layer over sharded lower graph | deferred Task 190 |
+| ARCH-02 | Replicated global routing layer over sharded lower graph | **selected by Task 190 for Task 198**, as a rebuildable coordinator traversal replica; no production promotion yet |
 | ARCH-03 | Graph/community-aware placement instead of hash placement | deferred; FR-078/ADR-085 replacement |
 | ARCH-04 | Hash ownership plus replicated boundary nodes | deferred Task 190 |
 | ARCH-05 | Columnar/packed immutable row tier | deferred; storage format decision |
 | ARCH-06 | Covering payload sidecars for common projections | deferred; workload/storage decision |
-| ARCH-07 | Dedicated binary RPC instead of SQL-function transport | deferred protocol decision |
-| ARCH-08 | Shared-memory or Unix-domain same-host transport | deferred topology-specific path |
+| ARCH-07 | Dedicated binary RPC instead of SQL-function transport | rejected for this escalation: measured encode/decode/connection work is only 0.071 ms/scan and the ten sequential remote/backend boundaries remain; reopen only with an independently measured transport-service premise |
+| ARCH-08 | Shared-memory or Unix-domain same-host transport | rejected for this escalation: it optimizes the same-host benchmark topology but neither serves genuinely remote owners nor removes sequential owner boundaries; reopen only for an explicitly same-host deployment product |
 | ARCH-09 | GPU/SIMD exhaustive compact-head scoring | deferred accelerator path |
 | ARCH-10 | GPU-batched head and traversal scoring | deferred throughput architecture |
 | ARCH-11 | Cross-query batching to amortize transport/scoring | deferred throughput task |
