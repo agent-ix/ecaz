@@ -1338,11 +1338,40 @@ async fn task198_replica_semantic_result(
             if replica { "on" } else { "off" },
         ))
         .await?;
-    coordinator
+    let has_payload = coordinator
         .query_one(
-            &materialization_semantic_sql(corpus, queries, "TRUE", 20, 0),
-            &[],
+            "SELECT EXISTS (
+                 SELECT 1 FROM pg_attribute
+                  WHERE attrelid = $1::regclass
+                    AND attname = 'payload_note'
+                    AND NOT attisdropped
+             )",
+            &[&corpus],
         )
+        .await?
+        .get::<_, bool>(0);
+    let sql = if has_payload {
+        materialization_semantic_sql(corpus, queries, "TRUE", 20, 0)
+    } else {
+        format!(
+            "WITH query_vector AS (
+                 SELECT source FROM {queries} ORDER BY id LIMIT 1
+             )
+             SELECT COALESCE(
+                        jsonb_agg(to_jsonb(result) ORDER BY result.distance, result.id)::text,
+                        '[]'
+                    )
+               FROM (
+                 SELECT id, source_id::text AS source_id,
+                        embedding <#> (SELECT source FROM query_vector) AS distance
+                   FROM {corpus}
+                  ORDER BY embedding <#> (SELECT source FROM query_vector), id
+                  LIMIT 20
+               ) result"
+        )
+    };
+    coordinator
+        .query_one(&sql, &[])
         .await?
         .try_get::<_, String>(0)
         .wrap_err("decoding Task 198 semantic result")

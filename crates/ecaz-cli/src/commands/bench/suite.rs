@@ -3349,9 +3349,25 @@ impl SuiteStep {
                                     && same_search(control, candidate)
                             })
                     });
-                    if !has_plan_pair && !has_batch_pair {
+                    let has_traversal_pair = step.benchmark_seed_variants.iter().any(|control| {
+                        !control.traversal_replica
+                            && step.benchmark_seed_variants.iter().any(|candidate| {
+                                candidate.traversal_replica
+                                    && candidate.materialization_batch_size
+                                        == control.materialization_batch_size
+                                    && candidate.owner_payload_plan_cache
+                                        == control.owner_payload_plan_cache
+                                    && candidate.seed_strategy == control.seed_strategy
+                                    && candidate.head_search_width == control.head_search_width
+                                    && candidate.head_seed_count == control.head_seed_count
+                                    && candidate.neighbor_score_mode == control.neighbor_score_mode
+                                    && candidate.beam_width == control.beam_width
+                                    && candidate.hop_rounds == control.hop_rounds
+                            })
+                    });
+                    if !has_plan_pair && !has_batch_pair && !has_traversal_pair {
                         bail!(
-                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan off/on pair or eager/lazy10 pair",
+                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan off/on, eager/lazy10, or owner/replica pair",
                             step.name
                         )
                     }
