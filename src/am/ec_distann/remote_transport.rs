@@ -958,11 +958,17 @@ async fn run_one_physical_expand(
             let is_tombstone: bool = row.try_get(2).map_err(row_err)?;
             let neighbor_vec_ids: Vec<i64> = row.try_get(3).map_err(row_err)?;
             let neighbor_code_dists: Vec<f32> = row.try_get(4).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
             let owner_total_ns: i64 = row.try_get(5).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
             let owner_open_validate_ns: i64 = row.try_get(6).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
             let owner_graph_read_ns: i64 = row.try_get(7).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
             let owner_score_ns: i64 = row.try_get(8).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
             let owner_response_encode_ns: i64 = row.try_get(9).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
             let owner_response_bytes: i64 = row.try_get(10).map_err(row_err)?;
             Ok(DistannExpandedNode {
                 vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
@@ -974,12 +980,30 @@ async fn run_one_physical_expand(
                     .map(|id| u64::from_le_bytes(id.to_le_bytes()))
                     .collect(),
                 neighbor_code_dists,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
                 owner_total_ns,
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                owner_total_ns: 0,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
                 owner_open_validate_ns,
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                owner_open_validate_ns: 0,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
                 owner_graph_read_ns,
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                owner_graph_read_ns: 0,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
                 owner_score_ns,
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                owner_score_ns: 0,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
                 owner_response_encode_ns,
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                owner_response_encode_ns: 0,
+                #[cfg(feature = "distann-head-attribution-benchmark")]
                 owner_response_bytes,
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                owner_response_bytes: 0,
                 coordinator_rpc_ns: 0,
                 coordinator_decode_ns: 0,
             })
