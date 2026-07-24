@@ -1,7 +1,7 @@
 # Task 198: ec_distann Coordinator Traversal Replica
 
-Status: **proposed by Task 190 / ADR-086** (2026-07-23). Priority: P2
-architecture implementation and measurement.
+Status: **in progress** (2026-07-23; Phase 1 contract and format). Priority:
+P2 architecture implementation and measurement.
 
 ## Why
 
@@ -169,5 +169,5 @@ Output either:
 
 - ADR-085 and ADR-086.
 - Tasks 184, 187, 191, 194, 195, and 197.
-- FR-078 through FR-083 and NFR-017 through NFR-020.
+- FR-078 through FR-084 and NFR-017 through NFR-020.
 - `plan/design/ec-distann-recall-latency-roadmap.md`.

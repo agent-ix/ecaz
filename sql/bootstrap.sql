@@ -951,6 +951,99 @@ CREATE TABLE ec_distann_active_epoch (
     )
 );
 
+-- FR-084 coordinator-local derived traversal copy. The replica is not an
+-- epoch or payload authority; owner generations and the active pointer remain
+-- authoritative. Physical relation OIDs are local implementation details.
+CREATE TABLE ec_distann_traversal_replica (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL CHECK (
+        (get_byte(uuid_send(build_id), 6) & 240) = 64
+        AND (get_byte(uuid_send(build_id), 8) & 192) = 128
+    ),
+    epoch_fingerprint bytea NOT NULL CHECK (octet_length(epoch_fingerprint) = 34),
+    generation_descriptor_digest bytea NOT NULL CHECK (
+        octet_length(generation_descriptor_digest) = 32
+    ),
+    content_digest bytea CHECK (
+        content_digest IS NULL OR octet_length(content_digest) = 32
+    ),
+    state text NOT NULL CHECK (
+        state IN ('Building', 'Ready', 'Stale', 'Retiring')
+    ),
+    replica_relid oid NOT NULL CHECK (replica_relid <> '0'::oid),
+    directory_relid oid NOT NULL CHECK (directory_relid <> '0'::oid),
+    format_version smallint NOT NULL CHECK (format_version = 1),
+    dimensions integer NOT NULL CHECK (dimensions > 0 AND dimensions <= 65535),
+    graph_degree integer NOT NULL CHECK (graph_degree > 0 AND graph_degree <= 65535),
+    neighbor_codec_kind smallint NOT NULL CHECK (
+        neighbor_codec_kind > 0 AND neighbor_codec_kind <= 255
+    ),
+    owner_count integer NOT NULL CHECK (owner_count > 0),
+    expected_record_count bigint NOT NULL CHECK (expected_record_count > 0),
+    copied_record_count bigint NOT NULL DEFAULT 0 CHECK (copied_record_count >= 0),
+    copied_bytes bigint NOT NULL DEFAULT 0 CHECK (copied_bytes >= 0),
+    wal_bytes bigint CHECK (wal_bytes IS NULL OR wal_bytes >= 0),
+    build_started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    ready_at timestamptz,
+    stale_at timestamptz,
+    retiring_at timestamptz,
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id),
+    UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint),
+    UNIQUE (replica_relid),
+    UNIQUE (directory_relid),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_build_candidate (index_oid, logical_index_uuid, build_id)
+        ON DELETE CASCADE,
+    CHECK (copied_record_count <= expected_record_count),
+    CHECK (
+        (state = 'Building'
+         AND content_digest IS NULL
+         AND ready_at IS NULL
+         AND stale_at IS NULL
+         AND retiring_at IS NULL)
+        OR
+        (state = 'Ready'
+         AND content_digest IS NOT NULL
+         AND copied_record_count = expected_record_count
+         AND ready_at IS NOT NULL
+         AND stale_at IS NULL
+         AND retiring_at IS NULL)
+        OR
+        (state = 'Stale'
+         AND content_digest IS NOT NULL
+         AND copied_record_count = expected_record_count
+         AND ready_at IS NOT NULL
+         AND stale_at IS NOT NULL
+         AND retiring_at IS NULL)
+        OR
+        (state = 'Retiring'
+         AND content_digest IS NOT NULL
+         AND copied_record_count = expected_record_count
+         AND ready_at IS NOT NULL
+         AND retiring_at IS NOT NULL)
+    )
+);
+
+CREATE TABLE ec_distann_traversal_replica_owner (
+    index_oid oid NOT NULL,
+    logical_index_uuid uuid NOT NULL,
+    build_id uuid NOT NULL,
+    owner_ordinal integer NOT NULL CHECK (owner_ordinal >= 0),
+    expected_record_count bigint NOT NULL CHECK (expected_record_count >= 0),
+    copied_record_count bigint NOT NULL CHECK (copied_record_count >= 0),
+    content_digest bytea NOT NULL CHECK (octet_length(content_digest) = 32),
+    copied_bytes bigint NOT NULL CHECK (copied_bytes >= 0),
+    completed_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, logical_index_uuid, build_id, owner_ordinal),
+    FOREIGN KEY (index_oid, logical_index_uuid, build_id)
+        REFERENCES ec_distann_traversal_replica (
+            index_oid, logical_index_uuid, build_id
+        )
+        ON DELETE CASCADE,
+    CHECK (copied_record_count = expected_record_count)
+);
+
 REVOKE ALL ON TABLE ec_distann_participant_identity FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_registry_state FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_node_descriptor FROM PUBLIC;
@@ -963,6 +1056,8 @@ REVOKE ALL ON TABLE ec_distann_publish_decision FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_predecessor_disposition FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_retire_decision FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_active_epoch FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_traversal_replica FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_traversal_replica_owner FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_generation_reclaim FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_cancelled_generation_reclaim FROM PUBLIC;
 
