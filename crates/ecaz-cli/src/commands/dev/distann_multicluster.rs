@@ -1334,6 +1334,7 @@ async fn task198_replica_semantic_result(
     coordinator
         .batch_execute(&format!(
             "SET ec_distann.benchmark_seed_mode = 'persisted_head';
+             SET enable_seqscan = off;
              SET ec_distann.benchmark_head_search_width = 32;
              SET ec_distann.benchmark_head_seed_count = 32;
              SET ec_distann.benchmark_exact_neighbor = off;
