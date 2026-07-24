@@ -983,6 +983,7 @@ CREATE TABLE ec_distann_traversal_replica (
     expected_record_count bigint NOT NULL CHECK (expected_record_count > 0),
     copied_record_count bigint NOT NULL DEFAULT 0 CHECK (copied_record_count >= 0),
     copied_bytes bigint NOT NULL DEFAULT 0 CHECK (copied_bytes >= 0),
+    relation_bytes bigint CHECK (relation_bytes IS NULL OR relation_bytes >= 0),
     wal_bytes bigint CHECK (wal_bytes IS NULL OR wal_bytes >= 0),
     build_started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     ready_at timestamptz,

@@ -42,10 +42,13 @@ pub(crate) enum DistannQueryStage {
     TraversalCoordinatorReceiveDecode,
     TraversalCoordinatorDecode,
     TraversalFrontierInsert,
+    ReplicaOpenValidate,
+    ReplicaGraphVectorRead,
+    ReplicaScore,
 }
 
 impl DistannQueryStage {
-    pub(crate) const ALL: [Self; 34] = [
+    pub(crate) const ALL: [Self; 37] = [
         Self::QueryPrep,
         Self::HeadScore,
         Self::SeedSelect,
@@ -80,6 +83,9 @@ impl DistannQueryStage {
         Self::TraversalCoordinatorReceiveDecode,
         Self::TraversalCoordinatorDecode,
         Self::TraversalFrontierInsert,
+        Self::ReplicaOpenValidate,
+        Self::ReplicaGraphVectorRead,
+        Self::ReplicaScore,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -118,6 +124,9 @@ impl DistannQueryStage {
             Self::TraversalCoordinatorReceiveDecode => "traversal_coordinator_receive_decode",
             Self::TraversalCoordinatorDecode => "traversal_coordinator_decode",
             Self::TraversalFrontierInsert => "traversal_frontier_insert",
+            Self::ReplicaOpenValidate => "replica_open_validate",
+            Self::ReplicaGraphVectorRead => "replica_graph_vector_read",
+            Self::ReplicaScore => "replica_score",
         }
     }
 
@@ -157,6 +166,9 @@ impl DistannQueryStage {
             Self::TraversalCoordinatorReceiveDecode => 31,
             Self::TraversalCoordinatorDecode => 32,
             Self::TraversalFrontierInsert => 33,
+            Self::ReplicaOpenValidate => 34,
+            Self::ReplicaGraphVectorRead => 35,
+            Self::ReplicaScore => 36,
         }
     }
 }
@@ -193,10 +205,12 @@ pub(crate) enum DistannMaterializationWork {
     TraversalQueryCacheMisses,
     TraversalRequestBytes,
     TraversalResponseBytes,
+    ReplicaScans,
+    ReplicaFallbacks,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 25] = [
+    pub(crate) const ALL: [Self; 27] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -222,6 +236,8 @@ impl DistannMaterializationWork {
         Self::TraversalQueryCacheMisses,
         Self::TraversalRequestBytes,
         Self::TraversalResponseBytes,
+        Self::ReplicaScans,
+        Self::ReplicaFallbacks,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -251,6 +267,8 @@ impl DistannMaterializationWork {
             Self::TraversalQueryCacheMisses => "traversal_query_cache_misses",
             Self::TraversalRequestBytes => "traversal_request_bytes",
             Self::TraversalResponseBytes => "traversal_response_bytes",
+            Self::ReplicaScans => "replica_scans",
+            Self::ReplicaFallbacks => "replica_fallbacks",
         }
     }
 
@@ -281,6 +299,8 @@ impl DistannMaterializationWork {
             Self::TraversalQueryCacheMisses => 22,
             Self::TraversalRequestBytes => 23,
             Self::TraversalResponseBytes => 24,
+            Self::ReplicaScans => 25,
+            Self::ReplicaFallbacks => 26,
         }
     }
 }

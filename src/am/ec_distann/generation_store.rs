@@ -71,6 +71,13 @@ pub(crate) struct GenerationRelations {
     pub(crate) directory_relid: pg_sys::Oid,
 }
 
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct TraversalReplicaRelations {
+    pub(crate) replica_relid: pg_sys::Oid,
+    pub(crate) directory_relid: pg_sys::Oid,
+}
+
 fn relation_exists(relation_oid: pg_sys::Oid) -> bool {
     relation_oid != pg_sys::InvalidOid && unsafe { pg_sys::get_rel_relkind(relation_oid) } != 0
 }
@@ -318,6 +325,16 @@ fn generation_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String,
     )
 }
 
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn traversal_replica_relation_names(index_oid: pg_sys::Oid, build_id: Uuid) -> (String, String) {
+    let suffix = hex::encode(build_id.as_bytes());
+    let oid = u32::from(index_oid);
+    (
+        format!("_ecdz_replica_{oid}_{suffix}"),
+        format!("_ecdz_replica_dir_{oid}_{suffix}"),
+    )
+}
+
 fn tablespace_clause(index_handle: RelationHandle) -> Result<String, String> {
     let explicit_tablespace_oid = relation_tablespace_handle(index_handle);
     // reltablespace=0 means the database default. Spell the effective
@@ -490,6 +507,70 @@ fn create_generation_relations(
     Ok(relations)
 }
 
+#[cfg(feature = "distann-head-attribution-benchmark")]
+pub(crate) fn create_traversal_replica_relations(
+    index_oid: pg_sys::Oid,
+    build_id: Uuid,
+) -> Result<TraversalReplicaRelations, String> {
+    let (control, index_handle, _metadata, _logical_index_uuid) = open_control_index(
+        index_oid,
+        pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
+        "traversal replica build",
+    )?;
+    let (namespace_oid, owner_oid, persistence) =
+        relation_namespace_owner_persistence_handle(index_handle);
+    if persistence != pg_sys::RELPERSISTENCE_PERMANENT as std::ffi::c_char {
+        return Err("EC_CONTROL_PERSISTENCE: traversal replica must be permanent".to_owned());
+    }
+    let namespace = cstring_owned(
+        unsafe { pg_sys::get_namespace_name(namespace_oid) },
+        "control-index namespace",
+    )?;
+    let owner = cstring_owned(
+        unsafe { pg_sys::GetUserNameFromId(owner_oid, false) },
+        "control-index owner",
+    )?;
+    let tablespace = tablespace_clause(index_handle)?;
+    let (replica_name, directory_name) = traversal_replica_relation_names(index_oid, build_id);
+    for name in [&replica_name, &directory_name] {
+        if relation_oid_by_name(namespace_oid, name).is_ok() {
+            return Err(
+                "EC_REPLICA_STATE: deterministic traversal replica relation exists without a reusable catalog identity"
+                    .to_owned(),
+            );
+        }
+    }
+    let qualified_replica = format!("{}.{}", quote_ident(&namespace), quote_ident(&replica_name));
+    Spi::run(&format!(
+        "CREATE TABLE {qualified_replica} (
+             vec_id bigint NOT NULL,
+             owner_ordinal integer NOT NULL,
+             graph_record bytea NOT NULL,
+             exact_vector bytea NOT NULL
+         ){tablespace}"
+    ))
+    .map_err(|error| format!("EC_REPLICA_STATE: replica relation creation failed: {error}"))?;
+    Spi::run(&format!(
+        "CREATE UNIQUE INDEX {} ON {qualified_replica} (vec_id){tablespace}",
+        quote_ident(&directory_name)
+    ))
+    .map_err(|error| format!("EC_REPLICA_STATE: replica directory creation failed: {error}"))?;
+    Spi::run(&format!(
+        "ALTER TABLE {qualified_replica} OWNER TO {}",
+        quote_ident(&owner)
+    ))
+    .map_err(|error| format!("EC_REPLICA_STATE: replica ownership change failed: {error}"))?;
+    let relations = TraversalReplicaRelations {
+        replica_relid: relation_oid_by_name(namespace_oid, &replica_name)?,
+        directory_relid: relation_oid_by_name(namespace_oid, &directory_name)?,
+    };
+    record_internal_dependency(relations.replica_relid, index_oid);
+    record_internal_dependency(relations.directory_relid, index_oid);
+    unsafe { pg_sys::CommandCounterIncrement() };
+    drop(control);
+    Ok(relations)
+}
+
 fn drop_relation_internal(
     relation_oid: pg_sys::Oid,
     control_oid: pg_sys::Oid,
@@ -535,6 +616,17 @@ pub(crate) fn drop_generation_relations(
     drop_relation_internal(relations.directory_relid, control_oid)?;
     drop_relation_internal(relations.graph_store_relid, control_oid)?;
     drop_relation_internal(relations.row_tier_relid, control_oid)?;
+    unsafe { pg_sys::CommandCounterIncrement() };
+    Ok(())
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+pub(crate) fn drop_traversal_replica_relations(
+    control_oid: pg_sys::Oid,
+    relations: TraversalReplicaRelations,
+) -> Result<(), String> {
+    drop_relation_internal(relations.directory_relid, control_oid)?;
+    drop_relation_internal(relations.replica_relid, control_oid)?;
     unsafe { pg_sys::CommandCounterIncrement() };
     Ok(())
 }

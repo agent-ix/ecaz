@@ -52,8 +52,11 @@ The version-1 replica heap SHALL contain:
 | `graph_record` | `bytea` | Exact FR-076 physical graph record from that owner. |
 | `exact_vector` | `bytea` | Exactly `dimensions * 4` bytes of finite IEEE-754 f32 words in little-endian order. |
 
-Rows SHALL be inserted and digested in ascending `(owner_ordinal, vec_id)`
-order. The version-1 content digest is:
+Rows SHALL be inserted and digested in ascending
+`(owner_ordinal, stored bigint vec_id)` order. `vec_id` retains its u64 bit
+pattern, but the physical B-tree's signed `bigint` order is canonical so
+bounded keyset pagination and digest replay use the same order. The version-1
+content digest is:
 
 ```text
 SHA-256(

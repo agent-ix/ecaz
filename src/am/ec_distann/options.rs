@@ -58,6 +58,11 @@ static ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC: GucSetting<i32> =
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(false);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(-1);
 /// ADR-085 D12 production policy. This is deliberately not a GUC or reloption.
 pub(super) const PRODUCTION_MATERIALIZATION_BATCH_SIZE: usize = 10;
 const ECDISTANN_MAX_BENCHMARK_HEAD_WIDTH: i32 = 4096;
@@ -286,6 +291,17 @@ pub(super) fn register_gucs() {
     );
     #[cfg(feature = "distann-head-attribution-benchmark")]
     GucRegistry::define_int_guc(
+        c"ec_distann.benchmark_traversal_replica_fail_batch",
+        c"Task 198 benchmark-only traversal replica mid-scan fault.",
+        c"When nonnegative, the replica expander fails before that zero-based batch. The coordinator must discard replica state and restart on owners. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC,
+        -1,
+        ECDISTANN_MAX_HOP_ROUNDS,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_int_guc(
         c"ec_distann.benchmark_materialization_batch_size",
         c"Task 191 benchmark-only final-payload policy override.",
         c"Minus one uses the production fixed lazy-10 policy. Zero selects the eager A/B control. A positive value selects an explicit deterministic ranked-window size for benchmark/test use. This GUC is absent from normal production builds.",
@@ -301,6 +317,15 @@ pub(super) fn register_gucs() {
         c"Task 193 benchmark-only owner payload prepared-plan cache arm.",
         c"When enabled, physical payload requests reuse a generation-owned, projection-fingerprinted SPI plan. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_traversal_replica",
+        c"Task 198 benchmark-only coordinator traversal replica selector.",
+        c"When enabled, a matching Ready fingerprint-bound coordinator replica executes graph traversal locally while final payloads remain owner-side. Missing, stale, or invalid replicas fall back to owner traversal. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -484,6 +509,24 @@ pub(super) fn benchmark_owner_payload_plan_cache() -> bool {
     }
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     false
+}
+
+pub(super) fn benchmark_traversal_replica() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    false
+}
+
+pub(super) fn benchmark_traversal_replica_fail_batch() -> Option<usize> {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return usize::try_from(ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC.get()).ok();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    None
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
