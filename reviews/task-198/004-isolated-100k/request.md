@@ -25,7 +25,9 @@ The cost is also decision-relevant: a 100k replica occupies 1.660 GB, emits
 therefore advances the candidate to the complete matrix without promoting it
 as a production default.
 
-The packet also records a scale-specific harness gap: the fixed fault query
-did not reach the injected second batch. `bb922fb9a` makes the drill
-deterministically find and report a query that does, preserving owner-result
-identity throughout. Packet 005 owns the corrected completion run.
+The packet also records a harness gap: the 20-row fault query did not reach
+the injected second batch, and packet 003's apparent pass was a stale-counter
+false positive. `cd47011d1` uses a bounded 64-row request and deterministic
+offset selection to require a genuine failure after one completed replica
+expansion, preserving owner-result identity throughout. Packet 005 owns the
+corrected completion run.

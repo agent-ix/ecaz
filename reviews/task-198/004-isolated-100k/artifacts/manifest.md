@@ -1,7 +1,7 @@
 # Task 198 packet 004 artifact manifest
 
 - Branch head at measurement: `c2e158042a49406fa934655efba1fb34f5736577`
-- Branch head including the follow-up fixture correction: `bb922fb9a`
+- Branch head including the final fixture correction: `cd47011d1`
 - Installed extension SHA: `2ff72b3e49609c44cec881f72edf183a83554412`
 - Task bucket: `reviews/task-198/004-isolated-100k/`
 - Lane: Intel local, three independent PG18 owner processes; owner zero is
@@ -59,14 +59,15 @@ the extension SHA above. The CLI was only the fixture driver.
 
 ## Fixture finding
 
-The fixed first query used by the mid-scan injection converged before the
-configured second expansion batch at this scale, so the line reported
-`fallback_count=0`; result identity still matched. Commit `bb922fb9a` corrects
-the drill to try deterministic query offsets until it proves a failure after
-one completed replica expansion, checking owner-result identity on every
-attempt. Packet 003 already has a passing second-batch full-restart drill on
-the same extension binary. Packet 005 reruns the corrected drill as part of
-the completion matrix.
+The fixed first query used by the mid-scan injection requested only 20 rows
+and completed in one expander call, so the line reported `fallback_count=0`;
+result identity still matched. An initial offset-selection correction in
+`bb922fb9a` revealed that this was true across the first 32 queries and that
+packet 003's apparent pass had read a stale counter from its preceding
+correctness scenario. Commit `cd47011d1` makes the fault drill use a separate,
+bounded 64-row request that must reach a second expansion, while checking
+owner-result identity on every attempted query. Packet 005 reruns the
+corrected drill as part of the completion matrix.
 
 ## Decision
 
