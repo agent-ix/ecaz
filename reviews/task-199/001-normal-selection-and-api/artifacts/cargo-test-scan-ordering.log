@@ -1,0 +1,26 @@
+Script started on 2026-07-24 16:11:59-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-199)
+   Compiling rustls v0.23.42
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 31.68s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c699c68ba0391e69)
+
+running 11 tests
+test am::ec_distann::scan::tests::distann_orchestration_returns_sub_k_on_exhaustion_as_complete ... ok
+test am::ec_distann::scan::tests::distann_orchestration_hop_rounds_cap_bounds_expansions ... ok
+test am::ec_distann::scan::tests::distann_orchestration_orders_equal_exact_scores_by_vec_id ... ok
+test am::ec_distann::scan::tests::distann_orchestration_excludes_tombstones_but_traverses_their_edges ... ok
+test am::ec_distann::scan::tests::distann_orchestration_early_exits_when_beam_cannot_improve_kth ... ok
+test am::ec_distann::scan::tests::distann_orchestration_expands_no_vec_id_twice_and_respects_cap ... ok
+test am::ec_distann::scan::tests::distann_orchestration_does_not_early_exit_before_equal_score_tie_break ... ok
+test am::ec_distann::scan::tests::restart_non_epoch_error_does_not_restart ... ok
+test am::ec_distann::scan::tests::restart_once_after_epoch_mismatch_then_succeeds ... ok
+test am::ec_distann::scan::tests::restart_second_epoch_mismatch_errors ... ok
+test am::ec_distann::scan::tests::restart_success_on_first_attempt_runs_once ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 2515 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-24 16:12:31-07:00 [COMMAND_EXIT_CODE="0"]

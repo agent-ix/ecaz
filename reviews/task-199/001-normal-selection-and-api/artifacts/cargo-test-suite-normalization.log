@@ -1,0 +1,13 @@
+Script started on 2026-07-24 16:13:46-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-199)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task-199/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 51.94s
+     Running unittests src/main.rs (target/debug/deps/ecaz-b9b3a2021d7b9f26)
+
+running 1 test
+test commands::bench::suite::tests::distann_traversal_pair_with_implicit_search_shape_stays_pairable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 459 filtered out; finished in 0.00s
+
+
+Script done on 2026-07-24 16:14:38-07:00 [COMMAND_EXIT_CODE="0"]
