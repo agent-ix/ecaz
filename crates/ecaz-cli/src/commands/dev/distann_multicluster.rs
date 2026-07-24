@@ -1329,6 +1329,7 @@ async fn task198_replica_semantic_result(
     replica: bool,
     fail_batch: i32,
     query_offset: u32,
+    result_limit: u32,
 ) -> Result<String> {
     coordinator
         .batch_execute(&format!(
@@ -1358,7 +1359,7 @@ async fn task198_replica_semantic_result(
         .await?
         .get::<_, bool>(0);
     let sql = if has_payload {
-        materialization_semantic_sql(corpus, queries, "TRUE", 20, query_offset)
+        materialization_semantic_sql(corpus, queries, "TRUE", result_limit, query_offset)
     } else {
         format!(
             "WITH query_vector AS (
@@ -1373,7 +1374,7 @@ async fn task198_replica_semantic_result(
                         embedding <#> (SELECT source FROM query_vector) AS distance
                    FROM {corpus}
                   ORDER BY embedding <#> (SELECT source FROM query_vector), id
-                  LIMIT 20
+                  LIMIT {result_limit}
                ) result"
         )
     };
@@ -1391,9 +1392,10 @@ async fn run_task198_replica_lifecycle_drills(
     queries: &str,
     content_digest: &str,
 ) -> Result<Vec<String>> {
-    let owner = task198_replica_semantic_result(coordinator, corpus, queries, false, -1, 0).await?;
+    let owner =
+        task198_replica_semantic_result(coordinator, corpus, queries, false, -1, 0, 20).await?;
     let replica =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0).await?;
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
     if replica != owner {
         bail!("Task 198 Ready replica changed ordered semantic results");
     }
@@ -1404,12 +1406,26 @@ async fn run_task198_replica_lifecycle_drills(
     let mut exercised_offset = None;
     let mut fallback_count = 0;
     for query_offset in 0..32 {
-        let expected =
-            task198_replica_semantic_result(coordinator, corpus, queries, false, -1, query_offset)
-                .await?;
-        let restarted =
-            task198_replica_semantic_result(coordinator, corpus, queries, true, 1, query_offset)
-                .await?;
+        let expected = task198_replica_semantic_result(
+            coordinator,
+            corpus,
+            queries,
+            false,
+            -1,
+            query_offset,
+            64,
+        )
+        .await?;
+        let restarted = task198_replica_semantic_result(
+            coordinator,
+            corpus,
+            queries,
+            true,
+            1,
+            query_offset,
+            64,
+        )
+        .await?;
         if restarted != expected {
             bail!(
                 "Task 198 mid-replica failure did not fully restart to identical owner results \
@@ -1456,7 +1472,7 @@ async fn run_task198_replica_lifecycle_drills(
         .await
         .wrap_err("truncating Task 198 replica for corruption fallback drill")?;
     let corrupt_fallback =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0).await?;
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
     if corrupt_fallback != owner {
         bail!("Task 198 corrupt replica did not fall back to identical owner results");
     }
@@ -1494,7 +1510,7 @@ async fn run_task198_replica_lifecycle_drills(
         .await?
         .get::<_, bool>(0);
     let stale_fallback =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0).await?;
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
     let mutation_pass = first_retryable && state == "Stale" && !retry && stale_fallback == owner;
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=durable_mutation_invalidation pass={mutation_pass} first_sqlstate={} state_after_error={state} retry_guard={retry} owner_fallback_identity={}",
@@ -1535,7 +1551,7 @@ async fn run_task198_replica_lifecycle_drills(
         .await?
         .get::<_, i64>(0);
     let removed_fallback =
-        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0).await?;
+        task198_replica_semantic_result(coordinator, corpus, queries, true, -1, 0, 20).await?;
     let reclaim_pass = retired && reclaimed && !replay && residue == 0 && removed_fallback == owner;
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=retire_reclaim_and_removed_fallback pass={reclaim_pass} retired={retired} reclaimed={reclaimed} replay={replay} catalog_residue={residue} owner_fallback_identity={}",
