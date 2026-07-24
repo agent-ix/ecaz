@@ -94,14 +94,17 @@ designed.
 
 A tombstone, insert, update, or back-edge amendment cannot dispatch while the
 replica is Ready. Its first attempt durably changes Ready to Stale and returns
-a stable retryable error without sending an owner mutation; a retry observes
-Stale and uses the owner path. This avoids a distributed-commit requirement,
-and a crash after invalidation is fail-safe. A scan that pinned Ready before
-the transition completes on the pinned immutable image, representing the
-permitted pre-mutation view; new scans observe Stale. Task 198 may implement
-this invalidation/fallback contract but may not add replica mutation
-propagation. A new epoch builds a new replica and cannot reuse one across
-fingerprints.
+a stable retryable error without sending an owner mutation. The transition is
+committed by a dedicated coordinator control transaction, independently of the
+failing user DML transaction; the error is returned only after that commit
+succeeds. A retry observes Stale and uses the owner path. This avoids a
+distributed-commit requirement and prevents rollback of the invalidation from
+causing a retry livelock. A crash after invalidation is fail-safe. A scan that
+pinned Ready before the transition completes on the pinned immutable image,
+representing the permitted pre-mutation view; new scans observe Stale. Task 198
+may implement this invalidation/fallback contract but may not add replica
+mutation propagation. A new epoch builds a new replica and cannot reuse one
+across fingerprints.
 
 ## Expected ceiling and gates
 
@@ -133,7 +136,9 @@ use of the existing owner traversal path.
 - The design can remove serial traversal RPCs without moving payload
   ownership, changing hash placement, or making partial success acceptable.
 - It adds substantial per-coordinator storage, build traffic, cache pressure,
-  publication work, and multi-coordinator amplification.
+  and publication work. Capacity reporting also projects linear
+  per-coordinator amplification for a possible future shared-authority design;
+  multi-coordinator replica serving is not supported by this ADR.
 - Read-mostly epochs can benefit first. Mutation-heavy epochs fall back until
   coherence is separately designed and accepted.
 - Replica correctness joins epoch lifecycle and scan fencing; a stale copy is

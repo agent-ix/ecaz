@@ -73,8 +73,11 @@ replication, a new codec, changed BW/H, or payload replication into its A/B.
   until a shared invalidation protocol is separately accepted.
 - Tombstone, insert, update, and back-edge amendment cannot dispatch while a
   replica is Ready. The first attempt durably transitions Ready to Stale and
-  returns a stable retryable error without owner mutation; a retry observes
-  Stale and uses the owner path. A crash after invalidation is fail-safe.
+  returns a stable retryable error without owner mutation. A dedicated
+  coordinator control transaction commits that transition independently of
+  the failing user DML transaction; the error is returned only after the
+  control commit succeeds. A retry observes Stale and uses the owner path. A
+  crash after invalidation is fail-safe.
 - A scan that pinned a Ready replica before invalidation completes against
   that pinned immutable image. New scans observe Stale. This is the permitted
   pre-mutation view under FR-082's concurrent-mutation model.
@@ -82,8 +85,13 @@ replication, a new codec, changed BW/H, or payload replication into its A/B.
   mismatch, activation race, retirement race, disk exhaustion, manual replica
   removal, mid-scan replica failure with full owner restart, and an
   in-flight-scan/invalidation/mutation race have explicit drills.
-- Multi-coordinator deployment treats each replica independently and reports
-  amplification per coordinator.
+- The mutation drill asserts that exactly one mutation attempt returns the
+  retryable invalidation error before its retry succeeds through the owner
+  path, including rollback and crash-after-control-commit variants.
+- Capacity evidence reports supported single-coordinator measured bytes and
+  projects linear per-coordinator amplification for a possible future
+  shared-authority design. This projection does not permit multiple active
+  replica coordinators.
 
 Mutation propagation/coherence is a separate future decision. This task owns
 safe invalidation and fallback only.
@@ -119,7 +127,9 @@ projection decision-relevant.
 Output either:
 
 - PROMOTE to a separately reviewed production-default/operations task, with
-  actual format, upgrade, monitoring, capacity, and rebuild policy; or
+  actual format, upgrade, monitoring, capacity, and rebuild policy, and with
+  the first mutation against a Ready replica disclosed as a user-visible
+  retryable failure; or
 - STOP and retain ADR-085 owner traversal unchanged.
 
 ## Acceptance criteria
