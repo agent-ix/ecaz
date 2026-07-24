@@ -1374,7 +1374,7 @@ async fn task198_replica_semantic_result(
                  SELECT id, source_id::text AS source_id,
                         embedding <#> (SELECT source FROM query_vector) AS distance
                    FROM {corpus}
-                  ORDER BY embedding <#> (SELECT source FROM query_vector), id
+                  ORDER BY embedding <#> (SELECT source FROM query_vector)
                   LIMIT {result_limit}
                ) result"
         )
