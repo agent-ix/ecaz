@@ -904,7 +904,7 @@ fn extension_owner() -> Result<(pg_sys::Oid, String), String> {
     Spi::connect(|client| {
         client
             .select(
-                "SELECT e.extowner, r.rolname
+                "SELECT e.extowner, r.rolname::text AS rolname
                    FROM pg_catalog.pg_extension e
                    JOIN pg_catalog.pg_roles r ON r.oid = e.extowner
                   WHERE e.extname = 'ecaz'",

@@ -406,7 +406,7 @@ async fn ensure_pooled_connections(
         .filter(|(key, _)| {
             connections
                 .get(key)
-                .map(|pooled| pooled.task.is_finished())
+                .map(|pooled| pooled.client.is_closed() || pooled.task.is_finished())
                 .unwrap_or(true)
         })
         .map(|(key, conninfo)| (key.clone(), *conninfo))

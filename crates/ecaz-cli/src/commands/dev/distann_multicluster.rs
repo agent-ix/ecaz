@@ -2477,6 +2477,39 @@ async fn run_physical_benchmarks(
             .await
             .err();
         restart_physical_node(pg_ctl, socket_dir, unavailable, nodes).await?;
+        // The intentionally killed owner also closes any warm scan connection
+        // held by this coordinator backend. Exercise the documented bounded
+        // reconnect path now, before later semantic comparisons could turn the
+        // drill's expected outage into an unrelated one-shot failure.
+        let recovery_first = task198_replica_semantic_result(
+            coordinator,
+            &physical_corpus,
+            &physical_queries,
+            -1,
+            0,
+            1,
+        )
+        .await;
+        let transport_retried = recovery_first
+            .as_ref()
+            .is_err_and(|error| error.to_string().contains("connection closed"));
+        if transport_retried {
+            task198_replica_semantic_result(
+                coordinator,
+                &physical_corpus,
+                &physical_queries,
+                -1,
+                0,
+                1,
+            )
+            .await
+            .wrap_err("recovering physical transport after owner restart")?;
+        } else {
+            recovery_first.wrap_err("probing physical transport after owner restart")?;
+        }
+        lines.push(format!(
+            "physical_benchmark_traversal_replica_fault scale={scale} scenario=owner_restart_transport_recovery pass=true retried={transport_retried}"
+        ));
         let residue = coordinator
             .query_one(
                 "SELECT count(*)::bigint
