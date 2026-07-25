@@ -1953,7 +1953,10 @@ async fn task199_inflight_scan_invalidation_drill(
 
 async fn task199_auth_failure_recovery_drill(
     coordinator: &tokio_postgres::Client,
+    coordinator_port: u16,
     corpus: &str,
+    queries: &str,
+    owner_baseline: &str,
 ) -> Result<String> {
     const MISSING_PASSWORD_FILE: &str = "/task199-intentionally-missing-replica-control-password";
     coordinator
@@ -2006,6 +2009,40 @@ async fn task199_auth_failure_recovery_drill(
         )
         .await?
         .get::<_, bool>(0);
+    let replica_relation = coordinator
+        .query_one(
+            "SELECT format('%I.%I', namespace.nspname, relation.relname)
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass) status
+               JOIN pg_class relation ON relation.oid = status.replica_relid
+               JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+              WHERE status.state = 'Ready'",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    let (locker, locker_connection) = task199_connect(coordinator_port).await?;
+    locker
+        .batch_execute(&format!(
+            "BEGIN;
+             LOCK TABLE {replica_relation} IN ACCESS EXCLUSIVE MODE"
+        ))
+        .await?;
+    coordinator.batch_execute("BEGIN READ ONLY").await?;
+    let owner_fallback =
+        task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await;
+    let _ = coordinator.batch_execute("ROLLBACK").await;
+    locker.batch_execute("ROLLBACK").await?;
+    locker_connection.abort();
+    let double_demotion_fallback = owner_fallback? == owner_baseline
+        && coordinator
+            .query_one(
+                "SELECT count(*) = 1
+                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+                  WHERE state = 'Ready'",
+                &[],
+            )
+            .await?
+            .get::<_, bool>(0);
     coordinator
         .batch_execute("ALTER SYSTEM RESET ec_distann.replica_control_password_file")
         .await?;
@@ -2040,6 +2077,7 @@ async fn task199_auth_failure_recovery_drill(
     if !reloaded
         || !auth_failed_closed
         || !ready_after_failure
+        || !double_demotion_fallback
         || !recovered
         || state != "Stale"
         || inserted_count != 0
@@ -2047,13 +2085,14 @@ async fn task199_auth_failure_recovery_drill(
         bail!(
             "Task 199 authentication recovery failed: reloaded={reloaded} \
              failed_closed={auth_failed_closed} ready={ready_after_failure} \
+             double_demotion_fallback={double_demotion_fallback} \
              recovered={recovered} state={state} inserted={inserted_count}"
         );
     }
     Ok(
         "scenario=control_auth_failure_recovery pass=true failed_closed=true \
-         state_after_failure=Ready operator_recovery=true state_after_recovery=Stale \
-         inserted_rows=0"
+         state_after_failure=Ready double_demotion_failure_owner_fallback=true \
+         read_only=true operator_recovery=true state_after_recovery=Stale inserted_rows=0"
             .to_owned(),
     )
 }
@@ -2640,12 +2679,28 @@ async fn run_task199_replica_lifecycle_drills(
         )
         .await?
         .get::<_, i64>(0);
+    let rebuild_error = coordinator
+        .query_one(
+            "SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)",
+            &[],
+        )
+        .await
+        .expect_err("same-generation Stale rebuild must name the recovery sequence");
+    let rebuild_guidance = rebuild_error.as_db_error().is_some_and(|error| {
+        error
+            .message()
+            .contains("ec_distann_retire_traversal_replica")
+            && error
+                .message()
+                .contains("ec_distann_reclaim_traversal_replica")
+    });
     let mutation_pass = first_retryable
         && state_after_error == "Stale"
         && retry_failed_closed
-        && inserted_count == 0;
+        && inserted_count == 0
+        && rebuild_guidance;
     lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=real_insert_durable_invalidation pass={mutation_pass} first_sqlstate={} token=EC_REPLICA_INVALIDATED state_after_error={state_after_error} retry_token=EC_GENERATION_MISSING retry_inserted_rows={inserted_count}",
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=real_insert_durable_invalidation pass={mutation_pass} first_sqlstate={} token=EC_REPLICA_INVALIDATED state_after_error={state_after_error} retry_token=EC_GENERATION_MISSING retry_inserted_rows={inserted_count} rebuild_guidance={rebuild_guidance}",
         first_error.code().map(|code| code.code()).unwrap_or("none"),
     ));
     if !mutation_pass {
@@ -2678,6 +2733,47 @@ async fn run_task199_replica_lifecycle_drills(
     ));
     if !reclaim_pass {
         bail!("Task 199 retirement/reclaim drill failed");
+    }
+
+    let hot_updated = coordinator
+        .execute(
+            &format!(
+                "UPDATE {corpus}
+                    SET source = source
+                  WHERE id = (SELECT max(id) FROM {corpus})"
+            ),
+            &[],
+        )
+        .await?;
+    if hot_updated != 1 {
+        bail!("Task 199 could not create one pre-build dead heap tuple for VACUUM");
+    }
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
+    coordinator
+        .batch_execute(&format!("VACUUM (INDEX_CLEANUP ON) {corpus}"))
+        .await
+        .wrap_err("vacuuming the Task 199 source with a Ready replica")?;
+    let vacuum_status = coordinator
+        .query_one(
+            "SELECT state, state_reason
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              ORDER BY build_started_at DESC LIMIT 1",
+            &[],
+        )
+        .await?;
+    let vacuum_state = vacuum_status.get::<_, String>(0);
+    let vacuum_reason = vacuum_status.get::<_, String>(1);
+    if vacuum_state != "Stale" || vacuum_reason != "vacuum" {
+        bail!(
+            "Task 199 VACUUM disposition failed: state={vacuum_state} reason={vacuum_reason}"
+        );
+    }
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=vacuum_demotes_and_continues pass=true hot_updated_rows=1 state=Stale reason=vacuum"
+    ));
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the VACUUM-demoted replica");
     }
 
     build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
@@ -2724,7 +2820,14 @@ async fn run_task199_replica_lifecycle_drills(
     build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} {}",
-        task199_auth_failure_recovery_drill(coordinator, corpus).await?
+        task199_auth_failure_recovery_drill(
+            coordinator,
+            coordinator_port,
+            corpus,
+            queries,
+            owner_baseline,
+        )
+        .await?
     ));
     let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
     if !retired || !reclaimed {

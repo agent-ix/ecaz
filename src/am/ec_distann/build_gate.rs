@@ -190,6 +190,7 @@ unsafe extern "C-unwind" fn invalidate_no_active_gate_cache(
     // much rarer than DML, and this avoids retaining a relation OID across
     // DROP EXTENSION / CREATE EXTENSION cycles.
     NO_ACTIVE_GATE.with(|cached| cached.set(false));
+    super::traversal_replica::invalidate_ready_replica_presence_cache();
 }
 
 /// Publish registration-table mutations through PostgreSQL's transactional
@@ -374,6 +375,11 @@ fn ec_distann_indexes_for_source(source_oid: pg_sys::Oid) -> Vec<pg_sys::Oid> {
 }
 
 fn guard_source_traversal_replicas(source_oid: pg_sys::Oid) {
+    if !super::traversal_replica::ready_replica_may_exist()
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
+    {
+        return;
+    }
     for index_oid in ec_distann_indexes_for_source(source_oid) {
         super::traversal_replica::guard_traversal_replica_mutation(index_oid);
     }

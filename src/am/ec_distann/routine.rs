@@ -125,7 +125,9 @@ unsafe extern "C-unwind" fn ec_distann_ambulkdelete(
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     pg_am_callback!({
-        super::traversal_replica::guard_traversal_replica_mutation((*(*info).index).rd_id);
+        super::traversal_replica::invalidate_traversal_replica_for_maintenance(
+            (*(*info).index).rd_id,
+        );
         // See aminsert: persisted metadata is authoritative. Keep this read
         // until a measured relcache cache can prove correct invalidation.
         let metadata = ambuild::read_metadata_from_index((*info).index)

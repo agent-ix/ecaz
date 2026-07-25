@@ -7,10 +7,11 @@
 use sha2::{Digest, Sha256};
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use std::time::Instant;
-use std::{fs, path::Path, time::Duration};
+use std::{cell::Cell, fs, path::Path, time::Duration};
 
 use pgrx::datum::{TimestampWithTimeZone, Uuid};
 use pgrx::iter::TableIterator;
+use pgrx::prelude::{AllocatedByPostgres, PgHeapTuple, PgTrigger, PgTriggerError};
 use pgrx::{name, pg_extern, pg_sys, PgRelation, Spi};
 
 use crate::storage::page::ItemPointer;
@@ -30,6 +31,54 @@ use super::tuple::DistannNodeTuple;
 
 const REPLICA_CONTENT_DOMAIN: &[u8] = b"ec_distann_traversal_replica_v1\0";
 pub(crate) const TRAVERSAL_REPLICA_FORMAT_VERSION: u16 = 1;
+
+thread_local! {
+    // 0 = unknown, 1 = no Ready replica anywhere in this database,
+    // 2 = at least one Ready replica. Catalog statement triggers publish a
+    // transactional relcache invalidation and clear this backend-local state.
+    static READY_REPLICA_PRESENCE: Cell<u8> = const { Cell::new(0) };
+}
+
+pub(crate) fn invalidate_ready_replica_presence_cache() {
+    READY_REPLICA_PRESENCE.with(|presence| presence.set(0));
+}
+
+pub(crate) fn ready_replica_may_exist() -> Result<bool, String> {
+    match READY_REPLICA_PRESENCE.with(Cell::get) {
+        1 => return Ok(false),
+        2 => return Ok(true),
+        _ => {}
+    }
+    if unsafe { pg_sys::get_extension_oid(c"ecaz".as_ptr(), true) } == pg_sys::InvalidOid {
+        READY_REPLICA_PRESENCE.with(|presence| presence.set(1));
+        return Ok(false);
+    }
+    let (catalog_owner, _) = extension_owner()?;
+    let catalog =
+        super::generation_catalog::extension_relation_name("ec_distann_traversal_replica")?;
+    let ready = super::handoff::with_restricted_type_io_owner(catalog_owner, || {
+        Spi::get_one::<bool>(&format!(
+            "SELECT EXISTS (SELECT 1 FROM {catalog} WHERE state = 'Ready')"
+        ))
+        .map_err(|error| format!("EC_REPLICA_STATE: Ready presence lookup failed: {error}"))?
+        .ok_or_else(|| "EC_REPLICA_STATE: Ready presence lookup returned NULL".to_owned())
+    })?;
+    READY_REPLICA_PRESENCE.with(|presence| presence.set(if ready { 2 } else { 1 }));
+    Ok(ready)
+}
+
+/// Publish traversal-replica catalog mutations through PostgreSQL's
+/// transactional relcache invalidation channel. The local cache is cleared
+/// immediately; other backends receive the invalidation at commit.
+#[pgrx::pg_trigger]
+fn ec_distann_traversal_replica_changed<'a>(
+    trigger: &'a PgTrigger<'a>,
+) -> Result<Option<PgHeapTuple<'a, AllocatedByPostgres>>, PgTriggerError> {
+    let relation_oid = trigger.relid()?;
+    invalidate_ready_replica_presence_cache();
+    unsafe { pg_sys::CacheInvalidateRelcacheByRelid(relation_oid) };
+    Ok(None)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum TraversalReplicaState {
@@ -466,7 +515,7 @@ fn existing_ready_digest(
                     || unsafe { pg_sys::get_rel_relkind(directory_relid) } == 0
                 {
                     return Err(format!(
-                        "EC_REPLICA_STATE: existing replica is not a complete Ready replay ({state})"
+                        "EC_REPLICA_STATE: existing replica is not a complete Ready replay ({state}); run ec_distann_retire_traversal_replica(index) and ec_distann_reclaim_traversal_replica(index) before rebuilding"
                     ));
                 }
                 Ok(digest)
@@ -933,6 +982,9 @@ fn extension_owner() -> Result<(pg_sys::Oid, String), String> {
 }
 
 fn active_ready_replica(index_oid: pg_sys::Oid) -> Result<Option<ReadyReplicaIdentity>, String> {
+    if !ready_replica_may_exist()? {
+        return Ok(None);
+    }
     let (catalog_owner, _) = extension_owner()?;
     super::handoff::with_restricted_type_io_owner(catalog_owner, || {
         let replica =
@@ -1250,6 +1302,27 @@ pub(crate) fn guard_traversal_replica_mutation(index_oid: pg_sys::Oid) {
     }
 }
 
+/// VACUUM has no application retry loop. Retire an eligible Ready image
+/// durably, then let ordinary index maintenance continue.
+pub(crate) fn invalidate_traversal_replica_for_maintenance(index_oid: pg_sys::Oid) {
+    super::lifecycle_guard::require_read_committed(
+        "ec_distann traversal replica maintenance guard",
+    )
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let Some(identity) =
+        active_ready_replica(index_oid).unwrap_or_else(|error| pgrx::error!("{error}"))
+    else {
+        return;
+    };
+    let transitioned = mark_stale_in_side_transaction(index_oid, &identity, "vacuum")
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    if transitioned {
+        pgrx::warning!(
+            "EC_REPLICA_INVALIDATED: VACUUM durably marked the Ready coordinator traversal replica Stale and is continuing owner index maintenance"
+        );
+    }
+}
+
 /// Mutation front-door guard. It returns normally when no Ready replica is
 /// eligible. The first caller that wins Ready -> Stale commits that change in
 /// a dedicated transaction and then receives SQLSTATE 40001. Its retry sees
@@ -1282,8 +1355,7 @@ pub(crate) fn handle_ready_replica_failure(
             // Read fallback can commit a local catalog demotion with the query
             // transaction. This preserves owner availability if control
             // authentication changes after the build preflight.
-            let (catalog_owner, _) = extension_owner()?;
-            let locally_marked =
+            let local_result = extension_owner().and_then(|(catalog_owner, _)| {
                 super::handoff::with_restricted_type_io_owner(catalog_owner, || {
                     mark_exact_ready_replica_stale(
                         index_oid,
@@ -1293,15 +1365,21 @@ pub(crate) fn handle_ready_replica_failure(
                         &generation_descriptor_digest,
                         reason,
                     )
-                })?;
-            if !locally_marked {
-                pgrx::warning!(
-                    "EC_REPLICA_CONTROL: side demotion failed ({side_error}); matching replica was already non-Ready"
-                );
-            } else {
-                pgrx::warning!(
+                })
+            });
+            match local_result {
+                Ok(false) => pgrx::warning!(
+                    "EC_REPLICA_CONTROL: side demotion failed ({side_error}); matching replica was already non-Ready; continuing owner fallback"
+                ),
+                Ok(true) => pgrx::warning!(
                     "EC_REPLICA_CONTROL: side demotion failed ({side_error}); demotion will commit with the owner fallback"
-                );
+                ),
+                Err(local_error) => {
+                    let local_error = local_error.chars().take(512).collect::<String>();
+                    pgrx::warning!(
+                        "EC_REPLICA_CONTROL: side demotion failed ({side_error}); local demotion also failed ({local_error}); continuing owner fallback without durable demotion"
+                    );
+                }
             }
             Ok(())
         }
@@ -1761,14 +1839,28 @@ impl<'a> ReadyTraversalReplica<'a> {
         if snapshot.is_null() {
             return Err("EC_REPLICA_STATE: scan has no active snapshot".to_owned());
         }
+        // A stronger-isolation snapshot cannot establish fresh Ready/Stale
+        // visibility. The replica is only an optional acceleration object, so
+        // decline it and preserve the pre-existing owner read path.
+        if super::lifecycle_guard::require_read_committed(
+            "ec_distann traversal replica selection",
+        )
+        .is_err()
+        {
+            return Ok(None);
+        }
+        if !ready_replica_may_exist()? {
+            return Ok(None);
+        }
         let catalog =
             super::generation_catalog::extension_relation_name("ec_distann_traversal_replica")?;
         let owner_catalog = super::generation_catalog::extension_relation_name(
             "ec_distann_traversal_replica_owner",
         )?;
-        let row = Spi::connect(|client| {
-            client
-                .select(
+        let (catalog_owner, _) = extension_owner()?;
+        let row = super::handoff::with_restricted_type_io_owner(catalog_owner, || {
+            Spi::connect(|client| {
+                client.select(
                     &format!(
                         "SELECT r.state, r.epoch_fingerprint,
                                 r.generation_descriptor_digest,
@@ -1797,9 +1889,11 @@ impl<'a> ReadyTraversalReplica<'a> {
                     ),
                     None,
                     &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
-                )
-                .map_err(|error| format!("EC_REPLICA_STATE: Ready replica lookup failed: {error}"))?
-                .map(|row| {
+                    )
+                    .map_err(|error| {
+                        format!("EC_REPLICA_STATE: Ready replica lookup failed: {error}")
+                    })?
+                    .map(|row| {
                     let required_i32 = |name: &str| -> Result<i32, String> {
                         row[name]
                             .value::<i32>()
@@ -1848,9 +1942,10 @@ impl<'a> ReadyTraversalReplica<'a> {
                         required_i64("completed_owners")?,
                         required_i64("owner_record_count")?,
                     ))
-                })
-                .next()
-                .transpose()
+                    })
+                    .next()
+                    .transpose()
+            })
         })?;
         let Some((
             state,
@@ -1873,16 +1968,6 @@ impl<'a> ReadyTraversalReplica<'a> {
             return Ok(None);
         };
         if state != TraversalReplicaState::Ready.as_str() {
-            return Ok(None);
-        }
-        // A stronger-isolation snapshot cannot establish fresh Ready/Stale
-        // visibility. The replica is only an optional acceleration object, so
-        // decline it and preserve the pre-existing owner read path.
-        if super::lifecycle_guard::require_read_committed(
-            "ec_distann traversal replica selection",
-        )
-        .is_err()
-        {
             return Ok(None);
         }
         if stored_fingerprint.as_slice() != fingerprint {
