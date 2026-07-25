@@ -511,11 +511,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         let tablespace_dir = run_dir.join("task199-enospc-tablespace");
         fs::create_dir_all(&tablespace_dir)?;
         let tablespace_dir = fs::canonicalize(&tablespace_dir)?;
+        let arm_file = fs::canonicalize(&run_dir)?.join("task199-enospc-provider.arm");
         let marker_file = log_dir.join("task199-enospc-provider.marker");
         fs::write(&marker_file, "")?;
         Some(Task199EnospcFixture {
             tablespace_dir,
-            arm_file: run_dir.join("task199-enospc-provider.arm"),
+            arm_file,
             marker_file,
         })
     } else {
