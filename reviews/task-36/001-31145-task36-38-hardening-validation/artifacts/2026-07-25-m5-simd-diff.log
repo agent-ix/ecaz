@@ -1,0 +1,21 @@
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.41
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling ecaz v0.1.1 (/Users/peter/tqvector)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 25.53s
+     Running tests/simd_diff.rs (target/debug/deps/simd_diff-ae859985e3d3f8a8)
+
+running 9 tests
+test am_source_inner_product_simd_matches_scalar_reference ... ok
+test dispatched_code_to_code_score_matches_scalar_reference ... ok
+test dispatched_fwht_matches_scalar_reference ... ok
+test dispatched_score_ip_from_parts_matches_scalar_reference ... ok
+test forced_neon_fwht_matches_scalar_reference_when_available ... ok
+test forced_neon_score_paths_match_scalar_reference_when_available ... ok
+test packed_mse_indices_roundtrip_across_widths ... ok
+test production_1536_4bit_score_path_matches_scalar_reference ... ok
+test three_bit_unpack_fixture_stays_bit_exact ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.87s
+
