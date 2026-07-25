@@ -14,10 +14,15 @@ all three DistANN fixtures. Each DistANN fixture has a distinct table/index
 name and uses real local `ec_distann` DDL with the selected
 `neighbor_code_format`.
 
-This is the model/fixture-selection foundation only. It does not yet request
-review of live cancellation, timeout, lifecycle, provider I/O, or remote
-transport evidence. Those follow in later code checkpoints within this same
-packet.
+The codec fixtures use dimensions supported by their real scorers:
+TurboQuant uses the 1536-D no-QJL 4-bit lane, while RaBitQ and grouped PQ use
+64-D deterministic vectors. DistANN now also participates in the existing
+test-controlled palloc sweep at build, scan, insert, bulk-delete, and vacuum
+callback boundaries.
+
+This remains a pre-live checkpoint. It does not yet request review of live
+cancellation, timeout, lifecycle, provider I/O, or remote transport evidence.
+Those follow in later code checkpoints within this same packet.
 
 ## Historical Context
 
@@ -32,6 +37,7 @@ slice.
 See `artifacts/manifest.md` and the packet-local logs:
 
 - `cargo test -p ecaz-fault-injection`
+- `cargo check -p ecaz-cli`
 - focused `ecaz-cli` DistANN fault parsing test
 - focused DistANN cancel-plan dry run
 - focused grouped-PQ timeout dry run
@@ -42,5 +48,9 @@ See `artifacts/manifest.md` and the packet-local logs:
   prevent silent single-codec passes?
 - Are the codec-specific relation names and local `ec_distann` DDL an
   appropriate foundation for the live fault lanes?
+- Are 1536-D TurboQuant and 64-D RaBitQ/grouped-PQ deterministic fixtures the
+  right small supported dimensions for interruption smoke?
+- Are the DistANN palloc hooks narrow and safely disabled by the existing
+  production-default-off GUC?
 - Is rejecting `--distann-codec` outside `--am distann` the right operator
   contract?

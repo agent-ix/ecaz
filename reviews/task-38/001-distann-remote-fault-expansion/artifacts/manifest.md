@@ -1,6 +1,6 @@
 # Artifact Manifest
 
-- Implementation HEAD: `998beed7a`
+- Implementation HEAD: `e94e3dace`
 - Task bucket: `reviews/task-38/`
 - Packet: `reviews/task-38/001-distann-remote-fault-expansion/`
 - Fixture shape: isolated one-table/one-index fixtures; DistANN uses one
@@ -13,8 +13,14 @@
 ### `fault-injection-tests.log`
 
 - Command: `cargo test -p ecaz-fault-injection`
-- Key result: `7 passed; 0 failed`, including five-AM coverage and all three
-  DistANN codecs.
+- Key result: `8 passed; 0 failed`, including five-AM coverage, all three
+  DistANN codecs, and the supported 1536-D TurboQuant fixture.
+
+### `ecaz-cli-check.log`
+
+- Command: `cargo check -p ecaz-cli`
+- Key result: CLI and extension compile successfully; the log retains the
+  pre-existing unused `LoadedDistributedPlacementConfig.path` warning.
 
 ### `ecaz-cli-distann-parse-test.log`
 
