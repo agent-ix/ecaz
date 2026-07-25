@@ -11,7 +11,7 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::process::Command;
 
 use super::support::{find_pgrx_install, repo_root, resolve_pgrx_home, run_status};
@@ -1402,6 +1402,26 @@ async fn task198_replica_semantic_result(
         .wrap_err("decoding Task 198 semantic result")
 }
 
+fn task199_real_insert_sql(corpus: &str) -> String {
+    format!(
+        "WITH next_row AS (
+             SELECT coalesce(max(id), 0) + 1 AS id FROM {corpus}
+         ), seed AS (
+             SELECT source, embedding FROM {corpus} ORDER BY id LIMIT 1
+         )
+         INSERT INTO {corpus} (id, source_id, source, embedding)
+         SELECT next_row.id,
+                (substr(md5(next_row.id::text),1,8)||'-'||
+                 substr(md5(next_row.id::text),9,4)||'-4'||
+                 substr(md5(next_row.id::text),14,3)||'-8'||
+                 substr(md5(next_row.id::text),18,3)||'-'||
+                 substr(md5(next_row.id::text),21,12))::uuid,
+                seed.source, seed.embedding
+           FROM next_row CROSS JOIN seed
+         RETURNING id"
+    )
+}
+
 async fn build_and_attest_traversal_replica(
     coordinator: &tokio_postgres::Client,
     scale: &str,
@@ -1504,13 +1524,674 @@ async fn retire_and_reclaim_traversal_replica(
     Ok((retired, reclaimed))
 }
 
+async fn task199_connect(
+    coordinator_port: u16,
+) -> Result<(tokio_postgres::Client, tokio::task::JoinHandle<()>)> {
+    let (client, connection) = tokio_postgres::connect(
+        &conninfo(Path::new(""), coordinator_port),
+        tokio_postgres::NoTls,
+    )
+    .await
+    .wrap_err("connecting Task 199 auxiliary coordinator session")?;
+    let task = tokio::spawn(async move {
+        let _ = connection.await;
+    });
+    Ok((client, task))
+}
+
+fn task199_decode_ordered_rows(rows: Vec<tokio_postgres::Row>) -> Vec<(i64, String, u32)> {
+    rows.into_iter()
+        .map(|row| {
+            (
+                row.get::<_, i64>(0),
+                row.get::<_, String>(1),
+                row.get::<_, f32>(2).to_bits(),
+            )
+        })
+        .collect()
+}
+
+fn task199_ordered_scan_sql(corpus: &str, queries: &str, limit: u32) -> String {
+    format!(
+        "WITH query_vector AS (
+             SELECT source AS query_embedding
+               FROM {queries} ORDER BY id LIMIT 1
+         )
+         SELECT id, source_id::text,
+                embedding <#> (SELECT query_embedding FROM query_vector) AS distance
+           FROM {corpus}
+          ORDER BY distance, id
+          LIMIT {limit}"
+    )
+}
+
+async fn task199_concurrent_build_mutation_drill(
+    coordinator: &tokio_postgres::Client,
+    coordinator_port: u16,
+    corpus: &str,
+) -> Result<(String, String)> {
+    let (builder, builder_connection) = task199_connect(coordinator_port).await?;
+    let builder_pid = builder
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await?
+        .get::<_, i32>(0);
+    let build = tokio::spawn(async move {
+        builder
+            .query_one(
+                "SELECT encode(
+                     ec_distann_build_traversal_replica('dm_idx'::regclass),
+                     'hex'
+                 )",
+                &[],
+            )
+            .await
+            .map(|row| row.get::<_, String>(0))
+    });
+    let mut build_fence_observed = false;
+    for _ in 0..100 {
+        build_fence_observed = coordinator
+            .query_one(
+                "SELECT EXISTS (
+                     SELECT 1 FROM pg_catalog.pg_locks
+                      WHERE pid = $1
+                        AND relation = 'dm_idx'::regclass::oid
+                        AND mode = 'ShareRowExclusiveLock'
+                        AND granted
+                 )",
+                &[&builder_pid],
+            )
+            .await?
+            .get::<_, bool>(0);
+        if build_fence_observed {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    if !build_fence_observed {
+        let _ = build.await;
+        builder_connection.abort();
+        bail!("Task 199 could not observe the traversal-replica build fence");
+    }
+
+    let (mutator, mutator_connection) = task199_connect(coordinator_port).await?;
+    mutator.batch_execute("SET lock_timeout = '500ms'").await?;
+    let inserted_id = mutator
+        .query_one(
+            &format!("SELECT coalesce(max(id), 0) + 1 FROM {corpus}"),
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let mutation_error = mutator
+        .query_one(&task199_real_insert_sql(corpus), &[])
+        .await
+        .expect_err("concurrent mutation must wait behind the replica build fence");
+    let mutation_fenced = mutation_error
+        .code()
+        .is_some_and(|code| code.code() == "55P03")
+        && mutation_error
+            .as_db_error()
+            .is_some_and(|error| error.message().contains("lock timeout"));
+    let digest = build
+        .await
+        .wrap_err("joining Task 199 concurrent replica build")?
+        .wrap_err("building traversal replica during the mutation-fence drill")?;
+    builder_connection.abort();
+    mutator_connection.abort();
+    let inserted_count = coordinator
+        .query_one(
+            &format!("SELECT count(*)::bigint FROM {corpus} WHERE id = $1"),
+            &[&inserted_id],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let ready = coordinator
+        .query_one(
+            "SELECT count(*) = 1
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Ready'",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if !mutation_fenced || inserted_count != 0 || !ready {
+        bail!(
+            "Task 199 build/mutation fence failed: observed={build_fence_observed} \
+             mutation_fenced={mutation_fenced} inserted={inserted_count} ready={ready}"
+        );
+    }
+    Ok((
+        digest,
+        format!(
+            "scenario=concurrent_build_mutation_fenced pass=true build_lock=ShareRowExclusiveLock mutation_sqlstate=55P03 inserted_rows=0 state=Ready"
+        ),
+    ))
+}
+
+async fn task199_inflight_scan_invalidation_drill(
+    coordinator: &tokio_postgres::Client,
+    coordinator_port: u16,
+    corpus: &str,
+    queries: &str,
+    owner_baseline: &str,
+) -> Result<String> {
+    let scan_sql = task199_ordered_scan_sql(corpus, queries, 40);
+    let (scan, scan_connection) = task199_connect(coordinator_port).await?;
+    scan.batch_execute(
+        "SET enable_seqscan = off;
+         SET ec_distann.beam_width = 4;
+         SET ec_distann.hop_rounds = 100;",
+    )
+    .await?;
+    let baseline = task199_decode_ordered_rows(scan.query(&scan_sql, &[]).await?);
+    scan.batch_execute(&format!(
+        "BEGIN ISOLATION LEVEL READ COMMITTED;
+         DECLARE task199_replica_cursor NO SCROLL CURSOR FOR {scan_sql}"
+    ))
+    .await?;
+    let mut cursor_rows = task199_decode_ordered_rows(
+        scan.query("FETCH FORWARD 10 FROM task199_replica_cursor", &[])
+            .await?,
+    );
+    let active_pins = coordinator
+        .query_one(
+            "SELECT active_pins
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Ready'",
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+
+    let (mutator, mutator_connection) = task199_connect(coordinator_port).await?;
+    let inserted_id = mutator
+        .query_one(
+            &format!("SELECT coalesce(max(id), 0) + 1 FROM {corpus}"),
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let invalidation = mutator
+        .query_one(&task199_real_insert_sql(corpus), &[])
+        .await
+        .expect_err("in-flight scan mutation must invalidate the Ready replica");
+    let first_retryable = invalidation
+        .code()
+        .is_some_and(|code| code.code() == "40001")
+        && invalidation
+            .as_db_error()
+            .is_some_and(|error| error.message().contains("EC_REPLICA_INVALIDATED"));
+    mutator_connection.abort();
+
+    cursor_rows.extend(task199_decode_ordered_rows(
+        scan.query("FETCH FORWARD ALL FROM task199_replica_cursor", &[])
+            .await?,
+    ));
+    scan.batch_execute("COMMIT").await?;
+    scan_connection.abort();
+    let state = coordinator
+        .query_one(
+            "SELECT state
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              ORDER BY build_started_at DESC LIMIT 1",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    let inserted_count = coordinator
+        .query_one(
+            &format!("SELECT count(*)::bigint FROM {corpus} WHERE id = $1"),
+            &[&inserted_id],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let owner_after =
+        task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+    let pass = active_pins > 0
+        && first_retryable
+        && state == "Stale"
+        && inserted_count == 0
+        && cursor_rows == baseline
+        && owner_after == owner_baseline;
+    if !pass {
+        bail!(
+            "Task 199 in-flight scan invalidation failed: pins={active_pins} \
+             retryable={first_retryable} state={state} inserted={inserted_count} \
+             cursor_identity={} owner_identity={}",
+            cursor_rows == baseline,
+            owner_after == owner_baseline,
+        );
+    }
+    Ok(format!(
+        "scenario=inflight_scan_invalidation pass=true active_pins={active_pins} cursor_rows={} first_sqlstate=40001 state=Stale inserted_rows=0 owner_fallback_identity=true",
+        cursor_rows.len()
+    ))
+}
+
+async fn task199_auth_failure_recovery_drill(
+    coordinator: &tokio_postgres::Client,
+    corpus: &str,
+) -> Result<String> {
+    const MISSING_PASSWORD_FILE: &str = "/task199-intentionally-missing-replica-control-password";
+    coordinator
+        .batch_execute(&format!(
+            "ALTER SYSTEM SET ec_distann.replica_control_password_file = \
+             '{MISSING_PASSWORD_FILE}'"
+        ))
+        .await?;
+    coordinator
+        .query_one("SELECT pg_reload_conf()", &[])
+        .await?;
+    let mut reloaded = false;
+    for _ in 0..100 {
+        let setting = coordinator
+            .query_one(
+                "SELECT current_setting(
+                     'ec_distann.replica_control_password_file', true
+                 )",
+                &[],
+            )
+            .await?
+            .get::<_, Option<String>>(0);
+        if setting.as_deref() == Some(MISSING_PASSWORD_FILE) {
+            reloaded = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    let inserted_id = coordinator
+        .query_one(
+            &format!("SELECT coalesce(max(id), 0) + 1 FROM {corpus}"),
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let auth_error = coordinator
+        .query_one(&task199_real_insert_sql(corpus), &[])
+        .await
+        .expect_err("broken replica control authentication must fail closed");
+    let auth_failed_closed = auth_error.as_db_error().is_some_and(|error| {
+        error.message().contains("EC_REPLICA_CONTROL")
+            && error.message().contains("password-file metadata failed")
+    });
+    let ready_after_failure = coordinator
+        .query_one(
+            "SELECT count(*) = 1
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Ready'",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    coordinator
+        .batch_execute("ALTER SYSTEM RESET ec_distann.replica_control_password_file")
+        .await?;
+    coordinator
+        .query_one("SELECT pg_reload_conf()", &[])
+        .await?;
+    let recovered = coordinator
+        .query_one(
+            "SELECT ec_distann_recover_traversal_replica_invalidation(
+                 'dm_idx'::regclass
+             )",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let state = coordinator
+        .query_one(
+            "SELECT state
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              ORDER BY build_started_at DESC LIMIT 1",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    let inserted_count = coordinator
+        .query_one(
+            &format!("SELECT count(*)::bigint FROM {corpus} WHERE id = $1"),
+            &[&inserted_id],
+        )
+        .await?
+        .get::<_, i64>(0);
+    if !reloaded
+        || !auth_failed_closed
+        || !ready_after_failure
+        || !recovered
+        || state != "Stale"
+        || inserted_count != 0
+    {
+        bail!(
+            "Task 199 authentication recovery failed: reloaded={reloaded} \
+             failed_closed={auth_failed_closed} ready={ready_after_failure} \
+             recovered={recovered} state={state} inserted={inserted_count}"
+        );
+    }
+    Ok(
+        "scenario=control_auth_failure_recovery pass=true failed_closed=true \
+         state_after_failure=Ready operator_recovery=true state_after_recovery=Stale \
+         inserted_rows=0"
+            .to_owned(),
+    )
+}
+
+async fn task199_relation_lock_fallback_drill(
+    coordinator: &tokio_postgres::Client,
+    coordinator_port: u16,
+    corpus: &str,
+    queries: &str,
+    owner_baseline: &str,
+) -> Result<String> {
+    let replica_relation = coordinator
+        .query_one(
+            "SELECT format('%I.%I', namespace.nspname, relation.relname)
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass) status
+               JOIN pg_class relation ON relation.oid = status.replica_relid
+               JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
+              WHERE status.state = 'Ready'",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    let (locker, locker_connection) = task199_connect(coordinator_port).await?;
+    locker
+        .batch_execute(&format!(
+            "BEGIN;
+             LOCK TABLE {replica_relation} IN ACCESS EXCLUSIVE MODE"
+        ))
+        .await?;
+    let fallback = task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+    locker.batch_execute("ROLLBACK").await?;
+    locker_connection.abort();
+    let status = coordinator
+        .query_one(
+            "SELECT state, state_reason
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              ORDER BY build_started_at DESC LIMIT 1",
+            &[],
+        )
+        .await?;
+    let state = status.get::<_, String>(0);
+    let reason = status.get::<_, String>(1);
+    let pass = fallback == owner_baseline
+        && state == "Stale"
+        && reason.contains("EC_REPLICA_RELATION_RACE");
+    if !pass {
+        bail!(
+            "Task 199 relation-lock fallback failed: identity={} state={state} reason={reason}",
+            fallback == owner_baseline
+        );
+    }
+    Ok(
+        "scenario=relation_lock_race_fallback pass=true nonblocking=true \
+         owner_identity=true state=Stale token=EC_REPLICA_RELATION_RACE"
+            .to_owned(),
+    )
+}
+
+async fn task199_queued_ddl_lock_drill(
+    coordinator: &tokio_postgres::Client,
+    coordinator_port: u16,
+    corpus: &str,
+    queries: &str,
+) -> Result<String> {
+    let (holder, holder_connection) = task199_connect(coordinator_port).await?;
+    let lock_establishing_scan = task199_ordered_scan_sql(corpus, queries, 1);
+    holder
+        .batch_execute(&format!(
+            "BEGIN;
+             SET enable_seqscan = off;
+             {lock_establishing_scan}"
+        ))
+        .await?;
+    let (dropper, dropper_connection) = task199_connect(coordinator_port).await?;
+    let dropper_pid = dropper
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await?
+        .get::<_, i32>(0);
+    let cancel = dropper.cancel_token();
+    let drop_task = tokio::spawn(async move { dropper.batch_execute("DROP INDEX dm_idx").await });
+    let mut queued = false;
+    for _ in 0..100 {
+        queued = coordinator
+            .query_one(
+                "SELECT EXISTS (
+                     SELECT 1 FROM pg_catalog.pg_locks
+                      WHERE pid = $1
+                        AND relation = 'dm_idx'::regclass::oid
+                        AND mode = 'AccessExclusiveLock'
+                        AND NOT granted
+                 )",
+                &[&dropper_pid],
+            )
+            .await?
+            .get::<_, bool>(0);
+        if queued {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    if !queued {
+        cancel.cancel_query(tokio_postgres::NoTls).await?;
+        let _ = drop_task.await;
+        holder.batch_execute("ROLLBACK").await?;
+        holder_connection.abort();
+        dropper_connection.abort();
+        bail!("Task 199 could not queue AccessExclusiveLock behind the holder");
+    }
+    let started = Instant::now();
+    let guard_result = tokio::time::timeout(
+        Duration::from_secs(2),
+        holder.query_one(
+            "SELECT ec_distann_guard_traversal_replica_mutation(
+                 'dm_idx'::regclass
+             )",
+            &[],
+        ),
+    )
+    .await;
+    let bounded = match guard_result {
+        Ok(Err(error)) => {
+            error.code().is_some_and(|code| code.code() == "40001")
+                && error
+                    .as_db_error()
+                    .is_some_and(|db| db.message().contains("EC_REPLICA_INVALIDATED"))
+        }
+        _ => false,
+    };
+    cancel.cancel_query(tokio_postgres::NoTls).await?;
+    let _ = drop_task.await;
+    holder.batch_execute("ROLLBACK").await?;
+    holder_connection.abort();
+    dropper_connection.abort();
+    let index_survived = coordinator
+        .query_one("SELECT to_regclass('dm_idx') IS NOT NULL", &[])
+        .await?
+        .get::<_, bool>(0);
+    let stale = coordinator
+        .query_one(
+            "SELECT count(*) = 1
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Stale'",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if !bounded || !index_survived || !stale {
+        bail!(
+            "Task 199 queued-DDL control transaction failed: bounded={bounded} \
+             index_survived={index_survived} stale={stale}"
+        );
+    }
+    Ok(format!(
+        "scenario=queued_ddl_invalidation pass=true queued_access_exclusive=true \
+         control_elapsed_ms={} first_sqlstate=40001 index_survived=true state=Stale",
+        started.elapsed().as_millis()
+    ))
+}
+
+async fn task199_epoch_turnover_drill(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    corpus: &str,
+    queries: &str,
+    owner_baseline: &str,
+    training_query_path: Option<&Path>,
+    lines: &mut Vec<String>,
+) -> Result<()> {
+    let replica_oids = coordinator
+        .query_one(
+            "SELECT replica_relid::oid, directory_relid::oid
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Ready'",
+            &[],
+        )
+        .await?;
+    let replica_relid = replica_oids.get::<_, u32>(0);
+    let directory_relid = replica_oids.get::<_, u32>(1);
+    let current_epoch = coordinator
+        .query_one(
+            "SELECT epoch
+               FROM ec_distann_active_epoch
+              WHERE index_oid = 'dm_idx'::regclass::oid",
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let successor_epoch = current_epoch + 1;
+    let successor_build = "73737373-7373-4373-8373-737373737373";
+    coordinator
+        .batch_execute(&format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 'dm_idx'::regclass, {successor_epoch},
+                 '{successor_build}'::uuid
+             )"
+        ))
+        .await?;
+    if let Some(path) = training_query_path {
+        let path = std::fs::canonicalize(path)?
+            .display()
+            .to_string()
+            .replace('\'', "''");
+        coordinator
+            .batch_execute(&format!(
+                "CREATE TEMP TABLE ec_distann_task199_training_stage (
+                     load_ordinal bigserial, source_id bigint, vec text
+                 );
+                 COPY ec_distann_task199_training_stage (source_id, vec)
+                   FROM '{path}' WITH (FORMAT text, DELIMITER E'\\t');
+                 CREATE TEMP TABLE ec_distann_task199_training_queries AS
+                 SELECT (load_ordinal - 200)::bigint AS training_ordinal,
+                        translate(vec, '[]', '{{}}')::real[] AS vector
+                   FROM ec_distann_task199_training_stage
+                  WHERE load_ordinal BETWEEN 201 AND 400
+                  ORDER BY load_ordinal;
+                 DROP TABLE ec_distann_task199_training_stage;
+                 SELECT ec_distann_build_epoch_with_training(
+                     'dm_idx'::regclass, {successor_epoch},
+                     '{successor_build}'::uuid,
+                     'ec_distann_task199_training_queries'::regclass
+                 );
+                 DROP TABLE ec_distann_task199_training_queries;"
+            ))
+            .await?;
+    } else {
+        coordinator
+            .batch_execute(&format!(
+                "SELECT ec_distann_build_epoch(
+                     'dm_idx'::regclass, {successor_epoch},
+                     '{successor_build}'::uuid
+                 )"
+            ))
+            .await?;
+    }
+    coordinator
+        .batch_execute(&format!(
+            "SELECT ec_distann_decide_epoch_publish(
+                 'dm_idx'::regclass, '{successor_build}'::uuid
+             );
+             SELECT ec_distann_recover_epoch_publish(
+                 'dm_idx'::regclass, '{successor_build}'::uuid
+             );"
+        ))
+        .await?;
+    let retiring = coordinator
+        .query_one(
+            "SELECT state, state_reason
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              ORDER BY build_started_at DESC LIMIT 1",
+            &[],
+        )
+        .await?;
+    let retiring_state = retiring.get::<_, String>(0);
+    let retiring_reason = retiring.get::<_, String>(1);
+    let successor_owner =
+        task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+    let reclaimed = coordinator
+        .query_one(
+            "SELECT ec_distann_reclaim_traversal_replica('dm_idx'::regclass)",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let relation_residue = coordinator
+        .query_one(
+            "SELECT count(*)::bigint
+               FROM pg_catalog.pg_class
+              WHERE oid IN ($1::oid, $2::oid)",
+            &[&replica_relid, &directory_relid],
+        )
+        .await?
+        .get::<_, i64>(0);
+    coordinator
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_epoch_publish(
+                 'dm_idx'::regclass, '{successor_build}'::uuid
+             )"
+        ))
+        .await?;
+    let active_successor = coordinator
+        .query_one(
+            "SELECT build_id::text = $1
+               FROM ec_distann_active_epoch
+              WHERE index_oid = 'dm_idx'::regclass::oid",
+            &[&successor_build],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if retiring_state != "Retiring"
+        || retiring_reason != "epoch_superseded"
+        || successor_owner != owner_baseline
+        || !reclaimed
+        || relation_residue != 0
+        || !active_successor
+    {
+        bail!(
+            "Task 199 epoch turnover failed: state={retiring_state} \
+             reason={retiring_reason} owner_identity={} reclaimed={reclaimed} \
+             relation_residue={relation_residue} active_successor={active_successor}",
+            successor_owner == owner_baseline
+        );
+    }
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} \
+         scenario=epoch_turnover_retire_reclaim pass=true state=Retiring \
+         reason=epoch_superseded owner_identity=true reclaimed=true \
+         relation_residue=0 successor_epoch={successor_epoch}"
+    ));
+    build_and_attest_traversal_replica(coordinator, scale, lines).await?;
+    Ok(())
+}
+
 async fn run_task199_replica_lifecycle_drills(
     coordinator: &tokio_postgres::Client,
+    coordinator_port: u16,
     scale: &str,
     corpus: &str,
     queries: &str,
     content_digest: &str,
     owner_baseline: &str,
+    training_query_path: Option<&Path>,
 ) -> Result<Vec<String>> {
     let replica = task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
     if replica != owner_baseline {
@@ -1685,23 +2366,7 @@ async fn run_task199_replica_lifecycle_drills(
         )
         .await?
         .get::<_, i64>(0);
-    let insert_sql = format!(
-        "WITH next_row AS (
-             SELECT coalesce(max(id), 0) + 1 AS id FROM {corpus}
-         ), seed AS (
-             SELECT source, embedding FROM {corpus} ORDER BY id LIMIT 1
-         )
-         INSERT INTO {corpus} (id, source_id, source, embedding)
-         SELECT next_row.id,
-                (substr(md5(next_row.id::text),1,8)||'-'||
-                 substr(md5(next_row.id::text),9,4)||'-4'||
-                 substr(md5(next_row.id::text),14,3)||'-8'||
-                 substr(md5(next_row.id::text),18,3)||'-'||
-                 substr(md5(next_row.id::text),21,12))::uuid,
-                seed.source, seed.embedding
-           FROM next_row CROSS JOIN seed
-         RETURNING id"
-    );
+    let insert_sql = task199_real_insert_sql(corpus);
     let first_error = coordinator
         .query_one(&insert_sql, &[])
         .await
@@ -1780,6 +2445,98 @@ async fn run_task199_replica_lifecycle_drills(
     if !reclaim_pass {
         bail!("Task 199 retirement/reclaim drill failed");
     }
+
+    let (concurrent_digest, concurrent_line) =
+        task199_concurrent_build_mutation_drill(coordinator, coordinator_port, corpus).await?;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} {concurrent_line} content_digest={concurrent_digest}"
+    ));
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} {}",
+        task199_inflight_scan_invalidation_drill(
+            coordinator,
+            coordinator_port,
+            corpus,
+            queries,
+            owner_baseline,
+        )
+        .await?
+    ));
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the in-flight invalidation replica");
+    }
+
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} {}",
+        task199_auth_failure_recovery_drill(coordinator, corpus).await?
+    ));
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the authentication-recovery replica");
+    }
+
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} {}",
+        task199_relation_lock_fallback_drill(
+            coordinator,
+            coordinator_port,
+            corpus,
+            queries,
+            owner_baseline,
+        )
+        .await?
+    ));
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the relation-lock fallback replica");
+    }
+
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} {}",
+        task199_queued_ddl_lock_drill(coordinator, coordinator_port, corpus, queries,).await?
+    ));
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the queued-DDL replica");
+    }
+
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
+    task199_epoch_turnover_drill(
+        coordinator,
+        scale,
+        corpus,
+        queries,
+        owner_baseline,
+        training_query_path,
+        &mut lines,
+    )
+    .await?;
+    let persisted_before =
+        task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+    let (reconnected, reconnected_task) = task199_connect(coordinator_port).await?;
+    let persisted_after =
+        task198_replica_semantic_result(&reconnected, corpus, queries, -1, 0, 20).await?;
+    let ready_after_reconnect = reconnected
+        .query_one(
+            "SELECT count(*) = 1
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Ready'",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    reconnected_task.abort();
+    if persisted_before != persisted_after || !ready_after_reconnect {
+        bail!("Task 199 replica did not survive a fresh coordinator backend");
+    }
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} \
+         scenario=coordinator_backend_reconnect pass=true ordered_identity=true state=Ready"
+    ));
     Ok(lines)
 }
 
@@ -3005,6 +3762,7 @@ async fn run_physical_benchmarks(
         lines.extend(
             run_task199_replica_lifecycle_drills(
                 coordinator,
+                coordinator_port,
                 scale,
                 &physical_corpus,
                 &physical_queries,
@@ -3012,6 +3770,7 @@ async fn run_physical_benchmarks(
                 traversal_owner_baseline.as_deref().ok_or_else(|| {
                     color_eyre::eyre::eyre!("traversal replica lifecycle has no owner baseline")
                 })?,
+                args.training_query_path.as_deref(),
             )
             .await?,
         );
