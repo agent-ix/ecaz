@@ -830,6 +830,29 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_fault_socket_provider_env_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "fault",
+            "provider-env",
+            "--mode",
+            "socket-reset",
+            "--peer-match",
+            "tcp:127.0.0.1:39711",
+            "--after",
+            "3",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn cli_parses_fault_provider_restart_command() {
         let cli = Cli::try_parse_from([
             "ecaz",

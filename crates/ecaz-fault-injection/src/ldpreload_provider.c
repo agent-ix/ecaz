@@ -3,13 +3,17 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -104,6 +108,58 @@ static int fd_target_matches(int fd, char *target, size_t target_size) {
     return path_matches(target);
 }
 
+static int peer_target_matches(int fd, char *target, size_t target_size) {
+    const char *expected = getenv("ECAZ_FAULT_PROVIDER_PEER");
+    if (!expected || !*expected || target_size == 0) {
+        return 0;
+    }
+
+    struct sockaddr_storage address;
+    socklen_t address_len = sizeof(address);
+    if (getpeername(fd, (struct sockaddr *)&address, &address_len) != 0) {
+        target[0] = '\0';
+        return 0;
+    }
+
+    if (address.ss_family == AF_UNIX) {
+        const struct sockaddr_un *unix_address =
+            (const struct sockaddr_un *)&address;
+        snprintf(target, target_size, "unix:%s", unix_address->sun_path);
+    } else if (address.ss_family == AF_INET) {
+        const struct sockaddr_in *inet_address =
+            (const struct sockaddr_in *)&address;
+        char host[INET_ADDRSTRLEN];
+        if (!inet_ntop(AF_INET, &inet_address->sin_addr, host, sizeof(host))) {
+            target[0] = '\0';
+            return 0;
+        }
+        snprintf(
+            target,
+            target_size,
+            "tcp:%s:%u",
+            host,
+            (unsigned)ntohs(inet_address->sin_port));
+    } else if (address.ss_family == AF_INET6) {
+        const struct sockaddr_in6 *inet6_address =
+            (const struct sockaddr_in6 *)&address;
+        char host[INET6_ADDRSTRLEN];
+        if (!inet_ntop(AF_INET6, &inet6_address->sin6_addr, host, sizeof(host))) {
+            target[0] = '\0';
+            return 0;
+        }
+        snprintf(
+            target,
+            target_size,
+            "tcp:[%s]:%u",
+            host,
+            (unsigned)ntohs(inet6_address->sin6_port));
+    } else {
+        target[0] = '\0';
+        return 0;
+    }
+    return strcmp(target, expected) == 0;
+}
+
 static int should_fault_path(const char *mode, const char *op, const char *path, int errnum) {
     if (!enabled() || !mode_is(mode) || !path_matches(path)) {
         return 0;
@@ -129,12 +185,27 @@ static int should_fault_fd(const char *mode, const char *op, int fd, int errnum)
     return 1;
 }
 
-static void maybe_sleep(void) {
-    if (!enabled() || !mode_is("slow-disk")) {
-        return;
+static int should_fault_socket(const char *mode, const char *op, int fd, int errnum) {
+    char target[4096];
+    if (!enabled() || !mode_is(mode) ||
+        !peer_target_matches(fd, target, sizeof(target))) {
+        return 0;
     }
+    unsigned long long count =
+        __atomic_add_fetch(&fault_counter, 1, __ATOMIC_RELAXED);
+    if (count < after_count()) {
+        return 0;
+    }
+    record_fault_event(mode, op, target, count, errnum);
+    return 1;
+}
+
+static long latency_millis(void) {
     const char *value = getenv("ECAZ_FAULT_PROVIDER_LATENCY_MS");
-    long millis = value ? strtol(value, NULL, 10) : 0;
+    return value ? strtol(value, NULL, 10) : 0;
+}
+
+static void sleep_millis(long millis) {
     if (millis <= 0) {
         return;
     }
@@ -142,6 +213,28 @@ static void maybe_sleep(void) {
     ts.tv_sec = millis / 1000;
     ts.tv_nsec = (millis % 1000) * 1000000L;
     nanosleep(&ts, NULL);
+}
+
+static void maybe_sleep(void) {
+    if (!enabled() || !mode_is("slow-disk")) {
+        return;
+    }
+    sleep_millis(latency_millis());
+}
+
+static void maybe_sleep_socket(const char *op, int fd) {
+    if (should_fault_socket("socket-slow", op, fd, 0)) {
+        sleep_millis(latency_millis());
+    }
+}
+
+static int maybe_reset_socket(const char *op, int fd) {
+    if (!should_fault_socket("socket-reset", op, fd, ECONNRESET)) {
+        return 0;
+    }
+    (void)syscall(SYS_shutdown, fd, SHUT_RDWR);
+    errno = ECONNRESET;
+    return 1;
 }
 
 static void *real_symbol(const char *name) {
@@ -155,14 +248,16 @@ static void *real_symbol(const char *name) {
 __attribute__((constructor)) static void ecaz_fault_provider_loaded(void) {
     const char *mode = getenv("ECAZ_FAULT_PROVIDER_MODE");
     const char *match = getenv("ECAZ_FAULT_PROVIDER_MATCH");
-    char line[256];
+    const char *peer = getenv("ECAZ_FAULT_PROVIDER_PEER");
+    char line[512];
     int len = snprintf(
         line,
         sizeof(line),
-        "pid=%ld mode=%s match=%s\n",
+        "pid=%ld mode=%s match=%s peer=%s\n",
         (long)getpid(),
         mode ? mode : "unset",
-        match ? match : "unset");
+        match ? match : "unset",
+        peer ? peer : "unset");
     if (len <= 0) {
         return;
     }
@@ -247,6 +342,10 @@ int openat2(int dirfd, const char *path, const struct open_how *how, size_t size
 }
 
 ssize_t read(int fd, void *buf, size_t count) {
+    if (maybe_reset_socket("read", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("read", fd);
     if (should_fault_fd("eio-read", "read", fd, EIO)) {
         errno = EIO;
         return -1;
@@ -277,6 +376,10 @@ ssize_t pread64(int fd, void *buf, size_t count, off64_t offset) {
 }
 
 ssize_t write(int fd, const void *buf, size_t count) {
+    if (maybe_reset_socket("write", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("write", fd);
     if (should_fault_fd("enospc-write", "write", fd, ENOSPC)) {
         errno = ENOSPC;
         return -1;
@@ -284,6 +387,24 @@ ssize_t write(int fd, const void *buf, size_t count) {
     maybe_sleep();
     ssize_t (*real_write)(int, const void *, size_t) = real_symbol("write");
     return real_write ? real_write(fd, buf, count) : -1;
+}
+
+ssize_t recv(int fd, void *buf, size_t count, int flags) {
+    if (maybe_reset_socket("recv", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("recv", fd);
+    ssize_t (*real_recv)(int, void *, size_t, int) = real_symbol("recv");
+    return real_recv ? real_recv(fd, buf, count, flags) : -1;
+}
+
+ssize_t send(int fd, const void *buf, size_t count, int flags) {
+    if (maybe_reset_socket("send", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("send", fd);
+    ssize_t (*real_send)(int, const void *, size_t, int) = real_symbol("send");
+    return real_send ? real_send(fd, buf, count, flags) : -1;
 }
 
 ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {

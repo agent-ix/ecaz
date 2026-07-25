@@ -12,6 +12,8 @@ pub enum ProviderMode {
     EioRead,
     EnospcWrite,
     SlowDisk,
+    SocketReset,
+    SocketSlow,
 }
 
 impl ProviderMode {
@@ -20,6 +22,8 @@ impl ProviderMode {
             ProviderMode::EioRead => "eio-read",
             ProviderMode::EnospcWrite => "enospc-write",
             ProviderMode::SlowDisk => "slow-disk",
+            ProviderMode::SocketReset => "socket-reset",
+            ProviderMode::SocketSlow => "socket-slow",
         }
     }
 }
@@ -40,6 +44,7 @@ pub fn provider_environment(
     after: u64,
     latency_ms: Option<u64>,
     marker: Option<&str>,
+    peer_match: Option<&str>,
 ) -> Vec<(String, String)> {
     let mut env = vec![
         (
@@ -70,6 +75,12 @@ pub fn provider_environment(
     }
     if let Some(marker) = marker {
         env.push(("ECAZ_FAULT_PROVIDER_MARKER".to_string(), marker.to_string()));
+    }
+    if let Some(peer_match) = peer_match {
+        env.push((
+            "ECAZ_FAULT_PROVIDER_PEER".to_string(),
+            peer_match.to_string(),
+        ));
     }
     env
 }
@@ -887,6 +898,7 @@ mod tests {
             3,
             None,
             Some("/tmp/ecaz-fault-provider.marker"),
+            None,
         );
         assert!(env.iter().any(|(key, value)| {
             key == "LD_PRELOAD" && (value.ends_with(".so") || value.contains("not built"))
@@ -897,6 +909,24 @@ mod tests {
         assert!(env
             .iter()
             .any(|(key, value)| key == "ECAZ_FAULT_PROVIDER_AFTER" && value == "3"));
+    }
+
+    #[test]
+    fn socket_provider_environment_pins_exact_peer() {
+        let env = provider_environment(
+            ProviderMode::SocketReset,
+            "",
+            2,
+            None,
+            Some("/tmp/ecaz-fault-provider.marker"),
+            Some("tcp:127.0.0.1:39711"),
+        );
+        assert!(env
+            .iter()
+            .any(|(key, value)| { key == "ECAZ_FAULT_PROVIDER_MODE" && value == "socket-reset" }));
+        assert!(env.iter().any(|(key, value)| {
+            key == "ECAZ_FAULT_PROVIDER_PEER" && value == "tcp:127.0.0.1:39711"
+        }));
     }
 
     #[cfg(target_os = "linux")]

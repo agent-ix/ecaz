@@ -54,6 +54,9 @@ pub struct ProviderEnvArgs {
     /// Substring that must appear in the target path, for example "base/".
     #[arg(long, default_value = "base/")]
     path_match: String,
+    /// Exact matched socket peer, e.g. tcp:127.0.0.1:39711 or unix:/path/.s.PGSQL.39424.
+    #[arg(long)]
+    peer_match: Option<String>,
     /// Start injecting on the Nth matching provider operation.
     #[arg(long, default_value_t = 1)]
     after: u64,
@@ -82,6 +85,9 @@ pub struct ProviderRestartArgs {
     /// Substring that must appear in the target path, for example "base/".
     #[arg(long, default_value = "base/")]
     path_match: String,
+    /// Exact matched socket peer, e.g. tcp:127.0.0.1:39711 or unix:/path/.s.PGSQL.39424.
+    #[arg(long)]
+    peer_match: Option<String>,
     /// Start injecting on the Nth matching provider operation.
     #[arg(long, default_value_t = 1)]
     after: u64,
@@ -160,6 +166,8 @@ pub enum ProviderModeArg {
     EioRead,
     EnospcWrite,
     SlowDisk,
+    SocketReset,
+    SocketSlow,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -184,6 +192,8 @@ impl From<ProviderModeArg> for ProviderMode {
             ProviderModeArg::EioRead => ProviderMode::EioRead,
             ProviderModeArg::EnospcWrite => ProviderMode::EnospcWrite,
             ProviderModeArg::SlowDisk => ProviderMode::SlowDisk,
+            ProviderModeArg::SocketReset => ProviderMode::SocketReset,
+            ProviderModeArg::SocketSlow => ProviderMode::SocketSlow,
         }
     }
 }
@@ -260,9 +270,7 @@ fn run_plan(args: PlanArgs) -> Result<()> {
 
 fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
     let mode = ProviderMode::from(args.mode);
-    if mode == ProviderMode::SlowDisk && args.latency_ms.unwrap_or(0) == 0 {
-        return Err(eyre!("--latency-ms must be >= 1 for slow-disk mode"));
-    }
+    validate_provider_options(mode, args.latency_ms, args.peer_match.as_deref())?;
     let marker = args
         .marker
         .as_deref()
@@ -275,6 +283,7 @@ fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
         args.after,
         args.latency_ms,
         marker.as_deref(),
+        args.peer_match.as_deref(),
     );
     for (key, value) in env {
         crate::ecaz_println!("{key}={value}");
@@ -285,9 +294,10 @@ fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
 async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
     let mode = ProviderMode::from(args.mode);
     let latency_ms = match (mode, args.latency_ms) {
-        (ProviderMode::SlowDisk, None) => Some(1),
+        (ProviderMode::SlowDisk | ProviderMode::SocketSlow, None) => Some(1),
         (_, value) => value,
     };
+    validate_provider_options(mode, latency_ms, args.peer_match.as_deref())?;
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let install = find_pgrx_install(args.pg, &pgrx_home)?;
     let marker = args.marker.unwrap_or_else(|| {
@@ -301,6 +311,7 @@ async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
         args.after,
         latency_ms,
         Some(&marker_string),
+        args.peer_match.as_deref(),
     );
     restart_pgrx_postmaster(
         &install.bin_dir.join("pg_ctl"),
@@ -311,6 +322,30 @@ async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
     )
     .await?;
     crate::ecaz_println!("[fault] provider_marker={marker_string}");
+    Ok(())
+}
+
+fn validate_provider_options(
+    mode: ProviderMode,
+    latency_ms: Option<u64>,
+    peer_match: Option<&str>,
+) -> Result<()> {
+    if matches!(mode, ProviderMode::SlowDisk | ProviderMode::SocketSlow)
+        && latency_ms.unwrap_or(0) == 0
+    {
+        return Err(eyre!("--latency-ms must be >= 1 for {mode} mode"));
+    }
+    if matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow)
+        && peer_match.is_none_or(str::is_empty)
+    {
+        return Err(eyre!("--peer-match is required for {mode} mode"));
+    }
+    if !matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow) && peer_match.is_some()
+    {
+        return Err(eyre!(
+            "--peer-match is valid only for socket-reset or socket-slow mode"
+        ));
+    }
     Ok(())
 }
 
@@ -383,6 +418,7 @@ async fn restore_pgrx_postmaster_immediate(
         "ECAZ_FAULT_PROVIDER_AFTER",
         "ECAZ_FAULT_PROVIDER_LATENCY_MS",
         "ECAZ_FAULT_PROVIDER_MARKER",
+        "ECAZ_FAULT_PROVIDER_PEER",
     ] {
         start.env_remove(name);
     }
@@ -424,6 +460,7 @@ async fn restart_pgrx_postmaster(
         "ECAZ_FAULT_PROVIDER_AFTER",
         "ECAZ_FAULT_PROVIDER_LATENCY_MS",
         "ECAZ_FAULT_PROVIDER_MARKER",
+        "ECAZ_FAULT_PROVIDER_PEER",
     ] {
         command.env_remove(name);
     }
@@ -590,9 +627,9 @@ async fn run_io_probe(
                     }
                 }
             }
-            ProviderMode::SlowDisk => {
+            ProviderMode::SlowDisk | ProviderMode::SocketReset | ProviderMode::SocketSlow => {
                 return Err(eyre!(
-                    "lane io requires an eio-read or enospc-write provider, got slow-disk"
+                    "lane io requires an eio-read or enospc-write provider, got {mode}"
                 ))
             }
         };
@@ -1557,6 +1594,16 @@ fn provider_mode_from_marker(content: &str) -> Result<ProviderMode> {
         Ok(ProviderMode::EnospcWrite)
     } else if content.lines().any(|line| line.contains("mode=slow-disk")) {
         Ok(ProviderMode::SlowDisk)
+    } else if content
+        .lines()
+        .any(|line| line.contains("mode=socket-reset"))
+    {
+        Ok(ProviderMode::SocketReset)
+    } else if content
+        .lines()
+        .any(|line| line.contains("mode=socket-slow"))
+    {
+        Ok(ProviderMode::SocketSlow)
     } else {
         Err(eyre!(
             "provider marker did not include a supported mode line"
