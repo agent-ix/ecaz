@@ -590,7 +590,11 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             if let Some(fixture) = enospc_fixture.as_ref() {
                 let environment = ecaz_fault_injection::provider_environment(
                     ecaz_fault_injection::ProviderMode::EnospcWrite,
-                    &fixture.tablespace_dir.to_string_lossy(),
+                    // PostgreSQL opens a tablespace relation through its
+                    // PGDATA-relative pg_tblspc/<oid>/... symlink path. The
+                    // disposable node has no other user tablespace, and the
+                    // provider remains disarmed until the replica build.
+                    "pg_tblspc/",
                     1,
                     None,
                     Some(&fixture.marker_file.to_string_lossy()),
@@ -1626,14 +1630,17 @@ async fn task199_enospc_replica_build_drill(
     let error = injected.expect_err("armed replica build must fail under injected ENOSPC");
     let sqlstate = error.code().map(|code| code.code()).unwrap_or("none");
     let marker = fs::read_to_string(&fixture.marker_file)?;
-    let provider_target = fixture.tablespace_dir.to_string_lossy();
     let provider_faults = marker
         .lines()
         .filter(|line| {
             line.contains("fault=1")
                 && line.contains("mode=enospc-write")
+                && (line.contains("op=open")
+                    || line.contains("op=open64")
+                    || line.contains("op=openat")
+                    || line.contains("op=openat2"))
                 && line.contains("errno=28")
-                && line.contains(provider_target.as_ref())
+                && line.contains("pg_tblspc/")
         })
         .count();
     let residue = coordinator
