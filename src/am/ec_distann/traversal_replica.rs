@@ -1352,35 +1352,12 @@ pub(crate) fn handle_ready_replica_failure(
         Ok(_) => Ok(()),
         Err(side_error) => {
             let side_error = side_error.chars().take(512).collect::<String>();
-            // Read fallback can commit a local catalog demotion with the query
-            // transaction. This preserves owner availability if control
-            // authentication changes after the build preflight.
-            let local_result = extension_owner().and_then(|(catalog_owner, _)| {
-                super::handoff::with_restricted_type_io_owner(catalog_owner, || {
-                    mark_exact_ready_replica_stale(
-                        index_oid,
-                        logical_index_uuid,
-                        build_id,
-                        epoch_fingerprint,
-                        &generation_descriptor_digest,
-                        reason,
-                    )
-                })
-            });
-            match local_result {
-                Ok(false) => pgrx::warning!(
-                    "EC_REPLICA_CONTROL: side demotion failed ({side_error}); matching replica was already non-Ready; continuing owner fallback"
-                ),
-                Ok(true) => pgrx::warning!(
-                    "EC_REPLICA_CONTROL: side demotion failed ({side_error}); demotion will commit with the owner fallback"
-                ),
-                Err(local_error) => {
-                    let local_error = local_error.chars().take(512).collect::<String>();
-                    pgrx::warning!(
-                        "EC_REPLICA_CONTROL: side demotion failed ({side_error}); local demotion also failed ({local_error}); continuing owner fallback without durable demotion"
-                    );
-                }
-            }
+            // Never attempt a catalog UPDATE in the user's query transaction.
+            // It may be READ ONLY or a standby, and a PostgreSQL ERROR would
+            // abort the SELECT before owner fallback can run.
+            pgrx::warning!(
+                "EC_REPLICA_CONTROL: side demotion failed ({side_error}); continuing owner fallback without durable demotion"
+            );
             Ok(())
         }
     }
