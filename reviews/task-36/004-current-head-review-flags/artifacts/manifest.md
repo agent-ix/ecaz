@@ -92,3 +92,36 @@ review.
 5. **Manual CI ran less than the local lane:** its SIMD matrix now runs
    `make simd-diff`. Triggers remain manual-only and no automatic CI claim is
    made.
+
+## Reviewer verification artifacts (2026-07-25, seq 02)
+
+Added by `feedback/2026-07-25-02-reviewer.md`. Verified at branch head
+`8923245ee` (packet head `a915b062b` plus the packet-004 request commit) in a
+clean worktree on Apple M5 (aarch64, NEON + dotprod, no SVE).
+
+### `2026-07-25-reviewer-make-simd-diff-repro.log`
+
+- Command: `make simd-diff`
+- Status: PASS (exit 0), independently reproducing `make-simd-diff.log`.
+- Key result: all ten counted stages report
+  `counted cargo test: observed expected N passed tests` with N =
+  10 / 2 / 7 / 10 / 9 / 8 / 5 / 3 / 3 / 2.
+
+### `2026-07-25-reviewer-counted-wrapper-controls.log`
+
+- Commands: three direct invocations of `scripts/run-counted-cargo-test.sh`.
+- Status: all three correctly fail.
+- Key result:
+  - wrong expected count (99 vs 3) → `exit=1`
+  - filter matching nothing → `exit=1, observed 0` (the packet-002 fail-open
+    hole)
+  - cargo itself failing → `exit=1`, cargo's own status propagated rather than
+    swallowed by the summary parsing.
+
+### `2026-07-25-reviewer-isa-cap-control.log`
+
+- Command: `ECAZ_ISA_CAP=scalar cargo test --lib --features bench quant::int8_approx32:: -- --test-threads=1`
+- Status: FAIL, as designed.
+- Key result: `int8 differential test did not execute the host's preferred SIMD
+  ISA` on every int8 differential test, confirming the pinning compares against
+  the uncapped host preference and cannot pass vacuously under a cap.
