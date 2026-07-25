@@ -91,6 +91,11 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
     pg_am_callback!({
+        // This is intentionally redundant with the statement-level
+        // ExecutorStart guard. A mutation can see Building there, wait behind
+        // the build's ShareRowExclusiveLock in ExecOpenIndices, and resume
+        // only after the replica commits Ready. The per-tuple check closes
+        // that ordering window.
         super::traversal_replica::guard_traversal_replica_mutation((*index_relation).rd_id);
         // The persisted format, not the mutable reloption, is authoritative
         // across ALTER/REINDEX boundaries. This cached block-0 read is the

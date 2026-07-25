@@ -104,6 +104,11 @@ A scan that selected Ready before invalidation MAY finish against its pinned
 immutable replica. New scans observe Stale. Replica pins participate in the
 same fingerprint retirement fence as owner traversal scans.
 
+Replica selection requires READ COMMITTED so the selecting statement can see
+a freshly committed Stale transition. REPEATABLE READ and SERIALIZABLE scans
+SHALL decline the optional replica and use unchanged owner traversal; building
+a performance object must not remove stronger-isolation read access.
+
 ## Traversal and Fallback
 
 Replica traversal SHALL use the same persisted head, ordered seeds, BW/H,
@@ -131,11 +136,20 @@ control connection in autocommit mode. The caller SHALL:
 3. dispatch no owner write; and
 4. return `EC_REPLICA_INVALIDATED`, a stable retryable error.
 
-The retry observes Stale and runs the ordinary owner-authoritative mutation.
-If invalidation cannot commit, the mutation fails closed with no owner write.
-A crash after the control commit is safe. The catalog update SHALL be the only
-lock acquired by the side transaction, preventing a lock dependency on the
-outer DML transaction.
+The retry observes Stale and reaches the index's ordinary mutation posture.
+For the current published distributed-control generation that pre-existing
+posture is fail-closed with `EC_GENERATION_MISSING`; Task 199 does not claim
+that retry commits an owner write. If invalidation cannot commit, the mutation
+fails closed with no owner write. A crash after the control commit is safe.
+The catalog update SHALL be the only lock acquired by the side transaction,
+preventing a lock dependency on the outer DML transaction.
+
+The traversal-replica mutation guard requires READ COMMITTED before it looks
+for a Ready row. A stronger-isolation snapshot cannot safely prove that no
+Ready replica was concurrently committed. REPEATABLE READ and SERIALIZABLE
+mutations through an ec_distann index therefore SHALL fail before lookup,
+invalidation, or owner dispatch with SQLSTATE `25001` and token
+`EC_TRANSACTION_ISOLATION`, even when the snapshot sees no replica.
 
 ## Operator Surface
 
@@ -163,7 +177,8 @@ or multi-coordinator topology.
 - **FR-084-AC-3:** Wrong fingerprint/digest/state never selects the replica.
 - **FR-084-AC-4:** A mid-replica fault restarts wholly on the owner path.
 - **FR-084-AC-5:** Exactly one first mutation attempt returns
-  `EC_REPLICA_INVALIDATED`; its retry reaches the owner mutation path.
+  `EC_REPLICA_INVALIDATED` after durable Stale and dispatches no owner write;
+  its retry reaches and reports the index's ordinary mutation posture.
 - **FR-084-AC-6:** Build/retire/reclaim and crash replay are idempotent and do
   not reclaim while a fingerprint scan pin exists.
 - **FR-084-AC-7:** Replica storage, build/WAL/copy cost, cache residency,

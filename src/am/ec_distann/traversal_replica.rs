@@ -1222,18 +1222,28 @@ fn preflight_control_connection() -> Result<(), String> {
 }
 
 pub(crate) fn guard_traversal_replica_mutation(index_oid: pg_sys::Oid) {
+    // Check isolation before the Ready lookup: a transaction-level snapshot
+    // may predate a concurrently committed Ready row and therefore cannot
+    // safely prove that invalidation is unnecessary.
+    if let Err(error) = super::lifecycle_guard::require_read_committed(
+        "ec_distann traversal replica mutation guard",
+    ) {
+        pgrx::ereport!(
+            ERROR,
+            pgrx::PgSqlErrorCode::ERRCODE_ACTIVE_SQL_TRANSACTION,
+            error
+        );
+    }
     let Some(identity) =
         active_ready_replica(index_oid).unwrap_or_else(|error| pgrx::error!("{error}"))
     else {
         return;
     };
-    super::lifecycle_guard::require_read_committed("ec_distann traversal replica mutation guard")
-        .unwrap_or_else(|error| pgrx::error!("{error}"));
     let transitioned = mark_stale_in_side_transaction(index_oid, &identity, "mutation")
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     if transitioned {
         DistannExpandError::EpochMismatch(
-            "EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; retry the mutation on the owner path"
+            "EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available"
                 .to_owned(),
         )
         .raise();
@@ -1243,7 +1253,8 @@ pub(crate) fn guard_traversal_replica_mutation(index_oid: pg_sys::Oid) {
 /// Mutation front-door guard. It returns normally when no Ready replica is
 /// eligible. The first caller that wins Ready -> Stale commits that change in
 /// a dedicated transaction and then receives SQLSTATE 40001. Its retry sees
-/// Stale and may dispatch the unchanged owner mutation.
+/// Stale; the published distributed-control index retains its existing
+/// fail-closed mutation posture until an ordinary owner mutation path exists.
 #[pg_extern(volatile, parallel_restricted)]
 fn ec_distann_guard_traversal_replica_mutation(index_regclass: PgRelation) -> bool {
     guard_traversal_replica_mutation(index_regclass.oid());
@@ -1864,7 +1875,16 @@ impl<'a> ReadyTraversalReplica<'a> {
         if state != TraversalReplicaState::Ready.as_str() {
             return Ok(None);
         }
-        super::lifecycle_guard::require_read_committed("ec_distann traversal replica selection")?;
+        // A stronger-isolation snapshot cannot establish fresh Ready/Stale
+        // visibility. The replica is only an optional acceleration object, so
+        // decline it and preserve the pre-existing owner read path.
+        if super::lifecycle_guard::require_read_committed(
+            "ec_distann traversal replica selection",
+        )
+        .is_err()
+        {
+            return Ok(None);
+        }
         if stored_fingerprint.as_slice() != fingerprint {
             return Err(
                 "EC_REPLICA_IDENTITY: Ready replica fingerprint differs from the active epoch"

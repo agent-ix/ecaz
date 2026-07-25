@@ -2505,9 +2505,6 @@ impl PhysicalGenerationScan {
                 }
             }
             Ok(None) => {}
-            Err(error) if error.starts_with("EC_TRANSACTION_ISOLATION:") => {
-                return Err(error);
-            }
             Err(error) => {
                 let reason = bounded_replica_failure_reason("replica validation failed", &error);
                 super::traversal_replica::handle_ready_replica_failure(

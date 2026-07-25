@@ -24,6 +24,11 @@ read-mostly capability**. When an operator has built and activated a valid
 Ready replica for the pinned generation, normal scans prefer it. Missing,
 partial, stale, corrupt, retiring, or removed replicas use unchanged owner
 traversal. Replica construction is not automatic in this task.
+REPEATABLE READ and SERIALIZABLE scans bypass the optional replica and retain
+owner traversal. Writes through an ec_distann index require READ COMMITTED
+because a stronger-isolation snapshot cannot safely prove that no Ready
+replica was concurrently committed; they fail before lookup, invalidation, or
+owner dispatch with SQLSTATE `25001` and `EC_TRANSACTION_ISOLATION`.
 
 ## Frozen behavior
 
@@ -116,8 +121,8 @@ The review's nine P3 observations are also required closeout items:
      activation and retirement races, disk exhaustion, manual relation loss,
      in-flight scan versus invalidation, and crash-after-control-commit.
    - Prove exactly one first-mutation `40001`, no owner mutation before the
-     control commit, retry through owners, immutable pre-invalidation scan
-     completion, and fail-safe restart recovery.
+     control commit, the actual post-invalidation retry posture, immutable
+     pre-invalidation scan completion, and fail-safe restart recovery.
    - Close F1, F2, F4, and P3 item 2 with real DML, concurrent build/mutation,
      epoch-turnover, lock-queue, authentication, and error-path drills.
 4. **Production observability**
@@ -142,9 +147,14 @@ The review's nine P3 observations are also required closeout items:
 2. Operator construction is explicit, privileged, idempotent, cancellable,
    and leaves no eligible partial image.
 3. All listed restart/race/exhaustion/mutation drills pass on PG18, including
-   genuine mid-scan full restart and exactly one retryable first mutation.
+   genuine mid-scan full restart, exactly one retryable first mutation, zero
+   owner mutation on that attempt, and the measured behavior of its retry.
 4. Normal observability and documentation disclose the measured storage/WAL/
-   build envelope and the single-authority/read-mostly restriction.
+   build envelope, the single-authority/read-mostly restriction, owner fallback
+   for stronger-isolation reads, SQLSTATE `25001`
+   `EC_TRANSACTION_ISOLATION` for stronger-isolation ec_distann writes
+   regardless of current replica state, and any fail-closed mutation
+   dependency.
 5. Release 10k/50k/100k evidence preserves exact recall/results and confirms
    a material end-to-end benefit; otherwise owner traversal remains normal and
    the productionization stops.

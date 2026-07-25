@@ -1754,7 +1754,10 @@ async fn task199_concurrent_build_mutation_drill(
     }
 
     let (mutator, mutator_connection) = task199_connect(coordinator_port).await?;
-    mutator.batch_execute("SET lock_timeout = '500ms'").await?;
+    let mutator_pid = mutator
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await?
+        .get::<_, i32>(0);
     let inserted_id = mutator
         .query_one(
             &format!("SELECT coalesce(max(id), 0) + 1 FROM {corpus}"),
@@ -1762,21 +1765,43 @@ async fn task199_concurrent_build_mutation_drill(
         )
         .await?
         .get::<_, i64>(0);
-    let mutation_error = mutator
-        .query_one(&task199_real_insert_sql(corpus), &[])
-        .await
-        .expect_err("concurrent mutation must wait behind the replica build fence");
-    let mutation_fenced = mutation_error
-        .code()
-        .is_some_and(|code| code.code() == "55P03")
-        && mutation_error
-            .as_db_error()
-            .is_some_and(|error| error.message().contains("lock timeout"));
+    let mutation_sql = task199_real_insert_sql(corpus);
+    let mutation = tokio::spawn(async move { mutator.query_one(&mutation_sql, &[]).await });
+    let mut mutation_waited = false;
+    for _ in 0..100 {
+        mutation_waited = coordinator
+            .query_one(
+                "SELECT EXISTS (
+                     SELECT 1 FROM pg_catalog.pg_locks
+                      WHERE pid = $1
+                        AND relation = 'dm_idx'::regclass::oid
+                        AND mode = 'RowExclusiveLock'
+                        AND NOT granted
+                 )",
+                &[&mutator_pid],
+            )
+            .await?
+            .get::<_, bool>(0);
+        if mutation_waited {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
     let digest = build
         .await
         .wrap_err("joining Task 199 concurrent replica build")?
         .wrap_err("building traversal replica during the mutation-fence drill")?;
     builder_connection.abort();
+    let mutation_error = mutation
+        .await
+        .wrap_err("joining the blocked Task 199 mutation")?
+        .expect_err("blocked mutation must invalidate the newly Ready replica");
+    let mutation_fenced = mutation_error
+        .code()
+        .is_some_and(|code| code.code() == "40001")
+        && mutation_error
+            .as_db_error()
+            .is_some_and(|error| error.message().contains("EC_REPLICA_INVALIDATED"));
     mutator_connection.abort();
     let inserted_count = coordinator
         .query_one(
@@ -1785,25 +1810,43 @@ async fn task199_concurrent_build_mutation_drill(
         )
         .await?
         .get::<_, i64>(0);
-    let ready = coordinator
+    let stale = coordinator
         .query_one(
             "SELECT count(*) = 1
                FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
-              WHERE state = 'Ready'",
+              WHERE state = 'Stale'",
             &[],
         )
         .await?
         .get::<_, bool>(0);
-    if !mutation_fenced || inserted_count != 0 || !ready {
+    if !mutation_waited || !mutation_fenced || inserted_count != 0 || !stale {
         bail!(
             "Task 199 build/mutation fence failed: observed={build_fence_observed} \
-             mutation_fenced={mutation_fenced} inserted={inserted_count} ready={ready}"
+             mutation_waited={mutation_waited} mutation_fenced={mutation_fenced} \
+             inserted={inserted_count} stale={stale}"
         );
     }
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the blocking-fence replica");
+    }
+    let rebuilt_digest = coordinator
+        .query_one(
+            "SELECT encode(
+                 ec_distann_build_traversal_replica('dm_idx'::regclass),
+                 'hex'
+             )",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    if rebuilt_digest != digest {
+        bail!("Task 199 blocking-fence rebuild returned a different content digest");
+    }
     Ok((
-        digest,
+        rebuilt_digest,
         format!(
-            "scenario=concurrent_build_mutation_fenced pass=true build_lock=ShareRowExclusiveLock mutation_sqlstate=55P03 inserted_rows=0 state=Ready"
+            "scenario=blocking_build_mutation_fenced pass=true build_lock=ShareRowExclusiveLock waiting_lock=RowExclusiveLock mutation_sqlstate=40001 token=EC_REPLICA_INVALIDATED inserted_rows=0 state_after_error=Stale rebuilt=true"
         ),
     ))
 }
@@ -2344,31 +2387,79 @@ async fn run_task199_replica_lifecycle_drills(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=normal_ready_semantic_identity pass=true content_digest={content_digest}"
     )];
 
-    coordinator
-        .batch_execute("BEGIN ISOLATION LEVEL REPEATABLE READ")
-        .await?;
-    let isolation_error = task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20)
-        .await
-        .expect_err("Ready replica scan must reject REPEATABLE READ");
-    let _ = coordinator.batch_execute("ROLLBACK").await;
-    let isolation_pass = isolation_error
-        .downcast_ref::<tokio_postgres::Error>()
-        .and_then(tokio_postgres::Error::as_db_error)
-        .is_some_and(|error| error.message().contains("EC_TRANSACTION_ISOLATION"))
-        && coordinator
-            .query_one(
-                "SELECT count(*) = 1
-                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
-                  WHERE state = 'Ready'",
-                &[],
-            )
-            .await?
-            .get::<_, bool>(0);
+    for isolation in ["REPEATABLE READ", "SERIALIZABLE"] {
+        coordinator
+            .batch_execute(&format!("BEGIN ISOLATION LEVEL {isolation} READ ONLY"))
+            .await?;
+        let isolated =
+            task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await;
+        let _ = coordinator.batch_execute("ROLLBACK").await;
+        if isolated? != owner_baseline {
+            bail!("Task 199 {isolation} owner fallback changed ordered results");
+        }
+    }
+    let isolation_pass = coordinator
+        .query_one(
+            "SELECT count(*) = 1
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Ready'",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
     if !isolation_pass {
-        bail!("Task 199 Ready replica isolation drill failed");
+        bail!("Task 199 stronger-isolation owner fallback demoted the Ready replica");
     }
     lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=repeatable_read_rejected_without_demotion pass=true token=EC_TRANSACTION_ISOLATION"
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=stronger_isolation_owner_fallback pass=true repeatable_read=true serializable=true read_only=true ordered_identity=true state=Ready"
+    ));
+
+    let stronger_isolation_insert_id = coordinator
+        .query_one(
+            &format!("SELECT coalesce(max(id), 0) + 1 FROM {corpus}"),
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    for isolation in ["REPEATABLE READ", "SERIALIZABLE"] {
+        coordinator
+            .batch_execute(&format!("BEGIN ISOLATION LEVEL {isolation}"))
+            .await?;
+        let mutation_error = coordinator
+            .query_one(&task199_real_insert_sql(corpus), &[])
+            .await
+            .expect_err("stronger-isolation mutation must reject before invalidation");
+        let rejected = mutation_error
+            .code()
+            .is_some_and(|code| code.code() == "25001")
+            && mutation_error
+                .as_db_error()
+                .is_some_and(|error| error.message().contains("EC_TRANSACTION_ISOLATION"));
+        let _ = coordinator.batch_execute("ROLLBACK").await;
+        if !rejected {
+            bail!("Task 199 {isolation} mutation returned the wrong rejection");
+        }
+    }
+    let stronger_isolation_posture = coordinator
+        .query_one(
+            &format!(
+                "SELECT
+                     (SELECT count(*) = 1
+                        FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+                       WHERE state = 'Ready')
+                     AND NOT EXISTS (
+                         SELECT 1 FROM {corpus} WHERE id = $1
+                     )"
+            ),
+            &[&stronger_isolation_insert_id],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if !stronger_isolation_posture {
+        bail!("Task 199 stronger-isolation mutation changed replica or owner state");
+    }
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=stronger_isolation_mutation_rejected pass=true repeatable_read=true serializable=true sqlstate=25001 token=EC_TRANSACTION_ISOLATION state=Ready inserted_rows=0"
     ));
 
     let has_fault_hooks = coordinator
