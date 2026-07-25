@@ -43,16 +43,22 @@ thread_local! {
     // 2 = at least one Ready replica. Catalog statement triggers publish a
     // transactional relcache invalidation and clear this backend-local state.
     static READY_REPLICA_PRESENCE: Cell<u8> = const { Cell::new(0) };
+    static TRAVERSAL_REPLICA_CATALOG_OID: Cell<u32> = const { Cell::new(0) };
     /// Bad Ready images whose durable side demotion failed in this backend.
-    /// A new build has a new UUID, so retaining the exact failed identity for
-    /// the session prevents repeated bounded-control connection attempts
-    /// without suppressing a repaired replacement.
+    /// Retaining the exact failed identity prevents repeated bounded-control
+    /// connection attempts until a committed catalog transition proves that
+    /// an operator or replacement build changed the lifecycle state.
     static SUPPRESSED_READY_REPLICAS: RefCell<HashSet<(u32, [u8; 16])>> =
         RefCell::new(HashSet::new());
 }
 
-pub(crate) fn invalidate_ready_replica_presence_cache() {
+pub(crate) fn invalidate_ready_replica_presence_cache(relation_oid: pg_sys::Oid) {
     READY_REPLICA_PRESENCE.with(|presence| presence.set(0));
+    let catalog_oid = TRAVERSAL_REPLICA_CATALOG_OID.with(Cell::get);
+    if catalog_oid != 0 && catalog_oid == relation_oid.to_u32() {
+        SUPPRESSED_READY_REPLICAS.with(|suppressed| suppressed.borrow_mut().clear());
+        TRAVERSAL_REPLICA_CATALOG_OID.with(|cached| cached.set(0));
+    }
 }
 
 pub(crate) fn ready_replica_may_exist() -> Result<bool, String> {
@@ -73,13 +79,16 @@ pub(crate) fn ready_replica_may_exist() -> Result<bool, String> {
     let (catalog_owner, _) = extension_owner()?;
     let catalog =
         super::generation_catalog::extension_relation_name("ec_distann_traversal_replica")?;
-    let ready = super::handoff::with_restricted_type_io_owner(catalog_owner, || {
-        Spi::get_one::<bool>(&format!(
-            "SELECT EXISTS (SELECT 1 FROM {catalog} WHERE state = 'Ready')"
+    let ready_catalog_oid = super::handoff::with_restricted_type_io_owner(catalog_owner, || {
+        Spi::get_one::<pg_sys::Oid>(&format!(
+            "SELECT tableoid FROM {catalog} WHERE state = 'Ready' LIMIT 1"
         ))
-        .map_err(|error| format!("EC_REPLICA_STATE: Ready presence lookup failed: {error}"))?
-        .ok_or_else(|| "EC_REPLICA_STATE: Ready presence lookup returned NULL".to_owned())
+        .map_err(|error| format!("EC_REPLICA_STATE: Ready presence lookup failed: {error}"))
     })?;
+    let ready = ready_catalog_oid.is_some();
+    if let Some(catalog_oid) = ready_catalog_oid {
+        TRAVERSAL_REPLICA_CATALOG_OID.with(|cached| cached.set(catalog_oid.to_u32()));
+    }
     READY_REPLICA_PRESENCE.with(|presence| presence.set(if ready { 2 } else { 1 }));
     Ok(ready)
 }
@@ -108,7 +117,7 @@ fn ec_distann_traversal_replica_changed<'a>(
     trigger: &'a PgTrigger<'a>,
 ) -> Result<Option<PgHeapTuple<'a, AllocatedByPostgres>>, PgTriggerError> {
     let relation_oid = trigger.relid()?;
-    invalidate_ready_replica_presence_cache();
+    invalidate_ready_replica_presence_cache(relation_oid);
     unsafe { pg_sys::CacheInvalidateRelcacheByRelid(relation_oid) };
     Ok(None)
 }

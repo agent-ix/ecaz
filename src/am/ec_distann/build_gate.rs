@@ -184,13 +184,13 @@ unsafe extern "C-unwind" fn invalidate_gate_function_oid(
 #[pg_guard]
 unsafe extern "C-unwind" fn invalidate_no_active_gate_cache(
     _arg: pg_sys::Datum,
-    _relation_oid: pg_sys::Oid,
+    relation_oid: pg_sys::Oid,
 ) {
     // Clearing on every relcache event is deliberately conservative. DDL is
     // much rarer than DML, and this avoids retaining a relation OID across
     // DROP EXTENSION / CREATE EXTENSION cycles.
     NO_ACTIVE_GATE.with(|cached| cached.set(false));
-    super::traversal_replica::invalidate_ready_replica_presence_cache();
+    super::traversal_replica::invalidate_ready_replica_presence_cache(relation_oid);
 }
 
 /// Publish registration-table mutations through PostgreSQL's transactional

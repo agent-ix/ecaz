@@ -51,8 +51,8 @@ unreadable images use owner traversal. A failure to durably demote a bad Ready
 image emits a bounded warning but does not prevent owner fallback.
 That backend suppresses the exact failed build for the rest of its session, so
 subsequent reads use owners directly instead of repeating the control
-connection timeout. A replacement build has a new build UUID and remains
-eligible.
+connection timeout. A committed traversal-replica catalog transition, including
+operator recovery or a replacement build, clears that suppression.
 
 ## Transaction isolation and writes
 
