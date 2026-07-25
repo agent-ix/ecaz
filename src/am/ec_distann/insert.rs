@@ -687,6 +687,28 @@ mod tests {
     }
 
     #[test]
+    fn simd_diff_exact_distance_is_shared_diskann_inner_product_negation() {
+        for dimensions in [1usize, 7, 8, 9, 31, 32, 33, 384, 1536] {
+            let left = (0..dimensions)
+                .map(|index| ((index * 17 + 3) as f32 * 0.03125).sin())
+                .collect::<Vec<_>>();
+            let right = (0..dimensions)
+                .map(|index| ((index * 11 + 5) as f32 * 0.0625).cos())
+                .collect::<Vec<_>>();
+            let shared = crate::am::ec_diskann::source_inner_product(&left, &right);
+            assert_eq!(
+                exact_distance(&left, &right).to_bits(),
+                (-shared).to_bits(),
+                "dimensions={dimensions}"
+            );
+        }
+        eprintln!(
+            "task36_distann source_inner_product_backend={}",
+            crate::quant::simd_backend_name()
+        );
+    }
+
+    #[test]
     fn select_respects_degree_bound_and_returns_valid_vec_ids() {
         let source = [1.0_f32, 0.0, 0.0];
         let cands = vec![

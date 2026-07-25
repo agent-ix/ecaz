@@ -1,24 +1,21 @@
 # Task 36: SIMD↔Scalar Differential Validation
 
-Status: **implemented locally for currently-present SIMD paths; needs follow-up
-as new SIMD paths land** — successor to Task 34 (comprehensive hardening).
-The local implementation adds scalar-reference hooks, forced test-only backend
-entry points, `tests/simd_diff.rs`, `make simd-diff`, `hardening-local`
-wiring, and a focused GitHub Actions `simd-diff` matrix over `ubuntu-24.04`
-x64 and `ubuntu-24.04-arm` arm64 runners.
-Current Linux x86 validation passes
-`cargo test --features bench --test simd_diff -- --test-threads=1` with 9/9
-tests passing, including product-quantizer scoring, FWHT, pack/unpack
-roundtrips, HNSW/DiskANN AM source inner-product SIMD lanes, and the production
-1536/4-bit score path. Miri scalar-reference coverage passes 19 `miri_` tests.
-A mutation-control run that perturbed the production score assertion failed as
-expected.
+Status: **review requested for the current local SIMD inventory** — successor
+to Task 34 (comprehensive hardening). The authoritative `make simd-diff` lane
+now includes the original public harness plus focused current-kernel suites
+and DistANN composition coverage. On the July 2026 Apple arm64 development
+host it validates scalar references against production dispatch and forced
+NEON, including SDOT/dotprod. Intel AVX2/AVX-512 and Graviton SVE/SVE2 remain
+hardware-specific execution gaps and are not claimed by that local result.
+No CI/scheduled trigger is added or claimed by this follow-up.
 
 ## Scope
 
 Add randomized property-based tests that compare every SIMD scoring/decoding
-implementation against a scalar reference for the same input, and gate them in
-the hardening lanes so regressions are caught at PR time.
+implementation against a scalar reference for the same input, and collect them
+in one hardening lane. Repository CI is currently manual-dispatch-only, so
+pre-merge execution must be recorded in a task-scoped review packet rather than
+described as an automatic PR gate.
 
 Coverage targets — every code path that has both a SIMD and a scalar variant:
 
@@ -84,28 +81,47 @@ Optional follow-on:
 
 ## Validation
 
-- `make simd-diff` passes on macOS (Neon + scalar) and Linux x86 (Avx2Fma /
-  Avx512 if available + scalar).
-- GitHub Actions runs the same `simd-diff` lane on x64 and arm64 Linux hosted
-  runners so AVX2/FMA and NEON regressions are PR-visible when those host
-  features are available.
+- `make simd-diff` must pass on the current host and print the exercised
+  backend/ISA. A host-reachable NEON or AVX2+FMA backend may not silently skip.
+- Hardware execution is recorded per host. The current Apple arm64 packet
+  proves NEON and SDOT/dotprod; it records Intel AVX2/AVX-512 and Graviton
+  SVE/SVE2 as unavailable, not passed.
 - `make hardening-local` includes `simd-diff` and stays under the existing wall
   clock budget by capping proptest cases per backend.
+- CI does not automatically run this lane on pull requests or a schedule.
+  Until repository CI policy changes, the pre-merge gate is a recorded local
+  `make simd-diff` run on each claimed host class.
+- The manual `ci.yml` SIMD matrix invokes the same fail-closed
+  `make simd-diff` lane. Its `ubuntu-24.04-arm` leg is the only CI job that
+  exercises NEON; the separate aarch64 full-test workflow remains reachable
+  only through manual dispatch because it has no active schedule trigger.
+  This matrix has not been manually dispatched since the lane began using
+  counted `--lib` stages, so CI-runner symbol resolution remains untested.
 - A deliberately mutated SIMD path (flip a sign in one branch) is caught by
   `simd-diff` and reported as a non-trivial diff in the packet.
 
-Current note: no AVX-512 product-quantizer implementation, SIMD
-`unpack_mse_indices` implementation, arch-specific `rotation.rs` path, or
-IVF/SPIRE scan SIMD accumulator exists in this tree. Those items remain covered
-by the "add a diff when the SIMD path exists" rule rather than by dead-code
-tests.
+Current locally validated paths are the `prod` and FWHT NEON paths; RaBitQ
+arithmetic NEON bits 1/4/8; `rabitq32` NEON bits 1/2/4 full and partial;
+`qjl32`, `lut32`, grouped-PQ, int8/SDOT, and real hamming NEON paths;
+HNSW/DiskANN source inner product; and the HNSW/IVF/DiskANN/SPIRE/DistANN
+common candidate-batch bindings covered by their shared kernel suites.
+DistANN additionally has direct-vs-batch codec, stride, tail, negation, and
+shared exact-source-IP tests.
+
+Hardware-specific implementations present but not executed on the Apple host:
+RaBitQ AVX2 and AVX-512 arithmetic, AVX2 variants of the block kernels and
+source IP, and the real QJL/LUT/grouped-PQ SVE/SVE2 blocks. Genuinely deferred
+paths that do not exist are a distinct AVX-512 `prod` scorer, SIMD
+`unpack_mse_indices`, architecture-specific `rotation.rs`, IVF/SPIRE-private
+scan accumulators, and real SVE implementations for RaBitQ32, int8, and
+hamming. Hamming AVX2 is also a placeholder rather than a SIMD path.
 
 ## Exit Criteria
 
 - Every SIMD scoring/decoding function listed above has a paired scalar
   reference and a property-based diff test.
-- `simd-diff` runs in `hardening-local` on at least the host CPU and on the CI
-  matrix (per Task 48) for both NEON and AVX2 paths.
+- `simd-diff` runs in `hardening-local` and proves every backend reachable on
+  the validating host; other hardware stays explicitly unexecuted.
 - `docs/hardening.md` documents the per-metric tolerance and the rationale.
 - The Task 34 `cfg!(miri)` scalar fallbacks remain (they cover Miri runs), but
   are documented as Miri-only — production SIMD coverage is owned here.

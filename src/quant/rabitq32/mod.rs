@@ -572,53 +572,63 @@ mod tests {
         // estimate (`estimate_ip_scalar_only`) under the ADR-076 family
         // envelope, so recall is preserved when IVF routes these widths
         // through the unified driver.
-        for bits in [2_u8, 4] {
-            let dim = 96;
-            let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(dim, 42, bits).unwrap();
-            let query = vector(dim, 7);
-            let prepared = quantizer.prepare_estimator(&query);
-            let code_len = quantizer.code_len();
-            let block_prepared = prepared
-                .bitsn_block_prepared(code_len)
-                .expect("bits=2/4 block prepared should exist");
+        for dim in [384usize, 1536] {
+            for bits in [2_u8, 4] {
+                let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(dim, 42, bits).unwrap();
+                let query = vector(dim, 7);
+                let prepared = quantizer.prepare_estimator(&query);
+                let code_len = quantizer.code_len();
+                let block_prepared = prepared
+                    .bitsn_block_prepared(code_len)
+                    .expect("bits=2/4 block prepared should exist");
+                let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH + 1)
+                    .map(|seed| {
+                        quantizer
+                            .encode_code(&vector(dim, seed as u64 + 100))
+                            .into_vec()
+                    })
+                    .collect();
+                let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
 
-            // 39 candidates = one 32-wide block + a 7-wide partial tail.
-            let codes: Vec<Vec<u8>> = (0..39)
-                .map(|seed| {
-                    quantizer
-                        .encode_code(&vector(dim, seed as u64 + 100))
-                        .into_vec()
-                })
-                .collect();
-            let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+                for width in [1usize, 7, 8, 9, 16, 17, 31, 32, 33] {
+                    let mut scores = vec![0.0_f32; width];
+                    let mut block_start = 0;
+                    while block_start + BLOCK_WIDTH <= width {
+                        let block: [&[u8]; BLOCK_WIDTH] = code_refs
+                            [block_start..block_start + BLOCK_WIDTH]
+                            .try_into()
+                            .expect("block slice has exact width");
+                        let block_isa = super::score_rabitq_bitsn_block32(
+                            block_prepared,
+                            block,
+                            &mut scores[block_start..block_start + BLOCK_WIDTH],
+                        );
+                        assert_eq!(block_isa, multibit_block_isa(), "dim={dim} bits={bits}");
+                        block_start += BLOCK_WIDTH;
+                    }
+                    if block_start < width {
+                        let tail_isa = super::score_rabitq_bitsn_partial(
+                            block_prepared,
+                            &code_refs[block_start..width],
+                            &mut scores[block_start..],
+                        );
+                        assert_eq!(tail_isa, multibit_block_isa(), "dim={dim} bits={bits}");
+                    }
 
-            let mut scores = vec![0.0_f32; codes.len()];
-            let block: [&[u8]; BLOCK_WIDTH] = code_refs[..BLOCK_WIDTH]
-                .try_into()
-                .expect("first 32 codes form one block");
-            let block_isa = super::score_rabitq_bitsn_block32(
-                block_prepared,
-                block,
-                &mut scores[..BLOCK_WIDTH],
-            );
-            super::score_rabitq_bitsn_partial(
-                block_prepared,
-                &code_refs[BLOCK_WIDTH..],
-                &mut scores[BLOCK_WIDTH..],
-            );
-
-            // The block must engage the host SIMD backend, not silently fall to
-            // scalar (NEON on aarch64; AVX2 multi-bit is a follow-up, so x86
-            // grades as scalar for now).
-            let expected_isa = multibit_block_isa();
-            assert_eq!(block_isa, expected_isa, "bits={bits}");
-
-            for (score, code) in scores.iter().zip(code_refs.iter()) {
-                let expected = prepared.estimate_ip_scalar_only(code);
-                let bound = 1e-5_f32 * score.abs().max(expected.abs()).max(1.0);
-                assert!(
-                    (score - expected).abs() <= bound,
-                    "bits={bits} kernel={score} expected={expected}"
+                    for (score, code) in scores.iter().zip(code_refs[..width].iter()) {
+                        let expected = prepared.estimate_ip_scalar_only(code);
+                        let bound = 1e-5_f32 * score.abs().max(expected.abs()).max(1.0);
+                        assert!(
+                            (score - expected).abs() <= bound,
+                            "dim={dim} bits={bits} width={width} kernel={score} expected={expected}"
+                        );
+                    }
+                }
+                eprintln!(
+                    "task36_rabitq32 bits={} dimensions={} isa={} widths=1,7,8,9,16,17,31,32,33",
+                    bits,
+                    dim,
+                    multibit_block_isa().label()
                 );
             }
         }

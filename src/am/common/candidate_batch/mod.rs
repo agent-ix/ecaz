@@ -1062,6 +1062,73 @@ mod tests {
     }
 
     #[test]
+    fn simd_diff_qjl_production_candidate_batch_cascade() {
+        let dim = 1024;
+        let quantizer = crate::quant::prod::ProdQuantizer::new(dim, 4, 42);
+        let query = random_unit_vector(dim, 36_001);
+        let prepared = quantizer.prepare_ip_query(&query);
+        let encoded: Vec<(Vec<u8>, f32)> = (0..33)
+            .map(|seed| {
+                let encoded = quantizer.encode(&random_unit_vector(dim, 36_100 + seed as u64));
+                let mut code =
+                    Vec::with_capacity(encoded.mse_packed.len() + encoded.qjl_packed.len());
+                code.extend_from_slice(&encoded.mse_packed);
+                code.extend_from_slice(&encoded.qjl_packed);
+                (code, encoded.gamma)
+            })
+            .collect();
+
+        for width in [1_usize, 7, 8, 9, 16, 17, 31, 32, 33] {
+            let mut batch = CandidateBatch::with_capacity(width);
+            for (index, (code, gamma)) in encoded[..width].iter().enumerate() {
+                batch
+                    .push(
+                        index,
+                        CandidatePayload::new(code, CandidateMeta::Gamma(*gamma)),
+                    )
+                    .unwrap();
+            }
+            let mut scores = vec![0.0_f32; width];
+            super::score_turboquant_qjl_batch_for(
+                CandidateBatchScoringSurface::Ivf,
+                &quantizer,
+                &prepared,
+                &batch,
+                &mut scores,
+            )
+            .unwrap();
+
+            let isa = crate::quant::isa::current_isa();
+            let scalar_tail_start = if isa == Isa::Scalar {
+                0
+            } else {
+                width - (width % crate::quant::qjl32::OCTET_WIDTH)
+            };
+            for (index, ((code, gamma), score)) in
+                encoded[..width].iter().zip(scores.iter()).enumerate()
+            {
+                let scalar =
+                    quantizer.score_ip_from_parts_scalar_reference(&prepared, *gamma, code);
+                if index < scalar_tail_start {
+                    assert_qjl_close(*score, scalar, 4);
+                } else {
+                    assert_eq!(
+                        score.to_bits(),
+                        scalar.to_bits(),
+                        "width={width} index={index} ISA={} scalar tail changed",
+                        isa.label()
+                    );
+                }
+            }
+        }
+
+        eprintln!(
+            "task36_qjl_candidate_batch production_cascade_isa={} widths=1,7,8,9,16,17,31,32,33",
+            crate::quant::isa::current_isa().label()
+        );
+    }
+
+    #[test]
     fn turboquant_lut_batch_matches_scalar_tail() {
         let quantizer = crate::quant::prod::ProdQuantizer::new(1536, 4, 42);
         let query = random_unit_vector(1536, 31);
@@ -1974,6 +2041,24 @@ mod tests {
             *value /= norm;
         }
         values
+    }
+
+    fn assert_qjl_close(actual: f32, expected: f32, max_ulp: u32) {
+        fn ordered(bits: u32) -> i32 {
+            let signed = bits as i32;
+            if signed < 0 {
+                i32::MIN - signed
+            } else {
+                signed
+            }
+        }
+
+        let ulp = ordered(actual.to_bits()).abs_diff(ordered(expected.to_bits()));
+        let rel = ((actual - expected).abs() / expected.abs().max(1.0e-12)).abs();
+        assert!(
+            ulp <= max_ulp || rel <= 1.0e-6,
+            "actual={actual:?} expected={expected:?} ulp={ulp} rel={rel:?}"
+        );
     }
 
     fn task124_batch_width_profile_candidates() -> usize {
