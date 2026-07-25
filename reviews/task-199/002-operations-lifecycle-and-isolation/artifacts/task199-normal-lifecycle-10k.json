@@ -36,6 +36,7 @@
       "benchmark_warmup_iterations": 1,
       "distann_stage_counters": false,
       "materialization_correctness": true,
+      "traversal_replica_enospc_drill": true,
       "skip_fault_drills": true,
       "compact_artifacts": true,
       "corpus_prefix": "ec_real_10k",
