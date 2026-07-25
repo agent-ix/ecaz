@@ -548,6 +548,9 @@ struct DistannLocalMultinodeStep {
     distann_stage_counters: bool,
     #[serde(default)]
     materialization_correctness: bool,
+    /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
+    #[serde(default)]
+    traversal_replica_enospc_drill: bool,
     #[serde(default)]
     base_port: Option<u16>,
     #[serde(default)]
@@ -4205,6 +4208,9 @@ fn expand_distann_local_multinode(
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());
     }
+    if step.traversal_replica_enospc_drill {
+        args.push("--traversal-replica-enospc-drill".into());
+    }
     push_opt_arg(
         &mut args,
         "--benchmark-iterations",
@@ -5605,6 +5611,7 @@ psql header noise\n\
             "physical_benchmark": true,
             "compact_artifacts": true,
             "allow_debug_extension": true,
+            "traversal_replica_enospc_drill": true,
             "artifact_dir": "artifacts/cap-256",
             "benchmark_warmup_iterations": 7,
             "drop_extension_cleanup_drill": true,
@@ -5640,6 +5647,7 @@ psql header noise\n\
             .any(|window| window == ["--benchmark-warmup-iterations", "7"]));
         assert!(command.contains(&"--drop-extension-cleanup-drill".into()));
         assert!(command.contains(&"--allow-debug-extension".into()));
+        assert!(command.contains(&"--traversal-replica-enospc-drill".into()));
         assert_eq!(
             config.steps[0].expected_artifacts(),
             vec![PathBuf::from(

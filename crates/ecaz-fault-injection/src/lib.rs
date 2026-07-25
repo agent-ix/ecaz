@@ -40,6 +40,7 @@ pub fn provider_environment(
     after: u64,
     latency_ms: Option<u64>,
     marker: Option<&str>,
+    arm_file: Option<&str>,
 ) -> Vec<(String, String)> {
     let mut env = vec![
         (
@@ -70,6 +71,12 @@ pub fn provider_environment(
     }
     if let Some(marker) = marker {
         env.push(("ECAZ_FAULT_PROVIDER_MARKER".to_string(), marker.to_string()));
+    }
+    if let Some(arm_file) = arm_file {
+        env.push((
+            "ECAZ_FAULT_PROVIDER_ARM_FILE".to_string(),
+            arm_file.to_string(),
+        ));
     }
     env
 }
@@ -639,6 +646,7 @@ mod tests {
             3,
             None,
             Some("/tmp/ecaz-fault-provider.marker"),
+            Some("/tmp/ecaz-fault-provider.arm"),
         );
         assert!(env.iter().any(|(key, value)| {
             key == "LD_PRELOAD" && (value.ends_with(".so") || value.contains("not built"))
@@ -649,6 +657,9 @@ mod tests {
         assert!(env
             .iter()
             .any(|(key, value)| key == "ECAZ_FAULT_PROVIDER_AFTER" && value == "3"));
+        assert!(env.iter().any(|(key, value)| {
+            key == "ECAZ_FAULT_PROVIDER_ARM_FILE" && value == "/tmp/ecaz-fault-provider.arm"
+        }));
     }
 
     #[cfg(target_os = "linux")]
@@ -726,6 +737,51 @@ mod tests {
                 && marker_content.contains("mode=enospc-write")
                 && marker_content.contains(&format!("target={path}")),
             "unexpected marker: {marker_content}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ldpreload_provider_waits_for_arm_file() {
+        let provider = provider_library_path().expect("linux provider should be built");
+        let pid = std::process::id();
+        let path = format!("/tmp/ecaz_fault_provider_armed_write_{pid}");
+        let arm = format!("/tmp/ecaz_fault_provider_arm_{pid}");
+        let marker = format!("/tmp/ecaz_fault_provider_arm_marker_{pid}");
+        let run = |target: &str| {
+            Command::new("dd")
+                .arg("if=/dev/zero")
+                .arg(format!("of={target}"))
+                .arg("bs=1")
+                .arg("count=1")
+                .env("LD_PRELOAD", provider)
+                .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+                .env("ECAZ_FAULT_PROVIDER_MODE", "enospc-write")
+                .env("ECAZ_FAULT_PROVIDER_MATCH", &path)
+                .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+                .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
+                .env("ECAZ_FAULT_PROVIDER_ARM_FILE", &arm)
+                .output()
+                .expect("run armed provider-backed dd")
+        };
+
+        let _ = std::fs::remove_file(&arm);
+        let disarmed = run(&path);
+        assert!(disarmed.status.success(), "disarmed write must succeed");
+        std::fs::write(&arm, b"armed").expect("arm provider");
+        let armed = run(&path);
+        assert!(!armed.status.success(), "armed write must fail with ENOSPC");
+        let marker_content = std::fs::read_to_string(&marker).expect("read provider marker");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&arm);
+        let _ = std::fs::remove_file(&marker);
+        assert_eq!(
+            marker_content
+                .lines()
+                .filter(|line| line.contains("fault=1"))
+                .count(),
+            1,
+            "only the armed child may inject: {marker_content}"
         );
     }
 }

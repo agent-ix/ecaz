@@ -71,6 +71,9 @@ pub struct LocalMultinodePg18Args {
     /// with batch sizes zero and ten.
     #[arg(long, default_value_t = false)]
     pub materialization_correctness: bool,
+    /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
+    #[arg(long, default_value_t = false)]
+    pub traversal_replica_enospc_drill: bool,
     /// First TCP port; node k listens on base_port + (k - 1).
     #[arg(long, default_value_t = 39710)]
     pub base_port: u16,
