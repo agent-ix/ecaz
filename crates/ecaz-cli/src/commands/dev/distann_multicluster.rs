@@ -1986,6 +1986,85 @@ async fn build_and_attest_traversal_replica(
     Ok(replica)
 }
 
+async fn task199_no_replica_insert_throughput(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    source_table: &str,
+    lines: &mut Vec<String>,
+) -> Result<()> {
+    const TRIALS: usize = 5;
+    const ROWS_PER_TRIAL: u64 = 2_000;
+    let ready_count = coordinator
+        .query_one(
+            "SELECT count(*)::bigint
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Ready'",
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    if ready_count != 0 {
+        bail!("Task 199 no-replica insert benchmark found a Ready replica");
+    }
+
+    let mut elapsed_ns = Vec::with_capacity(TRIALS);
+    for trial in 0..TRIALS {
+        coordinator
+            .batch_execute(&format!(
+                "DROP TABLE IF EXISTS task199_no_replica_insert_probe;
+                 CREATE TABLE task199_no_replica_insert_probe (
+                     id bigint, source real[], embedding ecvector
+                 );
+                 INSERT INTO task199_no_replica_insert_probe
+                 SELECT id, source, embedding
+                   FROM {source_table}
+                  ORDER BY id
+                  LIMIT 128;
+                 CREATE INDEX task199_no_replica_insert_probe_idx
+                    ON task199_no_replica_insert_probe
+                 USING ec_distann (embedding ecvector_distann_ip_ops)
+                  WITH (graph_degree = 32, head_index_cap = 128,
+                        neighbor_code_format = 'rabitq');"
+            ))
+            .await?;
+        let started = Instant::now();
+        let inserted = coordinator
+            .execute(
+                &format!(
+                    "INSERT INTO task199_no_replica_insert_probe
+                     SELECT (1000000000 + {} * {ROWS_PER_TRIAL}
+                             + row_number() OVER (ORDER BY id))::bigint,
+                            source, embedding
+                       FROM {source_table}
+                      ORDER BY id
+                      LIMIT {ROWS_PER_TRIAL}",
+                    trial
+                ),
+                &[],
+            )
+            .await?;
+        let nanos = started.elapsed().as_nanos();
+        if inserted != ROWS_PER_TRIAL {
+            bail!(
+                "Task 199 no-replica insert trial {trial} inserted {inserted}, expected {ROWS_PER_TRIAL}"
+            );
+        }
+        elapsed_ns.push(nanos);
+    }
+    coordinator
+        .batch_execute("DROP TABLE task199_no_replica_insert_probe")
+        .await?;
+    elapsed_ns.sort_unstable();
+    let median_ns = elapsed_ns[TRIALS / 2];
+    let rows_per_second = ROWS_PER_TRIAL as f64 * 1_000_000_000.0 / median_ns as f64;
+    lines.push(format!(
+        "physical_benchmark_no_replica_insert scale={scale} pass=true \
+         ready_replica_absent=true trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} \
+         median_ns={median_ns} rows_per_second={rows_per_second:.3}"
+    ));
+    Ok(())
+}
+
 async fn retire_and_reclaim_traversal_replica(
     coordinator: &tokio_postgres::Client,
 ) -> Result<(bool, bool)> {
@@ -4113,6 +4192,13 @@ async fn run_physical_benchmarks(
         if !outage_pass {
             bail!("Task 198 owner-outage build drill left residue or did not fail");
         }
+        task199_no_replica_insert_throughput(
+            coordinator,
+            scale,
+            &physical_corpus,
+            &mut lines,
+        )
+        .await?;
     }
     let mut same_seed_digests =
         std::collections::HashMap::<(String, u32, u32), (String, String)>::new();
