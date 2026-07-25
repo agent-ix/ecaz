@@ -187,6 +187,13 @@ struct Node {
     log_file: PathBuf,
 }
 
+#[derive(Debug)]
+struct Task199EnospcFixture {
+    tablespace_dir: PathBuf,
+    arm_file: PathBuf,
+    marker_file: PathBuf,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct ExtensionProvenance {
     node_id: u32,
@@ -491,6 +498,29 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         .wrap_err_with(|| format!("canonicalizing {}", socket_dir.display()))?;
     log_dir = fs::canonicalize(&log_dir)
         .wrap_err_with(|| format!("canonicalizing {}", log_dir.display()))?;
+    let enospc_fixture = if args.traversal_replica_enospc_drill {
+        if mode != FixtureMode::Physical {
+            bail!("--traversal-replica-enospc-drill requires the physical fixture");
+        }
+        if !cfg!(target_os = "linux") {
+            bail!("--traversal-replica-enospc-drill requires the Linux LD_PRELOAD provider");
+        }
+        if ecaz_fault_injection::provider_library_path().is_none() {
+            bail!("Task 199 ENOSPC drill has no built fault-provider library");
+        }
+        let tablespace_dir = run_dir.join("task199-enospc-tablespace");
+        fs::create_dir_all(&tablespace_dir)?;
+        let tablespace_dir = fs::canonicalize(&tablespace_dir)?;
+        let marker_file = log_dir.join("task199-enospc-provider.marker");
+        fs::write(&marker_file, "")?;
+        Some(Task199EnospcFixture {
+            tablespace_dir,
+            arm_file: run_dir.join("task199-enospc-provider.arm"),
+            marker_file,
+        })
+    } else {
+        None
+    };
 
     let nodes: Vec<Node> = (0..instance_count)
         .map(|k| Node {
@@ -556,6 +586,21 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
                 conninfo(&socket_dir, target.port),
             );
         }
+        if node.node_id == 1 {
+            if let Some(fixture) = enospc_fixture.as_ref() {
+                let environment = ecaz_fault_injection::provider_environment(
+                    ecaz_fault_injection::ProviderMode::EnospcWrite,
+                    &fixture.tablespace_dir.to_string_lossy(),
+                    1,
+                    None,
+                    Some(&fixture.marker_file.to_string_lossy()),
+                    Some(&fixture.arm_file.to_string_lossy()),
+                );
+                for (name, value) in environment {
+                    command.env(name, value);
+                }
+            }
+        }
         run_status(command)
             .await
             .wrap_err_with(|| format!("start node {}", node.node_id))?;
@@ -579,6 +624,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
                     &nodes,
                     log_dir.as_path(),
                     &extension_preflight,
+                    enospc_fixture.as_ref(),
                 )
                 .await
             }
@@ -1539,6 +1585,105 @@ async fn task199_crash_after_control_commit_drill(
          backend_terminated=true state=Stale inserted_rows=0 \
          fresh_backend_owner_fallback_identity=true"
     ))
+}
+
+async fn task199_enospc_replica_build_drill(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    corpus: &str,
+    queries: &str,
+    owner_baseline: &str,
+    fixture: &Task199EnospcFixture,
+    lines: &mut Vec<String>,
+) -> Result<()> {
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the pre-ENOSPC replica");
+    }
+    let tablespace_path = fixture
+        .tablespace_dir
+        .to_string_lossy()
+        .replace('\'', "''");
+    coordinator
+        .batch_execute(&format!(
+            "CREATE TABLESPACE task199_replica_enospc LOCATION '{tablespace_path}'"
+        ))
+        .await
+        .wrap_err("creating the Task 199 ENOSPC replica tablespace")?;
+    coordinator
+        .batch_execute("ALTER INDEX dm_idx SET TABLESPACE task199_replica_enospc")
+        .await
+        .wrap_err("preparing the Task 199 ENOSPC replica tablespace")?;
+    fs::write(&fixture.arm_file, "armed\n")?;
+    let injected = coordinator
+        .query_one(
+            "SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)",
+            &[],
+        )
+        .await;
+    let disarm = fs::remove_file(&fixture.arm_file);
+    disarm.wrap_err("disarming the Task 199 ENOSPC provider")?;
+    let error = injected.expect_err("armed replica build must fail under injected ENOSPC");
+    let sqlstate = error.code().map(|code| code.code()).unwrap_or("none");
+    let marker = fs::read_to_string(&fixture.marker_file)?;
+    let provider_target = fixture.tablespace_dir.to_string_lossy();
+    let provider_faults = marker
+        .lines()
+        .filter(|line| {
+            line.contains("fault=1")
+                && line.contains("mode=enospc-write")
+                && line.contains("errno=28")
+                && line.contains(provider_target.as_ref())
+        })
+        .count();
+    let residue = coordinator
+        .query_one(
+            "SELECT
+                 (SELECT count(*)::bigint
+                    FROM ec_distann_traversal_replica_status(
+                        'dm_idx'::regclass
+                    )),
+                 (SELECT count(*)::bigint
+                    FROM pg_catalog.pg_class
+                   WHERE relnamespace = 'public'::regnamespace
+                     AND relname ~ '^_ecdz_replica(_dir)?_')",
+            &[],
+        )
+        .await?;
+    let catalog_residue = residue.get::<_, i64>(0);
+    let relation_residue = residue.get::<_, i64>(1);
+    let cluster_healthy = coordinator
+        .query_one("SELECT 1::bigint", &[])
+        .await?
+        .get::<_, i64>(0)
+        == 1;
+    let owner_after_failure =
+        task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+    let owner_fallback = owner_after_failure == owner_baseline;
+    if provider_faults == 0
+        || catalog_residue != 0
+        || relation_residue != 0
+        || !cluster_healthy
+        || !owner_fallback
+    {
+        bail!(
+            "Task 199 ENOSPC build cleanup failed: sqlstate={sqlstate} \
+             provider_faults={provider_faults} catalog_residue={catalog_residue} \
+             relation_residue={relation_residue} cluster_healthy={cluster_healthy} \
+             owner_fallback={owner_fallback} error={error}"
+        );
+    }
+    let recovered_digest =
+        build_and_attest_traversal_replica(coordinator, scale, lines).await?;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} \
+         scenario=enospc_build_cleanup pass=true sqlstate={sqlstate} \
+         provider_fault_events={provider_faults} errno=28 \
+         eligible_partial_images=0 catalog_residue=0 relation_residue=0 \
+         cluster_healthy=true owner_fallback_identity=true \
+         recovery_build_state=Ready recovery_digest={recovered_digest}"
+    ));
+    Ok(())
 }
 
 async fn task199_physical_graph_digest(
@@ -2506,6 +2651,7 @@ async fn run_task199_replica_lifecycle_drills(
     content_digest: &str,
     owner_baseline: &str,
     training_query_path: Option<&Path>,
+    enospc_fixture: Option<&Task199EnospcFixture>,
 ) -> Result<Vec<String>> {
     let replica = task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
     if replica != owner_baseline {
@@ -3004,6 +3150,18 @@ async fn run_task199_replica_lifecycle_drills(
         "physical_benchmark_traversal_replica_fault scale={scale} \
          scenario=coordinator_backend_reconnect pass=true ordered_identity=true state=Ready"
     ));
+    if let Some(fixture) = enospc_fixture {
+        task199_enospc_replica_build_drill(
+            coordinator,
+            scale,
+            corpus,
+            queries,
+            owner_baseline,
+            fixture,
+            &mut lines,
+        )
+        .await?;
+    }
     Ok(lines)
 }
 
@@ -3438,6 +3596,7 @@ async fn run_physical_benchmarks(
     build_ms: u128,
     publish_ms: u128,
     extension_preflight: &ExtensionPreflight,
+    enospc_fixture: Option<&Task199EnospcFixture>,
 ) -> Result<Vec<String>> {
     let beam_width = args.beam_width.unwrap_or(4);
     let hop_rounds = args.hop_rounds.unwrap_or(100);
@@ -4238,6 +4397,7 @@ async fn run_physical_benchmarks(
                     color_eyre::eyre::eyre!("traversal replica lifecycle has no owner baseline")
                 })?,
                 args.training_query_path.as_deref(),
+                enospc_fixture,
             )
             .await?,
         );
@@ -4352,6 +4512,7 @@ async fn drive_physical_fixture(
     nodes: &[Node],
     log_dir: &Path,
     extension_preflight: &ExtensionPreflight,
+    enospc_fixture: Option<&Task199EnospcFixture>,
 ) -> Result<()> {
     crate::ecaz_println!(
         "[distann-multicluster] physical_setup_start rows={} nodes={}",
@@ -4706,6 +4867,7 @@ async fn drive_physical_fixture(
             physical_build_ms,
             physical_publish_ms,
             extension_preflight,
+            enospc_fixture,
         )
         .await?
     } else {
