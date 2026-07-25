@@ -1136,6 +1136,85 @@ unsafe fn required_snapshot_spi_value<T: FromDatum>(
         .ok_or_else(|| format!("EC_REPLICA_INVALIDATION: {label} decode failed"))
 }
 
+/// Check the database-wide Ready presence cache under an explicitly supplied
+/// snapshot when the cache is unknown.
+///
+/// A cached negative is safe to return without registering or consulting a
+/// snapshot: either this backend processed the catalog relcache invalidation
+/// for a newly committed Ready row, which cleared the cache, or a relation
+/// lock it already holds prevented that Ready commit. The unknown case must use
+/// the caller's latest snapshot; ordinary pgrx SPI would substitute the fixed
+/// transaction snapshot after an XID is assigned.
+fn ready_replica_may_exist_at_snapshot(snapshot: pg_sys::Snapshot) -> Result<bool, String> {
+    match READY_REPLICA_PRESENCE.with(Cell::get) {
+        1 => return Ok(false),
+        2 => return Ok(true),
+        _ => {}
+    }
+    if unsafe { pg_sys::get_extension_oid(c"ecaz".as_ptr(), true) } == pg_sys::InvalidOid {
+        READY_REPLICA_PRESENCE.with(|presence| presence.set(1));
+        return Ok(false);
+    }
+    let (catalog_owner, _) = extension_owner()?;
+    let catalog =
+        super::generation_catalog::extension_relation_name("ec_distann_traversal_replica")?;
+    super::handoff::with_restricted_type_io_owner(catalog_owner, || {
+        let query = CString::new(format!(
+            "SELECT EXISTS (
+                        SELECT 1 FROM {catalog} WHERE state = 'Ready'
+                    ),
+                    '{catalog}'::regclass::oid"
+        ))
+        .map_err(|_| "EC_REPLICA_STATE: Ready presence query contains NUL".to_owned())?;
+        Spi::connect(|_| unsafe {
+            pg_sys::SPI_tuptable = std::ptr::null_mut();
+            let plan = pg_sys::SPI_prepare(query.as_ptr(), 0, std::ptr::null_mut());
+            if plan.is_null() {
+                return Err(format!(
+                    "EC_REPLICA_STATE: Ready presence snapshot prepare failed: {}",
+                    Spi::check_status(pg_sys::SPI_result)
+                        .map(|status| format!("{status:?}"))
+                        .unwrap_or_else(|error| error.to_string())
+                ));
+            }
+            let status = pg_sys::SPI_execute_snapshot(
+                plan,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                snapshot,
+                std::ptr::null_mut(),
+                true,
+                false,
+                1,
+            );
+            let _ = pg_sys::SPI_freeplan(plan);
+            Spi::check_status(status).map_err(|error| {
+                format!("EC_REPLICA_STATE: Ready presence snapshot lookup failed: {error}")
+            })?;
+            let processed = pg_sys::SPI_processed;
+            if status != pg_sys::SPI_OK_SELECT as i32
+                || processed != 1
+                || pg_sys::SPI_tuptable.is_null()
+            {
+                return Err(format!(
+                    "EC_REPLICA_STATE: Ready presence snapshot lookup returned status {status}, rows {}",
+                    processed
+                ));
+            }
+            let tuple_table = &*pg_sys::SPI_tuptable;
+            let tuple_desc = tuple_table.tupdesc;
+            let tuple = *tuple_table.vals;
+            let ready =
+                required_snapshot_spi_value::<bool>(tuple, tuple_desc, 1, "Ready presence")?;
+            let catalog_oid =
+                required_snapshot_spi_value::<pg_sys::Oid>(tuple, tuple_desc, 2, "catalog OID")?;
+            TRAVERSAL_REPLICA_CATALOG_OID.with(|cached| cached.set(catalog_oid.to_u32()));
+            READY_REPLICA_PRESENCE.with(|presence| presence.set(if ready { 2 } else { 1 }));
+            Ok(ready)
+        })
+    })
+}
+
 /// Read the active Ready identity under an explicitly supplied snapshot.
 ///
 /// pgrx's ordinary `SpiClient::select` chooses `read_only = false` after the
@@ -1461,16 +1540,26 @@ pub(crate) fn guard_traversal_replica_mutation(index_oid: pg_sys::Oid) {
     // a fresh catalog snapshot is authoritative for the rest of the statement
     // even when the outer transaction uses RR or SERIALIZABLE. ExecutorStart
     // also calls this guard as a pre-lock best effort.
+    // The ordinary no-replica deployment must remain a TLS-cache hit after
+    // the first statement-level lookup. Registering a snapshot and issuing the
+    // three-catalog identity join per tuple regresses bulk inserts severely.
+    if READY_REPLICA_PRESENCE.with(Cell::get) == 1 {
+        return;
+    }
     let snapshot = crate::storage::snapshot_guard::RegisteredSnapshotGuard::latest()
         .unwrap_or_else(|| {
             pgrx::error!(
                 "EC_REPLICA_INVALIDATION: mutation guard could not acquire a fresh snapshot"
             )
         });
+    if !ready_replica_may_exist_at_snapshot(snapshot.as_ptr())
+        .unwrap_or_else(|error| pgrx::error!("{error}"))
+    {
+        return;
+    }
     let identity = active_ready_replica_at_snapshot(index_oid, snapshot.as_ptr())
         .unwrap_or_else(|error| pgrx::error!("{error}"));
-    let Some(identity) = identity
-    else {
+    let Some(identity) = identity else {
         return;
     };
     let transitioned = mark_stale_in_side_transaction(index_oid, &identity, "mutation")
