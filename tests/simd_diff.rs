@@ -164,8 +164,16 @@ proptest! {
 
         let hnsw_scalar = ecaz::bench_api::hnsw_source_inner_product_scalar_reference(&left, &right);
         #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        if let Some(hnsw_avx2) = ecaz::bench_api::hnsw_source_inner_product_avx2_fma_for_test(&left, &right) {
-            assert_close("hnsw forced avx2 source inner product", hnsw_avx2, hnsw_scalar, 1.0e-4);
+        {
+            let hnsw_avx2 =
+                ecaz::bench_api::hnsw_source_inner_product_avx2_fma_for_test(&left, &right)
+                    .expect("x86 Task 36 lane requires HNSW AVX2+FMA execution");
+            assert_close(
+                "hnsw forced avx2 source inner product",
+                hnsw_avx2,
+                hnsw_scalar,
+                1.0e-4,
+            );
         }
         #[cfg(target_arch = "aarch64")]
         {
@@ -182,8 +190,16 @@ proptest! {
 
         let diskann_scalar = ecaz::bench_api::diskann_source_inner_product_scalar_reference(&left, &right);
         #[cfg(target_arch = "x86_64")]
-        if let Some(diskann_avx2) = ecaz::bench_api::diskann_source_inner_product_avx2_fma_for_test(&left, &right) {
-            assert_close("diskann forced avx2 source inner product", diskann_avx2, diskann_scalar, 1.0e-4);
+        {
+            let diskann_avx2 =
+                ecaz::bench_api::diskann_source_inner_product_avx2_fma_for_test(&left, &right)
+                    .expect("x86 Task 36 lane requires DiskANN AVX2+FMA execution");
+            assert_close(
+                "diskann forced avx2 source inner product",
+                diskann_avx2,
+                diskann_scalar,
+                1.0e-4,
+            );
         }
         #[cfg(target_arch = "aarch64")]
         {
@@ -228,19 +244,19 @@ fn forced_avx2_fma_score_paths_match_scalar_reference_when_available() {
     let prepared = quantizer.prepare_ip_query(&query);
     let codes = code_bytes(&candidate);
 
-    if let Some(avx2) =
-        quantizer.score_ip_from_parts_avx2_fma_for_test(&prepared, candidate.gamma, &codes)
-    {
-        let scalar =
-            quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
-        assert_close("forced avx2 score_ip_from_parts", avx2, scalar, 1.0e-5);
-    }
+    let avx2 = quantizer
+        .score_ip_from_parts_avx2_fma_for_test(&prepared, candidate.gamma, &codes)
+        .expect("x86 Task 36 lane requires Prod AVX2+FMA execution");
+    let scalar =
+        quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
+    assert_close("forced avx2 score_ip_from_parts", avx2, scalar, 1.0e-5);
 
     let other = code_bytes(&quantizer.encode(&random_unit_vector(384, 0xC44)));
-    if let Some(avx2) = quantizer.score_ip_codes_lite_avx2_fma_for_test(&codes, &other) {
-        let scalar = quantizer.score_ip_codes_lite_scalar_reference(&codes, &other);
-        assert_close("forced avx2 score_ip_codes_lite", avx2, scalar, 1.0e-5);
-    }
+    let avx2 = quantizer
+        .score_ip_codes_lite_avx2_fma_for_test(&codes, &other)
+        .expect("x86 Task 36 lane requires Prod code-to-code AVX2+FMA execution");
+    let scalar = quantizer.score_ip_codes_lite_scalar_reference(&codes, &other);
+    assert_close("forced avx2 score_ip_codes_lite", avx2, scalar, 1.0e-5);
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -275,16 +291,18 @@ fn forced_avx2_fwht_matches_scalar_reference_when_available() {
         .collect::<Vec<_>>();
     let mut scalar = avx2.clone();
 
-    if ecaz::bench_api::fwht_in_place_avx2_for_test(&mut avx2) {
-        fwht_in_place_scalar_reference(&mut scalar);
-        for (index, (actual, expected)) in avx2.iter().zip(scalar.iter()).enumerate() {
-            assert_close(
-                &format!("forced avx2 fwht lane {index}"),
-                *actual,
-                *expected,
-                1.0e-5,
-            );
-        }
+    assert!(
+        ecaz::bench_api::fwht_in_place_avx2_for_test(&mut avx2),
+        "x86 Task 36 lane requires FWHT AVX2 execution"
+    );
+    fwht_in_place_scalar_reference(&mut scalar);
+    for (index, (actual, expected)) in avx2.iter().zip(scalar.iter()).enumerate() {
+        assert_close(
+            &format!("forced avx2 fwht lane {index}"),
+            *actual,
+            *expected,
+            1.0e-5,
+        );
     }
 }
 
