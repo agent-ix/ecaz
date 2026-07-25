@@ -1247,10 +1247,16 @@ async fn materialization_result_json(
     coordinator: &tokio_postgres::Client,
     variant: &BenchmarkSeedVariant,
     sql: &str,
+    has_attribution_hooks: bool,
 ) -> Result<String> {
+    let reset_sql = if has_attribution_hooks {
+        "SELECT ec_distann_stage_scoring_reset();"
+    } else {
+        ""
+    };
     coordinator
         .batch_execute(&format!(
-            "SELECT ec_distann_stage_scoring_reset(); SET enable_seqscan = off; {}",
+            "{reset_sql} SET enable_seqscan = off; {}",
             materialization_variant_settings_sql(variant),
         ))
         .await?;
@@ -1788,9 +1794,12 @@ async fn compare_materialization_scenario(
     require_toast: bool,
     expected_rows: usize,
     qualified: bool,
+    has_attribution_hooks: bool,
 ) -> Result<String> {
-    let control_json = materialization_result_json(coordinator, control, sql).await?;
-    let candidate_json = materialization_result_json(coordinator, candidate, sql).await?;
+    let control_json =
+        materialization_result_json(coordinator, control, sql, has_attribution_hooks).await?;
+    let candidate_json =
+        materialization_result_json(coordinator, candidate, sql, has_attribution_hooks).await?;
     let eager_value: serde_json::Value = serde_json::from_str(&control_json)?;
     let candidate_value: serde_json::Value = serde_json::from_str(&candidate_json)?;
     let rows = eager_value
@@ -1811,22 +1820,24 @@ async fn compare_materialization_scenario(
                     && value["payload_storage"] == "e"
             })
         });
-    let work = coordinator
-        .query(
-            "SELECT metric, value FROM ec_distann_materialization_work_snapshot()
-              WHERE metric IN ('remote_candidates_requested', 'duplicate_remote_candidates_requested', 'executor_local_rows_consumed')",
-            &[],
-        )
-        .await?;
     let mut remote_requested = 0_i64;
     let mut duplicate_requested = 0_i64;
     let mut local_consumed = 0_i64;
-    for row in work {
-        match row.get::<_, String>(0).as_str() {
-            "remote_candidates_requested" => remote_requested = row.get(1),
-            "duplicate_remote_candidates_requested" => duplicate_requested = row.get(1),
-            "executor_local_rows_consumed" => local_consumed = row.get(1),
-            _ => {}
+    if has_attribution_hooks {
+        let work = coordinator
+            .query(
+                "SELECT metric, value FROM ec_distann_materialization_work_snapshot()
+                  WHERE metric IN ('remote_candidates_requested', 'duplicate_remote_candidates_requested', 'executor_local_rows_consumed')",
+                &[],
+            )
+            .await?;
+        for row in work {
+            match row.get::<_, String>(0).as_str() {
+                "remote_candidates_requested" => remote_requested = row.get(1),
+                "duplicate_remote_candidates_requested" => duplicate_requested = row.get(1),
+                "executor_local_rows_consumed" => local_consumed = row.get(1),
+                _ => {}
+            }
         }
     }
     let configured_top_k = coordinator
@@ -1841,12 +1852,13 @@ async fn compare_materialization_scenario(
         ((expected_rows as i64 + 9) / 10) * 10
     };
     let payload_reads = remote_requested.saturating_add(local_consumed);
+    let attribution_pass =
+        !has_attribution_hooks || (duplicate_requested == 0 && payload_reads <= payload_read_bound);
     let pass = eager_value == candidate_value
         && rows == expected_rows
         && null_ok
         && external_toast_ok
-        && duplicate_requested == 0
-        && payload_reads <= payload_read_bound;
+        && attribution_pass;
     if !pass {
         bail!(
             "materialization correctness scenario {scenario} failed: rows={rows}/{expected_rows} identity={} null_ok={null_ok} external_toast_ok={external_toast_ok} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads}/{payload_read_bound} duplicate_requested={duplicate_requested}",
@@ -1854,7 +1866,7 @@ async fn compare_materialization_scenario(
         );
     }
     Ok(format!(
-        "physical_materialization_correctness scale={scale} scenario={scenario} pass=true rows={rows} eager_digest={} candidate_digest={} null_ok={null_ok} external_toast_ok={external_toast_ok} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads} payload_read_bound={payload_read_bound} deepening_cap={deepening_cap} duplicate_requested={duplicate_requested}",
+        "physical_materialization_correctness scale={scale} scenario={scenario} pass=true rows={rows} eager_digest={} candidate_digest={} null_ok={null_ok} external_toast_ok={external_toast_ok} attribution_available={has_attribution_hooks} remote_requested={remote_requested} local_consumed={local_consumed} payload_reads={payload_reads} payload_read_bound={payload_read_bound} deepening_cap={deepening_cap} duplicate_requested={duplicate_requested}",
         hex::encode(Sha256::digest(control_json.as_bytes())),
         hex::encode(Sha256::digest(candidate_json.as_bytes())),
     ))
@@ -1873,6 +1885,16 @@ async fn run_materialization_correctness(
     if nodes.len() < 2 {
         bail!("materialization correctness requires at least two physical owners");
     }
+    let has_attribution_hooks = coordinator
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_stage_scoring_reset()') IS NOT NULL
+                    AND to_regprocedure(
+                        'ec_distann_materialization_work_snapshot()'
+                    ) IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
     let same_search = |left: &BenchmarkSeedVariant, right: &BenchmarkSeedVariant| {
         left.strategy == right.strategy
             && left.head_search_width == right.head_search_width
@@ -2046,9 +2068,17 @@ async fn run_materialization_correctness(
                 require_toast,
                 limit as usize,
                 qualified,
+                has_attribution_hooks,
             )
             .await?,
         );
+    }
+
+    if !has_attribution_hooks {
+        lines.push(format!(
+            "physical_materialization_feature_isolation scale={scale} normal_release=true attribution_hooks_absent=true semantic_scenarios=7"
+        ));
+        return Ok(lines);
     }
 
     let mut mixed = None;
