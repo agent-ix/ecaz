@@ -584,6 +584,8 @@ pub fn workload_temp_spill_sql(rows: i64) -> String {
 mod tests {
     use super::*;
     #[cfg(target_os = "linux")]
+    use std::os::fd::AsRawFd;
+    #[cfg(target_os = "linux")]
     use std::process::Command;
 
     #[test]
@@ -783,5 +785,84 @@ mod tests {
             1,
             "only the armed child may inject: {marker_content}"
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ldpreload_provider_returns_enospc_for_postgres_pwritev_path() {
+        if std::env::var_os("ECAZ_FAULT_PROVIDER_PWRITEV_CHILD").is_some() {
+            let path =
+                std::env::var("ECAZ_FAULT_PROVIDER_MATCH").expect("child target path is set");
+            let arm =
+                std::env::var("ECAZ_FAULT_PROVIDER_ARM_FILE").expect("child arm path is set");
+            let target = std::fs::File::create(&path).expect("create disarmed target");
+            std::fs::write(&arm, b"armed").expect("arm provider after opening target");
+            let bytes = b"postgres-vectored-write";
+            let iovec = libc_iovec {
+                iov_base: bytes.as_ptr().cast(),
+                iov_len: bytes.len(),
+            };
+            let written = unsafe { pwritev(target.as_raw_fd(), &iovec, 1, 0) };
+            assert_eq!(written, -1, "armed pwritev must fail");
+            assert_eq!(
+                std::io::Error::last_os_error().raw_os_error(),
+                Some(28),
+                "armed pwritev must return ENOSPC"
+            );
+            return;
+        }
+
+        let pid = std::process::id();
+        let path = format!("/tmp/ecaz_fault_provider_pwritev_{pid}");
+        let arm = format!("/tmp/ecaz_fault_provider_pwritev_arm_{pid}");
+        let marker = format!("/tmp/ecaz_fault_provider_pwritev_marker_{pid}");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&arm);
+        let _ = std::fs::remove_file(&marker);
+        let output = Command::new(std::env::current_exe().expect("current test binary"))
+            .arg("--exact")
+            .arg("tests::ldpreload_provider_returns_enospc_for_postgres_pwritev_path")
+            .arg("--nocapture")
+            .env(
+                "LD_PRELOAD",
+                provider_library_path().expect("linux provider should be built"),
+            )
+            .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+            .env("ECAZ_FAULT_PROVIDER_MODE", "enospc-write")
+            .env("ECAZ_FAULT_PROVIDER_MATCH", &path)
+            .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+            .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
+            .env("ECAZ_FAULT_PROVIDER_ARM_FILE", &arm)
+            .env("ECAZ_FAULT_PROVIDER_PWRITEV_CHILD", "1")
+            .output()
+            .expect("run provider-backed pwritev child");
+        assert!(
+            output.status.success(),
+            "pwritev child failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let marker_content = std::fs::read_to_string(&marker).expect("read provider marker");
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_file(&arm);
+        let _ = std::fs::remove_file(&marker);
+        assert!(
+            marker_content.contains("fault=1")
+                && marker_content.contains("op=pwritev")
+                && marker_content.contains("errno=28")
+                && marker_content.contains(&format!("target={path}")),
+            "unexpected marker: {marker_content}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[repr(C)]
+    struct libc_iovec {
+        iov_base: *const std::ffi::c_void,
+        iov_len: usize,
+    }
+
+    #[cfg(target_os = "linux")]
+    unsafe extern "C" {
+        fn pwritev(fd: i32, iov: *const libc_iovec, iovcnt: i32, offset: i64) -> isize;
     }
 }

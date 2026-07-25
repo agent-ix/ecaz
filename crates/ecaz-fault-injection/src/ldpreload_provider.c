@@ -10,6 +10,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/syscall.h>
+#include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -308,6 +309,17 @@ ssize_t pwrite64(int fd, const void *buf, size_t count, off64_t offset) {
     maybe_sleep();
     ssize_t (*real_pwrite64)(int, const void *, size_t, off64_t) = real_symbol("pwrite64");
     return real_pwrite64 ? real_pwrite64(fd, buf, count, offset) : -1;
+}
+
+ssize_t pwritev(int fd, const struct iovec *iov, int iovcnt, off_t offset) {
+    if (should_fault_fd("enospc-write", "pwritev", fd, ENOSPC)) {
+        errno = ENOSPC;
+        return -1;
+    }
+    maybe_sleep();
+    ssize_t (*real_pwritev)(int, const struct iovec *, int, off_t) =
+        real_symbol("pwritev");
+    return real_pwritev ? real_pwritev(fd, iov, iovcnt, offset) : -1;
 }
 
 int fsync(int fd) {
