@@ -25,10 +25,10 @@ Ready replica for the pinned generation, normal scans prefer it. Missing,
 partial, stale, corrupt, retiring, or removed replicas use unchanged owner
 traversal. Replica construction is not automatic in this task.
 REPEATABLE READ and SERIALIZABLE scans bypass the optional replica and retain
-owner traversal. Writes through an ec_distann index require READ COMMITTED
-because a stronger-isolation snapshot cannot safely prove that no Ready
-replica was concurrently committed; they fail before lookup, invalidation, or
-owner dispatch with SQLSTATE `25001` and `EC_TRANSACTION_ISOLATION`.
+owner traversal. Writes at every PostgreSQL isolation level use the post-lock
+index callback's fresh catalog snapshot: `RowExclusiveLock` conflicts with the
+replica builder's `ShareRowExclusiveLock`, so a Ready image cannot commit
+between that lookup and the final tuple mutation.
 
 ## Frozen behavior
 
@@ -151,10 +151,8 @@ The review's nine P3 observations are also required closeout items:
    owner mutation on that attempt, and the measured behavior of its retry.
 4. Normal observability and documentation disclose the measured storage/WAL/
    build envelope, the single-authority/read-mostly restriction, owner fallback
-   for stronger-isolation reads, SQLSTATE `25001`
-   `EC_TRANSACTION_ISOLATION` for stronger-isolation ec_distann writes
-   regardless of current replica state, and any fail-closed mutation
-   dependency.
+   for stronger-isolation reads, lock-fenced invalidation for
+   stronger-isolation writes, and any fail-closed mutation dependency.
 5. Release 10k/50k/100k evidence preserves exact recall/results and confirms
    a material end-to-end benefit; otherwise owner traversal remains normal and
    the productionization stops.

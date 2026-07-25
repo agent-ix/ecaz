@@ -144,12 +144,18 @@ fails closed with no owner write. A crash after the control commit is safe.
 The catalog update SHALL be the only lock acquired by the side transaction,
 preventing a lock dependency on the outer DML transaction.
 
-The traversal-replica mutation guard requires READ COMMITTED before it looks
-for a Ready row. A stronger-isolation snapshot cannot safely prove that no
-Ready replica was concurrently committed. REPEATABLE READ and SERIALIZABLE
-mutations through an ec_distann index therefore SHALL fail before lookup,
-invalidation, or owner dispatch with SQLSTATE `25001` and token
-`EC_TRANSACTION_ISOLATION`, even when the snapshot sees no replica.
+The post-lock per-tuple mutation guard SHALL inspect the replica catalog under
+a fresh snapshot at every PostgreSQL isolation level. `ExecOpenIndices` holds
+`RowExclusiveLock` on the ec_distann index before that guard runs, while a
+replica build requires `ShareRowExclusiveLock` on the same index. Therefore a
+build cannot commit Ready between the fresh lookup and the final tuple
+mutation. The ExecutorStart guard remains a pre-lock best-effort fast path.
+
+DELETE has no per-tuple index callback. Its pre-lock guard can race a Ready
+commit, but that does not create an incomplete traversal image: heap MVCC
+filters the deleted row from replica and owner results alike. INSERT requires
+the post-lock backstop because missing an inserted row would make the replica
+incomplete.
 
 ## Operator Surface
 

@@ -7,7 +7,13 @@
 use sha2::{Digest, Sha256};
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use std::time::Instant;
-use std::{cell::Cell, fs, path::Path, time::Duration};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashSet,
+    fs,
+    path::Path,
+    time::Duration,
+};
 
 use pgrx::datum::{TimestampWithTimeZone, Uuid};
 use pgrx::iter::TableIterator;
@@ -37,6 +43,12 @@ thread_local! {
     // 2 = at least one Ready replica. Catalog statement triggers publish a
     // transactional relcache invalidation and clear this backend-local state.
     static READY_REPLICA_PRESENCE: Cell<u8> = const { Cell::new(0) };
+    /// Bad Ready images whose durable side demotion failed in this backend.
+    /// A new build has a new UUID, so retaining the exact failed identity for
+    /// the session prevents repeated bounded-control connection attempts
+    /// without suppressing a repaired replacement.
+    static SUPPRESSED_READY_REPLICAS: RefCell<HashSet<(u32, [u8; 16])>> =
+        RefCell::new(HashSet::new());
 }
 
 pub(crate) fn invalidate_ready_replica_presence_cache() {
@@ -44,6 +56,11 @@ pub(crate) fn invalidate_ready_replica_presence_cache() {
 }
 
 pub(crate) fn ready_replica_may_exist() -> Result<bool, String> {
+    // A cached negative remains coherent across the first Ready commit because
+    // acquiring a new relation lock processes relcache invalidations. If this
+    // backend already holds a conflicting lock, that lock itself prevents the
+    // replica build from committing Ready. The post-lock aminsert guard relies
+    // on both halves of this invariant.
     match READY_REPLICA_PRESENCE.with(Cell::get) {
         1 => return Ok(false),
         2 => return Ok(true),
@@ -65,6 +82,22 @@ pub(crate) fn ready_replica_may_exist() -> Result<bool, String> {
     })?;
     READY_REPLICA_PRESENCE.with(|presence| presence.set(if ready { 2 } else { 1 }));
     Ok(ready)
+}
+
+fn ready_replica_is_suppressed(index_oid: pg_sys::Oid, build_id: Uuid) -> bool {
+    SUPPRESSED_READY_REPLICAS.with(|suppressed| {
+        suppressed
+            .borrow()
+            .contains(&(index_oid.to_u32(), *build_id.as_bytes()))
+    })
+}
+
+fn suppress_ready_replica(index_oid: pg_sys::Oid, build_id: Uuid) {
+    SUPPRESSED_READY_REPLICAS.with(|suppressed| {
+        suppressed
+            .borrow_mut()
+            .insert((index_oid.to_u32(), *build_id.as_bytes()));
+    });
 }
 
 /// Publish traversal-replica catalog mutations through PostgreSQL's
@@ -1274,20 +1307,21 @@ fn preflight_control_connection() -> Result<(), String> {
 }
 
 pub(crate) fn guard_traversal_replica_mutation(index_oid: pg_sys::Oid) {
-    // Check isolation before the Ready lookup: a transaction-level snapshot
-    // may predate a concurrently committed Ready row and therefore cannot
-    // safely prove that invalidation is unnecessary.
-    if let Err(error) = super::lifecycle_guard::require_read_committed(
-        "ec_distann traversal replica mutation guard",
-    ) {
-        pgrx::ereport!(
-            ERROR,
-            pgrx::PgSqlErrorCode::ERRCODE_ACTIVE_SQL_TRANSACTION,
-            error
-        );
-    }
-    let Some(identity) =
+    // ExecOpenIndices already holds RowExclusiveLock when aminsert reaches
+    // this backstop. A build needs ShareRowExclusiveLock on the same index, so
+    // a fresh catalog snapshot is authoritative for the rest of the statement
+    // even when the outer transaction uses RR or SERIALIZABLE. ExecutorStart
+    // also calls this guard as a pre-lock best effort.
+    let identity = {
+        let _snapshot = crate::storage::snapshot_guard::ActiveSnapshotGuard::latest()
+            .unwrap_or_else(|| {
+                pgrx::error!(
+                    "EC_REPLICA_INVALIDATION: mutation guard could not acquire a fresh snapshot"
+                )
+            });
         active_ready_replica(index_oid).unwrap_or_else(|error| pgrx::error!("{error}"))
+    };
+    let Some(identity) = identity
     else {
         return;
     };
@@ -1358,6 +1392,7 @@ pub(crate) fn handle_ready_replica_failure(
     match mark_stale_in_side_transaction(index_oid, &identity, reason) {
         Ok(_) => Ok(()),
         Err(side_error) => {
+            suppress_ready_replica(index_oid, build_id);
             let side_error = side_error.chars().take(512).collect::<String>();
             // Never attempt a catalog UPDATE in the user's query transaction.
             // It may be READ ONLY or a standby, and a PostgreSQL ERROR would
@@ -1831,6 +1866,9 @@ impl<'a> ReadyTraversalReplica<'a> {
         )
         .is_err()
         {
+            return Ok(None);
+        }
+        if ready_replica_is_suppressed(index_oid, build_id) {
             return Ok(None);
         }
         if !ready_replica_may_exist()? {

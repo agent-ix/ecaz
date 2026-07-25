@@ -49,21 +49,23 @@ Only a complete `Ready` row matching the active epoch is eligible. Missing,
 Building, Stale, Retiring, malformed, identity-mismatched, relation-locked, or
 unreadable images use owner traversal. A failure to durably demote a bad Ready
 image emits a bounded warning but does not prevent owner fallback.
+That backend suppresses the exact failed build for the rest of its session, so
+subsequent reads use owners directly instead of repeating the control
+connection timeout. A replacement build has a new build UUID and remains
+eligible.
 
 ## Transaction isolation and writes
 
 REPEATABLE READ and SERIALIZABLE reads bypass the replica and use owner
 traversal. This fallback is read-only and does not demote a healthy Ready image.
 
-Writes through an ec_distann index require READ COMMITTED. A stronger-isolation
-snapshot cannot safely prove that a concurrent build did not just commit
-Ready, so such writes fail before lookup or dispatch with:
+Writes at READ COMMITTED, REPEATABLE READ, and SERIALIZABLE use a fresh
+post-lock replica-catalog snapshot. The index mutation lock conflicts with the
+replica build lock, so a Ready build cannot commit between that lookup and the
+tuple mutation.
 
-- SQLSTATE `25001`
-- token `EC_TRANSACTION_ISOLATION`
-
-The first READ COMMITTED mutation that sees Ready durably changes it to Stale,
-dispatches no owner mutation, and returns:
+The first mutation that sees Ready durably changes it to Stale, dispatches no
+owner mutation, and returns:
 
 - SQLSTATE `40001`
 - token `EC_REPLICA_INVALIDATED`

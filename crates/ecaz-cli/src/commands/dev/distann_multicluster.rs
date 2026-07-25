@@ -2119,6 +2119,21 @@ async fn task199_auth_failure_recovery_drill(
     coordinator
         .query_one("SELECT pg_reload_conf()", &[])
         .await?;
+    coordinator
+        .batch_execute(&format!("TRUNCATE TABLE {replica_relation}"))
+        .await?;
+    let suppressed_fallback =
+        task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+    let suppressed_repeat_control_attempt = suppressed_fallback == owner_baseline
+        && coordinator
+            .query_one(
+                "SELECT count(*) = 1
+                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+                  WHERE state = 'Ready'",
+                &[],
+            )
+            .await?
+            .get::<_, bool>(0);
     let recovered = coordinator
         .query_one(
             "SELECT ec_distann_recover_traversal_replica_invalidation(
@@ -2148,6 +2163,7 @@ async fn task199_auth_failure_recovery_drill(
         || !auth_failed_closed
         || !ready_after_failure
         || !double_demotion_fallback
+        || !suppressed_repeat_control_attempt
         || !recovered
         || state != "Stale"
         || inserted_count != 0
@@ -2156,13 +2172,16 @@ async fn task199_auth_failure_recovery_drill(
             "Task 199 authentication recovery failed: reloaded={reloaded} \
              failed_closed={auth_failed_closed} ready={ready_after_failure} \
              double_demotion_fallback={double_demotion_fallback} \
+             suppressed_repeat={suppressed_repeat_control_attempt} \
              recovered={recovered} state={state} inserted={inserted_count}"
         );
     }
     Ok(
         "scenario=control_auth_failure_recovery pass=true failed_closed=true \
          state_after_failure=Ready double_demotion_failure_owner_fallback=true \
-         read_only=true operator_recovery=true state_after_recovery=Stale inserted_rows=0"
+         read_only=true backend_build_suppression=true \
+         repeated_control_attempt=false operator_recovery=true \
+         state_after_recovery=Stale inserted_rows=0"
             .to_owned(),
     )
 }
@@ -2496,7 +2515,7 @@ async fn run_task199_replica_lifecycle_drills(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=normal_ready_semantic_identity pass=true content_digest={content_digest}"
     )];
 
-    for isolation in ["REPEATABLE READ", "SERIALIZABLE"] {
+    for isolation in ["READ UNCOMMITTED", "REPEATABLE READ", "SERIALIZABLE"] {
         coordinator
             .batch_execute(&format!("BEGIN ISOLATION LEVEL {isolation} READ ONLY"))
             .await?;
@@ -2520,55 +2539,59 @@ async fn run_task199_replica_lifecycle_drills(
         bail!("Task 199 stronger-isolation owner fallback demoted the Ready replica");
     }
     lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=stronger_isolation_owner_fallback pass=true repeatable_read=true serializable=true read_only=true ordered_identity=true state=Ready"
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=isolation_read_semantics pass=true read_uncommitted=true repeatable_read_owner_fallback=true serializable_owner_fallback=true read_only=true ordered_identity=true state=Ready"
     ));
 
-    let stronger_isolation_insert_id = coordinator
-        .query_one(
-            &format!("SELECT coalesce(max(id), 0) + 1 FROM {corpus}"),
-            &[],
-        )
-        .await?
-        .get::<_, i64>(0);
     for isolation in ["REPEATABLE READ", "SERIALIZABLE"] {
+        let inserted_id = coordinator
+            .query_one(
+                &format!("SELECT coalesce(max(id), 0) + 1 FROM {corpus}"),
+                &[],
+            )
+            .await?
+            .get::<_, i64>(0);
         coordinator
             .batch_execute(&format!("BEGIN ISOLATION LEVEL {isolation}"))
             .await?;
         let mutation_error = coordinator
             .query_one(&task199_real_insert_sql(corpus), &[])
             .await
-            .expect_err("stronger-isolation mutation must reject before invalidation");
-        let rejected = mutation_error
+            .expect_err("stronger-isolation mutation must invalidate the Ready replica");
+        let fenced = mutation_error
             .code()
-            .is_some_and(|code| code.code() == "25001")
+            .is_some_and(|code| code.code() == "40001")
             && mutation_error
                 .as_db_error()
-                .is_some_and(|error| error.message().contains("EC_TRANSACTION_ISOLATION"));
+                .is_some_and(|error| error.message().contains("EC_REPLICA_INVALIDATED"));
         let _ = coordinator.batch_execute("ROLLBACK").await;
-        if !rejected {
-            bail!("Task 199 {isolation} mutation returned the wrong rejection");
+        let posture = coordinator
+            .query_one(
+                &format!(
+                    "SELECT
+                         (SELECT count(*) = 1
+                            FROM ec_distann_traversal_replica_status(
+                                'dm_idx'::regclass
+                            )
+                           WHERE state = 'Stale')
+                         AND NOT EXISTS (
+                             SELECT 1 FROM {corpus} WHERE id = $1
+                         )"
+                ),
+                &[&inserted_id],
+            )
+            .await?
+            .get::<_, bool>(0);
+        if !fenced || !posture {
+            bail!("Task 199 {isolation} mutation did not fence against Ready");
         }
-    }
-    let stronger_isolation_posture = coordinator
-        .query_one(
-            &format!(
-                "SELECT
-                     (SELECT count(*) = 1
-                        FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
-                       WHERE state = 'Ready')
-                     AND NOT EXISTS (
-                         SELECT 1 FROM {corpus} WHERE id = $1
-                     )"
-            ),
-            &[&stronger_isolation_insert_id],
-        )
-        .await?
-        .get::<_, bool>(0);
-    if !stronger_isolation_posture {
-        bail!("Task 199 stronger-isolation mutation changed replica or owner state");
+        let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+        if !retired || !reclaimed {
+            bail!("Task 199 could not reclaim the {isolation} invalidation replica");
+        }
+        build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
     }
     lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=stronger_isolation_mutation_rejected pass=true repeatable_read=true serializable=true sqlstate=25001 token=EC_TRANSACTION_ISOLATION state=Ready inserted_rows=0"
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=stronger_isolation_mutation_fenced pass=true repeatable_read=true serializable=true sqlstate=40001 token=EC_REPLICA_INVALIDATED rebuilt_between_cases=true inserted_rows=0"
     ));
 
     lines.push(format!(
