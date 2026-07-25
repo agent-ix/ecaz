@@ -1522,8 +1522,9 @@ async fn run_task199_replica_lifecycle_drills(
         .expect_err("Ready replica scan must reject REPEATABLE READ");
     let _ = coordinator.batch_execute("ROLLBACK").await;
     let isolation_pass = isolation_error
-        .to_string()
-        .contains("EC_TRANSACTION_ISOLATION")
+        .downcast_ref::<tokio_postgres::Error>()
+        .and_then(tokio_postgres::Error::as_db_error)
+        .is_some_and(|error| error.message().contains("EC_TRANSACTION_ISOLATION"))
         && coordinator
             .query_one(
                 "SELECT count(*) = 1
