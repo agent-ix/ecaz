@@ -79,13 +79,25 @@ pub(crate) fn ready_replica_may_exist() -> Result<bool, String> {
     let (catalog_owner, _) = extension_owner()?;
     let catalog =
         super::generation_catalog::extension_relation_name("ec_distann_traversal_replica")?;
-    let ready_catalog_oid = super::handoff::with_restricted_type_io_owner(catalog_owner, || {
-        Spi::get_one::<pg_sys::Oid>(&format!(
-            "SELECT tableoid FROM {catalog} WHERE state = 'Ready' LIMIT 1"
-        ))
-        .map_err(|error| format!("EC_REPLICA_STATE: Ready presence lookup failed: {error}"))
-    })?;
-    let ready = ready_catalog_oid.is_some();
+    // Keep this a one-row query even when the catalog is empty. Spi::get_one
+    // rejects a zero-row result, which is the ordinary state before the first
+    // traversal replica has been built.
+    let (ready, ready_catalog_oid) =
+        super::handoff::with_restricted_type_io_owner(catalog_owner, || {
+            Spi::get_two::<bool, pg_sys::Oid>(&format!(
+                "SELECT EXISTS (
+                            SELECT 1 FROM {catalog} WHERE state = 'Ready'
+                        ),
+                        (
+                            SELECT tableoid
+                              FROM {catalog}
+                             WHERE state = 'Ready'
+                             LIMIT 1
+                        )"
+            ))
+            .map_err(|error| format!("EC_REPLICA_STATE: Ready presence lookup failed: {error}"))
+        })?;
+    let ready = ready.unwrap_or(false);
     if let Some(catalog_oid) = ready_catalog_oid {
         TRAVERSAL_REPLICA_CATALOG_OID.with(|cached| cached.set(catalog_oid.to_u32()));
     }
