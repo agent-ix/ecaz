@@ -192,7 +192,10 @@ Equality contracts:
   accumulation.
 - RaBitQ block and arithmetic paths allow relative/absolute `1e-5`; vector
   FMA/reduction order differs from the scalar anchor.
-- QJL allows 4 ULP or relative `1e-6`.
+- QJL scalar/remainder candidates are bit-exact. SIMD 32-candidate blocks
+  allow 4 ULP or relative `1e-6` because vector block reductions change the
+  accumulation order; the batch differential records the ISA returned by the
+  block kernel rather than printing host capability as a proxy.
 - FWHT and `prod` split/code-to-code scores allow relative/absolute `1e-5`.
 - HNSW/DiskANN source inner product allows relative/absolute `1e-4` because
   the SIMD implementation may fuse multiply-add while scalar does not.
@@ -209,7 +212,9 @@ pre-merge evidence is a task-scoped packet containing a local
 Every new production SIMD scoring path must land with an existing
 scalar/reference entry point, a narrow test/bench-only forced-backend hook
 when dispatch could hide it, boundary and realistic-dimension differential
-fixtures, and a focused command added to `make simd-diff`. The Miri scalar
+fixtures, and a focused command added to `make simd-diff`. Every focused
+command has an explicit expected test count; a renamed or empty filter fails
+the lane. The Miri scalar
 fallback remains useful for reference-path UB checks; it is not SIMD
 execution evidence.
 

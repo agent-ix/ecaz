@@ -76,7 +76,7 @@ pub(crate) fn score_turboquant_qjl_batch(
     codes: &[&[u8]],
     gammas: &[f32],
     out_scores: &mut [f32],
-) -> Result<(), String> {
+) -> Result<Option<crate::quant::isa::Isa>, String> {
     if codes.len() != gammas.len() || codes.len() != out_scores.len() {
         return Err(format!(
             "qjl32 score output count {} does not match code count {} and gamma count {}",
@@ -91,8 +91,9 @@ pub(crate) fn score_turboquant_qjl_batch(
     }
 
     let mut block_start = 0usize;
+    let mut observed_block_isa = None;
     while block_start + BLOCK_WIDTH <= codes.len() {
-        let _ = score_turboquant_qjl_block32(
+        let isa = score_turboquant_qjl_block32(
             quantizer,
             prepared,
             codes[block_start..block_start + BLOCK_WIDTH]
@@ -103,6 +104,13 @@ pub(crate) fn score_turboquant_qjl_batch(
                 .expect("slice length is exactly one block"),
             &mut out_scores[block_start..block_start + BLOCK_WIDTH],
         );
+        if let Some(previous) = observed_block_isa {
+            assert_eq!(
+                previous, isa,
+                "QJL batch changed ISA between blocks in one dispatch"
+            );
+        }
+        observed_block_isa = Some(isa);
         block_start += BLOCK_WIDTH;
     }
 
@@ -113,7 +121,7 @@ pub(crate) fn score_turboquant_qjl_batch(
     {
         *out_score = score_turboquant_qjl_scalar(quantizer, prepared, code, *gamma);
     }
-    Ok(())
+    Ok(observed_block_isa)
 }
 
 pub(crate) fn score_turboquant_qjl_block32(
@@ -241,7 +249,7 @@ mod tests {
     }
 
     #[test]
-    fn qjl32_batch_with_blocks_and_tail_matches_pre_slice_scorer_bits() {
+    fn qjl32_batch_matches_pre_slice_scorer_by_execution_path() {
         let quantizer = crate::quant::prod::ProdQuantizer::new(1024, 4, 42);
         let query = random_unit_vector(1024, 91);
         let prepared = quantizer.prepare_ip_query(&query);
@@ -261,22 +269,45 @@ mod tests {
         let all_code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
         let all_gammas: Vec<f32> = encoded.iter().map(|encoded| encoded.gamma).collect();
 
+        let mut observed_block_isa = None;
         for width in [1usize, 7, 8, 9, 16, 17, 31, 32, 33] {
             let code_refs = &all_code_refs[..width];
             let gammas = &all_gammas[..width];
             let mut scores = vec![0.0; width];
-            score_turboquant_qjl_batch(&quantizer, &prepared, code_refs, gammas, &mut scores)
-                .unwrap();
+            let block_isa =
+                score_turboquant_qjl_batch(&quantizer, &prepared, code_refs, gammas, &mut scores)
+                    .unwrap();
+            if let Some(isa) = block_isa {
+                if let Some(previous) = observed_block_isa {
+                    assert_eq!(previous, isa);
+                }
+                observed_block_isa = Some(isa);
+            }
 
-            for ((code, gamma), score) in code_refs.iter().zip(gammas.iter()).zip(scores.iter()) {
+            let block_candidate_count = width / BLOCK_WIDTH * BLOCK_WIDTH;
+            for (index, ((code, gamma), score)) in code_refs
+                .iter()
+                .zip(gammas.iter())
+                .zip(scores.iter())
+                .enumerate()
+            {
                 let pre_slice =
                     quantizer.score_ip_from_parts_scalar_reference(&prepared, *gamma, code);
-                assert_close(*score, pre_slice, 4);
+                if index < block_candidate_count && block_isa != Some(Isa::Scalar) {
+                    // SIMD block reductions use a different accumulation order.
+                    assert_close(*score, pre_slice, 4);
+                } else {
+                    // Sub-block widths and the tail after a full block execute
+                    // the scalar reference path and must remain bit-exact.
+                    assert_eq!(score.to_bits(), pre_slice.to_bits());
+                }
             }
         }
         eprintln!(
-            "task36_qjl32 isa={} widths=1,7,8,9,16,17,31,32,33",
-            crate::quant::isa::current_isa().label()
+            "task36_qjl32 observed_block_isa={} scalar_tail=bit-exact widths=1,7,8,9,16,17,31,32,33",
+            observed_block_isa
+                .map(crate::quant::isa::Isa::label)
+                .unwrap_or("not-exercised")
         );
     }
 
