@@ -91,6 +91,10 @@ Optional follow-on:
 - CI does not automatically run this lane on pull requests or a schedule.
   Until repository CI policy changes, the pre-merge gate is a recorded local
   `make simd-diff` run on each claimed host class.
+- The manual `ci.yml` SIMD matrix invokes the same fail-closed
+  `make simd-diff` lane. Its `ubuntu-24.04-arm` leg is the only CI job that
+  exercises NEON; the separate aarch64 full-test workflow remains reachable
+  only through manual dispatch because it has no active schedule trigger.
 - A deliberately mutated SIMD path (flip a sign in one branch) is caught by
   `simd-diff` and reported as a non-trivial diff in the packet.
 
