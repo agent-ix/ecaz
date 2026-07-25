@@ -1,0 +1,1784 @@
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Diff in /Users/peter/dev/tqvector/crates/ecaz-cli/src/commands/corpus/load.rs:2191:
+         stop.store(true, Ordering::SeqCst);
+         task.await
+             .map_err(|error| eyre!("build memory monitor task failed: {error}"))??;
+-        if let Some(after) = crate::commands::bench::latency::read_proc_status_memory(backend_pid)
+(B-            .await?
+(B+        if let Some(after) =
+(B+            crate::commands::bench::latency::read_proc_status_memory(backend_pid).await?
+(B         {
+             peak.lock().await.merge(after);
+         }
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Diff in /Users/peter/dev/tqvector/hardening/careful/src/../../../src/am/ec_diskann/scan.rs:1591:
+         // A chain graph exposes few admissible frontier entries per
+         // round, so the beam cannot widen flushes much here — but
+         // batching rounds must never *increase* the flush count.
+-        let flushes = |p: &FrontierProfile| {
+(B-            p.flush_width_zero + p.flush_width_buckets.iter().sum::<usize>()
+(B-        };
+(B+        let flushes =
+(B+            |p: &FrontierProfile| p.flush_width_zero + p.flush_width_buckets.iter().sum::<usize>();
+(B         assert!(
+             flushes(&profile) <= flushes(&sequential_profile),
+             "batched rounds must not exceed the sequential flush count"
+Diff in /Users/peter/dev/tqvector/hardening/careful/src/../../../src/am/ec_ivf/page.rs:3507:
+         "ec_ivf posting entry block sequence",
+         |buffer, block_number| {
+             let decode_started = std::time::Instant::now();
+-            let result =
+(B-                visit_all_ivf_posting_entries_from_buffer(buffer, block_number, payload_len, visitor);
+(B+            let result = visit_all_ivf_posting_entries_from_buffer(
+(B+                buffer,
+(B+                block_number,
+(B+                payload_len,
+(B+                visitor,
+(B+            );
+(B             decode_elapsed += decode_started.elapsed();
+             result
+         },
+Diff in /Users/peter/dev/tqvector/hardening/careful/src/../../../src/storage/page.rs:341:
+         assert_eq!(second.block_number, base, "same page while it fits");
+         assert_eq!(third.block_number, base + 1, "next page is base+1");
+         // Lookups resolve against the base.
+-        assert_eq!(chain.get_page(first.block_number).unwrap().raw_tuple(first).unwrap(), &[1; 32]);
+(B-        assert_eq!(chain.get_page(third.block_number).unwrap().raw_tuple(third).unwrap(), &[3; 32]);
+(B+        assert_eq!(
+(B+            chain
+(B+                .get_page(first.block_number)
+(B+                .unwrap()
+(B+                .raw_tuple(first)
+(B+                .unwrap(),
+(B+            &[1; 32]
+(B+        );
+(B+        assert_eq!(
+(B+            chain
+(B+                .get_page(third.block_number)
+(B+                .unwrap()
+(B+                .raw_tuple(third)
+(B+                .unwrap(),
+(B+            &[3; 32]
+(B+        );
+(B         // Below-base blocks are not in this chain.
+         assert!(chain.get_page(base - 1).is_none());
+         // pages() carry the base-relative block numbers for write_data_pages.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Diff in /Users/peter/dev/tqvector/src/am/ec_diskann/options.rs:194:
+ }
+
+ pub(super) fn current_beam_width() -> usize {
+-    usize::try_from(ECDISKANN_BEAM_WIDTH_GUC.get()).unwrap_or(1).max(1)
+(B+    usize::try_from(ECDISKANN_BEAM_WIDTH_GUC.get())
+(B+        .unwrap_or(1)
+(B+        .max(1)
+(B }
+
+ pub(super) fn scan_profile_notice_enabled() -> bool {
+Diff in /Users/peter/dev/tqvector/src/am/ec_diskann/scan.rs:1591:
+         // A chain graph exposes few admissible frontier entries per
+         // round, so the beam cannot widen flushes much here — but
+         // batching rounds must never *increase* the flush count.
+-        let flushes = |p: &FrontierProfile| {
+(B-            p.flush_width_zero + p.flush_width_buckets.iter().sum::<usize>()
+(B-        };
+(B+        let flushes =
+(B+            |p: &FrontierProfile| p.flush_width_zero + p.flush_width_buckets.iter().sum::<usize>();
+(B         assert!(
+             flushes(&profile) <= flushes(&sequential_profile),
+             "batched rounds must not exceed the sequential flush count"
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/build_gate.rs:358:
+         if rt_index <= 0 || rt_index > table_length {
+             continue;
+         }
+-        let rte = unsafe {
+(B-            pg_sys::list_nth(stmt.rtable, rt_index - 1).cast::<pg_sys::RangeTblEntry>()
+(B-        };
+(B+        let rte =
+(B+            unsafe { pg_sys::list_nth(stmt.rtable, rt_index - 1).cast::<pg_sys::RangeTblEntry>() };
+(B         let Some(rte) = (unsafe { rte.as_ref() }) else {
+             continue;
+         };
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/canonical_wire.rs:20:
+     code: &str,
+     field: &str,
+ ) -> Result<[u8; N], String> {
+-    bytes.try_into().map_err(|bytes: Vec<u8>| {
+(B-        format!(
+(B-            "{code}: {field} is {} bytes, expected {N}",
+(B-            bytes.len()
+(B-        )
+(B-    })
+(B+    bytes
+(B+        .try_into()
+(B+        .map_err(|bytes: Vec<u8>| format!("{code}: {field} is {} bytes, expected {N}", bytes.len()))
+(B }
+
+-pub(crate) fn fixed_digest(
+(B-    bytes: Vec<u8>,
+(B-    code: &str,
+(B-    field: &str,
+(B-) -> Result<[u8; 32], String> {
+(B+pub(crate) fn fixed_digest(bytes: Vec<u8>, code: &str, field: &str) -> Result<[u8; 32], String> {
+(B     fixed_bytes(bytes, code, field)
+ }
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/coordinator_retirement.rs:508:
+                             .value::<Vec<u8>>()
+                             .map_err(|_| "EC_EPOCH_STATE: retire digest decode failed".to_owned())?
+                             .ok_or_else(|| "EC_EPOCH_STATE: retire digest is NULL".to_owned())?,
+-                        state: RetireDecisionState::parse(&row["decision_state"]
+(B-                            .value::<String>()
+(B-                            .map_err(|_| "EC_EPOCH_STATE: retire state decode failed".to_owned())?
+(B-                            .ok_or_else(|| "EC_EPOCH_STATE: retire state is NULL".to_owned())?)?,
+(B+                        state: RetireDecisionState::parse(
+(B+                            &row["decision_state"]
+(B+                                .value::<String>()
+(B+                                .map_err(|_| {
+(B+                                    "EC_EPOCH_STATE: retire state decode failed".to_owned()
+(B+                                })?
+(B+                                .ok_or_else(|| "EC_EPOCH_STATE: retire state is NULL".to_owned())?,
+(B+                        )?,
+(B                         xmin: row["decision_xmin"]
+                             .value::<String>()
+                             .map_err(|_| {
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/coordinator_retirement.rs:658:
+                         stored.build_id.into(),
+                     ],
+                 )
+-                .map_err(|error| {
+(B-                    format!("EC_EPOCH_STATE: head-sample reclaim failed: {error}")
+(B-                })?;
+(B+                .map_err(|error| format!("EC_EPOCH_STATE: head-sample reclaim failed: {error}"))?;
+(B             Ok::<(), String>(())
+         })?;
+         let updated = Spi::connect_mut(|client| {
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/cost.rs:67:
+                 let constants = unsafe { current_planner_cost_constants() };
+                 // Per-query work is BW x H expansions (NFR-019); model the
+                 // search breadth as that product.
+-                let ef_search = i32::try_from(
+(B-                    options::current_beam_width() * options::current_hop_rounds(),
+(B-                )
+(B-                .unwrap_or(i32::MAX);
+(B+                let ef_search =
+(B+                    i32::try_from(options::current_beam_width() * options::current_hop_rounds())
+(B+                        .unwrap_or(i32::MAX);
+(B                 estimate_planner_cost(
+                     PlannerCostInputs {
+                         index_pages: index_pages_value,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/custom_scan.rs:1208:
+         .iter()
+         .take(previous_proven)
+         .position(|output| {
+-            output
+(B-                .as_ref()
+(B-                .and_then(materialized_remote_output_vec_id)
+(B-                == Some(vec_id)
+(B+            output.as_ref().and_then(materialized_remote_output_vec_id) == Some(vec_id)
+(B         })?;
+     previous_outputs.get_mut(position)?.take()
+ }
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/custom_scan.rs:1773:
+ #[cfg(test)]
+ mod materialization_candidate_tests {
+     use super::{
+-        pending_materialization_window, take_materialized_remote_output_by_id,
+(B-        CustomScanOutputRow,
+(B+        pending_materialization_window, take_materialized_remote_output_by_id, CustomScanOutputRow,
+(B     };
+
+     #[test]
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/dml.rs:85:
+     // are not already tombstoned (monotone: never re-flip).
+     let mut to_tombstone: Vec<ItemPointer> = Vec::new();
+     for (_vec_id, record_tid) in &directory {
+-        let raw = read_raw_tuple_bytes_from_relation(
+(B-            handle,
+(B-            *record_tid,
+(B-            "ec_distann tombstone scan",
+(B-        )?;
+(B+        let raw =
+(B+            read_raw_tuple_bytes_from_relation(handle, *record_tid, "ec_distann tombstone scan")?;
+(B         if raw.first().copied() != Some(DISTANN_NODE_TAG)
+             || raw.len() < DISTANN_NODE_HEAP_TID_OFFSET + 6
+         {
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/dml.rs:180:
+     let handle = NonNull::new(index_relation).ok_or_else(|| {
+         DistannExpandError::Internal("ec_distann tombstone needs a valid index relation".to_owned())
+     })?;
+-    let metadata =
+(B-        read_metadata_from_index_handle(handle).map_err(DistannExpandError::Internal)?;
+(B+    let metadata = read_metadata_from_index_handle(handle).map_err(DistannExpandError::Internal)?;
+(B     super::require_legacy_local_storage(&metadata, "ec_distann tombstone")
+         .map_err(DistannExpandError::GenerationMissing)?;
+     if vec_ids.is_empty() {
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/dml.rs:205:
+                 "ec_distann tombstone: vec_id {vec_id:#018x} is not in the directory"
+             ))
+         })?;
+-        let raw =
+(B-            read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann tombstone by vec_id")
+(B-                .map_err(DistannExpandError::Internal)?;
+(B+        let raw = read_raw_tuple_bytes_from_relation(
+(B+            handle,
+(B+            record_tid,
+(B+            "ec_distann tombstone by vec_id",
+(B+        )
+(B+        .map_err(DistannExpandError::Internal)?;
+(B         let flags = u16::from_le_bytes(
+             raw[DISTANN_NODE_FLAGS_OFFSET..DISTANN_NODE_FLAGS_OFFSET + 2]
+                 .try_into()
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/dml.rs:358:
+ /// Append one delta tuple on a freshly-extended page (one entry per page: a
+ /// dim-1536 entry is ~6 KB, near a page anyway, and the buffer is bounded).
+ /// WAL-logged. Returns the new tuple's TID.
+-fn append_delta_tuple(
+(B-    handle: RelationHandle,
+(B-    payload: Vec<u8>,
+(B-) -> Result<ItemPointer, String> {
+(B+fn append_delta_tuple(handle: RelationHandle, payload: Vec<u8>) -> Result<ItemPointer, String> {
+(B     let buffer = LockedBufferGuard::read_main_locked_handle(
+         handle,
+         P_NEW,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/epoch.rs:214:
+             let mut id = base_identity();
+             mutate(&mut id);
+             let changed = compute_epoch_fingerprint(&id, DISTANN_EPOCH_FINGERPRINT_V1);
+-            assert_ne!(base, changed, "mutator {index} did not change the fingerprint");
+(B+            assert_ne!(
+(B+                base, changed,
+(B+                "mutator {index} did not change the fingerprint"
+(B+            );
+(B             assert!(!fingerprints_match(&base, &changed));
+         }
+     }
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/epoch_manifest.rs:57:
+     Ok(result)
+ }
+
+-fn read_metadata(index_oid: pg_sys::Oid, caller: &'static str) -> Result<DistannMetadataPage, String> {
+(B+fn read_metadata(
+(B+    index_oid: pg_sys::Oid,
+(B+    caller: &'static str,
+(B+) -> Result<DistannMetadataPage, String> {
+(B     let guard = IndexRelationGuard::open(
+         index_oid,
+         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/epoch_manifest.rs:175:
+         name!(in_flight_count, i64),
+     ),
+ > {
+-    let metadata =
+(B-        read_metadata(index_regclass, "ec_distann_epoch_status").unwrap_or_else(|e| pgrx::error!("{e}"));
+(B+    let metadata = read_metadata(index_regclass, "ec_distann_epoch_status")
+(B+        .unwrap_or_else(|e| pgrx::error!("{e}"));
+(B     TableIterator::new(std::iter::once((
+         epoch_state_name(metadata.epoch_state).to_owned(),
+         metadata.active_epoch as i64,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/epoch_manifest.rs:192:
+ fn ec_distann_debug_set_in_flight(index_regclass: pg_sys::Oid, count: i64) {
+     let count = u32::try_from(count)
+         .unwrap_or_else(|_| pgrx::error!("ec_distann_debug_set_in_flight: count out of range"));
+-    with_metadata_mut(index_regclass, "ec_distann_debug_set_in_flight", |metadata| {
+(B-        metadata.in_flight_count = count;
+(B-        Ok(())
+(B-    })
+(B+    with_metadata_mut(
+(B+        index_regclass,
+(B+        "ec_distann_debug_set_in_flight",
+(B+        |metadata| {
+(B+            metadata.in_flight_count = count;
+(B+            Ok(())
+(B+        },
+(B+    )
+(B     .unwrap_or_else(|e| pgrx::error!("{e}"));
+ }
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/expand.rs:58:
+                     tid.block_number, tid.offset_number
+                 ));
+             }
+-            DistannNodeTuple::decode_into(raw, self.graph_degree_r, self.code_len, &mut self.pooled_node)
+(B+            DistannNodeTuple::decode_into(
+(B+                raw,
+(B+                self.graph_degree_r,
+(B+                self.code_len,
+(B+                &mut self.pooled_node,
+(B+            )
+(B         })?;
+         match visit {
+             LockedPageTupleVisit::Present(()) => Ok(()),
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/handoff_wire.rs:79:
+     pub(crate) fn from_descriptor(
+         descriptor: &super::generation_descriptor::DistannGenerationDescriptor,
+     ) -> Result<Self, String> {
+-        let binding = super::quantizer::DistannCodecBinding::from_artifact(
+(B-            &descriptor.codec_artifact,
+(B-        )?;
+(B+        let binding =
+(B+            super::quantizer::DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
+(B         Self::new(
+             binding.code_len(usize::from(descriptor.dimensions))?,
+             usize::from(descriptor.graph_degree),
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/head_cache.rs:132:
+         )
+     };
+     let head_seed = metadata.seed ^ DISTANN_HEAD_GRAPH_SEED_WRAP;
+-    let head_entry = crate::am::approximate_medoid(
+(B-        head_vectors.len(),
+(B-        head_vectors.len(),
+(B-        head_seed,
+(B-        head_dist,
+(B-    );
+(B+    let head_entry =
+(B+        crate::am::approximate_medoid(head_vectors.len(), head_vectors.len(), head_seed, head_dist);
+(B     let (head_graph, _stats) = crate::am::build_vamana_graph_with_stats(
+         head_vectors.len(),
+         head_entry,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/identity.rs:43:
+
+ /// vec_id for a heap TID (local mode; single-node posture only).
+ pub(crate) fn vec_id_from_local_heap_tid(heap_tid: ItemPointer) -> u64 {
+-    let packed =
+(B-        (u64::from(heap_tid.block_number) << 16) | u64::from(heap_tid.offset_number);
+(B+    let packed = (u64::from(heap_tid.block_number) << 16) | u64::from(heap_tid.offset_number);
+(B     fmix64(packed ^ DISTANN_VEC_ID_DOMAIN_LOCAL)
+ }
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:100:
+     let mut pairwise = vec![vec![0.0_f32; n]; n];
+     for left in 0..n {
+         for right in (left + 1)..n {
+-            let distance =
+(B-                exact_distance(&candidates[left].source_vector, &candidates[right].source_vector);
+(B+            let distance = exact_distance(
+(B+                &candidates[left].source_vector,
+(B+                &candidates[right].source_vector,
+(B+            );
+(B             pairwise[left][right] = distance;
+             pairwise[right][left] = distance;
+         }
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:183:
+         return Err("ec_distann backlink planning max_degree must be > 0".to_owned());
+     }
+     // Already linked (idempotent — a re-inserted/duplicate edge is a no-op).
+-    if target.current_neighbors.iter().any(|n| n.vec_id == new_vec_id) {
+(B+    if target
+(B+        .current_neighbors
+(B+        .iter()
+(B+        .any(|n| n.vec_id == new_vec_id)
+(B+    {
+(B         return Ok(target.current_neighbors.iter().map(|n| n.vec_id).collect());
+     }
+     // Free slot: append, preserving existing edges.
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:306:
+     let new_code = binding.encode(new_source_vector);
+
+     // Directory first — the descent and the collision guard both need it.
+-    let directory =
+(B-        read_directory_from_relation(handle, metadata.directory_head, metadata.node_count as usize)?;
+(B+    let directory = read_directory_from_relation(
+(B+        handle,
+(B+        metadata.directory_head,
+(B+        metadata.node_count as usize,
+(B+    )?;
+(B     // 167-003-P2: reject a vec_id collision BEFORE appending. The directory is a
+     // strict-ascending vec_id set (the reader rejects duplicates); a duplicate
+     // insert (e.g. a retried fold) must error, never append a second record for
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:395:
+         })?;
+         let raw = read_raw_tuple_bytes_from_relation(handle, tid, "ec_distann insert forward")?;
+         let node = DistannNodeTuple::decode(&raw, graph_degree_r, code_len)?;
+-        forward.push(DistannInsertNeighbor { vec_id: fid, code: node.search_code });
+(B+        forward.push(DistannInsertNeighbor {
+(B+            vec_id: fid,
+(B+            code: node.search_code,
+(B+        });
+(B         forward_tids.push(tid);
+     }
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:527:
+             .map_err(|e| format!("ec_distann graph insert node add failed: {e:?}"))?
+     };
+     wal_txn.finish();
+-    Ok(ItemPointer { block_number, offset_number })
+(B+    Ok(ItemPointer {
+(B+        block_number,
+(B+        offset_number,
+(B+    })
+(B }
+
+ /// Amend a forward neighbor's adjacency to include `new_vec_id`, WAL-logged in
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:556:
+         pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+     )
+     .ok_or_else(|| {
+-        format!("ec_distann backlink: could not open block {}", neighbor_tid.block_number)
+(B+        format!(
+(B+            "ec_distann backlink: could not open block {}",
+(B+            neighbor_tid.block_number
+(B+        )
+(B     })?;
+     let r = usize::from(graph_degree_r);
+     let vec_ids_off = distann_node_neighbor_vec_ids_offset(code_len);
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:738:
+         let samples = vec![
+             (10_u64, vec![0.99, 0.01, 0.0]), // closest
+             (20, vec![0.0, 1.0, 0.0]),
+-            (30, vec![0.9, 0.1, 0.0]),   // 2nd closest
+(B-            (40, vec![-1.0, 0.0, 0.0]),  // farthest
+(B+            (30, vec![0.9, 0.1, 0.0]),  // 2nd closest
+(B+            (40, vec![-1.0, 0.0, 0.0]), // farthest
+(B         ];
+         let ranked = rank_insert_candidates(&new_vec, &samples, 2).unwrap();
+         assert_eq!(ranked.len(), 2, "limit respected");
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:765:
+         let r: u16 = 4;
+         let code_len = 8;
+         let fwd = vec![
+-            DistannInsertNeighbor { vec_id: 111, code: vec![1_u8; code_len] },
+(B-            DistannInsertNeighbor { vec_id: 222, code: vec![2_u8; code_len] },
+(B+            DistannInsertNeighbor {
+(B+                vec_id: 111,
+(B+                code: vec![1_u8; code_len],
+(B+            },
+(B+            DistannInsertNeighbor {
+(B+                vec_id: 222,
+(B+                code: vec![2_u8; code_len],
+(B+            },
+(B         ];
+         let node = build_insert_node_tuple(
+             999,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:773:
+-            ItemPointer { block_number: 3, offset_number: 7 },
+(B+            ItemPointer {
+(B+                block_number: 3,
+(B+                offset_number: 7,
+(B+            },
+(B             vec![9_u8; code_len],
+             &fwd,
+             r,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:778:
+         )
+         .unwrap();
+         assert_eq!(node.vec_id, 999);
+-        assert_eq!(node.neighbor_count, 2, "count = real neighbors, not padding");
+(B+        assert_eq!(
+(B+            node.neighbor_count, 2,
+(B+            "count = real neighbors, not padding"
+(B+        );
+(B         assert_eq!(node.neighbor_vec_ids.len(), r as usize, "fixed R slots");
+         assert_eq!(node.neighbor_vec_ids[0], 111);
+-        assert_eq!(node.neighbor_vec_ids[2], 0, "slots past count are zero-padded");
+(B+        assert_eq!(
+(B+            node.neighbor_vec_ids[2], 0,
+(B+            "slots past count are zero-padded"
+(B+        );
+(B         assert!(!node.tombstoned);
+         // Round-trips through the on-disk encoding at fixed length.
+         let encoded = node.encode(r, code_len).unwrap();
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:788:
+         assert_eq!(encoded.len(), DistannNodeTuple::encoded_len(r, code_len));
+-        assert_eq!(DistannNodeTuple::decode(&encoded, r, code_len).unwrap(), node);
+(B+        assert_eq!(
+(B+            DistannNodeTuple::decode(&encoded, r, code_len).unwrap(),
+(B+            node
+(B+        );
+(B     }
+
+     #[test]
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:794:
+         let code_len = 8;
+         // Too many neighbors for R.
+         let many: Vec<_> = (0..5)
+-            .map(|i| DistannInsertNeighbor { vec_id: i, code: vec![0_u8; code_len] })
+(B+            .map(|i| DistannInsertNeighbor {
+(B+                vec_id: i,
+(B+                code: vec![0_u8; code_len],
+(B+            })
+(B             .collect();
+         assert!(
+-            build_insert_node_tuple(1, ItemPointer::INVALID, vec![0; code_len], &many, 4, code_len)
+(B-                .is_err(),
+(B+            build_insert_node_tuple(
+(B+                1,
+(B+                ItemPointer::INVALID,
+(B+                vec![0; code_len],
+(B+                &many,
+(B+                4,
+(B+                code_len
+(B+            )
+(B+            .is_err(),
+(B             "neighbors > R rejected"
+         );
+         // Wrong search_code length.
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:807:
+             "search_code len mismatch rejected"
+         );
+         // Wrong neighbor code length.
+-        let bad = vec![DistannInsertNeighbor { vec_id: 1, code: vec![0_u8; 4] }];
+(B+        let bad = vec![DistannInsertNeighbor {
+(B+            vec_id: 1,
+(B+            code: vec![0_u8; 4],
+(B+        }];
+(B         assert!(
+-            build_insert_node_tuple(1, ItemPointer::INVALID, vec![0; code_len], &bad, 4, code_len)
+(B-                .is_err(),
+(B+            build_insert_node_tuple(
+(B+                1,
+(B+                ItemPointer::INVALID,
+(B+                vec![0; code_len],
+(B+                &bad,
+(B+                4,
+(B+                code_len
+(B+            )
+(B+            .is_err(),
+(B             "neighbor code len mismatch rejected"
+         );
+     }
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:827:
+             ],
+         };
+         let kept = plan_insert_backlink(&target, 999, &[0.95, 0.05, 0.0], 1.2, 4).unwrap();
+-        assert_eq!(kept, vec![10, 20, 999], "free slot -> append, edges preserved");
+(B+        assert_eq!(
+(B+            kept,
+(B+            vec![10, 20, 999],
+(B+            "free slot -> append, edges preserved"
+(B+        );
+(B     }
+
+     #[test]
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:853:
+         let target = DistannBacklinkTarget {
+             vec_id: 100,
+             source_vector: vec![1.0, 0.0, 0.0],
+-            current_neighbors: vec![candidate(999, &[0.9, 0.1, 0.0]), candidate(10, &[0.8, 0.2, 0.0])],
+(B+            current_neighbors: vec![
+(B+                candidate(999, &[0.9, 0.1, 0.0]),
+(B+                candidate(10, &[0.8, 0.2, 0.0]),
+(B+            ],
+(B         };
+         let kept = plan_insert_backlink(&target, 999, &[0.9, 0.1, 0.0], 1.2, 4).unwrap();
+-        assert_eq!(kept, vec![999, 10], "already-linked -> unchanged (idempotent)");
+(B+        assert_eq!(
+(B+            kept,
+(B+            vec![999, 10],
+(B+            "already-linked -> unchanged (idempotent)"
+(B+        );
+(B     }
+
+     #[test]
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/insert.rs:863:
+     fn select_rejects_bad_input() {
+         let source = [1.0_f32, 0.0];
+-        assert!(select_insert_forward_neighbors(&[], &[], 1.2, 3).is_err(), "empty source");
+(B+        assert!(
+(B+            select_insert_forward_neighbors(&[], &[], 1.2, 3).is_err(),
+(B+            "empty source"
+(B+        );
+(B         assert!(
+             select_insert_forward_neighbors(&source, &[], 0.5, 3).is_err(),
+             "alpha < 1.0"
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:11:
+ //! materialization (Tasks 162–179).
+
+ mod ambuild;
+-mod build_gate;
+(B mod build_coordinator;
++mod build_gate;
+(B mod coordinator_abandonment;
+ #[cfg(any(test, feature = "pg_test"))]
++pub(crate) use self::ambuild::read_metadata_from_index;
+(B+#[cfg(any(test, feature = "pg_test"))]
+(B+pub(crate) use self::ambuild::test_physical_capture_dead_callback_does_not_access_datums;
+(B+pub(crate) use self::ambuild::{build_physical_graph_workspace, capture_physical_source_rows};
+(B+#[cfg(any(test, feature = "pg_test"))]
+(B pub(crate) use self::build_coordinator::build_session_lock_count_for_test;
+ #[cfg(any(test, feature = "pg_test"))]
+ pub(crate) use self::custom_scan::{
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:21:
+     exec_state_context_cleanups_for_test, reset_exec_state_context_cleanups_for_test,
+ };
+-#[cfg(any(test, feature = "pg_test"))]
+(B-pub(crate) use self::ambuild::read_metadata_from_index;
+(B-pub(crate) use self::ambuild::{
+(B-    build_physical_graph_workspace, capture_physical_source_rows,
+(B-};
+(B-#[cfg(any(test, feature = "pg_test"))]
+(B-pub(crate) use self::ambuild::{
+(B-    test_physical_capture_dead_callback_does_not_access_datums,
+(B-};
+(B mod canonical_wire;
+-mod cost;
+(B mod coordinator_retirement;
++mod cost;
+(B mod custom_scan;
+ mod dml;
+ mod epoch;
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:51:
+ mod head_sample;
+ mod identity;
+ mod insert;
+-mod lifecycle_wire;
+(B mod lifecycle_guard;
+ mod lifecycle_state;
++mod lifecycle_wire;
+(B mod manifest_v2;
+ mod node_registry;
+ mod options;
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:80:
+ pub(crate) mod scan;
+ mod shard_build;
+ mod source_spool;
+-mod traversal_replica;
+(B #[cfg(feature = "distann-head-attribution-benchmark")]
+ pub(crate) mod stage_counters;
++mod traversal_replica;
+(B pub mod tuple;
+
+ pub(crate) fn quote_ident(identifier: &str) -> String {
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:90:
+ }
+
+ #[cfg(any(test, feature = "pg_test"))]
+-pub(crate) use self::generation_catalog::extension_relation_name as catalog_relation_name;
+(B-#[cfg(any(test, feature = "pg_test"))]
+(B pub(crate) use self::coordinator_retirement::ensure_fingerprint_not_retiring as ensure_fingerprint_not_retiring_for_test;
++#[cfg(any(test, feature = "pg_test"))]
+(B+pub(crate) use self::generation_catalog::extension_relation_name as catalog_relation_name;
+(B pub use self::generation_descriptor::{
+     roster_digest, DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
+     DistannGenerationDescriptor, DistannHeadPolicy, DistannOwnerExpectation, DistannRosterEntry,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:107:
+     DISTANN_GENERATION_DESCRIPTOR_PLACEMENT_HASH_OFFSET,
+     DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET, DISTANN_GENERATION_DESCRIPTOR_VERSION,
+     DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET, DISTANN_GRAPH_RECORD_VERSION,
+-    DISTANN_HANDOFF_WIRE_VERSION,
+(B-    DISTANN_PHYSICAL_INDEX_FORMAT_VERSION, DISTANN_PLACEMENT_HASH_VERSION,
+(B+    DISTANN_HANDOFF_WIRE_VERSION, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+(B+    DISTANN_PLACEMENT_HASH_VERSION,
+(B };
++#[cfg(any(test, feature = "pg_test"))]
+(B+pub(crate) use self::handoff_router::{DistannHandoffRouteIdentity, DistannStageAck};
+(B+pub(crate) use self::handoff_wire::restore_owner_stream_hash_state;
+(B pub use self::handoff_wire::{
+     owner_stream_digest, DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape,
+     DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:122:
+     DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
+ };
+ #[cfg(any(test, feature = "pg_test"))]
+-pub(crate) use self::handoff_router::{DistannHandoffRouteIdentity, DistannStageAck};
+(B-pub(crate) use self::handoff_wire::restore_owner_stream_hash_state;
+(B-#[cfg(any(test, feature = "pg_test"))]
+(B pub(crate) use self::identity::vec_id_from_source_identity;
+ pub use self::lifecycle_wire::{
+     DistannAbandonBindingAuditV1, DistannAbandonedBinding, DistannAbandonedBindingSetV1,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:131:
+     DistannBuildCandidateV1, DistannCancelPublishAuditV1, DistannPublishedEpochIdentity,
+-    DistannRetireDecisionV1,
+(B-    DistannSuccessorActivationV1, DISTANN_ABANDONED_BINDING_ENTRY_BYTES,
+(B+    DistannRetireDecisionV1, DistannSuccessorActivationV1, DISTANN_ABANDONED_BINDING_ENTRY_BYTES,
+(B     DISTANN_ABANDONED_BINDING_SET_COUNT_OFFSET, DISTANN_ABANDONED_BINDING_SET_FIXED_PREFIX_BYTES,
+     DISTANN_ABANDONED_BINDING_SET_VERSION, DISTANN_ABANDON_BINDING_AUDIT_COORDINATOR_UUID_OFFSET,
+     DISTANN_ABANDON_BINDING_AUDIT_FIXED_PREFIX_BYTES,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:140:
+     DISTANN_ABANDON_BINDING_AUDIT_VERSION, DISTANN_ABANDON_BINDING_AUDIT_VERSION_OFFSET,
+     DISTANN_BUILD_CANDIDATE_BUILD_SPEC_LENGTH_OFFSET, DISTANN_BUILD_CANDIDATE_FIXED_PREFIX_BYTES,
+     DISTANN_BUILD_CANDIDATE_REGISTRATION_DIGEST_OFFSET, DISTANN_BUILD_CANDIDATE_VERSION,
+-    DISTANN_BUILD_CANDIDATE_VERSION_OFFSET, DISTANN_RETIRE_DECISION_COORDINATOR_UUID_OFFSET,
+(B-    DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
+(B+    DISTANN_BUILD_CANDIDATE_VERSION_OFFSET, DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
+(B     DISTANN_CANCEL_PUBLISH_AUDIT_COORDINATOR_UUID_OFFSET,
+     DISTANN_CANCEL_PUBLISH_AUDIT_EPOCH_OFFSET,
+     DISTANN_CANCEL_PUBLISH_AUDIT_FINGERPRINT_LENGTH_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/mod.rs:148:
+     DISTANN_CANCEL_PUBLISH_AUDIT_FIXED_PREFIX_BYTES, DISTANN_CANCEL_PUBLISH_AUDIT_VERSION,
+-    DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET,
+(B+    DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET, DISTANN_RETIRE_DECISION_COORDINATOR_UUID_OFFSET,
+(B     DISTANN_RETIRE_DECISION_EPOCH_OFFSET, DISTANN_RETIRE_DECISION_FINGERPRINT_LENGTH_OFFSET,
+     DISTANN_RETIRE_DECISION_FIXED_PREFIX_BYTES, DISTANN_RETIRE_DECISION_TARGET_BUILD_ID_OFFSET,
+     DISTANN_RETIRE_DECISION_VERSION, DISTANN_RETIRE_DECISION_VERSION_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/page.rs:263:
+     }
+
+     pub fn decode(input: &[u8]) -> Result<Self, String> {
+-        if !matches!(input.len(), DISTANN_METADATA_BYTES | DISTANN_CONTROL_METADATA_BYTES) {
+(B+        if !matches!(
+(B+            input.len(),
+(B+            DISTANN_METADATA_BYTES | DISTANN_CONTROL_METADATA_BYTES
+(B+        ) {
+(B             return Err(format!(
+                 "distann metadata length mismatch: got {}, expected {DISTANN_METADATA_BYTES} or {DISTANN_CONTROL_METADATA_BYTES}",
+                 input.len()
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/page.rs:332:
+             head_sample_head: ItemPointer::decode(&input[44..50])?,
+             delta_buffer_head: ItemPointer::decode(&input[50..56])?,
+             codec_subvector_count: u16::from_le_bytes(
+-                input[56..58].try_into().expect("codec_subvector_count bytes"),
+(B+                input[56..58]
+(B+                    .try_into()
+(B+                    .expect("codec_subvector_count bytes"),
+(B             ),
+             codec_subvector_dim: u16::from_le_bytes(
+                 input[58..60].try_into().expect("codec_subvector_dim bytes"),
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/page.rs:342:
+             content_digest: u64::from_le_bytes(
+                 input[72..80].try_into().expect("content_digest bytes"),
+             ),
+-            delta_count: u32::from_le_bytes(
+(B-                input[80..84].try_into().expect("delta_count bytes"),
+(B-            ),
+(B+            delta_count: u32::from_le_bytes(input[80..84].try_into().expect("delta_count bytes")),
+(B             epoch_state: input[DISTANN_METADATA_EPOCH_STATE_OFFSET],
+-            active_epoch: u64::from_le_bytes(
+(B-                input[85..93].try_into().expect("active_epoch bytes"),
+(B-            ),
+(B+            active_epoch: u64::from_le_bytes(input[85..93].try_into().expect("active_epoch bytes")),
+(B             in_flight_count: u32::from_le_bytes(
+                 input[93..97].try_into().expect("in_flight_count bytes"),
+             ),
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/page.rs:400:
+ #[cfg(test)]
+ mod tests {
+     use super::{
+-        DistannMetadataPage, DISTANN_CONTROL_METADATA_BYTES,
+(B-        DISTANN_METADATA_BYTES, DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET,
+(B-        DISTANN_NEIGHBOR_CODEC_GROUPED_PQ, DISTANN_NEIGHBOR_CODEC_RABITQ,
+(B-        INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
+(B+        DistannMetadataPage, DISTANN_CONTROL_METADATA_BYTES, DISTANN_METADATA_BYTES,
+(B+        DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET, DISTANN_NEIGHBOR_CODEC_GROUPED_PQ,
+(B+        DISTANN_NEIGHBOR_CODEC_RABITQ, INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
+(B     };
+     use crate::storage::page::ItemPointer;
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/page.rs:465:
+         let mut encoded = sample().encode();
+         encoded[0] = 0xFF;
+         encoded[1] = 0xFF;
+-        let error =
+(B-            DistannMetadataPage::decode(&encoded).expect_err("unknown version must fail");
+(B+        let error = DistannMetadataPage::decode(&encoded).expect_err("unknown version must fail");
+(B         assert!(error.contains("format version"));
+     }
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/page.rs:494:
+             u16::from_le_bytes(encoded[0..2].try_into().unwrap()),
+             INDEX_FORMAT_V1_DISTANN
+         );
+-        assert_eq!(encoded, DistannMetadataPage::decode(&encoded).unwrap().encode());
+(B+        assert_eq!(
+(B+            encoded,
+(B+            DistannMetadataPage::decode(&encoded).unwrap().encode()
+(B+        );
+(B     }
+
+     #[test]
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/quantizer.rs:209:
+             usize::from(metadata.dimensions),
+             DISTANN_TURBOQUANT_BITS,
+         )),
+-        other => Err(format!("ec_distann unsupported neighbor codec kind {other}")),
+(B+        other => Err(format!(
+(B+            "ec_distann unsupported neighbor codec kind {other}"
+(B+        )),
+(B     }
+ }
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/quantizer.rs:249:
+         match metadata.neighbor_codec_kind {
+             DISTANN_NEIGHBOR_CODEC_GROUPED_PQ => {
+                 let flat_codebooks = flat_codebooks.ok_or_else(|| {
+-                    "ec_distann grouped_pq query preparation requires the codebook chain"
+(B-                        .to_owned()
+(B+                    "ec_distann grouped_pq query preparation requires the codebook chain".to_owned()
+(B                 })?;
+                 let group_count = usize::from(metadata.codec_subvector_count);
+                 let group_size = usize::from(metadata.codec_subvector_dim);
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/quantizer.rs:257:
+                 if group_count == 0 || group_size == 0 {
+                     return Err(
+-                        "ec_distann grouped_pq metadata is missing subvector parameters".to_owned()
+(B+                        "ec_distann grouped_pq metadata is missing subvector parameters".to_owned(),
+(B                     );
+                 }
+                 let rotated = crate::am::ec_diskann::scan_query::encode_query_srht(
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/quantizer.rs:326:
+                 })
+             }
+             DistannCodecArtifact::RaBitQ { seed, bits, .. } => {
+-                let quantizer =
+(B-                    RaBitQQuantizer::cached_seeded_srht_bits(dimensions, *seed, *bits)?;
+(B+                let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(dimensions, *seed, *bits)?;
+(B                 Ok(Self::RaBitQ {
+                     prepared: quantizer.prepare_estimator(raw_query),
+                 })
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/quantizer.rs:401:
+                     out_scores,
+                 )?;
+             }
+-            Self::RaBitQ { prepared } => {
+(B-                match prepared.bits1_block_prepared(code_len) {
+(B-                    Some(block_prepared) => {
+(B-                        let mut batch = CandidateBatch::with_capacity(count);
+(B-                        for slot in 0..count {
+(B-                            batch.push(
+(B-                                slot,
+(B-                                CandidatePayload::new(
+(B-                                    &codes[slot * code_len..(slot + 1) * code_len],
+(B-                                    CandidateMeta::RaBitQ,
+(B-                                ),
+(B-                            )?;
+(B-                        }
+(B-                        score_rabitq_bits1_batch_for(
+(B-                            CandidateBatchScoringSurface::Distann,
+(B-                            block_prepared,
+(B-                            &batch,
+(B-                            out_scores,
+(B+            Self::RaBitQ { prepared } => match prepared.bits1_block_prepared(code_len) {
+(B+                Some(block_prepared) => {
+(B+                    let mut batch = CandidateBatch::with_capacity(count);
+(B+                    for slot in 0..count {
+(B+                        batch.push(
+(B+                            slot,
+(B+                            CandidatePayload::new(
+(B+                                &codes[slot * code_len..(slot + 1) * code_len],
+(B+                                CandidateMeta::RaBitQ,
+(B+                            ),
+(B                         )?;
+                     }
+-                    None => {
+(B-                        for slot in 0..count {
+(B-                            out_scores[slot] = prepared.estimate_ip_scalar_only(
+(B-                                &codes[slot * code_len..(slot + 1) * code_len],
+(B-                            );
+(B-                        }
+(B+                    score_rabitq_bits1_batch_for(
+(B+                        CandidateBatchScoringSurface::Distann,
+(B+                        block_prepared,
+(B+                        &batch,
+(B+                        out_scores,
+(B+                    )?;
+(B+                }
+(B+                None => {
+(B+                    for slot in 0..count {
+(B+                        out_scores[slot] = prepared.estimate_ip_scalar_only(
+(B+                            &codes[slot * code_len..(slot + 1) * code_len],
+(B+                        );
+(B                     }
+                 }
+-            }
+(B+            },
+(B             Self::TurboQuant {
+                 quantizer,
+                 prepared,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/reader.rs:81:
+     let mut entries = Vec::with_capacity(expected_entries);
+     let mut cursor = head_tid;
+     while cursor != ItemPointer::INVALID {
+-        let raw =
+(B-            read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann directory chunk")?;
+(B+        let raw = read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann directory chunk")?;
+(B         let tuple = DistannDirectoryTuple::decode(&raw)?;
+         entries.extend_from_slice(&tuple.entries);
+         cursor = tuple.next_tid;
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/reader.rs:115:
+     let mut samples = Vec::new();
+     let mut cursor = head_tid;
+     while cursor != ItemPointer::INVALID {
+-        let raw =
+(B-            read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann head sample")?;
+(B+        let raw = read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann head sample")?;
+(B         let tuple = DistannHeadSampleTuple::decode(&raw, dimensions)?;
+         cursor = tuple.next_tid;
+         samples.push(tuple);
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/reader.rs:169:
+     let mut cursor = head_tid;
+     let mut group_index = 0_usize;
+     while cursor != ItemPointer::INVALID {
+-        let raw =
+(B-            read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann codebook tuple")?;
+(B+        let raw = read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann codebook tuple")?;
+(B         let tuple = crate::am::VamanaCodebookTuple::decode(&raw, centroid_count)?;
+         if usize::from(tuple.group_index) != group_index {
+             return Err(format!(
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/reader.rs:201:
+     graph_degree_r: u16,
+     code_len: usize,
+ ) -> Result<DistannNodeTuple, String> {
+-    let page = chain
+(B-        .get_page(tid.block_number)
+(B-        .ok_or_else(|| format!("ec_distann node block {} not materialized", tid.block_number))?;
+(B+    let page = chain.get_page(tid.block_number).ok_or_else(|| {
+(B+        format!(
+(B+            "ec_distann node block {} not materialized",
+(B+            tid.block_number
+(B+        )
+(B+    })?;
+(B     let raw = page.raw_tuple(tid)?;
+     if raw.first().copied() != Some(DISTANN_NODE_TAG) {
+         return Err(format!(
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/remote_endpoint.rs:30:
+ use crate::storage::slot_guard::TupleTableSlotGuard;
+
+ use super::ambuild::read_metadata_from_index_handle;
+-use super::quote_ident;
+(B use super::epoch::{
+     compute_epoch_fingerprint, fingerprint_from_bytes, fingerprints_match,
+     DISTANN_EPOCH_FINGERPRINT_V1,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/remote_endpoint.rs:40:
+ use super::head_cache::cached_index_entry;
+ use super::placement::owning_node;
+ use super::quantizer::{metadata_code_len, DistannPreparedQuery};
++use super::quote_ident;
+(B use super::reader::{
+     directory_lookup, read_directory_from_relation, read_raw_tuple_bytes_from_relation,
+ };
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/remote_endpoint.rs:765:
+     let entry = cached_index_entry(index_oid.into(), handle, &metadata)?;
+     let prepared_query =
+         DistannPreparedQuery::prepare(&metadata, entry.flat_codebooks.as_deref(), query)?;
+-    let owner_open_validate_ns = i64::try_from(open_validate_started.elapsed().as_nanos())
+(B-        .unwrap_or(i64::MAX);
+(B+    let owner_open_validate_ns =
+(B+        i64::try_from(open_validate_started.elapsed().as_nanos()).unwrap_or(i64::MAX);
+(B     let code_len = metadata_code_len(&metadata)?;
+
+     let heap_oid = index_heap_relation_oid_handle(handle);
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/roster.rs:29:
+
+ use super::epoch::DistannEpochIdentity;
+ use super::page::DistannMetadataPage;
+-use super::placement::{
+(B-    DistannPlacementDirectory, DistannRosterNode, DISTANN_PLACEMENT_HASH_V1,
+(B-};
+(B+use super::placement::{DistannPlacementDirectory, DistannRosterNode, DISTANN_PLACEMENT_HASH_V1};
+(B
+-static ECDISTANN_ROSTER_GUC: GucSetting<Option<CString>> =
+(B-    GucSetting::<Option<CString>>::new(None);
+(B+static ECDISTANN_ROSTER_GUC: GucSetting<Option<CString>> = GucSetting::<Option<CString>>::new(None);
+(B static ECDISTANN_LOCAL_NODE_ID_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
+ /// PostgreSQL int GUCs are 32-bit; epoch numbers at research scale fit easily.
+ static ECDISTANN_EPOCH_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/roster.rs:123:
+             continue;
+         }
+         let (id_str, conninfo) = entry.split_once('@').ok_or_else(|| {
+-            format!(
+(B-                "ec_distann.roster entry {index} ({entry:?}) must be `node_id@conninfo`"
+(B-            )
+(B+            format!("ec_distann.roster entry {index} ({entry:?}) must be `node_id@conninfo`")
+(B         })?;
+         let node_id: u32 = id_str.trim().parse().map_err(|_| {
+             format!("ec_distann.roster entry {index} has non-numeric node_id {id_str:?}")
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/roster.rs:189:
+             DistannRosterNode {
+                 node_id: entry.node_id,
+                 is_local,
+-                conninfo: if is_local { String::new() } else { entry.conninfo },
+(B+                conninfo: if is_local {
+(B+                    String::new()
+(B+                } else {
+(B+                    entry.conninfo
+(B+                },
+(B             }
+         })
+         .collect();
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/routine.rs:14:
+     ambuild, cost,
+     expand::LocalNodeExpander,
+     head_cache, options,
+-    quote_ident,
+(B     quantizer::{self, DistannPreparedQuery},
++    quote_ident,
+(B     scan::{
+         distann_orchestrated_search, DistannOrchestrationParams, DistannScanCounters,
+         DistannScanHit, DistannSeedCandidate,
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/row_schema.rs:49:
+     pub(crate) columns: Vec<ResolvedRowSchemaColumn>,
+ }
+
+-pub(crate) fn resolve_relation_schema(relation_oid: pg_sys::Oid) -> Result<ResolvedRowSchema, String> {
+(B+pub(crate) fn resolve_relation_schema(
+(B+    relation_oid: pg_sys::Oid,
+(B+) -> Result<ResolvedRowSchema, String> {
+(B     let rows = Spi::connect(|client| {
+         client
+             .select(
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/scan.rs:338:
+ #[cfg(test)]
+ mod tests {
+     use super::{
+-        distann_orchestrated_search, run_scan_attempt_with_restart, DistannExpandedNode,
+(B-        DistannExpandError, DistannNodeExpander, DistannOrchestrationParams, DistannSeedCandidate,
+(B+        distann_orchestrated_search, run_scan_attempt_with_restart, DistannExpandError,
+(B+        DistannExpandedNode, DistannNodeExpander, DistannOrchestrationParams, DistannSeedCandidate,
+(B     };
+     use crate::storage::page::ItemPointer;
+     use std::cell::Cell;
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/scan.rs:379:
+         let calls = Cell::new(0);
+         let result = run_scan_attempt_with_restart(|| {
+             calls.set(calls.get() + 1);
+-            Err::<i32, _>(DistannExpandError::EpochMismatch(format!("mismatch {}", calls.get())))
+(B+            Err::<i32, _>(DistannExpandError::EpochMismatch(format!(
+(B+                "mismatch {}",
+(B+                calls.get()
+(B+            )))
+(B         });
+         assert!(matches!(result, Err(DistannExpandError::EpochMismatch(_))));
+         assert_eq!(calls.get(), 2, "capped at two attempts");
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/scan.rs:420:
+             vec_ids
+                 .iter()
+                 .map(|vec_id| {
+-                    let (exact, tombstone, neighbors) = self
+(B-                        .nodes
+(B-                        .get(vec_id)
+(B-                        .ok_or_else(|| DistannExpandError::Internal(format!("unknown vec_id {vec_id}")))?;
+(B+                    let (exact, tombstone, neighbors) =
+(B+                        self.nodes.get(vec_id).ok_or_else(|| {
+(B+                            DistannExpandError::Internal(format!("unknown vec_id {vec_id}"))
+(B+                        })?;
+(B                     Ok(DistannExpandedNode {
+                         vec_id: *vec_id,
+                         exact_dist: (!tombstone).then_some(*exact),
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/scan.rs:469:
+             vec_id: 1,
+             dist: -0.9,
+         }];
+-        let (hits, counters) =
+(B-            distann_orchestrated_search(&seeds, &mut expander, params(2, 8, 10))
+(B-                .expect("search should succeed");
+(B+        let (hits, counters) = distann_orchestrated_search(&seeds, &mut expander, params(2, 8, 10))
+(B+            .expect("search should succeed");
+(B         assert_eq!(counters.records_expanded, 2);
+         assert!(counters.records_expanded <= 2 * 8);
+         assert!(counters.beam_exhausted, "cycle exhausts the beam");
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/scan.rs:493:
+             vec_id: 1,
+             dist: -0.5,
+         }];
+-        let (hits, counters) =
+(B-            distann_orchestrated_search(&seeds, &mut expander, params(4, 8, 10))
+(B-                .expect("search should succeed");
+(B+        let (hits, counters) = distann_orchestrated_search(&seeds, &mut expander, params(4, 8, 10))
+(B+            .expect("search should succeed");
+(B         assert_eq!(hits.len(), 1, "fewer-than-k is a complete result");
+         assert!(counters.beam_exhausted);
+         assert!(!counters.early_exit);
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/scan.rs:537:
+             vec_id: 1,
+             dist: -0.9,
+         }];
+-        let (hits, counters) =
+(B-            distann_orchestrated_search(&seeds, &mut expander, params(1, 8, 1))
+(B-                .expect("search should succeed");
+(B+        let (hits, counters) = distann_orchestrated_search(&seeds, &mut expander, params(1, 8, 1))
+(B+            .expect("search should succeed");
+(B         assert!(counters.early_exit);
+         assert_eq!(counters.records_expanded, 1);
+         assert_eq!(hits[0].vec_id, 1);
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/shard_build.rs:348:
+                 "ec_distann duplicate or invalid shard spool index {shard_index}"
+             ));
+         }
+-        self.build_peak_completion_bytes = self
+(B-            .build_peak_completion_bytes
+(B-            .max(encoded.bytes.len());
+(B+        self.build_peak_completion_bytes =
+(B+            self.build_peak_completion_bytes.max(encoded.bytes.len());
+(B         let mut io = ShardSpoolIo::create()?;
+         io.write_all(&encoded.bytes);
+         let shard_bytes = u64::try_from(encoded.bytes.len())
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/shard_build.rs:840:
+                 // A send failure means the backend is already unwinding; no
+                 // PostgreSQL API or panic belongs on this worker thread.
+                 if sender.send((shard_index, result)).is_err() {
+-                    let _ = release_completion_bytes(
+(B-                        &retained_completion_bytes,
+(B-                        encoded_bytes,
+(B-                    );
+(B+                    let _ = release_completion_bytes(&retained_completion_bytes, encoded_bytes);
+(B                     return;
+                 }
+             });
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/shard_build.rs:1669:
+     }
+
+     fn raw_entry(node: u32, neighbors: &[u32]) -> Vec<u8> {
+-        let mut bytes = Vec::with_capacity(
+(B-            DISTANN_SHARD_SPILL_HEADER_BYTES + std::mem::size_of_val(neighbors),
+(B-        );
+(B+        let mut bytes =
+(B+            Vec::with_capacity(DISTANN_SHARD_SPILL_HEADER_BYTES + std::mem::size_of_val(neighbors));
+(B         bytes.extend_from_slice(&node.to_le_bytes());
+         bytes.extend_from_slice(&(neighbors.len() as u32).to_le_bytes());
+         for &neighbor in neighbors {
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:152:
+                 .iter()
+                 .any(|byte| *byte != 0)
+         {
+-            return Err(
+(B-                "distann physical node record has non-zero adjacency padding".to_owned(),
+(B-            );
+(B+            return Err("distann physical node record has non-zero adjacency padding".to_owned());
+(B         }
+         Ok(())
+     }
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:233:
+         expected_version: Option<u16>,
+     ) -> Result<Self, String> {
+         let mut out = Self::empty();
+-        Self::decode_into_version(
+(B-            input,
+(B-            graph_degree_r,
+(B-            code_len,
+(B-            expected_version,
+(B-            &mut out,
+(B-        )?;
+(B+        Self::decode_into_version(input, graph_degree_r, code_len, expected_version, &mut out)?;
+(B         Ok(out)
+     }
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:269:
+         }
+         if let Some(expected_version) = expected_version {
+             let format_version = u16::from_le_bytes(
+-                input[DISTANN_NODE_FORMAT_VERSION_OFFSET
+(B-                    ..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+(B+                input[DISTANN_NODE_FORMAT_VERSION_OFFSET..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+(B                     .try_into()
+                     .expect("graph record version bytes"),
+             );
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:387:
+                 input[0]
+             ));
+         }
+-        let entry_count =
+(B-            usize::from(u16::from_le_bytes(input[2..4].try_into().expect("count bytes")));
+(B+        let entry_count = usize::from(u16::from_le_bytes(
+(B+            input[2..4].try_into().expect("count bytes"),
+(B+        ));
+(B         let expected = Self::encoded_len(entry_count);
+         if input.len() != expected {
+             return Err(format!(
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:536:
+ #[cfg(test)]
+ mod tests {
+     use super::{
+-        DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE,
+(B-        DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
+(B-        DISTANN_NODE_HEADER_BYTES,
+(B+        DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FORMAT_VERSION,
+(B+        DISTANN_NODE_FORMAT_VERSION_OFFSET, DISTANN_NODE_HEADER_BYTES,
+(B     };
+     use crate::storage::page::ItemPointer;
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:577:
+             search_code: (0..CODE_LEN as u8).collect(),
+             neighbor_vec_ids: vec![101, 202, 303, 0],
+             neighbor_codes: (0..R as usize * CODE_LEN)
+-                .map(|offset| if offset < 3 * CODE_LEN { offset as u8 } else { 0 })
+(B+                .map(|offset| {
+(B+                    if offset < 3 * CODE_LEN {
+(B+                        offset as u8
+(B+                    } else {
+(B+                        0
+(B+                    }
+(B+                })
+(B                 .collect(),
+         }
+     }
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:603:
+             .expect("physical encode should succeed");
+         assert_eq!(
+             u16::from_le_bytes(
+-                encoded[DISTANN_NODE_FORMAT_VERSION_OFFSET
+(B-                    ..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+(B+                encoded[DISTANN_NODE_FORMAT_VERSION_OFFSET..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+(B                     .try_into()
+                     .unwrap()
+             ),
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:697:
+                 offset_number: 2,
+             },
+             entries: vec![
+-                (10, ItemPointer { block_number: 1, offset_number: 1 }),
+(B-                (20, ItemPointer { block_number: 1, offset_number: 2 }),
+(B-                (30, ItemPointer { block_number: 2, offset_number: 1 }),
+(B+                (
+(B+                    10,
+(B+                    ItemPointer {
+(B+                        block_number: 1,
+(B+                        offset_number: 1,
+(B+                    },
+(B+                ),
+(B+                (
+(B+                    20,
+(B+                    ItemPointer {
+(B+                        block_number: 1,
+(B+                        offset_number: 2,
+(B+                    },
+(B+                ),
+(B+                (
+(B+                    30,
+(B+                    ItemPointer {
+(B+                        block_number: 2,
+(B+                        offset_number: 1,
+(B+                    },
+(B+                ),
+(B             ],
+         };
+         let encoded = tuple.encode().expect("encode");
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:706:
+-        assert_eq!(
+(B-            encoded.len(),
+(B-            super::DistannDirectoryTuple::encoded_len(3)
+(B-        );
+(B+        assert_eq!(encoded.len(), super::DistannDirectoryTuple::encoded_len(3));
+(B         let decoded = super::DistannDirectoryTuple::decode(&encoded).expect("decode");
+         assert_eq!(decoded, tuple);
+     }
+Diff in /Users/peter/dev/tqvector/src/am/ec_distann/tuple.rs:719:
+             vector: vec![0.25, -0.5, 1.0, 0.0],
+         };
+         let encoded = tuple.encode();
+-        assert_eq!(
+(B-            encoded.len(),
+(B-            super::DistannHeadSampleTuple::encoded_len(4)
+(B-        );
+(B-        let decoded =
+(B-            super::DistannHeadSampleTuple::decode(&encoded, 4).expect("decode");
+(B+        assert_eq!(encoded.len(), super::DistannHeadSampleTuple::encoded_len(4));
+(B+        let decoded = super::DistannHeadSampleTuple::decode(&encoded, 4).expect("decode");
+(B         assert_eq!(decoded, tuple);
+         assert!(super::DistannHeadSampleTuple::decode(&encoded, 5).is_err());
+     }
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/page.rs:3507:
+         "ec_ivf posting entry block sequence",
+         |buffer, block_number| {
+             let decode_started = std::time::Instant::now();
+-            let result =
+(B-                visit_all_ivf_posting_entries_from_buffer(buffer, block_number, payload_len, visitor);
+(B+            let result = visit_all_ivf_posting_entries_from_buffer(
+(B+                buffer,
+(B+                block_number,
+(B+                payload_len,
+(B+                visitor,
+(B+            );
+(B             decode_elapsed += decode_started.elapsed();
+             result
+         },
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/quantizer.rs:449:
+             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+-            | (
+(B-                IvfQuantizerProfile::RaBitQ,
+(B-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+(B-            )
+(B+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
+(B             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/quantizer.rs:663:
+             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+-            | (
+(B-                IvfQuantizerProfile::RaBitQ,
+(B-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+(B-            )
+(B+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
+(B             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/quantizer.rs:883:
+             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+-            | (
+(B-                IvfQuantizerProfile::RaBitQ,
+(B-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+(B-            )
+(B+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
+(B             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/quantizer.rs:1144:
+             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+-            | (
+(B-                IvfQuantizerProfile::RaBitQ,
+(B-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+(B-            )
+(B+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
+(B             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/quantizer.rs:1249:
+             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
+-            | (
+(B-                IvfQuantizerProfile::RaBitQ,
+(B-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
+(B-            )
+(B+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
+(B             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
+             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/scan.rs:1191:
+     capacity: usize,
+ ) -> *mut CandidateDedupPool {
+     if opaque.candidate_dedup.is_null() {
+-        opaque.candidate_dedup = Box::into_raw(Box::new(CandidateDedupPool::with_capacity(
+(B-            capacity,
+(B-        )));
+(B+        opaque.candidate_dedup =
+(B+            Box::into_raw(Box::new(CandidateDedupPool::with_capacity(capacity)));
+(B         return opaque.candidate_dedup;
+     }
+
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/scan.rs:1692:
+     // pure `pre_rerank_candidate_limit` / `ranked_collect_limit` helpers take it
+     // as a parameter so they never touch pgrx GUC FFI off-thread.
+     let effective_rerank_width =
+-        super::options::resolve_scan_rerank_width(index_options.rerank_width).effective_rerank_width;
+(B+        super::options::resolve_scan_rerank_width(index_options.rerank_width)
+(B+            .effective_rerank_width;
+(B     let mut running_top = bound_pruning_active
+         .then(|| pre_rerank_candidate_limit(index_options, effective_rerank_width))
+         .flatten()
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/scan.rs:1944:
+         // the rerank helper validates whether heap_f32 state is present
+         // before use.
+         let rerank_started = should_record_exact_rerank.then(Instant::now);
+-        unsafe { rerank_probe_candidates(scan, index_options, opaque, centroid_scores, candidates) };
+(B+        unsafe {
+(B+            rerank_probe_candidates(scan, index_options, opaque, centroid_scores, candidates)
+(B+        };
+(B         if let Some(rerank_started) = rerank_started {
+             record_stage_elapsed(
+                 opaque,
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/scan.rs:2511:
+         index_options.rerank.v1_effective(),
+         super::options::RerankMode::HeapF32
+     ) {
+-        Some(pre_rerank_candidate_limit(index_options, effective_rerank_width).unwrap_or(candidate_len))
+(B+        Some(
+(B+            pre_rerank_candidate_limit(index_options, effective_rerank_width)
+(B+                .unwrap_or(candidate_len),
+(B+        )
+(B     } else {
+         None
+     }
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/scan.rs:5408:
+         let mut stream = Vec::new();
+         let mut state = 0x2545F4914F6CDD1D_u64;
+         for i in 0..10_000_u32 {
+-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+(B+            state = state
+(B+                .wrapping_mul(6364136223846793005)
+(B+                .wrapping_add(1442695040888963407);
+(B             let block = (state >> 33) as u32 % 512;
+             let offset = 1 + ((state >> 17) as u16 % 128);
+             let score = ((state >> 40) as f32) / 1e6 - 8.0;
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/scan.rs:5446:
+             for (left, right) in from_pool.iter().zip(from_reference.iter()) {
+                 assert_eq!(left.heap_tid, right.heap_tid, "limit {limit:?}");
+                 assert_eq!(left.rerank_tid, right.rerank_tid, "limit {limit:?}");
+-                assert_eq!(left.score.to_bits(), right.score.to_bits(), "limit {limit:?}");
+(B+                assert_eq!(
+(B+                    left.score.to_bits(),
+(B+                    right.score.to_bits(),
+(B+                    "limit {limit:?}"
+(B+                );
+(B             }
+         }
+     }
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/scan.rs:5495:
+         let mut stream = Vec::with_capacity(CANDIDATES);
+         let mut state = 0x9E3779B97F4A7C15_u64;
+         for i in 0..CANDIDATES as u64 {
+-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+(B+            state = state
+(B+                .wrapping_mul(6364136223846793005)
+(B+                .wrapping_add(1442695040888963407);
+(B             // Unique tids so the map holds the full candidate count.
+             let block = (i / 291) as u32;
+             let offset = 1 + (i % 291) as u16;
+Diff in /Users/peter/dev/tqvector/src/am/ec_ivf/scan.rs:5530:
+         let map_ref = &map;
+         let map_walk = time_ns(
+             "map walk only (values -> black_box)",
+-            Box::new(move || map_ref.values().map(|c| c.heap_tid.offset_number as usize).sum()),
+(B+            Box::new(move || {
+(B+                map_ref
+(B+                    .values()
+(B+                    .map(|c| c.heap_tid.offset_number as usize)
+(B+                    .sum()
+(B+            }),
+(B         );
+         let ranked_len = |ranked: RankedProbeCandidates| match ranked {
+             RankedProbeCandidates::Sorted(candidates) => candidates.len(),
+Diff in /Users/peter/dev/tqvector/src/am/mod.rs:38:
+ };
+ pub use self::ec_diskann::{vamana_decode_overflow_tuple_fixture, VamanaOverflowTupleFixture};
+ pub use self::ec_distann::page::{
+-    DistannMetadataPage, DISTANN_CONTROL_METADATA_BYTES,
+(B-    DISTANN_METADATA_ACTIVE_EPOCH_OFFSET, DISTANN_METADATA_ALPHA_OFFSET,
+(B-    DISTANN_METADATA_BUILD_LIST_SIZE_L_OFFSET, DISTANN_METADATA_BYTES,
+(B+    DistannMetadataPage, DISTANN_CONTROL_METADATA_BYTES, DISTANN_METADATA_ACTIVE_EPOCH_OFFSET,
+(B+    DISTANN_METADATA_ALPHA_OFFSET, DISTANN_METADATA_BUILD_LIST_SIZE_L_OFFSET,
+(B+    DISTANN_METADATA_BYTES, DISTANN_METADATA_CLOSURE_EPSILON_OFFSET,
+(B     DISTANN_METADATA_CODEC_SUBVECTOR_COUNT_OFFSET, DISTANN_METADATA_CODEC_SUBVECTOR_DIM_OFFSET,
+-    DISTANN_METADATA_CLOSURE_EPSILON_OFFSET, DISTANN_METADATA_CONTENT_DIGEST_OFFSET,
+(B-    DISTANN_METADATA_DELTA_BUFFER_HEAD_OFFSET, DISTANN_METADATA_DELTA_COUNT_OFFSET,
+(B+    DISTANN_METADATA_CONTENT_DIGEST_OFFSET, DISTANN_METADATA_DELTA_BUFFER_HEAD_OFFSET,
+(B+    DISTANN_METADATA_DELTA_COUNT_OFFSET, DISTANN_METADATA_DIMENSIONS_OFFSET,
+(B     DISTANN_METADATA_DIRECTORY_HEAD_OFFSET, DISTANN_METADATA_ENTRY_POINT_OFFSET,
+-    DISTANN_METADATA_DIMENSIONS_OFFSET,
+(B     DISTANN_METADATA_EPOCH_STATE_OFFSET, DISTANN_METADATA_FLAGS_OFFSET,
+     DISTANN_METADATA_FORMAT_VERSION_OFFSET, DISTANN_METADATA_GRAPH_DEGREE_R_OFFSET,
+     DISTANN_METADATA_GROUPED_CODEBOOK_HEAD_OFFSET, DISTANN_METADATA_HEAD_INDEX_CAP_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/am/mod.rs:52:
+     DISTANN_METADATA_HEAD_SAMPLE_HEAD_OFFSET, DISTANN_METADATA_IN_FLIGHT_COUNT_OFFSET,
+     DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET, DISTANN_METADATA_NEIGHBOR_CODEC_KIND_OFFSET,
+-    DISTANN_METADATA_NODE_COUNT_OFFSET, DISTANN_METADATA_SEED_OFFSET,
+(B-    INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
+(B+    DISTANN_METADATA_NODE_COUNT_OFFSET, DISTANN_METADATA_SEED_OFFSET, INDEX_FORMAT_V1_DISTANN,
+(B+    INDEX_FORMAT_V5_DISTANN_CONTROL,
+(B };
++pub(crate) use self::ec_distann::restore_owner_stream_hash_state;
+(B pub use self::ec_distann::tuple::{
+-    distann_node_neighbor_codes_offset, distann_node_neighbor_vec_ids_offset,
+(B-    DistannNodeTuple, DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_FORMAT_VERSION,
+(B-    DISTANN_NODE_FORMAT_VERSION_OFFSET, DISTANN_NODE_HEADER_BYTES,
+(B-    DISTANN_NODE_HEAP_TID_OFFSET, DISTANN_NODE_NEIGHBOR_COUNT_OFFSET,
+(B+    distann_node_neighbor_codes_offset, distann_node_neighbor_vec_ids_offset, DistannNodeTuple,
+(B+    DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
+(B+    DISTANN_NODE_HEADER_BYTES, DISTANN_NODE_HEAP_TID_OFFSET, DISTANN_NODE_NEIGHBOR_COUNT_OFFSET,
+(B     DISTANN_NODE_SEARCH_CODE_OFFSET, DISTANN_NODE_TAG_OFFSET, DISTANN_NODE_VEC_ID_OFFSET,
+ };
+ pub use self::ec_distann::{
+Diff in /Users/peter/dev/tqvector/src/am/mod.rs:65:
+     owner_stream_digest, DistannAbandonBindingAuditV1, DistannAbandonedBinding,
+     DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildOptions, DistannBuildSpec,
+-    DistannCancelPublishAuditV1,
+(B-    DistannCodecArtifact, DistannEpochFingerprint, DistannEpochManifestV2,
+(B-    DistannGenerationDescriptor, DistannHeadPolicy,
+(B-    DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape,
+(B-    DistannManifestBuildOptions, DistannManifestCodecParameters, DistannOwnerExpectation,
+(B-    DistannPublishedEpochIdentity, DistannReadyReceipt, DistannRetireDecisionV1,
+(B-    DistannRosterEntry, DistannRowSchemaAttribute,
+(B-    DistannRowSchemaDescriptor, DistannSourceSnapshot, DISTANN_BUILD_SPEC_VERSION,
+(B-    DistannSuccessorActivationV1, DISTANN_ABANDONED_BINDING_ENTRY_BYTES,
+(B-    DISTANN_ABANDONED_BINDING_SET_COUNT_OFFSET, DISTANN_ABANDONED_BINDING_SET_FIXED_PREFIX_BYTES,
+(B-    DISTANN_ABANDONED_BINDING_SET_VERSION, DISTANN_ABANDON_BINDING_AUDIT_COORDINATOR_UUID_OFFSET,
+(B+    DistannCancelPublishAuditV1, DistannCodecArtifact, DistannEpochFingerprint,
+(B+    DistannEpochManifestV2, DistannGenerationDescriptor, DistannHandoffBatch, DistannHandoffEntry,
+(B+    DistannHandoffShape, DistannHeadPolicy, DistannManifestBuildOptions,
+(B+    DistannManifestCodecParameters, DistannOwnerExpectation, DistannPublishedEpochIdentity,
+(B+    DistannReadyReceipt, DistannRetireDecisionV1, DistannRosterEntry, DistannRowSchemaAttribute,
+(B+    DistannRowSchemaDescriptor, DistannSourceSnapshot, DistannSuccessorActivationV1,
+(B+    DISTANN_ABANDONED_BINDING_ENTRY_BYTES, DISTANN_ABANDONED_BINDING_SET_COUNT_OFFSET,
+(B+    DISTANN_ABANDONED_BINDING_SET_FIXED_PREFIX_BYTES, DISTANN_ABANDONED_BINDING_SET_VERSION,
+(B+    DISTANN_ABANDON_BINDING_AUDIT_COORDINATOR_UUID_OFFSET,
+(B     DISTANN_ABANDON_BINDING_AUDIT_FIXED_PREFIX_BYTES,
+     DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_BUILD_ID_OFFSET,
+     DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_EPOCH_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/am/mod.rs:82:
+     DISTANN_ABANDON_BINDING_AUDIT_VERSION, DISTANN_ABANDON_BINDING_AUDIT_VERSION_OFFSET,
+     DISTANN_BUILD_CANDIDATE_BUILD_SPEC_LENGTH_OFFSET, DISTANN_BUILD_CANDIDATE_FIXED_PREFIX_BYTES,
+     DISTANN_BUILD_CANDIDATE_REGISTRATION_DIGEST_OFFSET, DISTANN_BUILD_CANDIDATE_VERSION,
+-    DISTANN_BUILD_CANDIDATE_VERSION_OFFSET,
+(B-    DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
+(B+    DISTANN_BUILD_CANDIDATE_VERSION_OFFSET, DISTANN_BUILD_SPEC_VERSION,
+(B+    DISTANN_BUILD_SPEC_VERSION_OFFSET, DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
+(B     DISTANN_CANCEL_PUBLISH_AUDIT_COORDINATOR_UUID_OFFSET,
+     DISTANN_CANCEL_PUBLISH_AUDIT_EPOCH_OFFSET,
+     DISTANN_CANCEL_PUBLISH_AUDIT_FINGERPRINT_LENGTH_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/am/mod.rs:90:
+     DISTANN_CANCEL_PUBLISH_AUDIT_FIXED_PREFIX_BYTES, DISTANN_CANCEL_PUBLISH_AUDIT_VERSION,
+-    DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET,
+(B-    DISTANN_BUILD_SPEC_VERSION_OFFSET, DISTANN_CODEC_ARTIFACT_VERSION,
+(B+    DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET, DISTANN_CODEC_ARTIFACT_VERSION,
+(B     DISTANN_CODEC_ARTIFACT_VERSION_OFFSET, DISTANN_EPOCH_FINGERPRINT_BYTES,
+     DISTANN_EPOCH_MANIFEST_VERSION, DISTANN_EPOCH_MANIFEST_VERSION_OFFSET,
+     DISTANN_GENERATION_DESCRIPTOR_COORDINATOR_UUID_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/am/mod.rs:101:
+     DISTANN_GENERATION_DESCRIPTOR_INDEX_FORMAT_OFFSET,
+     DISTANN_GENERATION_DESCRIPTOR_PLACEMENT_HASH_OFFSET,
+     DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET, DISTANN_GENERATION_DESCRIPTOR_VERSION,
+-    DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET,
+(B-    DISTANN_GRAPH_RECORD_VERSION, DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES,
+(B-    DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_MAX_BYTES,
+(B-    DISTANN_HANDOFF_VERSION_OFFSET, DISTANN_HANDOFF_WIRE_VERSION,
+(B+    DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET, DISTANN_GRAPH_RECORD_VERSION,
+(B+    DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES,
+(B+    DISTANN_HANDOFF_MAX_BYTES, DISTANN_HANDOFF_VERSION_OFFSET, DISTANN_HANDOFF_WIRE_VERSION,
+(B+    DISTANN_MANIFEST_BUILD_OPTIONS_BYTES, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION,
+(B+    DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET, DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES,
+(B+    DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION, DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET,
+(B     DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
+     DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
+     DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, DISTANN_OWNER_STREAM_HASH_STATE_BYTES,
+Diff in /Users/peter/dev/tqvector/src/am/mod.rs:111:
+     DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET,
+     DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET,
+-    DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
+(B-    DISTANN_MANIFEST_BUILD_OPTIONS_BYTES, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION,
+(B-    DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET, DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES,
+(B-    DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION, DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION_OFFSET,
+(B-    DISTANN_PHYSICAL_INDEX_FORMAT_VERSION, DISTANN_PLACEMENT_HASH_VERSION,
+(B-    DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
+(B+    DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+(B+    DISTANN_PLACEMENT_HASH_VERSION, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
+(B     DISTANN_READY_RECEIPT_VERSION, DISTANN_READY_RECEIPT_VERSION_OFFSET,
+     DISTANN_RETIRE_DECISION_COORDINATOR_UUID_OFFSET, DISTANN_RETIRE_DECISION_EPOCH_OFFSET,
+     DISTANN_RETIRE_DECISION_FINGERPRINT_LENGTH_OFFSET, DISTANN_RETIRE_DECISION_FIXED_PREFIX_BYTES,
+Diff in /Users/peter/dev/tqvector/src/am/mod.rs:122:
+     DISTANN_RETIRE_DECISION_TARGET_BUILD_ID_OFFSET, DISTANN_RETIRE_DECISION_VERSION,
+-    DISTANN_RETIRE_DECISION_VERSION_OFFSET,
+(B-    DISTANN_ROW_SCHEMA_VERSION, DISTANN_ROW_SCHEMA_VERSION_OFFSET,
+(B-    DISTANN_SOURCE_SNAPSHOT_VERSION, DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET,
+(B-    DISTANN_SUCCESSOR_ACTIVATION_COORDINATOR_UUID_OFFSET,
+(B+    DISTANN_RETIRE_DECISION_VERSION_OFFSET, DISTANN_ROW_SCHEMA_VERSION,
+(B+    DISTANN_ROW_SCHEMA_VERSION_OFFSET, DISTANN_SOURCE_SNAPSHOT_VERSION,
+(B+    DISTANN_SOURCE_SNAPSHOT_VERSION_OFFSET, DISTANN_SUCCESSOR_ACTIVATION_COORDINATOR_UUID_OFFSET,
+(B     DISTANN_SUCCESSOR_ACTIVATION_FIXED_PREFIX_BYTES,
+     DISTANN_SUCCESSOR_ACTIVATION_PREDECESSOR_PRESENT_OFFSET, DISTANN_SUCCESSOR_ACTIVATION_VERSION,
+     DISTANN_SUCCESSOR_ACTIVATION_VERSION_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/am/mod.rs:130:
+ };
+-pub(crate) use self::ec_distann::restore_owner_stream_hash_state;
+(B #[allow(unused_imports)]
+ pub(crate) use self::ec_hnsw::{
+     graph, index_admin_snapshot, index_cost_snapshot, page, planner_integration_snapshot,
+Diff in /Users/peter/dev/tqvector/src/lib.rs:411:
+         owner_stream_digest, DistannAbandonBindingAuditV1, DistannAbandonedBinding,
+         DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildOptions,
+         DistannBuildSpec, DistannCancelPublishAuditV1, DistannCodecArtifact,
+-        DistannEpochFingerprint, DistannEpochManifestV2,
+(B-        DistannGenerationDescriptor, DistannHeadPolicy,
+(B-        DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannManifestBuildOptions,
+(B-        DistannManifestCodecParameters, DistannMetadataPage, DistannNodeTuple,
+(B-        DistannOwnerExpectation, DistannPublishedEpochIdentity, DistannReadyReceipt,
+(B-        DistannRetireDecisionV1, DistannRosterEntry,
+(B+        DistannEpochFingerprint, DistannEpochManifestV2, DistannGenerationDescriptor,
+(B+        DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannHeadPolicy,
+(B+        DistannManifestBuildOptions, DistannManifestCodecParameters, DistannMetadataPage,
+(B+        DistannNodeTuple, DistannOwnerExpectation, DistannPublishedEpochIdentity,
+(B+        DistannReadyReceipt, DistannRetireDecisionV1, DistannRosterEntry,
+(B         DistannRowSchemaAttribute, DistannRowSchemaDescriptor, DistannSourceSnapshot,
+         DistannSuccessorActivationV1, DISTANN_ABANDONED_BINDING_ENTRY_BYTES,
+         DISTANN_ABANDONED_BINDING_SET_COUNT_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/lib.rs:423:
+-        DISTANN_ABANDONED_BINDING_SET_FIXED_PREFIX_BYTES,
+(B-        DISTANN_ABANDONED_BINDING_SET_VERSION,
+(B+        DISTANN_ABANDONED_BINDING_SET_FIXED_PREFIX_BYTES, DISTANN_ABANDONED_BINDING_SET_VERSION,
+(B         DISTANN_ABANDON_BINDING_AUDIT_COORDINATOR_UUID_OFFSET,
+         DISTANN_ABANDON_BINDING_AUDIT_FIXED_PREFIX_BYTES,
+         DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_BUILD_ID_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/lib.rs:428:
+         DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_EPOCH_OFFSET,
+         DISTANN_ABANDON_BINDING_AUDIT_SUCCESSOR_FINGERPRINT_LENGTH_OFFSET,
+         DISTANN_ABANDON_BINDING_AUDIT_VERSION, DISTANN_ABANDON_BINDING_AUDIT_VERSION_OFFSET,
+-        DISTANN_BUILD_SPEC_VERSION, DISTANN_BUILD_SPEC_VERSION_OFFSET,
+(B         DISTANN_BUILD_CANDIDATE_BUILD_SPEC_LENGTH_OFFSET,
+         DISTANN_BUILD_CANDIDATE_FIXED_PREFIX_BYTES,
+         DISTANN_BUILD_CANDIDATE_REGISTRATION_DIGEST_OFFSET, DISTANN_BUILD_CANDIDATE_VERSION,
+Diff in /Users/peter/dev/tqvector/src/lib.rs:435:
+-        DISTANN_BUILD_CANDIDATE_VERSION_OFFSET,
+(B-        DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
+(B+        DISTANN_BUILD_CANDIDATE_VERSION_OFFSET, DISTANN_BUILD_SPEC_VERSION,
+(B+        DISTANN_BUILD_SPEC_VERSION_OFFSET, DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
+(B         DISTANN_CANCEL_PUBLISH_AUDIT_COORDINATOR_UUID_OFFSET,
+         DISTANN_CANCEL_PUBLISH_AUDIT_EPOCH_OFFSET,
+         DISTANN_CANCEL_PUBLISH_AUDIT_FINGERPRINT_LENGTH_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/lib.rs:440:
+         DISTANN_CANCEL_PUBLISH_AUDIT_FIXED_PREFIX_BYTES, DISTANN_CANCEL_PUBLISH_AUDIT_VERSION,
+-        DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET,
+(B-        DISTANN_CODEC_ARTIFACT_VERSION, DISTANN_CODEC_ARTIFACT_VERSION_OFFSET,
+(B-        DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES,
+(B-        DISTANN_EPOCH_MANIFEST_VERSION, DISTANN_EPOCH_MANIFEST_VERSION_OFFSET,
+(B+        DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET, DISTANN_CODEC_ARTIFACT_VERSION,
+(B+        DISTANN_CODEC_ARTIFACT_VERSION_OFFSET, DISTANN_CONTROL_METADATA_BYTES,
+(B+        DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_EPOCH_MANIFEST_VERSION,
+(B+        DISTANN_EPOCH_MANIFEST_VERSION_OFFSET,
+(B         DISTANN_GENERATION_DESCRIPTOR_COORDINATOR_UUID_OFFSET,
+         DISTANN_GENERATION_DESCRIPTOR_DIMENSIONS_OFFSET,
+         DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES,
+Diff in /Users/peter/dev/tqvector/src/lib.rs:450:
+         DISTANN_GENERATION_DESCRIPTOR_HANDOFF_WIRE_OFFSET,
+         DISTANN_GENERATION_DESCRIPTOR_INDEX_FORMAT_OFFSET,
+         DISTANN_GENERATION_DESCRIPTOR_PLACEMENT_HASH_OFFSET,
+-        DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET,
+(B-        DISTANN_GENERATION_DESCRIPTOR_VERSION, DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET,
+(B-        DISTANN_GRAPH_RECORD_VERSION,
+(B+        DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET, DISTANN_GENERATION_DESCRIPTOR_VERSION,
+(B+        DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET, DISTANN_GRAPH_RECORD_VERSION,
+(B         DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES,
+         DISTANN_HANDOFF_MAX_BYTES, DISTANN_HANDOFF_VERSION_OFFSET, DISTANN_HANDOFF_WIRE_VERSION,
+-        DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
+(B-        DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
+(B-        DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, DISTANN_OWNER_STREAM_HASH_STATE_BYTES,
+(B-        DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET,
+(B-        DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET,
+(B-        DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
+(B         DISTANN_MANIFEST_BUILD_OPTIONS_BYTES, DISTANN_MANIFEST_BUILD_OPTIONS_VERSION,
+         DISTANN_MANIFEST_BUILD_OPTIONS_VERSION_OFFSET, DISTANN_MANIFEST_CODEC_PARAMETERS_BYTES,
+         DISTANN_MANIFEST_CODEC_PARAMETERS_VERSION,
+Diff in /Users/peter/dev/tqvector/src/lib.rs:480:
+         DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
+         DISTANN_NODE_HEADER_BYTES, DISTANN_NODE_HEAP_TID_OFFSET,
+         DISTANN_NODE_NEIGHBOR_COUNT_OFFSET, DISTANN_NODE_SEARCH_CODE_OFFSET,
+-        DISTANN_NODE_TAG_OFFSET, DISTANN_NODE_VEC_ID_OFFSET, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+(B+        DISTANN_NODE_TAG_OFFSET, DISTANN_NODE_VEC_ID_OFFSET,
+(B+        DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
+(B+        DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
+(B+        DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_OFFSET, DISTANN_OWNER_STREAM_HASH_STATE_BYTES,
+(B+        DISTANN_OWNER_STREAM_HASH_STATE_CHAIN_OFFSET,
+(B+        DISTANN_OWNER_STREAM_HASH_STATE_IMPLEMENTATION_OFFSET,
+(B+        DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+(B         DISTANN_PLACEMENT_HASH_VERSION, DISTANN_READY_RECEIPT_BYTES, DISTANN_READY_RECEIPT_STATE,
+         DISTANN_READY_RECEIPT_VERSION, DISTANN_READY_RECEIPT_VERSION_OFFSET,
+         DISTANN_RETIRE_DECISION_COORDINATOR_UUID_OFFSET, DISTANN_RETIRE_DECISION_EPOCH_OFFSET,
+Diff in /Users/peter/dev/tqvector/src/storage/page.rs:341:
+         assert_eq!(second.block_number, base, "same page while it fits");
+         assert_eq!(third.block_number, base + 1, "next page is base+1");
+         // Lookups resolve against the base.
+-        assert_eq!(chain.get_page(first.block_number).unwrap().raw_tuple(first).unwrap(), &[1; 32]);
+(B-        assert_eq!(chain.get_page(third.block_number).unwrap().raw_tuple(third).unwrap(), &[3; 32]);
+(B+        assert_eq!(
+(B+            chain
+(B+                .get_page(first.block_number)
+(B+                .unwrap()
+(B+                .raw_tuple(first)
+(B+                .unwrap(),
+(B+            &[1; 32]
+(B+        );
+(B+        assert_eq!(
+(B+            chain
+(B+                .get_page(third.block_number)
+(B+                .unwrap()
+(B+                .raw_tuple(third)
+(B+                .unwrap(),
+(B+            &[3; 32]
+(B+        );
+(B         // Below-base blocks are not in this chain.
+         assert!(chain.get_page(base - 1).is_none());
+         // pages() carry the base-relative block numbers for write_data_pages.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Diff in /Users/peter/dev/tqvector/tests/on_disk_fixtures.rs:9:
+     spire_decode_partition_object_v2_chain_segment_fixture,
+     spire_decode_routing_partition_object_fixture, spire_decode_top_graph_partition_object_fixture,
+     vamana_decode_overflow_tuple_fixture, DistannAbandonBindingAuditV1,
+-    DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildSpec, DistannCodecArtifact,
+(B-    DistannCancelPublishAuditV1, DistannEpochFingerprint, DistannEpochManifestV2,
+(B-    DistannGenerationDescriptor,
+(B-    DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannManifestBuildOptions,
+(B-    DistannManifestCodecParameters, DistannMetadataPage, DistannNodeTuple, DistannReadyReceipt,
+(B-    DistannRetireDecisionV1, DistannRowSchemaDescriptor, DistannSourceSnapshot,
+(B-    DistannSuccessorActivationV1, ItemPointer, IvfBlockRef, IvfCentroidTuple,
+(B-    IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple, IvfPqCodebookTuple, IvfRerankMode,
+(B-    IvfRerankScoreMode, IvfStorageFormat, MetadataPage, SpireConsistencyMode, SpireEpochManifest,
+(B-    SpireEpochState, SpireLocalStoreConfig, SpireLocalStoreState, SpireManifestEntry,
+(B-    SpireObjectManifest, SpirePlacementDirectory, SpirePlacementEntry, SpirePlacementState,
+(B-    TqElementTuple, TqGroupedCodebookTuple, TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple,
+(B-    TqTurboHotTuple, VamanaCodebookTuple, VamanaMetadataPage, VamanaNodeTuple,
+(B-    DISTANN_CONTROL_METADATA_BYTES, DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_METADATA_BYTES,
+(B+    DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildSpec,
+(B+    DistannCancelPublishAuditV1, DistannCodecArtifact, DistannEpochFingerprint,
+(B+    DistannEpochManifestV2, DistannGenerationDescriptor, DistannHandoffBatch, DistannHandoffEntry,
+(B+    DistannHandoffShape, DistannManifestBuildOptions, DistannManifestCodecParameters,
+(B+    DistannMetadataPage, DistannNodeTuple, DistannReadyReceipt, DistannRetireDecisionV1,
+(B+    DistannRowSchemaDescriptor, DistannSourceSnapshot, DistannSuccessorActivationV1, ItemPointer,
+(B+    IvfBlockRef, IvfCentroidTuple, IvfListDirectoryTuple, IvfMetadataPage, IvfPostingTuple,
+(B+    IvfPqCodebookTuple, IvfRerankMode, IvfRerankScoreMode, IvfStorageFormat, MetadataPage,
+(B+    SpireConsistencyMode, SpireEpochManifest, SpireEpochState, SpireLocalStoreConfig,
+(B+    SpireLocalStoreState, SpireManifestEntry, SpireObjectManifest, SpirePlacementDirectory,
+(B+    SpirePlacementEntry, SpirePlacementState, TqElementTuple, TqGroupedCodebookTuple,
+(B+    TqGroupedHotTuple, TqNeighborTuple, TqRerankTuple, TqTurboHotTuple, VamanaCodebookTuple,
+(B+    VamanaMetadataPage, VamanaNodeTuple, DISTANN_CONTROL_METADATA_BYTES,
+(B+    DISTANN_EPOCH_FINGERPRINT_BYTES, DISTANN_METADATA_BYTES,
+(B     DISTANN_METADATA_FORMAT_VERSION_OFFSET, DISTANN_NODE_FORMAT_VERSION_OFFSET,
+     DISTANN_OWNER_STREAM_HASH_STATE_BLOCK_COUNT_OFFSET,
+     DISTANN_OWNER_STREAM_HASH_STATE_BUFFER_LENGTH_OFFSET,
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
+Warning: can't set `imports_granularity = Crate`, unstable features are only available in nightly channel.
+Warning: can't set `group_imports = StdExternalCrate`, unstable features are only available in nightly channel.
