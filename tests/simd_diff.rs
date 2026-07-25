@@ -44,6 +44,43 @@ fn assert_close(label: &str, dispatched: f32, scalar: f32, rel_tol: f32) {
     );
 }
 
+#[test]
+fn host_backend_inventory_is_visible() {
+    #[cfg(target_arch = "aarch64")]
+    {
+        let neon = std::arch::is_aarch64_feature_detected!("neon");
+        let dotprod = std::arch::is_aarch64_feature_detected!("dotprod");
+        let sve = std::arch::is_aarch64_feature_detected!("sve");
+        let sve2 = std::arch::is_aarch64_feature_detected!("sve2");
+        eprintln!(
+            "task36_host arch=aarch64 backend={} neon={} dotprod={} sve={} sve2={} unavailable=x86_avx2_fma,x86_avx512",
+            ecaz::bench_api::simd_backend(),
+            neon,
+            dotprod,
+            sve,
+            sve2
+        );
+        assert!(neon, "aarch64 Task 36 lane requires host-reachable NEON");
+    }
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        let avx2 = std::arch::is_x86_feature_detected!("avx2");
+        let fma = std::arch::is_x86_feature_detected!("fma");
+        let avx512f = std::arch::is_x86_feature_detected!("avx512f");
+        eprintln!(
+            "task36_host arch=x86 backend={} avx2={} fma={} avx512f={} unavailable=arm_neon,arm_sve,arm_sve2",
+            ecaz::bench_api::simd_backend(),
+            avx2,
+            fma,
+            avx512f
+        );
+        assert!(
+            avx2 && fma,
+            "x86 Task 36 lane requires host-reachable AVX2+FMA"
+        );
+    }
+}
+
 proptest! {
     #![proptest_config(ProptestConfig::with_cases(24))]
 
@@ -131,8 +168,16 @@ proptest! {
             assert_close("hnsw forced avx2 source inner product", hnsw_avx2, hnsw_scalar, 1.0e-4);
         }
         #[cfg(target_arch = "aarch64")]
-        if let Some(hnsw_neon) = ecaz::bench_api::hnsw_source_inner_product_neon_for_test(&left, &right) {
-            assert_close("hnsw forced neon source inner product", hnsw_neon, hnsw_scalar, 1.0e-4);
+        {
+            let hnsw_neon =
+                ecaz::bench_api::hnsw_source_inner_product_neon_for_test(&left, &right)
+                    .expect("aarch64 Task 36 lane requires HNSW NEON execution");
+            assert_close(
+                "hnsw forced neon source inner product",
+                hnsw_neon,
+                hnsw_scalar,
+                1.0e-4,
+            );
         }
 
         let diskann_scalar = ecaz::bench_api::diskann_source_inner_product_scalar_reference(&left, &right);
@@ -141,8 +186,16 @@ proptest! {
             assert_close("diskann forced avx2 source inner product", diskann_avx2, diskann_scalar, 1.0e-4);
         }
         #[cfg(target_arch = "aarch64")]
-        if let Some(diskann_neon) = ecaz::bench_api::diskann_source_inner_product_neon_for_test(&left, &right) {
-            assert_close("diskann forced neon source inner product", diskann_neon, diskann_scalar, 1.0e-4);
+        {
+            let diskann_neon =
+                ecaz::bench_api::diskann_source_inner_product_neon_for_test(&left, &right)
+                    .expect("aarch64 Task 36 lane requires DiskANN NEON execution");
+            assert_close(
+                "diskann forced neon source inner product",
+                diskann_neon,
+                diskann_scalar,
+                1.0e-4,
+            );
         }
     }
 }
@@ -199,19 +252,18 @@ fn forced_neon_score_paths_match_scalar_reference_when_available() {
     let prepared = quantizer.prepare_ip_query(&query);
     let codes = code_bytes(&candidate);
 
-    if let Some(neon) =
-        quantizer.score_ip_from_parts_neon_for_test(&prepared, candidate.gamma, &codes)
-    {
-        let scalar =
-            quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
-        assert_close("forced neon score_ip_from_parts", neon, scalar, 1.0e-5);
-    }
+    let neon = quantizer
+        .score_ip_from_parts_neon_for_test(&prepared, candidate.gamma, &codes)
+        .expect("aarch64 Task 36 lane requires Prod NEON execution");
+    let scalar = quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
+    assert_close("forced neon score_ip_from_parts", neon, scalar, 1.0e-5);
 
     let other = code_bytes(&quantizer.encode(&random_unit_vector(384, 0xC44)));
-    if let Some(neon) = quantizer.score_ip_codes_lite_neon_for_test(&codes, &other) {
-        let scalar = quantizer.score_ip_codes_lite_scalar_reference(&codes, &other);
-        assert_close("forced neon score_ip_codes_lite", neon, scalar, 1.0e-5);
-    }
+    let neon = quantizer
+        .score_ip_codes_lite_neon_for_test(&codes, &other)
+        .expect("aarch64 Task 36 lane requires Prod code-to-code NEON execution");
+    let scalar = quantizer.score_ip_codes_lite_scalar_reference(&codes, &other);
+    assert_close("forced neon score_ip_codes_lite", neon, scalar, 1.0e-5);
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -245,16 +297,18 @@ fn forced_neon_fwht_matches_scalar_reference_when_available() {
         .collect::<Vec<_>>();
     let mut scalar = neon.clone();
 
-    if ecaz::bench_api::fwht_in_place_neon_for_test(&mut neon) {
-        fwht_in_place_scalar_reference(&mut scalar);
-        for (index, (actual, expected)) in neon.iter().zip(scalar.iter()).enumerate() {
-            assert_close(
-                &format!("forced neon fwht lane {index}"),
-                *actual,
-                *expected,
-                1.0e-5,
-            );
-        }
+    assert!(
+        ecaz::bench_api::fwht_in_place_neon_for_test(&mut neon),
+        "aarch64 Task 36 lane requires FWHT NEON execution"
+    );
+    fwht_in_place_scalar_reference(&mut scalar);
+    for (index, (actual, expected)) in neon.iter().zip(scalar.iter()).enumerate() {
+        assert_close(
+            &format!("forced neon fwht lane {index}"),
+            *actual,
+            *expected,
+            1.0e-5,
+        );
     }
 }
 

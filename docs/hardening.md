@@ -138,25 +138,78 @@ Seeded Miri coverage now includes:
 
 ## SIMD/Scalar Differential Validation
 
-- `make simd-diff`: runs `tests/simd_diff.rs` with the `bench` feature. The
-  harness compares production-dispatched scoring/FWHT entry points against
-  scalar-reference entry points in the same process, and also calls test-only
-  AVX2/FMA or NEON entry points directly when the host supports them. This
-  keeps backend pinning independent of `ECAZ_SIMD` process-global dispatch.
-- GitHub Actions runs the same lane in a focused `simd-diff` job on
-  `ubuntu-24.04` x64 and `ubuntu-24.04-arm` arm64 hosted runners so both AVX2
-  and NEON coverage are PR-visible.
-- Tolerances:
-  - FWHT lanes: absolute/relative `1e-5`.
-  - `score_ip_from_parts`: absolute/relative `1e-5`.
-  - `score_ip_codes_lite`: absolute/relative `1e-5`.
-  - AM source inner product (HNSW/DiskANN): absolute/relative `1e-4`
-    because production SIMD may use fused multiply-add while the scalar
-    reference accumulates with separate operations.
+`make simd-diff` is the authoritative local lane. It runs the public
+`tests/simd_diff.rs` harness and focused in-library differential suites for
+RaBitQ arithmetic, `rabitq32`, `qjl32`, `lut32`, `grouped_pq_block`,
+`int8_approx32`, the real `hamming32` SIMD implementation, and the
+`ec_distann` codec binding. The focused commands are intentional: do not
+replace them with an unfiltered `cargo test`. The lane prints the detected
+host features and the ISA each family exercised. A host-reachable primary
+backend (NEON on aarch64 or AVX2+FMA on x86) returning “unavailable” is a test
+failure, not a skip.
 
-Tolerance changes require a review packet that explains the numeric reason.
-The Miri scalar fallback remains useful for reference-path UB checks, but SIMD
-correctness is owned by this differential lane.
+Current production inventory:
+
+- `prod` TurboQuant split-score and code-to-code score: scalar,
+  AVX2+FMA, and NEON. The `SimdBackend::Avx512` dispatch tier currently enters
+  the AVX2/FMA product scorer; there is no distinct AVX-512 product scorer.
+- FWHT: scalar, AVX2/FMA, and NEON. `rotation.rs` has no separate
+  architecture-specific scoring kernel.
+- RaBitQ arithmetic (`rabitq.rs`): NEON bits 1/4/8, AVX2+FMA bits 1/4/8, and
+  AVX-512 bits 1/4/8; optional BF16 variants require their explicit cargo
+  feature and hardware feature.
+- `rabitq32`: bits=1 and multi-bit bits=2/4 full-block and partial kernels on
+  AVX2+FMA and NEON. Its SVE module is a NEON-routing placeholder, not an SVE
+  implementation.
+- `qjl32`: AVX2 and NEON 32-candidate blocks and 8-candidate octets, scalar
+  remainders below an octet, plus a real SVE/SVE2 block implementation.
+- `lut32`: AVX2 and NEON block/octet/partial/tiled dispatch, plus real
+  SVE/SVE2 block and predicated partial implementations.
+- `grouped_pq_block`: AVX2 and NEON 32-candidate blocks with padded partial
+  dispatch, plus a real SVE/SVE2 block implementation.
+- `int8_approx32`: AVX2, NEON, and NEON SDOT/dotprod full-block and partial
+  paths. SVE/SVE2 currently route through NEON.
+- `hamming32`: NEON XOR/popcount block and partial paths are real SIMD. The
+  AVX2 and SVE modules are scalar/NEON routing placeholders and must not be
+  reported as distinct SIMD execution.
+- HNSW and DiskANN source inner product: scalar, AVX2+FMA, and NEON. DistANN
+  exact source scoring intentionally calls the shared DiskANN implementation.
+
+The common `CandidateBatch` binding carries these kernels into the AMs:
+HNSW uses TurboQuant LUT/tiled/int8/QJL, grouped-PQ, and RaBitQ bits=1; IVF
+uses those families plus RaBitQ bits=2/4; DiskANN uses hamming, grouped-PQ,
+TurboQuant LUT, and RaBitQ bits=1; SPIRE uses TurboQuant LUT/QJL and RaBitQ
+bits=1; DistANN uses grouped-PQ, TurboQuant LUT, and RaBitQ bits=1. DistANN
+has no private SIMD kernel, so its differential test checks direct codec
+scoring against prepared/batch scoring, persisted stride slicing, widths
+1/7/8/9/16/17/31/32/33, full-block plus tail, and IP-to-distance negation.
+
+Equality contracts:
+
+- Integer accumulators and lookup sums (`lut32`, `int8_approx32`, SDOT, and
+  `hamming32`) are bit/integer exact.
+- Grouped-PQ is bit-exact because scalar and vector paths retain group-order
+  accumulation.
+- RaBitQ block and arithmetic paths allow relative/absolute `1e-5`; vector
+  FMA/reduction order differs from the scalar anchor.
+- QJL allows 4 ULP or relative `1e-6`.
+- FWHT and `prod` split/code-to-code scores allow relative/absolute `1e-5`.
+- HNSW/DiskANN source inner product allows relative/absolute `1e-4` because
+  the SIMD implementation may fuse multiply-add while scalar does not.
+
+Tolerance changes require a review packet explaining the numeric reason.
+Hardware-specific execution claims are host-local: Apple arm64 proves NEON
+and, when detected, SDOT; Intel/x86 hosts prove AVX2/AVX-512; Graviton hosts
+prove SVE/SVE2. Unavailable paths must be listed as unexecuted rather than
+inferred from compilation. This local lane does not by itself claim CI
+coverage.
+
+Every new production SIMD scoring path must land with an existing
+scalar/reference entry point, a narrow test/bench-only forced-backend hook
+when dispatch could hide it, boundary and realistic-dimension differential
+fixtures, and a focused command added to `make simd-diff`. The Miri scalar
+fallback remains useful for reference-path UB checks; it is not SIMD
+execution evidence.
 
 ## Fuzzing
 

@@ -151,7 +151,7 @@ mod tests {
 
     #[test]
     fn partial_is_integer_exact_with_scalar_reference() {
-        for count in [1usize, 2, 7, 22, 31] {
+        for count in [1usize, 7, 8, 9, 16, 17, 31, 32, 33] {
             let word_count = 24;
             let query = words(word_count, 11);
             let candidates: Vec<Vec<u64>> = (0..count)
@@ -159,13 +159,35 @@ mod tests {
                 .collect();
             let candidate_refs: Vec<&[u64]> = candidates.iter().map(Vec::as_slice).collect();
             let mut distances = vec![0u32; count];
-
-            score_hamming_partial(&query, &candidate_refs, &mut distances);
+            let mut block_start = 0;
+            while block_start + BLOCK_WIDTH <= count {
+                let block: &[&[u64]; BLOCK_WIDTH] = candidate_refs
+                    [block_start..block_start + BLOCK_WIDTH]
+                    .try_into()
+                    .unwrap();
+                score_hamming_block32(
+                    &query,
+                    block,
+                    &mut distances[block_start..block_start + BLOCK_WIDTH],
+                );
+                block_start += BLOCK_WIDTH;
+            }
+            if block_start < count {
+                score_hamming_partial(
+                    &query,
+                    &candidate_refs[block_start..],
+                    &mut distances[block_start..],
+                );
+            }
 
             for (distance, candidate) in distances.iter().zip(candidate_refs.iter()) {
                 assert_eq!(*distance, hamming_distance_scalar(&query, candidate));
             }
         }
+        eprintln!(
+            "task36_hamming32 isa={} widths=1,7,8,9,16,17,31,32,33",
+            host_expected_simd_isa().label()
+        );
     }
 
     #[test]

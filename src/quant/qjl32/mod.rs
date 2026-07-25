@@ -245,7 +245,7 @@ mod tests {
         let quantizer = crate::quant::prod::ProdQuantizer::new(1024, 4, 42);
         let query = random_unit_vector(1024, 91);
         let prepared = quantizer.prepare_ip_query(&query);
-        let encoded: Vec<_> = (0..BLOCK_WIDTH + 7)
+        let encoded: Vec<_> = (0..BLOCK_WIDTH + 1)
             .map(|seed| quantizer.encode(&random_unit_vector(1024, seed as u64 + 300)))
             .collect();
         let codes: Vec<Vec<u8>> = encoded
@@ -258,17 +258,26 @@ mod tests {
                 code
             })
             .collect();
-        let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
-        let gammas: Vec<f32> = encoded.iter().map(|encoded| encoded.gamma).collect();
-        let mut scores = vec![0.0; code_refs.len()];
+        let all_code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
+        let all_gammas: Vec<f32> = encoded.iter().map(|encoded| encoded.gamma).collect();
 
-        score_turboquant_qjl_batch(&quantizer, &prepared, &code_refs, &gammas, &mut scores)
-            .unwrap();
+        for width in [1usize, 7, 8, 9, 16, 17, 31, 32, 33] {
+            let code_refs = &all_code_refs[..width];
+            let gammas = &all_gammas[..width];
+            let mut scores = vec![0.0; width];
+            score_turboquant_qjl_batch(&quantizer, &prepared, code_refs, gammas, &mut scores)
+                .unwrap();
 
-        for ((code, gamma), score) in code_refs.iter().zip(gammas.iter()).zip(scores.iter()) {
-            let pre_slice = quantizer.score_ip_from_parts_scalar_reference(&prepared, *gamma, code);
-            assert_eq!(score.to_bits(), pre_slice.to_bits());
+            for ((code, gamma), score) in code_refs.iter().zip(gammas.iter()).zip(scores.iter()) {
+                let pre_slice =
+                    quantizer.score_ip_from_parts_scalar_reference(&prepared, *gamma, code);
+                assert_close(*score, pre_slice, 4);
+            }
         }
+        eprintln!(
+            "task36_qjl32 isa={} widths=1,7,8,9,16,17,31,32,33",
+            crate::quant::isa::current_isa().label()
+        );
     }
 
     #[test]

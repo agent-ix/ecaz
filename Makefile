@@ -223,7 +223,24 @@ proptest:
 
 ## Run SIMD/scalar differential tests for host-reachable vector backends
 simd-diff:
-	cargo test --features bench --test simd_diff -- --test-threads=1
+	@echo "task36 simd-diff: public bench hooks (Prod/FWHT/HNSW/DiskANN)"
+	cargo test --features bench --test simd_diff -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: RaBitQ arithmetic SIMD inventory"
+	cargo test --lib --features bench quant::rabitq::tests::task67_sum_query_dequant_for_test_ -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: rabitq32 bits=1/2/4 block and partial kernels"
+	cargo test --lib --features bench quant::rabitq32::tests:: -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: qjl32 block/octet/remainder kernels"
+	cargo test --lib --features bench quant::qjl32::tests:: -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: lut32 block/partial/tiled kernels"
+	cargo test --lib --features bench quant::lut32::tests::lut32_ -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: grouped-PQ block/partial kernels"
+	cargo test --lib --features bench quant::grouped_pq_block::tests::grouped_pq_ -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: int8/SDOT block/partial kernels"
+	cargo test --lib --features bench quant::int8_approx32:: -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: real hamming32 SIMD kernels"
+	cargo test --lib --features bench quant::hamming32::tests:: -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: DistANN codec composition, stride, and source IP"
+	cargo test --lib --features bench simd_diff_ -- --test-threads=1 --nocapture
 
 # --- On-disk format ---
 
