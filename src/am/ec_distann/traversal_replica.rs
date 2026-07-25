@@ -1294,6 +1294,13 @@ pub(crate) fn guard_traversal_replica_mutation(index_oid: pg_sys::Oid) {
     let transitioned = mark_stale_in_side_transaction(index_oid, &identity, "mutation")
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     if transitioned {
+        if super::options::debug_crash_after_replica_control_commit() {
+            pgrx::ereport!(
+                FATAL,
+                pgrx::PgSqlErrorCode::ERRCODE_ADMIN_SHUTDOWN,
+                "EC_REPLICA_CONTROL_COMMIT_CRASH: injected backend termination after durable traversal-replica invalidation"
+            );
+        }
         DistannExpandError::EpochMismatch(
             "EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available"
                 .to_owned(),

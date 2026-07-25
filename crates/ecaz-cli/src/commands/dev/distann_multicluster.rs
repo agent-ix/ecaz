@@ -1471,6 +1471,73 @@ async fn task199_real_delete_invalidation_drill(
     ))
 }
 
+async fn task199_crash_after_control_commit_drill(
+    coordinator: &tokio_postgres::Client,
+    coordinator_port: u16,
+    corpus: &str,
+    queries: &str,
+    owner_baseline: &str,
+) -> Result<String> {
+    let inserted_id = coordinator
+        .query_one(
+            &format!("SELECT coalesce(max(id), 0) + 1 FROM {corpus}"),
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let (mutator, mutator_connection) = task199_connect(coordinator_port).await?;
+    let mutator_pid = mutator
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await?
+        .get::<_, i32>(0);
+    mutator
+        .batch_execute("SET ec_distann.debug_crash_after_replica_control_commit = on")
+        .await?;
+    let crash = mutator
+        .query_one(&task199_real_insert_sql(corpus), &[])
+        .await
+        .expect_err("injected post-control-commit crash must terminate the mutating backend");
+    let terminated = crash
+        .code()
+        .is_some_and(|code| code.code() == "57P01")
+        || crash.is_closed();
+    let _ = mutator_connection.await;
+
+    let state = coordinator
+        .query_one(
+            "SELECT state
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              ORDER BY build_started_at DESC LIMIT 1",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    let inserted_count = coordinator
+        .query_one(
+            &format!("SELECT count(*)::bigint FROM {corpus} WHERE id = $1"),
+            &[&inserted_id],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let (fresh, fresh_connection) = task199_connect(coordinator_port).await?;
+    let owner_after_crash =
+        task198_replica_semantic_result(&fresh, corpus, queries, -1, 0, 20).await?;
+    fresh_connection.abort();
+    let owner_fallback = owner_after_crash == owner_baseline;
+    if !terminated || state != "Stale" || inserted_count != 0 || !owner_fallback {
+        bail!(
+            "Task 199 post-control-commit crash failed: pid={mutator_pid} \
+             terminated={terminated} state={state} inserted={inserted_count} \
+             owner_fallback={owner_fallback} error={crash}"
+        );
+    }
+    Ok(format!(
+        "scenario=crash_after_control_commit pass=true backend_pid={mutator_pid} \
+         backend_terminated=true state=Stale inserted_rows=0 \
+         fresh_backend_owner_fallback_identity=true"
+    ))
+}
+
 async fn task199_physical_graph_digest(
     coordinator: &tokio_postgres::Client,
 ) -> Result<String> {
@@ -2500,6 +2567,23 @@ async fn run_task199_replica_lifecycle_drills(
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=stronger_isolation_mutation_rejected pass=true repeatable_read=true serializable=true sqlstate=25001 token=EC_TRANSACTION_ISOLATION state=Ready inserted_rows=0"
     ));
+
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} {}",
+        task199_crash_after_control_commit_drill(
+            coordinator,
+            coordinator_port,
+            corpus,
+            queries,
+            owner_baseline,
+        )
+        .await?
+    ));
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the post-control-commit crash replica");
+    }
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
 
     let has_fault_hooks = coordinator
         .query_one(

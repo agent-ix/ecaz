@@ -107,6 +107,12 @@ static ECDISTANN_DEBUG_FAIL_HANDOFF_AFTER_PREPARE_GUC: GucSetting<bool> =
 static ECDISTANN_DEBUG_FAIL_RECOVER_AFTER_PUBLISH_ACK_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(false);
 
+/// Task 199 traversal-replica crash-window fault: terminate the mutating
+/// backend after the dedicated control transaction has committed Ready ->
+/// Stale, but before the caller can receive its ordinary retry error.
+static ECDISTANN_DEBUG_CRASH_AFTER_REPLICA_CONTROL_COMMIT_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+
 /// 0=off, 1=absent index TID, 2=callback vector mismatch, 3=callback identity
 /// mismatch. Used to exercise otherwise race-impossible single-snapshot checks.
 static ECDISTANN_DEBUG_SOURCE_CAPTURE_FAULT_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
@@ -456,6 +462,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.debug_crash_after_replica_control_commit",
+        c"Task 199 fault injection: terminate after traversal-replica invalidation commits.",
+        c"When on, a mutation that commits Ready-to-Stale through the dedicated control connection terminates its backend before returning the ordinary retry error. Off by default.",
+        &ECDISTANN_DEBUG_CRASH_AFTER_REPLICA_CONTROL_COMMIT_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.debug_source_capture_fault",
         c"Task 179 source-callback mismatch fault selector.",
@@ -722,6 +736,10 @@ pub(super) fn debug_fail_handoff_after_prepare() -> bool {
 
 pub(super) fn debug_fail_recover_after_publish_ack() -> bool {
     ECDISTANN_DEBUG_FAIL_RECOVER_AFTER_PUBLISH_ACK_GUC.get()
+}
+
+pub(super) fn debug_crash_after_replica_control_commit() -> bool {
+    ECDISTANN_DEBUG_CRASH_AFTER_REPLICA_CONTROL_COMMIT_GUC.get()
 }
 
 pub(super) fn debug_source_capture_fault() -> i32 {
