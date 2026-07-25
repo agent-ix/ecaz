@@ -285,3 +285,42 @@ fixtures for `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` unless noted.
 - Lane: final postmaster state check
 - Command: `script -q -e -c "/home/peter/.pgrx/18.3/pgrx-install/bin/pg_ctl -D /home/peter/.pgrx/data-18 status" reviews/task-36/001-31145-task36-38-hardening-validation/artifacts/task38-final-pg18-status.log`
 - Key result: PG18 postmaster is running without provider environment in the command line.
+
+## 2026-07-25 Apple M5 (NEON) re-review artifacts
+
+Added by reviewer feedback `feedback/2026-07-25-01-reviewer.md`.
+
+- Head SHA: `48fc8ee21`
+- Branch: `task-132-134-tq-optimization-tests`
+- Task bucket / packet: `reviews/task-36/001-31145-task36-38-hardening-validation`
+- Host: Apple M5, macOS (Darwin 25.4.0), aarch64/NEON. No SVE, no AVX2 —
+  x86 and SVE claims in this packet were reviewed statically only.
+- Timestamp: 2026-07-25
+
+### 2026-07-25-m5-simd-diff.log
+
+- Lane: Task 36 `make simd-diff` differential lane, NEON pathway
+- Command: `cargo test --features bench --test simd_diff -- --test-threads=1`
+- Key result: `test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 24.87s`
+- Both `forced_neon_score_paths_match_scalar_reference_when_available` and
+  `forced_neon_fwht_matches_scalar_reference_when_available` executed rather
+  than skipping their `if let Some(..)` availability guard, so the NEON
+  intrinsic bodies were genuinely diffed against the scalar references.
+
+### 2026-07-25-m5-quant-lib-tests.log
+
+- Lane: crate `--lib` unit tests filtered to `quant::`, which is where the
+  post-May block-kernel scalar-diff tests live (`lut32`, `qjl32`, `rabitq32`,
+  `hamming32`, `int8_approx32`, `grouped_pq_block`). This lane is not run by
+  `make simd-diff`, `make hardening-local`, or any CI job.
+- Command: `cargo test --no-default-features --features pg18,bench --lib quant::`
+- Key result: `test result: FAILED. 184 passed; 1 failed; 2 ignored; 0 measured; 2052 filtered out`
+- Failure: `quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane`
+  panics at `src/quant/prod.rs:1837` with `left: 8, right: 16` instead of the
+  expected lane-guard message. Bisected to `3d66bdcf3`, which rewrote
+  `prepare_ip_query_tiled_lut_no_qjl_4bit` to build the f32 LUT inline and
+  dropped the query-length assert and the no-QJL/4-bit lane guard it had
+  previously inherited by delegating to `prepare_ip_query_lut_no_qjl_4bit`.
+- Scope caveat: this is the `quant::`-filtered run (185 tests). A full
+  unfiltered `--lib` sweep was started but had not produced output when this
+  feedback was written; no claim is made here about the remaining 2052 tests.

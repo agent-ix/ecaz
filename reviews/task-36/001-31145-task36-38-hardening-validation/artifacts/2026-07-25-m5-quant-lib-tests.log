@@ -1,0 +1,215 @@
+   Compiling ring v0.17.14
+   Compiling rustls-webpki v0.103.13
+   Compiling rustls v0.23.41
+   Compiling tokio-rustls v0.26.4
+   Compiling ecaz v0.1.1 (/Users/peter/tqvector)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 14.80s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-6e663634d39738f7)
+
+running 187 tests
+test quant::codebook::tests::log_gamma_known_values ... ok
+test quant::grouped_pq::tests::grouped_pq_nibble_reads_even_and_odd_groups ... ok
+test quant::codebook::tests::beta_pdf_out_of_range ... ok
+test quant::grouped_pq::tests::pack_grouped_pq_nibbles_packs_even_count ... ok
+test quant::grouped_pq::tests::pack_grouped_pq_nibbles_packs_odd_count ... ok
+test quant::grouped_pq::tests::nearest_centroid_l2_prefers_lowest_distance ... ok
+test quant::grouped_pq::tests::build_grouped_pq_lut_f32_uses_flat_codebooks_by_group ... ok
+test quant::grouped_pq::tests::grouped_pq_score_f32_sums_lut_rows_by_nibble ... ok
+test quant::grouped_pq_block::tests::grouped_pq_scalar_tail_matches_scalar_reference_bits ... ok
+test quant::hadamard::tests::miri_fwht_small ... ok
+test quant::hadamard::tests::miri_orthonormal_fwht_small ... ok
+test quant::grouped_pq::tests::encode_grouped_pq_packs_nibbles_from_shared_codebooks ... ok
+test quant::hadamard::tests::tiled_fwht_matches_chunkwise_full_fwht ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_rejects_shape_mismatch ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_with_block_and_tail_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_neon_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::grouped_pq_block::tests::grouped_pq_avx2_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::grouped_pq_block::tests::grouped_pq_sve_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_under_block_width_matches_scalar_reference_bits ... ok
+test quant::hadamard::tests::fwht_preserves_norm_after_normalization ... ok
+test quant::hadamard::tests::tiled_orthonormal_fwht_preserves_norm_per_tile ... ok
+test quant::grouped_pq_block::tests::grouped_pq_block32_matches_scalar_reference_bits_across_shapes ... ok
+test quant::hamming32::tests::scalar_reference_is_xor_popcount ... ok
+test quant::isa::tests::select_highest_isa_falls_back_to_neon_or_scalar ... ok
+test quant::isa::tests::select_highest_isa_prefers_neon_on_graviton4 ... ok
+test quant::isa::tests::parse_isa_cap_accepts_known_values ... ok
+test quant::isa::tests::cap_encoding_roundtrips ... ok
+test quant::isa::tests::select_highest_isa_prefers_x86_avx2_on_x86_features ... ok
+test quant::isa::tests::select_highest_isa_uses_sve_tiers_only_without_neon ... ok
+test quant::hamming32::tests::partial_is_integer_exact_with_scalar_reference ... ok
+test quant::hamming32::tests::block32_is_integer_exact_with_scalar_reference ... ok
+test quant::isa::tests::capped_selection_limits_but_never_fakes ... ok
+test quant::int8_approx32::tests::simd_dim_tails_are_bit_equal_with_scalar_reference ... ok
+test quant::int8_approx32::tests::block32_is_bit_equal_at_extreme_i8_values ... ok
+test quant::lut32::neon::tests::transpose_8x16_yields_byte_columns ... ok
+test quant::lut32::tests::lut32_avx2_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::lut32::tests::lut32_rejects_shape_mismatch ... ok
+test quant::lut32::tests::task124_profile_lut32_block32_and_query_prep ... ignored, Task 124 scorer microprofile; run explicitly with ECAZ_TQ_PROFILE_LOG
+test quant::lut32::tests::lut32_sve_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::mse::tests::nearest_centroid_index_prefers_lower_index_on_tie ... ok
+test quant::isa::tests::parse_isa_cap_rejects_unknown_values - should panic ... ok
+test quant::mse::tests::quantize_to_indices_dispatches_unrolled_for_16_centroids ... ok
+test quant::codebook::tests::lloyd_max_b1_centroids_symmetric ... ok
+test quant::lut32::tests::lut32_batch_with_blocks_and_tail_matches_scalar_tail_bits ... ok
+test quant::lut32::tests::lut32_batch_under_block_width_matches_scalar_tail_bits ... ok
+test quant::lut32::tests::lut32_neon_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::prod::tests::decode_eight_3bit_aligned_matches_packer ... ok
+test quant::lut32::tests::lut32_block32_matches_scalar_tail_bits_across_dims ... ok
+test quant::lut32::tests::lut32_partial_matches_scalar_tail_bits_across_widths ... ok
+test quant::mse::tests::branchless_matches_branching_over_random_inputs ... ok
+test quant::lut32::tests::lut32_tiled_batch_matches_scalar_tail_bits_across_widths_and_dims ... ok
+test quant::codebook::tests::beta_pdf_integrates_to_one ... ok
+test quant::mse::tests::unrolled_16_matches_generic_branchless ... ok
+test quant::grouped_pq::tests::pq_fastscan_quantizer_trait_score_matches_direct_helpers ... ok
+test quant::int8_approx32::tests::scalar_reference_matches_production_scorer_bits ... ok
+test quant::prod::tests::encode_decode_has_reasonable_fidelity ... ok
+test quant::hadamard::tests::orthonormal_fwht_runtime_path_matches_scalar_on_random_inputs ... ok
+test quant::hadamard::tests::fwht_runtime_path_matches_scalar_on_random_inputs ... ok
+test quant::prod::tests::miri_pack_unpack_mse ... ok
+test quant::prod::tests::miri_pack_unpack_qjl ... ok
+test quant::prod::tests::binary_sign_no_qjl_4bit_keeps_identical_vector_ranked_first ... ok
+test quant::prod::tests::encode_payload_length_matches_spec ... ok
+test quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference ... ok
+test quant::prod::tests::mse_pack_unpack_roundtrip_all_widths ... ok
+test quant::prod::tests::encode_is_deterministic ... ok
+test quant::prod::tests::explicit_lut_no_qjl_4bit_tracks_direct_scoring_with_int16_lut ... ok
+test quant::prod::tests::pack_mse_indices_fast_paths_match_generic ... ok
+test quant::prod::tests::qjl_pack_unpack_roundtrip ... ok
+test quant::prod::tests::binary_sign_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::qjl_sign_lanes_exhaustive ... ok
+test quant::prod::tests::code_to_code_score_is_symmetric_and_ignores_qjl ... ok
+test quant::prod::tests::int8_approx_no_qjl_4bit_keeps_identical_vector_ranked_first ... ok
+test quant::prod::tests::explicit_lut_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::int8_approx_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::cached_quantizer_reuses_instances ... ok
+test quant::prod::tests::quantizer_1536_4bit_disables_unused_qjl_and_lut_state ... ok
+test quant::prod::tests::quantizer_1536_4bit_reallocates_qjl_budget_to_mse ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_binary_sign_query_prep ... ok
+test quant::prod::tests::prepared_query_score_matches_explicit_formula ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_explicit_lut_query_prep ... ok
+test quant::prod::tests::miri_score_ip_encoded ... ok
+test quant::prod::tests::miri_score_ip_codes_lite ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_int8_approx_query_prep ... ok
+test quant::prod::tests::task124_profile_no_qjl_lut_query_prep ... ignored, Task 124 query-prep microprofile; run explicitly with ECAZ_TQ_QUERY_PREP_PROFILE_LOG
+test quant::prod::tests::quantizer_1536_4bit_supports_tiled_lut_query_prep ... ok
+test quant::prod::tests::quantizer_1536_uses_tiled_working_dimension ... ok
+test quant::prod::tests::quantizer_trait_score_matches_inherent_score_ip_encoded ... ok
+test quant::prod::tests::quantizer_no_qjl_lut_min_bound_keeps_or_prunes_exact_score ... ok
+test quant::prod::tests::miri_encode_decode_roundtrip ... ok
+test quant::prod::tests::quantizer_32_4bit_keeps_qjl_and_lut_state_when_active ... ok
+test quant::prod::tests::tiled_lut_no_qjl_4bit_matches_direct_scoring ... ok
+test quant::qjl32::tests::qjl32_avx2_block32_matches_pre_slice_scorer_tolerance ... ok
+test quant::qjl32::tests::qjl32_block32_matches_pre_slice_scorer_bits ... ok
+test quant::qjl32::tests::qjl32_block32_matches_production_dispatch_tolerance ... ok
+test quant::prod::tests::score_from_parts_honors_supplied_gamma ... ok
+test quant::qjl32::tests::qjl32_batch_with_blocks_and_tail_matches_pre_slice_scorer_bits ... ok
+test quant::prod::tests::score_from_parts_matches_encoded_payload_path ... ok
+test quant::rabitq32::tests::multibit_block_and_partial_match_scalar_estimate ... ok
+test quant::qjl32::tests::qjl32_octet8_matches_pre_slice_scorer_tolerance ... ok
+test quant::rabitq32::tests::production_dispatch_is_within_phase2_tolerance ... ok
+test quant::rabitq32::tests::partial_dispatch_matches_anchor_and_production_batch ... ok
+test quant::rabitq32::tests::scalar_tail_is_forced_scalar_anchor ... ok
+test quant::rabitq32::tests::scalar_block32_matches_forced_scalar_anchor_bits ... ok
+test quant::rabitq::tests::batch_max_prevalidated_matches_scalar_max ... ok
+test quant::rabitq::tests::bit_level_packers_round_trip_all_supported_widths ... ok
+test quant::rabitq::tests::bits1_batch_estimator_matches_scalar_order ... ok
+test quant::rabitq::tests::bits1_batch_estimator_rejects_wrong_width_and_stride ... ok
+test quant::rabitq::tests::bits1_byte_lut_matches_per_bit_decode ... ok
+test quant::rabitq::tests::bits1_byte_lut_scalar_sum_matches_per_bit_decode ... ok
+test quant::rabitq::tests::bits4_batch_estimator_matches_scalar_order ... ok
+test quant::rabitq::tests::bits8_batch_estimator_matches_scalar_order ... ok
+test quant::rabitq::tests::bits8_precompute_matches_lut_decode ... ok
+test quant::rabitq::tests::centered_api_rejects_qbit_bits ... ok
+test quant::rabitq::tests::centered_context_and_scorer_cover_raw_and_degenerate_paths ... ok
+test quant::rabitq::tests::centered_encode_pins_asymmetric_center_tail_and_zero_residual ... ok
+test quant::rabitq::tests::centered_estimator_bound_dominates_error_on_random_vectors ... ok
+test quant::rabitq::tests::centered_estimator_is_exact_on_sign_aligned_residual ... ok
+test quant::rabitq::tests::centered_scorer_floor_boundaries_cover_below_equal_and_above ... ok
+test quant::rabitq::tests::centered_scorer_matches_manual_unit_residual_ip ... ok
+test quant::rabitq::tests::centered_scorer_pins_nontrivial_bound_formula ... ok
+test quant::rabitq32::tests::dispatched_block32_matches_anchor_within_tolerance ... ok
+test quant::rabitq::tests::custom_rotation_plugs_into_seam ... ok
+test quant::rabitq::tests::dequantized_estimator_scores_reconstructed_payload_and_guards_tail_scalars ... ok
+test quant::rabitq::tests::encode_code_pins_qbit_payload_and_scalars ... ok
+test quant::rabitq::tests::encode_code_pins_zero_vector_tail_and_levels ... ok
+test quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane - should panic ... FAILED
+test quant::rabitq::tests::estimate_ip_guards_and_bound_are_pinned ... ok
+test quant::rabitq::tests::estimate_ip_o_dot_floor_covers_below_equal_and_above ... ok
+test quant::rabitq::tests::estimator_bound_dominates_error_on_random_vectors ... ok
+test quant::rabitq::tests::estimator_recovers_self_ip_on_sign_aligned_vector ... ok
+test quant::rabitq::tests::hamming_similarity_identity_equals_dim ... ok
+test quant::rabitq::tests::least_squares_estimator_uses_o_dot_as_shrinkage ... ok
+test quant::rabitq::tests::neon_sum_query_dequant_matches_scalar_bits1 ... ok
+test quant::rabitq::tests::neon_sum_query_dequant_matches_scalar_bits4 ... ok
+test quant::rabitq::tests::neon_sum_query_dequant_matches_scalar_bits8 ... ok
+test quant::rabitq32::tests::simd_block32_is_bit_equal_with_production_batch ... ok
+test quant::rabitq::tests::prepared_queries_only_keep_bits1_byte_lut_for_bits1 ... ok
+test quant::rabitq::tests::qbit_code_len_scales_with_bits ... ok
+test quant::rabitq::tests::qbit_encoder_reduces_error_vs_binary ... ok
+test quant::rabitq::tests::qbit_quantize_and_dequantize_pin_level_midpoints ... ok
+test quant::rabitq::tests::qbit_quantize_pins_non_roundtrip_scale_term ... ok
+test quant::rabitq::tests::qbit_rejects_unsupported_bits ... ok
+test quant::rabitq::tests::quantizer_and_prepared_estimator_accessors_are_stable ... ok
+test quant::rabitq::tests::query_scorer_matches_estimator_for_nontrivial_pair ... ok
+test quant::prod::tests::raw_code_score_matches_encoded_lite_path ... ok
+test quant::rabitq::tests::residual_code_is_byte_identical_shape_to_absolute_code ... ok
+test quant::rabitq::tests::residual_estimate_recovers_exact_residual_term ... ok
+test quant::qjl32::tests::qjl32_neon_block32_matches_pre_slice_scorer_tolerance_when_available ... ok
+test quant::rabitq::tests::seeded_srht_cache_keys_include_bits_seed_and_clip ... ok
+test quant::rabitq::tests::sign_sidecar_helpers_pack_exact_words ... ok
+test quant::rabitq::tests::sign_words_from_rotated_matches_manual_pack ... ok
+test quant::qjl32::tests::qjl32_rejects_no_qjl_1536_lane ... ok
+test quant::rabitq::tests::task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available ... ok
+test quant::rabitq::tests::task67_sum_query_dequant_for_test_scaffold_registers_expected_kernels ... ok
+test quant::rabitq::tests::residual_beats_absolute_on_concentrated_lists ... ok
+test quant::rabitq::tests::residual_scoring_matches_exact_within_tolerance ... ok
+test quant::rabitq::tests::try_estimate_scalar_cutoff_is_monotone_in_threshold ... ok
+test quant::qjl32::tests::qjl32_scalar_matches_pre_slice_scorer_bits ... ok
+test quant::qjl32::tests::qjl32_sve_block32_matches_pre_slice_scorer_tolerance_when_available ... ok
+test quant::rotation::tests::srht_preserves_norm ... ok
+test quant::qjl32::tests::qjl32_scalar_reference_matches_production_dispatch_tolerance ... ok
+test quant::rotation::tests::tiled_srht_roundtrip_1536 ... ok
+test quant::simd::tests::backend_name_matches_detected_backend ... ok
+test quant::rabitq::tests::try_estimate_bound_carrying_cutoff_agrees_with_scalar ... ok
+test quant::simd::tests::detect_backend_honors_forced_scalar ... ok
+test quant::simd::tests::forced_backend_accepts_auto_empty_and_absent ... ok
+test quant::simd::tests::forced_backend_accepts_supported_backend_names ... ok
+test quant::simd::tests::x86_backend_gate_requires_avx2_and_fma ... ok
+test quant::simd::tests::x86_feature_slots_model_task67_kernel_requirements ... ok
+test quant::simd::tests::forced_backend_rejects_unknown_name ... ok
+test quant::rabitq::tests::try_estimate_scalar_cutoff_is_sound_under_non_identity_rotation ... ok
+test quant::rabitq::tests::try_estimate_scalar_cutoff_never_prunes_a_keepable_candidate ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_at_production_dims ... ok
+test quant::hadamard::tests::fwht_runtime_path_matches_scalar_at_large_sizes ... ok
+test quant::rotation::tests::srht_runtime_path_matches_scalar_on_random_inputs ... ok
+test quant::rotation::tests::srht_padded_matches_pad_input_plus_srht ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_with_tail_dims ... ok
+test quant::prod::tests::cached_with_presence_reports_whether_entry_already_existed ... ok
+test quant::rabitq::tests::code_len_matches_dimension ... ok
+test quant::rabitq::tests::srht_seeded_rotation_is_deterministic_and_independent_of_prod ... ok
+test quant::tiled_lut32::tests::run_is_bit_equal_with_production_tiled_scorer ... ok
+test quant::rabitq::tests::encode_then_score_same_vector_is_nonnegative ... ok
+test quant::prod::tests::miri_quantizer_cache_concurrent_init_under_contention ... ok
+test quant::rabitq::tests::persisted_sidecar_helpers_preserve_supported_and_unsupported_lanes ... ok
+test quant::prod::tests::qjl_pre_task104_neon_multi_accum_tolerance_diagnostic ... ok
+test quant::prod::tests::qjl_neon_production_path_matches_scalar_reference_tolerance ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_on_random_inputs ... ok
+
+failures:
+
+---- quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane stdout ----
+
+thread 'quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane' (34260425) panicked at src/quant/prod.rs:1837:5:
+assertion `left == right` failed
+  left: 8
+ right: 16
+note: panic did not contain expected string
+      panic message: "assertion `left == right` failed\n  left: 8\n right: 16"
+ expected substring: "explicit LUT query prep requires the no-QJL 4-bit lane"
+
+failures:
+    quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane
+
+test result: FAILED. 184 passed; 1 failed; 2 ignored; 0 measured; 2052 filtered out; finished in 1.58s
+
+error: test failed, to rerun pass `--lib`
