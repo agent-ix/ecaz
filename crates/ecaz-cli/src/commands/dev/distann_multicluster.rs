@@ -1471,35 +1471,61 @@ async fn task199_real_delete_invalidation_drill(
     ))
 }
 
+async fn task199_physical_graph_digest(
+    coordinator: &tokio_postgres::Client,
+) -> Result<String> {
+    Ok(coordinator
+        .query_one(
+            "SELECT encode(graph_digest, 'hex')
+               FROM ec_distann_epoch_topology(
+                   'dm_idx'::regclass,
+                   (
+                       SELECT epoch_fingerprint
+                         FROM ec_distann_active_epoch
+                        WHERE index_oid = 'dm_idx'::regclass::oid
+                   )
+               )",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0))
+}
+
 async fn task199_participant_tombstone_invalidation_drill(
     coordinator: &tokio_postgres::Client,
 ) -> Result<String> {
-    let owner_count = coordinator
+    let replica_relation = coordinator
         .query_one(
-            "SELECT owner_count
+            "SELECT replica_relid::regclass::text
                FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
               WHERE state = 'Ready'",
             &[],
         )
         .await?
-        .get::<_, i32>(0);
+        .get::<_, String>(0);
     let vec_id = coordinator
         .query_one(
-            "SELECT vec_id
-               FROM ec_distann_list_directory('dm_idx'::regclass)
-              WHERE NOT is_tombstone
-                AND ec_distann_owning_node(vec_id, $1, 1) = 0
-              ORDER BY vec_id
-              LIMIT 1",
-            &[&owner_count],
+            &format!(
+                "SELECT vec_id
+                   FROM {replica_relation}
+                  WHERE owner_ordinal = 0
+                  ORDER BY vec_id
+                  LIMIT 1"
+            ),
+            &[],
         )
         .await?
         .get::<_, i64>(0);
+    let before_digest = task199_physical_graph_digest(coordinator).await?;
     let invalidation = coordinator
         .query_one(
             "SELECT ec_distann_apply_record_writes(
                  'dm_idx'::regclass,
-                 ec_distann_epoch_fingerprint('dm_idx'::regclass),
+                 (
+                     SELECT epoch_fingerprint
+                       FROM ec_distann_active_epoch
+                      WHERE index_oid = 'dm_idx'::regclass::oid
+                 ),
                  ARRAY[$1]::bigint[]
              )",
             &[&vec_id],
@@ -1512,15 +1538,8 @@ async fn task199_participant_tombstone_invalidation_drill(
         && invalidation
             .as_db_error()
             .is_some_and(|error| error.message().contains("EC_REPLICA_INVALIDATED"));
-    let record_live = coordinator
-        .query_one(
-            "SELECT NOT is_tombstone
-               FROM ec_distann_list_directory('dm_idx'::regclass)
-              WHERE vec_id = $1",
-            &[&vec_id],
-        )
-        .await?
-        .get::<_, bool>(0);
+    let after_digest = task199_physical_graph_digest(coordinator).await?;
+    let generation_unchanged = after_digest == before_digest;
     let stale = coordinator
         .query_one(
             "SELECT count(*) = 1
@@ -1530,16 +1549,16 @@ async fn task199_participant_tombstone_invalidation_drill(
         )
         .await?
         .get::<_, bool>(0);
-    if !retryable || !record_live || !stale {
+    if !retryable || !generation_unchanged || !stale {
         bail!(
             "Task 199 participant tombstone invalidation failed: retryable={retryable} \
-             record_live={record_live} stale={stale}"
+             generation_unchanged={generation_unchanged} stale={stale}"
         );
     }
     Ok(format!(
         "scenario=participant_tombstone_durable_invalidation pass=true vec_id={vec_id} \
          owner_ordinal=0 first_sqlstate=40001 token=EC_REPLICA_INVALIDATED \
-         state=Stale tombstoned_rows=0"
+         state=Stale generation_unchanged=true tombstoned_rows=0"
     ))
 }
 
