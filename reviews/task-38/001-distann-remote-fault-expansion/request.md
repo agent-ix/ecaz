@@ -24,6 +24,18 @@ This remains a pre-live checkpoint. It does not yet request review of live
 cancellation, timeout, lifecycle, provider I/O, or remote transport evidence.
 Those follow in later code checkpoints within this same packet.
 
+The provider foundation now has two socket-only modes:
+`socket-reset` returns `ECONNRESET` and shuts down the matched connection;
+`socket-slow` applies bounded latency. Both require an exact peer identity
+(`tcp:HOST:PORT`, bracketed IPv6, or `unix:PATH`) resolved with
+`getpeername(2)`. File-provider matching remains separate. Provider restore
+removes the peer filter along with the existing LD_PRELOAD variables.
+
+This macOS/aarch64 host can validate parsing and dry-run environment planning,
+but it cannot build or execute the Linux LD_PRELOAD provider and has neither
+cgroup v2 nor `systemd-run`. No live socket-fault or cgroup pass is claimed in
+this checkpoint.
+
 ## Historical Context
 
 The prior four-AM smoke implementation and reviewer cycles remain in
@@ -39,6 +51,8 @@ See `artifacts/manifest.md` and the packet-local logs:
 - `cargo test -p ecaz-fault-injection`
 - `cargo check -p ecaz-cli`
 - focused `ecaz-cli` DistANN fault parsing test
+- focused socket-provider CLI parsing test
+- exact-peer socket-provider environment dry run
 - focused DistANN cancel-plan dry run
 - focused grouped-PQ timeout dry run
 
@@ -54,3 +68,5 @@ See `artifacts/manifest.md` and the packet-local logs:
   production-default-off GUC?
 - Is rejecting `--distann-codec` outside `--am distann` the right operator
   contract?
+- Does exact `getpeername(2)` matching adequately isolate SPIRE Unix-domain
+  and DistANN loopback-TCP transport faults from control traffic?

@@ -1,6 +1,6 @@
 # Artifact Manifest
 
-- Implementation HEAD: `e94e3dace`
+- Implementation HEAD: `6ca901124`
 - Task bucket: `reviews/task-38/`
 - Packet: `reviews/task-38/001-distann-remote-fault-expansion/`
 - Fixture shape: isolated one-table/one-index fixtures; DistANN uses one
@@ -28,6 +28,23 @@
   `cargo test -p ecaz-cli cli_parses_distann_fault_smoke_dry_run_command`
 - Key result: `1 passed; 0 failed; 459 filtered out`.
 
+### `ecaz-cli-socket-provider-parse-test.log`
+
+- Command:
+  `cargo test -p ecaz-cli cli_parses_fault_socket_provider_env_command`
+- Key result: `1 passed; 0 failed; 460 filtered out`.
+
+### `socket-provider-env-dry-run.log`
+
+- Command:
+  `cargo run -p ecaz-cli -- dev fault provider-env --mode socket-reset
+  --peer-match tcp:127.0.0.1:39711 --after 3`
+- Provider filter: exact peer `tcp:127.0.0.1:39711`; inject beginning on the
+  third matched socket operation.
+- Key result: environment includes `ECAZ_FAULT_PROVIDER_MODE=socket-reset`,
+  `ECAZ_FAULT_PROVIDER_AFTER=3`, and
+  `ECAZ_FAULT_PROVIDER_PEER=tcp:127.0.0.1:39711`.
+
 ### `distann-cancel-plan.log`
 
 - Command:
@@ -45,6 +62,12 @@
 
 ## Host
 
-Host OS, architecture, and systemd/cgroup capability evidence will be added
-with the live/capability checkpoint. Provider match configuration and
-`fault=1` proof are not applicable to this model-only checkpoint.
+`host-capability.log` records macOS 26.4.1 / Darwin 25.4.0 on arm64.
+`systemd-run` and `/sys/fs/cgroup/cgroup.controllers` are unavailable.
+Consequently:
+
+- Linux LD_PRELOAD provider compilation/execution: unavailable on this host.
+- Exact-peer socket reset/slow live run: unavailable on this host.
+- cgroup v2 user-scope OOM run: unavailable on this host.
+
+No provider `fault=1` proof is claimed yet; it requires a Linux live run.

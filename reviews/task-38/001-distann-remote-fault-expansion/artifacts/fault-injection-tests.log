@@ -1,17 +1,18 @@
     Finished `test` profile [unoptimized + debuginfo] target(s) in 0.07s
      Running unittests src/lib.rs (target/debug/deps/ecaz_fault_injection-ea8b1e0caae3d890)
 
-running 8 tests
+running 9 tests
 test tests::parser_accepts_documented_distann_codec_names ... ok
 test tests::distann_turboquant_fixture_uses_the_supported_no_qjl_dimension ... ok
 test tests::io_lane_covers_eio_and_enospc ... ok
 test tests::parser_accepts_documented_lane_names ... ok
 test tests::provider_environment_pins_provider_and_mode ... ok
 test tests::all_lanes_cover_every_access_method ... ok
+test tests::socket_provider_environment_pins_exact_peer ... ok
 test tests::all_lanes_cover_every_distann_codec_with_distinct_fixture_ids ... ok
 test tests::workload_sql_mentions_every_access_method ... ok
 
-test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
 
    Doc-tests ecaz_fault_injection
 
