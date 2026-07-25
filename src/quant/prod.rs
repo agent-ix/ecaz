@@ -408,6 +408,17 @@ impl ProdQuantizer {
         query: &[f32],
         tile_size: usize,
     ) -> PreparedTiledLutNoQjl4BitQuery {
+        assert_eq!(
+            query.len(),
+            self.original_dim,
+            "query length mismatch: got {}, expected {}",
+            query.len(),
+            self.original_dim
+        );
+        assert!(
+            self.bits == 4 && !qjl_enabled(self.original_dim, self.bits),
+            "explicit LUT query prep requires the no-QJL 4-bit lane"
+        );
         assert!(
             tile_size > 0,
             "tiled LUT query prep requires a positive tile size"
@@ -1839,7 +1850,11 @@ pub fn qjl_code_len(dim: usize) -> usize {
 }
 
 fn build_prepared_query_lut(rotated: &[f32], codebook: &[f32], num_centroids: usize) -> Vec<f32> {
-    debug_assert_eq!(codebook.len(), num_centroids);
+    assert_eq!(
+        codebook.len(),
+        num_centroids,
+        "prepared query LUT codebook length must match the centroid count"
+    );
     let mut lut = vec![0.0_f32; rotated.len() * num_centroids];
 
     if let [c0, c1, c2, c3, c4, c5, c6, c7] = codebook {
@@ -2593,6 +2608,20 @@ mod tests {
         let quantizer = ProdQuantizer::new(32, 4, 42);
         let query = random_unit_vector(32, 23);
         let _ = quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(&query, 16);
+    }
+
+    #[test]
+    #[should_panic(expected = "query length mismatch")]
+    fn tiled_lut_query_prep_rejects_query_length_mismatch() {
+        let quantizer = ProdQuantizer::new(1536, 4, 42);
+        let query = random_unit_vector(1535, 24);
+        let _ = quantizer.prepare_ip_query_tiled_lut_no_qjl_4bit(&query, 512);
+    }
+
+    #[test]
+    #[should_panic(expected = "prepared query LUT codebook length must match the centroid count")]
+    fn tiled_lut_query_prep_rejects_codebook_centroid_mismatch() {
+        let _ = build_prepared_query_lut(&[1.0, -1.0], &[0.0; 8], 16);
     }
 
     #[test]

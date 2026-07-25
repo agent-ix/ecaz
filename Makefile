@@ -237,6 +237,8 @@ simd-diff:
 	cargo test --lib --features bench quant::grouped_pq_block::tests::grouped_pq_ -- --test-threads=1 --nocapture
 	@echo "task36 simd-diff: int8/SDOT block/partial kernels"
 	cargo test --lib --features bench quant::int8_approx32:: -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: tiled LUT lane and query-shape guards"
+	cargo test --lib --features bench quant::prod::tests::tiled_lut_query_prep_ -- --test-threads=1 --nocapture
 	@echo "task36 simd-diff: real hamming32 SIMD kernels"
 	cargo test --lib --features bench quant::hamming32::tests:: -- --test-threads=1 --nocapture
 	@echo "task36 simd-diff: DistANN codec composition, stride, and source IP"
