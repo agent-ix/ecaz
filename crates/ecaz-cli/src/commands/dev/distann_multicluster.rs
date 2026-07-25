@@ -589,13 +589,14 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         }
         if node.node_id == 1 {
             if let Some(fixture) = enospc_fixture.as_ref() {
+                let path_match = format!("pg_tblspc/|{}", fixture.tablespace_dir.to_string_lossy());
                 let environment = ecaz_fault_injection::provider_environment(
                     ecaz_fault_injection::ProviderMode::EnospcWrite,
                     // PostgreSQL opens a tablespace relation through its
-                    // PGDATA-relative pg_tblspc/<oid>/... symlink path. The
-                    // disposable node has no other user tablespace, and the
-                    // provider remains disarmed until the replica build.
-                    "pg_tblspc/",
+                    // PGDATA-relative pg_tblspc/<oid>/... symlink path, while
+                    // /proc/self/fd resolves data-write targets through the
+                    // symlink to this fixture's canonical directory.
+                    &path_match,
                     1,
                     None,
                     Some(&fixture.marker_file.to_string_lossy()),
@@ -1601,10 +1602,115 @@ async fn task199_enospc_replica_build_drill(
     fixture: &Task199EnospcFixture,
     lines: &mut Vec<String>,
 ) -> Result<()> {
+    async fn verify_failure(
+        coordinator: &tokio_postgres::Client,
+        corpus: &str,
+        queries: &str,
+        owner_baseline: &str,
+        fixture: &Task199EnospcFixture,
+        marker_start: usize,
+        phase: &str,
+        error: &tokio_postgres::Error,
+    ) -> Result<(usize, String)> {
+        let sqlstate = error.code().map(|code| code.code()).unwrap_or("none");
+        if sqlstate != "53100" {
+            bail!(
+                "Task 199 {phase} ENOSPC build returned SQLSTATE {sqlstate}, expected 53100: {error}"
+            );
+        }
+        let marker = fs::read_to_string(&fixture.marker_file)?;
+        let expected_target = fixture.tablespace_dir.to_string_lossy();
+        let provider_faults = marker
+            .lines()
+            .skip(marker_start)
+            .filter(|line| {
+                let expected_operation = match phase {
+                    "create" => {
+                        line.contains("op=open")
+                            || line.contains("op=open64")
+                            || line.contains("op=openat")
+                            || line.contains("op=openat2")
+                    }
+                    "data" => {
+                        line.contains("op=write")
+                            || line.contains("op=pwrite")
+                            || line.contains("op=pwrite64")
+                            || line.contains("op=pwritev")
+                            || line.contains("op=fsync")
+                            || line.contains("op=fdatasync")
+                    }
+                    _ => false,
+                };
+                line.contains("fault=1")
+                    && line.contains("mode=enospc-write")
+                    && expected_operation
+                    && line.contains("errno=28")
+                    && match phase {
+                        "create" => line.contains("pg_tblspc/"),
+                        "data" => line.contains(expected_target.as_ref()),
+                        _ => false,
+                    }
+            })
+            .collect::<Vec<_>>();
+        let residue = coordinator
+            .query_one(
+                "SELECT
+                     (SELECT count(*)::bigint
+                        FROM ec_distann_traversal_replica_status(
+                            'dm_idx'::regclass
+                        )),
+                     (SELECT count(*)::bigint
+                        FROM pg_catalog.pg_class
+                       WHERE relnamespace = 'public'::regnamespace
+                         AND relname ~ '^_ecdz_replica(_dir)?_')",
+                &[],
+            )
+            .await?;
+        let catalog_residue = residue.get::<_, i64>(0);
+        let relation_residue = residue.get::<_, i64>(1);
+        let cluster_healthy = coordinator
+            .query_one("SELECT 1::bigint", &[])
+            .await?
+            .get::<_, i64>(0)
+            == 1;
+        let owner_after_failure =
+            task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
+        let owner_fallback = owner_after_failure == owner_baseline;
+        if provider_faults.is_empty()
+            || catalog_residue != 0
+            || relation_residue != 0
+            || !cluster_healthy
+            || !owner_fallback
+        {
+            bail!(
+                "Task 199 {phase} ENOSPC cleanup failed: sqlstate={sqlstate} \
+                 provider_faults={} catalog_residue={catalog_residue} \
+                 relation_residue={relation_residue} cluster_healthy={cluster_healthy} \
+                 owner_fallback={owner_fallback} error={error}",
+                provider_faults.len()
+            );
+        }
+        Ok((provider_faults.len(), provider_faults[0].to_owned()))
+    }
+
     let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
     if !retired || !reclaimed {
         bail!("Task 199 could not reclaim the pre-ENOSPC replica");
     }
+    let original_tablespace = coordinator
+        .query_one(
+            "SELECT CASE
+                        WHEN c.reltablespace = 0 THEN 'pg_default'
+                        ELSE t.spcname
+                    END
+               FROM pg_catalog.pg_class c
+               LEFT JOIN pg_catalog.pg_tablespace t
+                 ON t.oid = c.reltablespace
+              WHERE c.oid = 'dm_idx'::regclass::oid",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
     let tablespace_path = fixture
         .tablespace_dir
         .to_string_lossy()
@@ -1619,7 +1725,9 @@ async fn task199_enospc_replica_build_drill(
         .batch_execute("ALTER INDEX dm_idx SET TABLESPACE task199_replica_enospc")
         .await
         .wrap_err("preparing the Task 199 ENOSPC replica tablespace")?;
-    fs::write(&fixture.arm_file, "armed\n")?;
+
+    let create_marker_start = fs::read_to_string(&fixture.marker_file)?.lines().count();
+    fs::write(&fixture.arm_file, "create\n")?;
     let injected = coordinator
         .query_one(
             "SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)",
@@ -1628,68 +1736,84 @@ async fn task199_enospc_replica_build_drill(
         .await;
     let disarm = fs::remove_file(&fixture.arm_file);
     disarm.wrap_err("disarming the Task 199 ENOSPC provider")?;
-    let error = injected.expect_err("armed replica build must fail under injected ENOSPC");
-    let sqlstate = error.code().map(|code| code.code()).unwrap_or("none");
-    let marker = fs::read_to_string(&fixture.marker_file)?;
-    let provider_faults = marker
-        .lines()
-        .filter(|line| {
-            line.contains("fault=1")
-                && line.contains("mode=enospc-write")
-                && (line.contains("op=open")
-                    || line.contains("op=open64")
-                    || line.contains("op=openat")
-                    || line.contains("op=openat2"))
-                && line.contains("errno=28")
-                && line.contains("pg_tblspc/")
-        })
-        .count();
-    let residue = coordinator
-        .query_one(
-            "SELECT
-                 (SELECT count(*)::bigint
-                    FROM ec_distann_traversal_replica_status(
-                        'dm_idx'::regclass
-                    )),
-                 (SELECT count(*)::bigint
-                    FROM pg_catalog.pg_class
-                   WHERE relnamespace = 'public'::regnamespace
-                     AND relname ~ '^_ecdz_replica(_dir)?_')",
-            &[],
-        )
-        .await?;
-    let catalog_residue = residue.get::<_, i64>(0);
-    let relation_residue = residue.get::<_, i64>(1);
-    let cluster_healthy = coordinator
-        .query_one("SELECT 1::bigint", &[])
-        .await?
-        .get::<_, i64>(0)
-        == 1;
-    let owner_after_failure =
-        task198_replica_semantic_result(coordinator, corpus, queries, -1, 0, 20).await?;
-    let owner_fallback = owner_after_failure == owner_baseline;
-    if provider_faults == 0
-        || catalog_residue != 0
-        || relation_residue != 0
-        || !cluster_healthy
-        || !owner_fallback
-    {
-        bail!(
-            "Task 199 ENOSPC build cleanup failed: sqlstate={sqlstate} \
-             provider_faults={provider_faults} catalog_residue={catalog_residue} \
-             relation_residue={relation_residue} cluster_healthy={cluster_healthy} \
-             owner_fallback={owner_fallback} error={error}"
-        );
-    }
-    let recovered_digest =
+    let create_error =
+        injected.expect_err("create-armed replica build must fail under injected ENOSPC");
+    let (create_faults, create_marker) = verify_failure(
+        coordinator,
+        corpus,
+        queries,
+        owner_baseline,
+        fixture,
+        create_marker_start,
+        "create",
+        &create_error,
+    )
+    .await?;
+    let create_recovery_digest =
         build_and_attest_traversal_replica(coordinator, scale, lines).await?;
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} \
-         scenario=enospc_build_cleanup pass=true sqlstate={sqlstate} \
-         provider_fault_events={provider_faults} errno=28 \
+         scenario=enospc_create_cleanup pass=true sqlstate=53100 \
+         provider_fault_events={create_faults} errno=28 \
          eligible_partial_images=0 catalog_residue=0 relation_residue=0 \
          cluster_healthy=true owner_fallback_identity=true \
-         recovery_build_state=Ready recovery_digest={recovered_digest}"
+         recovery_build_state=Ready recovery_digest={create_recovery_digest}"
+    ));
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} \
+         scenario=enospc_provider_fault_marker phase=create {create_marker}"
+    ));
+
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the create-ENOSPC recovery replica");
+    }
+    let data_marker_start = fs::read_to_string(&fixture.marker_file)?.lines().count();
+    fs::write(&fixture.arm_file, "data\n")?;
+    let injected = coordinator
+        .query_one(
+            "SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)",
+            &[],
+        )
+        .await;
+    let disarm = fs::remove_file(&fixture.arm_file);
+    disarm.wrap_err("disarming the Task 199 mid-copy ENOSPC provider")?;
+    let data_error =
+        injected.expect_err("data-armed replica build must fail under injected ENOSPC");
+    let (data_faults, data_marker) = verify_failure(
+        coordinator,
+        corpus,
+        queries,
+        owner_baseline,
+        fixture,
+        data_marker_start,
+        "data",
+        &data_error,
+    )
+    .await?;
+
+    let original_tablespace = original_tablespace.replace('"', "\"\"");
+    coordinator
+        .batch_execute(&format!(
+            "ALTER INDEX dm_idx SET TABLESPACE \"{original_tablespace}\"; \
+             DROP TABLESPACE task199_replica_enospc"
+        ))
+        .await
+        .wrap_err("restoring the Task 199 index tablespace after ENOSPC drills")?;
+    let data_recovery_digest =
+        build_and_attest_traversal_replica(coordinator, scale, lines).await?;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} \
+         scenario=enospc_midcopy_cleanup pass=true sqlstate=53100 \
+         provider_fault_events={data_faults} errno=28 building_row_created=true \
+         eligible_partial_images=0 catalog_residue=0 relation_residue=0 \
+         cluster_healthy=true owner_fallback_identity=true \
+         tablespace_restored=true recovery_build_state=Ready \
+         recovery_digest={data_recovery_digest}"
+    ));
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} \
+         scenario=enospc_provider_fault_marker phase=data {data_marker}"
     ));
     Ok(())
 }
@@ -2696,6 +2820,17 @@ async fn run_task199_replica_lifecycle_drills(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=isolation_read_semantics pass=true read_uncommitted=true repeatable_read_owner_fallback=true serializable_owner_fallback=true read_only=true ordered_identity=true state=Ready"
     ));
 
+    coordinator
+        .batch_execute(
+            "CREATE TEMP TABLE IF NOT EXISTS task199_isolation_xid_probe (
+                 marker integer NOT NULL
+             ) ON COMMIT PRESERVE ROWS",
+        )
+        .await?;
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the pre-isolation replica");
+    }
     for isolation in ["REPEATABLE READ", "SERIALIZABLE"] {
         let inserted_id = coordinator
             .query_one(
@@ -2707,10 +2842,21 @@ async fn run_task199_replica_lifecycle_drills(
         coordinator
             .batch_execute(&format!("BEGIN ISOLATION LEVEL {isolation}"))
             .await?;
+        coordinator
+            .execute(
+                "INSERT INTO task199_isolation_xid_probe (marker) VALUES (1)",
+                &[],
+            )
+            .await?;
+        let (builder, builder_connection) = task199_connect(coordinator_port).await?;
+        build_and_attest_traversal_replica(&builder, scale, &mut lines).await?;
+        builder_connection.abort();
         let mutation_error = coordinator
             .query_one(&task199_real_insert_sql(corpus), &[])
             .await
-            .expect_err("stronger-isolation mutation must invalidate the Ready replica");
+            .expect_err(
+                "stale-snapshot stronger-isolation mutation must invalidate the Ready replica",
+            );
         let fenced = mutation_error
             .code()
             .is_some_and(|code| code.code() == "40001")
@@ -2742,10 +2888,10 @@ async fn run_task199_replica_lifecycle_drills(
         if !retired || !reclaimed {
             bail!("Task 199 could not reclaim the {isolation} invalidation replica");
         }
-        build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
     }
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
     lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=stronger_isolation_mutation_fenced pass=true repeatable_read=true serializable=true sqlstate=40001 token=EC_REPLICA_INVALIDATED rebuilt_between_cases=true inserted_rows=0"
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=stronger_isolation_mutation_fenced pass=true repeatable_read=true serializable=true stale_snapshot=true xid_assigned_before_ready=true ready_committed_after_snapshot=true sqlstate=40001 token=EC_REPLICA_INVALIDATED rebuilt_between_cases=true inserted_rows=0"
     ));
 
     lines.push(format!(

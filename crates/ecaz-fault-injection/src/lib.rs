@@ -791,12 +791,16 @@ mod tests {
     #[test]
     fn ldpreload_provider_returns_enospc_for_postgres_pwritev_path() {
         if std::env::var_os("ECAZ_FAULT_PROVIDER_PWRITEV_CHILD").is_some() {
-            let path =
+            let matches =
                 std::env::var("ECAZ_FAULT_PROVIDER_MATCH").expect("child target path is set");
-            let arm =
-                std::env::var("ECAZ_FAULT_PROVIDER_ARM_FILE").expect("child arm path is set");
+            let path = matches
+                .split('|')
+                .find(|candidate| candidate.starts_with("/tmp/"))
+                .expect("child match list contains target path")
+                .to_owned();
+            let arm = std::env::var("ECAZ_FAULT_PROVIDER_ARM_FILE").expect("child arm path is set");
             let target = std::fs::File::create(&path).expect("create disarmed target");
-            std::fs::write(&arm, b"armed").expect("arm provider after opening target");
+            std::fs::write(&arm, b"data\n").expect("arm data-write provider after opening target");
             let bytes = b"postgres-vectored-write";
             let iovec = libc_iovec {
                 iov_base: bytes.as_ptr().cast(),
@@ -829,7 +833,7 @@ mod tests {
             )
             .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
             .env("ECAZ_FAULT_PROVIDER_MODE", "enospc-write")
-            .env("ECAZ_FAULT_PROVIDER_MATCH", &path)
+            .env("ECAZ_FAULT_PROVIDER_MATCH", format!("unmatched|{path}"))
             .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
             .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
             .env("ECAZ_FAULT_PROVIDER_ARM_FILE", &arm)

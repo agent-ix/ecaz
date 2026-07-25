@@ -10,12 +10,13 @@ use std::time::Instant;
 use std::{
     cell::{Cell, RefCell},
     collections::HashSet,
+    ffi::CString,
     fs,
     path::Path,
     time::Duration,
 };
 
-use pgrx::datum::{TimestampWithTimeZone, Uuid};
+use pgrx::datum::{FromDatum, TimestampWithTimeZone, Uuid};
 use pgrx::iter::TableIterator;
 use pgrx::prelude::{AllocatedByPostgres, PgHeapTuple, PgTrigger, PgTriggerError};
 use pgrx::{name, pg_extern, pg_sys, PgRelation, Spi};
@@ -55,7 +56,9 @@ thread_local! {
 pub(crate) fn invalidate_ready_replica_presence_cache(relation_oid: pg_sys::Oid) {
     READY_REPLICA_PRESENCE.with(|presence| presence.set(0));
     let catalog_oid = TRAVERSAL_REPLICA_CATALOG_OID.with(Cell::get);
-    if catalog_oid != 0 && catalog_oid == relation_oid.to_u32() {
+    if relation_oid == pg_sys::InvalidOid
+        || (catalog_oid != 0 && catalog_oid == relation_oid.to_u32())
+    {
         SUPPRESSED_READY_REPLICAS.with(|suppressed| suppressed.borrow_mut().clear());
         TRAVERSAL_REPLICA_CATALOG_OID.with(|cached| cached.set(0));
     }
@@ -1117,6 +1120,131 @@ fn active_ready_replica(index_oid: pg_sys::Oid) -> Result<Option<ReadyReplicaIde
     })
 }
 
+unsafe fn required_snapshot_spi_value<T: FromDatum>(
+    tuple: pg_sys::HeapTuple,
+    tuple_desc: pg_sys::TupleDesc,
+    ordinal: i32,
+    label: &str,
+) -> Result<T, String> {
+    let mut is_null = false;
+    let datum = unsafe { pg_sys::SPI_getbinval(tuple, tuple_desc, ordinal, &mut is_null) };
+    if is_null {
+        return Err(format!("EC_REPLICA_INVALIDATION: {label} is NULL"));
+    }
+    let type_oid = unsafe { pg_sys::SPI_gettypeid(tuple_desc, ordinal) };
+    unsafe { T::from_polymorphic_datum(datum, false, type_oid) }
+        .ok_or_else(|| format!("EC_REPLICA_INVALIDATION: {label} decode failed"))
+}
+
+/// Read the active Ready identity under an explicitly supplied snapshot.
+///
+/// pgrx's ordinary `SpiClient::select` chooses `read_only = false` after the
+/// transaction has assigned an XID. PostgreSQL then replaces the active
+/// snapshot with `GetTransactionSnapshot()`, which is stale under RR and
+/// SERIALIZABLE. `SPI_execute_snapshot` is required here so the post-lock
+/// mutation guard actually observes a Ready commit newer than the outer
+/// transaction snapshot.
+fn active_ready_replica_at_snapshot(
+    index_oid: pg_sys::Oid,
+    snapshot: pg_sys::Snapshot,
+) -> Result<Option<ReadyReplicaIdentity>, String> {
+    let (catalog_owner, _) = extension_owner()?;
+    super::handoff::with_restricted_type_io_owner(catalog_owner, || {
+        let replica =
+            super::generation_catalog::extension_relation_name("ec_distann_traversal_replica")?;
+        let active = super::generation_catalog::extension_relation_name("ec_distann_active_epoch")?;
+        let candidate =
+            super::generation_catalog::extension_relation_name("ec_distann_build_candidate")?;
+        let query = CString::new(format!(
+            "SELECT r.logical_index_uuid, r.build_id,
+                    r.epoch_fingerprint,
+                    r.generation_descriptor_digest
+               FROM {replica} r
+               JOIN {active} a
+                 ON a.index_oid = r.index_oid
+                AND a.logical_index_uuid = r.logical_index_uuid
+                AND a.build_id = r.build_id
+                AND a.epoch_fingerprint = r.epoch_fingerprint
+               JOIN {candidate} c
+                 ON c.index_oid = r.index_oid
+                AND c.logical_index_uuid = r.logical_index_uuid
+                AND c.build_id = r.build_id
+                AND c.generation_descriptor_digest =
+                    r.generation_descriptor_digest
+              WHERE r.index_oid = {}::oid
+                AND r.state = 'Ready'
+              LIMIT 1",
+            index_oid.to_u32()
+        ))
+        .map_err(|_| "EC_REPLICA_INVALIDATION: active Ready query contains NUL".to_owned())?;
+
+        Spi::connect(|_| unsafe {
+            pg_sys::SPI_tuptable = std::ptr::null_mut();
+            let plan = pg_sys::SPI_prepare(query.as_ptr(), 0, std::ptr::null_mut());
+            if plan.is_null() {
+                return Err(format!(
+                    "EC_REPLICA_INVALIDATION: active Ready snapshot prepare failed: {}",
+                    Spi::check_status(pg_sys::SPI_result)
+                        .map(|status| format!("{status:?}"))
+                        .unwrap_or_else(|error| error.to_string())
+                ));
+            }
+            let status = pg_sys::SPI_execute_snapshot(
+                plan,
+                std::ptr::null_mut(),
+                std::ptr::null(),
+                snapshot,
+                std::ptr::null_mut(),
+                true,
+                false,
+                1,
+            );
+            let _ = pg_sys::SPI_freeplan(plan);
+            Spi::check_status(status).map_err(|error| {
+                format!("EC_REPLICA_INVALIDATION: active Ready snapshot lookup failed: {error}")
+            })?;
+            if status != pg_sys::SPI_OK_SELECT as i32 {
+                return Err(format!(
+                    "EC_REPLICA_INVALIDATION: active Ready snapshot lookup returned SPI status {status}"
+                ));
+            }
+            if pg_sys::SPI_processed == 0 {
+                return Ok(None);
+            }
+            if pg_sys::SPI_processed != 1 || pg_sys::SPI_tuptable.is_null() {
+                return Err(
+                    "EC_REPLICA_INVALIDATION: active Ready snapshot lookup returned an invalid row count"
+                        .to_owned(),
+                );
+            }
+            let tuple_table = &*pg_sys::SPI_tuptable;
+            let tuple_desc = tuple_table.tupdesc;
+            let tuple = *tuple_table.vals;
+            Ok(Some(ReadyReplicaIdentity {
+                logical_index_uuid: required_snapshot_spi_value(
+                    tuple,
+                    tuple_desc,
+                    1,
+                    "logical UUID",
+                )?,
+                build_id: required_snapshot_spi_value(tuple, tuple_desc, 2, "build UUID")?,
+                epoch_fingerprint: required_snapshot_spi_value(
+                    tuple,
+                    tuple_desc,
+                    3,
+                    "fingerprint",
+                )?,
+                generation_descriptor_digest: required_snapshot_spi_value(
+                    tuple,
+                    tuple_desc,
+                    4,
+                    "descriptor digest",
+                )?,
+            }))
+        })
+    })
+}
+
 fn mark_exact_ready_replica_stale(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
@@ -1333,15 +1461,14 @@ pub(crate) fn guard_traversal_replica_mutation(index_oid: pg_sys::Oid) {
     // a fresh catalog snapshot is authoritative for the rest of the statement
     // even when the outer transaction uses RR or SERIALIZABLE. ExecutorStart
     // also calls this guard as a pre-lock best effort.
-    let identity = {
-        let _snapshot = crate::storage::snapshot_guard::ActiveSnapshotGuard::latest()
-            .unwrap_or_else(|| {
-                pgrx::error!(
-                    "EC_REPLICA_INVALIDATION: mutation guard could not acquire a fresh snapshot"
-                )
-            });
-        active_ready_replica(index_oid).unwrap_or_else(|error| pgrx::error!("{error}"))
-    };
+    let snapshot = crate::storage::snapshot_guard::RegisteredSnapshotGuard::latest()
+        .unwrap_or_else(|| {
+            pgrx::error!(
+                "EC_REPLICA_INVALIDATION: mutation guard could not acquire a fresh snapshot"
+            )
+        });
+    let identity = active_ready_replica_at_snapshot(index_oid, snapshot.as_ptr())
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
     let Some(identity) = identity
     else {
         return;
@@ -1390,7 +1517,7 @@ pub(crate) fn invalidate_traversal_replica_for_maintenance(index_oid: pg_sys::Oi
 /// a dedicated transaction and then receives SQLSTATE 40001. Its retry sees
 /// Stale; the published distributed-control index retains its existing
 /// fail-closed mutation posture until an ordinary owner mutation path exists.
-#[pg_extern(volatile, parallel_restricted)]
+#[pg_extern(volatile, parallel_unsafe)]
 fn ec_distann_guard_traversal_replica_mutation(index_regclass: PgRelation) -> bool {
     guard_traversal_replica_mutation(index_regclass.oid());
     false
@@ -1885,7 +2012,7 @@ impl<'a> ReadyTraversalReplica<'a> {
         if super::lifecycle_guard::require_read_committed(
             "ec_distann traversal replica selection",
         )
-        .is_err()
+            .is_err()
         {
             return Ok(None);
         }
@@ -1904,8 +2031,8 @@ impl<'a> ReadyTraversalReplica<'a> {
         let row = super::handoff::with_restricted_type_io_owner(catalog_owner, || {
             Spi::connect(|client| {
                 client.select(
-                    &format!(
-                        "SELECT r.state, r.epoch_fingerprint,
+                        &format!(
+                            "SELECT r.state, r.epoch_fingerprint,
                                 r.generation_descriptor_digest,
                                 r.content_digest, r.replica_relid,
                                 r.directory_relid,
@@ -1929,62 +2056,62 @@ impl<'a> ReadyTraversalReplica<'a> {
                             AND r.logical_index_uuid = $2::uuid
                             AND r.build_id = $3::uuid
                           GROUP BY r.index_oid, r.logical_index_uuid, r.build_id"
-                    ),
-                    None,
-                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                        ),
+                        None,
+                        &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
                     )
                     .map_err(|error| {
                         format!("EC_REPLICA_STATE: Ready replica lookup failed: {error}")
                     })?
                     .map(|row| {
-                    let required_i32 = |name: &str| -> Result<i32, String> {
-                        row[name]
-                            .value::<i32>()
-                            .map_err(|_| format!("EC_REPLICA_STATE: {name} decode failed"))?
-                            .ok_or_else(|| format!("EC_REPLICA_STATE: {name} is NULL"))
-                    };
-                    let required_i64 = |name: &str| -> Result<i64, String> {
-                        row[name]
-                            .value::<i64>()
-                            .map_err(|_| format!("EC_REPLICA_STATE: {name} decode failed"))?
-                            .ok_or_else(|| format!("EC_REPLICA_STATE: {name} is NULL"))
-                    };
-                    let required_bytes = |name: &str| -> Result<Vec<u8>, String> {
-                        row[name]
-                            .value::<Vec<u8>>()
-                            .map_err(|_| format!("EC_REPLICA_STATE: {name} decode failed"))?
-                            .ok_or_else(|| format!("EC_REPLICA_STATE: {name} is NULL"))
-                    };
-                    Ok::<_, String>((
-                        row["state"]
-                            .value::<String>()
-                            .map_err(|_| "EC_REPLICA_STATE: state decode failed".to_owned())?
-                            .ok_or_else(|| "EC_REPLICA_STATE: state is NULL".to_owned())?,
-                        required_bytes("epoch_fingerprint")?,
-                        required_bytes("generation_descriptor_digest")?,
-                        row["content_digest"].value::<Vec<u8>>().map_err(|_| {
-                            "EC_REPLICA_STATE: content digest decode failed".to_owned()
-                        })?,
-                        row["replica_relid"]
-                            .value::<pg_sys::Oid>()
+                        let required_i32 = |name: &str| -> Result<i32, String> {
+                            row[name]
+                                .value::<i32>()
+                                .map_err(|_| format!("EC_REPLICA_STATE: {name} decode failed"))?
+                                .ok_or_else(|| format!("EC_REPLICA_STATE: {name} is NULL"))
+                        };
+                        let required_i64 = |name: &str| -> Result<i64, String> {
+                            row[name]
+                                .value::<i64>()
+                                .map_err(|_| format!("EC_REPLICA_STATE: {name} decode failed"))?
+                                .ok_or_else(|| format!("EC_REPLICA_STATE: {name} is NULL"))
+                        };
+                        let required_bytes = |name: &str| -> Result<Vec<u8>, String> {
+                            row[name]
+                                .value::<Vec<u8>>()
+                                .map_err(|_| format!("EC_REPLICA_STATE: {name} decode failed"))?
+                                .ok_or_else(|| format!("EC_REPLICA_STATE: {name} is NULL"))
+                        };
+                        Ok::<_, String>((
+                            row["state"]
+                                .value::<String>()
+                                .map_err(|_| "EC_REPLICA_STATE: state decode failed".to_owned())?
+                                .ok_or_else(|| "EC_REPLICA_STATE: state is NULL".to_owned())?,
+                            required_bytes("epoch_fingerprint")?,
+                            required_bytes("generation_descriptor_digest")?,
+                            row["content_digest"].value::<Vec<u8>>().map_err(|_| {
+                                "EC_REPLICA_STATE: content digest decode failed".to_owned()
+                            })?,
+                            row["replica_relid"]
+                                .value::<pg_sys::Oid>()
                             .map_err(|_| "EC_REPLICA_STATE: replica OID decode failed".to_owned())?
                             .ok_or_else(|| "EC_REPLICA_STATE: replica OID is NULL".to_owned())?,
-                        row["directory_relid"]
-                            .value::<pg_sys::Oid>()
-                            .map_err(|_| {
-                                "EC_REPLICA_STATE: directory OID decode failed".to_owned()
-                            })?
+                            row["directory_relid"]
+                                .value::<pg_sys::Oid>()
+                                .map_err(|_| {
+                                    "EC_REPLICA_STATE: directory OID decode failed".to_owned()
+                                })?
                             .ok_or_else(|| "EC_REPLICA_STATE: directory OID is NULL".to_owned())?,
-                        required_i32("format_version")?,
-                        required_i32("dimensions")?,
-                        required_i32("graph_degree")?,
-                        required_i32("neighbor_codec_kind")?,
-                        required_i32("owner_count")?,
-                        required_i64("expected_record_count")?,
-                        required_i64("copied_record_count")?,
-                        required_i64("completed_owners")?,
-                        required_i64("owner_record_count")?,
-                    ))
+                            required_i32("format_version")?,
+                            required_i32("dimensions")?,
+                            required_i32("graph_degree")?,
+                            required_i32("neighbor_codec_kind")?,
+                            required_i32("owner_count")?,
+                            required_i64("expected_record_count")?,
+                            required_i64("copied_record_count")?,
+                            required_i64("completed_owners")?,
+                            required_i64("owner_record_count")?,
+                        ))
                     })
                     .next()
                     .transpose()
@@ -2380,5 +2507,21 @@ mod tests {
         assert!(TraversalReplicaState::Stale.can_transition_to(TraversalReplicaState::Retiring));
         assert!(!TraversalReplicaState::Building.can_transition_to(TraversalReplicaState::Stale));
         assert!(!TraversalReplicaState::Stale.can_transition_to(TraversalReplicaState::Ready));
+    }
+
+    #[test]
+    fn full_relcache_reset_clears_ready_presence_and_suppression() {
+        let index_oid = pg_sys::Oid::from(42_u32);
+        let build_id = Uuid::from_bytes([0x55; 16]);
+        READY_REPLICA_PRESENCE.with(|presence| presence.set(2));
+        TRAVERSAL_REPLICA_CATALOG_OID.with(|cached| cached.set(99));
+        suppress_ready_replica(index_oid, build_id);
+        assert!(ready_replica_is_suppressed(index_oid, build_id));
+
+        invalidate_ready_replica_presence_cache(pg_sys::InvalidOid);
+
+        assert_eq!(READY_REPLICA_PRESENCE.with(Cell::get), 0);
+        assert_eq!(TRAVERSAL_REPLICA_CATALOG_OID.with(Cell::get), 0);
+        assert!(!ready_replica_is_suppressed(index_oid, build_id));
     }
 }

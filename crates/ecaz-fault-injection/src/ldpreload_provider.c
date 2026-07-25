@@ -36,6 +36,38 @@ static int mode_is(const char *mode) {
     return value && strcmp(value, mode) == 0;
 }
 
+static int arm_allows_operation(const char *op) {
+    const char *arm_file = getenv("ECAZ_FAULT_PROVIDER_ARM_FILE");
+    if (!arm_file || !*arm_file) {
+        return 1;
+    }
+    char phase[32] = {0};
+    int fd = (int)syscall(SYS_openat, AT_FDCWD, arm_file, O_RDONLY, 0);
+    if (fd < 0) {
+        return 0;
+    }
+    ssize_t len = syscall(SYS_read, fd, phase, sizeof(phase) - 1);
+    (void)syscall(SYS_close, fd);
+    if (len <= 0 || strncmp(phase, "armed", 5) == 0) {
+        return 1;
+    }
+    if (strncmp(phase, "create", 6) == 0) {
+        return strcmp(op, "open") == 0
+            || strcmp(op, "open64") == 0
+            || strcmp(op, "openat") == 0
+            || strcmp(op, "openat2") == 0;
+    }
+    if (strncmp(phase, "data", 4) == 0) {
+        return strcmp(op, "write") == 0
+            || strcmp(op, "pwrite") == 0
+            || strcmp(op, "pwrite64") == 0
+            || strcmp(op, "pwritev") == 0
+            || strcmp(op, "fsync") == 0
+            || strcmp(op, "fdatasync") == 0;
+    }
+    return 0;
+}
+
 static unsigned long long after_count(void) {
     const char *value = getenv("ECAZ_FAULT_PROVIDER_AFTER");
     if (!value || !*value) {
@@ -50,7 +82,24 @@ static int path_matches(const char *path) {
     if (!needle || !*needle) {
         return 1;
     }
-    return path && strstr(path, needle) != NULL;
+    if (!path) {
+        return 0;
+    }
+    const char *start = needle;
+    while (*start) {
+        const char *separator = strchr(start, '|');
+        size_t len = separator ? (size_t)(separator - start) : strlen(start);
+        for (const char *candidate = path; len > 0 && *candidate; candidate++) {
+            if (strncmp(candidate, start, len) == 0) {
+                return 1;
+            }
+        }
+        if (!separator) {
+            break;
+        }
+        start = separator + 1;
+    }
+    return 0;
 }
 
 static void append_marker_line(const char *line, size_t len) {
@@ -110,7 +159,7 @@ static int fd_target_matches(int fd, char *target, size_t target_size) {
 }
 
 static int should_fault_path(const char *mode, const char *op, const char *path, int errnum) {
-    if (!enabled() || !mode_is(mode) || !path_matches(path)) {
+    if (!enabled() || !mode_is(mode) || !arm_allows_operation(op) || !path_matches(path)) {
         return 0;
     }
     unsigned long long count = __atomic_add_fetch(&fault_counter, 1, __ATOMIC_RELAXED);
@@ -123,7 +172,10 @@ static int should_fault_path(const char *mode, const char *op, const char *path,
 
 static int should_fault_fd(const char *mode, const char *op, int fd, int errnum) {
     char target[4096];
-    if (!enabled() || !mode_is(mode) || !fd_target_matches(fd, target, sizeof(target))) {
+    if (!enabled()
+        || !mode_is(mode)
+        || !arm_allows_operation(op)
+        || !fd_target_matches(fd, target, sizeof(target))) {
         return 0;
     }
     unsigned long long count = __atomic_add_fetch(&fault_counter, 1, __ATOMIC_RELAXED);
