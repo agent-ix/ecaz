@@ -375,9 +375,11 @@ fn ec_distann_indexes_for_source(source_oid: pg_sys::Oid) -> Vec<pg_sys::Oid> {
 }
 
 fn guard_source_traversal_replicas(source_oid: pg_sys::Oid) {
-    if !super::traversal_replica::ready_replica_may_exist()
-        .unwrap_or_else(|error| pgrx::error!("{error}"))
-    {
+    // Do not populate an unknown cache through ordinary SPI here. Under
+    // RR/SERIALIZABLE, SPI can substitute the fixed transaction snapshot and
+    // incorrectly cache "no Ready replica" after another session commits one.
+    // The per-index guard below owns the explicit latest-snapshot lookup.
+    if super::traversal_replica::ready_replica_known_absent() {
         return;
     }
     for index_oid in ec_distann_indexes_for_source(source_oid) {

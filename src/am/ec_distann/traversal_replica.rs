@@ -108,6 +108,12 @@ pub(crate) fn ready_replica_may_exist() -> Result<bool, String> {
     Ok(ready)
 }
 
+/// Fast-path predicate for callers that can perform an explicit latest-
+/// snapshot lookup when the database-wide cache is unknown.
+pub(crate) fn ready_replica_known_absent() -> bool {
+    READY_REPLICA_PRESENCE.with(Cell::get) == 1
+}
+
 fn ready_replica_is_suppressed(index_oid: pg_sys::Oid, build_id: Uuid) -> bool {
     SUPPRESSED_READY_REPLICAS.with(|suppressed| {
         suppressed
