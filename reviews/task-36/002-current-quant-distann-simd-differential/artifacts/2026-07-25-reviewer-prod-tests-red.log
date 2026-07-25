@@ -1,0 +1,68 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 13.49s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 45 tests
+test quant::prod::tests::binary_sign_no_qjl_4bit_keeps_identical_vector_ranked_first ... ok
+test quant::prod::tests::binary_sign_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::cached_quantizer_reuses_instances ... ok
+test quant::prod::tests::cached_with_presence_reports_whether_entry_already_existed ... ok
+test quant::prod::tests::code_to_code_score_is_symmetric_and_ignores_qjl ... ok
+test quant::prod::tests::decode_eight_3bit_aligned_matches_packer ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_at_production_dims ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_on_random_inputs ... ok
+test quant::prod::tests::dispatched_score_matches_scalar_with_tail_dims ... ok
+test quant::prod::tests::encode_decode_has_reasonable_fidelity ... ok
+test quant::prod::tests::encode_is_deterministic ... ok
+test quant::prod::tests::encode_payload_length_matches_spec ... ok
+test quant::prod::tests::explicit_lut_no_qjl_4bit_tracks_direct_scoring_with_int16_lut ... ok
+test quant::prod::tests::explicit_lut_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::int8_approx_no_qjl_4bit_keeps_identical_vector_ranked_first ... ok
+test quant::prod::tests::int8_approx_query_prep_rejects_qjl_active_lane - should panic ... ok
+test quant::prod::tests::miri_encode_decode_roundtrip ... ok
+test quant::prod::tests::miri_pack_unpack_mse ... ok
+test quant::prod::tests::miri_pack_unpack_qjl ... ok
+test quant::prod::tests::miri_quantizer_cache_concurrent_init_under_contention ... ok
+test quant::prod::tests::miri_score_ip_codes_lite ... ok
+test quant::prod::tests::miri_score_ip_encoded ... ok
+test quant::prod::tests::mse_pack_unpack_roundtrip_all_widths ... ok
+test quant::prod::tests::pack_mse_indices_fast_paths_match_generic ... ok
+test quant::prod::tests::prepared_query_score_matches_explicit_formula ... ok
+test quant::prod::tests::qjl_neon_production_path_matches_scalar_reference_tolerance ... ok
+test quant::prod::tests::qjl_pack_unpack_roundtrip ... ok
+test quant::prod::tests::qjl_pre_task104_neon_multi_accum_tolerance_diagnostic ... ok
+test quant::prod::tests::qjl_sign_lanes_exhaustive ... ok
+test quant::prod::tests::quantizer_1536_4bit_disables_unused_qjl_and_lut_state ... ok
+test quant::prod::tests::quantizer_1536_4bit_reallocates_qjl_budget_to_mse ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_binary_sign_query_prep ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_explicit_lut_query_prep ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_int8_approx_query_prep ... ok
+test quant::prod::tests::quantizer_1536_4bit_supports_tiled_lut_query_prep ... ok
+test quant::prod::tests::quantizer_1536_uses_tiled_working_dimension ... ok
+test quant::prod::tests::quantizer_32_4bit_keeps_qjl_and_lut_state_when_active ... ok
+test quant::prod::tests::quantizer_no_qjl_lut_min_bound_keeps_or_prunes_exact_score ... ok
+test quant::prod::tests::quantizer_trait_score_matches_inherent_score_ip_encoded ... ok
+test quant::prod::tests::raw_code_score_matches_encoded_lite_path ... ok
+test quant::prod::tests::score_from_parts_honors_supplied_gamma ... ok
+test quant::prod::tests::score_from_parts_matches_encoded_payload_path ... ok
+test quant::prod::tests::task124_profile_no_qjl_lut_query_prep ... ignored, Task 124 query-prep microprofile; run explicitly with ECAZ_TQ_QUERY_PREP_PROFILE_LOG
+test quant::prod::tests::tiled_lut_no_qjl_4bit_matches_direct_scoring ... ok
+test quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane - should panic ... FAILED
+
+failures:
+
+---- quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane stdout ----
+
+thread 'quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane' (34328997) panicked at src/quant/prod.rs:1842:5:
+assertion `left == right` failed
+  left: 8
+ right: 16
+note: panic did not contain expected string
+      panic message: "assertion `left == right` failed\n  left: 8\n right: 16"
+ expected substring: "explicit LUT query prep requires the no-QJL 4-bit lane"
+
+failures:
+    quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane
+
+test result: FAILED. 43 passed; 1 failed; 1 ignored; 0 measured; 2474 filtered out; finished in 4.70s
+
+error: test failed, to rerun pass `--lib`
