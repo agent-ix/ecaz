@@ -1672,6 +1672,13 @@ async fn run_task199_replica_lifecycle_drills(
     }
     build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
 
+    let inserted_id = coordinator
+        .query_one(
+            &format!("SELECT coalesce(max(id), 0) + 1 FROM {corpus}"),
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
     let insert_sql = format!(
         "WITH next_row AS (
              SELECT coalesce(max(id), 0) + 1 AS id FROM {corpus}
@@ -1708,10 +1715,19 @@ async fn run_task199_replica_lifecycle_drills(
         )
         .await?
         .get::<_, String>(0);
-    let inserted_id = coordinator
-        .query_one(&insert_sql, &[])
-        .await?
-        .get::<_, i64>(0);
+    // Task 167 still owns distributed incremental insert. Task 199 must prove
+    // that its one-time invalidation composes with the existing explicit
+    // fail-closed posture: the retry reaches ordinary distributed-control DML
+    // handling, does not return a second 40001, and does not mutate source or
+    // owner state.
+    let retry_error = coordinator.query_one(&insert_sql, &[]).await.expect_err(
+        "distributed-control INSERT retry must retain the Task 167 fail-closed posture",
+    );
+    let retry_failed_closed = retry_error.as_db_error().is_some_and(|error| {
+        error
+            .message()
+            .contains("EC_GENERATION_MISSING: ec_distann distributed-control inserts")
+    });
     let inserted_count = coordinator
         .query_one(
             &format!("SELECT count(*)::bigint FROM {corpus} WHERE id = $1"),
@@ -1719,9 +1735,12 @@ async fn run_task199_replica_lifecycle_drills(
         )
         .await?
         .get::<_, i64>(0);
-    let mutation_pass = first_retryable && state_after_error == "Stale" && inserted_count == 1;
+    let mutation_pass = first_retryable
+        && state_after_error == "Stale"
+        && retry_failed_closed
+        && inserted_count == 0;
     lines.push(format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=real_insert_durable_invalidation pass={mutation_pass} first_sqlstate={} token=EC_REPLICA_INVALIDATED state_after_error={state_after_error} retry_inserted_rows={inserted_count}",
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=real_insert_durable_invalidation pass={mutation_pass} first_sqlstate={} token=EC_REPLICA_INVALIDATED state_after_error={state_after_error} retry_token=EC_GENERATION_MISSING retry_inserted_rows={inserted_count}",
         first_error.code().map(|code| code.code()).unwrap_or("none"),
     ));
     if !mutation_pass {
@@ -1736,15 +1755,6 @@ async fn run_task199_replica_lifecycle_drills(
         )
         .await?
         .get::<_, bool>(0);
-    coordinator
-        .execute(
-            &format!("DELETE FROM {corpus} WHERE id = $1"),
-            &[&inserted_id],
-        )
-        .await?;
-    coordinator
-        .batch_execute(&format!("VACUUM {corpus}"))
-        .await?;
     let residue = coordinator
         .query_one(
             "SELECT count(*)::bigint
