@@ -3,7 +3,7 @@
 ## Scope
 
 Please review the Task 199 operations/lifecycle checkpoint through
-`1b3de943c`:
+`7c27a9916`:
 
 - `e9f17c644` — decode the normal transport row shape;
 - `9984bbca0` — recover replica lifecycle after owner outage;
@@ -22,7 +22,17 @@ Please review the Task 199 operations/lifecycle checkpoint through
   drill;
 - `6a7c1cfed` — add the invalidation-backed no-Ready cache, VACUUM disposition,
   fallback/rebuild drills, and operator runbook;
-- `1b3de943c` — preserve owner fallback when durable demotion fails.
+- `1b3de943c` — preserve owner fallback when durable demotion fails;
+- `d08838473` — add the post-control-commit backend-crash drill;
+- `5465f7693` — add armed fault-provider suite control;
+- `2dd24b6dc` — preserve writes across stronger isolation and bound failed
+  control retries per backend/build;
+- `6c73649be` / `85174f1be` — add and enable the ENOSPC replica-build drill;
+- `6bf805bdb` — re-enable replica selection after operator control recovery;
+- `fcfc529e5` — make the Ready-presence probe safe on an empty catalog;
+- `a4a8c3aa2` — intercept PG18 vectored writes in the fault provider;
+- `f67562904` / `7c27a9916` — target tablespace relation creates and use an
+  absolute arm-file path.
 
 The suite config was committed separately as `be3e75ac4`. This packet is a
 runtime checkpoint and response to the outside review at `f19462ecf`, not Task
@@ -32,7 +42,7 @@ runtime checkpoint and response to the outside review at `f19462ecf`, not Task
 
 The checked-in normal-release PG18 suite completed its one operations step
 with `completed=1`, `failed=0`, `missing_artifacts=0`, and `stale=0`. The
-extension, CLI, runner, and all three nodes reported exact SHA `1b3de943c`.
+extension, CLI, runner, and all three nodes reported exact SHA `7c27a9916`.
 
 The run directly exercises:
 
@@ -43,18 +53,26 @@ The run directly exercises:
 - one durable `40001` with zero DELETE through the actual DELETE front door;
 - one durable `40001` with an unchanged physical graph and zero tombstones
   through the actual participant endpoint;
-- REPEATABLE READ and SERIALIZABLE owner fallback with ordered identity, plus
-  SQLSTATE `25001` / `EC_TRANSACTION_ISOLATION` for writes at both levels;
+- READ UNCOMMITTED replica selection, REPEATABLE READ and SERIALIZABLE owner
+  fallback with ordered identity, plus actual writes at both stronger levels
+  fenced by `40001 EC_REPLICA_INVALIDATED` with a rebuild between cases;
+- a backend terminated after the durable control commit but before outer
+  mutation retry, leaving Stale, zero inserted rows, and fresh-backend owner
+  identity;
+- armed PG18 ENOSPC at hidden-relation creation, with SQLSTATE `53100`, one
+  provider `errno=28` event, zero catalog/relation residue, healthy owner
+  fallback, and a successful recovery build;
 - real VACUUM of a pre-build dead tuple, with durable Stale and continued
   maintenance;
 - immutable in-flight cursor completion while invalidation commits;
 - extension-owner control authentication failure, fail-closed behavior,
   owner fallback when both durable and local demotion are unavailable,
+  backend/build suppression of repeated control attempts, operator
   preflight/recovery, and zero mutation;
 - a locked/dropped replica-relation race with nonblocking owner fallback and
   durable diagnosis;
 - a queued control-index `AccessExclusiveLock`, proving the plain-OID side
-  transaction completes in 155 ms without relation-lock inversion;
+  transaction completes in 45 ms without relation-lock inversion;
 - owner restart, owner-outage partial build, corrupt-image fallback, explicit
   retire/reclaim, and removed-image fallback;
 - successor epoch publication, automatic `epoch_superseded` retirement,
@@ -64,9 +82,9 @@ The run directly exercises:
   materialization semantic cases.
 
 The representative Ready image copied exactly 10,000 records / 131,520,000
-bytes, occupied 158,326,784 relation bytes, emitted 137,460,656 WAL bytes, and
-built in 4,718 ms. The diagnostic A/B returned identical `0.9900` recall; its
-two-sample warm means were 19.70 ms owner and 15.30 ms replica. Those small
+bytes, occupied 158,326,784 relation bytes, emitted 137,659,336 WAL bytes, and
+built in 5,067 ms. The diagnostic A/B returned identical `0.9900` recall; its
+two-sample warm means were 19.50 ms owner and 16.10 ms replica. Those small
 sample counts are lifecycle smoke data only, not release-decision evidence.
 
 ## Validation
@@ -79,7 +97,7 @@ lines.
   dead-code warning;
 - focused PG18 extension and CLI compile checks: pass;
 - `ecaz bench suite audit`: pass;
-- `ecaz bench suite run`: pass in 328,138 ms;
+- `ecaz bench suite run`: pass in 357,885 ms;
 - `ecaz bench suite status`: completed 1, failed 0, missing 0, stale 0;
 - three-node 10k topology: Ready/Published, 10,000 owned rows, zero non-owned
   rows, zero orphans;
@@ -89,31 +107,20 @@ lines.
 
 Please focus on:
 
-1. whether the real INSERT/DELETE/participant/VACUUM front doors now close F1
-   and the packet-001 P2 maintenance findings;
-2. whether the blocking INSERT proves the exact F2 ordering hazard identified
-   as packet-002 P1-A and protects the per-tuple guard from removal;
-3. whether stronger-isolation owner fallback and the disclosed `25001` write
-   restriction resolve packet-001 P1-1/P1-2;
-4. whether the invalidation-backed no-Ready presence cache is structurally
-   sound; its required no-replica performance A/B remains assigned to packet
-   003;
-5. whether failed demotion now correctly warns and restarts through owners,
-   including in a read-only transaction;
-6. whether the epoch successor sequence proves reachable automatic retirement
-   and leak-free reclaim for F4;
-7. whether the 155 ms queued-DDL result adequately demonstrates the side
-   transaction's plain-OID/no-pgrx-relation-lock property;
-8. whether the explicit Task 167 fail-closed retry posture and actionable
-   retire/reclaim rebuild guidance are correctly separated from Task 199
-   invalidation rather than misrepresented as distributed mutation
-   propagation;
-9. what additional direct runtime evidence is required before packet 003.
+1. whether the fresh post-lock snapshot preserves stronger-isolation writes
+   while retaining ordered owner fallback for stronger-isolation reads;
+2. whether exact-build backend suppression bounds broken-control retries and
+   correctly clears on operator recovery/replacement publication;
+3. whether the post-control-commit backend termination proves the durable
+   invalidation fence survives process loss with zero mutation;
+4. whether the armed PG18 `53100` / `errno=28` run, zero residue, owner
+   fallback, and recovery build close packet-002 P2-C;
+5. whether the empty-catalog Ready-presence fix and catalog-specific relcache
+   invalidation preserve the no-Ready cache invariant;
+6. what additional direct runtime evidence is required before packet 003.
 
 ## Explicitly still open
 
-- The phase-3 disk-exhaustion and crash-after-control-commit cases still need
-  direct normal-release runtime evidence.
 - Heterogeneous-ISA ordered identity cannot be established by this local
   three-node same-host run; packet 001 contains the deterministic ordering
   code/tests, and final cross-host evidence remains open.

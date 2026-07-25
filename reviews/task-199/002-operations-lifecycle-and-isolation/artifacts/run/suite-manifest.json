@@ -2,10 +2,10 @@
   "suite": "task199-normal-lifecycle-10k",
   "schema_version": 1,
   "config": "reviews/task-199/002-operations-lifecycle-and-isolation/artifacts/task199-normal-lifecycle-10k.json",
-  "config_sha256": "d233cf4c103c57a120c34e176079769d50000894028b6932c36a779f17aed89f",
+  "config_sha256": "bf3510fbdeacb98edcfa9db306cb8b9848d6d774d07c52f27505058d35a003e6",
   "dry_run": false,
-  "generated_at_unix_ms": 1784954007461,
-  "runner_git_commit": "1b3de943c75331cdc4ebc6c676d96fe878a78401",
+  "generated_at_unix_ms": 1785000520069,
+  "runner_git_commit": "7c27a9916b810b86a5bfc296a41d8d5e0a8d18c2",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -37,6 +37,7 @@
         "3",
         "--physical-benchmark",
         "--materialization-correctness",
+        "--traversal-replica-enospc-drill",
         "--benchmark-iterations",
         "2",
         "--benchmark-warmup-iterations",
@@ -81,9 +82,9 @@
         "reviews/task-199/002-operations-lifecycle-and-isolation/artifacts/run/normal-replica-lifecycle-10k/distann-multinode-summary.log"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1784954007482,
-      "finished_at_unix_ms": 1784954335622,
-      "duration_ms": 328138,
+      "started_at_unix_ms": 1785000520089,
+      "finished_at_unix_ms": 1785000871990,
+      "duration_ms": 357885,
       "exit_code": 0
     }
   ]
