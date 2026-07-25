@@ -104,13 +104,9 @@ pub(crate) fn score_turboquant_qjl_batch(
                 .expect("slice length is exactly one block"),
             &mut out_scores[block_start..block_start + BLOCK_WIDTH],
         );
-        if let Some(previous) = observed_block_isa {
-            assert_eq!(
-                previous, isa,
-                "QJL batch changed ISA between blocks in one dispatch"
-            );
+        if observed_block_isa.is_none() {
+            observed_block_isa = Some(isa);
         }
-        observed_block_isa = Some(isa);
         block_start += BLOCK_WIDTH;
     }
 

@@ -95,6 +95,8 @@ Optional follow-on:
   `make simd-diff` lane. Its `ubuntu-24.04-arm` leg is the only CI job that
   exercises NEON; the separate aarch64 full-test workflow remains reachable
   only through manual dispatch because it has no active schedule trigger.
+  This matrix has not been manually dispatched since the lane began using
+  counted `--lib` stages, so CI-runner symbol resolution remains untested.
 - A deliberately mutated SIMD path (flip a sign in one branch) is caught by
   `simd-diff` and reported as a non-trivial diff in the packet.
 

@@ -241,8 +241,8 @@ simd-diff:
 	bash scripts/run-counted-cargo-test.sh 3 --lib --features bench quant::prod::tests::tiled_lut_query_prep_ -- --test-threads=1 --nocapture
 	@echo "task36 simd-diff: real hamming32 SIMD kernels"
 	bash scripts/run-counted-cargo-test.sh 3 --lib --features bench quant::hamming32::tests:: -- --test-threads=1 --nocapture
-	@echo "task36 simd-diff: DistANN codec composition, stride, and source IP"
-	bash scripts/run-counted-cargo-test.sh 2 --lib --features bench simd_diff_ -- --test-threads=1 --nocapture
+	@echo "task36 simd-diff: production QJL cascade and DistANN composition/source IP"
+	bash scripts/run-counted-cargo-test.sh 3 --lib --features bench simd_diff_ -- --test-threads=1 --nocapture
 
 # --- On-disk format ---
 

@@ -146,7 +146,9 @@ RaBitQ arithmetic, `rabitq32`, `qjl32`, `lut32`, `grouped_pq_block`,
 replace them with an unfiltered `cargo test`. The lane prints the detected
 host features and the ISA each family exercised. A host-reachable primary
 backend (NEON on aarch64 or AVX2+FMA on x86) returning “unavailable” is a test
-failure, not a skip.
+failure, not a skip. Production `prod` scoring is covered through the public
+forced-hook stage; the focused in-library `prod` stage pins the tiled-LUT
+query-shape and lane guards.
 
 Current production inventory:
 
@@ -192,10 +194,11 @@ Equality contracts:
   accumulation.
 - RaBitQ block and arithmetic paths allow relative/absolute `1e-5`; vector
   FMA/reduction order differs from the scalar anchor.
-- QJL scalar/remainder candidates are bit-exact. SIMD 32-candidate blocks
-  allow 4 ULP or relative `1e-6` because vector block reductions change the
-  accumulation order; the batch differential records the ISA returned by the
-  block kernel rather than printing host capability as a proxy.
+- QJL candidates in the scalar remainder below an octet are bit-exact. SIMD
+  8-candidate octets and 32-candidate blocks allow 4 ULP or relative `1e-6`
+  because vector reductions change the accumulation order. The production
+  candidate-batch differential covers widths 1/7/8/9/16/17/31/32/33 through
+  the real block→octet→scalar cascade.
 - FWHT and `prod` split/code-to-code scores allow relative/absolute `1e-5`.
 - HNSW/DiskANN source inner product allows relative/absolute `1e-4` because
   the SIMD implementation may fuse multiply-add while scalar does not.
