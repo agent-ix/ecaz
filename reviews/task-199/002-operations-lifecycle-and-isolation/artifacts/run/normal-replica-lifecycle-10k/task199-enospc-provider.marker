@@ -1,0 +1,7 @@
+pid=211791 mode=enospc-write match=pg_tblspc/|/home/peter/dev/ecaz/.claude/worktrees/task199-final-build/target/task199-normal-lifecycle-10k/task199-enospc-tablespace
+pid=211792 mode=enospc-write match=pg_tblspc/|/home/peter/dev/ecaz/.claude/worktrees/task199-final-build/target/task199-normal-lifecycle-10k/task199-enospc-tablespace
+pid=211793 mode=enospc-write match=pg_tblspc/|/home/peter/dev/ecaz/.claude/worktrees/task199-final-build/target/task199-normal-lifecycle-10k/task199-enospc-tablespace
+pid=211794 mode=enospc-write match=pg_tblspc/|/home/peter/dev/ecaz/.claude/worktrees/task199-final-build/target/task199-normal-lifecycle-10k/task199-enospc-tablespace
+pid=211794 mode=enospc-write match=pg_tblspc/|/home/peter/dev/ecaz/.claude/worktrees/task199-final-build/target/task199-normal-lifecycle-10k/task199-enospc-tablespace
+fault=1 pid=211883 mode=enospc-write op=open count=1 errno=28 target=pg_tblspc/461627/PG_18_202506291/5/461629
+fault=1 pid=211883 mode=enospc-write op=pwrite count=2 errno=28 target=/home/peter/dev/ecaz/.claude/worktrees/task199-final-build/target/task199-normal-lifecycle-10k/task199-enospc-tablespace/PG_18_202506291/5/481639
