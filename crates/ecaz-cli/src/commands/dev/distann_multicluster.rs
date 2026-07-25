@@ -1560,7 +1560,7 @@ fn task199_ordered_scan_sql(corpus: &str, queries: &str, limit: u32) -> String {
          SELECT id, source_id::text,
                 embedding <#> (SELECT query_embedding FROM query_vector) AS distance
            FROM {corpus}
-          ORDER BY distance, id
+          ORDER BY embedding <#> (SELECT query_embedding FROM query_vector)
           LIMIT {limit}"
     )
 }
