@@ -2108,8 +2108,12 @@ async fn task199_epoch_turnover_drill(
         .batch_execute(&format!(
             "SELECT ec_distann_decide_epoch_publish(
                  'dm_idx'::regclass, '{successor_build}'::uuid
-             );
-             SELECT ec_distann_recover_epoch_publish(
+             );"
+        ))
+        .await?;
+    coordinator
+        .batch_execute(&format!(
+            "SELECT ec_distann_recover_epoch_publish(
                  'dm_idx'::regclass, '{successor_build}'::uuid
              );"
         ))
