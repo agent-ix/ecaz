@@ -6,7 +6,7 @@ use ecaz_fault_injection::{
     workload_bulk_insert_sql, workload_insert_sql, workload_reindex_sql,
     workload_repeated_scan_sql, workload_resource_setup_sql, workload_scan_sql, workload_setup_sql,
     workload_table_sql, workload_temp_spill_sql, workload_vacuum_full_sql, workload_vacuum_sql,
-    FaultAm, FaultLane, ProviderMode,
+    DistannCodec, FaultAm, FaultFixture, FaultLane, ProviderMode,
 };
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -38,6 +38,12 @@ pub struct PlanArgs {
     /// Restrict output to one lane.
     #[arg(long, value_enum)]
     lane: Option<FaultLaneArg>,
+    /// Restrict output to one access method.
+    #[arg(long, value_enum)]
+    am: Option<FaultAmArg>,
+    /// Restrict ec_distann output to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
 }
 
 #[derive(Args, Debug)]
@@ -108,6 +114,9 @@ pub struct PrepareArgs {
     /// Restrict preparation to one access method.
     #[arg(long, value_enum)]
     am: Option<FaultAmArg>,
+    /// Restrict ec_distann preparation to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
 }
 
 #[derive(Args, Debug)]
@@ -124,6 +133,9 @@ pub struct SmokeArgs {
     /// Restrict the smoke lane to one access method.
     #[arg(long, value_enum)]
     am: Option<FaultAmArg>,
+    /// Restrict ec_distann smoke to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
     /// Marker file proving the target postmaster loaded the fault provider.
     #[arg(long)]
     provider_marker: Option<String>,
@@ -156,6 +168,14 @@ pub enum FaultAmArg {
     Ivf,
     Diskann,
     Spire,
+    Distann,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum DistannCodecArg {
+    Rabitq,
+    Turboquant,
+    GroupedPq,
 }
 
 impl From<ProviderModeArg> for ProviderMode {
@@ -175,6 +195,17 @@ impl From<FaultAmArg> for FaultAm {
             FaultAmArg::Ivf => FaultAm::Ivf,
             FaultAmArg::Diskann => FaultAm::DiskAnn,
             FaultAmArg::Spire => FaultAm::Spire,
+            FaultAmArg::Distann => FaultAm::DistAnn,
+        }
+    }
+}
+
+impl From<DistannCodecArg> for DistannCodec {
+    fn from(value: DistannCodecArg) -> Self {
+        match value {
+            DistannCodecArg::Rabitq => DistannCodec::RaBitQ,
+            DistannCodecArg::Turboquant => DistannCodec::TurboQuant,
+            DistannCodecArg::GroupedPq => DistannCodec::GroupedPq,
         }
     }
 }
@@ -201,8 +232,8 @@ impl FaultCommand {
             FaultCommand::ProviderRestart(args) => run_provider_restart(args).await,
             FaultCommand::ProviderRestore(args) => run_provider_restore(args).await,
             FaultCommand::Prepare(args) => {
-                let ams = selected_ams(args.am);
-                prepare_workloads(conn, args.rows, &ams).await
+                let fixtures = selected_fixtures(args.am, args.distann_codec)?;
+                prepare_workloads(conn, args.rows, &fixtures).await
             }
             FaultCommand::Smoke(args) => run_smoke(conn, args).await,
         }
@@ -210,10 +241,18 @@ impl FaultCommand {
 }
 
 fn run_plan(args: PlanArgs) -> Result<()> {
+    let fixtures = selected_fixtures(args.am, args.distann_codec)?;
     let cases = args
         .lane
         .map(|lane| required_smoke_cases(lane.into()))
-        .unwrap_or_else(all_smoke_cases);
+        .unwrap_or_else(all_smoke_cases)
+        .into_iter()
+        .filter(|case| {
+            fixtures.iter().any(|fixture| {
+                fixture.access_method == case.access_method && fixture.codec == case.codec
+            })
+        })
+        .collect::<Vec<_>>();
     print_cases(&cases);
     print_leak_probes();
     Ok(())
@@ -396,10 +435,14 @@ async fn restart_pgrx_postmaster(
 
 async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
     let lane = FaultLane::from(args.lane);
-    let ams = selected_ams(args.am);
+    let fixtures = selected_fixtures(args.am, args.distann_codec)?;
     let cases = required_smoke_cases(lane)
         .into_iter()
-        .filter(|case| ams.contains(&case.access_method))
+        .filter(|case| {
+            fixtures.iter().any(|fixture| {
+                fixture.access_method == case.access_method && fixture.codec == case.codec
+            })
+        })
         .collect::<Vec<_>>();
     print_cases(&cases);
     print_leak_probes();
@@ -429,7 +472,7 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                     args.rows
                 ));
             }
-            run_io_probe(conn, mode, &path_match, &ams).await?;
+            run_io_probe(conn, mode, &path_match, &fixtures).await?;
             assert_provider_fault_marker(
                 args.provider_marker.as_deref(),
                 mode,
@@ -445,15 +488,15 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Cancel => {
-            run_cancel_probe(conn, args.rows, &ams).await?;
+            run_cancel_probe(conn, args.rows, &fixtures).await?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Timeout => {
-            run_timeout_probe(conn, args.rows, &ams).await?;
+            run_timeout_probe(conn, args.rows, &fixtures).await?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::LockTimeout => {
-            run_lock_timeout_probe(conn, args.rows, &ams).await?;
+            run_lock_timeout_probe(conn, args.rows, &fixtures).await?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Resource => {
@@ -462,7 +505,7 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                 .as_deref()
                 .map(|marker| read_provider_marker(Some(marker), lane))
                 .transpose()?;
-            run_resource_probe(conn, args.rows, &ams, provider_marker.as_deref()).await?;
+            run_resource_probe(conn, args.rows, &fixtures, provider_marker.as_deref()).await?;
             if let Some(marker) = provider_marker.as_deref() {
                 if resource_provider_targets_temp_spill(marker)? {
                     assert_provider_fault_marker(
@@ -476,27 +519,42 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Memory => {
-            run_memory_probe(conn, args.rows, &ams).await?;
+            run_memory_probe(conn, args.rows, &fixtures).await?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::SlowDisk => {
             read_provider_marker(args.provider_marker.as_deref(), lane)?;
-            run_slow_disk_probe(conn, args.rows, &ams).await?;
+            run_slow_disk_probe(conn, args.rows, &fixtures).await?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
     }
 }
 
-fn selected_ams(am: Option<FaultAmArg>) -> Vec<FaultAm> {
-    am.map(|am| vec![am.into()])
-        .unwrap_or_else(|| FaultAm::ALL.to_vec())
+fn selected_fixtures(
+    am: Option<FaultAmArg>,
+    distann_codec: Option<DistannCodecArg>,
+) -> Result<Vec<FaultFixture>> {
+    let codec = distann_codec.map(Into::into);
+    match am.map(Into::into) {
+        Some(FaultAm::DistAnn) => Ok(FaultFixture::for_access_method(FaultAm::DistAnn)
+            .into_iter()
+            .filter(|fixture| codec.is_none() || fixture.codec == codec)
+            .collect()),
+        Some(access_method) if codec.is_some() => Err(eyre!(
+            "--distann-codec is valid only with --am distann, got --am {}",
+            access_method.as_str()
+        )),
+        Some(access_method) => Ok(FaultFixture::for_access_method(access_method)),
+        None if codec.is_some() => Err(eyre!("--distann-codec requires --am distann")),
+        None => Ok(FaultFixture::ALL.to_vec()),
+    }
 }
 
 async fn run_io_probe(
     conn: &ConnectionOptions,
     mode: ProviderMode,
     path_match: &str,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     let client = connect_fault(conn, mode.as_str()).await?;
     for &am in ams {
@@ -556,7 +614,7 @@ fn provider_targets_wal(path_match: &str) -> bool {
     path_match.contains("pg_wal")
 }
 
-async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultFixture]) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     for &am in ams {
         run_backend_interrupt_case(
@@ -584,7 +642,7 @@ async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
 async fn run_backend_interrupt_case(
     conn: &ConnectionOptions,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
     label: &str,
     interrupt_sql: &str,
     require_query_canceled_sqlstate: bool,
@@ -627,7 +685,11 @@ async fn run_backend_interrupt_case(
     }
 }
 
-async fn run_timeout_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn run_timeout_probe(
+    conn: &ConnectionOptions,
+    rows: i64,
+    ams: &[FaultFixture],
+) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     run_statement_timeout_probe(conn, rows, ams).await?;
     run_idle_in_transaction_timeout_probe(conn, ams).await
@@ -636,7 +698,7 @@ async fn run_timeout_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm])
 async fn run_statement_timeout_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     let client = connect_fault(conn, "statement-timeout").await?;
     for &am in ams {
@@ -654,7 +716,7 @@ async fn run_statement_timeout_probe(
 
 async fn run_idle_in_transaction_timeout_probe(
     conn: &ConnectionOptions,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     for &am in ams {
         let client = connect_fault(conn, "idle-tx-timeout").await?;
@@ -683,7 +745,7 @@ async fn run_idle_in_transaction_timeout_probe(
 async fn run_lock_timeout_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     let holder = connect_fault(conn, "lock-holder").await?;
@@ -693,7 +755,7 @@ async fn run_lock_timeout_probe(
         run_lock_timeout_case(
             &holder,
             &waiter,
-            table,
+            &table,
             &format!("reindex {}", am.as_str()),
             &workload_reindex_sql(am),
         )
@@ -706,7 +768,7 @@ async fn run_lock_timeout_probe(
         run_lock_timeout_case(
             &holder,
             &waiter,
-            table,
+            &table,
             &format!("create_index {}", am.as_str()),
             &create_index,
         )
@@ -714,7 +776,7 @@ async fn run_lock_timeout_probe(
         run_lock_timeout_case(
             &holder,
             &waiter,
-            table,
+            &table,
             &format!("vacuum_full {}", am.as_str()),
             &workload_vacuum_full_sql(am),
         )
@@ -751,7 +813,7 @@ fn repeated_scan_probe_iterations(rows: i64) -> i64 {
 async fn run_resource_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
     provider_marker: Option<&str>,
 ) -> Result<()> {
     let pressure_rows = resource_accumulator_rows(rows);
@@ -803,7 +865,7 @@ async fn prepare_resource_workloads(
     conn: &ConnectionOptions,
     rows: i64,
     pressure_limit: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     if rows <= 0 {
         return Err(eyre!("--rows must be >= 1"));
@@ -836,7 +898,7 @@ async fn prepare_resource_workloads(
 
 async fn run_resource_accumulator_pressure_probe(
     client: &tokio_postgres::Client,
-    am: FaultAm,
+    am: FaultFixture,
     rows: i64,
     pressure_limit: i64,
 ) -> Result<()> {
@@ -895,7 +957,7 @@ fn resource_temp_spill_rows(rows: i64) -> i64 {
 async fn run_temp_file_limit_probe(
     client: &tokio_postgres::Client,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let temp_bytes_before = pg_stat_database_temp_bytes(client).await?;
     let temp_spill = client
@@ -923,7 +985,7 @@ async fn run_temp_file_limit_probe(
 async fn run_provider_temp_spill_probe(
     client: &tokio_postgres::Client,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let temp_bytes_before = pg_stat_database_temp_bytes(client).await?;
     let temp_spill = client
@@ -954,7 +1016,7 @@ async fn run_provider_temp_spill_probe(
 async fn run_wal_rotation_accounting_probe(
     client: &tokio_postgres::Client,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let wal_before = pg_stat_wal_snapshot(client).await?;
     let lsn_before = current_wal_lsn(client).await?;
@@ -1029,7 +1091,7 @@ fn wal_rotation_rows(rows: i64) -> i64 {
     rows.clamp(64, 1_024)
 }
 
-async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultFixture]) -> Result<()> {
     let client = connect_fault(conn, "memory").await?;
     for &am in ams {
         run_memory_build_probe(&client, rows, am).await?;
@@ -1049,7 +1111,7 @@ async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
 async fn run_memory_build_probe(
     client: &tokio_postgres::Client,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let build_sql = ecaz_fault_injection::workload_create_index_sql(am, rows);
     let mut reached_success = false;
@@ -1075,7 +1137,7 @@ async fn run_memory_build_probe(
 
 async fn run_memory_workload_palloc_sweep(
     client: &tokio_postgres::Client,
-    am: FaultAm,
+    am: FaultFixture,
     lane: &str,
     sql: &str,
 ) -> Result<()> {
@@ -1099,7 +1161,7 @@ async fn run_memory_workload_palloc_sweep(
 
 async fn run_memory_expected_palloc_probe(
     client: &tokio_postgres::Client,
-    am: FaultAm,
+    am: FaultFixture,
     lane: &str,
     nth: i32,
     sql: &str,
@@ -1145,7 +1207,7 @@ fn memory_major_workload_sweep_limit() -> i32 {
 async fn run_memory_rlimit_oom_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     for &am in ams {
         let rows = rlimit_oom_workload_rows(rows);
@@ -1167,7 +1229,7 @@ async fn run_memory_rlimit_oom_probe(
 async fn run_memory_rlimit_oom_probe(
     _conn: &ConnectionOptions,
     _rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     let am_names = ams
         .iter()
@@ -1184,7 +1246,7 @@ async fn run_memory_rlimit_oom_probe(
 #[cfg(target_os = "linux")]
 async fn run_memory_rlimit_oom_case(
     conn: &ConnectionOptions,
-    am: FaultAm,
+    am: FaultFixture,
     workload: &str,
     sql: &str,
 ) -> Result<()> {
@@ -1246,7 +1308,7 @@ fn rlimit_oom_headroom_bytes() -> u64 {
 async fn run_memory_oom_kill_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     for &am in ams {
         let rows = oom_kill_workload_rows(rows);
@@ -1268,7 +1330,7 @@ async fn run_memory_oom_kill_probe(
 async fn run_memory_oom_kill_build_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let setup = connect_fault(conn, "oom-kill-setup").await?;
     setup.batch_execute(&workload_table_sql(am, rows)).await?;
@@ -1284,7 +1346,7 @@ async fn run_memory_oom_kill_build_probe(
 
 async fn run_memory_oom_kill_case(
     conn: &ConnectionOptions,
-    am: FaultAm,
+    am: FaultFixture,
     workload: &str,
     sql: &str,
 ) -> Result<()> {
@@ -1402,7 +1464,11 @@ fn set_backend_address_space_limit(pid: i32, limit_bytes: u64) -> Result<()> {
     }
 }
 
-async fn run_slow_disk_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn run_slow_disk_probe(
+    conn: &ConnectionOptions,
+    rows: i64,
+    ams: &[FaultFixture],
+) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     let client = connect_fault(conn, "slow-disk").await?;
     for &am in ams {
@@ -1413,7 +1479,11 @@ async fn run_slow_disk_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm
     Ok(())
 }
 
-async fn prepare_workloads(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn prepare_workloads(
+    conn: &ConnectionOptions,
+    rows: i64,
+    ams: &[FaultFixture],
+) -> Result<()> {
     if rows <= 0 {
         return Err(eyre!("--rows must be >= 1"));
     }
@@ -1437,11 +1507,11 @@ async fn prepare_workloads(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm])
     Ok(())
 }
 
-async fn print_workload_paths(client: &tokio_postgres::Client, am: FaultAm) -> Result<()> {
+async fn print_workload_paths(client: &tokio_postgres::Client, am: FaultFixture) -> Result<()> {
     let table = ecaz_fault_injection::workload_table(am);
     let index = ecaz_fault_injection::workload_index(am);
-    let table_path = relation_filepath(client, table).await?;
-    let index_path = relation_filepath(client, index).await?;
+    let table_path = relation_filepath(client, &table).await?;
+    let index_path = relation_filepath(client, &index).await?;
     crate::ecaz_println!(
         "{}\ttable={}\ttable_path={}\tindex={}\tindex_path={}",
         am.as_str(),
@@ -1808,7 +1878,7 @@ async fn pg_stat_database_temp_bytes(client: &tokio_postgres::Client) -> Result<
 
 async fn assert_temp_bytes_non_decreasing(
     client: &tokio_postgres::Client,
-    am: FaultAm,
+    am: FaultFixture,
     mode: &str,
     before: Option<i64>,
 ) -> Result<()> {
@@ -1913,10 +1983,11 @@ fn assert_sqlstate(
 fn print_cases(cases: &[ecaz_fault_injection::FaultCase]) {
     for case in cases {
         crate::ecaz_println!(
-            "{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}",
             case.id,
             case.lane,
             case.access_method.as_str(),
+            case.codec.map(|codec| codec.as_str()).unwrap_or("n/a"),
             case.fault,
             case.expected
         );
