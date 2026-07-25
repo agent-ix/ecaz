@@ -1422,6 +1422,127 @@ fn task199_real_insert_sql(corpus: &str) -> String {
     )
 }
 
+async fn task199_real_delete_invalidation_drill(
+    coordinator: &tokio_postgres::Client,
+    corpus: &str,
+) -> Result<String> {
+    let target_id = coordinator
+        .query_one(&format!("SELECT min(id)::bigint FROM {corpus}"), &[])
+        .await?
+        .get::<_, i64>(0);
+    let invalidation = coordinator
+        .execute(
+            &format!("DELETE FROM {corpus} WHERE id = $1"),
+            &[&target_id],
+        )
+        .await
+        .expect_err("real DELETE must invalidate the Ready traversal replica");
+    let retryable = invalidation
+        .code()
+        .is_some_and(|code| code.code() == "40001")
+        && invalidation
+            .as_db_error()
+            .is_some_and(|error| error.message().contains("EC_REPLICA_INVALIDATED"));
+    let row_preserved = coordinator
+        .query_one(
+            &format!("SELECT count(*) = 1 FROM {corpus} WHERE id = $1"),
+            &[&target_id],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let stale = coordinator
+        .query_one(
+            "SELECT count(*) = 1
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Stale'",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if !retryable || !row_preserved || !stale {
+        bail!(
+            "Task 199 real DELETE invalidation failed: retryable={retryable} \
+             row_preserved={row_preserved} stale={stale}"
+        );
+    }
+    Ok(format!(
+        "scenario=real_delete_durable_invalidation pass=true target_id={target_id} \
+         first_sqlstate=40001 token=EC_REPLICA_INVALIDATED state=Stale deleted_rows=0"
+    ))
+}
+
+async fn task199_participant_tombstone_invalidation_drill(
+    coordinator: &tokio_postgres::Client,
+) -> Result<String> {
+    let owner_count = coordinator
+        .query_one(
+            "SELECT owner_count
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Ready'",
+            &[],
+        )
+        .await?
+        .get::<_, i32>(0);
+    let vec_id = coordinator
+        .query_one(
+            "SELECT vec_id
+               FROM ec_distann_list_directory('dm_idx'::regclass)
+              WHERE NOT is_tombstone
+                AND ec_distann_owning_node(vec_id, $1, 1) = 0
+              ORDER BY vec_id
+              LIMIT 1",
+            &[&owner_count],
+        )
+        .await?
+        .get::<_, i64>(0);
+    let invalidation = coordinator
+        .query_one(
+            "SELECT ec_distann_apply_record_writes(
+                 'dm_idx'::regclass,
+                 ec_distann_epoch_fingerprint('dm_idx'::regclass),
+                 ARRAY[$1]::bigint[]
+             )",
+            &[&vec_id],
+        )
+        .await
+        .expect_err("participant tombstone endpoint must invalidate the Ready replica");
+    let retryable = invalidation
+        .code()
+        .is_some_and(|code| code.code() == "40001")
+        && invalidation
+            .as_db_error()
+            .is_some_and(|error| error.message().contains("EC_REPLICA_INVALIDATED"));
+    let record_live = coordinator
+        .query_one(
+            "SELECT NOT is_tombstone
+               FROM ec_distann_list_directory('dm_idx'::regclass)
+              WHERE vec_id = $1",
+            &[&vec_id],
+        )
+        .await?
+        .get::<_, bool>(0);
+    let stale = coordinator
+        .query_one(
+            "SELECT count(*) = 1
+               FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+              WHERE state = 'Stale'",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if !retryable || !record_live || !stale {
+        bail!(
+            "Task 199 participant tombstone invalidation failed: retryable={retryable} \
+             record_live={record_live} stale={stale}"
+        );
+    }
+    Ok(format!(
+        "scenario=participant_tombstone_durable_invalidation pass=true vec_id={vec_id} \
+         owner_ordinal=0 first_sqlstate=40001 token=EC_REPLICA_INVALIDATED \
+         state=Stale tombstoned_rows=0"
+    ))
+}
+
 async fn build_and_attest_traversal_replica(
     coordinator: &tokio_postgres::Client,
     scale: &str,
@@ -2447,6 +2568,26 @@ async fn run_task199_replica_lifecycle_drills(
     ));
     if !reclaim_pass {
         bail!("Task 199 retirement/reclaim drill failed");
+    }
+
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} {}",
+        task199_real_delete_invalidation_drill(coordinator, corpus).await?
+    ));
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the real DELETE invalidation replica");
+    }
+
+    build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
+    lines.push(format!(
+        "physical_benchmark_traversal_replica_fault scale={scale} {}",
+        task199_participant_tombstone_invalidation_drill(coordinator).await?
+    ));
+    let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
+    if !retired || !reclaimed {
+        bail!("Task 199 could not reclaim the participant tombstone invalidation replica");
     }
 
     let (concurrent_digest, concurrent_line) =
