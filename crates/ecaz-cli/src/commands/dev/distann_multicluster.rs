@@ -1932,17 +1932,16 @@ async fn task199_relation_lock_fallback_drill(
 async fn task199_queued_ddl_lock_drill(
     coordinator: &tokio_postgres::Client,
     coordinator_port: u16,
-    corpus: &str,
-    queries: &str,
 ) -> Result<String> {
     let (holder, holder_connection) = task199_connect(coordinator_port).await?;
-    let lock_establishing_scan = task199_ordered_scan_sql(corpus, queries, 1);
     holder
-        .batch_execute(&format!(
+        .batch_execute(
             "BEGIN;
-             SET enable_seqscan = off;
-             {lock_establishing_scan}"
-        ))
+             SELECT encode(
+                 ec_distann_build_traversal_replica('dm_idx'::regclass),
+                 'hex'
+             );",
+        )
         .await?;
     let (dropper, dropper_connection) = task199_connect(coordinator_port).await?;
     let dropper_pid = dropper
@@ -2497,7 +2496,7 @@ async fn run_task199_replica_lifecycle_drills(
     build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?;
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} {}",
-        task199_queued_ddl_lock_drill(coordinator, coordinator_port, corpus, queries,).await?
+        task199_queued_ddl_lock_drill(coordinator, coordinator_port).await?
     ));
     let (retired, reclaimed) = retire_and_reclaim_traversal_replica(coordinator).await?;
     if !retired || !reclaimed {
