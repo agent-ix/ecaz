@@ -259,6 +259,14 @@ impl FaultFixture {
             _ => "invalid",
         }
     }
+
+    pub fn dimensions(self) -> usize {
+        match self.codec {
+            Some(DistannCodec::TurboQuant) => 1536,
+            Some(DistannCodec::RaBitQ | DistannCodec::GroupedPq) => 64,
+            None => 4,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -488,6 +496,26 @@ pub fn workload_setup_sql(fixture: FaultFixture, rows: i64) -> String {
 
 pub fn workload_table_sql(fixture: FaultFixture, rows: i64) -> String {
     let table = workload_table(fixture);
+    let dimensions = fixture.dimensions();
+    let source_vector = if fixture.access_method == FaultAm::DistAnn {
+        format!(
+            "ARRAY(
+                 SELECT (
+                     sin((gs * 0.013 * (d + 1))::double precision) +
+                     cos((gs * 0.0031 * (d + 1))::double precision)
+                 )::real
+                 FROM generate_series(0, {dimensions} - 1) AS d
+             )"
+        )
+    } else {
+        "ARRAY[
+             cos((gs * 0.013)::double precision)::real,
+             sin((gs * 0.013)::double precision)::real,
+             0.0::real,
+             0.0::real
+         ]::real[]"
+            .to_owned()
+    };
     format!(
         "DROP TABLE IF EXISTS {table} CASCADE;
          CREATE TABLE {table} (
@@ -496,12 +524,7 @@ pub fn workload_table_sql(fixture: FaultFixture, rows: i64) -> String {
          );
          INSERT INTO {table} (embedding)
          SELECT encode_to_ecvector(
-             ARRAY[
-                 cos((gs * 0.013)::double precision)::real,
-                 sin((gs * 0.013)::double precision)::real,
-                 0.0::real,
-                 0.0::real
-             ]::real[],
+             {source_vector},
              4,
              42
          )
@@ -621,11 +644,12 @@ pub fn workload_accumulator_pressure_settings_sql(
 pub fn workload_accumulator_pressure_sql(fixture: FaultFixture, pressure_limit: i64) -> String {
     let table = workload_table(fixture);
     let pressure_limit = pressure_limit.clamp(1, 1_000);
+    let query = workload_query_vector_sql(fixture, "1");
     format!(
         "SELECT count(*)::bigint
          FROM (
              SELECT id FROM {table}
-             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
+             ORDER BY embedding <#> {query}
              LIMIT {pressure_limit}
          ) AS nearest"
     )
@@ -633,30 +657,27 @@ pub fn workload_accumulator_pressure_sql(fixture: FaultFixture, pressure_limit: 
 
 pub fn workload_scan_sql(fixture: FaultFixture) -> String {
     let table = workload_table(fixture);
+    let query = workload_query_vector_sql(fixture, "1");
     format!(
         "SET enable_seqscan = off;
          SET enable_bitmapscan = off;
          SET enable_sort = off;
          SELECT id FROM {table}
-         ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
+         ORDER BY embedding <#> {query}
          LIMIT 5"
     )
 }
 
 pub fn workload_repeated_scan_sql(fixture: FaultFixture, iterations: i64) -> String {
     let table = workload_table(fixture);
+    let query = workload_query_vector_sql(fixture, "probe.i");
     format!(
         "SET enable_seqscan = off;
          SELECT count(*)
          FROM generate_series(1, {iterations}) AS probe(i)
          CROSS JOIN LATERAL (
              SELECT id FROM {table}
-             ORDER BY embedding <#> ARRAY[
-                 cos((probe.i * 0.000001)::double precision)::real,
-                 sin((probe.i * 0.000001)::double precision)::real,
-                 0.0::real,
-                 0.0::real
-             ]::real[]
+             ORDER BY embedding <#> {query}
              LIMIT 5
          ) AS nearest"
     )
@@ -664,29 +685,69 @@ pub fn workload_repeated_scan_sql(fixture: FaultFixture, iterations: i64) -> Str
 
 pub fn workload_insert_sql(fixture: FaultFixture) -> String {
     let table = workload_table(fixture);
+    let query = workload_query_vector_sql(fixture, "991");
     format!(
         "INSERT INTO {table} (embedding)
-         VALUES (encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0]::real[], 4, 42))"
+         VALUES (encode_to_ecvector({query}, 4, 42))"
     )
 }
 
 pub fn workload_bulk_insert_sql(fixture: FaultFixture, rows: i64) -> String {
     let table = workload_table(fixture);
     let rows = rows.max(1);
+    let dimensions = fixture.dimensions();
+    let source_vector = if fixture.access_method == FaultAm::DistAnn {
+        format!(
+            "ARRAY(
+                 SELECT (
+                     sin((gs * 0.017 * (d + 1))::double precision) +
+                     cos((gs * 0.0041 * (d + 1))::double precision)
+                 )::real
+                 FROM generate_series(0, {dimensions} - 1) AS d
+             )"
+        )
+    } else {
+        "ARRAY[
+             cos((gs * 0.017)::double precision)::real,
+             sin((gs * 0.017)::double precision)::real,
+             0.0::real,
+             0.0::real
+         ]::real[]"
+            .to_owned()
+    };
     format!(
         "INSERT INTO {table} (embedding)
          SELECT encode_to_ecvector(
-             ARRAY[
-                 cos((gs * 0.017)::double precision)::real,
-                 sin((gs * 0.017)::double precision)::real,
-                 0.0::real,
-                 0.0::real
-             ]::real[],
+             {source_vector},
              4,
              42
          )
          FROM generate_series(1, {rows}) AS gs"
     )
+}
+
+fn workload_query_vector_sql(fixture: FaultFixture, seed_expr: &str) -> String {
+    let dimensions = fixture.dimensions();
+    if fixture.access_method == FaultAm::DistAnn {
+        format!(
+            "ARRAY(
+                 SELECT (
+                     sin(({seed_expr} * 0.000001 * (d + 1))::double precision) +
+                     cos(({seed_expr} * 0.0000031 * (d + 1))::double precision)
+                 )::real
+                 FROM generate_series(0, {dimensions} - 1) AS d
+             )"
+        )
+    } else {
+        format!(
+            "ARRAY[
+                 cos(({seed_expr} * 0.000001)::double precision)::real,
+                 sin(({seed_expr} * 0.000001)::double precision)::real,
+                 0.0::real,
+                 0.0::real
+             ]::real[]"
+        )
+    }
 }
 
 pub fn workload_vacuum_sql(fixture: FaultFixture) -> String {
@@ -804,9 +865,18 @@ mod tests {
             assert!(workload_reindex_sql(fixture).contains(&index));
             if let Some(codec) = fixture.codec {
                 assert!(sql.contains(codec.as_str()));
+                assert!(sql.contains(&fixture.dimensions().to_string()));
             }
         }
         assert!(workload_temp_spill_sql(10).contains("generate_series(1, 100000)"));
+    }
+
+    #[test]
+    fn distann_turboquant_fixture_uses_the_supported_no_qjl_dimension() {
+        let fixture = FaultFixture::new(FaultAm::DistAnn, Some(DistannCodec::TurboQuant));
+        assert_eq!(fixture.dimensions(), 1536);
+        assert!(workload_setup_sql(fixture, 16).contains("generate_series(0, 1536 - 1)"));
+        assert!(workload_scan_sql(fixture).contains("generate_series(0, 1536 - 1)"));
     }
 
     #[test]
