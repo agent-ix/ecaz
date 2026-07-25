@@ -1795,11 +1795,14 @@ async fn task199_enospc_replica_build_drill(
     let original_tablespace = original_tablespace.replace('"', "\"\"");
     coordinator
         .batch_execute(&format!(
-            "ALTER INDEX dm_idx SET TABLESPACE \"{original_tablespace}\"; \
-             DROP TABLESPACE task199_replica_enospc"
+            "ALTER INDEX dm_idx SET TABLESPACE \"{original_tablespace}\""
         ))
         .await
         .wrap_err("restoring the Task 199 index tablespace after ENOSPC drills")?;
+    coordinator
+        .batch_execute("DROP TABLESPACE task199_replica_enospc")
+        .await
+        .wrap_err("dropping the Task 199 ENOSPC tablespace")?;
     let data_recovery_digest =
         build_and_attest_traversal_replica(coordinator, scale, lines).await?;
     lines.push(format!(
