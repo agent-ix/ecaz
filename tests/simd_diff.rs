@@ -247,8 +247,7 @@ fn forced_avx2_fma_score_paths_match_scalar_reference_when_available() {
     let avx2 = quantizer
         .score_ip_from_parts_avx2_fma_for_test(&prepared, candidate.gamma, &codes)
         .expect("x86 Task 36 lane requires Prod AVX2+FMA execution");
-    let scalar =
-        quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
+    let scalar = quantizer.score_ip_from_parts_scalar_reference(&prepared, candidate.gamma, &codes);
     assert_close("forced avx2 score_ip_from_parts", avx2, scalar, 1.0e-5);
 
     let other = code_bytes(&quantizer.encode(&random_unit_vector(384, 0xC44)));
