@@ -201,8 +201,10 @@ Tolerance changes require a review packet explaining the numeric reason.
 Hardware-specific execution claims are host-local: Apple arm64 proves NEON
 and, when detected, SDOT; Intel/x86 hosts prove AVX2/AVX-512; Graviton hosts
 prove SVE/SVE2. Unavailable paths must be listed as unexecuted rather than
-inferred from compilation. This local lane does not by itself claim CI
-coverage.
+inferred from compilation. Repository CI is manual-dispatch-only; this lane is
+not an automatic pull-request or scheduled gate. Until that policy changes,
+pre-merge evidence is a task-scoped packet containing a local
+`make simd-diff` run from every host class being claimed.
 
 Every new production SIMD scoring path must land with an existing
 scalar/reference entry point, a narrow test/bench-only forced-backend hook

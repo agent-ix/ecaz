@@ -12,8 +12,10 @@ No CI/scheduled trigger is added or claimed by this follow-up.
 ## Scope
 
 Add randomized property-based tests that compare every SIMD scoring/decoding
-implementation against a scalar reference for the same input, and gate them in
-the hardening lanes so regressions are caught at PR time.
+implementation against a scalar reference for the same input, and collect them
+in one hardening lane. Repository CI is currently manual-dispatch-only, so
+pre-merge execution must be recorded in a task-scoped review packet rather than
+described as an automatic PR gate.
 
 Coverage targets — every code path that has both a SIMD and a scalar variant:
 
@@ -86,6 +88,9 @@ Optional follow-on:
   SVE/SVE2 as unavailable, not passed.
 - `make hardening-local` includes `simd-diff` and stays under the existing wall
   clock budget by capping proptest cases per backend.
+- CI does not automatically run this lane on pull requests or a schedule.
+  Until repository CI policy changes, the pre-merge gate is a recorded local
+  `make simd-diff` run on each claimed host class.
 - A deliberately mutated SIMD path (flip a sign in one branch) is caught by
   `simd-diff` and reported as a non-trivial diff in the packet.
 
