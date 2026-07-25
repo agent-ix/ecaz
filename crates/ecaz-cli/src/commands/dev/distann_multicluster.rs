@@ -2792,8 +2792,9 @@ async fn run_task199_replica_lifecycle_drills(
     if replica != owner_baseline {
         bail!("Task 199 Ready replica changed ordered semantic results");
     }
+    let ordered_result_digest = hex::encode(Sha256::digest(owner_baseline.as_bytes()));
     let mut lines = vec![format!(
-        "physical_benchmark_traversal_replica_fault scale={scale} scenario=normal_ready_semantic_identity pass=true content_digest={content_digest}"
+        "physical_benchmark_traversal_replica_fault scale={scale} scenario=normal_ready_semantic_identity pass=true content_digest={content_digest} ordered_result_digest={ordered_result_digest}"
     )];
 
     for isolation in ["READ UNCOMMITTED", "REPEATABLE READ", "SERIALIZABLE"] {

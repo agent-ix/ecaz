@@ -1,0 +1,85 @@
+{
+  "name": "task199-graviton-ordered-identity-10k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-199/003-release-matrix-and-decision/artifacts/graviton-run",
+  "defaults": { "pg": 18, "socket_dir": "/var/run/postgresql" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "corpus-fetch",
+      "name": "fetch-dbpedia-openai3",
+      "tags": ["task199", "phase5", "aws", "graviton", "setup"],
+      "dataset": "qdrant-dbpedia-openai3-large-1536-1m",
+      "output_dir": "/var/lib/pgsql/18/datasets/task199-dbpedia-openai3-1m"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-10k",
+      "tags": ["task199", "phase5", "aws", "graviton", "setup", "ec_real_10k"],
+      "profile": "ec_real_10k",
+      "parquet": "/var/lib/pgsql/18/datasets/task199-dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task199-cross-isa"
+    },
+    {
+      "kind": "corpus-prepare",
+      "name": "prepare-ec-real-100k",
+      "tags": ["task199", "phase5", "aws", "graviton", "setup", "ec_real_100k"],
+      "profile": "ec_real_100k",
+      "parquet": "/var/lib/pgsql/18/datasets/task199-dbpedia-openai3-1m/data",
+      "output_dir": "/var/lib/pgsql/18/datasets/staged-task199-cross-isa"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "graviton-ordered-identity-10k",
+      "tags": ["task199", "phase5", "aws", "graviton", "cross_isa", "ec_real_10k"],
+      "artifact_dir": "${artifact_dir}/graviton-ordered-identity-10k",
+      "run_dir": "target/task199-graviton-ordered-identity",
+      "pgbin": "/usr/bin",
+      "nodes": 3,
+      "base_port": 42620,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "production_head_policy": "training_landmarks_exact",
+      "training_query_path": "/var/lib/pgsql/18/datasets/staged-task199-cross-isa/ec_real_100k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 2,
+      "benchmark_warmup_iterations": 1,
+      "distann_stage_counters": false,
+      "materialization_correctness": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/var/lib/pgsql/18/datasets/staged-task199-cross-isa",
+      "benchmark_seed_variants": [
+        {
+          "name": "owner-control",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "traversal_replica": false
+        },
+        {
+          "name": "coordinator-replica",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "traversal_replica": true
+        }
+      ]
+    }
+  ]
+}
