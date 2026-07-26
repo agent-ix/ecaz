@@ -636,19 +636,25 @@ allowance is restricted to messages containing `checkpoint request failed` or
 
 Current interrupt inventory:
 
-- DiskANN build/scan paths call `maybe_check_for_interrupts()` from
-  `src/am/ec_diskann/mod.rs`, including the scan loop and build/import loops in
-  `src/am/ec_diskann/scan.rs` and `src/am/ec_diskann/routine.rs`.
-- SPIRE remote candidate dispatch polls PostgreSQL interrupt and statement
-  timeout flags in `src/am/ec_spire/coordinator/remote_candidates/dispatch.rs`.
-- DistANN build and scan paths poll around physical generation, traversal,
-  owner scoring, and payload work. The codec fixtures keep interrupt workloads
-  in repeated real scoring rather than substituting `pg_sleep`.
-- HNSW parallel build calls `pg_sys::ProcessInterrupts()` in
-  `src/am/ec_hnsw/build_parallel.rs`.
+| AM / surface | Backend interrupt boundary |
+| --- | --- |
+| HNSW parallel-build leader wait | `src/am/ec_hnsw/build_parallel.rs`: calls `pg_sys::ProcessInterrupts()` before sleeping when no worker queue made progress |
+| IVF parallel-build leader wait | `src/am/ec_ivf/build_parallel.rs`: calls `pg_sys::ProcessInterrupts()` before sleeping when no worker queue made progress |
+| DiskANN scan | `src/am/ec_diskann/scan.rs`: both profiled and unprofiled greedy-descent frontier loops call `maybe_check_for_interrupts()` once per outer beam iteration |
+| DiskANN vacuum | `src/am/ec_diskann/routine.rs`: bulk-delete node passes, neighbor-fill targets, and repair candidates call `maybe_check_for_interrupts()` |
+| SPIRE remote dispatch | `src/am/ec_spire/coordinator/remote_candidates/dispatch.rs`: the local-cancel future polls PostgreSQL `InterruptPending`/`QueryCancelPending` and the statement-timeout indicator at a bounded interval |
+| DistANN physical shard build | `src/am/ec_distann/shard_build.rs`: membership assignment, sequential shard builds, parallel completion receipt/timeouts, stitch groups, and reachability repair call `maybe_check_for_interrupts()` |
+| DistANN remote transport | `src/am/ec_distann/remote_transport.rs`: calls `maybe_check_for_interrupts()` immediately before and after the thread-local transport-state borrow; async cancellation first clears pooled connections, then the outer boundary raises |
 
-Missing or newly discovered long-running loops should be added to this list
-with either an interrupt check or a follow-up task.
+This table inventories every explicit interrupt poll currently present under
+the five AM source trees. It is not a claim that every potentially
+long-running loop already has a poll. Task 200 owns the source audit and
+remediation/follow-up decisions for the known unpolled or ambiguous surfaces:
+HNSW/IVF eager `amrescan` work, sequential build/page traversal, SPIRE local
+build/scan CPU loops, DiskANN page flush/import work, and DistANN legacy/local
+build plus eager orchestration outside the physical-shard and remote-transport
+boundaries. Newly discovered surfaces must be added to Task 200 rather than
+silently extending this list.
 
 ## Concurrency And Formal Pilots
 
