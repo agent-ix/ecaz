@@ -1,0 +1,23 @@
+Task 38 packet 003 local validation
+Implementation HEAD: dfcbffd4e
+Host: macOS arm64
+
+rustfmt modified Rust files
+result=pass
+notes=stable rustfmt reported only repository nightly-option warnings
+
+git diff --check
+result=pass
+
+cargo check -p ecaz-cli
+result=pass
+elapsed=2m18s
+warning=pre-existing LoadedDistributedPlacementConfig.path dead_code
+warning=PostgreSQL header unused-parameter warnings from pg18_pgstat_shim.c
+
+cargo test -p ecaz-cli cli_parses_spire_remote_socket_fault_command
+result=not_run
+reason=production cargo check passed; no separate test code-generation cycle
+
+linux_provider_runtime=not_available
+live_fault_event=not_claimed

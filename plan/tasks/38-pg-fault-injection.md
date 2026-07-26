@@ -6,7 +6,8 @@ pending** — the historical Linux packet proved the four-AM
 adds `ec_distann` as a first-class AM with separate RaBitQ, TurboQuant, and
 grouped-PQ fixtures, exact-peer socket reset/latency provider modes, measured
 slow-disk comparison inputs, stronger accumulator markers, reset-safe palloc
-handling, and host-independent cgroup planning.
+handling, armed exact-peer DistANN TCP and SPIRE Unix-socket drills, and
+host-independent cgroup planning.
 
 The seven current fixtures flow through real build, KNN scan, insert,
 delete/vacuum, DDL, cancel/terminate, statement/idle/lock timeout, palloc,
