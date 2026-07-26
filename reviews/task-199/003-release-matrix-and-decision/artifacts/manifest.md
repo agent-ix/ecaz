@@ -20,10 +20,11 @@ Storage lines report identical owner and coordinator-replica generation,
 coordinator-source, and single-index bytes because that step measures shared
 generation storage, not the replica image. Replica relation/WAL/build costs
 are listed above; at 100k the relation is 52.0% of the 3,188,056,064-byte
-physical generation. The 2,000-trial recall mean includes setup/cold effects;
-the 50-sample latency step is warm-cache steady state. At 100k those answer
-different questions (21.43→21.50 ms bulk mean versus 19.90→16.20 ms warm
-repeat), so promotion claims the warm steady-state benefit explicitly.
+physical generation. The 2,000-trial bulk step is noisier than the 50-sample
+warm step: at 50k its owner/replica mean moved from 21.21/17.97 ms in the
+earlier run to 21.75/20.34 ms in the selected run. At 100k the bulk
+21.43→21.50 ms result is therefore not interpreted as evidence of no benefit;
+promotion claims only the warm steady-state figure, 19.90→16.20 ms.
 
 The no-replica read-latency before arm was not measured at release sample
 size; the pre-boundary run had only 10 queries/2 iterations and is cited only
@@ -43,7 +44,10 @@ waived for this task's promotion, with the limitation recorded explicitly.
 
 ## Run dispersion and configuration identity
 
-The selected release rows are the dedicated per-scale runs listed above. The
+The selected release rows are the dedicated per-scale runs listed above. A
+second same-SHA run exists at 10k under `artifacts/run/normal-release-ab-10k/`
+and at 50k under `artifacts/run/normal-release-ab-50k/`; it is retained only
+for dispersion and is not the selected citation. The
 previous release run provides a dispersion check: 10k owner/replica latency
 was 18.60/15.70 ms versus selected 18.30/15.30 (−0.30/−0.40 ms), 50k was
 19.30/16.60 versus selected 20.40/16.40 (+1.10/−0.20 ms), and 100k was
@@ -52,10 +56,13 @@ reported so the 100k warm-repeat benefit is not presented as more precise than
 the observed run-to-run spread.
 
 The per-scale suite manifests preserve actual configuration identity:
-10k/100k use config SHA `515bf5b80c06356ce29a76637525e364ef16c3bc3fe16689032be6bb7fd0c730`;
-the corrected 50k run uses `db9985d3cc97f9ff82cfbac53d29db535ae6c5dbd48d8402e32d1fe95c3e196c`.
-The differences are limited to run directory/base port; benchmark arguments,
-corpus, seed variants, and result values are unchanged.
+the committed reproducible config (with per-step run directories and ports
+restored) is `ac973a2c05cc2b513489e29b9b876a4f3ebe09338d53a944476923485b08fd99`.
+The selected 10k/100k manifests retain their historical config SHA
+`515bf5b80c06356ce29a76637525e364ef16c3bc3fe16689032be6bb7fd0c730`, and the
+selected 50k manifest retains `db9985d3cc97f9ff82cfbac53d29db535ae6c5dbd48d8402e32d1fe95c3e196c`;
+only run directory/base port differed. Benchmark arguments, corpus, seed
+variants, and result values are unchanged.
 
 The packet-local `distann-multinode-summary.log` files are the cited raw
 result artifacts. SHA-256 hashes of all committed artifacts are recorded in
