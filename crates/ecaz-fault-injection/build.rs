@@ -18,6 +18,8 @@ fn main() {
         .arg("-shared")
         .arg("-fPIC")
         .arg("-O2")
+        .arg("-Wall")
+        .arg("-Wextra")
         .arg("src/ldpreload_provider.c")
         .arg("-o")
         .arg(&provider)
