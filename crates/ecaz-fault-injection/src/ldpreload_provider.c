@@ -13,6 +13,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
+#include <sys/un.h>
 #include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
@@ -128,7 +129,22 @@ static int peer_target_matches(int fd, char *target, size_t target_size) {
         return 0;
     }
 
-    if (address.ss_family == AF_INET) {
+    if (address.ss_family == AF_UNIX) {
+        const struct sockaddr_un *unix_address =
+            (const struct sockaddr_un *)&address;
+        /*
+         * Accepted AF_UNIX sockets commonly report an unnamed peer. Abstract
+         * peers also begin with NUL. Neither has a stable pathname identity,
+         * so never turn either form into a matchable "unix:" key.
+         */
+        if (address_len <= offsetof(struct sockaddr_un, sun_path) ||
+            unix_address->sun_path[0] == '\0') {
+            target[0] = '\0';
+            errno = saved_errno;
+            return 0;
+        }
+        snprintf(target, target_size, "unix:%s", unix_address->sun_path);
+    } else if (address.ss_family == AF_INET) {
         const struct sockaddr_in *inet_address =
             (const struct sockaddr_in *)&address;
         char host[INET_ADDRSTRLEN];

@@ -495,10 +495,10 @@ sessions, relation/advisory locks, prepared transactions, optional
   built-in Linux provider. That provider can inject matched-path `EIO` reads,
   matched-path `ENOSPC` writes/creates/fsyncs, slow-disk latency, and
   exact-peer socket reset/latency faults once the PG postmaster is started
-  with the printed environment. Socket peers use `tcp:HOST:PORT` or
-  `tcp:[IPv6]:PORT`; socket modes reject a missing or non-TCP `--peer-match`.
-  Unix-domain peers are intentionally unsupported because an accepted
-  `AF_UNIX` connection commonly has no unique peer pathname.
+  with the printed environment. Socket peers use `tcp:HOST:PORT`,
+  `tcp:[IPv6]:PORT`, or an absolute named `unix:/path`; socket modes reject a
+  missing or unstable identity. Unnamed and abstract `AF_UNIX` peers never
+  match because they do not have a stable pathname.
 - `ecaz dev fault provider-restart` and `ecaz dev fault provider-restore`
   wrap the local pgrx `pg_ctl restart` step so provider-backed lanes do not
   require hand-assembled `LD_PRELOAD` commands. Marker paths passed to
@@ -582,9 +582,10 @@ SPIRE Stage E SQLSTATE faults reuse
 `ecaz dev spire-multicluster fault-pg18`; this is distinct from provider-level
 socket faults. SPIRE loopback remote SQL uses Unix sockets, while DistANN
 multicluster owner/payload SQL uses loopback TCP. On Linux, start only the
-coordinator with the exact peer filter, require a reset/slow `fault=1` marker,
-restore the provider, and run the shared postconditions. This macOS host cannot
-load the Linux provider, so no live socket result is claimed. SPIRE
+coordinator with the exact named-Unix or TCP peer filter, require a reset/slow
+`fault=1` marker, restore the provider, and run the shared postconditions.
+Unnamed and abstract Unix peers are deliberately non-matchable. This macOS
+host cannot load the Linux provider, so no live socket result is claimed. SPIRE
 object-store reads remain **nonexistent**, not an unavailable transport test.
 
 `ecaz dev fault cgroup-plan` reports Linux, cgroup-v2, and `systemd-run`

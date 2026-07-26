@@ -56,7 +56,7 @@ pub struct ProviderEnvArgs {
     /// Substring that must appear in the target path, for example "base/".
     #[arg(long, default_value = "base/")]
     path_match: String,
-    /// Exact matched TCP peer, e.g. tcp:127.0.0.1:39711 or tcp:[::1]:39711.
+    /// Exact matched peer, e.g. tcp:127.0.0.1:39711 or unix:/path/.s.PGSQL.39424.
     #[arg(long)]
     peer_match: Option<String>,
     /// Start injecting on the Nth matching provider operation.
@@ -87,7 +87,7 @@ pub struct ProviderRestartArgs {
     /// Substring that must appear in the target path, for example "base/".
     #[arg(long, default_value = "base/")]
     path_match: String,
-    /// Exact matched TCP peer, e.g. tcp:127.0.0.1:39711 or tcp:[::1]:39711.
+    /// Exact matched peer, e.g. tcp:127.0.0.1:39711 or unix:/path/.s.PGSQL.39424.
     #[arg(long)]
     peer_match: Option<String>,
     /// Start injecting on the Nth matching provider operation.
@@ -408,12 +408,19 @@ fn validate_provider_options(
     {
         return Err(eyre!("--peer-match is required for {mode} mode"));
     }
-    if matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow)
-        && peer_match.is_some_and(|peer| !peer.starts_with("tcp:"))
-    {
-        return Err(eyre!(
-            "--peer-match supports TCP peers only and must start with tcp:"
-        ));
+    if matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow) {
+        let peer = peer_match.expect("required above");
+        let valid_tcp = peer
+            .strip_prefix("tcp:")
+            .is_some_and(|identity| !identity.is_empty());
+        let valid_unix = peer
+            .strip_prefix("unix:")
+            .is_some_and(|path| path.starts_with('/') && path.len() > 1);
+        if !valid_tcp && !valid_unix {
+            return Err(eyre!(
+                "--peer-match must be tcp:HOST:PORT or an absolute named unix:/path"
+            ));
+        }
     }
     if !matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow) && peer_match.is_some()
     {
@@ -2183,7 +2190,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn socket_provider_requires_tcp_peer_identity() {
+    fn socket_provider_requires_stable_peer_identity() {
         assert!(validate_provider_options(
             ProviderMode::SocketReset,
             None,
@@ -2193,16 +2200,15 @@ mod tests {
         assert!(validate_provider_options(
             ProviderMode::SocketSlow,
             Some(1),
-            Some("tcp:[::1]:39711")
+            Some("unix:/tmp/.s.PGSQL.39424")
         )
         .is_ok());
 
-        let error = validate_provider_options(
-            ProviderMode::SocketReset,
-            None,
-            Some("unix:/tmp/.s.PGSQL.39424"),
-        )
-        .expect_err("Unix peers are intentionally unsupported");
-        assert!(error.to_string().contains("supports TCP peers only"));
+        for unstable_peer in ["unix:", "unix:relative.sock", "abstract:peer"] {
+            let error =
+                validate_provider_options(ProviderMode::SocketReset, None, Some(unstable_peer))
+                    .expect_err("unstable peer identities are unsupported");
+            assert!(error.to_string().contains("absolute named unix:/path"));
+        }
     }
 }
