@@ -1,0 +1,43 @@
+Task 38 packet 008 outside-review static audit
+Date: 2026-07-26
+Reviewed branch head: e71081693
+Reviewed canonical status checkpoint: 167d7d379
+
+Scope:
+- request, manifest, m5-closeout-audit, static-validation log
+- canonical Task 38 definition
+- final approvals and retained evidence boundaries in packets 001-007
+- no Cargo, tests, PostgreSQL workloads, remote hosts, AWS, CI, or Intel work
+
+Static check:
+Command: git diff --check 67177c713..e71081693
+Result: pass
+
+Packet 005 M5-gap approvals:
+- cancellation mutation control: packet 007 approval 67177c713
+- resource/palloc negative control: packet 007 approval 67177c713
+- explicit interrupt-boundary inventory and Task 200 follow-up ownership:
+  packet 006 approval 6cc24bf3e
+
+Current fault-full surface:
+- Makefile:382 depends on fault-io-smoke, fault-mem-smoke,
+  fault-cancel-smoke, fault-timeout-smoke, fault-lock-smoke,
+  fault-resource-smoke, and fault-slow-disk-smoke.
+- It does not include fault-mutation-control,
+  fault-distann-remote-socket-smoke, fault-spire-remote-socket-smoke, or
+  fault-cgroup-smoke.
+- Generic smoke lanes default to FAULT_SMOKE_FLAGS=--dry-run.
+- The target does not sequence provider restart/restore, EIO/ENOSPC/slow
+  modes, markers, arm files, or same-run slow baselines.
+- Therefore the canonical locally-authoritative fault-full criterion remains
+  both implementation- and execution-incomplete after the four listed Linux
+  behavior groups.
+
+Retained closeout oracle details from prior approved packets:
+- DistANN socket slow: same-run baseline + configured latency; reset accepted
+  outcome; exact expected-source recovery.
+- SPIRE socket: validated healthy baseline; accepted reset error/degraded
+  outcome; stable slow profile and recovered profile; slow timing threshold.
+- cgroup: exact expected rows; exact valid/ready index; forced AM scan; shared
+  postconditions; clean post-recovery stop.
+- all executed lanes: no postmaster PANIC and no leaked buffers/locks.
