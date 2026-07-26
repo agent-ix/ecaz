@@ -13,7 +13,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/syscall.h>
-#include <sys/un.h>
+#include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -114,23 +114,27 @@ static int peer_target_matches(int fd, char *target, size_t target_size) {
         return 0;
     }
 
+    /*
+     * getpeername(2) on a regular file sets errno. Preserve the caller's errno
+     * when this descriptor is not the configured TCP peer so merely enabling a
+     * socket mode cannot perturb unrelated file I/O.
+     */
+    int saved_errno = errno;
     struct sockaddr_storage address;
     socklen_t address_len = sizeof(address);
     if (getpeername(fd, (struct sockaddr *)&address, &address_len) != 0) {
         target[0] = '\0';
+        errno = saved_errno;
         return 0;
     }
 
-    if (address.ss_family == AF_UNIX) {
-        const struct sockaddr_un *unix_address =
-            (const struct sockaddr_un *)&address;
-        snprintf(target, target_size, "unix:%s", unix_address->sun_path);
-    } else if (address.ss_family == AF_INET) {
+    if (address.ss_family == AF_INET) {
         const struct sockaddr_in *inet_address =
             (const struct sockaddr_in *)&address;
         char host[INET_ADDRSTRLEN];
         if (!inet_ntop(AF_INET, &inet_address->sin_addr, host, sizeof(host))) {
             target[0] = '\0';
+            errno = saved_errno;
             return 0;
         }
         snprintf(
@@ -145,6 +149,7 @@ static int peer_target_matches(int fd, char *target, size_t target_size) {
         char host[INET6_ADDRSTRLEN];
         if (!inet_ntop(AF_INET6, &inet6_address->sin6_addr, host, sizeof(host))) {
             target[0] = '\0';
+            errno = saved_errno;
             return 0;
         }
         snprintf(
@@ -155,9 +160,12 @@ static int peer_target_matches(int fd, char *target, size_t target_size) {
             (unsigned)ntohs(inet6_address->sin6_port));
     } else {
         target[0] = '\0';
+        errno = saved_errno;
         return 0;
     }
-    return strcmp(target, expected) == 0;
+    int matches = strcmp(target, expected) == 0;
+    errno = saved_errno;
+    return matches;
 }
 
 static int should_fault_path(const char *mode, const char *op, const char *path, int errnum) {
@@ -406,6 +414,92 @@ ssize_t send(int fd, const void *buf, size_t count, int flags) {
     maybe_sleep_socket("send", fd);
     ssize_t (*real_send)(int, const void *, size_t, int) = real_symbol("send");
     return real_send ? real_send(fd, buf, count, flags) : -1;
+}
+
+ssize_t readv(int fd, const struct iovec *iov, int iovcnt) {
+    if (maybe_reset_socket("readv", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("readv", fd);
+    ssize_t (*real_readv)(int, const struct iovec *, int) =
+        real_symbol("readv");
+    return real_readv ? real_readv(fd, iov, iovcnt) : -1;
+}
+
+ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
+    if (maybe_reset_socket("writev", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("writev", fd);
+    ssize_t (*real_writev)(int, const struct iovec *, int) =
+        real_symbol("writev");
+    return real_writev ? real_writev(fd, iov, iovcnt) : -1;
+}
+
+ssize_t recvfrom(
+    int fd,
+    void *buf,
+    size_t count,
+    int flags,
+    struct sockaddr *address,
+    socklen_t *address_len) {
+    if (maybe_reset_socket("recvfrom", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("recvfrom", fd);
+    ssize_t (*real_recvfrom)(
+        int,
+        void *,
+        size_t,
+        int,
+        struct sockaddr *,
+        socklen_t *) = real_symbol("recvfrom");
+    return real_recvfrom
+        ? real_recvfrom(fd, buf, count, flags, address, address_len)
+        : -1;
+}
+
+ssize_t sendto(
+    int fd,
+    const void *buf,
+    size_t count,
+    int flags,
+    const struct sockaddr *address,
+    socklen_t address_len) {
+    if (maybe_reset_socket("sendto", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("sendto", fd);
+    ssize_t (*real_sendto)(
+        int,
+        const void *,
+        size_t,
+        int,
+        const struct sockaddr *,
+        socklen_t) = real_symbol("sendto");
+    return real_sendto
+        ? real_sendto(fd, buf, count, flags, address, address_len)
+        : -1;
+}
+
+ssize_t recvmsg(int fd, struct msghdr *message, int flags) {
+    if (maybe_reset_socket("recvmsg", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("recvmsg", fd);
+    ssize_t (*real_recvmsg)(int, struct msghdr *, int) =
+        real_symbol("recvmsg");
+    return real_recvmsg ? real_recvmsg(fd, message, flags) : -1;
+}
+
+ssize_t sendmsg(int fd, const struct msghdr *message, int flags) {
+    if (maybe_reset_socket("sendmsg", fd)) {
+        return -1;
+    }
+    maybe_sleep_socket("sendmsg", fd);
+    ssize_t (*real_sendmsg)(int, const struct msghdr *, int) =
+        real_symbol("sendmsg");
+    return real_sendmsg ? real_sendmsg(fd, message, flags) : -1;
 }
 
 ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {

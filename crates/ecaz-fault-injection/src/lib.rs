@@ -215,67 +215,84 @@ impl FromStr for DistannCodec {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
-pub struct FaultFixture {
-    pub access_method: FaultAm,
-    pub codec: Option<DistannCodec>,
+pub enum FaultFixture {
+    Hnsw,
+    Ivf,
+    DiskAnn,
+    Spire,
+    DistAnn(DistannCodec),
 }
 
 impl FaultFixture {
     pub const ALL: [FaultFixture; 7] = [
-        FaultFixture::new(FaultAm::Hnsw, None),
-        FaultFixture::new(FaultAm::Ivf, None),
-        FaultFixture::new(FaultAm::DiskAnn, None),
-        FaultFixture::new(FaultAm::Spire, None),
-        FaultFixture::new(FaultAm::DistAnn, Some(DistannCodec::RaBitQ)),
-        FaultFixture::new(FaultAm::DistAnn, Some(DistannCodec::TurboQuant)),
-        FaultFixture::new(FaultAm::DistAnn, Some(DistannCodec::GroupedPq)),
+        FaultFixture::Hnsw,
+        FaultFixture::Ivf,
+        FaultFixture::DiskAnn,
+        FaultFixture::Spire,
+        FaultFixture::DistAnn(DistannCodec::RaBitQ),
+        FaultFixture::DistAnn(DistannCodec::TurboQuant),
+        FaultFixture::DistAnn(DistannCodec::GroupedPq),
     ];
 
-    pub const fn new(access_method: FaultAm, codec: Option<DistannCodec>) -> Self {
-        Self {
-            access_method,
-            codec,
+    pub const fn access_method(self) -> FaultAm {
+        match self {
+            FaultFixture::Hnsw => FaultAm::Hnsw,
+            FaultFixture::Ivf => FaultAm::Ivf,
+            FaultFixture::DiskAnn => FaultAm::DiskAnn,
+            FaultFixture::Spire => FaultAm::Spire,
+            FaultFixture::DistAnn(_) => FaultAm::DistAnn,
+        }
+    }
+
+    pub const fn codec(self) -> Option<DistannCodec> {
+        match self {
+            FaultFixture::DistAnn(codec) => Some(codec),
+            FaultFixture::Hnsw
+            | FaultFixture::Ivf
+            | FaultFixture::DiskAnn
+            | FaultFixture::Spire => None,
         }
     }
 
     pub fn for_access_method(access_method: FaultAm) -> Vec<Self> {
         Self::ALL
             .into_iter()
-            .filter(|fixture| fixture.access_method == access_method)
+            .filter(|fixture| fixture.access_method() == access_method)
             .collect()
     }
 
     pub fn slug(self) -> &'static str {
-        match (self.access_method, self.codec) {
-            (FaultAm::Hnsw, None) => "hnsw",
-            (FaultAm::Ivf, None) => "ivf",
-            (FaultAm::DiskAnn, None) => "diskann",
-            (FaultAm::Spire, None) => "spire",
-            (FaultAm::DistAnn, Some(DistannCodec::RaBitQ)) => "distann_rabitq",
-            (FaultAm::DistAnn, Some(DistannCodec::TurboQuant)) => "distann_turboquant",
-            (FaultAm::DistAnn, Some(DistannCodec::GroupedPq)) => "distann_grouped_pq",
-            _ => "invalid",
+        match self {
+            FaultFixture::Hnsw => "hnsw",
+            FaultFixture::Ivf => "ivf",
+            FaultFixture::DiskAnn => "diskann",
+            FaultFixture::Spire => "spire",
+            FaultFixture::DistAnn(DistannCodec::RaBitQ) => "distann_rabitq",
+            FaultFixture::DistAnn(DistannCodec::TurboQuant) => "distann_turboquant",
+            FaultFixture::DistAnn(DistannCodec::GroupedPq) => "distann_grouped_pq",
         }
     }
 
     pub fn as_str(self) -> &'static str {
-        match (self.access_method, self.codec) {
-            (FaultAm::Hnsw, None) => "ec_hnsw",
-            (FaultAm::Ivf, None) => "ec_ivf",
-            (FaultAm::DiskAnn, None) => "ec_diskann",
-            (FaultAm::Spire, None) => "ec_spire",
-            (FaultAm::DistAnn, Some(DistannCodec::RaBitQ)) => "ec_distann/rabitq",
-            (FaultAm::DistAnn, Some(DistannCodec::TurboQuant)) => "ec_distann/turboquant",
-            (FaultAm::DistAnn, Some(DistannCodec::GroupedPq)) => "ec_distann/grouped_pq",
-            _ => "invalid",
+        match self {
+            FaultFixture::Hnsw => "ec_hnsw",
+            FaultFixture::Ivf => "ec_ivf",
+            FaultFixture::DiskAnn => "ec_diskann",
+            FaultFixture::Spire => "ec_spire",
+            FaultFixture::DistAnn(DistannCodec::RaBitQ) => "ec_distann/rabitq",
+            FaultFixture::DistAnn(DistannCodec::TurboQuant) => "ec_distann/turboquant",
+            FaultFixture::DistAnn(DistannCodec::GroupedPq) => "ec_distann/grouped_pq",
         }
     }
 
     pub fn dimensions(self) -> usize {
-        match self.codec {
-            Some(DistannCodec::TurboQuant) => 1536,
-            Some(DistannCodec::RaBitQ | DistannCodec::GroupedPq) => 64,
-            None => 4,
+        match self {
+            FaultFixture::DistAnn(DistannCodec::TurboQuant) => 1536,
+            FaultFixture::DistAnn(DistannCodec::RaBitQ | DistannCodec::GroupedPq) => 64,
+            FaultFixture::Hnsw
+            | FaultFixture::Ivf
+            | FaultFixture::DiskAnn
+            | FaultFixture::Spire => 4,
         }
     }
 }
@@ -295,7 +312,7 @@ pub struct FaultCase {
 pub fn required_smoke_cases(lane: FaultLane) -> Vec<FaultCase> {
     FaultFixture::ALL
         .into_iter()
-        .flat_map(|fixture| lane_cases(lane, fixture.access_method, fixture.codec))
+        .flat_map(|fixture| lane_cases(lane, fixture.access_method(), fixture.codec()))
         .collect()
 }
 
@@ -508,7 +525,7 @@ pub fn workload_setup_sql(fixture: FaultFixture, rows: i64) -> String {
 pub fn workload_table_sql(fixture: FaultFixture, rows: i64) -> String {
     let table = workload_table(fixture);
     let dimensions = fixture.dimensions();
-    let source_vector = if fixture.access_method == FaultAm::DistAnn {
+    let source_vector = if fixture.access_method() == FaultAm::DistAnn {
         format!(
             "ARRAY(
                  SELECT (
@@ -549,7 +566,7 @@ pub fn workload_create_index_sql(fixture: FaultFixture, rows: i64) -> String {
 
 pub fn workload_create_named_index_sql(fixture: FaultFixture, index: &str, rows: i64) -> String {
     let table = workload_table(fixture);
-    match fixture.access_method {
+    match fixture.access_method() {
         FaultAm::Hnsw => format!(
             "CREATE INDEX {index} ON {table} USING ec_hnsw (embedding ecvector_ip_ops) \
              WITH (m = 8, ef_construction = 16)"
@@ -570,7 +587,7 @@ pub fn workload_create_named_index_sql(fixture: FaultFixture, index: &str, rows:
             "CREATE INDEX {index} ON {table} USING ec_distann (embedding ecvector_distann_ip_ops) \
              WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = '{}')",
             fixture
-                .codec
+                .codec()
                 .expect("ec_distann fault fixture requires a codec")
                 .as_str()
         ),
@@ -599,7 +616,7 @@ pub fn workload_create_resource_index_sql(
     let index = workload_index(fixture);
     let pressure_limit = pressure_limit.clamp(1, 1_000);
     let nlists = rows.clamp(4, 16);
-    match fixture.access_method {
+    match fixture.access_method() {
         FaultAm::Hnsw => format!(
             "CREATE INDEX {index} ON {table} USING ec_hnsw (embedding ecvector_ip_ops) \
              WITH (m = 8, ef_construction = 32, ef_search = {pressure_limit})"
@@ -620,7 +637,7 @@ pub fn workload_create_resource_index_sql(
             "CREATE INDEX {index} ON {table} USING ec_distann (embedding ecvector_distann_ip_ops) \
              WITH (graph_degree = 8, build_list_size = 32, head_index_cap = {pressure_limit}, neighbor_code_format = '{}')",
             fixture
-                .codec
+                .codec()
                 .expect("ec_distann fault fixture requires a codec")
                 .as_str()
         ),
@@ -632,7 +649,7 @@ pub fn workload_accumulator_pressure_settings_sql(
     pressure_limit: i64,
 ) -> String {
     let pressure_limit = pressure_limit.clamp(1, 1_000);
-    match fixture.access_method {
+    match fixture.access_method() {
         FaultAm::Hnsw => format!("SET ec_hnsw.ef_search = {pressure_limit};"),
         FaultAm::Ivf => format!(
             "SET ec_ivf.nprobe = 16;
@@ -707,7 +724,7 @@ pub fn workload_bulk_insert_sql(fixture: FaultFixture, rows: i64) -> String {
     let table = workload_table(fixture);
     let rows = rows.max(1);
     let dimensions = fixture.dimensions();
-    let source_vector = if fixture.access_method == FaultAm::DistAnn {
+    let source_vector = if fixture.access_method() == FaultAm::DistAnn {
         format!(
             "ARRAY(
                  SELECT (
@@ -739,7 +756,7 @@ pub fn workload_bulk_insert_sql(fixture: FaultFixture, rows: i64) -> String {
 
 fn workload_query_vector_sql(fixture: FaultFixture, seed_expr: &str) -> String {
     let dimensions = fixture.dimensions();
-    if fixture.access_method == FaultAm::DistAnn {
+    if fixture.access_method() == FaultAm::DistAnn {
         format!(
             "ARRAY(
                  SELECT (
@@ -864,7 +881,7 @@ mod tests {
             let sql = workload_setup_sql(fixture, 16);
             assert!(sql.contains(&table));
             assert!(sql.contains(&index));
-            assert!(sql.contains(fixture.access_method.as_str()));
+            assert!(sql.contains(fixture.access_method().as_str()));
             assert!(workload_scan_sql(fixture).contains(&table));
             assert!(workload_repeated_scan_sql(fixture, 10).contains(&table));
             assert!(workload_resource_setup_sql(fixture, 1024, 512).contains(&table));
@@ -874,7 +891,7 @@ mod tests {
             assert!(workload_bulk_insert_sql(fixture, 10).contains(&table));
             assert!(workload_vacuum_sql(fixture).contains(&table));
             assert!(workload_reindex_sql(fixture).contains(&index));
-            if let Some(codec) = fixture.codec {
+            if let Some(codec) = fixture.codec() {
                 assert!(sql.contains(codec.as_str()));
                 assert!(sql.contains(&fixture.dimensions().to_string()));
             }
@@ -884,7 +901,7 @@ mod tests {
 
     #[test]
     fn distann_turboquant_fixture_uses_the_supported_no_qjl_dimension() {
-        let fixture = FaultFixture::new(FaultAm::DistAnn, Some(DistannCodec::TurboQuant));
+        let fixture = FaultFixture::DistAnn(DistannCodec::TurboQuant);
         assert_eq!(fixture.dimensions(), 1536);
         assert!(workload_setup_sql(fixture, 16).contains("generate_series(0, 1536 - 1)"));
         assert!(workload_scan_sql(fixture).contains("generate_series(0, 1536 - 1)"));

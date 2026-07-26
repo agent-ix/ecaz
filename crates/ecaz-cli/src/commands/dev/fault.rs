@@ -56,7 +56,7 @@ pub struct ProviderEnvArgs {
     /// Substring that must appear in the target path, for example "base/".
     #[arg(long, default_value = "base/")]
     path_match: String,
-    /// Exact matched socket peer, e.g. tcp:127.0.0.1:39711 or unix:/path/.s.PGSQL.39424.
+    /// Exact matched TCP peer, e.g. tcp:127.0.0.1:39711 or tcp:[::1]:39711.
     #[arg(long)]
     peer_match: Option<String>,
     /// Start injecting on the Nth matching provider operation.
@@ -87,7 +87,7 @@ pub struct ProviderRestartArgs {
     /// Substring that must appear in the target path, for example "base/".
     #[arg(long, default_value = "base/")]
     path_match: String,
-    /// Exact matched socket peer, e.g. tcp:127.0.0.1:39711 or unix:/path/.s.PGSQL.39424.
+    /// Exact matched TCP peer, e.g. tcp:127.0.0.1:39711 or tcp:[::1]:39711.
     #[arg(long)]
     peer_match: Option<String>,
     /// Start injecting on the Nth matching provider operation.
@@ -327,7 +327,7 @@ fn run_plan(args: PlanArgs) -> Result<()> {
         .into_iter()
         .filter(|case| {
             fixtures.iter().any(|fixture| {
-                fixture.access_method == case.access_method && fixture.codec == case.codec
+                fixture.access_method() == case.access_method && fixture.codec() == case.codec
             })
         })
         .collect::<Vec<_>>();
@@ -407,6 +407,13 @@ fn validate_provider_options(
         && peer_match.is_none_or(str::is_empty)
     {
         return Err(eyre!("--peer-match is required for {mode} mode"));
+    }
+    if matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow)
+        && peer_match.is_some_and(|peer| !peer.starts_with("tcp:"))
+    {
+        return Err(eyre!(
+            "--peer-match supports TCP peers only and must start with tcp:"
+        ));
     }
     if !matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow) && peer_match.is_some()
     {
@@ -545,7 +552,7 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
         .into_iter()
         .filter(|case| {
             fixtures.iter().any(|fixture| {
-                fixture.access_method == case.access_method && fixture.codec == case.codec
+                fixture.access_method() == case.access_method && fixture.codec() == case.codec
             })
         })
         .collect::<Vec<_>>();
@@ -655,7 +662,7 @@ fn selected_fixtures(
     match am.map(Into::into) {
         Some(FaultAm::DistAnn) => Ok(FaultFixture::for_access_method(FaultAm::DistAnn)
             .into_iter()
-            .filter(|fixture| codec.is_none() || fixture.codec == codec)
+            .filter(|fixture| codec.is_none() || fixture.codec() == codec)
             .collect()),
         Some(access_method) if codec.is_some() => Err(eyre!(
             "--distann-codec is valid only with --am distann, got --am {}",
@@ -2168,5 +2175,34 @@ fn print_leak_probes() {
     }
     for sql in optional_leak_probe_sql() {
         crate::ecaz_println!("{sql}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn socket_provider_requires_tcp_peer_identity() {
+        assert!(validate_provider_options(
+            ProviderMode::SocketReset,
+            None,
+            Some("tcp:127.0.0.1:39711")
+        )
+        .is_ok());
+        assert!(validate_provider_options(
+            ProviderMode::SocketSlow,
+            Some(1),
+            Some("tcp:[::1]:39711")
+        )
+        .is_ok());
+
+        let error = validate_provider_options(
+            ProviderMode::SocketReset,
+            None,
+            Some("unix:/tmp/.s.PGSQL.39424"),
+        )
+        .expect_err("Unix peers are intentionally unsupported");
+        assert!(error.to_string().contains("supports TCP peers only"));
     }
 }

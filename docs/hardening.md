@@ -495,9 +495,10 @@ sessions, relation/advisory locks, prepared transactions, optional
   built-in Linux provider. That provider can inject matched-path `EIO` reads,
   matched-path `ENOSPC` writes/creates/fsyncs, slow-disk latency, and
   exact-peer socket reset/latency faults once the PG postmaster is started
-  with the printed environment. Socket peers use `tcp:HOST:PORT`,
-  `tcp:[IPv6]:PORT`, or `unix:/path/.s.PGSQL.PORT`; socket modes reject a
-  missing `--peer-match`.
+  with the printed environment. Socket peers use `tcp:HOST:PORT` or
+  `tcp:[IPv6]:PORT`; socket modes reject a missing or non-TCP `--peer-match`.
+  Unix-domain peers are intentionally unsupported because an accepted
+  `AF_UNIX` connection commonly has no unique peer pathname.
 - `ecaz dev fault provider-restart` and `ecaz dev fault provider-restore`
   wrap the local pgrx `pg_ctl restart` step so provider-backed lanes do not
   require hand-assembled `LD_PRELOAD` commands. Marker paths passed to
