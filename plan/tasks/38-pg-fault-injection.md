@@ -7,7 +7,7 @@ adds `ec_distann` as a first-class AM with separate RaBitQ, TurboQuant, and
 grouped-PQ fixtures, exact-peer socket reset/latency provider modes, measured
 slow-disk comparison inputs, stronger accumulator markers, reset-safe palloc
 handling, armed exact-peer DistANN TCP and SPIRE Unix-socket drills, and
-host-independent cgroup planning.
+an executable seven-fixture systemd-scoped cgroup OOM drill.
 
 The seven current fixtures flow through real build, KNN scan, insert,
 delete/vacuum, DDL, cancel/terminate, statement/idle/lock timeout, palloc,
