@@ -1,0 +1,24 @@
+ec_distann-rabitq-timeout-statement-timeout	timeout	ec_distann	rabitq	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_distann-rabitq-timeout-idle-in-transaction-timeout	timeout	ec_distann	rabitq	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_distann-turboquant-timeout-statement-timeout	timeout	ec_distann	turboquant	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_distann-turboquant-timeout-idle-in-transaction-timeout	timeout	ec_distann	turboquant	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_distann-grouped_pq-timeout-statement-timeout	timeout	ec_distann	grouped_pq	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_distann-grouped_pq-timeout-idle-in-transaction-timeout	timeout	ec_distann	grouped_pq	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/88883223	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/88883233
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/88883235	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/88883261
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/88883263	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/88883273
+2026-07-26T00:17:44.685672Z ERROR ecaz::psql: postgres connection task failed error=db error
+2026-07-26T00:17:44.844741Z ERROR ecaz::psql: postgres connection task failed error=db error
+2026-07-26T00:17:45.004724Z ERROR ecaz::psql: postgres connection task failed error=db error
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113545582 after=113545656
+[fault] pg_stat_wal_records_before=358903894 after=358905023 bytes_before=407514746458 after=407515203587

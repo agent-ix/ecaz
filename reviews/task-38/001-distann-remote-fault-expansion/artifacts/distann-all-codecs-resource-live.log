@@ -1,0 +1,34 @@
+ec_distann-rabitq-resource-tiny-work-mem	resource	ec_distann	rabitq	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_distann-rabitq-resource-temp-file-limit	resource	ec_distann	rabitq	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_distann-rabitq-resource-wal-rotation-accounting	resource	ec_distann	rabitq	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_distann-turboquant-resource-tiny-work-mem	resource	ec_distann	turboquant	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_distann-turboquant-resource-temp-file-limit	resource	ec_distann	turboquant	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_distann-turboquant-resource-wal-rotation-accounting	resource	ec_distann	turboquant	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_distann-grouped_pq-resource-tiny-work-mem	resource	ec_distann	grouped_pq	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_distann-grouped_pq-resource-temp-file-limit	resource	ec_distann	grouped_pq	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_distann-grouped_pq-resource-wal-rotation-accounting	resource	ec_distann	grouped_pq	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+[fault] resource_accumulator_prepare rows=4096 limit=1000 work_mem=64kB
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/88887460	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/88887470
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/88887472	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/88891578
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/88891580	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/88891590
+[fault] resource_accumulator_pressure am=ec_distann/rabitq rows=4096 limit=1000 target=1000 returned=1000 returned_fraction_ppm=1000000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_distann/rabitq mode=temp_file_limit temp_bytes_before=87040 after=87040 delta=0
+[fault] wal_rotation_accounting am=ec_distann/rabitq lsn_before=C0/5ADAAC08 lsn_after=C0/5B000120 records_before=359047797 records_after=359048235 bytes_before=407682279383 bytes_after=407682376833
+[fault] resource_accumulator_pressure am=ec_distann/turboquant rows=4096 limit=1000 target=1000 returned=999 returned_fraction_ppm=999000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_distann/turboquant mode=temp_file_limit temp_bytes_before=152576 after=152576 delta=0
+[fault] wal_rotation_accounting am=ec_distann/turboquant lsn_before=C0/5C9F0360 lsn_after=C0/5D000120 records_before=359048235 records_after=359061401 bytes_before=407682376833 bytes_after=407710278415
+[fault] resource_accumulator_pressure am=ec_distann/grouped_pq rows=4096 limit=1000 target=1000 returned=1000 returned_fraction_ppm=1000000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_distann/grouped_pq mode=temp_file_limit temp_bytes_before=282624 after=282624 delta=0
+[fault] wal_rotation_accounting am=ec_distann/grouped_pq lsn_before=C0/5D1445A8 lsn_after=C0/5E000120 records_before=359061401 records_after=359061996 bytes_before=407710278415 bytes_after=407711660948
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113555726 after=113567038
+[fault] pg_stat_wal_records_before=358983729 after=359061996 bytes_before=407613299340 after=407711660948

@@ -1,0 +1,24 @@
+ec_distann-rabitq-cancel-pg-cancel-backend	cancel	ec_distann	rabitq	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_distann-rabitq-cancel-pg-terminate-backend	cancel	ec_distann	rabitq	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_distann-turboquant-cancel-pg-cancel-backend	cancel	ec_distann	turboquant	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_distann-turboquant-cancel-pg-terminate-backend	cancel	ec_distann	turboquant	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_distann-grouped_pq-cancel-pg-cancel-backend	cancel	ec_distann	grouped_pq	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_distann-grouped_pq-cancel-pg-terminate-backend	cancel	ec_distann	grouped_pq	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/88883171	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/88883181
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/88883183	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/88883209
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/88883211	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/88883221
+2026-07-26T00:17:40.067953Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+2026-07-26T00:17:40.178144Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+2026-07-26T00:17:40.289355Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113545498 after=113545582
+[fault] pg_stat_wal_records_before=358902916 after=358903894 bytes_before=407514306061 after=407514746458

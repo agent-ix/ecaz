@@ -1,0 +1,11 @@
+head=815b788c0
+host=macOS-26.4.1/Darwin-25.4.0/arm64
+linux_ld_preload_provider_compile=pass reason="manual CI run 30184074527 PG18 job 89745572723 built ecaz-cli at head 815b788c0 on Ubuntu 24.04 x86_64 with -Wall -Wextra -Werror; ecaz-cli directly depends on ecaz-fault-injection"
+linux_ld_preload_provider_runtime=unavailable reason="provider was compiled but not loaded or exercised by CI; current host is macOS"
+distann_local_eio_enospc_slow_disk=unavailable reason="requires live Linux LD_PRELOAD provider and fault=1 markers"
+spire_remote_sql_socket_fault=unavailable reason="production remote SQL transport exists, but exact-peer provider cannot execute on this host"
+distann_remote_owner_payload_socket_fault=unavailable reason="production loopback TCP transport exists, but exact-peer provider cannot execute on this host"
+spire_object_store_read_fault=nonexistent reason="production object-store read path has not landed"
+cgroup_v2_oom=unavailable reason="linux=false cgroup_v2=false systemd_run=false"
+make_fault_full_live=not_run reason="aggregate live prerequisites are unavailable; make fault-full dry-run and supported focused PG18 lanes were run"
+linux_socket_followup=required reason="run focused TCP socket-reset against a real peer and trace workload network syscalls"
