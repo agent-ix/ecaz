@@ -608,9 +608,18 @@ object-store reads remain **nonexistent**, not an unavailable transport test.
 
 `ecaz dev fault cgroup-plan` reports Linux, cgroup-v2, and `systemd-run`
 capability and prints the isolated one-index-per-table MemoryMax plan. A live
-run must place the isolated PG18 postmaster and workload in a user
-`systemd-run --scope`; direct `/sys/fs/cgroup` writes are forbidden. The
-current macOS host reports this lane unavailable.
+run uses `make fault-cgroup-smoke` to place a fresh isolated PG18 postmaster,
+the selected AM workload, and a resident-memory pressure task in one user
+`systemd-run --scope`. Each of the seven fixtures runs separately with
+`MemoryMax` and `OOMPolicy=kill`. The outer operator requires systemd
+`Result=oom-kill` after the repeated real AM-build marker, restarts the killed
+cluster outside the scope, verifies SQL usability and zero invalid ECAZ
+indexes, and stops it cleanly. Scope and recovery logs land below
+`FAULT_CGROUP_ARTIFACT_DIR`; transient data directories live below
+`FAULT_CGROUP_RUNTIME_DIR` and are removed only after successful recovery, so
+PostgreSQL data files cannot accidentally enter a review packet. Direct
+`/sys/fs/cgroup` writes are forbidden. The current macOS host reports this lane
+unavailable and cannot supply live evidence.
 
 Provider ENOSPC can surface PostgreSQL checkpoint failures as `XX000`. The
 allowance is restricted to messages containing `checkpoint request failed` or

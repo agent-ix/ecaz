@@ -1,5 +1,5 @@
 use clap::{Args, Subcommand, ValueEnum};
-use color_eyre::eyre::{eyre, Result};
+use color_eyre::eyre::{bail, eyre, Context, Result};
 use ecaz_fault_injection::{
     all_smoke_cases, leak_probe_sql, optional_leak_probe_sql, required_smoke_cases,
     workload_accumulator_pressure_settings_sql, workload_accumulator_pressure_sql,
@@ -8,6 +8,7 @@ use ecaz_fault_injection::{
     workload_table_sql, workload_temp_spill_sql, workload_vacuum_full_sql, workload_vacuum_sql,
     DistannCodec, FaultAm, FaultFixture, FaultLane, ProviderMode,
 };
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use tokio::process::Command;
@@ -33,6 +34,14 @@ pub enum FaultCommand {
     Smoke(SmokeArgs),
     /// Print a host-independent cgroup-v2/systemd OOM operator plan.
     CgroupPlan(CgroupPlanArgs),
+    /// Run isolated PostgreSQL AM workloads under a cgroup-v2 memory limit.
+    CgroupSmoke(CgroupSmokeArgs),
+    /// Internal worker launched inside the constrained systemd scope.
+    #[command(hide = true)]
+    CgroupWorker(CgroupWorkerArgs),
+    /// Internal recovery probe launched outside the constrained scope.
+    #[command(hide = true)]
+    CgroupRecover(CgroupRecoverArgs),
 }
 
 #[derive(Args, Debug)]
@@ -180,6 +189,75 @@ pub struct CgroupPlanArgs {
     distann_codec: Option<DistannCodecArg>,
 }
 
+#[derive(Args, Debug)]
+pub struct CgroupSmokeArgs {
+    /// PostgreSQL major version to constrain.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+    /// MemoryMax value for each isolated user scope.
+    #[arg(long, default_value = "512M")]
+    memory_max: String,
+    /// Rows loaded before the repeated AM build workload begins.
+    #[arg(long, default_value_t = 64)]
+    rows: i64,
+    /// First port considered for isolated PostgreSQL clusters.
+    #[arg(long, default_value_t = 29_680)]
+    base_port: u16,
+    /// Packet-local or target-local directory for cluster and scope evidence.
+    #[arg(long, default_value = "target/fault-cgroup")]
+    artifact_dir: PathBuf,
+    /// Target-local scratch directory for uncommittable PostgreSQL data.
+    #[arg(long, default_value = "target/fault-cgroup-runtime")]
+    runtime_dir: PathBuf,
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+    /// Restrict the smoke to one access method.
+    #[arg(long, value_enum)]
+    am: Option<FaultAmArg>,
+    /// Restrict ec_distann smoke to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
+}
+
+#[derive(Args, Debug)]
+pub struct CgroupWorkerArgs {
+    #[arg(long)]
+    pg: u16,
+    #[arg(long)]
+    port: u16,
+    #[arg(long)]
+    rows: i64,
+    #[arg(long)]
+    artifact_dir: PathBuf,
+    #[arg(long)]
+    runtime_dir: PathBuf,
+    #[arg(long)]
+    pgrx_home: PathBuf,
+    #[arg(long, value_enum)]
+    am: FaultAmArg,
+    #[arg(long, value_enum)]
+    distann_codec: Option<DistannCodecArg>,
+}
+
+#[derive(Args, Debug)]
+pub struct CgroupRecoverArgs {
+    #[arg(long)]
+    pg: u16,
+    #[arg(long)]
+    port: u16,
+    #[arg(long)]
+    artifact_dir: PathBuf,
+    #[arg(long)]
+    runtime_dir: PathBuf,
+    #[arg(long)]
+    pgrx_home: PathBuf,
+    #[arg(long, value_enum)]
+    am: FaultAmArg,
+    #[arg(long, value_enum)]
+    distann_codec: Option<DistannCodecArg>,
+}
+
 #[derive(Clone, Copy, Debug, ValueEnum)]
 pub enum FaultLaneArg {
     Io,
@@ -277,6 +355,9 @@ impl FaultCommand {
             }
             FaultCommand::Smoke(args) => run_smoke(conn, args).await,
             FaultCommand::CgroupPlan(args) => run_cgroup_plan(args),
+            FaultCommand::CgroupSmoke(args) => run_cgroup_smoke(args).await,
+            FaultCommand::CgroupWorker(args) => run_cgroup_worker(args).await,
+            FaultCommand::CgroupRecover(args) => run_cgroup_recover(args).await,
         }
     }
 }
@@ -322,6 +403,554 @@ fn run_cgroup_plan(args: CgroupPlanArgs) -> Result<()> {
         );
     }
     Ok(())
+}
+
+async fn run_cgroup_smoke(args: CgroupSmokeArgs) -> Result<()> {
+    if args.rows <= 0 {
+        bail!("--rows must be >= 1");
+    }
+    if args.memory_max.trim().is_empty() {
+        bail!("--memory-max must be nonempty");
+    }
+    require_cgroup_smoke_host().await?;
+
+    let fixtures = selected_fixtures(args.am, args.distann_codec)?;
+    let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref())
+        .canonicalize()
+        .wrap_err("resolving PGRX_HOME for cgroup smoke")?;
+    find_pgrx_install(args.pg, &pgrx_home)?;
+    fs::create_dir_all(&args.artifact_dir).wrap_err_with(|| {
+        format!(
+            "creating cgroup artifact directory {}",
+            args.artifact_dir.display()
+        )
+    })?;
+    let artifact_root = args
+        .artifact_dir
+        .canonicalize()
+        .wrap_err("resolving cgroup artifact directory")?;
+    fs::create_dir_all(&args.runtime_dir).wrap_err_with(|| {
+        format!(
+            "creating cgroup runtime directory {}",
+            args.runtime_dir.display()
+        )
+    })?;
+    let runtime_root = args
+        .runtime_dir
+        .canonicalize()
+        .wrap_err("resolving cgroup runtime directory")?;
+    let executable = std::env::current_exe()
+        .wrap_err("resolving current ecaz executable")?
+        .canonicalize()
+        .wrap_err("canonicalizing current ecaz executable")?;
+    let run_id = format!(
+        "run-{}-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .wrap_err("system clock predates Unix epoch")?
+            .as_secs(),
+        std::process::id()
+    );
+    let run_artifact_root = artifact_root.join(&run_id);
+    let run_runtime_root = runtime_root.join(&run_id);
+    fs::create_dir_all(&run_artifact_root)
+        .wrap_err_with(|| format!("creating {}", run_artifact_root.display()))?;
+    fs::create_dir_all(&run_runtime_root)
+        .wrap_err_with(|| format!("creating {}", run_runtime_root.display()))?;
+
+    for (ordinal, fixture) in fixtures.into_iter().enumerate() {
+        let port_offset =
+            u16::try_from(ordinal).wrap_err("too many cgroup fixtures for port allocation")?;
+        let port = args
+            .base_port
+            .checked_add(port_offset)
+            .ok_or_else(|| eyre!("cgroup fixture port overflow"))?;
+        let unit = format!(
+            "ecaz-fault-{}-{}",
+            std::process::id(),
+            fixture.slug().replace('_', "-")
+        );
+        let case_dir = run_artifact_root.join(fixture.slug());
+        let case_runtime_dir = run_runtime_root.join(fixture.slug());
+        fs::create_dir_all(&case_dir)
+            .wrap_err_with(|| format!("creating {}", case_dir.display()))?;
+        fs::create_dir_all(&case_runtime_dir)
+            .wrap_err_with(|| format!("creating {}", case_runtime_dir.display()))?;
+
+        let mut scope = Command::new("systemd-run");
+        scope
+            .arg("--user")
+            .arg("--scope")
+            .arg("--wait")
+            .arg("--pipe")
+            .arg(format!("--unit={unit}"))
+            .arg(format!("--property=MemoryMax={}", args.memory_max))
+            .arg("--property=OOMPolicy=kill")
+            .arg(&executable)
+            .arg("dev")
+            .arg("fault")
+            .arg("cgroup-worker")
+            .arg("--pg")
+            .arg(args.pg.to_string())
+            .arg("--port")
+            .arg(port.to_string())
+            .arg("--rows")
+            .arg(args.rows.to_string())
+            .arg("--artifact-dir")
+            .arg(&case_dir)
+            .arg("--runtime-dir")
+            .arg(&case_runtime_dir)
+            .arg("--pgrx-home")
+            .arg(&pgrx_home);
+        append_fixture_cli_args(&mut scope, fixture);
+        let scope_output = scope
+            .output()
+            .await
+            .wrap_err_with(|| format!("launching constrained scope {unit}"))?;
+
+        let scope_name = format!("{unit}.scope");
+        let properties = Command::new("systemctl")
+            .arg("--user")
+            .arg("show")
+            .arg(&scope_name)
+            .arg("--property=Result")
+            .arg("--property=MemoryCurrent")
+            .arg("--property=MemoryPeak")
+            .arg("--property=MemoryEvents")
+            .arg("--no-pager")
+            .output()
+            .await
+            .wrap_err_with(|| format!("reading systemd evidence for {scope_name}"))?;
+        if !properties.status.success() {
+            bail!(
+                "systemctl show {scope_name} failed: {}",
+                String::from_utf8_lossy(&properties.stderr)
+            );
+        }
+        let property_text = String::from_utf8_lossy(&properties.stdout);
+        let scope_stdout = String::from_utf8_lossy(&scope_output.stdout);
+        let scope_stderr = String::from_utf8_lossy(&scope_output.stderr);
+        fs::write(
+            case_dir.join("scope.log"),
+            format!(
+                "unit={scope_name}\nfixture={}\nmemory_max={}\nstatus={}\n\n[stdout]\n{}\n[stderr]\n{}\n[systemctl-show]\n{}\n",
+                fixture.as_str(),
+                args.memory_max,
+                scope_output.status,
+                scope_stdout,
+                scope_stderr,
+                property_text
+            ),
+        )
+        .wrap_err_with(|| format!("writing {}/scope.log", case_dir.display()))?;
+
+        if scope_output.status.success() {
+            bail!("{scope_name} completed without a cgroup OOM");
+        }
+        if !property_text
+            .lines()
+            .any(|line| line.trim() == "Result=oom-kill")
+        {
+            bail!(
+                "{scope_name} failed without Result=oom-kill; inspect {}/scope.log",
+                case_dir.display()
+            );
+        }
+        if !scope_stdout.contains("[fault] cgroup_workload_active=true") {
+            bail!(
+                "{scope_name} OOMed before the AM workload marker; inspect {}/scope.log",
+                case_dir.display()
+            );
+        }
+
+        let mut recover = Command::new(&executable);
+        recover
+            .arg("dev")
+            .arg("fault")
+            .arg("cgroup-recover")
+            .arg("--pg")
+            .arg(args.pg.to_string())
+            .arg("--port")
+            .arg(port.to_string())
+            .arg("--artifact-dir")
+            .arg(&case_dir)
+            .arg("--runtime-dir")
+            .arg(&case_runtime_dir)
+            .arg("--pgrx-home")
+            .arg(&pgrx_home);
+        append_fixture_cli_args(&mut recover, fixture);
+        let recovery_output = recover
+            .output()
+            .await
+            .wrap_err_with(|| format!("running recovery probe for {scope_name}"))?;
+        fs::write(
+            case_dir.join("recovery.log"),
+            format!(
+                "status={}\n\n[stdout]\n{}\n[stderr]\n{}\n",
+                recovery_output.status,
+                String::from_utf8_lossy(&recovery_output.stdout),
+                String::from_utf8_lossy(&recovery_output.stderr)
+            ),
+        )
+        .wrap_err_with(|| format!("writing {}/recovery.log", case_dir.display()))?;
+        if !recovery_output.status.success() {
+            bail!(
+                "recovery probe for {scope_name} failed; inspect {}/recovery.log",
+                case_dir.display()
+            );
+        }
+        fs::remove_dir_all(&case_runtime_dir).wrap_err_with(|| {
+            format!(
+                "removing recovered cgroup runtime {}",
+                case_runtime_dir.display()
+            )
+        })?;
+
+        let reset_status = Command::new("systemctl")
+            .arg("--user")
+            .arg("reset-failed")
+            .arg(&scope_name)
+            .status()
+            .await
+            .wrap_err_with(|| format!("resetting failed state for {scope_name}"))?;
+        if !reset_status.success() {
+            bail!("systemctl reset-failed {scope_name} failed with {reset_status}");
+        }
+        crate::ecaz_println!(
+            "[fault] cgroup_oom am={} unit={} memory_max={} result=oom-kill workload_active=true recovery=pass artifacts={}",
+            fixture.as_str(),
+            scope_name,
+            args.memory_max,
+            case_dir.display()
+        );
+    }
+    fs::remove_dir(&run_runtime_root)
+        .wrap_err_with(|| format!("removing empty {}", run_runtime_root.display()))?;
+    Ok(())
+}
+
+async fn require_cgroup_smoke_host() -> Result<()> {
+    if !cfg!(target_os = "linux") {
+        bail!(
+            "cgroup smoke requires Linux; current target is {}",
+            std::env::consts::OS
+        );
+    }
+    if !Path::new("/sys/fs/cgroup/cgroup.controllers").is_file() {
+        bail!("cgroup smoke requires cgroup v2 at /sys/fs/cgroup/cgroup.controllers");
+    }
+    let status = Command::new("systemctl")
+        .arg("--user")
+        .arg("show-environment")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .wrap_err("probing the systemd user manager")?;
+    if !status.success() {
+        bail!("cgroup smoke requires a reachable systemd user manager");
+    }
+    Ok(())
+}
+
+fn append_fixture_cli_args(command: &mut Command, fixture: FaultFixture) {
+    let am = match fixture.access_method() {
+        FaultAm::Hnsw => "hnsw",
+        FaultAm::Ivf => "ivf",
+        FaultAm::DiskAnn => "diskann",
+        FaultAm::Spire => "spire",
+        FaultAm::DistAnn => "distann",
+    };
+    command.arg("--am").arg(am);
+    if let Some(codec) = fixture.codec() {
+        command.arg("--distann-codec").arg(codec.as_str());
+    }
+}
+
+async fn run_cgroup_worker(args: CgroupWorkerArgs) -> Result<()> {
+    let fixture = selected_single_fixture(args.am, args.distann_codec)?;
+    if args.rows <= 0 {
+        bail!("--rows must be >= 1");
+    }
+    let install = find_pgrx_install(args.pg, &args.pgrx_home)?;
+    assert_fault_install_ready(&install)?;
+    let data_dir = args.runtime_dir.join("data");
+    let socket_dir = args.runtime_dir.join("socket");
+    let postgres_log = args.artifact_dir.join("postgres.log");
+    if data_dir.join("PG_VERSION").exists() {
+        bail!(
+            "refusing to reuse cgroup worker data directory {}",
+            data_dir.display()
+        );
+    }
+    fs::create_dir_all(&socket_dir)
+        .wrap_err_with(|| format!("creating {}", socket_dir.display()))?;
+    let mut initdb = Command::new(install.bin_dir.join("initdb"));
+    initdb
+        .arg("-D")
+        .arg(&data_dir)
+        .arg("-A")
+        .arg("trust")
+        .arg("-U")
+        .arg("postgres");
+    run_status(initdb).await?;
+
+    let pg_ctl = install.bin_dir.join("pg_ctl");
+    let mut start = Command::new(&pg_ctl);
+    start
+        .arg("-D")
+        .arg(&data_dir)
+        .arg("-l")
+        .arg(&postgres_log)
+        .arg("-o")
+        .arg(format!(
+            "-p {} -c listen_addresses='' -c unix_socket_directories={} -c shared_preload_libraries=ecaz",
+            args.port,
+            socket_dir.display()
+        ))
+        .arg("-w")
+        .arg("start");
+    run_status(start).await?;
+
+    let conn = isolated_fault_connection(&socket_dir, args.port);
+    let client = connect_isolated_fault(&conn, "cgroup worker").await?;
+    client
+        .batch_execute("CREATE EXTENSION ecaz;")
+        .await
+        .wrap_err("creating ecaz in cgroup worker cluster")?;
+    client
+        .batch_execute(&workload_table_sql(fixture, args.rows))
+        .await
+        .wrap_err_with(|| format!("preparing {} cgroup table", fixture.as_str()))?;
+
+    let create_index = ecaz_fault_injection::workload_create_index_sql(fixture, args.rows);
+    let create_index = create_index.replace('\'', "''");
+    let index = ecaz_fault_injection::workload_index(fixture);
+    let workload_sql = format!(
+        "DO $ecaz_cgroup$
+         BEGIN
+           LOOP
+             EXECUTE 'DROP INDEX IF EXISTS {index}';
+             EXECUTE '{create_index}';
+           END LOOP;
+         END
+         $ecaz_cgroup$"
+    );
+    let workload = tokio::spawn(async move {
+        client
+            .batch_execute(&workload_sql)
+            .await
+            .map_err(color_eyre::Report::from)
+    });
+    wait_for_cgroup_workload_active(&conn).await?;
+    if workload.is_finished() {
+        return workload
+            .await
+            .wrap_err("joining cgroup AM workload")?
+            .and_then(|_| Err(eyre!("cgroup AM workload ended before memory pressure")));
+    }
+    crate::ecaz_println!(
+        "[fault] cgroup_workload_active=true am={} port={} pressure=resident-8MiB-chunks",
+        fixture.as_str(),
+        args.port
+    );
+
+    let mut resident_chunks: Vec<Vec<u8>> = Vec::new();
+    loop {
+        let mut chunk = vec![0_u8; 8 * 1024 * 1024];
+        for page in chunk.iter_mut().step_by(4096) {
+            *page = 1;
+        }
+        resident_chunks.push(chunk);
+        tokio::task::yield_now().await;
+        if workload.is_finished() {
+            return workload
+                .await
+                .wrap_err("joining cgroup AM workload")?
+                .and_then(|_| Err(eyre!("cgroup AM workload ended before OOM")));
+        }
+    }
+}
+
+async fn wait_for_cgroup_workload_active(conn: &ConnectionOptions) -> Result<()> {
+    let observer = connect_isolated_fault(conn, "cgroup workload observer").await?;
+    for _ in 0..50 {
+        let active: bool = observer
+            .query_one(
+                "SELECT EXISTS (
+                   SELECT 1
+                   FROM pg_stat_activity
+                   WHERE pid <> pg_backend_pid()
+                     AND state = 'active'
+                     AND query LIKE 'DO $ecaz_cgroup$%'
+                 )",
+                &[],
+            )
+            .await?
+            .get(0);
+        if active {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+    bail!("repeated AM-build workload did not become active within 500ms")
+}
+
+async fn run_cgroup_recover(args: CgroupRecoverArgs) -> Result<()> {
+    let fixture = selected_single_fixture(args.am, args.distann_codec)?;
+    let install = find_pgrx_install(args.pg, &args.pgrx_home)?;
+    let pg_ctl = install.bin_dir.join("pg_ctl");
+    let data_dir = args.runtime_dir.join("data");
+    let socket_dir = args.runtime_dir.join("socket");
+    let postgres_log = args.artifact_dir.join("postgres.log");
+    if !data_dir.join("PG_VERSION").is_file() {
+        bail!("missing cgroup worker cluster at {}", data_dir.display());
+    }
+
+    let status = Command::new(&pg_ctl)
+        .arg("-D")
+        .arg(&data_dir)
+        .arg("status")
+        .status()
+        .await
+        .wrap_err("checking constrained postmaster status")?;
+    if status.success() {
+        bail!("constrained postmaster survived OOMPolicy=kill unexpectedly");
+    }
+
+    let guard = FaultPgClusterGuard::new(pg_ctl.clone(), data_dir.clone());
+    let mut start = Command::new(&pg_ctl);
+    start
+        .arg("-D")
+        .arg(&data_dir)
+        .arg("-l")
+        .arg(&postgres_log)
+        .arg("-o")
+        .arg(format!(
+            "-p {} -c listen_addresses='' -c unix_socket_directories={} -c shared_preload_libraries=ecaz",
+            args.port,
+            socket_dir.display()
+        ))
+        .arg("-w")
+        .arg("start");
+    run_status(start).await?;
+    let conn = isolated_fault_connection(&socket_dir, args.port);
+    let client = connect_isolated_fault(&conn, "cgroup recovery").await?;
+    client.simple_query("SELECT 1").await?;
+    let invalid_indexes: i64 = client
+        .query_one(
+            "SELECT count(*)
+             FROM pg_index i
+             JOIN pg_class c ON c.oid = i.indexrelid
+             WHERE NOT i.indisvalid AND c.relname LIKE 'ecaz_fault_%'",
+            &[],
+        )
+        .await?
+        .get(0);
+    if invalid_indexes != 0 {
+        bail!("cgroup recovery found {invalid_indexes} invalid ECAZ indexes");
+    }
+    let table = ecaz_fault_injection::workload_table(fixture);
+    let recovered_rows: i64 = client
+        .query_one(&format!("SELECT count(*) FROM {table}"), &[])
+        .await
+        .wrap_err_with(|| format!("querying recovered {} table", fixture.as_str()))?
+        .get(0);
+    if recovered_rows <= 0 {
+        bail!("cgroup recovery found an empty {} table", fixture.as_str());
+    }
+    guard.stop().await?;
+    crate::ecaz_println!(
+        "[fault] cgroup_recovery am={} postmaster_started=true query_usable=true recovered_rows={} invalid_indexes=0 clean_stop=true",
+        fixture.as_str(),
+        recovered_rows
+    );
+    Ok(())
+}
+
+fn selected_single_fixture(
+    am: FaultAmArg,
+    distann_codec: Option<DistannCodecArg>,
+) -> Result<FaultFixture> {
+    let fixtures = selected_fixtures(Some(am), distann_codec)?;
+    match fixtures.as_slice() {
+        [fixture] => Ok(*fixture),
+        _ => bail!("cgroup worker requires exactly one AM fixture"),
+    }
+}
+
+fn assert_fault_install_ready(install: &super::support::PgrxInstall) -> Result<()> {
+    let control = install.sharedir.join("extension/ecaz.control");
+    let library = install.pkglibdir.join("ecaz.so");
+    if !control.is_file() || !library.is_file() {
+        bail!(
+            "ecaz is not installed for PG18 via {}; missing {} or {}",
+            install.pg_config.display(),
+            control.display(),
+            library.display()
+        );
+    }
+    Ok(())
+}
+
+fn isolated_fault_connection(socket_dir: &Path, port: u16) -> ConnectionOptions {
+    ConnectionOptions {
+        database: "postgres".to_owned(),
+        host: Some(socket_dir.to_string_lossy().to_string()),
+        port: Some(port),
+        user: Some("postgres".to_owned()),
+        password: None,
+    }
+}
+
+async fn connect_isolated_fault(
+    conn: &ConnectionOptions,
+    label: &str,
+) -> Result<tokio_postgres::Client> {
+    for _ in 0..50 {
+        if let Ok(client) = psql::connect(conn).await {
+            return Ok(client);
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    bail!("{label} could not connect to isolated PostgreSQL within 5s")
+}
+
+struct FaultPgClusterGuard {
+    pg_ctl: PathBuf,
+    data_dir: PathBuf,
+}
+
+impl FaultPgClusterGuard {
+    fn new(pg_ctl: PathBuf, data_dir: PathBuf) -> Self {
+        Self { pg_ctl, data_dir }
+    }
+
+    async fn stop(&self) -> Result<()> {
+        let mut stop = Command::new(&self.pg_ctl);
+        stop.arg("-D")
+            .arg(&self.data_dir)
+            .arg("-m")
+            .arg("fast")
+            .arg("-w")
+            .arg("stop");
+        run_status(stop).await
+    }
+}
+
+impl Drop for FaultPgClusterGuard {
+    fn drop(&mut self) {
+        let _ = std::process::Command::new(&self.pg_ctl)
+            .arg("-D")
+            .arg(&self.data_dir)
+            .arg("-m")
+            .arg("fast")
+            .arg("-w")
+            .arg("stop")
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
 }
 
 fn run_plan(args: PlanArgs) -> Result<()> {
