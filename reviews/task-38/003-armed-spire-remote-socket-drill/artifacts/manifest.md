@@ -2,6 +2,7 @@
 
 - Implementation HEAD: `dfcbffd4e`
 - Review-response HEAD: `631ec2940`
+- Re-review-response HEAD: `aea65a78f`
 - Task bucket: `reviews/task-38/`
 - Packet: `reviews/task-38/003-armed-spire-remote-socket-drill/`
 - Capture date: `2026-07-25 America/Los_Angeles`
@@ -33,3 +34,21 @@ or cgroup OOM result in this packet. Those remain required Linux evidence.
 - Records scoped formatting and diff checks, production and test-configured CLI
   checks, the stable-profile unit-test type check, and the focused-test
   execution ceiling for the review-response commit.
+
+## `2026-07-26-test-configured-check.log`
+
+- Command:
+  `cargo check -p ecaz-cli --tests`
+- Result: pass in 12m01s on Apple M5.
+- This type-checks the new healthy-baseline validator and its negative unit
+  test. The only emitted diagnostics are existing PostgreSQL-header warnings.
+
+## `2026-07-26-focused-profile-test.log`
+
+- Command:
+  `cargo test -p ecaz-cli --bin ecaz
+  socket_fault_profile_health_rejects_degraded_or_empty_baselines --
+  --nocapture`
+- Result: no test result claimed. The monolithic CLI test target remained in
+  link/codegen on this M5 and was stopped after the bounded local validation
+  window.

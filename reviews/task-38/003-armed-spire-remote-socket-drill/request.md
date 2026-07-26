@@ -54,6 +54,28 @@ Follow-up implementation `631ec2940` addresses both findings in
 
 See `artifacts/2026-07-26-review-response-validation.log`.
 
+## 2026-07-26 Outside Re-review Response
+
+Follow-up implementation `aea65a78f` addresses the remaining baseline-health
+finding in `feedback/2026-07-26-02-reviewer.md`:
+
+- the fixed `top_k = 10` baseline must report `status=ready`,
+  `result_source=remote_heap_candidates`, and
+  `final_heap_fetch_status=remote_ready`;
+- it must return exactly ten candidates from a nonempty remote candidate set;
+- it rejects skipped PIDs and failed remote-heap dispatches; and
+- every selected dispatch must complete as a ready remote-heap dispatch.
+
+Slow and recovery profiles must still equal that validated baseline across all
+stable correctness and participation metrics. A negative test covers degraded,
+empty, skipped, failed, and partially ready profiles.
+
+On this Apple M5 host, `cargo check -p ecaz-cli --tests` passed in 12m01s.
+The focused monolithic CLI test binary did not finish linking within the local
+validation window and was stopped without claiming a test result. See
+`artifacts/2026-07-26-test-configured-check.log` and
+`artifacts/2026-07-26-focused-profile-test.log`.
+
 ## Reviewer Focus
 
 - Does the named Unix peer match the coordinator-to-participant PostgreSQL
@@ -72,4 +94,4 @@ See `artifacts/2026-07-26-review-response-validation.log`.
 - execute provider-backed DistANN local EIO/ENOSPC/slow-disk;
 - replace the cgroup plan with a live systemd-scoped OOM lane and execute it on
   a supported Linux host;
-- obtain reviewer re-verification of the addressed packet 003 findings.
+- obtain reviewer re-verification of implementation `aea65a78f`.
