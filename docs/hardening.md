@@ -522,7 +522,18 @@ sessions, relation/advisory locks, prepared transactions, optional
   insert, and vacuum callback boundary, and sweeps the first few Nth allocation
   points for each AM scan workload. The runner attempts to disable the GUC and
   reset its counter after every workload result, including unexpected errors;
-  a workload error plus reset error is a hard failure.
+  a workload error plus reset error is a hard failure. After scan, insert, and
+  vacuum palloc faults, the normal recovery oracle also runs a real AM scan and
+  requires the AM/backend to be usable.
+- `make fault-mutation-control` runs the live, repeatable negative controls for
+  every fixture. The cancellation control injects a deliberate palloc error
+  into the normal cancel worker and requires the cancellation SQLSTATE oracle
+  to reject that wrong failure class. The resource/palloc control leaves the
+  palloc fault armed after the expected scan ERROR and requires the same real
+  AM recovery probe to reject the unrecovered backend; it then disarms the
+  fault, requires that identical probe to pass, and checks shared
+  postconditions. Use `FAULT_MUTATION_KIND=cancel-unexpected-palloc` or
+  `FAULT_MUTATION_KIND=memory-unrecovered-palloc` for one control.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, `ec_spire`, and all three `ec_distann` codec shapes, then directly exercises cancellation and

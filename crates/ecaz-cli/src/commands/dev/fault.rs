@@ -1,3 +1,9 @@
+use std::{
+    fs,
+    path::{Path, PathBuf},
+    process::Stdio,
+};
+
 use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{bail, eyre, Context, Result};
 use ecaz_fault_injection::{
@@ -8,9 +14,6 @@ use ecaz_fault_injection::{
     workload_table_sql, workload_temp_spill_sql, workload_vacuum_full_sql, workload_vacuum_sql,
     DistannCodec, FaultAm, FaultFixture, FaultLane, ProviderMode,
 };
-use std::fs;
-use std::path::{Path, PathBuf};
-use std::process::Stdio;
 use tokio::process::Command;
 
 use super::support::{
@@ -33,6 +36,8 @@ pub enum FaultCommand {
     Prepare(PrepareArgs),
     /// Run or dry-run one smoke lane.
     Smoke(SmokeArgs),
+    /// Prove fault-lane oracles reject deliberate controlled failures.
+    MutationControl(MutationControlArgs),
     /// Print a host-independent cgroup-v2/systemd OOM operator plan.
     CgroupPlan(CgroupPlanArgs),
     /// Run isolated PostgreSQL AM workloads under a cgroup-v2 memory limit.
@@ -172,6 +177,22 @@ pub struct SmokeArgs {
 }
 
 #[derive(Args, Debug)]
+pub struct MutationControlArgs {
+    /// Controlled negative case to run.
+    #[arg(long, value_enum, default_value = "all")]
+    kind: MutationControlKindArg,
+    /// Rows loaded into each per-AM fixture.
+    #[arg(long, default_value_t = 64)]
+    rows: i64,
+    /// Restrict the control to one access method.
+    #[arg(long, value_enum)]
+    am: Option<FaultAmArg>,
+    /// Restrict ec_distann controls to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
+}
+
+#[derive(Args, Debug)]
 pub struct CgroupPlanArgs {
     /// PostgreSQL major version to constrain.
     #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
@@ -297,6 +318,13 @@ pub enum DistannCodecArg {
     GroupedPq,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum MutationControlKindArg {
+    All,
+    CancelUnexpectedPalloc,
+    MemoryUnrecoveredPalloc,
+}
+
 impl From<ProviderModeArg> for ProviderMode {
     fn from(value: ProviderModeArg) -> Self {
         match value {
@@ -357,6 +385,7 @@ impl FaultCommand {
                 prepare_workloads(conn, args.rows, &fixtures).await
             }
             FaultCommand::Smoke(args) => run_smoke(conn, args).await,
+            FaultCommand::MutationControl(args) => run_mutation_control(conn, args).await,
             FaultCommand::CgroupPlan(args) => run_cgroup_plan(args),
             FaultCommand::CgroupSmoke(args) => run_cgroup_smoke(args).await,
             FaultCommand::CgroupWorker(args) => run_cgroup_worker(args).await,
@@ -1518,6 +1547,7 @@ async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultFixtu
             "cancel",
             "SELECT pg_cancel_backend($1)",
             true,
+            None,
         )
         .await?;
         run_backend_interrupt_case(
@@ -1527,6 +1557,7 @@ async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultFixtu
             "terminate",
             "SELECT pg_terminate_backend($1)",
             false,
+            None,
         )
         .await?;
     }
@@ -1540,6 +1571,7 @@ async fn run_backend_interrupt_case(
     label: &str,
     interrupt_sql: &str,
     require_query_canceled_sqlstate: bool,
+    worker_setup_sql: Option<&str>,
 ) -> Result<()> {
     let worker = connect_fault(conn, &format!("{label}-worker")).await?;
     let control = connect_fault(conn, &format!("{label}-control")).await?;
@@ -1547,6 +1579,9 @@ async fn run_backend_interrupt_case(
         .query_one("SELECT pg_backend_pid()", &[])
         .await?
         .get::<_, i32>(0);
+    if let Some(worker_setup_sql) = worker_setup_sql {
+        worker.batch_execute(worker_setup_sql).await?;
+    }
     let sql = workload_repeated_scan_sql(am, repeated_scan_probe_iterations(rows));
     let worker_task = tokio::spawn(async move {
         worker
@@ -1577,6 +1612,158 @@ async fn run_backend_interrupt_case(
         }
         Err(_) => Ok(()),
     }
+}
+
+async fn run_mutation_control(conn: &ConnectionOptions, args: MutationControlArgs) -> Result<()> {
+    if args.rows <= 0 {
+        bail!("--rows must be >= 1");
+    }
+    let fixtures = selected_fixtures(args.am, args.distann_codec)?;
+    prepare_workloads(conn, args.rows, &fixtures).await?;
+
+    if matches!(
+        args.kind,
+        MutationControlKindArg::All | MutationControlKindArg::CancelUnexpectedPalloc
+    ) {
+        run_cancel_unexpected_palloc_control(conn, args.rows, &fixtures).await?;
+    }
+    if matches!(
+        args.kind,
+        MutationControlKindArg::All | MutationControlKindArg::MemoryUnrecoveredPalloc
+    ) {
+        run_memory_unrecovered_palloc_control(conn, &fixtures).await?;
+    }
+
+    assert_postconditions(conn, FaultLane::Memory, None, None).await?;
+    crate::ecaz_println!(
+        "[fault] mutation_control_complete kind={:?} fixtures={} clean_postconditions=true",
+        args.kind,
+        fixtures.len()
+    );
+    Ok(())
+}
+
+async fn run_cancel_unexpected_palloc_control(
+    conn: &ConnectionOptions,
+    rows: i64,
+    fixtures: &[FaultFixture],
+) -> Result<()> {
+    const SETUP: &str = "SELECT ecaz_fault_reset_palloc_counter(); SET ecaz.fault_palloc_nth = 1;";
+    for &fixture in fixtures {
+        let result = run_backend_interrupt_case(
+            conn,
+            rows,
+            fixture,
+            "cancel-mutation",
+            "SELECT pg_cancel_backend($1)",
+            true,
+            Some(SETUP),
+        )
+        .await;
+        match result {
+            Ok(()) => {
+                bail!(
+                    "cancel mutation control unexpectedly accepted a deliberate palloc failure for {}",
+                    fixture.as_str()
+                )
+            }
+            Err(error) if report_is_ecaz_palloc_error(&error) => {
+                crate::ecaz_println!(
+                    "[fault] cancellation_mutation_control am={} injected=palloc_nth_1 normal_cancel_oracle=rejected",
+                    fixture.as_str()
+                );
+            }
+            Err(error) => {
+                return Err(error).wrap_err_with(|| {
+                    format!(
+                    "cancel mutation control for {} did not reach the deliberate palloc failure",
+                    fixture.as_str()
+                )
+                })
+            }
+        }
+    }
+    assert_postconditions(conn, FaultLane::Cancel, None, None).await
+}
+
+async fn run_memory_unrecovered_palloc_control(
+    conn: &ConnectionOptions,
+    fixtures: &[FaultFixture],
+) -> Result<()> {
+    for &fixture in fixtures {
+        let worker = connect_fault(conn, "mutation-memory-unrecovered").await?;
+        worker
+            .batch_execute(
+                "SELECT ecaz_fault_reset_palloc_counter(); SET ecaz.fault_palloc_nth = 1;",
+            )
+            .await?;
+        let result = worker.batch_execute(&workload_scan_sql(fixture)).await;
+        match result {
+            Err(error) if is_ecaz_palloc_error(&error) => {}
+            Err(error) => return Err(error.into()),
+            Ok(()) => {
+                bail!(
+                    "memory mutation control did not inject palloc failure for {}",
+                    fixture.as_str()
+                )
+            }
+        }
+
+        let oracle = run_palloc_recovery_probe(&worker, fixture).await;
+        match oracle {
+            Err(error) if is_ecaz_palloc_error(&error) => {}
+            Err(error) => return Err(error.into()),
+            Ok(()) => {
+                bail!(
+                    "memory mutation control recovery oracle accepted an armed palloc failure for {}",
+                    fixture.as_str()
+                )
+            }
+        }
+        crate::ecaz_println!(
+            "[fault] resource_palloc_mutation_control am={} injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected",
+            fixture.as_str()
+        );
+
+        worker
+            .batch_execute(
+                "SET ecaz.fault_palloc_nth = -1; SELECT ecaz_fault_reset_palloc_counter();",
+            )
+            .await?;
+        run_palloc_recovery_probe(&worker, fixture)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "memory mutation control did not recover after disarming palloc for {}",
+                    fixture.as_str()
+                )
+            })?;
+        drop(worker);
+        assert_postconditions(conn, FaultLane::Memory, None, None)
+            .await
+            .wrap_err_with(|| {
+                format!(
+                    "memory mutation control cleanup failed for {}",
+                    fixture.as_str()
+                )
+            })?;
+    }
+    Ok(())
+}
+
+async fn run_palloc_recovery_probe(
+    client: &tokio_postgres::Client,
+    fixture: FaultFixture,
+) -> Result<(), tokio_postgres::Error> {
+    client.batch_execute(&workload_scan_sql(fixture)).await?;
+    client.simple_query("SELECT 1").await?;
+    Ok(())
+}
+
+fn report_is_ecaz_palloc_error(error: &color_eyre::Report) -> bool {
+    error
+        .downcast_ref::<tokio_postgres::Error>()
+        .is_some_and(is_ecaz_palloc_error)
 }
 
 async fn run_timeout_probe(
@@ -2013,7 +2200,7 @@ async fn run_memory_build_probe(
     let mut reached_success = false;
     for nth in 1..=memory_major_workload_sweep_limit() {
         client.batch_execute(&workload_table_sql(am, rows)).await?;
-        if run_memory_expected_palloc_probe(client, am, "build", nth, &build_sql).await? {
+        if run_memory_expected_palloc_probe(client, am, "build", nth, &build_sql, false).await? {
             continue;
         }
         reached_success = true;
@@ -2039,7 +2226,7 @@ async fn run_memory_workload_palloc_sweep(
 ) -> Result<()> {
     let mut reached_success = false;
     for nth in 1..=memory_major_workload_sweep_limit() {
-        if run_memory_expected_palloc_probe(client, am, lane, nth, sql).await? {
+        if run_memory_expected_palloc_probe(client, am, lane, nth, sql, true).await? {
             continue;
         }
         reached_success = true;
@@ -2061,6 +2248,7 @@ async fn run_memory_expected_palloc_probe(
     lane: &str,
     nth: i32,
     sql: &str,
+    verify_am_recovery: bool,
 ) -> Result<bool> {
     client
         .batch_execute(&format!(
@@ -2091,12 +2279,23 @@ async fn run_memory_expected_palloc_probe(
         Err(error) if is_ecaz_palloc_error(&error) => {}
         Err(error) => return Err(error.into()),
     }
-    client.simple_query("SELECT 1").await.map_err(|error| {
-        eyre!(
-            "memory palloc {} {lane} nth {nth} did not leave the backend usable: {error}",
-            am.as_str()
-        )
-    })?;
+    if verify_am_recovery {
+        run_palloc_recovery_probe(client, am)
+            .await
+            .map_err(|error| {
+                eyre!(
+                    "memory palloc {} {lane} nth {nth} did not leave the AM/backend usable: {error}",
+                    am.as_str()
+                )
+            })?;
+    } else {
+        client.simple_query("SELECT 1").await.map_err(|error| {
+            eyre!(
+                "memory palloc {} {lane} nth {nth} did not leave the backend usable: {error}",
+                am.as_str()
+            )
+        })?;
+    }
     crate::ecaz_println!(
         "[fault] memory_palloc_sweep_fault am={} lane={lane} nth={nth}",
         am.as_str()
