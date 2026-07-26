@@ -1,6 +1,7 @@
 # Artifact Manifest
 
 - Implementation HEAD: `b3a70764c`
+- Review-response HEAD: `631ec2940`
 - Task bucket: `reviews/task-38/`
 - Packet: `reviews/task-38/002-armed-distann-remote-socket-drill/`
 - Capture date: `2026-07-25 America/Los_Angeles`
@@ -36,3 +37,9 @@
 This host cannot load `LD_PRELOAD` or run the Linux-built provider. There is no
 live `fault=1` marker, exact-peer syscall trace, socket reset/delay measurement,
 or cgroup OOM result in this packet. Those remain required Linux evidence.
+
+## `2026-07-26-review-response-validation.log`
+
+- Records scoped formatting and diff checks, production and test-configured CLI
+  checks, and the focused-test execution ceiling for the review-response
+  commit.

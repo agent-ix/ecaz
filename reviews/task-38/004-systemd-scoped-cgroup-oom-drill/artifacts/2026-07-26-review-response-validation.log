@@ -1,0 +1,27 @@
+Task 38 packet 004 outside-review response validation
+Review-response HEAD: 631ec2940
+Host: macOS arm64
+
+rustfmt --edition 2021 --check modified Rust files
+result=pass
+
+git diff --check
+result=pass
+
+cargo check -p ecaz-cli
+result=pass
+elapsed=2m09s
+warning=pre-existing LoadedDistributedPlacementConfig.path dead_code
+warning=PostgreSQL header unused-parameter warnings from pg18_pgstat_shim.c
+
+cargo check -p ecaz-cli --tests
+result=pass
+elapsed=10m11s
+typed_test=cgroup_roots_must_be_disjoint_and_runtime_must_avoid_evidence_trees
+
+cargo test -p ecaz-cli --bin ecaz cgroup_roots_must_be_disjoint_and_runtime_must_avoid_evidence_trees
+result=not_completed
+reason=monolithic ecaz-cli test binary did not finish linking within 11 minutes
+
+linux_cgroup_runtime=not_available
+live_oom_event=not_claimed

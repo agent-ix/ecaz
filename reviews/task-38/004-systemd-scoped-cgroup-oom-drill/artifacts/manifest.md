@@ -1,6 +1,7 @@
 # Artifact Manifest
 
 - Implementation HEAD: `79af1107b`
+- Review-response HEAD: `631ec2940`
 - Task bucket: `reviews/task-38/`
 - Packet: `reviews/task-38/004-systemd-scoped-cgroup-oom-drill/`
 - Capture date: `2026-07-25 America/Los_Angeles`
@@ -9,7 +10,7 @@
   each with its postmaster, repeated AM-build workload, and resident pressure
   in one user systemd scope
 - Storage: durable logs below the packet artifact directory; transient PG data
-  below a separate target-local runtime directory
+  below a separate, validated-disjoint target-local runtime directory
 - Benchmark matrix: not applicable; this checkpoint changes fault-control and
   recovery diagnostics, not production index behavior
 
@@ -35,3 +36,9 @@
 This host cannot execute cgroup v2 or a systemd user scope. There is no live
 `Result=oom-kill`, AM workload marker, memory event, postmaster crash-recovery,
 or seven-fixture result in this packet. Those remain required Linux evidence.
+
+## `2026-07-26-review-response-validation.log`
+
+- Records scoped formatting and diff checks, production and test-configured CLI
+  checks, the path-safety unit-test type check, and the focused-test execution
+  ceiling for the review-response commit.

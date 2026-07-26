@@ -21,11 +21,11 @@ injection.
 3. completes the physical generation while disarmed;
 4. proves a disarmed remote-owner baseline;
 5. arms one real distributed owner query;
-6. requires reset failure or the configured delay and an exact-peer `fault=1`
-   marker;
+6. requires reset failure or a same-run baseline-plus-configured-latency delay
+   and an exact-peer `fault=1` marker;
 7. removes the arm file; and
-8. requires the existing subsequent remote-owner materialization query to
-   recover successfully.
+8. verifies the expected source identity in a recovery query before emitting
+   any positive recovery line.
 
 `make fault-distann-remote-socket-smoke` exposes the two-owner diagnostic lane.
 
@@ -45,6 +45,18 @@ The current macOS arm64 host cannot load the Linux provider, so this packet
 does not claim live socket-reset/slow execution. The new runner must be
 executed on Linux before Task 38 closeout.
 
+## 2026-07-26 Outside-Review Response
+
+Follow-up implementation `631ec2940` addresses both findings in
+`feedback/2026-07-26-01-reviewer.md`:
+
+- the fault probe now owns and validates its recovery query before returning
+  the summary line, including expected and recovered source identities; and
+- slow mode now requires `fault_ms >= baseline_ms + configured_latency_ms`
+  rather than comparing only against the configured delay.
+
+See `artifacts/2026-07-26-review-response-validation.log`.
+
 ## Reviewer Focus
 
 - Is the arm-file gate safe and narrow enough for a postmaster-inherited
@@ -60,8 +72,8 @@ executed on Linux before Task 38 closeout.
 
 - execute reset and slow modes on Linux and retain their marker, runner, and
   syscall-trace evidence;
-- add the corresponding real SPIRE remote SQL drill;
+- execute the corresponding real SPIRE remote SQL drill;
 - execute provider-backed DistANN local EIO/ENOSPC/slow-disk;
 - replace the cgroup plan with a live systemd-scoped OOM lane and execute it on
   a supported Linux host;
-- obtain outside review for this checkpoint.
+- obtain reviewer re-verification of the addressed findings.

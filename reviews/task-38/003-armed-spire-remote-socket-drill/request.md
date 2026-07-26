@@ -12,18 +12,20 @@ DistANN remote-socket drill from packet 002.
 2. pins the first participant's real named PostgreSQL Unix socket as the exact
    peer;
 3. prepares the physical SPIRE fixture while the provider is disarmed;
-4. proves a disarmed production-read-profile baseline;
+4. captures a nonempty disarmed production-read profile with remote
+   participation;
 5. arms one production-read-profile query;
-6. requires the configured delay or a reset result, plus an exact-peer
-   `fault=1` marker;
+6. requires a baseline-equivalent stable profile plus
+   baseline-plus-configured-latency timing for slow mode, or a reset result,
+   plus an exact-peer `fault=1` marker;
 7. removes the arm file; and
-8. requires the next production-read-profile query to recover successfully.
+8. requires the next stable production-read profile to equal the baseline.
 
 Reset mode accepts either a clean SQL error or SPIRE's clean degraded result.
 In both cases the exact provider marker, rather than the SQL outcome alone,
 proves that the real participant transport was faulted.
 
-`make fault-spire-remote-socket-smoke` exposes the native two-participant
+`make fault-spire-remote-socket-smoke` exposes the native three-participant
 diagnostic lane.
 
 ## Validation
@@ -37,6 +39,20 @@ See `artifacts/manifest.md` and `artifacts/local-validation.log`.
 The current macOS arm64 host cannot load the Linux provider, so this packet
 does not claim live socket-reset/slow execution. The new runner must be
 executed on Linux before Task 38 closeout.
+
+## 2026-07-26 Outside-Review Response
+
+Follow-up implementation `631ec2940` addresses both findings in
+`feedback/2026-07-26-01-reviewer.md`:
+
+- baseline, armed, and recovery profile rows are captured as named metrics;
+- baseline requires remote participation;
+- slow mode requires stable correctness/participation metrics equal to
+  baseline plus the baseline-plus-latency timing gate;
+- recovery requires its stable profile to equal baseline before success; and
+- the manifest now records the actual three-participant topology.
+
+See `artifacts/2026-07-26-review-response-validation.log`.
 
 ## Reviewer Focus
 
@@ -56,4 +72,4 @@ executed on Linux before Task 38 closeout.
 - execute provider-backed DistANN local EIO/ENOSPC/slow-disk;
 - replace the cgroup plan with a live systemd-scoped OOM lane and execute it on
   a supported Linux host;
-- obtain outside review for packets 002 and 003.
+- obtain reviewer re-verification of the addressed packet 003 findings.
