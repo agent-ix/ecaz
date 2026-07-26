@@ -2619,4 +2619,28 @@ mod tests {
         assert_eq!(TRAVERSAL_REPLICA_CATALOG_OID.with(Cell::get), 0);
         assert!(!ready_replica_is_suppressed(index_oid, build_id));
     }
+
+    #[test]
+    fn ready_presence_cache_distinguishes_unknown_and_known_absent() {
+        invalidate_ready_replica_presence_cache(pg_sys::InvalidOid);
+        assert!(!ready_replica_known_absent());
+        READY_REPLICA_PRESENCE.with(|presence| presence.set(1));
+        assert!(ready_replica_known_absent());
+        READY_REPLICA_PRESENCE.with(|presence| presence.set(2));
+        assert!(!ready_replica_known_absent());
+        invalidate_ready_replica_presence_cache(pg_sys::InvalidOid);
+    }
+
+    #[test]
+    fn suppression_is_scoped_to_index_and_build_identity() {
+        let index_oid = pg_sys::Oid::from(43_u32);
+        let other_index = pg_sys::Oid::from(44_u32);
+        let build_id = Uuid::from_bytes([0x66; 16]);
+        let other_build = Uuid::from_bytes([0x77; 16]);
+        suppress_ready_replica(index_oid, build_id);
+        assert!(ready_replica_is_suppressed(index_oid, build_id));
+        assert!(!ready_replica_is_suppressed(other_index, build_id));
+        assert!(!ready_replica_is_suppressed(index_oid, other_build));
+        TRAVERSAL_REPLICA_SUPPRESSION.with(|suppressed| suppressed.borrow_mut().clear());
+    }
 }

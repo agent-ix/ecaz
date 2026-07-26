@@ -1808,7 +1808,7 @@ async fn task199_enospc_replica_build_drill(
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} \
          scenario=enospc_midcopy_cleanup pass=true sqlstate=53100 \
-         provider_fault_events={data_faults} errno=28 building_row_created=true \
+         provider_fault_events={data_faults} errno=28 \
          eligible_partial_images=0 catalog_residue=0 relation_residue=0 \
          cluster_healthy=true owner_fallback_identity=true \
          tablespace_restored=true recovery_build_state=Ready \
