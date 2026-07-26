@@ -1,0 +1,34 @@
+src/am/ec_diskann/mod.rs:179:pub(super) fn maybe_check_for_interrupts() {
+src/am/ec_diskann/mod.rs:185:        pgrx::check_for_interrupts!();
+src/am/ec_diskann/routine.rs:1458:        maybe_check_for_interrupts();
+src/am/ec_diskann/routine.rs:1490:            maybe_check_for_interrupts();
+src/am/ec_diskann/routine.rs:1607:            maybe_check_for_interrupts();
+src/am/ec_diskann/routine.rs:1766:        maybe_check_for_interrupts();
+src/am/ec_diskann/routine.rs:30:    ambuild, cost, insert, maybe_check_for_interrupts, options,
+src/am/ec_diskann/scan.rs:33:    maybe_check_for_interrupts,
+src/am/ec_diskann/scan.rs:555:        maybe_check_for_interrupts();
+src/am/ec_diskann/scan.rs:692:        maybe_check_for_interrupts();
+src/am/ec_distann/remote_transport.rs:1595:    // CHECK_FOR_INTERRUPTS may ereport(ERROR), whose PostgreSQL longjmp skips
+src/am/ec_distann/remote_transport.rs:1599:    maybe_check_for_interrupts();
+src/am/ec_distann/remote_transport.rs:1620:    maybe_check_for_interrupts();
+src/am/ec_distann/remote_transport.rs:51:use crate::am::ec_diskann::maybe_check_for_interrupts;
+src/am/ec_distann/remote_transport.rs:80:                // clients/driver tasks before CHECK_FOR_INTERRUPTS raises.
+src/am/ec_distann/shard_build.rs:1032:        maybe_check_for_interrupts();
+src/am/ec_distann/shard_build.rs:1276:        maybe_check_for_interrupts();
+src/am/ec_distann/shard_build.rs:58:use crate::am::ec_diskann::maybe_check_for_interrupts;
+src/am/ec_distann/shard_build.rs:658:        maybe_check_for_interrupts();
+src/am/ec_distann/shard_build.rs:779:            maybe_check_for_interrupts();
+src/am/ec_distann/shard_build.rs:859:                    maybe_check_for_interrupts();
+src/am/ec_distann/shard_build.rs:885:                Err(RecvTimeoutError::Timeout) => maybe_check_for_interrupts(),
+src/am/ec_distann/shard_build.rs:93:/// thread; worker code never calls `CHECK_FOR_INTERRUPTS`.
+src/am/ec_hnsw/build_parallel.rs:2793:                    pg_sys::ProcessInterrupts();
+src/am/ec_ivf/build_parallel.rs:449:                    pg_sys::ProcessInterrupts();
+462:    PostgresInterruptPoll { poll_interval_ms: u64 },
+604:        Self::PostgresInterruptPoll {
+2488:            SpireRemoteLocalCancelSource::PostgresInterruptPoll { poll_interval_ms } => {
+2491:                    if postgres_query_cancel_pending() {
+2520:fn postgres_query_cancel_pending() -> bool {
+2521:    postgres_sig_atomic_flag(b"InterruptPending\0") != 0
+2522:        && postgres_sig_atomic_flag(b"QueryCancelPending\0") != 0
+2529:fn postgres_statement_timeout_pending() -> bool {
+2551:    if postgres_statement_timeout_pending() {
