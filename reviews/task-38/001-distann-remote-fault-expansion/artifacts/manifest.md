@@ -247,3 +247,20 @@ the same host class as the packet, with the same LD_PRELOAD limits.
 - Key result: `Build operator CLI` completed successfully at exact head
   `18bf5e248`; the full PG18 job also completed successfully.
 - Scope: Linux x86_64 compilation only. No provider runtime claim.
+
+### `2026-07-25-reviewer-reverify.log`
+
+- Added by `feedback/2026-07-25-02-reviewer.md`. Head `adb808b93`, Apple M5
+  macOS arm64.
+- Commands: `cargo test -p ecaz-fault-injection`, `cargo test -p ecaz-cli fault`,
+  `clang -fsyntax-only -Wall -Wextra` on the provider.
+- Status: PASS.
+- Key result: 9 passed / 0 failed provider; 31 passed / 0 failed CLI fault
+  (up from 30 at seq 01); 0 non-deprecated warnings under `-Wall -Wextra`,
+  which is the evidence that adding `-Werror` to `build.rs` is now low-risk.
+- Independent check of the cited compile evidence: CI run `30183037880` reports
+  `headSha=18bf5e248`, `event=workflow_dispatch`, job `pgrx pg18` success. The
+  provenance chain holds because `crates/ecaz-cli/Cargo.toml:41` declares a path
+  dependency on `ecaz-fault-injection`, so that job's `cargo build -p ecaz-cli`
+  runs the fault crate's `build.rs`. HEAD `adb808b93` changes artifacts only, so
+  the compile covers the exact current source.
