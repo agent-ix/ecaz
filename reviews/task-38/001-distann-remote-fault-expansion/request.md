@@ -44,7 +44,7 @@ an empty `unix:` selector from aliasing unrelated accepted connections. The
 provider covers scalar, vectored, datagram, and message socket I/O entry
 points; file-provider matching remains separate.
 Provider restore removes the peer filter along with the existing LD_PRELOAD
-variables. Linux builds now enable `-Wall -Wextra` for the provider.
+variables. Linux builds now enforce `-Wall -Wextra -Werror` for the provider.
 
 The Linux LD_PRELOAD provider compiled successfully on Ubuntu 24.04 x86_64 in
 the manually dispatched PG18 job for this PR head. That job does not load or

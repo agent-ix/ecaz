@@ -231,21 +231,21 @@ the same host class as the packet, with the same LD_PRELOAD limits.
 - Change coverage: stable named-Unix/TCP peer validation with unnamed and
   abstract Unix peers rejected; scalar, vectored, datagram, and message socket
   entry points; `errno` preservation; unrepresentable invalid DistANN fixture
-  state; Linux provider compilation enables `-Wall -Wextra`.
-- Linux compile evidence: manual workflow run `30183037880`, PG18 job
-  `89742835246`, head `18bf5e248`. Its `Build operator CLI` step passed on
+  state; Linux provider compilation enforces `-Wall -Wextra -Werror`.
+- Linux compile evidence: manual workflow run `30184074527`, PG18 job
+  `89745572723`, head `815b788c0`. Its `Build operator CLI` step passed on
   Ubuntu 24.04 x86_64. Since `ecaz-cli` directly depends on
   `ecaz-fault-injection`, the Linux-only provider build script completed with
-  `-Wall -Wextra`.
+  `-Wall -Wextra -Werror`.
 - Evidence ceiling: CI did not load or exercise the provider. A focused TCP
   reset against a real peer and network syscall trace still require a Linux
   runtime.
 
 ### `2026-07-25-linux-provider-compile-ci.log`
 
-- Source: GitHub Actions run `30183037880`, job `89742835246`.
+- Source: GitHub Actions run `30184074527`, job `89745572723`.
 - Key result: `Build operator CLI` completed successfully at exact head
-  `18bf5e248`; the full PG18 job also completed successfully.
+  `815b788c0`; the full PG18 job also completed successfully.
 - Scope: Linux x86_64 compilation only. No provider runtime claim.
 
 ### `2026-07-25-reviewer-reverify.log`

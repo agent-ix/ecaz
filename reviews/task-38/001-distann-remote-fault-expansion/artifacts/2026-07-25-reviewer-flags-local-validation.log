@@ -23,10 +23,10 @@ Scope:
   named Unix path; unnamed and abstract Unix peers cannot match. The provider
   preserves errno while probing descriptors and interposes read/write,
   recv/send, readv/writev, recvfrom/sendto, and recvmsg/sendmsg.
-  Linux provider compilation enables -Wall -Wextra.
+  Linux provider compilation enforces -Wall -Wextra -Werror.
 
 Evidence ceiling:
   This local run is not Linux compile or runtime evidence. Subsequent manual CI
-  run 30183037880 provides Linux compile evidence only. A focused socket
+  run 30184074527 provides Linux compile evidence only. A focused socket
   socket-reset run against a real peer and network syscall trace remain
   required.
