@@ -593,15 +593,19 @@ coordinator with the exact named-Unix or TCP peer filter, require a reset/slow
 two-owner physical DistANN fixture. The coordinator starts with the provider
 disarmed, proves the baseline remote owner query, creates the arm file for one
 exact-peer query, requires the reset/error or measured delay plus a matching
-`fault=1` marker, removes the arm file, and requires the next remote-owner
-query to recover successfully. Set `FAULT_SOCKET_PROVIDER_MODE` to
-`socket-reset` or `socket-slow`.
+`fault=1` marker, removes the arm file, and requires an expected-source
+recovery query before reporting success. Slow mode requires the armed duration
+to reach the same-run baseline plus the configured latency. Set
+`FAULT_SOCKET_PROVIDER_MODE` to `socket-reset` or `socket-slow`.
 `make fault-spire-remote-socket-smoke` applies the same armed sequence to the
 native one-coordinator/three-worker SPIRE fixture. Only the coordinator loads
 the provider; the exact peer is remote worker 1's named Unix socket. The probe
-runs the production read profile before, during, and after the fault, requires
-the exact-peer marker, accepts SPIRE's documented clean degraded result or
-clean ERROR for reset, and requires successful recovery after disarm.
+runs the production read profile before, during, and after the fault, captures
+its correctness and participation metrics instead of discarding returned rows,
+requires the exact-peer marker, accepts SPIRE's documented clean degraded
+result or clean ERROR for reset, and requires the recovered stable profile to
+equal the baseline. Slow mode also requires its armed stable profile to equal
+the baseline and its duration to reach baseline plus configured latency.
 Unnamed and abstract Unix peers are deliberately non-matchable. This macOS
 host cannot load the Linux provider, so no live socket result is claimed. SPIRE
 object-store reads remain **nonexistent**, not an unavailable transport test.
@@ -611,15 +615,20 @@ capability and prints the isolated one-index-per-table MemoryMax plan. A live
 run uses `make fault-cgroup-smoke` to place a fresh isolated PG18 postmaster,
 the selected AM workload, and a resident-memory pressure task in one user
 `systemd-run --scope`. Each of the seven fixtures runs separately with
-`MemoryMax` and `OOMPolicy=kill`. The outer operator requires systemd
-`Result=oom-kill` after the repeated real AM-build marker, restarts the killed
-cluster outside the scope, verifies SQL usability and zero invalid ECAZ
-indexes, and stops it cleanly. Scope and recovery logs land below
+`MemoryMax` and `OOMPolicy=kill`. The worker commits a valid fixture index
+before entering the interrupted DROP/CREATE build loop. The outer operator
+requires systemd `Result=oom-kill` after the repeated real AM-build marker,
+restarts the killed cluster outside the scope, requires the exact fixture row
+count, the expected valid/ready index, a successful forced AM scan, and the
+shared leak/lock/pin postconditions, then stops it cleanly. Scope and recovery
+logs land below
 `FAULT_CGROUP_ARTIFACT_DIR`; transient data directories live below
 `FAULT_CGROUP_RUNTIME_DIR` and are removed only after successful recovery, so
-PostgreSQL data files cannot accidentally enter a review packet. Direct
-`/sys/fs/cgroup` writes are forbidden. The current macOS host reports this lane
-unavailable and cannot supply live evidence.
+PostgreSQL data files cannot accidentally enter a review packet. Equal or
+ancestor/descendant evidence/runtime roots are rejected, as are runtime roots
+inside `reviews/` or `benchmarks/`. Direct `/sys/fs/cgroup` writes are
+forbidden. The current macOS host reports this lane unavailable and cannot
+supply live evidence.
 
 Provider ENOSPC can surface PostgreSQL checkpoint failures as `XX000`. The
 allowance is restricted to messages containing `checkpoint request failed` or

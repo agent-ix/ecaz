@@ -6,7 +6,7 @@
 //! explicit control-only subcommand.
 
 use clap::{Args, Subcommand, ValueEnum};
-use color_eyre::eyre::{bail, Context, Result};
+use color_eyre::eyre::{bail, eyre, Context, Result};
 use ecaz_fault_injection::ProviderMode;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -3272,6 +3272,7 @@ async fn drive_physical_fixture(
                     &log_dir.join("distann-remote-socket-fault.arm"),
                     &log_dir.join("distann-remote-socket-fault.marker"),
                     node.port,
+                    source_id,
                 )
                 .await?;
                 crate::ecaz_println!("[distann-multicluster] {line}");
@@ -3412,20 +3413,27 @@ async fn run_remote_socket_fault_probe(
     arm_file: &Path,
     marker: &Path,
     peer_port: u16,
+    expected_source_id: &str,
 ) -> Result<String> {
+    let probe_sql = format!("SELECT source_id::text FROM ({owner_query}) q");
     let baseline_started = Instant::now();
     let baseline = coordinator
-        .query_opt(owner_query, &[])
+        .query_opt(&probe_sql, &[])
         .await
         .wrap_err("running disarmed DistANN remote socket baseline")?;
-    if baseline.is_none() {
-        bail!("disarmed DistANN remote socket baseline returned no row");
+    let baseline_source_id = baseline
+        .map(|row| row.get::<_, String>(0))
+        .ok_or_else(|| eyre!("disarmed DistANN remote socket baseline returned no row"))?;
+    if baseline_source_id != expected_source_id {
+        bail!(
+            "disarmed DistANN remote socket baseline returned {baseline_source_id}, expected {expected_source_id}"
+        );
     }
     let baseline_ms = baseline_started.elapsed().as_millis();
 
     fs::write(arm_file, "").wrap_err_with(|| format!("arming {}", arm_file.display()))?;
     let fault_started = Instant::now();
-    let outcome = coordinator.query_opt(owner_query, &[]).await;
+    let outcome = coordinator.query_opt(&probe_sql, &[]).await;
     let fault_ms = fault_started.elapsed().as_millis();
     fs::remove_file(arm_file).wrap_err_with(|| format!("disarming {}", arm_file.display()))?;
 
@@ -3435,10 +3443,19 @@ async fn run_remote_socket_fault_probe(
         }
         RemoteSocketFaultArg::Reset => {}
         RemoteSocketFaultArg::Slow => {
-            outcome.wrap_err("armed DistANN socket-slow query failed")?;
-            if fault_ms < u128::from(latency_ms) {
+            let fault_source_id = outcome
+                .wrap_err("armed DistANN socket-slow query failed")?
+                .map(|row| row.get::<_, String>(0))
+                .ok_or_else(|| eyre!("armed DistANN socket-slow query returned no row"))?;
+            if fault_source_id != expected_source_id {
                 bail!(
-                    "armed DistANN socket-slow query took {fault_ms} ms, below configured {latency_ms} ms"
+                    "armed DistANN socket-slow query returned {fault_source_id}, expected {expected_source_id}"
+                );
+            }
+            let required_fault_ms = baseline_ms.saturating_add(u128::from(latency_ms));
+            if fault_ms < required_fault_ms {
+                bail!(
+                    "armed DistANN socket-slow query took {fault_ms} ms versus {baseline_ms} ms baseline, below required baseline-plus-latency {required_fault_ms} ms"
                 );
             }
         }
@@ -3457,12 +3474,25 @@ async fn run_remote_socket_fault_probe(
             "DistANN remote socket marker has no exact-peer fault event for {expected_mode} {expected_target}"
         );
     }
+    let recovered_source_id = coordinator
+        .query_opt(&probe_sql, &[])
+        .await
+        .wrap_err("running disarmed DistANN remote socket recovery query")?
+        .map(|row| row.get::<_, String>(0))
+        .ok_or_else(|| eyre!("disarmed DistANN remote socket recovery returned no row"))?;
+    if recovered_source_id != expected_source_id {
+        bail!(
+            "disarmed DistANN remote socket recovery returned {recovered_source_id}, expected {expected_source_id}"
+        );
+    }
     Ok(format!(
-        "remote_socket_fault mode={} peer=tcp:127.0.0.1:{} baseline_ms={} fault_ms={} fault_event=true disarmed=true recovery=verified-by-subsequent-owner-query",
+        "remote_socket_fault mode={} peer=tcp:127.0.0.1:{} baseline_ms={} fault_ms={} expected_source_id={} recovered_source_id={} fault_event=true disarmed=true recovery=true",
         expected_mode,
         peer_port,
         baseline_ms,
-        fault_ms
+        fault_ms,
+        expected_source_id,
+        recovered_source_id
     ))
 }
 

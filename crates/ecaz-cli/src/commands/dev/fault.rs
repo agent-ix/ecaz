@@ -14,7 +14,8 @@ use std::process::Stdio;
 use tokio::process::Command;
 
 use super::support::{
-    default_pgrx_port, find_pgrx_install, resolve_pgrx_home, run_status, DEFAULT_PG_MAJOR,
+    default_pgrx_port, find_pgrx_install, repo_root, resolve_pgrx_home, run_status,
+    DEFAULT_PG_MAJOR,
 };
 use crate::psql::{self, ConnectionOptions};
 
@@ -247,6 +248,8 @@ pub struct CgroupRecoverArgs {
     #[arg(long)]
     port: u16,
     #[arg(long)]
+    rows: i64,
+    #[arg(long)]
     artifact_dir: PathBuf,
     #[arg(long)]
     runtime_dir: PathBuf,
@@ -415,6 +418,14 @@ async fn run_cgroup_smoke(args: CgroupSmokeArgs) -> Result<()> {
     require_cgroup_smoke_host().await?;
 
     let fixtures = selected_fixtures(args.am, args.distann_codec)?;
+    let repo_root = repo_root()?;
+    let requested_artifact_root = resolve_future_path(&args.artifact_dir)?;
+    let requested_runtime_root = resolve_future_path(&args.runtime_dir)?;
+    validate_cgroup_roots(
+        &requested_artifact_root,
+        &requested_runtime_root,
+        &repo_root,
+    )?;
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref())
         .canonicalize()
         .wrap_err("resolving PGRX_HOME for cgroup smoke")?;
@@ -439,6 +450,7 @@ async fn run_cgroup_smoke(args: CgroupSmokeArgs) -> Result<()> {
         .runtime_dir
         .canonicalize()
         .wrap_err("resolving cgroup runtime directory")?;
+    validate_cgroup_roots(&artifact_root, &runtime_root, &repo_root)?;
     let executable = std::env::current_exe()
         .wrap_err("resolving current ecaz executable")?
         .canonicalize()
@@ -572,6 +584,8 @@ async fn run_cgroup_smoke(args: CgroupSmokeArgs) -> Result<()> {
             .arg(args.pg.to_string())
             .arg("--port")
             .arg(port.to_string())
+            .arg("--rows")
+            .arg(args.rows.to_string())
             .arg("--artifact-dir")
             .arg(&case_dir)
             .arg("--runtime-dir")
@@ -653,6 +667,71 @@ async fn require_cgroup_smoke_host() -> Result<()> {
     Ok(())
 }
 
+fn resolve_future_path(path: &Path) -> Result<PathBuf> {
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut normalized = PathBuf::new();
+    for component in absolute.components() {
+        match component {
+            std::path::Component::CurDir => {}
+            std::path::Component::ParentDir => {
+                normalized.pop();
+            }
+            other => normalized.push(other.as_os_str()),
+        }
+    }
+
+    let mut existing = normalized.as_path();
+    let mut missing = Vec::new();
+    while !existing.exists() {
+        let name = existing
+            .file_name()
+            .ok_or_else(|| eyre!("could not resolve future path {}", path.display()))?;
+        missing.push(name.to_os_string());
+        existing = existing
+            .parent()
+            .ok_or_else(|| eyre!("could not resolve future path {}", path.display()))?;
+    }
+    let mut resolved = existing
+        .canonicalize()
+        .wrap_err_with(|| format!("canonicalizing existing ancestor {}", existing.display()))?;
+    for name in missing.into_iter().rev() {
+        resolved.push(name);
+    }
+    Ok(resolved)
+}
+
+fn validate_cgroup_roots(
+    artifact_root: &Path,
+    runtime_root: &Path,
+    repo_root: &Path,
+) -> Result<()> {
+    if paths_overlap(artifact_root, runtime_root) {
+        bail!(
+            "cgroup --artifact-dir and --runtime-dir must be disjoint, got {} and {}",
+            artifact_root.display(),
+            runtime_root.display()
+        );
+    }
+    for evidence_tree in [repo_root.join("reviews"), repo_root.join("benchmarks")] {
+        if runtime_root.starts_with(&evidence_tree) {
+            bail!(
+                "cgroup --runtime-dir {} must not be inside evidence tree {}",
+                runtime_root.display(),
+                evidence_tree.display()
+            );
+        }
+    }
+    Ok(())
+}
+
+fn paths_overlap(lhs: &Path, rhs: &Path) -> bool {
+    lhs == rhs || lhs.starts_with(rhs) || rhs.starts_with(lhs)
+}
+
 fn append_fixture_cli_args(command: &mut Command, fixture: FaultFixture) {
     let am = match fixture.access_method() {
         FaultAm::Hnsw => "hnsw",
@@ -722,6 +801,12 @@ async fn run_cgroup_worker(args: CgroupWorkerArgs) -> Result<()> {
         .batch_execute(&workload_table_sql(fixture, args.rows))
         .await
         .wrap_err_with(|| format!("preparing {} cgroup table", fixture.as_str()))?;
+    client
+        .batch_execute(&ecaz_fault_injection::workload_create_index_sql(
+            fixture, args.rows,
+        ))
+        .await
+        .wrap_err_with(|| format!("committing initial {} cgroup index", fixture.as_str()))?;
 
     let create_index = ecaz_fault_injection::workload_create_index_sql(fixture, args.rows);
     let create_index = create_index.replace('\'', "''");
@@ -798,6 +883,9 @@ async fn wait_for_cgroup_workload_active(conn: &ConnectionOptions) -> Result<()>
 
 async fn run_cgroup_recover(args: CgroupRecoverArgs) -> Result<()> {
     let fixture = selected_single_fixture(args.am, args.distann_codec)?;
+    if args.rows <= 0 {
+        bail!("--rows must be >= 1");
+    }
     let install = find_pgrx_install(args.pg, &args.pgrx_home)?;
     let pg_ctl = install.bin_dir.join("pg_ctl");
     let data_dir = args.runtime_dir.join("data");
@@ -837,18 +925,25 @@ async fn run_cgroup_recover(args: CgroupRecoverArgs) -> Result<()> {
     let conn = isolated_fault_connection(&socket_dir, args.port);
     let client = connect_isolated_fault(&conn, "cgroup recovery").await?;
     client.simple_query("SELECT 1").await?;
-    let invalid_indexes: i64 = client
+    let index = ecaz_fault_injection::workload_index(fixture);
+    let index_state = client
         .query_one(
-            "SELECT count(*)
-             FROM pg_index i
-             JOIN pg_class c ON c.oid = i.indexrelid
-             WHERE NOT i.indisvalid AND c.relname LIKE 'ecaz_fault_%'",
-            &[],
+            "SELECT
+                 r.index_oid IS NOT NULL,
+                 COALESCE(i.indisvalid, false),
+                 COALESCE(i.indisready, false)
+             FROM (SELECT to_regclass($1::text) AS index_oid) r
+             LEFT JOIN pg_index i ON i.indexrelid = r.index_oid",
+            &[&index],
         )
-        .await?
-        .get(0);
-    if invalid_indexes != 0 {
-        bail!("cgroup recovery found {invalid_indexes} invalid ECAZ indexes");
+        .await?;
+    let index_exists = index_state.get::<_, bool>(0);
+    let index_valid = index_state.get::<_, bool>(1);
+    let index_ready = index_state.get::<_, bool>(2);
+    if !(index_exists && index_valid && index_ready) {
+        bail!(
+            "cgroup recovery index {index} state was exists={index_exists} valid={index_valid} ready={index_ready}"
+        );
     }
     let table = ecaz_fault_injection::workload_table(fixture);
     let recovered_rows: i64 = client
@@ -856,13 +951,24 @@ async fn run_cgroup_recover(args: CgroupRecoverArgs) -> Result<()> {
         .await
         .wrap_err_with(|| format!("querying recovered {} table", fixture.as_str()))?
         .get(0);
-    if recovered_rows <= 0 {
-        bail!("cgroup recovery found an empty {} table", fixture.as_str());
+    if recovered_rows != args.rows {
+        bail!(
+            "cgroup recovery found {recovered_rows} rows for {}, expected {}",
+            fixture.as_str(),
+            args.rows
+        );
     }
+    client
+        .batch_execute(&workload_scan_sql(fixture))
+        .await
+        .wrap_err_with(|| format!("running recovered {} AM scan", fixture.as_str()))?;
+    drop(client);
+    assert_postconditions(&conn, FaultLane::Memory, None, None).await?;
     guard.stop().await?;
     crate::ecaz_println!(
-        "[fault] cgroup_recovery am={} postmaster_started=true query_usable=true recovered_rows={} invalid_indexes=0 clean_stop=true",
+        "[fault] cgroup_recovery am={} postmaster_started=true query_usable=true expected_rows={} recovered_rows={} index_exists=true index_valid=true index_ready=true am_scan=true shared_postconditions=true clean_stop=true",
         fixture.as_str(),
+        args.rows,
         recovered_rows
     );
     Ok(())
@@ -2845,6 +2951,33 @@ fn print_leak_probes() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cgroup_roots_must_be_disjoint_and_runtime_must_avoid_evidence_trees() {
+        let repo = Path::new("/repo");
+        assert!(validate_cgroup_roots(
+            Path::new("/repo/reviews/task-38/004/artifacts"),
+            Path::new("/repo/target/fault-cgroup-runtime"),
+            repo
+        )
+        .is_ok());
+
+        for runtime in [
+            "/repo/reviews/task-38/004/artifacts/runtime",
+            "/repo/benchmarks/task-38-runtime",
+            "/repo/target/fault-cgroup/evidence/runtime",
+        ] {
+            assert!(
+                validate_cgroup_roots(
+                    Path::new("/repo/target/fault-cgroup/evidence"),
+                    Path::new(runtime),
+                    repo
+                )
+                .is_err(),
+                "runtime root {runtime} should be rejected"
+            );
+        }
+    }
 
     #[test]
     fn socket_provider_requires_stable_peer_identity() {
