@@ -1,13 +1,15 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **open; Apple-M5 implementation and source review complete, designated
-Intel/Linux execution pending** — the historical Linux packet proved the four-AM
-`ec_hnsw`/`ec_ivf`/`ec_diskann`/`ec_spire` surface. The current Task 38 branch
-adds `ec_distann` as a first-class AM with separate RaBitQ, TurboQuant, and
-grouped-PQ fixtures, exact-peer socket reset/latency provider modes, measured
-slow-disk comparison inputs, stronger accumulator markers, reset-safe palloc
-handling, armed exact-peer DistANN TCP and SPIRE Unix-socket drills, and
-an executable seven-fixture systemd-scoped cgroup OOM drill.
+Status: **open; Apple-M5 implementation, local PG18 validation, and source
+review complete, designated Intel/Linux execution pending** — the historical
+Linux packet proved the four-AM `ec_hnsw`/`ec_ivf`/`ec_diskann`/`ec_spire`
+surface. The current Task 38 branch adds `ec_distann` as a first-class AM with
+separate RaBitQ, TurboQuant, and grouped-PQ fixtures, exact-peer socket
+reset/latency provider modes, measured slow-disk comparison inputs, stronger
+accumulator markers, reset-safe palloc handling, armed exact-peer DistANN TCP
+and SPIRE Unix-socket drills, an executable seven-fixture systemd-scoped
+cgroup OOM drill, and repeatable seven-fixture cancellation/palloc mutation
+controls.
 
 The seven current fixtures flow through real build, KNN scan, insert,
 delete/vacuum, DDL, cancel/terminate, statement/idle/lock timeout, palloc,
@@ -25,8 +27,21 @@ unavailable on this host until Linux evidence lands. SPIRE remote SQL transport
 does exist and is actionable; only future SPIRE object-store reads are
 nonexistent. No CI/nightly execution is claimed, and this task stays open for
 operator-scheduled execution on the designated Intel/Linux host. Review
-packets 001 through 004 have outside approval at the implementation/source
-level; that approval does not substitute for the missing live Linux evidence.
+packets 001 through 007 have outside approval for their stated implementation,
+source, inventory, and M5-local evidence scopes; those approvals do not
+substitute for the missing live Linux evidence.
+
+The Apple-M5 validation boundary is complete. Packet 006 inventories every
+explicit ECAZ interrupt boundary and files Task 200 for unpolled-loop
+classification/remediation. Packet 007 proves the production cancellation
+oracle rejects a deliberate wrong AM failure and proves the real-AM recovery
+oracle rejects an unrecovered palloc state before accepting the identical scan
+after disarm, across all seven fixtures. The remaining Task 38 hold-open matrix
+is exclusively the designated Intel/Linux execution surface:
+
+- DistANN provider-backed EIO, ENOSPC, and measured slow-disk behavior;
+- DistANN TCP reset/slow and SPIRE named-Unix reset/slow behavior; and
+- seven systemd/cgroup-v2 OOM fixture cases.
 
 ## Scope
 
@@ -64,8 +79,10 @@ adversarial operational conditions:
 - `statement_timeout` fires asynchronously; any code path that holds a buffer
   pin or LWLock when it fires can leak.
 
-None of these are exercised today. Task 37 covers `SIGKILL` recovery, but not
-the in-process cleanup paths.
+Task 38 now exercises the local in-process cleanup paths and supplies armed
+Linux provider/cgroup operators. Task 37 remains the historical source of the
+general `SIGKILL` recovery model; the live Task 38 Linux provider, socket, and
+cgroup matrix remains pending as stated above.
 
 ## Approach
 
