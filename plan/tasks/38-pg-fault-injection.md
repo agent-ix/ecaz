@@ -1,55 +1,38 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **operator smoke surface implemented locally; needs follow-up for
-documented expansion gaps** — extends Task 37 from "crash mid-write" to the
-broader class of operational faults that real production clusters hit. The
-local implementation adds
-`crates/ecaz-fault-injection`, an LD_PRELOAD provider for matched-path EIO,
-ENOSPC, and slow-disk latency injection, extension-side palloc smoke injection
-through `ecaz.fault_palloc_nth`, `ecaz dev fault`, Makefile smoke lanes, and
-`docs/hardening.md` coverage. Current validation passed provider self-tests,
-the full dry-run matrix, and live PG18 probes for cancellation, statement
-timeout, `idle_in_transaction_session_timeout`, `pg_cancel_backend` and
-`pg_terminate_backend`, lock timeout across `REINDEX INDEX CONCURRENTLY`,
-`CREATE INDEX`, and `VACUUM (FULL)`, calibrated accumulator `work_mem`
-pressure across all four AMs, resource settings plus built-in
-`temp_file_limit` and provider-backed ENOSPC temp-spill failures, memory/palloc
-smoke across build, scan, insert, and vacuum AM callbacks, backend-SIGKILL
-OOM-proxy smoke during build/scan/insert for every AM, backend `RLIMIT_AS` OOM
-pressure during AM build work for every AM, provider-backed slow-disk
-operation, and provider-backed EIO/ENOSPC against AM-specific `ec_hnsw`,
-`ec_ivf`, `ec_diskann`, and `ec_spire` fixtures, WAL-path ENOSPC smoke through
-`match=pg_wal` with explicit restore-required handling, resource-lane WAL
-rotation accounting that performs AM-backed writes and forces `pg_switch_wal()`
-across all four AMs, provider fault-event marker accounting that requires
-actual `fault=1` events for configured EIO/ENOSPC matches, plus the existing
-SPIRE Stage E `remote_oom` transport fault fixture.
-Postconditions assert no leftover fault sessions, relation/advisory locks, or
-prepared transactions, and include optional live `pg_buffercache` fixture pin
-checks plus `pg_stat_io` and `pg_stat_wal` non-decreasing operation counters
-when those PG18 surfaces are available. Resource temp-spill probes also emit
-`pg_stat_database.temp_bytes` before/after markers. Memory smoke now sweeps
-build, scan, insert, and vacuum palloc fault ordinals until the first
-successful Nth allocation, capped at 100, instead of checking only fixed per-AM
-scan limits or the first injected allocation. The provider marker path is now
-made absolute before postmaster restart, avoiding false negatives after
-PostgreSQL changes backend working directories. The smoke surface is now in
-place; raw PostgreSQL allocator sweeps beyond currently instrumented ECAZ
-palloc sites, byte-perfect expected-vs-forced WAL/temp-byte attribution, cgroup
-OOM-kill campaigns beyond the current `RLIMIT_AS` and SIGKILL recovery
-surfaces, and SPIRE remote-object fetch faulting remain follow-on expansion
-beyond this smoke checkpoint. The packet records current availability checks:
-cgroup v2 memory is present but should be driven through a systemd-scoped
-postmaster workflow rather than direct `/sys/fs/cgroup` writes, and SPIRE live
-remote-object reads are not implemented yet.
+Status: **open; five-AM local model implemented, current live expansion review
+pending** — the historical Linux packet proved the four-AM
+`ec_hnsw`/`ec_ivf`/`ec_diskann`/`ec_spire` surface. The current Task 38 branch
+adds `ec_distann` as a first-class AM with separate RaBitQ, TurboQuant, and
+grouped-PQ fixtures, exact-peer socket reset/latency provider modes, measured
+slow-disk comparison inputs, stronger accumulator markers, reset-safe palloc
+handling, and host-independent cgroup planning.
+
+The seven current fixtures flow through real build, KNN scan, insert,
+delete/vacuum, DDL, cancel/terminate, statement/idle/lock timeout, palloc,
+RLIMIT/SIGKILL proxy, file I/O, WAL/temp/accounting, and shared cleanup
+inventory. DistANN uses 64-D RaBitQ, supported 1536-D no-QJL TurboQuant, and
+64-D grouped-PQ shapes so interruption and pressure occur around actual
+physical generation/traversal/owner scoring/payload and codec batch work.
+
+Evidence is intentionally split. The old four-AM live Linux results remain
+historical background. The current macOS arm64 host can validate Rust/CLI
+planning and local PostgreSQL behavior, but cannot load the Linux LD_PRELOAD
+provider or execute cgroup-v2 user scopes. Therefore live DistANN provider
+EIO/ENOSPC/slow-disk, SPIRE/DistANN socket faults, and cgroup OOM remain
+unavailable on this host until Linux evidence lands. SPIRE remote SQL transport
+does exist and is actionable; only future SPIRE object-store reads are
+nonexistent. No CI/nightly execution is claimed, and this task stays open for
+outside review.
 
 ## Scope
 
 Add fault-injection harnesses for failure modes that happen during normal PG
 operation and that ECAZ AMs must survive cleanly:
 
-- **I/O faults**: EIO and ENOSPC on heap reads, index reads, WAL writes, temp
-  file spill, and SPIRE remote object fetch.
+- **I/O faults**: EIO and ENOSPC on heap reads, index reads, WAL writes, and
+  temp file spill. SPIRE object-store fetch is deferred because the production
+  path does not exist.
 - **Memory pressure**: palloc failures (`MemoryContextStats`), OOM kills mid
   build/insert/scan, `work_mem` exhaustion in scan accumulators.
 - **Query cancellation**: `pg_cancel_backend` and `pg_terminate_backend`
@@ -122,7 +105,8 @@ the in-process cleanup paths.
   - `make fault-io-smoke` — one EIO/ENOSPC per AM per code path, 30s budget.
   - `make fault-mem-smoke` — palloc-failure sweep capped at first 100 sites.
   - `make fault-cancel-smoke` — cancel sweep across documented entry points.
-  - `make fault-full` — full sweep, nightly.
+  - `make fault-full` — full locally authoritative sweep when host
+    prerequisites are reachable.
 
 ## Validation
 
@@ -135,10 +119,12 @@ the in-process cleanup paths.
 
 ## Exit Criteria
 
-- All four ECAZ AMs survive the smoke lanes cleanly.
+- All five ECAZ AMs, including all three supported DistANN codec fixtures,
+  survive the applicable smoke lanes cleanly.
 - Documented inventory of `CHECK_FOR_INTERRUPTS` sites in every long-running
   ECAZ loop; missing sites are filed as follow-ups.
-- `make fault-full` is nightly-CI-eligible (per Task 49 governance).
+- `make fault-full` is locally authoritative; any later nightly/CI eligibility
+  is owned by Task 49 governance and is not claimed here.
 - `docs/hardening.md` gains a "fault injection" section describing the model.
 
 ## Dependencies

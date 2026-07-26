@@ -31,6 +31,8 @@ pub enum FaultCommand {
     Prepare(PrepareArgs),
     /// Run or dry-run one smoke lane.
     Smoke(SmokeArgs),
+    /// Print a host-independent cgroup-v2/systemd OOM operator plan.
+    CgroupPlan(CgroupPlanArgs),
 }
 
 #[derive(Args, Debug)]
@@ -148,6 +150,28 @@ pub struct SmokeArgs {
     /// Reuse already-created AM fixtures instead of preparing them in this process.
     #[arg(long)]
     assume_prepared: bool,
+    /// Measured provider-off elapsed time for the same slow-disk workload.
+    #[arg(long, requires = "provider_marker")]
+    slow_disk_baseline_ms: Option<u128>,
+}
+
+#[derive(Args, Debug)]
+pub struct CgroupPlanArgs {
+    /// PostgreSQL major version to constrain.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+    /// MemoryMax value for the isolated user scope.
+    #[arg(long, default_value = "512M")]
+    memory_max: String,
+    /// Rows in the selected AM workload.
+    #[arg(long, default_value_t = 64)]
+    rows: i64,
+    /// Restrict the plan to one access method.
+    #[arg(long, value_enum)]
+    am: Option<FaultAmArg>,
+    /// Restrict ec_distann planning to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -246,8 +270,52 @@ impl FaultCommand {
                 prepare_workloads(conn, args.rows, &fixtures).await
             }
             FaultCommand::Smoke(args) => run_smoke(conn, args).await,
+            FaultCommand::CgroupPlan(args) => run_cgroup_plan(args),
         }
     }
+}
+
+fn run_cgroup_plan(args: CgroupPlanArgs) -> Result<()> {
+    if args.rows <= 0 {
+        return Err(eyre!("--rows must be >= 1"));
+    }
+    if args.memory_max.trim().is_empty() {
+        return Err(eyre!("--memory-max must be nonempty"));
+    }
+    let fixtures = selected_fixtures(args.am, args.distann_codec)?;
+    let linux = cfg!(target_os = "linux");
+    let cgroup_v2 = Path::new("/sys/fs/cgroup/cgroup.controllers").is_file();
+    let systemd_run = std::process::Command::new("systemd-run")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    let availability = if linux && cgroup_v2 && systemd_run {
+        "host-reachable"
+    } else {
+        "unavailable"
+    };
+    crate::ecaz_println!(
+        "[fault] cgroup_plan availability={availability} linux={linux} cgroup_v2={cgroup_v2} systemd_run={systemd_run} pg={} memory_max={} rows={}",
+        args.pg,
+        args.memory_max,
+        args.rows
+    );
+    for fixture in fixtures {
+        crate::ecaz_println!(
+            "[fault] cgroup_case am={} fixture={} shape=isolated-one-index-per-table launch=\"systemd-run --user --scope -p MemoryMax={} <isolated-pg18-postmaster-and-ecaz-fault-workload>\" expected=\"backend or postmaster OOM; postmaster recovery; clean postconditions\"",
+            fixture.as_str(),
+            fixture.slug(),
+            args.memory_max
+        );
+    }
+    if availability == "unavailable" {
+        crate::ecaz_println!(
+            "[fault] cgroup_skip reason=\"requires Linux cgroup v2 and a working user systemd-run scope; no direct /sys/fs/cgroup writes\""
+        );
+    }
+    Ok(())
 }
 
 fn run_plan(args: PlanArgs) -> Result<()> {
@@ -560,8 +628,20 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::SlowDisk => {
-            read_provider_marker(args.provider_marker.as_deref(), lane)?;
-            run_slow_disk_probe(conn, args.rows, &fixtures).await?;
+            let marker = read_provider_marker(args.provider_marker.as_deref(), lane)?;
+            let latency_ms = provider_latency_ms_from_marker(&marker)?;
+            let baseline_ms = args.slow_disk_baseline_ms.ok_or_else(|| {
+                eyre!(
+                    "live slow-disk requires --slow-disk-baseline-ms from the same provider-off workload"
+                )
+            })?;
+            run_slow_disk_probe(conn, args.rows, &fixtures, baseline_ms, latency_ms).await?;
+            assert_provider_fault_marker(
+                args.provider_marker.as_deref(),
+                ProviderMode::SlowDisk,
+                &provider_path_match_from_marker(&marker)?,
+                "slow-disk timing",
+            )?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
     }
@@ -960,13 +1040,14 @@ async fn run_resource_accumulator_pressure_probe(
         .await?;
     let count = row.get::<_, i64>(0);
     crate::ecaz_println!(
-        "[fault] resource_accumulator_pressure am={} rows={rows} limit={pressure_limit} returned={count} work_mem=64kB effective_cache_size=1MB",
-        am.as_str()
+        "[fault] resource_accumulator_pressure am={} rows={rows} limit={pressure_limit} expected={} returned={count} workload_high_water_marker=full_limit work_mem=64kB effective_cache_size=1MB",
+        am.as_str(),
+        pressure_limit.min(rows)
     );
-    let minimum = pressure_limit.min(rows).min(64);
-    if count < minimum {
+    let expected = pressure_limit.min(rows);
+    if count != expected {
         return Err(eyre!(
-            "resource accumulator pressure {} returned {count}, expected at least {minimum}",
+            "resource accumulator pressure {} returned {count}, expected exactly {expected}",
             am.as_str()
         ));
     }
@@ -1209,9 +1290,18 @@ async fn run_memory_expected_palloc_probe(
         ))
         .await?;
     let result = client.batch_execute(sql).await;
-    client
+    let reset = client
         .batch_execute("SET ecaz.fault_palloc_nth = -1; SELECT ecaz_fault_reset_palloc_counter();")
-        .await?;
+        .await;
+    if let Err(reset_error) = reset {
+        return match result {
+            Ok(()) => Err(reset_error.into()),
+            Err(workload_error) => Err(eyre!(
+                "memory palloc {} {lane} nth {nth} failed ({workload_error}) and reset failed ({reset_error})",
+                am.as_str()
+            )),
+        };
+    }
     match result {
         Ok(()) => {
             crate::ecaz_println!(
@@ -1401,8 +1491,11 @@ async fn run_memory_oom_kill_case(
             .map_err(color_eyre::Report::from)
     });
 
-    tokio::time::sleep(std::time::Duration::from_millis(oom_kill_delay_ms())).await;
-    crate::ecaz_println!("[fault] {label} sigkill_pid={pid}");
+    let delay_ms = oom_kill_delay_ms();
+    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+    crate::ecaz_println!(
+        "[fault] {label} sigkill_pid={pid} delay_ms={delay_ms} timing_semantics=probability-tuning-not-critical-section-proof"
+    );
     send_sigkill(pid).await?;
 
     match worker_task.await? {
@@ -1505,13 +1598,25 @@ async fn run_slow_disk_probe(
     conn: &ConnectionOptions,
     rows: i64,
     ams: &[FaultFixture],
+    baseline_ms: u128,
+    configured_latency_ms: u64,
 ) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     let client = connect_fault(conn, "slow-disk").await?;
+    let started = std::time::Instant::now();
     for &am in ams {
         client.batch_execute(&workload_scan_sql(am)).await?;
         client.batch_execute(&workload_insert_sql(am)).await?;
         client.batch_execute(&workload_vacuum_sql(am)).await?;
+    }
+    let provider_ms = started.elapsed().as_millis();
+    crate::ecaz_println!(
+        "[fault] slow_disk_timing baseline_ms={baseline_ms} provider_ms={provider_ms} configured_latency_ms={configured_latency_ms} comparison=provider-greater-than-baseline"
+    );
+    if provider_ms <= baseline_ms {
+        return Err(eyre!(
+            "slow-disk provider workload took {provider_ms}ms, not greater than measured baseline {baseline_ms}ms"
+        ));
     }
     Ok(())
 }
@@ -1620,6 +1725,18 @@ fn provider_path_match_from_marker(content: &str) -> Result<String> {
         })
         .map(ToOwned::to_owned)
         .ok_or_else(|| eyre!("provider marker did not include a match field"))
+}
+
+fn provider_latency_ms_from_marker(content: &str) -> Result<u64> {
+    content
+        .lines()
+        .find_map(|line| {
+            line.split_whitespace()
+                .find_map(|field| field.strip_prefix("latency_ms="))
+        })
+        .ok_or_else(|| eyre!("provider marker did not include a latency_ms field"))?
+        .parse()
+        .map_err(|error| eyre!("provider marker latency_ms is invalid: {error}"))
 }
 
 fn assert_provider_fault_marker(
@@ -1978,6 +2095,8 @@ fn assert_provider_sql_error(label: &str, result: Result<(), tokio_postgres::Err
 }
 
 fn provider_sqlstate_allowed(db: &tokio_postgres::error::DbError) -> bool {
+    // PostgreSQL checkpoint failures can wrap the provider's ENOSPC in XX000.
+    // Keep this allowance message-narrow so unrelated internal errors fail.
     matches!(db.code().code(), "53100" | "58030")
         || (db.code().code() == "XX000" && db.message().contains("checkpoint request failed"))
         || (db.code().code() == "XX000" && db.message().contains("No space left on device"))

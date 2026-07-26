@@ -2,7 +2,7 @@
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded miri-tree miri-many-seeds miri-full careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: loom-real shuttle-real sim-spire-remote sim-spire-remote-deep kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
-.PHONY: fault-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report coverage-baseline-check test-quality-ci-audit mutants mutants-full flake-hunt
+.PHONY: fault-provider-env fault-socket-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-distann-plan fault-distann-local-smoke fault-cgroup-plan fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report coverage-baseline-check test-quality-ci-audit mutants mutants-full flake-hunt
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
 .PHONY: recall-gate recall-gate-full cross-am-gate cost-gate
 
@@ -303,14 +303,21 @@ careful:
 
 FAULT_SMOKE_FLAGS ?= --dry-run
 FAULT_PROVIDER_MODE ?= eio-read
+FAULT_SOCKET_PROVIDER_MODE ?= socket-reset
 FAULT_PROVIDER_MATCH ?= base/
 FAULT_PROVIDER_AFTER ?= 1
 FAULT_PROVIDER_LATENCY_MS ?= 25
 FAULT_PROVIDER_MARKER ?= /tmp/ecaz-fault-provider-$(FAULT_PROVIDER_MODE)-pg18.marker
+FAULT_PROVIDER_PEER ?= tcp:127.0.0.1:39711
 FAULT_ROWS ?= 64
+FAULT_SLOW_DISK_BASELINE_ARG ?=
+FAULT_CGROUP_MEMORY_MAX ?= 512M
 
 fault-provider-env:
 	cargo run -p ecaz-cli -- dev fault provider-env --mode $(FAULT_PROVIDER_MODE) --path-match $(FAULT_PROVIDER_MATCH) --after $(FAULT_PROVIDER_AFTER) --latency-ms $(FAULT_PROVIDER_LATENCY_MS) --marker $(FAULT_PROVIDER_MARKER)
+
+fault-socket-provider-env:
+	cargo run -p ecaz-cli -- dev fault provider-env --mode $(FAULT_SOCKET_PROVIDER_MODE) --peer-match $(FAULT_PROVIDER_PEER) --after $(FAULT_PROVIDER_AFTER) --latency-ms $(FAULT_PROVIDER_LATENCY_MS) --marker $(FAULT_PROVIDER_MARKER)
 
 fault-provider-restart:
 	cargo run -p ecaz-cli -- dev fault provider-restart --mode $(FAULT_PROVIDER_MODE) --path-match $(FAULT_PROVIDER_MATCH) --after $(FAULT_PROVIDER_AFTER) --latency-ms $(FAULT_PROVIDER_LATENCY_MS) --marker $(FAULT_PROVIDER_MARKER)
@@ -340,7 +347,19 @@ fault-resource-smoke:
 	cargo run -p ecaz-cli -- dev fault smoke --lane resource $(FAULT_SMOKE_FLAGS)
 
 fault-slow-disk-smoke:
-	cargo run -p ecaz-cli -- dev fault smoke --lane slow-disk $(FAULT_SMOKE_FLAGS)
+	cargo run -p ecaz-cli -- dev fault smoke --lane slow-disk $(FAULT_SMOKE_FLAGS) $(FAULT_SLOW_DISK_BASELINE_ARG)
+
+fault-distann-plan:
+	cargo run -p ecaz-cli -- dev fault plan --am distann
+
+fault-distann-local-smoke:
+	cargo run -p ecaz-cli -- dev fault smoke --lane cancel --am distann $(FAULT_SMOKE_FLAGS)
+	cargo run -p ecaz-cli -- dev fault smoke --lane timeout --am distann $(FAULT_SMOKE_FLAGS)
+	cargo run -p ecaz-cli -- dev fault smoke --lane lock-timeout --am distann $(FAULT_SMOKE_FLAGS)
+	cargo run -p ecaz-cli -- dev fault smoke --lane resource --am distann $(FAULT_SMOKE_FLAGS)
+
+fault-cgroup-plan:
+	cargo run -p ecaz-cli -- dev fault cgroup-plan --memory-max $(FAULT_CGROUP_MEMORY_MAX) --rows $(FAULT_ROWS)
 
 fault-full: fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke
 

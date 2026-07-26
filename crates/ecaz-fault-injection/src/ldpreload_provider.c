@@ -253,11 +253,12 @@ __attribute__((constructor)) static void ecaz_fault_provider_loaded(void) {
     int len = snprintf(
         line,
         sizeof(line),
-        "pid=%ld mode=%s match=%s peer=%s\n",
+        "pid=%ld mode=%s match=%s peer=%s latency_ms=%ld\n",
         (long)getpid(),
         mode ? mode : "unset",
         match ? match : "unset",
-        peer ? peer : "unset");
+        peer ? peer : "unset",
+        latency_millis());
     if (len <= 0) {
         return;
     }
