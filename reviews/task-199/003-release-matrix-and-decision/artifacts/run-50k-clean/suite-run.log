@@ -1,0 +1,12 @@
+[suite:task199-normal-release-10k-50k-100k] wrote reviews/task-199/003-release-matrix-and-decision/artifacts/run-50k-clean/suite-manifest.json
+[suite:task199-normal-release-10k-50k-100k] normal-release-ab-50k -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --pgbin /home/peter/.pgrx/18.3/pgrx-install/bin --artifact-dir reviews/task-199/003-release-matrix-and-decision/artifacts/run-50k-clean/normal-release-ab-50k --run-dir target/task199-normal-release-matrix-50k --log-file reviews/task-199/003-release-matrix-and-decision/artifacts/run-50k-clean/normal-release-ab-50k/distann-local-multinode.log --nodes 3 --physical-benchmark --materialization-correctness --benchmark-iterations 50 --benchmark-warmup-iterations 10 --base-port 42520 --graph-degree 32 --head-index-cap 4096 --beam-width 4 --hop-rounds 100 --production-head-policy training_landmarks_exact --training-query-path /home/peter/dev/ecaz/data/staged-current/ec_real_50k_queries.tsv --benchmark-seed-variant owner-control:persisted_head:32:32:rabitq:10:off:4:100:off --benchmark-seed-variant coordinator-replica:persisted_head:32:32:rabitq:10:off:4:100:on --queries 200 --top-k 10 --skip-fault-drills --corpus-prefix ec_real_50k --staged-dir /home/peter/dev/ecaz/data/staged-current
+[suite:task199-normal-release-10k-50k-100k] wrote reviews/task-199/003-release-matrix-and-decision/artifacts/run-50k-clean/suite-manifest.json
+[suite:task199-normal-release-10k-50k-100k] wrote reviews/task-199/003-release-matrix-and-decision/artifacts/run-50k-clean/suite-manifest.json
+
+   0: [91msuite step "normal-release-ab-50k" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1104[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

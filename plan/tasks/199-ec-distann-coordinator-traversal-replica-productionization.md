@@ -101,6 +101,15 @@ The review's nine P3 observations are also required closeout items:
 
 ## Phases
 
+### Scope waiver (2026-07-25)
+
+Task 199 promotion accepts a scoped cross-ISA limitation: the retained
+Graviton4/aarch64 run verifies ordered identity and lifecycle/fault handling
+within ARM, but does not compare one shared generation's `(distance, vec_id)`
+sequence against x86. Cross-ISA final-order equivalence is deferred to a
+dedicated shared-generation portability task; this task records the limitation
+in its release packet rather than claiming that comparison was performed.
+
 1. **Normal scan selection and feature isolation**
    - Remove `ec_distann.benchmark_traversal_replica` from the selection path.
    - A valid Ready replica is the normal preferred path; absence or any

@@ -24,9 +24,11 @@ the packet-local summaries.
 The historical pre-task baseline at 10k was 2315.234 rows/s, so the final
 10k matrix is within 1% (the independent lifecycle run measured 2481.671
 rows/s). Task 198 owner-control latency references remain above the final
-owner values at 10k/50k/100k. Cross-ISA Graviton evidence preserves the same
-ordered identity digest; its run predates the guard-only follow-up and is
-retained as causal read-path evidence.
+owner values at 10k/50k/100k. The Graviton evidence proves ordered identity
+and lifecycle correctness within aarch64 (Graviton4/Neoverse V2, SVE2-128);
+it does not claim cross-ISA comparison of one shared generation. That
+comparison is explicitly waived for this task and deferred to a shared-
+generation portability task.
 
 Decision: promote pending outside reviewer acceptance of this packet and the
 already refreshed lifecycle packet 002.
