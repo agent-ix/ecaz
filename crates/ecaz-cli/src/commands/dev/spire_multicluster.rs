@@ -2463,6 +2463,8 @@ async fn run_spire_remote_socket_fault_probe(
     coord_index: &str,
     config: &LocalRemoteSocketFaultConfig,
 ) -> Result<()> {
+    const PROFILE_TOP_K: i64 = 10;
+
     let conninfo = format!(
         "host={} port={} dbname=postgres user=ecaz_coord connect_timeout=2",
         socket_dir.display(),
@@ -2491,6 +2493,8 @@ async fn run_spire_remote_socket_fault_probe(
     let baseline = query_spire_remote_profile(&client, &profile_sql)
         .await
         .wrap_err("running disarmed SPIRE remote socket baseline")?;
+    validate_spire_remote_profile_health(&baseline, PROFILE_TOP_K)
+        .wrap_err("validating disarmed SPIRE remote socket baseline")?;
     let baseline_ms = baseline_started.elapsed().as_millis();
     let baseline_stable = stable_spire_remote_profile(&baseline)?;
 
@@ -2637,6 +2641,68 @@ fn spire_remote_profile_i64(profile: &BTreeMap<String, String>, metric: &str) ->
         .ok_or_else(|| eyre!("SPIRE production read profile missing metric {metric}"))?
         .parse::<i64>()
         .wrap_err_with(|| format!("parsing SPIRE production read profile metric {metric}"))
+}
+
+fn validate_spire_remote_profile_health(
+    profile: &BTreeMap<String, String>,
+    expected_top_k: i64,
+) -> Result<()> {
+    let metric = |name: &str| {
+        profile
+            .get(name)
+            .map(String::as_str)
+            .ok_or_else(|| eyre!("SPIRE production read profile missing metric {name}"))
+    };
+    let require_value = |name: &str, expected: &str| -> Result<()> {
+        let actual = metric(name)?;
+        if actual != expected {
+            bail!(
+                "SPIRE production read profile metric {name} was {actual:?}, expected {expected:?}"
+            );
+        }
+        Ok(())
+    };
+
+    require_value("status", "ready")?;
+    require_value("result_source", "remote_heap_candidates")?;
+    require_value("final_heap_fetch_status", "remote_ready")?;
+
+    let remote_pid_count = spire_remote_profile_i64(profile, "remote_pid_count")?;
+    if remote_pid_count <= 0 {
+        bail!("SPIRE production read profile had no remote participants");
+    }
+    let returned_candidate_count = spire_remote_profile_i64(profile, "returned_candidate_count")?;
+    if returned_candidate_count != expected_top_k {
+        bail!(
+            "SPIRE production read profile returned {returned_candidate_count} candidates, expected {expected_top_k}"
+        );
+    }
+    let skipped_pid_count = spire_remote_profile_i64(profile, "skipped_pid_count")?;
+    if skipped_pid_count != 0 {
+        bail!("SPIRE production read profile skipped {skipped_pid_count} selected PIDs");
+    }
+    let failed_dispatch_count =
+        spire_remote_profile_i64(profile, "remote_heap_failed_dispatch_count")?;
+    if failed_dispatch_count != 0 {
+        bail!(
+            "SPIRE production read profile had {failed_dispatch_count} failed remote heap dispatches"
+        );
+    }
+    let dispatch_count = spire_remote_profile_i64(profile, "dispatch_count")?;
+    let ready_dispatch_count =
+        spire_remote_profile_i64(profile, "remote_heap_ready_dispatch_count")?;
+    if dispatch_count <= 0 || ready_dispatch_count != dispatch_count {
+        bail!(
+            "SPIRE production read profile had {ready_dispatch_count} ready remote heap dispatches for {dispatch_count} selected dispatches"
+        );
+    }
+    let remote_candidate_count = spire_remote_profile_i64(profile, "remote_heap_candidate_count")?;
+    if remote_candidate_count < returned_candidate_count {
+        bail!(
+            "SPIRE production read profile had {remote_candidate_count} remote heap candidates for {returned_candidate_count} returned candidates"
+        );
+    }
+    Ok(())
 }
 
 fn summarize_spire_remote_profile(profile: &BTreeMap<String, String>) -> Result<String> {
@@ -2974,12 +3040,33 @@ fn parse_u16_list(raw: &str) -> Result<Vec<u16>> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn socket_fault_stable_profile_ignores_timings_but_tracks_participation() {
-        let mut baseline = SPIRE_REMOTE_FAULT_STABLE_METRICS
+    fn healthy_socket_fault_profile() -> BTreeMap<String, String> {
+        let mut profile = SPIRE_REMOTE_FAULT_STABLE_METRICS
             .iter()
             .map(|metric| ((*metric).to_owned(), "1".to_owned()))
             .collect::<BTreeMap<_, _>>();
+        for (metric, value) in [
+            ("remote_pid_count", "3"),
+            ("skipped_pid_count", "0"),
+            ("dispatch_count", "3"),
+            ("remote_heap_ready_dispatch_count", "3"),
+            ("remote_heap_failed_dispatch_count", "0"),
+            ("remote_heap_candidate_count", "30"),
+            ("returned_candidate_count", "10"),
+            ("result_source", "remote_heap_candidates"),
+            ("final_heap_fetch_status", "remote_ready"),
+            ("next_blocker", "none"),
+            ("status", "ready"),
+            ("recommendation", "none"),
+        ] {
+            profile.insert(metric.to_owned(), value.to_owned());
+        }
+        profile
+    }
+
+    #[test]
+    fn socket_fault_stable_profile_ignores_timings_but_tracks_participation() {
+        let mut baseline = healthy_socket_fault_profile();
         baseline.insert("total_elapsed_ms".to_owned(), "12".to_owned());
         let mut same_result = baseline.clone();
         same_result.insert("total_elapsed_ms".to_owned(), "37".to_owned());
@@ -2994,6 +3081,29 @@ mod tests {
             stable_spire_remote_profile(&baseline).unwrap(),
             stable_spire_remote_profile(&same_result).unwrap()
         );
+    }
+
+    #[test]
+    fn socket_fault_profile_health_rejects_degraded_or_empty_baselines() {
+        let healthy = healthy_socket_fault_profile();
+        validate_spire_remote_profile_health(&healthy, 10).unwrap();
+
+        for (metric, unhealthy_value) in [
+            ("status", "degraded"),
+            ("result_source", "none"),
+            ("final_heap_fetch_status", "remote_failed"),
+            ("returned_candidate_count", "0"),
+            ("skipped_pid_count", "1"),
+            ("remote_heap_failed_dispatch_count", "1"),
+            ("remote_heap_ready_dispatch_count", "2"),
+        ] {
+            let mut unhealthy = healthy.clone();
+            unhealthy.insert(metric.to_owned(), unhealthy_value.to_owned());
+            assert!(
+                validate_spire_remote_profile_health(&unhealthy, 10).is_err(),
+                "{metric}={unhealthy_value} must not become a socket-fault baseline"
+            );
+        }
     }
 
     #[test]
