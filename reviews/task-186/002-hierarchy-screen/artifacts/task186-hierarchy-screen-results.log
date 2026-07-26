@@ -1,0 +1,20 @@
+Task 186 hierarchy screen — 100k physical PG18
+
+Provenance: extension c1c43a9bf66c25b390535ba47e52e0e251a5d6e7, release,
+ec_real_100k, query SHA a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782,
+three owners, shared physical generation, isolated one-index-per-table surface.
+
+physical_benchmark_landmark scale=100k head_policy=training_landmarks sample_cap=16384 construction_ms=993521
+physical_benchmark_coverage scale=100k head_policy=training_landmarks queries=200 zero_fraction=0 owner_membership_rate=0.61546875 bounded_overlap_rate=0.5440625 exact_overlap_rate=0.5628125 mean_best_score_gap=0.0307640441 p50_best_score_gap=0.0082647651 p95_best_score_gap=0.1623819768
+physical_benchmark_recall scale=100k variant=production seed_strategy=head_hierarchy head_search_width=32 head_seed_count=32 beam_width=4 hop_rounds=100 neighbor_score_mode=rabitq recall=0.9440 distinct_recall_ci95_low=0.9330 distinct_recall_ci95_high=0.9533 mean_ms=85.31
+physical_benchmark_latency scale=100k variant=production seed_strategy=head_hierarchy count=50 mean_ms=84.30 p50_ms=77.60 p95_ms=125.30 p99_ms=133.60 max_ms=134.70 cache=warm
+physical_benchmark_storage scale=100k variant=production head_index_cap=16384 physical_generation_bytes=2496634880 storage_shared=true owners=3
+physical_benchmark_head scale=100k variant=production seed_strategy=head_hierarchy sample_count=16384 head_sample_bytes=101122048 head_graph_bytes=2460471 head_cache_estimated_bytes=103582519
+physical_benchmark_engagement scale=100k variant=production remote_owners=2 materialize_probes=2 pass=true
+physical_topology_gate pass=true owners=3 remote_verified=2 source_rows=100000
+
+Decision: STOP. Coverage is materially represented (zero fraction 0 and owner
+membership 0.6155), but bounded hierarchy routing loses recall and is slower
+than the exact 16,384 control from Task 186 packet 001 (0.9740 recall,
+27.10 ms warm mean, approximately 103.6 MB head cache). No hierarchy
+candidate advances to the 10k/50k/100k closeout matrix or production work.
