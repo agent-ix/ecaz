@@ -12,15 +12,14 @@
 ## `explicit-interrupt-sites.log`
 
 - Commands:
-  - `rg -n "CHECK_FOR_INTERRUPTS|check_for_interrupts|ProcessInterrupts|maybe_check_for_interrupts" src/am/ec_hnsw src/am/ec_ivf src/am/ec_diskann src/am/ec_spire src/am/ec_distann -g '*.rs' | sort`
-  - `rg -n "PostgresInterruptPoll|postgres_query_cancel_pending|postgres_statement_timeout_pending|InterruptPending|QueryCancelPending" src/am/ec_spire/coordinator/remote_candidates/dispatch.rs`
+  - `rg -n "CHECK_FOR_INTERRUPTS|check_for_interrupts|ProcessInterrupts|maybe_check_for_interrupts|PostgresInterruptPoll|postgres_interrupt_signal|postgres_interrupt_pending|postgres_query_cancel_pending|postgres_statement_timeout_pending|InterruptPending|QueryCancelPending|ProcDiePending" src/am/ec_hnsw src/am/ec_ivf src/am/ec_diskann src/am/ec_spire src/am/ec_distann -g '*.rs' | sort -u`
 - Result: exact current explicit poll-site source listing. Import lines and
   safety comments remain in the raw result so a reviewer can distinguish them
   from executable call sites.
 
 ## Static Validation
 
-- `git diff --check`: pass.
+- `git diff --check 476407ed9`: pass across the complete inventory checkpoint
+  plus its review response.
 - Tests: not run; documentation/task-definition-only checkpoint.
 - Architecture-specific execution: not applicable and not claimed.
-

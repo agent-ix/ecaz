@@ -32,6 +32,18 @@ See `artifacts/manifest.md` and `artifacts/explicit-interrupt-sites.log`.
 - no runtime behavior changed, so no Cargo or PG test was run; and
 - no Intel/Linux-only lane was invoked.
 
+## 2026-07-26 Outside-Review Response
+
+The response closes both findings in
+`feedback/2026-07-26-01-reviewer.md`:
+
+- the raw search and documentation now include DistANN's inner 5 ms
+  `InterruptPending`/`QueryCancelPending`/`ProcDiePending` poll, bounded remote
+  cancel, pooled-connection clearing, and outer raising boundary; and
+- trailing blank lines were removed and
+  `git diff --check 476407ed9` passed for the complete checkpoint range plus
+  this response.
+
 ## Reviewer Focus
 
 - Does the inventory accurately describe every current explicit poll?
@@ -39,4 +51,3 @@ See `artifacts/manifest.md` and `artifacts/explicit-interrupt-sites.log`.
   follow-ups” without claiming remediation?
 - Are the longjmp-safety constraints explicit enough to prevent unsafe poll
   placement?
-
