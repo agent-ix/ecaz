@@ -1039,15 +1039,16 @@ async fn run_resource_accumulator_pressure_probe(
         .query_one(&workload_accumulator_pressure_sql(am, pressure_limit), &[])
         .await?;
     let count = row.get::<_, i64>(0);
+    let target = pressure_limit.min(rows);
+    let returned_fraction_ppm = count.saturating_mul(1_000_000) / target.max(1);
     crate::ecaz_println!(
-        "[fault] resource_accumulator_pressure am={} rows={rows} limit={pressure_limit} expected={} returned={count} workload_high_water_marker=full_limit work_mem=64kB effective_cache_size=1MB",
+        "[fault] resource_accumulator_pressure am={} rows={rows} limit={pressure_limit} target={target} returned={count} returned_fraction_ppm={returned_fraction_ppm} workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB",
         am.as_str(),
-        pressure_limit.min(rows)
     );
-    let expected = pressure_limit.min(rows);
-    if count != expected {
+    let minimum = target.saturating_mul(95).saturating_add(99) / 100;
+    if count < minimum {
         return Err(eyre!(
-            "resource accumulator pressure {} returned {count}, expected exactly {expected}",
+            "resource accumulator pressure {} returned {count}, expected at least 95% of target {target} ({minimum})",
             am.as_str()
         ));
     }

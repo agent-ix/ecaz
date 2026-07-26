@@ -539,8 +539,9 @@ an immediate stop/start if fast restart cannot shut down the faulting
 postmaster. Resource smoke prepares pressure-sized AM fixtures, runs high-limit
 KNN scans under `work_mem = '64kB'` and `effective_cache_size = '1MB'`, emits
 `resource_accumulator_pressure` markers with the prepared row count, requested
-limit, exact expected/returned row counts, and
-`workload_high_water_marker=full_limit`, then runs AM scan/insert/vacuum under tiny
+limit, actual returned high-water, and returned fraction. The gate requires at
+least 95% of the requested pressure target so approximate AMs remain valid
+without falling back to the weak historical `count >= 64` assertion. It then runs AM scan/insert/vacuum under tiny
 `work_mem`/`maintenance_work_mem` settings and forces a temp-spill failure with
 `temp_file_limit = '64kB'`, verifying the backend remains usable. When the
 postmaster is restarted with an `enospc-write` provider whose marker records
