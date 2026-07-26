@@ -15,7 +15,7 @@ known-absent path, and avoids stale statement-snapshot negative caching.
 
 The exact release A/B matrix completed at 10k, 50k, and 100k. Recall is
 unchanged between owner and traversal-replica arms at each scale; replica
-latency is 16.00, 16.40, and 16.20 ms versus owner 18.30, 20.40, and 19.90
+latency is 15.30, 16.40, and 16.20 ms versus owner 18.30, 20.40, and 19.90
 ms. No-replica mutation throughput is 2292.764, 2564.925, and 2524.220
 rows/s. Storage is identical between arms at every scale. All physical
 topology and materialization gates passed; see `artifacts/manifest.md` and

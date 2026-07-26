@@ -1,0 +1,12 @@
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.42
+   Compiling rustls-webpki v0.103.13
+   Compiling tokio-rustls v0.26.4
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-199)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 32.40s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-c699c68ba0391e69)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2529 filtered out; finished in 0.00s
+
