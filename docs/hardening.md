@@ -596,6 +596,12 @@ exact-peer query, requires the reset/error or measured delay plus a matching
 `fault=1` marker, removes the arm file, and requires the next remote-owner
 query to recover successfully. Set `FAULT_SOCKET_PROVIDER_MODE` to
 `socket-reset` or `socket-slow`.
+`make fault-spire-remote-socket-smoke` applies the same armed sequence to the
+native one-coordinator/three-worker SPIRE fixture. Only the coordinator loads
+the provider; the exact peer is remote worker 1's named Unix socket. The probe
+runs the production read profile before, during, and after the fault, requires
+the exact-peer marker, accepts SPIRE's documented clean degraded result or
+clean ERROR for reset, and requires successful recovery after disarm.
 Unnamed and abstract Unix peers are deliberately non-matchable. This macOS
 host cannot load the Linux provider, so no live socket result is claimed. SPIRE
 object-store reads remain **nonexistent**, not an unavailable transport test.

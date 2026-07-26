@@ -1,5 +1,6 @@
 use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{bail, eyre, Context, Result};
+use ecaz_fault_injection::ProviderMode;
 use serde_json::{json, Value};
 use std::collections::BTreeSet;
 use std::env;
@@ -513,6 +514,29 @@ pub struct LocalMultinodePg18Args {
     /// Skip cargo pgrx install before starting fixture clusters.
     #[arg(long)]
     skip_install: bool,
+
+    /// Inject one exact-peer provider fault into the first remote SQL peer.
+    #[arg(long, value_enum)]
+    remote_socket_fault: Option<RemoteSocketFaultArg>,
+
+    /// Per-operation delay for --remote-socket-fault slow.
+    #[arg(long, default_value_t = 25)]
+    remote_socket_fault_latency_ms: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum RemoteSocketFaultArg {
+    Reset,
+    Slow,
+}
+
+impl RemoteSocketFaultArg {
+    fn provider_mode(self) -> ProviderMode {
+        match self {
+            Self::Reset => ProviderMode::SocketReset,
+            Self::Slow => ProviderMode::SocketSlow,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1074,6 +1098,14 @@ struct LocalPgCluster {
     nodes: Vec<LocalPgNode>,
 }
 
+struct LocalRemoteSocketFaultConfig {
+    fault: RemoteSocketFaultArg,
+    latency_ms: u64,
+    peer: String,
+    marker: PathBuf,
+    arm_file: PathBuf,
+}
+
 impl LocalPgCluster {
     async fn stop_all(&self) {
         for node in &self.nodes {
@@ -1096,6 +1128,11 @@ async fn run_native_local_multinode_pg18(
     pgbin: PathBuf,
     args: LocalMultinodePg18Args,
 ) -> Result<()> {
+    if args.remote_socket_fault == Some(RemoteSocketFaultArg::Slow)
+        && args.remote_socket_fault_latency_ms == 0
+    {
+        bail!("--remote-socket-fault-latency-ms must be at least 1");
+    }
     let run_id = args.run_id.unwrap_or_else(default_local_multinode_run_id);
     let coord_port = args.coord_port.unwrap_or(39700);
     let remote1_port = args.remote1_port.unwrap_or(39701);
@@ -1142,6 +1179,8 @@ async fn run_native_local_multinode_pg18(
         .wrap_err_with(|| format!("creating {}", socket_dir.display()))?;
     fs::create_dir_all(&run_dir).wrap_err_with(|| format!("creating {}", run_dir.display()))?;
     fs::create_dir_all(&work_dir).wrap_err_with(|| format!("creating {}", work_dir.display()))?;
+    let log_dir = fs::canonicalize(&log_dir)
+        .wrap_err_with(|| format!("canonicalizing {}", log_dir.display()))?;
 
     log_local_multinode(
         smoke_log.as_deref(),
@@ -1226,10 +1265,34 @@ async fn run_native_local_multinode_pg18(
         psql,
         nodes,
     };
+    let remote_fault = args
+        .remote_socket_fault
+        .map(|fault| {
+            let provider = ecaz_fault_injection::provider_library_path()
+                .filter(|path| !path.contains("not built"))
+                .ok_or_else(|| {
+                    eyre!("--remote-socket-fault requires the Linux LD_PRELOAD provider")
+                })?;
+            if !Path::new(provider).is_file() {
+                bail!("fault provider does not exist at {provider}");
+            }
+            Ok(LocalRemoteSocketFaultConfig {
+                fault,
+                latency_ms: args.remote_socket_fault_latency_ms,
+                peer: format!("unix:{}/.s.PGSQL.{remote1_port}", socket_dir.display()),
+                marker: log_dir.join("spire-remote-socket-fault.marker"),
+                arm_file: log_dir.join("spire-remote-socket-fault.arm"),
+            })
+        })
+        .transpose()?;
+    if let Some(config) = &remote_fault {
+        let _ = fs::remove_file(&config.marker);
+        let _ = fs::remove_file(&config.arm_file);
+    }
 
     let result = async {
         init_local_pg_nodes(&cluster).await?;
-        start_local_pg_nodes(&cluster, &socket_dir).await?;
+        start_local_pg_nodes(&cluster, &socket_dir, remote_fault.as_ref()).await?;
         setup_local_pg_nodes(&cluster, &socket_dir).await?;
         write_local_topology(&topology, &socket_dir, &cluster.nodes)?;
 
@@ -1254,6 +1317,18 @@ async fn run_native_local_multinode_pg18(
             args.prepared_dir.as_deref(),
         )
         .await?;
+
+        if let Some(config) = &remote_fault {
+            run_spire_remote_socket_fault_probe(
+                &socket_dir,
+                coord_port,
+                &log_dir,
+                &prefix,
+                &coord_index,
+                config,
+            )
+            .await?;
+        }
 
         run_local_multinode_smoke(
             &repo_root,
@@ -1330,17 +1405,21 @@ async fn init_local_pg_nodes(cluster: &LocalPgCluster) -> Result<()> {
     Ok(())
 }
 
-async fn start_local_pg_nodes(cluster: &LocalPgCluster, socket_dir: &Path) -> Result<()> {
+async fn start_local_pg_nodes(
+    cluster: &LocalPgCluster,
+    socket_dir: &Path,
+    remote_fault: Option<&LocalRemoteSocketFaultConfig>,
+) -> Result<()> {
     let conninfo_env = local_conninfo_env(&cluster.nodes, socket_dir)?;
     for node in cluster.nodes.iter().filter(|node| node.node_id != 1) {
-        start_one_local_pg_node(cluster, node, socket_dir, &conninfo_env).await?;
+        start_one_local_pg_node(cluster, node, socket_dir, &conninfo_env, None).await?;
     }
     let coord = cluster
         .nodes
         .iter()
         .find(|node| node.node_id == 1)
         .ok_or_else(|| eyre!("missing coordinator node"))?;
-    start_one_local_pg_node(cluster, coord, socket_dir, &conninfo_env).await
+    start_one_local_pg_node(cluster, coord, socket_dir, &conninfo_env, remote_fault).await
 }
 
 async fn start_one_local_pg_node(
@@ -1348,6 +1427,7 @@ async fn start_one_local_pg_node(
     node: &LocalPgNode,
     socket_dir: &Path,
     conninfo_env: &[(String, String)],
+    remote_fault: Option<&LocalRemoteSocketFaultConfig>,
 ) -> Result<()> {
     let mut command = Command::new(&cluster.pg_ctl);
     command
@@ -1367,6 +1447,21 @@ async fn start_one_local_pg_node(
         .stderr(Stdio::inherit());
     for (name, value) in conninfo_env {
         command.env(name, value);
+    }
+    if let Some(config) = remote_fault {
+        let marker = config.marker.display().to_string();
+        let arm_file = config.arm_file.display().to_string();
+        for (name, value) in ecaz_fault_injection::provider_environment(
+            config.fault.provider_mode(),
+            "",
+            1,
+            (config.fault == RemoteSocketFaultArg::Slow).then_some(config.latency_ms),
+            Some(&marker),
+            Some(&arm_file),
+            Some(&config.peer),
+        ) {
+            command.env(name, value);
+        }
     }
     run_status(command)
         .await
@@ -2358,6 +2453,98 @@ async fn run_local_multinode_smoke(
     run_status(command)
         .await
         .wrap_err("running local multinode pipeline smoke")
+}
+
+async fn run_spire_remote_socket_fault_probe(
+    socket_dir: &Path,
+    coord_port: u16,
+    log_dir: &Path,
+    prefix: &str,
+    coord_index: &str,
+    config: &LocalRemoteSocketFaultConfig,
+) -> Result<()> {
+    let conninfo = format!(
+        "host={} port={} dbname=postgres user=ecaz_coord connect_timeout=2",
+        socket_dir.display(),
+        coord_port
+    );
+    let (client, connection) = tokio_postgres::connect(&conninfo, tokio_postgres::NoTls)
+        .await
+        .wrap_err("connecting SPIRE socket-fault coordinator session")?;
+    let connection_task = tokio::spawn(connection);
+    let query_table = sql_identifier(&format!("{prefix}_queries"));
+    let profile_sql = format!(
+        "SET enable_seqscan = off;
+         SET enable_indexscan = off;
+         SELECT count(*) FROM ec_spire_remote_search_production_read_profile(
+             {}::regclass,
+             (SELECT source FROM {query_table} ORDER BY id LIMIT 1)::real[],
+             10
+         )",
+        sql_string_literal(coord_index)
+    );
+
+    let baseline_started = Instant::now();
+    client
+        .batch_execute(&profile_sql)
+        .await
+        .wrap_err("running disarmed SPIRE remote socket baseline")?;
+    let baseline_ms = baseline_started.elapsed().as_millis();
+
+    fs::write(&config.arm_file, "")
+        .wrap_err_with(|| format!("arming {}", config.arm_file.display()))?;
+    let fault_started = Instant::now();
+    let outcome = client.batch_execute(&profile_sql).await;
+    let fault_ms = fault_started.elapsed().as_millis();
+    fs::remove_file(&config.arm_file)
+        .wrap_err_with(|| format!("disarming {}", config.arm_file.display()))?;
+
+    let outcome_ok = outcome.is_ok();
+    if config.fault == RemoteSocketFaultArg::Slow {
+        outcome.wrap_err("armed SPIRE socket-slow query failed")?;
+        if fault_ms < u128::from(config.latency_ms) || fault_ms <= baseline_ms {
+            bail!(
+                "armed SPIRE socket-slow query took {fault_ms} ms versus {baseline_ms} ms baseline, below the configured {} ms evidence gate",
+                config.latency_ms
+            );
+        }
+    }
+    let armed_outcome = if outcome_ok { "success" } else { "clean-error" };
+
+    let marker_content = fs::read_to_string(&config.marker)
+        .wrap_err_with(|| format!("reading {}", config.marker.display()))?;
+    let expected_mode = config.fault.provider_mode().as_str();
+    if !marker_content.lines().any(|line| {
+        line.contains("fault=1")
+            && line.contains(&format!("mode={expected_mode}"))
+            && line.contains(&format!("target={}", config.peer))
+    }) {
+        bail!(
+            "SPIRE remote socket marker has no exact-peer fault event for {expected_mode} {}",
+            config.peer
+        );
+    }
+
+    client
+        .batch_execute(&profile_sql)
+        .await
+        .wrap_err("running disarmed SPIRE remote socket recovery query")?;
+    connection_task.abort();
+    let line = format!(
+        "remote_socket_fault mode={expected_mode} peer={} baseline_ms={baseline_ms} fault_ms={fault_ms} armed_outcome={armed_outcome} fault_event=true disarmed=true recovery=true",
+        config.peer
+    );
+    fs::write(
+        log_dir.join("spire-remote-socket-fault.log"),
+        format!("{line}\n"),
+    )
+    .wrap_err("writing SPIRE remote socket fault summary")?;
+    crate::ecaz_println!("[spire-multicluster] {line}");
+    Ok(())
+}
+
+fn sql_identifier(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
 }
 
 async fn run_ecaz_dev_sql_string_logged(
