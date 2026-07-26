@@ -1,12 +1,17 @@
-   Compiling ring v0.17.14
-   Compiling rustls v0.23.42
-   Compiling rustls-webpki v0.103.13
-   Compiling tokio-rustls v0.26.4
    Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-199)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 32.40s
+   Compiling pgrx-pg-sys v0.17.0
+   Compiling pgrx v0.17.0
+   Compiling pgrx-tests v0.17.0
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 05s
      Running unittests src/lib.rs (target/debug/deps/ecaz-c699c68ba0391e69)
 
-running 0 tests
+running 6 tests
+test am::ec_distann::traversal_replica::tests::content_digest_rejects_duplicate_order_shape_and_cardinality ... ok
+test am::ec_distann::traversal_replica::tests::content_digest_is_deterministic_and_identity_bound ... ok
+test am::ec_distann::traversal_replica::tests::ready_presence_cache_distinguishes_unknown_and_known_absent ... ok
+test am::ec_distann::traversal_replica::tests::state_machine_allows_only_contract_transitions ... ok
+test am::ec_distann::traversal_replica::tests::suppression_is_scoped_to_index_and_build_identity ... ok
+test am::ec_distann::traversal_replica::tests::full_relcache_reset_clears_ready_presence_and_suppression ... ok
 
-test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 2529 filtered out; finished in 0.00s
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 2523 filtered out; finished in 0.00s
 

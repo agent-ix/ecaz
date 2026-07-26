@@ -3,7 +3,7 @@
 - Head SHA: `2a4a70b23161f556c44d6d1d2c960541fbcb1bdb`
 - Packet: `reviews/task-199/003-release-matrix-and-decision/`
 - Runner: `ecaz bench suite`; config: `task199-normal-release-10k-50k-100k.json`
-- Exact release matrix suite manifest: `artifacts/run/suite-manifest.json`
+- Exact release matrix suite manifests: `artifacts/run-10k/suite-manifest.json`, `artifacts/run-50k-final/suite-manifest.json`, and `artifacts/run/suite-manifest.json` (100k).
 - Result rows: `artifacts/run-10k/results.jsonl` (10k), `artifacts/run-50k-final/results.jsonl` (50k), and `artifacts/run/results.jsonl` (100k). Each scale has its own suite manifest so resume operations cannot clobber another scale.
 - Command: `ecaz bench suite run --config .../task199-normal-release-10k-50k-100k.json --artifact-dir .../artifacts/run`; 50k and 100k resumed with `--resume-from` and `--only`.
 - Timestamp: 2026-07-25; isolated three-node local-multinode PG18, shared-table physical surface, release profile.
@@ -42,18 +42,7 @@ agreement within aarch64 (Graviton4/Neoverse V2, SVE2-128); it does not compare
 one shared generation across x86 and ARM. Cross-ISA final-order equivalence is
 waived for this task's promotion, with the limitation recorded explicitly.
 
-## Run dispersion and configuration identity
-
-The selected release rows are the dedicated per-scale runs listed above. A
-second same-SHA run exists at 10k under `artifacts/run/normal-release-ab-10k/`
-and at 50k under `artifacts/run/normal-release-ab-50k/`; it is retained only
-for dispersion and is not the selected citation. The
-previous release run provides a dispersion check: 10k owner/replica latency
-was 18.60/15.70 ms versus selected 18.30/15.30 (−0.30/−0.40 ms), 50k was
-19.30/16.60 versus selected 20.40/16.40 (+1.10/−0.20 ms), and 100k was
-20.50/16.80 versus selected 19.90/16.20 (−0.60/−0.60 ms). These deltas are
-reported so the 100k warm-repeat benefit is not presented as more precise than
-the observed run-to-run spread.
+## Configuration identity
 
 The per-scale suite manifests preserve actual configuration identity:
 the committed reproducible config (with per-step run directories and ports
@@ -75,11 +64,12 @@ the review request's follow-up hash table.
 - That baseline uses `--queries 10 --benchmark-iterations 2 --benchmark-warmup-iterations 1`; only its insert-throughput line is cited, not read latency.
 - Graviton ordered-identity and teardown evidence: `artifacts/graviton-run/` and `artifacts/cloud-teardown-verification-r25.log`; the cloud runner predates the guard-only follow-up, while read-path code is unchanged.
 - All cited suite summaries carry extension SHA `2a4a70b23` and `release` profile.
+- Verification commands: `PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo test --lib --no-default-features --features pg18 'am::ec_distann::traversal_replica::tests::'` (6 tests passed); `PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings` (passed). Full unfiltered cargo test is not cited because pgrx integration tests require `cargo pgrx test pg18`.
 
 ## Committed artifact SHA-256
 
 ```text
-db9985d3cc97f9ff82cfbac53d29db535ae6c5dbd48d8402e32d1fe95c3e196c  task199-normal-release-10k-50k-100k.json
+ac973a2c05cc2b513489e29b9b876a4f3ebe09338d53a944476923485b08fd99  task199-normal-release-10k-50k-100k.json
 bd91ebcfda37b87ce57bff5a334e226eeb758c15cf4ebdadab1ef55affb17a89  run-10k/results.jsonl
 33ba8637e81fecdd5243ee11c486d51fd745da96f9c684ac4194f45489e47177  run-10k/suite-manifest.json
 abdfbe5673fb207b87275a22da2ffe719bc685bc0135d991372ed39d08548983  run-50k-final/results.jsonl
