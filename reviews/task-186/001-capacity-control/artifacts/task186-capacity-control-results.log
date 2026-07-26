@@ -1,0 +1,17 @@
+Task 186 capacity-control 100k screen
+Corpus: ec_real_100k; PG18; three-owner physical surface; RabitQ neighbor codes; exact head scoring; beam=4; hops=100; seeds=32; queries=200; top-k=10; warm latency=50 iterations after 10 warmups.
+Extension SHA: c1c43a9bf66c25b390535ba47e52e0e251a5d6e7
+Query SHA: a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+
+| arm | head construction | coverage | physical recall | physical warm latency | physical generation bytes | head cache bytes |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| cap4096 | 858297 ms | zero 0.015; owner membership 0.5503125 | 0.9625 (95% CI 0.9532–0.9700) | 19.70 ms (p95 22.70) | 2496651264 | 25892203 |
+| cap8192 | 891369 ms | zero 0.005; owner membership 0.57328125 | 0.9690 (95% CI 0.9605–0.9757) | 22.40 ms (p95 25.80) | 2496659456 | 51791241 |
+| cap16384 | 994375 ms | zero 0; owner membership 0.61546875 | 0.9740 (95% CI 0.9661–0.9801) | 27.10 ms (p95 30.00) | 2496634880 | 103582519 |
+
+Additional checks: all arms passed `physical_topology_gate` with 3 owners and 2 remote-owner verifications; engagement passed; no non-owned or orphan records were reported.
+
+Source logs:
+- `run-benchmark-feature/trained-cap-4096-control-100k/distann-multinode-summary.log`
+- `run-benchmark-feature/trained-cap-8192-candidate-100k/distann-multinode-summary.log`
+- `run-cap16384/trained-cap-16384-candidate-100k/distann-multinode-summary.log`

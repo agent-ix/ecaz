@@ -1,0 +1,122 @@
+{
+  "suite": "task186-capacity-control-100k",
+  "schema_version": 1,
+  "config": "reviews/task-186/001-capacity-control/artifacts/task186-capacity-control-100k-suite.json",
+  "config_sha256": "edbf80d33be171e7845507dd97450fad610d148d649eaf063bbcc797ce9deba8",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785100589508,
+  "runner_git_commit": "c1c43a9bf66c25b390535ba47e52e0e251a5d6e7",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "trained-cap-4096-control-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task186",
+        "capacity_control",
+        "head_cap_4096",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-186/001-capacity-control/artifacts/run-cap16384/trained-cap-4096-control-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "trained-cap-8192-candidate-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task186",
+        "capacity_candidate",
+        "head_cap_8192",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-186/001-capacity-control/artifacts/run-cap16384/trained-cap-8192-candidate-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "trained-cap-16384-candidate-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-186/001-capacity-control/artifacts/run-cap16384/trained-cap-16384-candidate-100k",
+        "--run-dir",
+        "target/task186-capacity-control",
+        "--log-file",
+        "reviews/task-186/001-capacity-control/artifacts/run-cap16384/trained-cap-16384-candidate-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "41660",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "16384",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--seed-strategy",
+        "head_sample_exact",
+        "--head-search-width",
+        "32",
+        "--head-seed-count",
+        "32",
+        "--neighbor-score-mode",
+        "rabitq",
+        "--head-policy",
+        "training_landmarks",
+        "--training-query-path",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task186",
+        "capacity_candidate",
+        "head_cap_16384",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-186/001-capacity-control/artifacts/run-cap16384/trained-cap-16384-candidate-100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785100589530,
+      "finished_at_unix_ms": 1785103318092,
+      "duration_ms": 2817343,
+      "exit_code": 0
+    }
+  ]
+}
