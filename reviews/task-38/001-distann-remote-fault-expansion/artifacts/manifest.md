@@ -188,12 +188,41 @@ built>`. SPIRE remote SQL and DistANN owner/payload transport exist, but their
 live socket-provider cases are unavailable on this host. SPIRE object-store
 reads are separately classified as nonexistent.
 
+## Reviewer verification artifacts (2026-07-25)
+
+Added by `feedback/2026-07-25-01-reviewer.md`. PR #50 head `22bbe6284`,
+verified in a clean worktree on Apple M5 (macOS 26.4.1, Darwin 25.4.0, arm64) —
+the same host class as the packet, with the same LD_PRELOAD limits.
+
+### `2026-07-25-reviewer-test-rerun.log`
+
+- Commands: `cargo test -p ecaz-fault-injection`, `cargo test -p ecaz-cli fault`
+- Status: PASS, reproducing the PR body's counts.
+- Key result: 9 passed / 0 failed for the provider crate (including
+  `socket_provider_environment_pins_exact_peer` and
+  `all_lanes_cover_every_distann_codec_with_distinct_fixture_ids`); 30 passed /
+  0 failed for the CLI fault parsers.
+
+### `2026-07-25-reviewer-c-syntax-ceiling.log`
+
+- Command: `clang -fsyntax-only` on `ldpreload_provider.c` at `origin/main` and
+  at PR head.
+- Status: 4 errors on both sides, all pre-existing Linux-only types (`off64_t`,
+  implicit int) that this SDK cannot resolve.
+- Key result: the diff introduces no NEW syntax errors. This is the ceiling of
+  what an Apple host can establish about the C provider —
+  `crates/ecaz-fault-injection/build.rs` returns early unless
+  `CARGO_CFG_TARGET_OS == "linux"`, so the provider is not compiled here, and
+  repository CI is `workflow_dispatch`-only, so it has not been compiled there
+  either. The new socket code is therefore uncompiled on every host, not merely
+  unexecuted on this one.
+
 ## Reviewer-flag follow-up (2026-07-25)
 
 ### `2026-07-25-reviewer-flags-local-validation.log`
 
-- Implementation base: PR #50 reviewer head `bbcdec666`; follow-up changes
-  are the working-tree state awaiting publication.
+- Implementation base: PR #50 reviewer head `df063bf83`; follow-up changes
+  are the local commits merged with that reviewer head.
 - Commands: `cargo check -p ecaz-cli`,
   `cargo test -p ecaz-fault-injection`, `cargo test -p ecaz-cli fault`, and
   `git diff --check`.
@@ -202,6 +231,6 @@ reads are separately classified as nonexistent.
 - Change coverage: TCP-only peer validation; scalar, vectored, datagram, and
   message socket entry points; `errno` preservation; unrepresentable invalid
   DistANN fixture state.
-- Evidence ceiling: no Linux compile or runtime claim. A Linux provider
-  compile, focused TCP reset against a real peer, and network syscall trace
-  remain required.
+- Evidence ceiling: no Linux compile or runtime claim yet. The existing manual
+  Ubuntu workflow can establish compilation; a focused TCP reset against a
+  real peer and network syscall trace still require a Linux runtime.
