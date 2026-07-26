@@ -1,13 +1,18 @@
 Task 38 packet 008 static validation
 date=2026-07-26
 status_checkpoint=167d7d3794ccc367f9a0c29c5ea63f5457009966
+response_checkpoint=af908f44c912f6eaa78a1c17a92017eb6aee6b1c
 host_scope=Apple M5 macOS arm64
 remote_execution=none
 
 command=git diff --check 67177c713..167d7d379
 result=PASS (no output)
 
-canonical_status=Apple-M5 implementation, local PG18 validation, and source review complete
+command=git diff --check aa57d7286..af908f44c
+result=PASS (no output)
+
+canonical_status=three packet005 M5 gaps complete; authoritative aggregate and Intel/Linux execution remain open
+remaining_group_0=implement and review authoritative fault-full aggregation
 remaining_group_1=DistANN provider-backed EIO ENOSPC measured slow disk
 remaining_group_2=DistANN TCP and SPIRE named-Unix reset/slow
 remaining_group_3=seven systemd/cgroup-v2 OOM fixture cases

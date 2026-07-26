@@ -26,10 +26,10 @@ rewrite packet 005 or claim Task 38 completion. It distinguishes:
 | --- | --- | --- |
 | Every applicable lane completes without postmaster `PANIC` or leaked buffers/locks | Historical four-AM Linux evidence; packet 001 DistANN M5 logs; packet 007 zero-pin and zero session/lock/prepared-xact evidence | Partially complete overall. Proven for executed historical/local lanes; unexecuted Intel/Linux provider/socket/cgroup lanes remain open. |
 | A deliberately introduced invalid-buffer-style bug is caught by cancellation | Packet 007 live seven-fixture cancellation mutation markers and final approval | Complete on M5. The canonical “invalid buffer” text is an example; the approved control injects an exact wrong AM palloc failure and proves the production `57014` oracle rejects it. |
-| Resource exhaustion catches an accumulator/palloc failure without recovery | Packet 007 live seven-fixture armed/disarmed real-AM recovery markers and final approval | Complete on M5. The same KNN scan fails while palloc remains armed and succeeds only after disarm/reset. |
+| Resource exhaustion catches an accumulator/palloc failure without recovery | Packet 007 live seven-fixture armed/disarmed real-AM recovery evidence and final approval | Complete on M5. Seven rejection markers prove the armed state; the final seven-fixture completion marker and approved control flow prove the same scans succeeded after disarm/reset. |
 | All five AMs and all three DistANN codecs survive applicable smoke lanes | Historical four-AM evidence and packet 001 M5 DistANN evidence | Partially complete overall. The Intel/Linux provider/socket/cgroup cases remain unexecuted. |
 | Document every long-running-loop interrupt site and file follow-ups | Packet 006 exact explicit-boundary artifact, final approval, and Task 200 | Complete for Task 38's inventory/follow-up criterion. Task 200 owns classification/remediation of unpolled loops and remains open independently. |
-| `make fault-full` is locally authoritative | Dry-run planning plus implemented operators | Not complete. Behavioral authority requires the designated Intel/Linux provider and cgroup prerequisites. |
+| `make fault-full` is locally authoritative | Current Make dependency list and implemented component operators | Not complete. The aggregate itself still defaults generic lanes to dry-run, omits mutation/socket/cgroup operators, and does not sequence provider modes, restart/restore, exact markers/arm files, or measured slow baselines. It requires implementation review and designated Intel/Linux execution evidence. |
 | `docs/hardening.md` contains the fault-injection model | Seven-fixture matrix, operator model, provider/socket/cgroup procedures, recovery oracles, mutation controls, and interrupt inventory | Complete. |
 
 ## Resolution Of Packet 005 M5 Gaps
@@ -40,28 +40,42 @@ rewrite packet 005 or claim Task 38 completion. It distinguishes:
 | Resource/palloc negative control | Same packet 007 checkpoint, armed/disarmed real-AM recovery evidence, and approval | Closed on M5. |
 | Exhaustive interrupt inventory | Packet 006 inventory checkpoint and reviewer approval `6cc24bf3e` | Closed for Task 38; Task 200 owns follow-up work. |
 
-## Remaining Designated Intel/Linux Matrix
+## Remaining Aggregate And Designated Intel/Linux Matrix
 
-Task 38 remains open until all of the following behavior is executed and
-stored as packet-local evidence:
+Task 38 remains open until all of the following implementation and behavior is
+reviewed/executed and stored as packet-local evidence:
 
-1. DistANN provider-backed EIO, ENOSPC, and measured slow-disk cases, including
-   exact fault markers, clean workload result/recovery, and shared
-   postconditions.
-2. DistANN real owner/payload TCP reset and slow cases, including exact-peer
-   marker/syscall evidence and recovery.
-3. SPIRE real participant named-Unix reset and slow cases, including exact-peer
-   marker/syscall evidence, healthy baseline/stable slow result, and recovery.
-4. Seven systemd/cgroup-v2 OOM cases: HNSW, IVF, DiskANN, SPIRE, DistANN
-   RaBitQ, DistANN TurboQuant, and DistANN grouped-PQ, each with
-   `Result=oom-kill`, scoped-postmaster death, restarted valid/ready index,
-   forced AM scan, and clean shared postconditions.
+1. Implement and source-review an authoritative `make fault-full` aggregate
+   that includes the mutation, remote-socket, and cgroup operators and
+   sequences distinct provider modes, postmaster restart/restore, exact
+   markers/arm files, and same-run slow baselines. Then execute that aggregate
+   on the designated host.
+2. Run all three DistANN codecs across applicable heap/index/WAL/temp paths for
+   provider-backed EIO and ENOSPC. Require exact mode/path markers, documented
+   accepted outcomes, recovery/shared postconditions, and a same-run measured
+   slow-disk baseline delta.
+3. Run DistANN real owner/payload TCP reset/slow. Require an accepted clean
+   reset outcome; for slow, the expected source identity and
+   baseline-plus-latency threshold; then exact expected-source recovery.
+4. Run SPIRE real participant named-Unix reset/slow. Require a validated
+   healthy baseline, documented accepted reset error/degraded result, stable
+   slow profile equal to the baseline, baseline-plus-latency timing, and a
+   recovered stable profile equal to the baseline.
+5. Run seven systemd/cgroup-v2 OOM cases: HNSW, IVF, DiskANN, SPIRE, DistANN
+   RaBitQ, DistANN TurboQuant, and DistANN grouped-PQ. Require
+   `Result=oom-kill`, scoped-postmaster death, exact expected row-count
+   equality, a valid/ready index, a forced AM scan, shared postconditions, and
+   a clean post-recovery stop.
+
+Every executed lane must retain a postmaster log with no `PANIC` and pass the
+buffer/lock cleanup criteria.
 
 No AWS, remote-host, CI, nightly, or Intel command was executed for this M5
 closeout.
 
 ## Conclusion
 
-The Apple-M5 work boundary is complete and supported by outside-reviewed source
-and live local PG18 evidence. Task 38 is intentionally still open. Its only
-remaining execution boundary is the designated Intel/Linux matrix above.
+The three Apple-M5-verifiable gaps recorded by packet 005 are complete and
+supported by outside-reviewed source and live local PG18 evidence. Task 38 is
+intentionally still open for authoritative aggregate implementation and the
+designated Intel/Linux matrix above.
