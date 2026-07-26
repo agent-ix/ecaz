@@ -1,0 +1,45 @@
+Task 38 packet 007 outside-review static audit
+Date: 2026-07-26
+Reviewed branch head: 9de3cd25a
+Reviewed code checkpoint: 374166bd3
+Diff base: 6cc24bf3e
+
+Scope:
+- request, manifest, every packet-local artifact
+- code diff 6cc24bf3e..374166bd3
+- canonical Task 38 validation criteria
+- no Cargo, PostgreSQL, remote-host, AWS, CI, or Intel execution
+
+Artifact integrity:
+- all-fixtures-mutation-control-live.log
+  sha256=4937ee09955011f8f1a8d4046d46eed0aa64578d8dd8f7fd272372cbe9cd729a
+  lines=58
+  cancellation_rejected=7
+  armed_resource_recovery_rejected=7
+  zero_pin_markers=9
+  final_complete_markers=1
+- postcondition-audit-live.log
+  sha256=2b6408707b54a41052bf41c88f01ab49c59dbd8f276b2a7d980097924dced21a
+  fault_sessions=0
+  fault_locks=0
+  prepared_xacts=0
+
+Static checkpoint check:
+Command: git diff --check 6cc24bf3e..9de3cd25a
+Result: pass
+
+Code trace:
+- cancellation control calls run_backend_interrupt_case with the production
+  require_query_canceled_sqlstate=true path; that path accepts only SQLSTATE
+  57014. The control accepts the expected rejection only when the returned
+  database error is the named ECAZ palloc failure.
+- fault_palloc_nth is defined to fail the Nth and every later instrumented
+  palloc site. The resource control therefore leaves the second scan faulted
+  until explicit disarm/reset.
+- armed and disarmed resource checks call the same workload_scan_sql helper,
+  which disables sequential, bitmap, and explicit sort paths for the fixture
+  KNN query. The disarmed scan and SELECT 1 must pass before per-fixture
+  postconditions run.
+- ordinary memory smoke uses this AM recovery helper after scan, insert, and
+  vacuum palloc errors. Failed build cases retain backend-only recovery because
+  an index is not guaranteed to exist after the injected build error.
