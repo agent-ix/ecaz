@@ -35,14 +35,18 @@ gate records actual high-water and returned fraction and requires at least 95%
 of target. The rerun passed at 100%, 99.9%, and 100% for RaBitQ, TurboQuant,
 and grouped PQ respectively.
 
-The provider foundation now has two socket-only modes:
+The provider foundation now has two TCP-socket-only modes:
 `socket-reset` returns `ECONNRESET` and shuts down the matched connection;
 `socket-slow` applies bounded latency. Both require an exact peer identity
-(`tcp:HOST:PORT`, bracketed IPv6, or `unix:PATH`) resolved with
-`getpeername(2)`. File-provider matching remains separate. Provider restore
-removes the peer filter along with the existing LD_PRELOAD variables.
+(`tcp:HOST:PORT` or bracketed IPv6) resolved with `getpeername(2)`.
+Unix-domain peers are rejected because accepted sockets commonly have no
+unique peer pathname. The provider covers scalar, vectored, datagram, and
+message socket I/O entry points; file-provider matching remains separate.
+Provider restore removes the peer filter along with the existing LD_PRELOAD
+variables.
 
-This macOS/aarch64 host cannot build or execute the Linux LD_PRELOAD provider
+The Linux LD_PRELOAD provider has not been compiled on any host, including CI.
+This macOS/aarch64 host cannot build or execute it
 and has neither cgroup v2 nor `systemd-run`. Consequently local provider EIO,
 ENOSPC, measured slow-disk, SPIRE/DistANN exact-peer socket faults, and cgroup
 OOM remain explicitly unavailable. The socket provider and cgroup operator
@@ -89,10 +93,18 @@ upstream base across many untouched files; the packet retains that output.
   production-default-off GUC?
 - Is rejecting `--distann-codec` outside `--am distann` the right operator
   contract?
-- Does exact `getpeername(2)` matching adequately isolate SPIRE Unix-domain
-  and DistANN loopback-TCP transport faults from control traffic?
+- Does exact TCP `getpeername(2)` matching adequately isolate SPIRE SQL and
+  DistANN loopback-TCP transport faults from control traffic?
 - Is the quantified 95% accumulator-pressure gate strong enough for
   approximate AMs while avoiding the historical weak `count >= 64` check?
 - Are the Linux provider and cgroup deferrals stated narrowly enough to keep
   Task 38 open without confusing unavailable host capability with nonexistent
   SPIRE object-store functionality?
+
+## Open Linux Evidence
+
+Task 38 remains open. A Linux session must compile the provider, run a focused
+TCP `socket-reset` case against a real SPIRE SQL or DistANN owner/payload peer,
+and trace the network syscalls used by that workload. The same host must still
+capture live provider-backed DistANN EIO/ENOSPC/slow-disk evidence and the
+cgroup-v2 OOM lane before task closeout.

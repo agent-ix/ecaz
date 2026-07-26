@@ -1,0 +1,29 @@
+Task 38 reviewer-flag follow-up validation
+Date: 2026-07-25 America/Los_Angeles
+Host: macOS / Darwin arm64
+
+Commands:
+  cargo check -p ecaz-cli
+  cargo test -p ecaz-fault-injection
+  cargo test -p ecaz-cli fault
+  git diff --check
+
+Results:
+  cargo check -p ecaz-cli: PASS
+    Retains the pre-existing LoadedDistributedPlacementConfig.path warning.
+  cargo test -p ecaz-fault-injection: PASS
+    9 passed; 0 failed.
+  cargo test -p ecaz-cli fault: PASS
+    31 passed; 0 failed; 433 filtered out.
+  git diff --check: PASS
+
+Scope:
+  FaultFixture is now an enum, so a DistANN fixture without a codec cannot be
+  constructed. Socket peer selection is TCP-only. The provider preserves errno
+  while probing descriptors and interposes read/write, recv/send, readv/writev,
+  recvfrom/sendto, and recvmsg/sendmsg.
+
+Evidence ceiling:
+  This is not Linux compile or runtime evidence. The provider has not been
+  compiled on any host, including CI. A Linux compile, focused TCP socket-reset
+  run against a real peer, and network syscall trace remain required.

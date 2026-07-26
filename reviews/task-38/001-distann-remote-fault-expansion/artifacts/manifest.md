@@ -187,3 +187,21 @@ records the exact TCP peer filter and `LD_PRELOAD=<linux-only provider not
 built>`. SPIRE remote SQL and DistANN owner/payload transport exist, but their
 live socket-provider cases are unavailable on this host. SPIRE object-store
 reads are separately classified as nonexistent.
+
+## Reviewer-flag follow-up (2026-07-25)
+
+### `2026-07-25-reviewer-flags-local-validation.log`
+
+- Implementation base: PR #50 reviewer head `bbcdec666`; follow-up changes
+  are the working-tree state awaiting publication.
+- Commands: `cargo check -p ecaz-cli`,
+  `cargo test -p ecaz-fault-injection`, `cargo test -p ecaz-cli fault`, and
+  `git diff --check`.
+- Key results: check PASS; fault crate `9 passed; 0 failed`; CLI fault filter
+  `31 passed; 0 failed`; diff check PASS.
+- Change coverage: TCP-only peer validation; scalar, vectored, datagram, and
+  message socket entry points; `errno` preservation; unrepresentable invalid
+  DistANN fixture state.
+- Evidence ceiling: no Linux compile or runtime claim. A Linux provider
+  compile, focused TCP reset against a real peer, and network syscall trace
+  remain required.

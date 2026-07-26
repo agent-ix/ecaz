@@ -1,9 +1,10 @@
 head=4d9bbec47
 host=macOS-26.4.1/Darwin-25.4.0/arm64
-linux_ld_preload_provider=unavailable reason="provider build is target_os=linux; current CLI reports <linux-only provider not built>"
+linux_ld_preload_provider=unavailable reason="not compiled on any host, including CI; provider build is target_os=linux and current CLI reports <linux-only provider not built>"
 distann_local_eio_enospc_slow_disk=unavailable reason="requires live Linux LD_PRELOAD provider and fault=1 markers"
 spire_remote_sql_socket_fault=unavailable reason="production remote SQL transport exists, but exact-peer provider cannot execute on this host"
 distann_remote_owner_payload_socket_fault=unavailable reason="production loopback TCP transport exists, but exact-peer provider cannot execute on this host"
 spire_object_store_read_fault=nonexistent reason="production object-store read path has not landed"
 cgroup_v2_oom=unavailable reason="linux=false cgroup_v2=false systemd_run=false"
 make_fault_full_live=not_run reason="aggregate live prerequisites are unavailable; make fault-full dry-run and supported focused PG18 lanes were run"
+linux_socket_followup=required reason="compile provider, run focused TCP socket-reset against a real peer, and trace workload network syscalls"
