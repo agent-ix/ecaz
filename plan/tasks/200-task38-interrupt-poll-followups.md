@@ -61,4 +61,3 @@ For every candidate loop, record exactly one outcome:
 - `docs/hardening.md` § “PG Fault Injection” interrupt inventory.
 - DistANN transport longjmp-safety comments in
   `src/am/ec_distann/remote_transport.rs`.
-

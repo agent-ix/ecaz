@@ -644,7 +644,7 @@ Current interrupt inventory:
 | DiskANN vacuum | `src/am/ec_diskann/routine.rs`: bulk-delete node passes, neighbor-fill targets, and repair candidates call `maybe_check_for_interrupts()` |
 | SPIRE remote dispatch | `src/am/ec_spire/coordinator/remote_candidates/dispatch.rs`: the local-cancel future polls PostgreSQL `InterruptPending`/`QueryCancelPending` and the statement-timeout indicator at a bounded interval |
 | DistANN physical shard build | `src/am/ec_distann/shard_build.rs`: membership assignment, sequential shard builds, parallel completion receipt/timeouts, stitch groups, and reachability repair call `maybe_check_for_interrupts()` |
-| DistANN remote transport | `src/am/ec_distann/remote_transport.rs`: calls `maybe_check_for_interrupts()` immediately before and after the thread-local transport-state borrow; async cancellation first clears pooled connections, then the outer boundary raises |
+| DistANN remote transport | `src/am/ec_distann/remote_transport.rs`: every remote await races a 5 ms poll of `InterruptPending`, `QueryCancelPending`, and `ProcDiePending`; observation marks the transport interrupted and attempts bounded remote cancel, the thread-local state then clears pooled connections, and `maybe_check_for_interrupts()` immediately outside the borrow raises the PostgreSQL interrupt |
 
 This table inventories every explicit interrupt poll currently present under
 the five AM source trees. It is not a claim that every potentially
