@@ -43,7 +43,7 @@ Unix-domain peers are rejected because accepted sockets commonly have no
 unique peer pathname. The provider covers scalar, vectored, datagram, and
 message socket I/O entry points; file-provider matching remains separate.
 Provider restore removes the peer filter along with the existing LD_PRELOAD
-variables.
+variables. Linux builds now enable `-Wall -Wextra` for the provider.
 
 The Linux LD_PRELOAD provider has not been compiled on any host, including CI.
 This macOS/aarch64 host cannot build or execute it

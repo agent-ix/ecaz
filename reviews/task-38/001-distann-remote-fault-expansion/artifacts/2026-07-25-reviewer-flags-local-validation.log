@@ -22,6 +22,7 @@ Scope:
   constructed. Socket peer selection is TCP-only. The provider preserves errno
   while probing descriptors and interposes read/write, recv/send, readv/writev,
   recvfrom/sendto, and recvmsg/sendmsg.
+  Linux provider compilation enables -Wall -Wextra.
 
 Evidence ceiling:
   This is not Linux compile or runtime evidence. The provider has not been

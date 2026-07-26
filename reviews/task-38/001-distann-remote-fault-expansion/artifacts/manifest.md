@@ -230,7 +230,7 @@ the same host class as the packet, with the same LD_PRELOAD limits.
   `31 passed; 0 failed`; diff check PASS.
 - Change coverage: TCP-only peer validation; scalar, vectored, datagram, and
   message socket entry points; `errno` preservation; unrepresentable invalid
-  DistANN fixture state.
+  DistANN fixture state; Linux provider compilation enables `-Wall -Wextra`.
 - Evidence ceiling: no Linux compile or runtime claim yet. The existing manual
   Ubuntu workflow can establish compilation; a focused TCP reset against a
   real peer and network syscall trace still require a Linux runtime.
