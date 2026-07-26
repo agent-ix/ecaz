@@ -1,0 +1,20 @@
+Task 38 packet 006 reviewer static revalidation
+Date: 2026-07-26
+Reviewed head: 5c4f6baf9
+
+Scope:
+- response commits d243b379f and 5c4f6baf9 against seq01 only
+- no Cargo, PostgreSQL, remote-host, AWS, or CI execution
+
+Finding 1:
+- explicit-interrupt-sites.log now includes DistANN postgres_interrupt_signal,
+  postgres_interrupt_pending, InterruptPending, QueryCancelPending, and
+  ProcDiePending lines.
+- docs/hardening.md now records the 5 ms inner flag poll, bounded remote cancel,
+  pooled-connection clearing inside the thread-local borrow, and the outer
+  maybe_check_for_interrupts raising boundary.
+- result: closed
+
+Finding 2:
+Command: git diff --check 476407ed9..5c4f6baf9
+Result: pass
