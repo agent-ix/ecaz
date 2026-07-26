@@ -1,7 +1,7 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **open; five-AM local model implemented, current live expansion review
-pending** — the historical Linux packet proved the four-AM
+Status: **open; Apple-M5 implementation and source review complete, designated
+Intel/Linux execution pending** — the historical Linux packet proved the four-AM
 `ec_hnsw`/`ec_ivf`/`ec_diskann`/`ec_spire` surface. The current Task 38 branch
 adds `ec_distann` as a first-class AM with separate RaBitQ, TurboQuant, and
 grouped-PQ fixtures, exact-peer socket reset/latency provider modes, measured
@@ -24,7 +24,9 @@ EIO/ENOSPC/slow-disk, SPIRE/DistANN socket faults, and cgroup OOM remain
 unavailable on this host until Linux evidence lands. SPIRE remote SQL transport
 does exist and is actionable; only future SPIRE object-store reads are
 nonexistent. No CI/nightly execution is claimed, and this task stays open for
-outside review.
+operator-scheduled execution on the designated Intel/Linux host. Review
+packets 001 through 004 have outside approval at the implementation/source
+level; that approval does not substitute for the missing live Linux evidence.
 
 ## Scope
 
