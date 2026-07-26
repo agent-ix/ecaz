@@ -6,7 +6,7 @@ use ecaz_fault_injection::{
     workload_bulk_insert_sql, workload_insert_sql, workload_reindex_sql,
     workload_repeated_scan_sql, workload_resource_setup_sql, workload_scan_sql, workload_setup_sql,
     workload_table_sql, workload_temp_spill_sql, workload_vacuum_full_sql, workload_vacuum_sql,
-    FaultAm, FaultLane, ProviderMode,
+    DistannCodec, FaultAm, FaultFixture, FaultLane, ProviderMode,
 };
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -31,6 +31,8 @@ pub enum FaultCommand {
     Prepare(PrepareArgs),
     /// Run or dry-run one smoke lane.
     Smoke(SmokeArgs),
+    /// Print a host-independent cgroup-v2/systemd OOM operator plan.
+    CgroupPlan(CgroupPlanArgs),
 }
 
 #[derive(Args, Debug)]
@@ -38,6 +40,12 @@ pub struct PlanArgs {
     /// Restrict output to one lane.
     #[arg(long, value_enum)]
     lane: Option<FaultLaneArg>,
+    /// Restrict output to one access method.
+    #[arg(long, value_enum)]
+    am: Option<FaultAmArg>,
+    /// Restrict ec_distann output to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
 }
 
 #[derive(Args, Debug)]
@@ -48,6 +56,9 @@ pub struct ProviderEnvArgs {
     /// Substring that must appear in the target path, for example "base/".
     #[arg(long, default_value = "base/")]
     path_match: String,
+    /// Exact matched peer, e.g. tcp:127.0.0.1:39711 or unix:/path/.s.PGSQL.39424.
+    #[arg(long)]
+    peer_match: Option<String>,
     /// Start injecting on the Nth matching provider operation.
     #[arg(long, default_value_t = 1)]
     after: u64,
@@ -79,6 +90,9 @@ pub struct ProviderRestartArgs {
     /// Substring that must appear in the target path, for example "base/".
     #[arg(long, default_value = "base/")]
     path_match: String,
+    /// Exact matched peer, e.g. tcp:127.0.0.1:39711 or unix:/path/.s.PGSQL.39424.
+    #[arg(long)]
+    peer_match: Option<String>,
     /// Start injecting on the Nth matching provider operation.
     #[arg(long, default_value_t = 1)]
     after: u64,
@@ -114,6 +128,9 @@ pub struct PrepareArgs {
     /// Restrict preparation to one access method.
     #[arg(long, value_enum)]
     am: Option<FaultAmArg>,
+    /// Restrict ec_distann preparation to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
 }
 
 #[derive(Args, Debug)]
@@ -130,12 +147,37 @@ pub struct SmokeArgs {
     /// Restrict the smoke lane to one access method.
     #[arg(long, value_enum)]
     am: Option<FaultAmArg>,
+    /// Restrict ec_distann smoke to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
     /// Marker file proving the target postmaster loaded the fault provider.
     #[arg(long)]
     provider_marker: Option<String>,
     /// Reuse already-created AM fixtures instead of preparing them in this process.
     #[arg(long)]
     assume_prepared: bool,
+    /// Measured provider-off elapsed time for the same slow-disk workload.
+    #[arg(long, requires = "provider_marker")]
+    slow_disk_baseline_ms: Option<u128>,
+}
+
+#[derive(Args, Debug)]
+pub struct CgroupPlanArgs {
+    /// PostgreSQL major version to constrain.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+    /// MemoryMax value for the isolated user scope.
+    #[arg(long, default_value = "512M")]
+    memory_max: String,
+    /// Rows in the selected AM workload.
+    #[arg(long, default_value_t = 64)]
+    rows: i64,
+    /// Restrict the plan to one access method.
+    #[arg(long, value_enum)]
+    am: Option<FaultAmArg>,
+    /// Restrict ec_distann planning to one neighbor-code codec.
+    #[arg(long, value_enum, requires = "am")]
+    distann_codec: Option<DistannCodecArg>,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -154,6 +196,8 @@ pub enum ProviderModeArg {
     EioRead,
     EnospcWrite,
     SlowDisk,
+    SocketReset,
+    SocketSlow,
 }
 
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -162,6 +206,14 @@ pub enum FaultAmArg {
     Ivf,
     Diskann,
     Spire,
+    Distann,
+}
+
+#[derive(Clone, Copy, Debug, ValueEnum)]
+pub enum DistannCodecArg {
+    Rabitq,
+    Turboquant,
+    GroupedPq,
 }
 
 impl From<ProviderModeArg> for ProviderMode {
@@ -170,6 +222,8 @@ impl From<ProviderModeArg> for ProviderMode {
             ProviderModeArg::EioRead => ProviderMode::EioRead,
             ProviderModeArg::EnospcWrite => ProviderMode::EnospcWrite,
             ProviderModeArg::SlowDisk => ProviderMode::SlowDisk,
+            ProviderModeArg::SocketReset => ProviderMode::SocketReset,
+            ProviderModeArg::SocketSlow => ProviderMode::SocketSlow,
         }
     }
 }
@@ -181,6 +235,17 @@ impl From<FaultAmArg> for FaultAm {
             FaultAmArg::Ivf => FaultAm::Ivf,
             FaultAmArg::Diskann => FaultAm::DiskAnn,
             FaultAmArg::Spire => FaultAm::Spire,
+            FaultAmArg::Distann => FaultAm::DistAnn,
+        }
+    }
+}
+
+impl From<DistannCodecArg> for DistannCodec {
+    fn from(value: DistannCodecArg) -> Self {
+        match value {
+            DistannCodecArg::Rabitq => DistannCodec::RaBitQ,
+            DistannCodecArg::Turboquant => DistannCodec::TurboQuant,
+            DistannCodecArg::GroupedPq => DistannCodec::GroupedPq,
         }
     }
 }
@@ -207,19 +272,71 @@ impl FaultCommand {
             FaultCommand::ProviderRestart(args) => run_provider_restart(args).await,
             FaultCommand::ProviderRestore(args) => run_provider_restore(args).await,
             FaultCommand::Prepare(args) => {
-                let ams = selected_ams(args.am);
-                prepare_workloads(conn, args.rows, &ams).await
+                let fixtures = selected_fixtures(args.am, args.distann_codec)?;
+                prepare_workloads(conn, args.rows, &fixtures).await
             }
             FaultCommand::Smoke(args) => run_smoke(conn, args).await,
+            FaultCommand::CgroupPlan(args) => run_cgroup_plan(args),
         }
     }
 }
 
+fn run_cgroup_plan(args: CgroupPlanArgs) -> Result<()> {
+    if args.rows <= 0 {
+        return Err(eyre!("--rows must be >= 1"));
+    }
+    if args.memory_max.trim().is_empty() {
+        return Err(eyre!("--memory-max must be nonempty"));
+    }
+    let fixtures = selected_fixtures(args.am, args.distann_codec)?;
+    let linux = cfg!(target_os = "linux");
+    let cgroup_v2 = Path::new("/sys/fs/cgroup/cgroup.controllers").is_file();
+    let systemd_run = std::process::Command::new("systemd-run")
+        .arg("--version")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .is_ok_and(|status| status.success());
+    let availability = if linux && cgroup_v2 && systemd_run {
+        "host-reachable"
+    } else {
+        "unavailable"
+    };
+    crate::ecaz_println!(
+        "[fault] cgroup_plan availability={availability} linux={linux} cgroup_v2={cgroup_v2} systemd_run={systemd_run} pg={} memory_max={} rows={}",
+        args.pg,
+        args.memory_max,
+        args.rows
+    );
+    for fixture in fixtures {
+        crate::ecaz_println!(
+            "[fault] cgroup_case am={} fixture={} shape=isolated-one-index-per-table launch=\"systemd-run --user --scope -p MemoryMax={} <isolated-pg18-postmaster-and-ecaz-fault-workload>\" expected=\"backend or postmaster OOM; postmaster recovery; clean postconditions\"",
+            fixture.as_str(),
+            fixture.slug(),
+            args.memory_max
+        );
+    }
+    if availability == "unavailable" {
+        crate::ecaz_println!(
+            "[fault] cgroup_skip reason=\"requires Linux cgroup v2 and a working user systemd-run scope; no direct /sys/fs/cgroup writes\""
+        );
+    }
+    Ok(())
+}
+
 fn run_plan(args: PlanArgs) -> Result<()> {
+    let fixtures = selected_fixtures(args.am, args.distann_codec)?;
     let cases = args
         .lane
         .map(|lane| required_smoke_cases(lane.into()))
-        .unwrap_or_else(all_smoke_cases);
+        .unwrap_or_else(all_smoke_cases)
+        .into_iter()
+        .filter(|case| {
+            fixtures.iter().any(|fixture| {
+                fixture.access_method() == case.access_method && fixture.codec() == case.codec
+            })
+        })
+        .collect::<Vec<_>>();
     print_cases(&cases);
     print_leak_probes();
     Ok(())
@@ -227,9 +344,7 @@ fn run_plan(args: PlanArgs) -> Result<()> {
 
 fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
     let mode = ProviderMode::from(args.mode);
-    if mode == ProviderMode::SlowDisk && args.latency_ms.unwrap_or(0) == 0 {
-        return Err(eyre!("--latency-ms must be >= 1 for slow-disk mode"));
-    }
+    validate_provider_options(mode, args.latency_ms, args.peer_match.as_deref())?;
     let marker = args
         .marker
         .as_deref()
@@ -243,6 +358,7 @@ fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
         args.latency_ms,
         marker.as_deref(),
         args.arm_file.as_deref(),
+        args.peer_match.as_deref(),
     );
     for (key, value) in env {
         crate::ecaz_println!("{key}={value}");
@@ -253,9 +369,10 @@ fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
 async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
     let mode = ProviderMode::from(args.mode);
     let latency_ms = match (mode, args.latency_ms) {
-        (ProviderMode::SlowDisk, None) => Some(1),
+        (ProviderMode::SlowDisk | ProviderMode::SocketSlow, None) => Some(1),
         (_, value) => value,
     };
+    validate_provider_options(mode, latency_ms, args.peer_match.as_deref())?;
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let install = find_pgrx_install(args.pg, &pgrx_home)?;
     let marker = args.marker.unwrap_or_else(|| {
@@ -275,6 +392,7 @@ async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
         latency_ms,
         Some(&marker_string),
         arm_file.as_deref(),
+        args.peer_match.as_deref(),
     );
     restart_pgrx_postmaster(
         &install.bin_dir.join("pg_ctl"),
@@ -285,6 +403,44 @@ async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
     )
     .await?;
     crate::ecaz_println!("[fault] provider_marker={marker_string}");
+    Ok(())
+}
+
+fn validate_provider_options(
+    mode: ProviderMode,
+    latency_ms: Option<u64>,
+    peer_match: Option<&str>,
+) -> Result<()> {
+    if matches!(mode, ProviderMode::SlowDisk | ProviderMode::SocketSlow)
+        && latency_ms.unwrap_or(0) == 0
+    {
+        return Err(eyre!("--latency-ms must be >= 1 for {mode} mode"));
+    }
+    if matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow)
+        && peer_match.is_none_or(str::is_empty)
+    {
+        return Err(eyre!("--peer-match is required for {mode} mode"));
+    }
+    if matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow) {
+        let peer = peer_match.expect("required above");
+        let valid_tcp = peer
+            .strip_prefix("tcp:")
+            .is_some_and(|identity| !identity.is_empty());
+        let valid_unix = peer
+            .strip_prefix("unix:")
+            .is_some_and(|path| path.starts_with('/') && path.len() > 1);
+        if !valid_tcp && !valid_unix {
+            return Err(eyre!(
+                "--peer-match must be tcp:HOST:PORT or an absolute named unix:/path"
+            ));
+        }
+    }
+    if !matches!(mode, ProviderMode::SocketReset | ProviderMode::SocketSlow) && peer_match.is_some()
+    {
+        return Err(eyre!(
+            "--peer-match is valid only for socket-reset or socket-slow mode"
+        ));
+    }
     Ok(())
 }
 
@@ -358,6 +514,7 @@ async fn restore_pgrx_postmaster_immediate(
         "ECAZ_FAULT_PROVIDER_LATENCY_MS",
         "ECAZ_FAULT_PROVIDER_MARKER",
         "ECAZ_FAULT_PROVIDER_ARM_FILE",
+        "ECAZ_FAULT_PROVIDER_PEER",
     ] {
         start.env_remove(name);
     }
@@ -400,6 +557,7 @@ async fn restart_pgrx_postmaster(
         "ECAZ_FAULT_PROVIDER_LATENCY_MS",
         "ECAZ_FAULT_PROVIDER_MARKER",
         "ECAZ_FAULT_PROVIDER_ARM_FILE",
+        "ECAZ_FAULT_PROVIDER_PEER",
     ] {
         command.env_remove(name);
     }
@@ -411,10 +569,14 @@ async fn restart_pgrx_postmaster(
 
 async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
     let lane = FaultLane::from(args.lane);
-    let ams = selected_ams(args.am);
+    let fixtures = selected_fixtures(args.am, args.distann_codec)?;
     let cases = required_smoke_cases(lane)
         .into_iter()
-        .filter(|case| ams.contains(&case.access_method))
+        .filter(|case| {
+            fixtures.iter().any(|fixture| {
+                fixture.access_method() == case.access_method && fixture.codec() == case.codec
+            })
+        })
         .collect::<Vec<_>>();
     print_cases(&cases);
     print_leak_probes();
@@ -444,7 +606,7 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                     args.rows
                 ));
             }
-            run_io_probe(conn, mode, &path_match, &ams).await?;
+            run_io_probe(conn, mode, &path_match, &fixtures).await?;
             assert_provider_fault_marker(
                 args.provider_marker.as_deref(),
                 mode,
@@ -460,15 +622,15 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Cancel => {
-            run_cancel_probe(conn, args.rows, &ams).await?;
+            run_cancel_probe(conn, args.rows, &fixtures).await?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Timeout => {
-            run_timeout_probe(conn, args.rows, &ams).await?;
+            run_timeout_probe(conn, args.rows, &fixtures).await?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::LockTimeout => {
-            run_lock_timeout_probe(conn, args.rows, &ams).await?;
+            run_lock_timeout_probe(conn, args.rows, &fixtures).await?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Resource => {
@@ -477,7 +639,7 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                 .as_deref()
                 .map(|marker| read_provider_marker(Some(marker), lane))
                 .transpose()?;
-            run_resource_probe(conn, args.rows, &ams, provider_marker.as_deref()).await?;
+            run_resource_probe(conn, args.rows, &fixtures, provider_marker.as_deref()).await?;
             if let Some(marker) = provider_marker.as_deref() {
                 if resource_provider_targets_temp_spill(marker)? {
                     assert_provider_fault_marker(
@@ -491,27 +653,54 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::Memory => {
-            run_memory_probe(conn, args.rows, &ams).await?;
+            run_memory_probe(conn, args.rows, &fixtures).await?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
         FaultLane::SlowDisk => {
-            read_provider_marker(args.provider_marker.as_deref(), lane)?;
-            run_slow_disk_probe(conn, args.rows, &ams).await?;
+            let marker = read_provider_marker(args.provider_marker.as_deref(), lane)?;
+            let latency_ms = provider_latency_ms_from_marker(&marker)?;
+            let baseline_ms = args.slow_disk_baseline_ms.ok_or_else(|| {
+                eyre!(
+                    "live slow-disk requires --slow-disk-baseline-ms from the same provider-off workload"
+                )
+            })?;
+            run_slow_disk_probe(conn, args.rows, &fixtures, baseline_ms, latency_ms).await?;
+            assert_provider_fault_marker(
+                args.provider_marker.as_deref(),
+                ProviderMode::SlowDisk,
+                &provider_path_match_from_marker(&marker)?,
+                "slow-disk timing",
+            )?;
             assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
         }
     }
 }
 
-fn selected_ams(am: Option<FaultAmArg>) -> Vec<FaultAm> {
-    am.map(|am| vec![am.into()])
-        .unwrap_or_else(|| FaultAm::ALL.to_vec())
+fn selected_fixtures(
+    am: Option<FaultAmArg>,
+    distann_codec: Option<DistannCodecArg>,
+) -> Result<Vec<FaultFixture>> {
+    let codec = distann_codec.map(Into::into);
+    match am.map(Into::into) {
+        Some(FaultAm::DistAnn) => Ok(FaultFixture::for_access_method(FaultAm::DistAnn)
+            .into_iter()
+            .filter(|fixture| codec.is_none() || fixture.codec() == codec)
+            .collect()),
+        Some(access_method) if codec.is_some() => Err(eyre!(
+            "--distann-codec is valid only with --am distann, got --am {}",
+            access_method.as_str()
+        )),
+        Some(access_method) => Ok(FaultFixture::for_access_method(access_method)),
+        None if codec.is_some() => Err(eyre!("--distann-codec requires --am distann")),
+        None => Ok(FaultFixture::ALL.to_vec()),
+    }
 }
 
 async fn run_io_probe(
     conn: &ConnectionOptions,
     mode: ProviderMode,
     path_match: &str,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     let client = connect_fault(conn, mode.as_str()).await?;
     for &am in ams {
@@ -547,9 +736,9 @@ async fn run_io_probe(
                     }
                 }
             }
-            ProviderMode::SlowDisk => {
+            ProviderMode::SlowDisk | ProviderMode::SocketReset | ProviderMode::SocketSlow => {
                 return Err(eyre!(
-                    "lane io requires an eio-read or enospc-write provider, got slow-disk"
+                    "lane io requires an eio-read or enospc-write provider, got {mode}"
                 ))
             }
         };
@@ -571,7 +760,7 @@ fn provider_targets_wal(path_match: &str) -> bool {
     path_match.contains("pg_wal")
 }
 
-async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultFixture]) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     for &am in ams {
         run_backend_interrupt_case(
@@ -599,7 +788,7 @@ async fn run_cancel_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
 async fn run_backend_interrupt_case(
     conn: &ConnectionOptions,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
     label: &str,
     interrupt_sql: &str,
     require_query_canceled_sqlstate: bool,
@@ -642,7 +831,11 @@ async fn run_backend_interrupt_case(
     }
 }
 
-async fn run_timeout_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn run_timeout_probe(
+    conn: &ConnectionOptions,
+    rows: i64,
+    ams: &[FaultFixture],
+) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     run_statement_timeout_probe(conn, rows, ams).await?;
     run_idle_in_transaction_timeout_probe(conn, ams).await
@@ -651,7 +844,7 @@ async fn run_timeout_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm])
 async fn run_statement_timeout_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     let client = connect_fault(conn, "statement-timeout").await?;
     for &am in ams {
@@ -669,7 +862,7 @@ async fn run_statement_timeout_probe(
 
 async fn run_idle_in_transaction_timeout_probe(
     conn: &ConnectionOptions,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     for &am in ams {
         let client = connect_fault(conn, "idle-tx-timeout").await?;
@@ -698,7 +891,7 @@ async fn run_idle_in_transaction_timeout_probe(
 async fn run_lock_timeout_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     let holder = connect_fault(conn, "lock-holder").await?;
@@ -708,7 +901,7 @@ async fn run_lock_timeout_probe(
         run_lock_timeout_case(
             &holder,
             &waiter,
-            table,
+            &table,
             &format!("reindex {}", am.as_str()),
             &workload_reindex_sql(am),
         )
@@ -721,7 +914,7 @@ async fn run_lock_timeout_probe(
         run_lock_timeout_case(
             &holder,
             &waiter,
-            table,
+            &table,
             &format!("create_index {}", am.as_str()),
             &create_index,
         )
@@ -729,7 +922,7 @@ async fn run_lock_timeout_probe(
         run_lock_timeout_case(
             &holder,
             &waiter,
-            table,
+            &table,
             &format!("vacuum_full {}", am.as_str()),
             &workload_vacuum_full_sql(am),
         )
@@ -766,7 +959,7 @@ fn repeated_scan_probe_iterations(rows: i64) -> i64 {
 async fn run_resource_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
     provider_marker: Option<&str>,
 ) -> Result<()> {
     let pressure_rows = resource_accumulator_rows(rows);
@@ -818,7 +1011,7 @@ async fn prepare_resource_workloads(
     conn: &ConnectionOptions,
     rows: i64,
     pressure_limit: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     if rows <= 0 {
         return Err(eyre!("--rows must be >= 1"));
@@ -851,7 +1044,7 @@ async fn prepare_resource_workloads(
 
 async fn run_resource_accumulator_pressure_probe(
     client: &tokio_postgres::Client,
-    am: FaultAm,
+    am: FaultFixture,
     rows: i64,
     pressure_limit: i64,
 ) -> Result<()> {
@@ -875,14 +1068,16 @@ async fn run_resource_accumulator_pressure_probe(
         .query_one(&workload_accumulator_pressure_sql(am, pressure_limit), &[])
         .await?;
     let count = row.get::<_, i64>(0);
+    let target = pressure_limit.min(rows);
+    let returned_fraction_ppm = count.saturating_mul(1_000_000) / target.max(1);
     crate::ecaz_println!(
-        "[fault] resource_accumulator_pressure am={} rows={rows} limit={pressure_limit} returned={count} work_mem=64kB effective_cache_size=1MB",
-        am.as_str()
+        "[fault] resource_accumulator_pressure am={} rows={rows} limit={pressure_limit} target={target} returned={count} returned_fraction_ppm={returned_fraction_ppm} workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB",
+        am.as_str(),
     );
-    let minimum = pressure_limit.min(rows).min(64);
+    let minimum = target.saturating_mul(95).saturating_add(99) / 100;
     if count < minimum {
         return Err(eyre!(
-            "resource accumulator pressure {} returned {count}, expected at least {minimum}",
+            "resource accumulator pressure {} returned {count}, expected at least 95% of target {target} ({minimum})",
             am.as_str()
         ));
     }
@@ -910,7 +1105,7 @@ fn resource_temp_spill_rows(rows: i64) -> i64 {
 async fn run_temp_file_limit_probe(
     client: &tokio_postgres::Client,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let temp_bytes_before = pg_stat_database_temp_bytes(client).await?;
     let temp_spill = client
@@ -938,7 +1133,7 @@ async fn run_temp_file_limit_probe(
 async fn run_provider_temp_spill_probe(
     client: &tokio_postgres::Client,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let temp_bytes_before = pg_stat_database_temp_bytes(client).await?;
     let temp_spill = client
@@ -969,7 +1164,7 @@ async fn run_provider_temp_spill_probe(
 async fn run_wal_rotation_accounting_probe(
     client: &tokio_postgres::Client,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let wal_before = pg_stat_wal_snapshot(client).await?;
     let lsn_before = current_wal_lsn(client).await?;
@@ -1044,7 +1239,7 @@ fn wal_rotation_rows(rows: i64) -> i64 {
     rows.clamp(64, 1_024)
 }
 
-async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultFixture]) -> Result<()> {
     let client = connect_fault(conn, "memory").await?;
     for &am in ams {
         run_memory_build_probe(&client, rows, am).await?;
@@ -1064,7 +1259,7 @@ async fn run_memory_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) 
 async fn run_memory_build_probe(
     client: &tokio_postgres::Client,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let build_sql = ecaz_fault_injection::workload_create_index_sql(am, rows);
     let mut reached_success = false;
@@ -1090,7 +1285,7 @@ async fn run_memory_build_probe(
 
 async fn run_memory_workload_palloc_sweep(
     client: &tokio_postgres::Client,
-    am: FaultAm,
+    am: FaultFixture,
     lane: &str,
     sql: &str,
 ) -> Result<()> {
@@ -1114,7 +1309,7 @@ async fn run_memory_workload_palloc_sweep(
 
 async fn run_memory_expected_palloc_probe(
     client: &tokio_postgres::Client,
-    am: FaultAm,
+    am: FaultFixture,
     lane: &str,
     nth: i32,
     sql: &str,
@@ -1125,9 +1320,18 @@ async fn run_memory_expected_palloc_probe(
         ))
         .await?;
     let result = client.batch_execute(sql).await;
-    client
+    let reset = client
         .batch_execute("SET ecaz.fault_palloc_nth = -1; SELECT ecaz_fault_reset_palloc_counter();")
-        .await?;
+        .await;
+    if let Err(reset_error) = reset {
+        return match result {
+            Ok(()) => Err(reset_error.into()),
+            Err(workload_error) => Err(eyre!(
+                "memory palloc {} {lane} nth {nth} failed ({workload_error}) and reset failed ({reset_error})",
+                am.as_str()
+            )),
+        };
+    }
     match result {
         Ok(()) => {
             crate::ecaz_println!(
@@ -1160,7 +1364,7 @@ fn memory_major_workload_sweep_limit() -> i32 {
 async fn run_memory_rlimit_oom_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     for &am in ams {
         let rows = rlimit_oom_workload_rows(rows);
@@ -1182,7 +1386,7 @@ async fn run_memory_rlimit_oom_probe(
 async fn run_memory_rlimit_oom_probe(
     _conn: &ConnectionOptions,
     _rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     let am_names = ams
         .iter()
@@ -1199,7 +1403,7 @@ async fn run_memory_rlimit_oom_probe(
 #[cfg(target_os = "linux")]
 async fn run_memory_rlimit_oom_case(
     conn: &ConnectionOptions,
-    am: FaultAm,
+    am: FaultFixture,
     workload: &str,
     sql: &str,
 ) -> Result<()> {
@@ -1261,7 +1465,7 @@ fn rlimit_oom_headroom_bytes() -> u64 {
 async fn run_memory_oom_kill_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    ams: &[FaultAm],
+    ams: &[FaultFixture],
 ) -> Result<()> {
     for &am in ams {
         let rows = oom_kill_workload_rows(rows);
@@ -1283,7 +1487,7 @@ async fn run_memory_oom_kill_probe(
 async fn run_memory_oom_kill_build_probe(
     conn: &ConnectionOptions,
     rows: i64,
-    am: FaultAm,
+    am: FaultFixture,
 ) -> Result<()> {
     let setup = connect_fault(conn, "oom-kill-setup").await?;
     setup.batch_execute(&workload_table_sql(am, rows)).await?;
@@ -1299,7 +1503,7 @@ async fn run_memory_oom_kill_build_probe(
 
 async fn run_memory_oom_kill_case(
     conn: &ConnectionOptions,
-    am: FaultAm,
+    am: FaultFixture,
     workload: &str,
     sql: &str,
 ) -> Result<()> {
@@ -1317,8 +1521,11 @@ async fn run_memory_oom_kill_case(
             .map_err(color_eyre::Report::from)
     });
 
-    tokio::time::sleep(std::time::Duration::from_millis(oom_kill_delay_ms())).await;
-    crate::ecaz_println!("[fault] {label} sigkill_pid={pid}");
+    let delay_ms = oom_kill_delay_ms();
+    tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
+    crate::ecaz_println!(
+        "[fault] {label} sigkill_pid={pid} delay_ms={delay_ms} timing_semantics=probability-tuning-not-critical-section-proof"
+    );
     send_sigkill(pid).await?;
 
     match worker_task.await? {
@@ -1417,18 +1624,38 @@ fn set_backend_address_space_limit(pid: i32, limit_bytes: u64) -> Result<()> {
     }
 }
 
-async fn run_slow_disk_probe(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn run_slow_disk_probe(
+    conn: &ConnectionOptions,
+    rows: i64,
+    ams: &[FaultFixture],
+    baseline_ms: u128,
+    configured_latency_ms: u64,
+) -> Result<()> {
     prepare_workloads(conn, rows, ams).await?;
     let client = connect_fault(conn, "slow-disk").await?;
+    let started = std::time::Instant::now();
     for &am in ams {
         client.batch_execute(&workload_scan_sql(am)).await?;
         client.batch_execute(&workload_insert_sql(am)).await?;
         client.batch_execute(&workload_vacuum_sql(am)).await?;
     }
+    let provider_ms = started.elapsed().as_millis();
+    crate::ecaz_println!(
+        "[fault] slow_disk_timing baseline_ms={baseline_ms} provider_ms={provider_ms} configured_latency_ms={configured_latency_ms} comparison=provider-greater-than-baseline"
+    );
+    if provider_ms <= baseline_ms {
+        return Err(eyre!(
+            "slow-disk provider workload took {provider_ms}ms, not greater than measured baseline {baseline_ms}ms"
+        ));
+    }
     Ok(())
 }
 
-async fn prepare_workloads(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm]) -> Result<()> {
+async fn prepare_workloads(
+    conn: &ConnectionOptions,
+    rows: i64,
+    ams: &[FaultFixture],
+) -> Result<()> {
     if rows <= 0 {
         return Err(eyre!("--rows must be >= 1"));
     }
@@ -1452,11 +1679,11 @@ async fn prepare_workloads(conn: &ConnectionOptions, rows: i64, ams: &[FaultAm])
     Ok(())
 }
 
-async fn print_workload_paths(client: &tokio_postgres::Client, am: FaultAm) -> Result<()> {
+async fn print_workload_paths(client: &tokio_postgres::Client, am: FaultFixture) -> Result<()> {
     let table = ecaz_fault_injection::workload_table(am);
     let index = ecaz_fault_injection::workload_index(am);
-    let table_path = relation_filepath(client, table).await?;
-    let index_path = relation_filepath(client, index).await?;
+    let table_path = relation_filepath(client, &table).await?;
+    let index_path = relation_filepath(client, &index).await?;
     crate::ecaz_println!(
         "{}\ttable={}\ttable_path={}\tindex={}\tindex_path={}",
         am.as_str(),
@@ -1502,6 +1729,16 @@ fn provider_mode_from_marker(content: &str) -> Result<ProviderMode> {
         Ok(ProviderMode::EnospcWrite)
     } else if content.lines().any(|line| line.contains("mode=slow-disk")) {
         Ok(ProviderMode::SlowDisk)
+    } else if content
+        .lines()
+        .any(|line| line.contains("mode=socket-reset"))
+    {
+        Ok(ProviderMode::SocketReset)
+    } else if content
+        .lines()
+        .any(|line| line.contains("mode=socket-slow"))
+    {
+        Ok(ProviderMode::SocketSlow)
     } else {
         Err(eyre!(
             "provider marker did not include a supported mode line"
@@ -1518,6 +1755,18 @@ fn provider_path_match_from_marker(content: &str) -> Result<String> {
         })
         .map(ToOwned::to_owned)
         .ok_or_else(|| eyre!("provider marker did not include a match field"))
+}
+
+fn provider_latency_ms_from_marker(content: &str) -> Result<u64> {
+    content
+        .lines()
+        .find_map(|line| {
+            line.split_whitespace()
+                .find_map(|field| field.strip_prefix("latency_ms="))
+        })
+        .ok_or_else(|| eyre!("provider marker did not include a latency_ms field"))?
+        .parse()
+        .map_err(|error| eyre!("provider marker latency_ms is invalid: {error}"))
 }
 
 fn assert_provider_fault_marker(
@@ -1823,7 +2072,7 @@ async fn pg_stat_database_temp_bytes(client: &tokio_postgres::Client) -> Result<
 
 async fn assert_temp_bytes_non_decreasing(
     client: &tokio_postgres::Client,
-    am: FaultAm,
+    am: FaultFixture,
     mode: &str,
     before: Option<i64>,
 ) -> Result<()> {
@@ -1876,6 +2125,8 @@ fn assert_provider_sql_error(label: &str, result: Result<(), tokio_postgres::Err
 }
 
 fn provider_sqlstate_allowed(db: &tokio_postgres::error::DbError) -> bool {
+    // PostgreSQL checkpoint failures can wrap the provider's ENOSPC in XX000.
+    // Keep this allowance message-narrow so unrelated internal errors fail.
     matches!(db.code().code(), "53100" | "58030")
         || (db.code().code() == "XX000" && db.message().contains("checkpoint request failed"))
         || (db.code().code() == "XX000" && db.message().contains("No space left on device"))
@@ -1928,10 +2179,11 @@ fn assert_sqlstate(
 fn print_cases(cases: &[ecaz_fault_injection::FaultCase]) {
     for case in cases {
         crate::ecaz_println!(
-            "{}\t{}\t{}\t{}\t{}",
+            "{}\t{}\t{}\t{}\t{}\t{}",
             case.id,
             case.lane,
             case.access_method.as_str(),
+            case.codec.map(|codec| codec.as_str()).unwrap_or("n/a"),
             case.fault,
             case.expected
         );
@@ -1945,5 +2197,33 @@ fn print_leak_probes() {
     }
     for sql in optional_leak_probe_sql() {
         crate::ecaz_println!("{sql}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn socket_provider_requires_stable_peer_identity() {
+        assert!(validate_provider_options(
+            ProviderMode::SocketReset,
+            None,
+            Some("tcp:127.0.0.1:39711")
+        )
+        .is_ok());
+        assert!(validate_provider_options(
+            ProviderMode::SocketSlow,
+            Some(1),
+            Some("unix:/tmp/.s.PGSQL.39424")
+        )
+        .is_ok());
+
+        for unstable_peer in ["unix:", "unix:relative.sock", "abstract:peer"] {
+            let error =
+                validate_provider_options(ProviderMode::SocketReset, None, Some(unstable_peer))
+                    .expect_err("unstable peer identities are unsupported");
+            assert!(error.to_string().contains("absolute named unix:/path"));
+        }
     }
 }

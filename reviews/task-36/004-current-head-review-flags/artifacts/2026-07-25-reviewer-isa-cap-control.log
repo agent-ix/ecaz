@@ -1,0 +1,43 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 5 tests
+test quant::int8_approx32::neon::neon_path_tests::legacy_and_dotprod_candidate_paths_match_scalar_bits ... ok
+test quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference ... FAILED
+test quant::int8_approx32::tests::block32_is_bit_equal_at_extreme_i8_values ... FAILED
+test quant::int8_approx32::tests::scalar_reference_matches_production_scorer_bits ... ok
+test quant::int8_approx32::tests::simd_dim_tails_are_bit_equal_with_scalar_reference ... FAILED
+
+failures:
+
+---- quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference stdout ----
+
+thread 'quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference' (34457025) panicked at src/quant/int8_approx32/mod.rs:103:9:
+assertion `left == right` failed: int8 differential test did not execute the host's preferred SIMD ISA
+  left: Scalar
+ right: Neon
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- quant::int8_approx32::tests::block32_is_bit_equal_at_extreme_i8_values stdout ----
+
+thread 'quant::int8_approx32::tests::block32_is_bit_equal_at_extreme_i8_values' (34457026) panicked at src/quant/int8_approx32/mod.rs:103:9:
+assertion `left == right` failed: int8 differential test did not execute the host's preferred SIMD ISA
+  left: Scalar
+ right: Neon
+
+---- quant::int8_approx32::tests::simd_dim_tails_are_bit_equal_with_scalar_reference stdout ----
+
+thread 'quant::int8_approx32::tests::simd_dim_tails_are_bit_equal_with_scalar_reference' (34457028) panicked at src/quant/int8_approx32/mod.rs:103:9:
+assertion `left == right` failed: int8 differential test did not execute the host's preferred SIMD ISA
+  left: Scalar
+ right: Neon
+
+
+failures:
+    quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference
+    quant::int8_approx32::tests::block32_is_bit_equal_at_extreme_i8_values
+    quant::int8_approx32::tests::simd_dim_tails_are_bit_equal_with_scalar_reference
+
+test result: FAILED. 2 passed; 3 failed; 0 ignored; 0 measured; 2516 filtered out; finished in 0.05s
+
+error: test failed, to rerun pass `--lib`

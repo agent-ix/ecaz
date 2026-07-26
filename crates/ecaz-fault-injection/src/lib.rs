@@ -12,6 +12,8 @@ pub enum ProviderMode {
     EioRead,
     EnospcWrite,
     SlowDisk,
+    SocketReset,
+    SocketSlow,
 }
 
 impl ProviderMode {
@@ -20,6 +22,8 @@ impl ProviderMode {
             ProviderMode::EioRead => "eio-read",
             ProviderMode::EnospcWrite => "enospc-write",
             ProviderMode::SlowDisk => "slow-disk",
+            ProviderMode::SocketReset => "socket-reset",
+            ProviderMode::SocketSlow => "socket-slow",
         }
     }
 }
@@ -41,6 +45,7 @@ pub fn provider_environment(
     latency_ms: Option<u64>,
     marker: Option<&str>,
     arm_file: Option<&str>,
+    peer_match: Option<&str>,
 ) -> Vec<(String, String)> {
     let mut env = vec![
         (
@@ -76,6 +81,12 @@ pub fn provider_environment(
         env.push((
             "ECAZ_FAULT_PROVIDER_ARM_FILE".to_string(),
             arm_file.to_string(),
+        ));
+    }
+    if let Some(peer_match) = peer_match {
+        env.push((
+            "ECAZ_FAULT_PROVIDER_PEER".to_string(),
+            peer_match.to_string(),
         ));
     }
     env
@@ -145,14 +156,16 @@ pub enum FaultAm {
     Ivf,
     DiskAnn,
     Spire,
+    DistAnn,
 }
 
 impl FaultAm {
-    pub const ALL: [FaultAm; 4] = [
+    pub const ALL: [FaultAm; 5] = [
         FaultAm::Hnsw,
         FaultAm::Ivf,
         FaultAm::DiskAnn,
         FaultAm::Spire,
+        FaultAm::DistAnn,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -161,6 +174,132 @@ impl FaultAm {
             FaultAm::Ivf => "ec_ivf",
             FaultAm::DiskAnn => "ec_diskann",
             FaultAm::Spire => "ec_spire",
+            FaultAm::DistAnn => "ec_distann",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum DistannCodec {
+    RaBitQ,
+    TurboQuant,
+    GroupedPq,
+}
+
+impl DistannCodec {
+    pub const ALL: [DistannCodec; 3] = [
+        DistannCodec::RaBitQ,
+        DistannCodec::TurboQuant,
+        DistannCodec::GroupedPq,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DistannCodec::RaBitQ => "rabitq",
+            DistannCodec::TurboQuant => "turboquant",
+            DistannCodec::GroupedPq => "grouped_pq",
+        }
+    }
+}
+
+impl fmt::Display for DistannCodec {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+impl FromStr for DistannCodec {
+    type Err = String;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "rabitq" | "ra-bit-q" => Ok(DistannCodec::RaBitQ),
+            "turboquant" | "turbo-quant" => Ok(DistannCodec::TurboQuant),
+            "grouped_pq" | "grouped-pq" => Ok(DistannCodec::GroupedPq),
+            other => Err(format!("unknown ec_distann codec {other:?}")),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub enum FaultFixture {
+    Hnsw,
+    Ivf,
+    DiskAnn,
+    Spire,
+    DistAnn(DistannCodec),
+}
+
+impl FaultFixture {
+    pub const ALL: [FaultFixture; 7] = [
+        FaultFixture::Hnsw,
+        FaultFixture::Ivf,
+        FaultFixture::DiskAnn,
+        FaultFixture::Spire,
+        FaultFixture::DistAnn(DistannCodec::RaBitQ),
+        FaultFixture::DistAnn(DistannCodec::TurboQuant),
+        FaultFixture::DistAnn(DistannCodec::GroupedPq),
+    ];
+
+    pub const fn access_method(self) -> FaultAm {
+        match self {
+            FaultFixture::Hnsw => FaultAm::Hnsw,
+            FaultFixture::Ivf => FaultAm::Ivf,
+            FaultFixture::DiskAnn => FaultAm::DiskAnn,
+            FaultFixture::Spire => FaultAm::Spire,
+            FaultFixture::DistAnn(_) => FaultAm::DistAnn,
+        }
+    }
+
+    pub const fn codec(self) -> Option<DistannCodec> {
+        match self {
+            FaultFixture::DistAnn(codec) => Some(codec),
+            FaultFixture::Hnsw
+            | FaultFixture::Ivf
+            | FaultFixture::DiskAnn
+            | FaultFixture::Spire => None,
+        }
+    }
+
+    pub fn for_access_method(access_method: FaultAm) -> Vec<Self> {
+        Self::ALL
+            .into_iter()
+            .filter(|fixture| fixture.access_method() == access_method)
+            .collect()
+    }
+
+    pub fn slug(self) -> &'static str {
+        match self {
+            FaultFixture::Hnsw => "hnsw",
+            FaultFixture::Ivf => "ivf",
+            FaultFixture::DiskAnn => "diskann",
+            FaultFixture::Spire => "spire",
+            FaultFixture::DistAnn(DistannCodec::RaBitQ) => "distann_rabitq",
+            FaultFixture::DistAnn(DistannCodec::TurboQuant) => "distann_turboquant",
+            FaultFixture::DistAnn(DistannCodec::GroupedPq) => "distann_grouped_pq",
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            FaultFixture::Hnsw => "ec_hnsw",
+            FaultFixture::Ivf => "ec_ivf",
+            FaultFixture::DiskAnn => "ec_diskann",
+            FaultFixture::Spire => "ec_spire",
+            FaultFixture::DistAnn(DistannCodec::RaBitQ) => "ec_distann/rabitq",
+            FaultFixture::DistAnn(DistannCodec::TurboQuant) => "ec_distann/turboquant",
+            FaultFixture::DistAnn(DistannCodec::GroupedPq) => "ec_distann/grouped_pq",
+        }
+    }
+
+    pub fn dimensions(self) -> usize {
+        match self {
+            FaultFixture::DistAnn(DistannCodec::TurboQuant) => 1536,
+            FaultFixture::DistAnn(DistannCodec::RaBitQ | DistannCodec::GroupedPq) => 64,
+            FaultFixture::Hnsw
+            | FaultFixture::Ivf
+            | FaultFixture::DiskAnn
+            | FaultFixture::Spire => 4,
         }
     }
 }
@@ -170,6 +309,7 @@ pub struct FaultCase {
     pub id: String,
     pub lane: FaultLane,
     pub access_method: FaultAm,
+    pub codec: Option<DistannCodec>,
     pub fault: &'static str,
     pub trigger: &'static str,
     pub expected: &'static str,
@@ -177,9 +317,9 @@ pub struct FaultCase {
 }
 
 pub fn required_smoke_cases(lane: FaultLane) -> Vec<FaultCase> {
-    FaultAm::ALL
+    FaultFixture::ALL
         .into_iter()
-        .flat_map(|am| lane_cases(lane, am))
+        .flat_map(|fixture| lane_cases(lane, fixture.access_method(), fixture.codec()))
         .collect()
 }
 
@@ -190,12 +330,17 @@ pub fn all_smoke_cases() -> Vec<FaultCase> {
         .collect()
 }
 
-fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
+fn lane_cases(
+    lane: FaultLane,
+    access_method: FaultAm,
+    codec: Option<DistannCodec>,
+) -> Vec<FaultCase> {
     match lane {
         FaultLane::Io => vec![
             case(
                 lane,
                 access_method,
+                codec,
                 "eio-read",
                 "inject EIO on relation read path",
                 "clean ERROR; backend remains connected",
@@ -203,6 +348,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "enospc-write",
                 "inject ENOSPC on page extension or WAL write",
                 "clean ERROR; no partial AM-visible tuple",
@@ -212,6 +358,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "palloc-nth-failure",
                 "fail the Nth allocation while the AM callback is active",
                 "clean ERROR; Rust guards release PG resources",
@@ -219,6 +366,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "backend-sigkill-oom-proxy",
                 "SIGKILL the backend while build/scan/insert work is active",
                 "postmaster recovers; no leaked fault state remains",
@@ -226,6 +374,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "backend-rlimit-oom",
                 "cap backend address space with prlimit while AM build work is active",
                 "backend reports an OOM-class failure or disconnects; new sessions remain usable",
@@ -235,6 +384,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "pg-cancel-backend",
                 "cancel the backend while build/scan/insert/vacuum is in progress",
                 "query cancels promptly; no leaked pins or locks",
@@ -242,6 +392,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "pg-terminate-backend",
                 "terminate the backend while build/scan/insert/vacuum is in progress",
                 "backend exits cleanly; no leaked pins or locks",
@@ -251,6 +402,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "statement-timeout",
                 "SET statement_timeout low enough to interrupt active AM work",
                 "timeout ERROR; all retained AM state is dropped",
@@ -258,6 +410,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "idle-in-transaction-timeout",
                 "SET idle_in_transaction_session_timeout after touching an AM fixture in a transaction",
                 "idle session is terminated; transaction state is rolled back",
@@ -266,6 +419,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
         FaultLane::LockTimeout => vec![case(
             lane,
             access_method,
+            codec,
             "lock-timeout",
             "SET lock_timeout while contended DDL waits on AM relations",
             "lock timeout ERROR; no relation lock survives the session",
@@ -274,6 +428,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "tiny-work-mem",
                 "run build/scan with tiny work_mem and maintenance_work_mem",
                 "clean ERROR or successful bounded execution; no negative counters",
@@ -281,6 +436,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "temp-file-limit",
                 "force temp spill under a tiny temp_file_limit",
                 "clean ERROR; backend remains usable and temp state is released",
@@ -288,6 +444,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
             case(
                 lane,
                 access_method,
+                codec,
                 "wal-rotation-accounting",
                 "perform AM-backed writes and force a WAL segment switch",
                 "WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing",
@@ -296,6 +453,7 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
         FaultLane::SlowDisk => vec![case(
             lane,
             access_method,
+            codec,
             "latency-injection",
             "delay relation and remote-object reads",
             "operation remains cancellable and timeout-governed",
@@ -306,14 +464,24 @@ fn lane_cases(lane: FaultLane, access_method: FaultAm) -> Vec<FaultCase> {
 fn case(
     lane: FaultLane,
     access_method: FaultAm,
+    codec: Option<DistannCodec>,
     fault: &'static str,
     trigger: &'static str,
     expected: &'static str,
 ) -> FaultCase {
     FaultCase {
-        id: format!("{}-{}-{fault}", access_method.as_str(), lane.as_str()),
+        id: match codec {
+            Some(codec) => format!(
+                "{}-{}-{}-{fault}",
+                access_method.as_str(),
+                codec.as_str(),
+                lane.as_str()
+            ),
+            None => format!("{}-{}-{fault}", access_method.as_str(), lane.as_str()),
+        },
         lane,
         access_method,
+        codec,
         fault,
         trigger,
         expected,
@@ -344,35 +512,45 @@ pub fn optional_leak_probe_sql() -> &'static [&'static str] {
     ]
 }
 
-pub fn workload_table(access_method: FaultAm) -> &'static str {
-    match access_method {
-        FaultAm::Hnsw => "ecaz_fault_hnsw",
-        FaultAm::Ivf => "ecaz_fault_ivf",
-        FaultAm::DiskAnn => "ecaz_fault_diskann",
-        FaultAm::Spire => "ecaz_fault_spire",
-    }
+pub fn workload_table(fixture: FaultFixture) -> String {
+    format!("ecaz_fault_{}", fixture.slug())
 }
 
-pub fn workload_index(access_method: FaultAm) -> &'static str {
-    match access_method {
-        FaultAm::Hnsw => "ecaz_fault_hnsw_idx",
-        FaultAm::Ivf => "ecaz_fault_ivf_idx",
-        FaultAm::DiskAnn => "ecaz_fault_diskann_idx",
-        FaultAm::Spire => "ecaz_fault_spire_idx",
-    }
+pub fn workload_index(fixture: FaultFixture) -> String {
+    format!("{}_idx", workload_table(fixture))
 }
 
-pub fn workload_setup_sql(access_method: FaultAm, rows: i64) -> String {
+pub fn workload_setup_sql(fixture: FaultFixture, rows: i64) -> String {
     format!(
         "{};
          {};",
-        workload_table_sql(access_method, rows),
-        workload_create_index_sql(access_method, rows)
+        workload_table_sql(fixture, rows),
+        workload_create_index_sql(fixture, rows)
     )
 }
 
-pub fn workload_table_sql(access_method: FaultAm, rows: i64) -> String {
-    let table = workload_table(access_method);
+pub fn workload_table_sql(fixture: FaultFixture, rows: i64) -> String {
+    let table = workload_table(fixture);
+    let dimensions = fixture.dimensions();
+    let source_vector = if fixture.access_method() == FaultAm::DistAnn {
+        format!(
+            "ARRAY(
+                 SELECT (
+                     sin((gs * 0.013 * (d + 1))::double precision) +
+                     cos((gs * 0.0031 * (d + 1))::double precision)
+                 )::real
+                 FROM generate_series(0, {dimensions} - 1) AS d
+             )"
+        )
+    } else {
+        "ARRAY[
+             cos((gs * 0.013)::double precision)::real,
+             sin((gs * 0.013)::double precision)::real,
+             0.0::real,
+             0.0::real
+         ]::real[]"
+            .to_owned()
+    };
     format!(
         "DROP TABLE IF EXISTS {table} CASCADE;
          CREATE TABLE {table} (
@@ -381,12 +559,7 @@ pub fn workload_table_sql(access_method: FaultAm, rows: i64) -> String {
          );
          INSERT INTO {table} (embedding)
          SELECT encode_to_ecvector(
-             ARRAY[
-                 cos((gs * 0.013)::double precision)::real,
-                 sin((gs * 0.013)::double precision)::real,
-                 0.0::real,
-                 0.0::real
-             ]::real[],
+             {source_vector},
              4,
              42
          )
@@ -394,13 +567,13 @@ pub fn workload_table_sql(access_method: FaultAm, rows: i64) -> String {
     )
 }
 
-pub fn workload_create_index_sql(access_method: FaultAm, rows: i64) -> String {
-    workload_create_named_index_sql(access_method, workload_index(access_method), rows)
+pub fn workload_create_index_sql(fixture: FaultFixture, rows: i64) -> String {
+    workload_create_named_index_sql(fixture, &workload_index(fixture), rows)
 }
 
-pub fn workload_create_named_index_sql(access_method: FaultAm, index: &str, rows: i64) -> String {
-    let table = workload_table(access_method);
-    match access_method {
+pub fn workload_create_named_index_sql(fixture: FaultFixture, index: &str, rows: i64) -> String {
+    let table = workload_table(fixture);
+    match fixture.access_method() {
         FaultAm::Hnsw => format!(
             "CREATE INDEX {index} ON {table} USING ec_hnsw (embedding ecvector_ip_ops) \
              WITH (m = 8, ef_construction = 16)"
@@ -417,32 +590,40 @@ pub fn workload_create_named_index_sql(access_method: FaultAm, index: &str, rows
             "CREATE INDEX {index} ON {table} USING ec_spire (embedding ecvector_spire_ip_ops) \
              WITH (nlists = 4, nprobe = 4, storage_format = 'rabitq')"
         ),
+        FaultAm::DistAnn => format!(
+            "CREATE INDEX {index} ON {table} USING ec_distann (embedding ecvector_distann_ip_ops) \
+             WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = '{}')",
+            fixture
+                .codec()
+                .expect("ec_distann fault fixture requires a codec")
+                .as_str()
+        ),
     }
 }
 
 pub fn workload_resource_setup_sql(
-    access_method: FaultAm,
+    fixture: FaultFixture,
     rows: i64,
     pressure_limit: i64,
 ) -> String {
     format!(
         "{};
          {};",
-        workload_table_sql(access_method, rows),
-        workload_create_resource_index_sql(access_method, pressure_limit, rows)
+        workload_table_sql(fixture, rows),
+        workload_create_resource_index_sql(fixture, pressure_limit, rows)
     )
 }
 
 pub fn workload_create_resource_index_sql(
-    access_method: FaultAm,
+    fixture: FaultFixture,
     pressure_limit: i64,
     rows: i64,
 ) -> String {
-    let table = workload_table(access_method);
-    let index = workload_index(access_method);
+    let table = workload_table(fixture);
+    let index = workload_index(fixture);
     let pressure_limit = pressure_limit.clamp(1, 1_000);
     let nlists = rows.clamp(4, 16);
-    match access_method {
+    match fixture.access_method() {
         FaultAm::Hnsw => format!(
             "CREATE INDEX {index} ON {table} USING ec_hnsw (embedding ecvector_ip_ops) \
              WITH (m = 8, ef_construction = 32, ef_search = {pressure_limit})"
@@ -459,15 +640,23 @@ pub fn workload_create_resource_index_sql(
             "CREATE INDEX {index} ON {table} USING ec_spire (embedding ecvector_spire_ip_ops) \
              WITH (nlists = {nlists}, nprobe = {nlists}, storage_format = 'rabitq', rerank_width = {pressure_limit}, max_candidate_rows = {pressure_limit})"
         ),
+        FaultAm::DistAnn => format!(
+            "CREATE INDEX {index} ON {table} USING ec_distann (embedding ecvector_distann_ip_ops) \
+             WITH (graph_degree = 8, build_list_size = 32, head_index_cap = {pressure_limit}, neighbor_code_format = '{}')",
+            fixture
+                .codec()
+                .expect("ec_distann fault fixture requires a codec")
+                .as_str()
+        ),
     }
 }
 
 pub fn workload_accumulator_pressure_settings_sql(
-    access_method: FaultAm,
+    fixture: FaultFixture,
     pressure_limit: i64,
 ) -> String {
     let pressure_limit = pressure_limit.clamp(1, 1_000);
-    match access_method {
+    match fixture.access_method() {
         FaultAm::Hnsw => format!("SET ec_hnsw.ef_search = {pressure_limit};"),
         FaultAm::Ivf => format!(
             "SET ec_ivf.nprobe = 16;
@@ -479,73 +668,92 @@ pub fn workload_accumulator_pressure_settings_sql(
              SET ec_spire.rerank_width = {pressure_limit};
              SET ec_spire.max_candidate_rows = {pressure_limit};"
         ),
+        FaultAm::DistAnn => format!(
+            "SET ec_distann.beam_width = 64;
+             SET ec_distann.hop_rounds = 100;
+             SET ec_distann.top_k = {pressure_limit};"
+        ),
     }
 }
 
-pub fn workload_accumulator_pressure_sql(access_method: FaultAm, pressure_limit: i64) -> String {
-    let table = workload_table(access_method);
+pub fn workload_accumulator_pressure_sql(fixture: FaultFixture, pressure_limit: i64) -> String {
+    let table = workload_table(fixture);
     let pressure_limit = pressure_limit.clamp(1, 1_000);
+    let query = workload_query_vector_sql(fixture, "1");
     format!(
         "SELECT count(*)::bigint
          FROM (
              SELECT id FROM {table}
-             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
+             ORDER BY embedding <#> {query}
              LIMIT {pressure_limit}
          ) AS nearest"
     )
 }
 
-pub fn workload_scan_sql(access_method: FaultAm) -> String {
-    let table = workload_table(access_method);
+pub fn workload_scan_sql(fixture: FaultFixture) -> String {
+    let table = workload_table(fixture);
+    let query = workload_query_vector_sql(fixture, "1");
     format!(
         "SET enable_seqscan = off;
          SET enable_bitmapscan = off;
          SET enable_sort = off;
          SELECT id FROM {table}
-         ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
+         ORDER BY embedding <#> {query}
          LIMIT 5"
     )
 }
 
-pub fn workload_repeated_scan_sql(access_method: FaultAm, iterations: i64) -> String {
-    let table = workload_table(access_method);
+pub fn workload_repeated_scan_sql(fixture: FaultFixture, iterations: i64) -> String {
+    let table = workload_table(fixture);
+    let query = workload_query_vector_sql(fixture, "probe.i");
     format!(
         "SET enable_seqscan = off;
          SELECT count(*)
          FROM generate_series(1, {iterations}) AS probe(i)
          CROSS JOIN LATERAL (
              SELECT id FROM {table}
-             ORDER BY embedding <#> ARRAY[
-                 cos((probe.i * 0.000001)::double precision)::real,
-                 sin((probe.i * 0.000001)::double precision)::real,
-                 0.0::real,
-                 0.0::real
-             ]::real[]
+             ORDER BY embedding <#> {query}
              LIMIT 5
          ) AS nearest"
     )
 }
 
-pub fn workload_insert_sql(access_method: FaultAm) -> String {
-    let table = workload_table(access_method);
+pub fn workload_insert_sql(fixture: FaultFixture) -> String {
+    let table = workload_table(fixture);
+    let query = workload_query_vector_sql(fixture, "991");
     format!(
         "INSERT INTO {table} (embedding)
-         VALUES (encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0]::real[], 4, 42))"
+         VALUES (encode_to_ecvector({query}, 4, 42))"
     )
 }
 
-pub fn workload_bulk_insert_sql(access_method: FaultAm, rows: i64) -> String {
-    let table = workload_table(access_method);
+pub fn workload_bulk_insert_sql(fixture: FaultFixture, rows: i64) -> String {
+    let table = workload_table(fixture);
     let rows = rows.max(1);
+    let dimensions = fixture.dimensions();
+    let source_vector = if fixture.access_method() == FaultAm::DistAnn {
+        format!(
+            "ARRAY(
+                 SELECT (
+                     sin((gs * 0.017 * (d + 1))::double precision) +
+                     cos((gs * 0.0041 * (d + 1))::double precision)
+                 )::real
+                 FROM generate_series(0, {dimensions} - 1) AS d
+             )"
+        )
+    } else {
+        "ARRAY[
+             cos((gs * 0.017)::double precision)::real,
+             sin((gs * 0.017)::double precision)::real,
+             0.0::real,
+             0.0::real
+         ]::real[]"
+            .to_owned()
+    };
     format!(
         "INSERT INTO {table} (embedding)
          SELECT encode_to_ecvector(
-             ARRAY[
-                 cos((gs * 0.017)::double precision)::real,
-                 sin((gs * 0.017)::double precision)::real,
-                 0.0::real,
-                 0.0::real
-             ]::real[],
+             {source_vector},
              4,
              42
          )
@@ -553,19 +761,40 @@ pub fn workload_bulk_insert_sql(access_method: FaultAm, rows: i64) -> String {
     )
 }
 
-pub fn workload_vacuum_sql(access_method: FaultAm) -> String {
-    format!("VACUUM (ANALYZE) {}", workload_table(access_method))
+fn workload_query_vector_sql(fixture: FaultFixture, seed_expr: &str) -> String {
+    let dimensions = fixture.dimensions();
+    if fixture.access_method() == FaultAm::DistAnn {
+        format!(
+            "ARRAY(
+                 SELECT (
+                     sin(({seed_expr} * 0.000001 * (d + 1))::double precision) +
+                     cos(({seed_expr} * 0.0000031 * (d + 1))::double precision)
+                 )::real
+                 FROM generate_series(0, {dimensions} - 1) AS d
+             )"
+        )
+    } else {
+        format!(
+            "ARRAY[
+                 cos(({seed_expr} * 0.000001)::double precision)::real,
+                 sin(({seed_expr} * 0.000001)::double precision)::real,
+                 0.0::real,
+                 0.0::real
+             ]::real[]"
+        )
+    }
 }
 
-pub fn workload_vacuum_full_sql(access_method: FaultAm) -> String {
-    format!("VACUUM (FULL) {}", workload_table(access_method))
+pub fn workload_vacuum_sql(fixture: FaultFixture) -> String {
+    format!("VACUUM (ANALYZE) {}", workload_table(fixture))
 }
 
-pub fn workload_reindex_sql(access_method: FaultAm) -> String {
-    format!(
-        "REINDEX INDEX CONCURRENTLY {}",
-        workload_index(access_method)
-    )
+pub fn workload_vacuum_full_sql(fixture: FaultFixture) -> String {
+    format!("VACUUM (FULL) {}", workload_table(fixture))
+}
+
+pub fn workload_reindex_sql(fixture: FaultFixture) -> String {
+    format!("REINDEX INDEX CONCURRENTLY {}", workload_index(fixture))
 }
 
 pub fn workload_temp_spill_sql(rows: i64) -> String {
@@ -603,6 +832,28 @@ mod tests {
     }
 
     #[test]
+    fn all_lanes_cover_every_distann_codec_with_distinct_fixture_ids() {
+        for lane in FaultLane::ALL {
+            let cases = required_smoke_cases(lane);
+            for codec in DistannCodec::ALL {
+                let codec_cases = cases
+                    .iter()
+                    .filter(|case| {
+                        case.access_method == FaultAm::DistAnn && case.codec == Some(codec)
+                    })
+                    .collect::<Vec<_>>();
+                assert!(
+                    !codec_cases.is_empty(),
+                    "lane {lane} missing ec_distann codec {codec}"
+                );
+                assert!(codec_cases
+                    .iter()
+                    .all(|case| case.id.contains(codec.as_str())));
+            }
+        }
+    }
+
+    #[test]
     fn io_lane_covers_eio_and_enospc() {
         let cases = required_smoke_cases(FaultLane::Io);
         assert!(cases.iter().any(|case| case.fault == "eio-read"));
@@ -621,23 +872,48 @@ mod tests {
     }
 
     #[test]
+    fn parser_accepts_documented_distann_codec_names() {
+        for codec in DistannCodec::ALL {
+            assert_eq!(codec.as_str().parse::<DistannCodec>(), Ok(codec));
+        }
+        assert_eq!(
+            "grouped-pq".parse::<DistannCodec>(),
+            Ok(DistannCodec::GroupedPq)
+        );
+    }
+
+    #[test]
     fn workload_sql_mentions_every_access_method() {
-        for am in FaultAm::ALL {
-            let sql = workload_setup_sql(am, 16);
-            assert!(sql.contains(workload_table(am)));
-            assert!(sql.contains(workload_index(am)));
-            assert!(sql.contains(am.as_str()));
-            assert!(workload_scan_sql(am).contains(workload_table(am)));
-            assert!(workload_repeated_scan_sql(am, 10).contains(workload_table(am)));
-            assert!(workload_resource_setup_sql(am, 1024, 512).contains(workload_table(am)));
-            assert!(workload_resource_setup_sql(am, 1024, 512).contains(workload_index(am)));
-            assert!(workload_accumulator_pressure_sql(am, 512).contains(workload_table(am)));
-            assert!(workload_insert_sql(am).contains(workload_table(am)));
-            assert!(workload_bulk_insert_sql(am, 10).contains(workload_table(am)));
-            assert!(workload_vacuum_sql(am).contains(workload_table(am)));
-            assert!(workload_reindex_sql(am).contains(workload_index(am)));
+        for fixture in FaultFixture::ALL {
+            let table = workload_table(fixture);
+            let index = workload_index(fixture);
+            let sql = workload_setup_sql(fixture, 16);
+            assert!(sql.contains(&table));
+            assert!(sql.contains(&index));
+            assert!(sql.contains(fixture.access_method().as_str()));
+            assert!(workload_scan_sql(fixture).contains(&table));
+            assert!(workload_repeated_scan_sql(fixture, 10).contains(&table));
+            assert!(workload_resource_setup_sql(fixture, 1024, 512).contains(&table));
+            assert!(workload_resource_setup_sql(fixture, 1024, 512).contains(&index));
+            assert!(workload_accumulator_pressure_sql(fixture, 512).contains(&table));
+            assert!(workload_insert_sql(fixture).contains(&table));
+            assert!(workload_bulk_insert_sql(fixture, 10).contains(&table));
+            assert!(workload_vacuum_sql(fixture).contains(&table));
+            assert!(workload_reindex_sql(fixture).contains(&index));
+            if let Some(codec) = fixture.codec() {
+                assert!(sql.contains(codec.as_str()));
+                assert!(sql.contains(&fixture.dimensions().to_string()));
+            }
         }
         assert!(workload_temp_spill_sql(10).contains("generate_series(1, 100000)"));
+    }
+
+    #[test]
+    fn distann_turboquant_fixture_uses_the_supported_no_qjl_dimension() {
+        let fixture = FaultFixture::DistAnn(DistannCodec::TurboQuant);
+        assert_eq!(fixture.dimensions(), 1536);
+        assert!(workload_setup_sql(fixture, 16).contains("generate_series(0, 1536 - 1)"));
+        assert!(workload_scan_sql(fixture).contains("generate_series(0, 1536 - 1)"));
     }
 
     #[test]
@@ -649,6 +925,7 @@ mod tests {
             None,
             Some("/tmp/ecaz-fault-provider.marker"),
             Some("/tmp/ecaz-fault-provider.arm"),
+            None,
         );
         assert!(env.iter().any(|(key, value)| {
             key == "LD_PRELOAD" && (value.ends_with(".so") || value.contains("not built"))
@@ -661,6 +938,25 @@ mod tests {
             .any(|(key, value)| key == "ECAZ_FAULT_PROVIDER_AFTER" && value == "3"));
         assert!(env.iter().any(|(key, value)| {
             key == "ECAZ_FAULT_PROVIDER_ARM_FILE" && value == "/tmp/ecaz-fault-provider.arm"
+        }));
+    }
+
+    #[test]
+    fn socket_provider_environment_pins_exact_peer() {
+        let env = provider_environment(
+            ProviderMode::SocketReset,
+            "",
+            2,
+            None,
+            Some("/tmp/ecaz-fault-provider.marker"),
+            None,
+            Some("tcp:127.0.0.1:39711"),
+        );
+        assert!(env
+            .iter()
+            .any(|(key, value)| { key == "ECAZ_FAULT_PROVIDER_MODE" && value == "socket-reset" }));
+        assert!(env.iter().any(|(key, value)| {
+            key == "ECAZ_FAULT_PROVIDER_PEER" && value == "tcp:127.0.0.1:39711"
         }));
     }
 

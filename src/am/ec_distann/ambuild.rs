@@ -634,6 +634,7 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
                 pgrx::datum::Uuid::from_bytes(logical_index_uuid),
             )
             .unwrap_or_else(|error| pgrx::error!("{error}"));
+            crate::fault::maybe_fail_palloc("ec_distann control ambuild result");
             let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
             // The logical control relation intentionally indexes no heap rows.
             // Physical generation construction later owns snapshot accounting.
@@ -667,6 +668,7 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_ambuild(
             state.rows.len() as f64
         };
 
+        crate::fault::maybe_fail_palloc("ec_distann ambuild result");
         let mut result = PgBox::<pg_sys::IndexBuildResult>::alloc0();
         result.heap_tuples = heap_tuples;
         result.index_tuples = index_tuples;

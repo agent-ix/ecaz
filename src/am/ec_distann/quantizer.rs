@@ -472,6 +472,7 @@ mod tests {
     use super::*;
 
     const ARTIFACT_TEST_DIMENSIONS: usize = 1536;
+    const SIMD_DIFF_WIDTHS: [usize; 9] = [1, 7, 8, 9, 16, 17, 31, 32, 33];
 
     fn corpus() -> Vec<Vec<f32>> {
         (0..32)
@@ -486,6 +487,142 @@ mod tests {
                 vector
             })
             .collect()
+    }
+
+    fn deterministic_vector(dimensions: usize, row: usize) -> Vec<f32> {
+        let mut vector = (0..dimensions)
+            .map(|dimension| {
+                let phase = (row * 37 + dimension * 13) as f32;
+                phase.sin() + 0.25 * (phase * 0.03125).cos()
+            })
+            .collect::<Vec<_>>();
+        let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+        for value in &mut vector {
+            *value /= norm.max(f32::MIN_POSITIVE);
+        }
+        vector
+    }
+
+    fn grouped_pq_fixture() -> DistannCodecBinding {
+        let dimensions = 64;
+        let group_size = 8;
+        let group_count = dimensions / group_size;
+        let codebooks = (0..group_count)
+            .map(|group| {
+                (0..GROUPED_PQ_CENTROIDS * group_size)
+                    .map(|index| {
+                        let centroid = index / group_size;
+                        let lane = index % group_size;
+                        ((group * 101 + centroid * 17 + lane * 7) as f32 * 0.03125).sin()
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .collect::<Vec<_>>();
+        DistannCodecBinding::GroupedPq {
+            model: GroupedPq4Model {
+                codebooks,
+                group_count,
+                group_size,
+                transform_dim: dimensions,
+                signs: crate::quant::rotation::sign_vector(dimensions, 42),
+            },
+        }
+    }
+
+    fn assert_distann_score(format: NeighborCodeFormat, actual: f32, expected: f32) {
+        if format == NeighborCodeFormat::RaBitQ {
+            let tolerance = 1.0e-5_f32 * actual.abs().max(expected.abs()).max(1.0);
+            assert!(
+                (actual - expected).abs() <= tolerance,
+                "format={} actual={actual} expected={expected} tolerance={tolerance}",
+                format.as_str()
+            );
+        } else {
+            assert_eq!(
+                actual.to_bits(),
+                expected.to_bits(),
+                "format={}",
+                format.as_str()
+            );
+        }
+    }
+
+    #[test]
+    fn simd_diff_distann_codec_batches_match_direct_scalar_scores_across_widths() {
+        for format in [
+            NeighborCodeFormat::GroupedPq,
+            NeighborCodeFormat::RaBitQ,
+            NeighborCodeFormat::TurboQuant,
+        ] {
+            let (binding, dimensions) = match format {
+                NeighborCodeFormat::GroupedPq => (grouped_pq_fixture(), 64),
+                NeighborCodeFormat::RaBitQ | NeighborCodeFormat::TurboQuant => (
+                    DistannCodecBinding::prepare(format, &[], ARTIFACT_TEST_DIMENSIONS, 42)
+                        .unwrap(),
+                    ARTIFACT_TEST_DIMENSIONS,
+                ),
+            };
+            let artifact = binding.to_artifact(dimensions as u16, 42).unwrap();
+            let query = deterministic_vector(dimensions, 10_000);
+            let prepared = DistannPreparedQuery::prepare_artifact(&artifact, &query).unwrap();
+            let code_len = binding.code_len(dimensions).unwrap();
+            let codes = (0..SIMD_DIFF_WIDTHS[SIMD_DIFF_WIDTHS.len() - 1])
+                .map(|row| binding.encode(&deterministic_vector(dimensions, row + 1)))
+                .collect::<Vec<_>>();
+            assert!(
+                codes.iter().all(|code| code.len() == code_len),
+                "{} payload stride",
+                format.as_str()
+            );
+
+            let first_raw_ip = match &prepared {
+                DistannPreparedQuery::GroupedPq {
+                    query_lut,
+                    group_count,
+                } => grouped_pq_score_f32(query_lut, *group_count, &codes[0]),
+                DistannPreparedQuery::RaBitQ { prepared } => {
+                    prepared.estimate_ip_scalar_only(&codes[0])
+                }
+                DistannPreparedQuery::TurboQuant {
+                    quantizer,
+                    prepared,
+                } => quantizer.score_ip_from_parts_lut_no_qjl_4bit(prepared, &codes[0]),
+            };
+            assert_eq!(
+                prepared.score_dist(&codes[0]).to_bits(),
+                (-first_raw_ip).to_bits(),
+                "{} direct IP-to-distance negation",
+                format.as_str()
+            );
+
+            for width in SIMD_DIFF_WIDTHS {
+                let mut slab = codes[..width]
+                    .iter()
+                    .flat_map(|code| code.iter().copied())
+                    .collect::<Vec<_>>();
+                // A complete poison payload after the requested candidates
+                // proves the binding uses count × persisted stride and does
+                // not consume a neighboring record.
+                slab.extend(std::iter::repeat_n(0xA5, code_len));
+                let mut batch_scores = vec![f32::NAN; width];
+                prepared
+                    .score_dists_batch(&slab, code_len, width, &mut batch_scores)
+                    .unwrap();
+
+                for (slot, actual) in batch_scores.iter().copied().enumerate() {
+                    let expected = prepared.score_dist(&codes[slot]);
+                    assert_distann_score(format, actual, expected);
+                }
+            }
+
+            eprintln!(
+                "task36_distann format={} dimensions={} widths={:?} host_isa={}",
+                format.as_str(),
+                dimensions,
+                SIMD_DIFF_WIDTHS,
+                crate::quant::isa::current_isa().label()
+            );
+        }
     }
 
     #[test]

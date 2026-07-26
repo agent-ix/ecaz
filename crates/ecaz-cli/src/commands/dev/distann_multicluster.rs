@@ -601,6 +601,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
                     None,
                     Some(&fixture.marker_file.to_string_lossy()),
                     Some(&fixture.arm_file.to_string_lossy()),
+                    None,
                 );
                 for (name, value) in environment {
                     command.env(name, value);

@@ -103,7 +103,7 @@ jobs:
           sudo apt-get install -y postgresql-server-dev-18 clang llvm pkg-config libssl-dev
 
       - name: SIMD/scalar differential tests
-        run: cargo test --features bench --test simd_diff -- --test-threads=1
+        run: make simd-diff
         env:
           PROPTEST_CASES: 256
 

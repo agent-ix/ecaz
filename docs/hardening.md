@@ -138,25 +138,88 @@ Seeded Miri coverage now includes:
 
 ## SIMD/Scalar Differential Validation
 
-- `make simd-diff`: runs `tests/simd_diff.rs` with the `bench` feature. The
-  harness compares production-dispatched scoring/FWHT entry points against
-  scalar-reference entry points in the same process, and also calls test-only
-  AVX2/FMA or NEON entry points directly when the host supports them. This
-  keeps backend pinning independent of `ECAZ_SIMD` process-global dispatch.
-- GitHub Actions runs the same lane in a focused `simd-diff` job on
-  `ubuntu-24.04` x64 and `ubuntu-24.04-arm` arm64 hosted runners so both AVX2
-  and NEON coverage are PR-visible.
-- Tolerances:
-  - FWHT lanes: absolute/relative `1e-5`.
-  - `score_ip_from_parts`: absolute/relative `1e-5`.
-  - `score_ip_codes_lite`: absolute/relative `1e-5`.
-  - AM source inner product (HNSW/DiskANN): absolute/relative `1e-4`
-    because production SIMD may use fused multiply-add while the scalar
-    reference accumulates with separate operations.
+`make simd-diff` is the authoritative local lane. It runs the public
+`tests/simd_diff.rs` harness and focused in-library differential suites for
+RaBitQ arithmetic, `rabitq32`, `qjl32`, `lut32`, `grouped_pq_block`,
+`int8_approx32`, the real `hamming32` SIMD implementation, and the
+`ec_distann` codec binding. The focused commands are intentional: do not
+replace them with an unfiltered `cargo test`. The lane prints the detected
+host features and the ISA each family exercised. A host-reachable primary
+backend (NEON on aarch64 or AVX2+FMA on x86) returning “unavailable” is a test
+failure, not a skip. Production `prod` scoring is covered through the public
+forced-hook stage; the focused in-library `prod` stage pins the tiled-LUT
+query-shape and lane guards.
 
-Tolerance changes require a review packet that explains the numeric reason.
-The Miri scalar fallback remains useful for reference-path UB checks, but SIMD
-correctness is owned by this differential lane.
+Current production inventory:
+
+- `prod` TurboQuant split-score and code-to-code score: scalar,
+  AVX2+FMA, and NEON. The `SimdBackend::Avx512` dispatch tier currently enters
+  the AVX2/FMA product scorer; there is no distinct AVX-512 product scorer.
+- FWHT: scalar, AVX2/FMA, and NEON. `rotation.rs` has no separate
+  architecture-specific scoring kernel.
+- RaBitQ arithmetic (`rabitq.rs`): NEON bits 1/4/8, AVX2+FMA bits 1/4/8, and
+  AVX-512 bits 1/4/8; optional BF16 variants require their explicit cargo
+  feature and hardware feature.
+- `rabitq32`: bits=1 and multi-bit bits=2/4 full-block and partial kernels on
+  AVX2+FMA and NEON. Its SVE module is a NEON-routing placeholder, not an SVE
+  implementation.
+- `qjl32`: AVX2 and NEON 32-candidate blocks and 8-candidate octets, scalar
+  remainders below an octet, plus a real SVE/SVE2 block implementation.
+- `lut32`: AVX2 and NEON block/octet/partial/tiled dispatch, plus real
+  SVE/SVE2 block and predicated partial implementations.
+- `grouped_pq_block`: AVX2 and NEON 32-candidate blocks with padded partial
+  dispatch, plus a real SVE/SVE2 block implementation.
+- `int8_approx32`: AVX2, NEON, and NEON SDOT/dotprod full-block and partial
+  paths. SVE/SVE2 currently route through NEON.
+- `hamming32`: NEON XOR/popcount block and partial paths are real SIMD. The
+  AVX2 and SVE modules are scalar/NEON routing placeholders and must not be
+  reported as distinct SIMD execution.
+- HNSW and DiskANN source inner product: scalar, AVX2+FMA, and NEON. DistANN
+  exact source scoring intentionally calls the shared DiskANN implementation.
+
+The common `CandidateBatch` binding carries these kernels into the AMs:
+HNSW uses TurboQuant LUT/tiled/int8/QJL, grouped-PQ, and RaBitQ bits=1; IVF
+uses those families plus RaBitQ bits=2/4; DiskANN uses hamming, grouped-PQ,
+TurboQuant LUT, and RaBitQ bits=1; SPIRE uses TurboQuant LUT/QJL and RaBitQ
+bits=1; DistANN uses grouped-PQ, TurboQuant LUT, and RaBitQ bits=1. DistANN
+has no private SIMD kernel, so its differential test checks direct codec
+scoring against prepared/batch scoring, persisted stride slicing, widths
+1/7/8/9/16/17/31/32/33, full-block plus tail, and IP-to-distance negation.
+
+Equality contracts:
+
+- Integer accumulators and lookup sums (`lut32`, `int8_approx32`, SDOT, and
+  `hamming32`) are bit/integer exact.
+- Grouped-PQ is bit-exact because scalar and vector paths retain group-order
+  accumulation.
+- RaBitQ block and arithmetic paths allow relative/absolute `1e-5`; vector
+  FMA/reduction order differs from the scalar anchor.
+- QJL candidates in the scalar remainder below an octet are bit-exact. SIMD
+  8-candidate octets and 32-candidate blocks allow 4 ULP or relative `1e-6`
+  because vector reductions change the accumulation order. The production
+  candidate-batch differential covers widths 1/7/8/9/16/17/31/32/33 through
+  the real block→octet→scalar cascade.
+- FWHT and `prod` split/code-to-code scores allow relative/absolute `1e-5`.
+- HNSW/DiskANN source inner product allows relative/absolute `1e-4` because
+  the SIMD implementation may fuse multiply-add while scalar does not.
+
+Tolerance changes require a review packet explaining the numeric reason.
+Hardware-specific execution claims are host-local: Apple arm64 proves NEON
+and, when detected, SDOT; Intel/x86 hosts prove AVX2/AVX-512; Graviton hosts
+prove SVE/SVE2. Unavailable paths must be listed as unexecuted rather than
+inferred from compilation. Repository CI is manual-dispatch-only; this lane is
+not an automatic pull-request or scheduled gate. Until that policy changes,
+pre-merge evidence is a task-scoped packet containing a local
+`make simd-diff` run from every host class being claimed.
+
+Every new production SIMD scoring path must land with an existing
+scalar/reference entry point, a narrow test/bench-only forced-backend hook
+when dispatch could hide it, boundary and realistic-dimension differential
+fixtures, and a focused command added to `make simd-diff`. Every focused
+command has an explicit expected test count; a renamed or empty filter fails
+the lane. The Miri scalar
+fallback remains useful for reference-path UB checks; it is not SIMD
+execution evidence.
 
 ## Fuzzing
 
@@ -386,21 +449,56 @@ through another lane.
 
 ## PG Fault Injection
 
+Task 38 tracks five access methods. DistANN expands into three independent
+fixtures: `ec_distann/rabitq` (64 dimensions),
+`ec_distann/turboquant` (the supported 1536-dimensional no-QJL shape), and
+`ec_distann/grouped_pq` (64 dimensions). `ecaz dev fault plan` and every
+aggregate smoke lane include all seven fixtures; use
+`--am distann --distann-codec <codec>` or the
+`fault-distann-{plan,local-smoke}` Make targets for focused work.
+
+Status terms below are evidence-sensitive: **executed-history** means the May
+Linux Task 36/38 packet contains a live result; **implemented-current** means
+the current runner has a real fixture/operator path but this branch still needs
+live evidence; **unavailable-host** means the path requires Linux facilities
+absent on the current macOS arm64 host; and **nonexistent** means the production
+feature itself does not exist.
+
+| Access method / fixture | Build, scan, insert, delete-vacuum, DDL | Cancel, terminate, statement/idle/lock timeout | palloc/process memory; I/O; WAL/temp | Local / remote transport | Cleanup and evidence |
+| --- | --- | --- | --- | --- | --- |
+| `ec_hnsw` | Real AM lifecycle and HNSW-specific DDL | All generic interrupt/timeout probes | palloc, RLIMIT/SIGKILL proxy, matched EIO/ENOSPC/slow disk, accumulator and WAL/temp accounting | Local | Shared probes; **executed-history** |
+| `ec_ivf` | Real AM lifecycle and IVF-specific DDL | All generic probes | Same resource/provider inventory | Local | Shared probes; **executed-history** |
+| `ec_diskann` | Real AM lifecycle and DiskANN traversal | All generic probes | Same resource/provider inventory | Local | Shared probes; **executed-history** |
+| `ec_spire` | Real local lifecycle; Stage E fixtures are separate | Generic local probes plus Stage E fault cases | Same local inventory | Real remote SQL transport exists over libpq/Unix sockets; exact-peer reset/slow is **implemented-current**. Object-store reads are **nonexistent** | Local probes **executed-history**; live socket provider **unavailable-host** here |
+| `ec_distann/rabitq` | Real 64-D physical build, traversal/owner scoring/payload, insert/tombstone, vacuum and DDL | Repeated real KNN work for all probes | Codec-specific palloc and local relation provider/resource lanes | Real owner/payload libpq loopback transport | **implemented-current**; live evidence pending |
+| `ec_distann/turboquant` | Real supported 1536-D no-QJL lifecycle | Same, inside TurboQuant batch scoring | Distinct fixture paths and markers | Same DistANN transport | **implemented-current**; live evidence pending |
+| `ec_distann/grouped_pq` | Real grouped-PQ lifecycle. An operation requiring an absent future codebook-rehydration path must emit a supported skip | Same, inside grouped-PQ batch scoring | Distinct fixture paths and markers | Same DistANN transport | **implemented-current**; live evidence pending |
+
+Every live lane uses one index per fixture table and prints AM, codec, phase,
+and fault markers. Shared postconditions check surviving `ecaz-fault-*`
+sessions, relation/advisory locks, prepared transactions, optional
+`pg_buffercache` fixture pins, and readable/non-decreasing `pg_stat_io` and
+`pg_stat_wal` counters. Provider cases additionally require a matching
+`fault=1` event; provider-load/configuration markers alone cannot pass.
+
 - `ecaz dev fault plan`: prints the required Task 38 fault matrix for every
-  ECAZ AM (`ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire`) and every lane.
+  ECAZ AM and every lane.
 - `make fault-io-smoke`, `make fault-mem-smoke`, `make fault-cancel-smoke`,
   `make fault-timeout-smoke`, `make fault-lock-smoke`,
   `make fault-resource-smoke`, and `make fault-slow-disk-smoke`: run the
   operator smoke entry points. They default to `FAULT_SMOKE_FLAGS=--dry-run` so
-  local and nightly hardening can verify matrix coverage without a live
-  injection provider.
+  local hardening can verify matrix coverage without a live injection
+  provider. This is not a CI or nightly execution claim.
 - To run a live probe, clear the dry-run flag, for example:
   `make fault-timeout-smoke FAULT_SMOKE_FLAGS=`.
 - `ecaz dev fault provider-env` prints the LD_PRELOAD environment for the
   built-in Linux provider. That provider can inject matched-path `EIO` reads,
-  matched-path `ENOSPC` writes/creates/fsyncs, and slow-disk latency once the
-  PG postmaster is started with the printed environment. Example:
-  `make fault-provider-env FAULT_PROVIDER_MODE=slow-disk`.
+  matched-path `ENOSPC` writes/creates/fsyncs, slow-disk latency, and
+  exact-peer socket reset/latency faults once the PG postmaster is started
+  with the printed environment. Socket peers use `tcp:HOST:PORT`,
+  `tcp:[IPv6]:PORT`, or an absolute named `unix:/path`; socket modes reject a
+  missing or unstable identity. Unnamed and abstract `AF_UNIX` peers never
+  match because they do not have a stable pathname.
 - `ecaz dev fault provider-restart` and `ecaz dev fault provider-restore`
   wrap the local pgrx `pg_ctl restart` step so provider-backed lanes do not
   require hand-assembled `LD_PRELOAD` commands. Marker paths passed to
@@ -417,17 +515,21 @@ through another lane.
   `ecaz_fault_reset_palloc_counter()` to raise a clean ERROR at instrumented
   AM memory-fault boundaries. The current smoke covers each AM's build,
   insert, and vacuum callback boundary, and sweeps the first few Nth allocation
-  points for each AM scan workload.
+  points for each AM scan workload. The runner attempts to disable the GUC and
+  reset its counter after every workload result, including unexpected errors;
+  a workload error plus reset error is a hard failure.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
-`ec_diskann`, and `ec_spire`, then directly exercises cancellation and
+`ec_diskann`, `ec_spire`, and all three `ec_distann` codec shapes, then directly exercises cancellation and
 backend termination with repeated AM KNN scans, statement timeout with repeated
 AM KNN scans, `idle_in_transaction_session_timeout` after each AM fixture is
 touched inside an open transaction, lock timeout with
 `REINDEX INDEX CONCURRENTLY`, `CREATE INDEX`, and `VACUUM (FULL)`, and
 scan/insert/vacuum/resource settings on those fixtures.
 Slow-disk runs the same AM-specific scan/insert/vacuum smoke against a
-provider-backed postmaster and requires a non-empty provider marker. I/O smoke
+provider-backed postmaster, requires a `fault=1` marker, and requires
+`--slow-disk-baseline-ms` measured from the matched provider-off workload.
+The lane prints and asserts provider elapsed time is greater than baseline. I/O smoke
 uses prebuilt fixtures and checks one provider mode at a time: `eio-read`
 expects clean ERROR from AM scan reads, while `enospc-write` expects clean
 ERROR from AM writes. When the provider marker records `match=pg_wal`, the I/O
@@ -438,7 +540,9 @@ an immediate stop/start if fast restart cannot shut down the faulting
 postmaster. Resource smoke prepares pressure-sized AM fixtures, runs high-limit
 KNN scans under `work_mem = '64kB'` and `effective_cache_size = '1MB'`, emits
 `resource_accumulator_pressure` markers with the prepared row count, requested
-limit, and returned row count, then runs AM scan/insert/vacuum under tiny
+limit, actual returned high-water, and returned fraction. The gate requires at
+least 95% of the requested pressure target so approximate AMs remain valid
+without falling back to the weak historical `count >= 64` assertion. It then runs AM scan/insert/vacuum under tiny
 `work_mem`/`maintenance_work_mem` settings and forces a temp-spill failure with
 `temp_file_limit = '64kB'`, verifying the backend remains usable. When the
 postmaster is restarted with an `enospc-write` provider whose marker records
@@ -469,14 +573,30 @@ non-decreasing totals rather than byte-perfect attribution. Memory smoke also
 caps a warmed backend's `RLIMIT_AS` during AM build work, expecting an
 OOM-class ERROR or backend disconnect followed by a usable postmaster, then
 SIGKILLs worker backends during AM build/scan/insert as an OOM-kill proxy and
-waits for postmaster recovery. Those subcases are crash-recovery checks; lower
+waits for postmaster recovery. The 25 ms delay is probability tuning, not
+proof that SIGKILL landed inside an AM critical section. Those subcases are crash-recovery checks; lower
 post-run `pg_stat_io` or `pg_stat_wal` totals are recorded as stats resets
 after recovery rather than treated as monotonicity failures.
 
-SPIRE remote transport faults reuse `ecaz dev spire-multicluster fault-pg18`.
-The Stage E fixture scripts keep their PostgreSQL Unix sockets under a short
-target-local socket directory derived from the run directory so descriptive run
-ids do not exceed PostgreSQL's Unix socket path limit.
+SPIRE Stage E SQLSTATE faults reuse
+`ecaz dev spire-multicluster fault-pg18`; this is distinct from provider-level
+socket faults. SPIRE loopback remote SQL uses Unix sockets, while DistANN
+multicluster owner/payload SQL uses loopback TCP. On Linux, start only the
+coordinator with the exact named-Unix or TCP peer filter, require a reset/slow
+`fault=1` marker, restore the provider, and run the shared postconditions.
+Unnamed and abstract Unix peers are deliberately non-matchable. This macOS
+host cannot load the Linux provider, so no live socket result is claimed. SPIRE
+object-store reads remain **nonexistent**, not an unavailable transport test.
+
+`ecaz dev fault cgroup-plan` reports Linux, cgroup-v2, and `systemd-run`
+capability and prints the isolated one-index-per-table MemoryMax plan. A live
+run must place the isolated PG18 postmaster and workload in a user
+`systemd-run --scope`; direct `/sys/fs/cgroup` writes are forbidden. The
+current macOS host reports this lane unavailable.
+
+Provider ENOSPC can surface PostgreSQL checkpoint failures as `XX000`. The
+allowance is restricted to messages containing `checkpoint request failed` or
+`No space left on device`; arbitrary internal errors still fail.
 
 Current interrupt inventory:
 
@@ -485,6 +605,9 @@ Current interrupt inventory:
   `src/am/ec_diskann/scan.rs` and `src/am/ec_diskann/routine.rs`.
 - SPIRE remote candidate dispatch polls PostgreSQL interrupt and statement
   timeout flags in `src/am/ec_spire/coordinator/remote_candidates/dispatch.rs`.
+- DistANN build and scan paths poll around physical generation, traversal,
+  owner scoring, and payload work. The codec fixtures keep interrupt workloads
+  in repeated real scoring rather than substituting `pg_sleep`.
 - HNSW parallel build calls `pg_sys::ProcessInterrupts()` in
   `src/am/ec_hnsw/build_parallel.rs`.
 

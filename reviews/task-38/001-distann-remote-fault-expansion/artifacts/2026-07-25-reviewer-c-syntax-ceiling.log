@@ -1,0 +1,13 @@
+# Reviewer C-provider verification ceiling, 2026-07-25, macOS arm64
+# build.rs returns early unless CARGO_CFG_TARGET_OS == linux, so this host never compiles the provider.
+# clang -fsyntax-only is the most this host can do. Linux-only types still error on BOTH sides,
+# so the count comparison is the signal: no NEW syntax errors from the diff.
+
+base (origin/main) errors: 4
+PR head errors:            4
+
+PR head error detail (all pre-existing Linux-only types):
+crates/ecaz-fault-injection/src/ldpreload_provider.c:369:50: error: unknown type name 'off64_t'; did you mean 'off_t'?
+crates/ecaz-fault-injection/src/ldpreload_provider.c:375:50: error: type specifier missing, defaults to 'int'; ISO C99 and later do not support implicit int [-Wimplicit-int]
+crates/ecaz-fault-injection/src/ldpreload_provider.c:421:57: error: unknown type name 'off64_t'; did you mean 'off_t'?
+crates/ecaz-fault-injection/src/ldpreload_provider.c:427:57: error: type specifier missing, defaults to 'int'; ISO C99 and later do not support implicit int [-Wimplicit-int]

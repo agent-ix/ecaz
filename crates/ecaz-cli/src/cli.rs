@@ -785,6 +785,28 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_distann_fault_smoke_dry_run_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "fault",
+            "smoke",
+            "--lane",
+            "cancel",
+            "--am",
+            "distann",
+            "--dry-run",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn cli_parses_fault_provider_env_command() {
         let cli = Cli::try_parse_from([
             "ecaz",
@@ -797,6 +819,77 @@ mod tests {
             "25",
             "--path-match",
             "base/",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_fault_socket_provider_env_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "fault",
+            "provider-env",
+            "--mode",
+            "socket-reset",
+            "--peer-match",
+            "tcp:127.0.0.1:39711",
+            "--after",
+            "3",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_distann_cgroup_plan_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "fault",
+            "cgroup-plan",
+            "--memory-max",
+            "384M",
+            "--rows",
+            "128",
+            "--am",
+            "distann",
+            "--distann-codec",
+            "grouped-pq",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::Fault { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cli_parses_measured_slow_disk_smoke_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "fault",
+            "smoke",
+            "--lane",
+            "slow-disk",
+            "--provider-marker",
+            "/tmp/ecaz-fault-provider.marker",
+            "--slow-disk-baseline-ms",
+            "17",
         ])
         .expect("cli parses");
         match cli.command {

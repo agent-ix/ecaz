@@ -1,0 +1,228 @@
+task36 simd-diff: public bench hooks (Prod/FWHT/HNSW/DiskANN)
+cargo test --features bench --test simd_diff -- --test-threads=1 --nocapture
+    Updating crates.io index
+     Locking 452 packages to latest compatible versions
+      Adding arrow-array v55.2.0 (available: v59.1.0)
+      Adding arrow-schema v55.2.0 (available: v59.1.0)
+      Adding criterion v0.5.1 (available: v0.8.2)
+      Adding directories v5.0.1 (available: v6.0.0)
+      Adding generic-array v0.14.7 (available: v0.14.9)
+      Adding hashbrown v0.15.5 (available: v0.17.1)
+      Adding iai-callgrind v0.14.2 (available: v0.16.1)
+      Adding indicatif v0.17.11 (available: v0.18.6)
+      Adding ndarray v0.16.1 (available: v0.17.2)
+      Adding parquet v55.2.0 (available: v59.1.0)
+      Adding pgrx v0.17.0 (available: v0.18.1)
+      Adding pgrx-pg-config v0.17.0 (available: v0.18.1)
+      Adding pgrx-tests v0.17.0 (available: v0.18.1)
+      Adding rand v0.8.7 (available: v0.10.2)
+      Adding rand_chacha v0.3.1 (available: v0.10.0)
+      Adding rand_distr v0.4.3 (available: v0.6.0)
+      Adding reqwest v0.12.28 (available: v0.13.4)
+      Adding sha2 v0.10.9 (available: v0.11.0)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 07s
+     Running tests/simd_diff.rs (target/debug/deps/simd_diff-066c79309fe4fb1b)
+
+running 10 tests
+test am_source_inner_product_simd_matches_scalar_reference ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test dispatched_code_to_code_score_matches_scalar_reference ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test dispatched_fwht_matches_scalar_reference ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test dispatched_score_ip_from_parts_matches_scalar_reference ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test forced_neon_fwht_matches_scalar_reference_when_available ... ok
+test forced_neon_score_paths_match_scalar_reference_when_available ... ok
+test host_backend_inventory_is_visible ... task36_host arch=aarch64 backend=neon neon=true dotprod=true sve=false sve2=false unavailable=x86_avx2_fma,x86_avx512
+ok
+test packed_mse_indices_roundtrip_across_widths ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test production_1536_4bit_score_path_matches_scalar_reference ... ok
+test three_bit_unpack_fixture_stays_bit_exact ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.58s
+
+task36 simd-diff: RaBitQ arithmetic SIMD inventory
+cargo test --lib --features bench quant::rabitq::tests::task67_sum_query_dequant_for_test_ -- --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 51.93s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 2 tests
+test quant::rabitq::tests::task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available ... task36_rabitq kernel=scalar_bits1 bits=1 dim=7 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=7 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=8 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=8 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=9 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=9 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=31 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=31 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=32 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=32 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=33 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=33 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=96 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=96 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=384 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=384 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=1536 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=1536 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=7 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=7 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=8 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=8 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=9 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=9 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=31 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=31 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=32 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=32 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=33 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=33 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=96 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=96 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=384 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=384 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=1536 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=1536 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=7 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=7 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=8 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=8 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=9 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=9 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=31 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=31 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=32 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=32 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=33 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=33 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=96 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=96 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=384 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=384 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=1536 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=1536 status=exercised
+ok
+test quant::rabitq::tests::task67_sum_query_dequant_for_test_scaffold_registers_expected_kernels ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2517 filtered out; finished in 0.00s
+
+task36 simd-diff: rabitq32 bits=1/2/4 block and partial kernels
+cargo test --lib --features bench quant::rabitq32::tests:: -- --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.20s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 7 tests
+test quant::rabitq32::tests::dispatched_block32_matches_anchor_within_tolerance ... ok
+test quant::rabitq32::tests::multibit_block_and_partial_match_scalar_estimate ... task36_rabitq32 bits=2 dimensions=384 isa=neon widths=1,7,8,9,16,17,31,32,33
+task36_rabitq32 bits=4 dimensions=384 isa=neon widths=1,7,8,9,16,17,31,32,33
+task36_rabitq32 bits=2 dimensions=1536 isa=neon widths=1,7,8,9,16,17,31,32,33
+task36_rabitq32 bits=4 dimensions=1536 isa=neon widths=1,7,8,9,16,17,31,32,33
+ok
+test quant::rabitq32::tests::partial_dispatch_matches_anchor_and_production_batch ... ok
+test quant::rabitq32::tests::production_dispatch_is_within_phase2_tolerance ... ok
+test quant::rabitq32::tests::scalar_block32_matches_forced_scalar_anchor_bits ... ok
+test quant::rabitq32::tests::scalar_tail_is_forced_scalar_anchor ... ok
+test quant::rabitq32::tests::simd_block32_is_bit_equal_with_production_batch ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 2512 filtered out; finished in 0.05s
+
+task36 simd-diff: qjl32 block/octet/remainder kernels
+cargo test --lib --features bench quant::qjl32::tests:: -- --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 10 tests
+test quant::qjl32::tests::qjl32_avx2_block32_matches_pre_slice_scorer_tolerance ... ok
+test quant::qjl32::tests::qjl32_batch_with_blocks_and_tail_matches_pre_slice_scorer_bits ... task36_qjl32 isa=neon widths=1,7,8,9,16,17,31,32,33
+ok
+test quant::qjl32::tests::qjl32_block32_matches_pre_slice_scorer_bits ... ok
+test quant::qjl32::tests::qjl32_block32_matches_production_dispatch_tolerance ... ok
+test quant::qjl32::tests::qjl32_neon_block32_matches_pre_slice_scorer_tolerance_when_available ... ok
+test quant::qjl32::tests::qjl32_octet8_matches_pre_slice_scorer_tolerance ... ok
+test quant::qjl32::tests::qjl32_rejects_no_qjl_1536_lane ... ok
+test quant::qjl32::tests::qjl32_scalar_matches_pre_slice_scorer_bits ... ok
+test quant::qjl32::tests::qjl32_scalar_reference_matches_production_dispatch_tolerance ... ok
+test quant::qjl32::tests::qjl32_sve_block32_matches_pre_slice_scorer_tolerance_when_available ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 2509 filtered out; finished in 0.25s
+
+task36 simd-diff: lut32 block/partial/tiled kernels
+cargo test --lib --features bench quant::lut32::tests::lut32_ -- --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 9 tests
+test quant::lut32::tests::lut32_avx2_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::lut32::tests::lut32_batch_under_block_width_matches_scalar_tail_bits ... ok
+test quant::lut32::tests::lut32_batch_with_blocks_and_tail_matches_scalar_tail_bits ... ok
+test quant::lut32::tests::lut32_block32_matches_scalar_tail_bits_across_dims ... ok
+test quant::lut32::tests::lut32_neon_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::lut32::tests::lut32_partial_matches_scalar_tail_bits_across_widths ... ok
+test quant::lut32::tests::lut32_rejects_shape_mismatch ... ok
+test quant::lut32::tests::lut32_sve_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::lut32::tests::lut32_tiled_batch_matches_scalar_tail_bits_across_widths_and_dims ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 2510 filtered out; finished in 0.03s
+
+task36 simd-diff: grouped-PQ block/partial kernels
+cargo test --lib --features bench quant::grouped_pq_block::tests::grouped_pq_ -- --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 8 tests
+test quant::grouped_pq_block::tests::grouped_pq_avx2_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_rejects_shape_mismatch ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_under_block_width_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_with_block_and_tail_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_block32_matches_scalar_reference_bits_across_shapes ... ok
+test quant::grouped_pq_block::tests::grouped_pq_neon_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::grouped_pq_block::tests::grouped_pq_scalar_tail_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_sve_backend_matches_scalar_reference_bits_when_available ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2511 filtered out; finished in 0.00s
+
+task36 simd-diff: int8/SDOT block/partial kernels
+cargo test --lib --features bench quant::int8_approx32:: -- --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 5 tests
+test quant::int8_approx32::neon::neon_path_tests::legacy_and_dotprod_candidate_paths_match_scalar_bits ... ok
+test quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference ... ok
+test quant::int8_approx32::tests::block32_is_bit_equal_at_extreme_i8_values ... ok
+test quant::int8_approx32::tests::scalar_reference_matches_production_scorer_bits ... ok
+test quant::int8_approx32::tests::simd_dim_tails_are_bit_equal_with_scalar_reference ... task36_int8_approx32 neon=true dotprod=true widths=1,7,8,9,16,17,31,32,33
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2514 filtered out; finished in 0.05s
+
+task36 simd-diff: real hamming32 SIMD kernels
+cargo test --lib --features bench quant::hamming32::tests:: -- --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 3 tests
+test quant::hamming32::tests::block32_is_integer_exact_with_scalar_reference ... ok
+test quant::hamming32::tests::partial_is_integer_exact_with_scalar_reference ... task36_hamming32 isa=neon widths=1,7,8,9,16,17,31,32,33
+ok
+test quant::hamming32::tests::scalar_reference_is_xor_popcount ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2516 filtered out; finished in 0.00s
+
+task36 simd-diff: DistANN codec composition, stride, and source IP
+cargo test --lib --features bench simd_diff_ -- --test-threads=1 --nocapture
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.09s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-0d594238e7d98c78)
+
+running 2 tests
+test am::ec_distann::insert::tests::simd_diff_exact_distance_is_shared_diskann_inner_product_negation ... task36_distann source_inner_product_backend=neon
+ok
+test am::ec_distann::quantizer::tests::simd_diff_distann_codec_batches_match_direct_scalar_scores_across_widths ... task36_distann format=grouped_pq dimensions=64 widths=[1, 7, 8, 9, 16, 17, 31, 32, 33] host_isa=neon
+task36_distann format=rabitq dimensions=1536 widths=[1, 7, 8, 9, 16, 17, 31, 32, 33] host_isa=neon
+task36_distann format=turboquant dimensions=1536 widths=[1, 7, 8, 9, 16, 17, 31, 32, 33] host_isa=neon
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2517 filtered out; finished in 0.06s
+

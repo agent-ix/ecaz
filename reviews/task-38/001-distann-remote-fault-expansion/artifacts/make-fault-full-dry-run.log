@@ -1,0 +1,414 @@
+cargo run -p ecaz-cli -- dev fault smoke --lane io --dry-run
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling ecaz-cli v0.1.0 (/Users/peter/dev/tqvector/.task-worktrees/task-38-distann-remote-fault-expansion/crates/ecaz-cli)
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 15.95s
+     Running `target/debug/ecaz dev fault smoke --lane io --dry-run`
+ec_hnsw-io-eio-read	io	ec_hnsw	n/a	eio-read	clean ERROR; backend remains connected
+ec_hnsw-io-enospc-write	io	ec_hnsw	n/a	enospc-write	clean ERROR; no partial AM-visible tuple
+ec_ivf-io-eio-read	io	ec_ivf	n/a	eio-read	clean ERROR; backend remains connected
+ec_ivf-io-enospc-write	io	ec_ivf	n/a	enospc-write	clean ERROR; no partial AM-visible tuple
+ec_diskann-io-eio-read	io	ec_diskann	n/a	eio-read	clean ERROR; backend remains connected
+ec_diskann-io-enospc-write	io	ec_diskann	n/a	enospc-write	clean ERROR; no partial AM-visible tuple
+ec_spire-io-eio-read	io	ec_spire	n/a	eio-read	clean ERROR; backend remains connected
+ec_spire-io-enospc-write	io	ec_spire	n/a	enospc-write	clean ERROR; no partial AM-visible tuple
+ec_distann-rabitq-io-eio-read	io	ec_distann	rabitq	eio-read	clean ERROR; backend remains connected
+ec_distann-rabitq-io-enospc-write	io	ec_distann	rabitq	enospc-write	clean ERROR; no partial AM-visible tuple
+ec_distann-turboquant-io-eio-read	io	ec_distann	turboquant	eio-read	clean ERROR; backend remains connected
+ec_distann-turboquant-io-enospc-write	io	ec_distann	turboquant	enospc-write	clean ERROR; no partial AM-visible tuple
+ec_distann-grouped_pq-io-eio-read	io	ec_distann	grouped_pq	eio-read	clean ERROR; backend remains connected
+ec_distann-grouped_pq-io-enospc-write	io	ec_distann	grouped_pq	enospc-write	clean ERROR; no partial AM-visible tuple
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+cargo run -p ecaz-cli -- dev fault smoke --lane memory --dry-run
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running `target/debug/ecaz dev fault smoke --lane memory --dry-run`
+ec_hnsw-memory-palloc-nth-failure	memory	ec_hnsw	n/a	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_hnsw-memory-backend-sigkill-oom-proxy	memory	ec_hnsw	n/a	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_hnsw-memory-backend-rlimit-oom	memory	ec_hnsw	n/a	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_ivf-memory-palloc-nth-failure	memory	ec_ivf	n/a	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_ivf-memory-backend-sigkill-oom-proxy	memory	ec_ivf	n/a	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_ivf-memory-backend-rlimit-oom	memory	ec_ivf	n/a	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_diskann-memory-palloc-nth-failure	memory	ec_diskann	n/a	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_diskann-memory-backend-sigkill-oom-proxy	memory	ec_diskann	n/a	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_diskann-memory-backend-rlimit-oom	memory	ec_diskann	n/a	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_spire-memory-palloc-nth-failure	memory	ec_spire	n/a	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_spire-memory-backend-sigkill-oom-proxy	memory	ec_spire	n/a	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_spire-memory-backend-rlimit-oom	memory	ec_spire	n/a	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_distann-rabitq-memory-palloc-nth-failure	memory	ec_distann	rabitq	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_distann-rabitq-memory-backend-sigkill-oom-proxy	memory	ec_distann	rabitq	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_distann-rabitq-memory-backend-rlimit-oom	memory	ec_distann	rabitq	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_distann-turboquant-memory-palloc-nth-failure	memory	ec_distann	turboquant	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_distann-turboquant-memory-backend-sigkill-oom-proxy	memory	ec_distann	turboquant	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_distann-turboquant-memory-backend-rlimit-oom	memory	ec_distann	turboquant	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_distann-grouped_pq-memory-palloc-nth-failure	memory	ec_distann	grouped_pq	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_distann-grouped_pq-memory-backend-sigkill-oom-proxy	memory	ec_distann	grouped_pq	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_distann-grouped_pq-memory-backend-rlimit-oom	memory	ec_distann	grouped_pq	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+cargo run -p ecaz-cli -- dev fault smoke --lane cancel --dry-run
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.12s
+     Running `target/debug/ecaz dev fault smoke --lane cancel --dry-run`
+ec_hnsw-cancel-pg-cancel-backend	cancel	ec_hnsw	n/a	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_hnsw-cancel-pg-terminate-backend	cancel	ec_hnsw	n/a	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_ivf-cancel-pg-cancel-backend	cancel	ec_ivf	n/a	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_ivf-cancel-pg-terminate-backend	cancel	ec_ivf	n/a	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_diskann-cancel-pg-cancel-backend	cancel	ec_diskann	n/a	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_diskann-cancel-pg-terminate-backend	cancel	ec_diskann	n/a	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_spire-cancel-pg-cancel-backend	cancel	ec_spire	n/a	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_spire-cancel-pg-terminate-backend	cancel	ec_spire	n/a	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_distann-rabitq-cancel-pg-cancel-backend	cancel	ec_distann	rabitq	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_distann-rabitq-cancel-pg-terminate-backend	cancel	ec_distann	rabitq	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_distann-turboquant-cancel-pg-cancel-backend	cancel	ec_distann	turboquant	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_distann-turboquant-cancel-pg-terminate-backend	cancel	ec_distann	turboquant	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_distann-grouped_pq-cancel-pg-cancel-backend	cancel	ec_distann	grouped_pq	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_distann-grouped_pq-cancel-pg-terminate-backend	cancel	ec_distann	grouped_pq	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+cargo run -p ecaz-cli -- dev fault smoke --lane timeout --dry-run
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running `target/debug/ecaz dev fault smoke --lane timeout --dry-run`
+ec_hnsw-timeout-statement-timeout	timeout	ec_hnsw	n/a	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_hnsw-timeout-idle-in-transaction-timeout	timeout	ec_hnsw	n/a	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_ivf-timeout-statement-timeout	timeout	ec_ivf	n/a	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_ivf-timeout-idle-in-transaction-timeout	timeout	ec_ivf	n/a	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_diskann-timeout-statement-timeout	timeout	ec_diskann	n/a	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_diskann-timeout-idle-in-transaction-timeout	timeout	ec_diskann	n/a	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_spire-timeout-statement-timeout	timeout	ec_spire	n/a	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_spire-timeout-idle-in-transaction-timeout	timeout	ec_spire	n/a	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_distann-rabitq-timeout-statement-timeout	timeout	ec_distann	rabitq	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_distann-rabitq-timeout-idle-in-transaction-timeout	timeout	ec_distann	rabitq	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_distann-turboquant-timeout-statement-timeout	timeout	ec_distann	turboquant	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_distann-turboquant-timeout-idle-in-transaction-timeout	timeout	ec_distann	turboquant	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_distann-grouped_pq-timeout-statement-timeout	timeout	ec_distann	grouped_pq	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_distann-grouped_pq-timeout-idle-in-transaction-timeout	timeout	ec_distann	grouped_pq	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+cargo run -p ecaz-cli -- dev fault smoke --lane lock-timeout --dry-run
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running `target/debug/ecaz dev fault smoke --lane lock-timeout --dry-run`
+ec_hnsw-lock-timeout-lock-timeout	lock-timeout	ec_hnsw	n/a	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_ivf-lock-timeout-lock-timeout	lock-timeout	ec_ivf	n/a	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_diskann-lock-timeout-lock-timeout	lock-timeout	ec_diskann	n/a	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_spire-lock-timeout-lock-timeout	lock-timeout	ec_spire	n/a	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_distann-rabitq-lock-timeout-lock-timeout	lock-timeout	ec_distann	rabitq	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_distann-turboquant-lock-timeout-lock-timeout	lock-timeout	ec_distann	turboquant	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_distann-grouped_pq-lock-timeout-lock-timeout	lock-timeout	ec_distann	grouped_pq	lock-timeout	lock timeout ERROR; no relation lock survives the session
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+cargo run -p ecaz-cli -- dev fault smoke --lane resource --dry-run
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running `target/debug/ecaz dev fault smoke --lane resource --dry-run`
+ec_hnsw-resource-tiny-work-mem	resource	ec_hnsw	n/a	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_hnsw-resource-temp-file-limit	resource	ec_hnsw	n/a	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_hnsw-resource-wal-rotation-accounting	resource	ec_hnsw	n/a	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_ivf-resource-tiny-work-mem	resource	ec_ivf	n/a	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_ivf-resource-temp-file-limit	resource	ec_ivf	n/a	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_ivf-resource-wal-rotation-accounting	resource	ec_ivf	n/a	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_diskann-resource-tiny-work-mem	resource	ec_diskann	n/a	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_diskann-resource-temp-file-limit	resource	ec_diskann	n/a	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_diskann-resource-wal-rotation-accounting	resource	ec_diskann	n/a	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_spire-resource-tiny-work-mem	resource	ec_spire	n/a	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_spire-resource-temp-file-limit	resource	ec_spire	n/a	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_spire-resource-wal-rotation-accounting	resource	ec_spire	n/a	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_distann-rabitq-resource-tiny-work-mem	resource	ec_distann	rabitq	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_distann-rabitq-resource-temp-file-limit	resource	ec_distann	rabitq	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_distann-rabitq-resource-wal-rotation-accounting	resource	ec_distann	rabitq	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_distann-turboquant-resource-tiny-work-mem	resource	ec_distann	turboquant	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_distann-turboquant-resource-temp-file-limit	resource	ec_distann	turboquant	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_distann-turboquant-resource-wal-rotation-accounting	resource	ec_distann	turboquant	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_distann-grouped_pq-resource-tiny-work-mem	resource	ec_distann	grouped_pq	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_distann-grouped_pq-resource-temp-file-limit	resource	ec_distann	grouped_pq	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_distann-grouped_pq-resource-wal-rotation-accounting	resource	ec_distann	grouped_pq	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+cargo run -p ecaz-cli -- dev fault smoke --lane slow-disk --dry-run
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.13s
+     Running `target/debug/ecaz dev fault smoke --lane slow-disk --dry-run`
+ec_hnsw-slow-disk-latency-injection	slow-disk	ec_hnsw	n/a	latency-injection	operation remains cancellable and timeout-governed
+ec_ivf-slow-disk-latency-injection	slow-disk	ec_ivf	n/a	latency-injection	operation remains cancellable and timeout-governed
+ec_diskann-slow-disk-latency-injection	slow-disk	ec_diskann	n/a	latency-injection	operation remains cancellable and timeout-governed
+ec_spire-slow-disk-latency-injection	slow-disk	ec_spire	n/a	latency-injection	operation remains cancellable and timeout-governed
+ec_distann-rabitq-slow-disk-latency-injection	slow-disk	ec_distann	rabitq	latency-injection	operation remains cancellable and timeout-governed
+ec_distann-turboquant-slow-disk-latency-injection	slow-disk	ec_distann	turboquant	latency-injection	operation remains cancellable and timeout-governed
+ec_distann-grouped_pq-slow-disk-latency-injection	slow-disk	ec_distann	grouped_pq	latency-injection	operation remains cancellable and timeout-governed
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting

@@ -1,0 +1,34 @@
+Task 38 Linux provider compile evidence
+Date: 2026-07-25 America/Los_Angeles
+
+Repository: agent-ix/ecaz
+Workflow: CI / ci.yml
+Trigger: workflow_dispatch
+Run: 30184074527
+Run URL: https://github.com/agent-ix/ecaz/actions/runs/30184074527
+Head: 815b788c0df5c8e6c38b408fdfb63b365f90834b
+
+Job: pgrx pg18
+Job ID: 89745572723
+Runner: Ubuntu 24.04 x86_64
+Result: success
+
+Relevant steps:
+  Install ecaz for pg18 validation: success
+  Build operator CLI: success
+  pg18 preload validation: success
+
+Compile provenance:
+  crates/ecaz-cli/Cargo.toml declares a direct path dependency on
+  ecaz-fault-injection. Building ecaz-cli therefore runs the fault crate's
+  Linux-only build.rs. That script asserts successful compilation of
+  ldpreload_provider.c and, at this head, enforces -Wall -Wextra -Werror.
+
+Evidence ceiling:
+  The workflow did not load or execute the provider. This proves Linux x86_64
+  compilation only, not socket-reset, socket-slow, EIO, ENOSPC, or slow-disk
+  runtime behavior.
+
+Other workflow result:
+  The Rust Checks job failed at the known repository-wide formatting gate
+  before its host-side fault tests. It is not used as compile evidence.

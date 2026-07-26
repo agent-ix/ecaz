@@ -1,0 +1,466 @@
+task36 simd-diff: public bench hooks (Prod/FWHT/HNSW/DiskANN)
+bash scripts/run-counted-cargo-test.sh 10 --features bench --test simd_diff -- --test-threads=1 --nocapture
+   Compiling ecaz v0.1.1 (/Users/peter/dev/tqvector)
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 24s
+     Running tests/simd_diff.rs (target/debug/deps/simd_diff-3eb2e7ac5b649314)
+
+running 10 tests
+test am_source_inner_product_simd_matches_scalar_reference ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test dispatched_code_to_code_score_matches_scalar_reference ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test dispatched_fwht_matches_scalar_reference ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test dispatched_score_ip_from_parts_matches_scalar_reference ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test forced_neon_fwht_matches_scalar_reference_when_available ... ok
+test forced_neon_score_paths_match_scalar_reference_when_available ... ok
+test host_backend_inventory_is_visible ... task36_host arch=aarch64 backend=neon neon=true dotprod=true sve=false sve2=false unavailable=x86_avx2_fma,x86_avx512
+ok
+test packed_mse_indices_roundtrip_across_widths ... proptest: FileFailurePersistence::SourceParallel set, but failed to find lib.rs or main.rs
+ok
+test production_1536_4bit_score_path_matches_scalar_reference ... ok
+test three_bit_unpack_fixture_stays_bit_exact ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 32.86s
+
+counted cargo test: observed expected 10 passed tests
+task36 simd-diff: RaBitQ arithmetic SIMD inventory
+bash scripts/run-counted-cargo-test.sh 2 --lib --features bench quant::rabitq::tests::task67_sum_query_dequant_for_test_ -- --test-threads=1 --nocapture
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling ecaz v0.1.1 (/Users/peter/dev/tqvector)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 35.76s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-65e29342b3f44057)
+
+running 2 tests
+test quant::rabitq::tests::task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available ... task36_rabitq kernel=scalar_bits1 bits=1 dim=7 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=7 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=8 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=8 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=9 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=9 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=31 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=31 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=32 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=32 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=33 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=33 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=96 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=96 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=384 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=384 status=exercised
+task36_rabitq kernel=scalar_bits1 bits=1 dim=1536 status=exercised
+task36_rabitq kernel=neon_bits1 bits=1 dim=1536 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=7 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=7 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=8 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=8 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=9 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=9 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=31 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=31 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=32 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=32 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=33 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=33 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=96 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=96 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=384 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=384 status=exercised
+task36_rabitq kernel=scalar_bits4 bits=4 dim=1536 status=exercised
+task36_rabitq kernel=neon_bits4 bits=4 dim=1536 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=7 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=7 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=8 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=8 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=9 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=9 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=31 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=31 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=32 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=32 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=33 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=33 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=96 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=96 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=384 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=384 status=exercised
+task36_rabitq kernel=scalar_bits8 bits=8 dim=1536 status=exercised
+task36_rabitq kernel=neon_bits8 bits=8 dim=1536 status=exercised
+ok
+test quant::rabitq::tests::task67_sum_query_dequant_for_test_scaffold_registers_expected_kernels ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2519 filtered out; finished in 0.00s
+
+counted cargo test: observed expected 2 passed tests
+task36 simd-diff: rabitq32 bits=1/2/4 block and partial kernels
+bash scripts/run-counted-cargo-test.sh 7 --lib --features bench quant::rabitq32::tests:: -- --test-threads=1 --nocapture
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.34s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-65e29342b3f44057)
+
+running 7 tests
+test quant::rabitq32::tests::dispatched_block32_matches_anchor_within_tolerance ... ok
+test quant::rabitq32::tests::multibit_block_and_partial_match_scalar_estimate ... task36_rabitq32 bits=2 dimensions=384 isa=neon widths=1,7,8,9,16,17,31,32,33
+task36_rabitq32 bits=4 dimensions=384 isa=neon widths=1,7,8,9,16,17,31,32,33
+task36_rabitq32 bits=2 dimensions=1536 isa=neon widths=1,7,8,9,16,17,31,32,33
+task36_rabitq32 bits=4 dimensions=1536 isa=neon widths=1,7,8,9,16,17,31,32,33
+ok
+test quant::rabitq32::tests::partial_dispatch_matches_anchor_and_production_batch ... ok
+test quant::rabitq32::tests::production_dispatch_is_within_phase2_tolerance ... ok
+test quant::rabitq32::tests::scalar_block32_matches_forced_scalar_anchor_bits ... ok
+test quant::rabitq32::tests::scalar_tail_is_forced_scalar_anchor ... ok
+test quant::rabitq32::tests::simd_block32_is_bit_equal_with_production_batch ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 2514 filtered out; finished in 0.04s
+
+counted cargo test: observed expected 7 passed tests
+task36 simd-diff: qjl32 block/octet/remainder kernels
+bash scripts/run-counted-cargo-test.sh 10 --lib --features bench quant::qjl32::tests:: -- --test-threads=1 --nocapture
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-65e29342b3f44057)
+
+running 10 tests
+test quant::qjl32::tests::qjl32_avx2_block32_matches_pre_slice_scorer_tolerance ... ok
+test quant::qjl32::tests::qjl32_batch_matches_pre_slice_scorer_by_execution_path ... task36_qjl32 observed_block_isa=neon scalar_tail=bit-exact widths=1,7,8,9,16,17,31,32,33
+ok
+test quant::qjl32::tests::qjl32_block32_matches_pre_slice_scorer_bits ... ok
+test quant::qjl32::tests::qjl32_block32_matches_production_dispatch_tolerance ... ok
+test quant::qjl32::tests::qjl32_neon_block32_matches_pre_slice_scorer_tolerance_when_available ... ok
+test quant::qjl32::tests::qjl32_octet8_matches_pre_slice_scorer_tolerance ... ok
+test quant::qjl32::tests::qjl32_rejects_no_qjl_1536_lane ... ok
+test quant::qjl32::tests::qjl32_scalar_matches_pre_slice_scorer_bits ... ok
+test quant::qjl32::tests::qjl32_scalar_reference_matches_production_dispatch_tolerance ... ok
+test quant::qjl32::tests::qjl32_sve_block32_matches_pre_slice_scorer_tolerance_when_available ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 2511 filtered out; finished in 0.24s
+
+counted cargo test: observed expected 10 passed tests
+task36 simd-diff: lut32 block/partial/tiled kernels
+bash scripts/run-counted-cargo-test.sh 9 --lib --features bench quant::lut32::tests::lut32_ -- --test-threads=1 --nocapture
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-65e29342b3f44057)
+
+running 9 tests
+test quant::lut32::tests::lut32_avx2_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::lut32::tests::lut32_batch_under_block_width_matches_scalar_tail_bits ... ok
+test quant::lut32::tests::lut32_batch_with_blocks_and_tail_matches_scalar_tail_bits ... ok
+test quant::lut32::tests::lut32_block32_matches_scalar_tail_bits_across_dims ... ok
+test quant::lut32::tests::lut32_neon_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::lut32::tests::lut32_partial_matches_scalar_tail_bits_across_widths ... ok
+test quant::lut32::tests::lut32_rejects_shape_mismatch ... ok
+test quant::lut32::tests::lut32_sve_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::lut32::tests::lut32_tiled_batch_matches_scalar_tail_bits_across_widths_and_dims ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 2512 filtered out; finished in 0.03s
+
+counted cargo test: observed expected 9 passed tests
+task36 simd-diff: grouped-PQ block/partial kernels
+bash scripts/run-counted-cargo-test.sh 8 --lib --features bench quant::grouped_pq_block::tests::grouped_pq_ -- --test-threads=1 --nocapture
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-65e29342b3f44057)
+
+running 8 tests
+test quant::grouped_pq_block::tests::grouped_pq_avx2_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_rejects_shape_mismatch ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_under_block_width_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_batch_with_block_and_tail_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_block32_matches_scalar_reference_bits_across_shapes ... ok
+test quant::grouped_pq_block::tests::grouped_pq_neon_backend_matches_scalar_reference_bits_when_available ... ok
+test quant::grouped_pq_block::tests::grouped_pq_scalar_tail_matches_scalar_reference_bits ... ok
+test quant::grouped_pq_block::tests::grouped_pq_sve_backend_matches_scalar_reference_bits_when_available ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 2513 filtered out; finished in 0.00s
+
+counted cargo test: observed expected 8 passed tests
+task36 simd-diff: int8/SDOT block/partial kernels
+bash scripts/run-counted-cargo-test.sh 5 --lib --features bench quant::int8_approx32:: -- --test-threads=1 --nocapture
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-65e29342b3f44057)
+
+running 5 tests
+test quant::int8_approx32::neon::neon_path_tests::legacy_and_dotprod_candidate_paths_match_scalar_bits ... ok
+test quant::int8_approx32::tests::block32_and_partial_are_bit_equal_with_scalar_reference ... ok
+test quant::int8_approx32::tests::block32_is_bit_equal_at_extreme_i8_values ... ok
+test quant::int8_approx32::tests::scalar_reference_matches_production_scorer_bits ... ok
+test quant::int8_approx32::tests::simd_dim_tails_are_bit_equal_with_scalar_reference ... task36_int8_approx32 neon=true dotprod=true widths=1,7,8,9,16,17,31,32,33
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2516 filtered out; finished in 0.05s
+
+counted cargo test: observed expected 5 passed tests
+task36 simd-diff: tiled LUT lane and query-shape guards
+bash scripts/run-counted-cargo-test.sh 3 --lib --features bench quant::prod::tests::tiled_lut_query_prep_ -- --test-threads=1 --nocapture
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-65e29342b3f44057)
+
+running 3 tests
+test quant::prod::tests::tiled_lut_query_prep_rejects_codebook_centroid_mismatch - should panic ...
+thread 'quant::prod::tests::tiled_lut_query_prep_rejects_codebook_centroid_mismatch' (34433530) panicked at src/quant/prod.rs:1853:5:
+assertion `left == right` failed: prepared query LUT codebook length must match the centroid count
+  left: 8
+ right: 16
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+ok
+test quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane - should panic ...
+thread 'quant::prod::tests::tiled_lut_query_prep_rejects_qjl_active_lane' (34433531) panicked at src/quant/prod.rs:418:9:
+explicit LUT query prep requires the no-QJL 4-bit lane
+ok
+test quant::prod::tests::tiled_lut_query_prep_rejects_query_length_mismatch - should panic ...
+thread 'quant::prod::tests::tiled_lut_query_prep_rejects_query_length_mismatch' (34433532) panicked at src/quant/prod.rs:411:9:
+assertion `left == right` failed: query length mismatch: got 1535, expected 1536
+  left: 1535
+ right: 1536
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2518 filtered out; finished in 0.07s
+
+counted cargo test: observed expected 3 passed tests
+task36 simd-diff: real hamming32 SIMD kernels
+bash scripts/run-counted-cargo-test.sh 3 --lib --features bench quant::hamming32::tests:: -- --test-threads=1 --nocapture
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-65e29342b3f44057)
+
+running 3 tests
+test quant::hamming32::tests::block32_is_integer_exact_with_scalar_reference ... ok
+test quant::hamming32::tests::partial_is_integer_exact_with_scalar_reference ... task36_hamming32 isa=neon widths=1,7,8,9,16,17,31,32,33
+ok
+test quant::hamming32::tests::scalar_reference_is_xor_popcount ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 2518 filtered out; finished in 0.00s
+
+counted cargo test: observed expected 3 passed tests
+task36 simd-diff: DistANN codec composition, stride, and source IP
+bash scripts/run-counted-cargo-test.sh 2 --lib --features bench simd_diff_ -- --test-threads=1 --nocapture
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: In file included from /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:19:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:537:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   537 | dlist_next_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:547:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:   547 | dlist_prev_node(dlist_head *head, dlist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/lib/ilist.h:1054:29: warning: unused parameter 'head' [-Wunused-parameter]
+warning: ecaz@0.1.1:  1054 | slist_next_node(slist_head *head, slist_node *node)
+warning: ecaz@0.1.1:       |                             ^
+warning: ecaz@0.1.1: In file included from csrc/pg18_pgstat_shim.c:10:
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:58: warning: unused parameter 'size' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                          ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:875:70: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   875 | pgstat_cmp_hash_key(const void *a, const void *b, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                                      ^
+warning: ecaz@0.1.1: /opt/homebrew/include/postgresql@18/server/utils/pgstat_internal.h:882:56: warning: unused parameter 'arg' [-Wunused-parameter]
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.08s
+     Running unittests src/lib.rs (target/debug/deps/ecaz-65e29342b3f44057)
+
+running 2 tests
+test am::ec_distann::insert::tests::simd_diff_exact_distance_is_shared_diskann_inner_product_negation ... task36_distann source_inner_product_backend=neon
+ok
+test am::ec_distann::quantizer::tests::simd_diff_distann_codec_batches_match_direct_scalar_scores_across_widths ... task36_distann format=grouped_pq dimensions=64 widths=[1, 7, 8, 9, 16, 17, 31, 32, 33] host_isa=neon
+task36_distann format=rabitq dimensions=1536 widths=[1, 7, 8, 9, 16, 17, 31, 32, 33] host_isa=neon
+task36_distann format=turboquant dimensions=1536 widths=[1, 7, 8, 9, 16, 17, 31, 32, 33] host_isa=neon
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 2519 filtered out; finished in 0.06s
+
+counted cargo test: observed expected 2 passed tests

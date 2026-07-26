@@ -97,6 +97,7 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
         // only after the replica commits Ready. The per-tuple check closes
         // that ordering window.
         super::traversal_replica::guard_traversal_replica_mutation((*index_relation).rd_id);
+        crate::fault::maybe_fail_palloc("ec_distann aminsert entry");
         // The persisted format, not the mutable reloption, is authoritative
         // across ALTER/REINDEX boundaries. This cached block-0 read is the
         // correctness gate; any future relcache optimization must include
@@ -128,6 +129,7 @@ unsafe extern "C-unwind" fn ec_distann_ambulkdelete(
         super::traversal_replica::invalidate_traversal_replica_for_maintenance(
             (*(*info).index).rd_id,
         );
+        crate::fault::maybe_fail_palloc("ec_distann bulkdelete stats");
         // See aminsert: persisted metadata is authoritative. Keep this read
         // until a measured relcache cache can prove correct invalidation.
         let metadata = ambuild::read_metadata_from_index((*info).index)
@@ -159,6 +161,7 @@ unsafe extern "C-unwind" fn ec_distann_amvacuumcleanup(
     stats: *mut pg_sys::IndexBulkDeleteResult,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     pg_am_callback!({
+        crate::fault::maybe_fail_palloc("ec_distann vacuum stats");
         ec_distann_noop_vacuum_stats((*info).index, stats)
             .unwrap_or_else(|e| pgrx::error!("ec_distann amvacuumcleanup failed: {e}"))
     })
@@ -213,6 +216,7 @@ unsafe extern "C-unwind" fn ec_distann_ambeginscan(
     norderbys: std::ffi::c_int,
 ) -> pg_sys::IndexScanDesc {
     pg_am_callback!({
+        crate::fault::maybe_fail_palloc("ec_distann ambeginscan opaque");
         let metadata = ambuild::read_metadata_from_index(index_relation)
             .unwrap_or_else(|e| pgrx::error!("ec_distann scan metadata read failed: {e}"));
         if metadata.is_distributed_control() {

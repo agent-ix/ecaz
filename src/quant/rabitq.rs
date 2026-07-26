@@ -4807,6 +4807,27 @@ pub(crate) mod bench_api {
             required_features: &[],
             invoke: scalar_sum_query_dequant_for_test,
         },
+        #[cfg(target_arch = "aarch64")]
+        SumQueryDequantKernelForTest {
+            name: "neon_bits1",
+            bits: 1,
+            required_features: &["neon"],
+            invoke: sum_query_dequant_neon_bits1_for_test,
+        },
+        #[cfg(target_arch = "aarch64")]
+        SumQueryDequantKernelForTest {
+            name: "neon_bits4",
+            bits: 4,
+            required_features: &["neon"],
+            invoke: sum_query_dequant_neon_bits4_for_test,
+        },
+        #[cfg(target_arch = "aarch64")]
+        SumQueryDequantKernelForTest {
+            name: "neon_bits8",
+            bits: 8,
+            required_features: &["neon"],
+            invoke: sum_query_dequant_neon_bits8_for_test,
+        },
         #[cfg(target_arch = "x86_64")]
         SumQueryDequantKernelForTest {
             name: "avx512_bits1",
@@ -4873,6 +4894,52 @@ pub(crate) mod bench_api {
             fixture.lut,
             fixture.code,
         ))
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[target_feature(enable = "neon")]
+    unsafe fn sum_query_dequant_neon_bits1_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        Some(unsafe {
+            sum_query_dequant_neon_bits1(
+                fixture.query_rotated,
+                fixture.dimensions,
+                fixture.bits1_byte_lut?,
+                fixture.lut,
+                fixture.code,
+            )
+        })
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[target_feature(enable = "neon")]
+    unsafe fn sum_query_dequant_neon_bits4_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        Some(unsafe {
+            sum_query_dequant_neon_bits4(
+                fixture.query_rotated,
+                fixture.dimensions,
+                fixture.lut,
+                fixture.code,
+            )
+        })
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[target_feature(enable = "neon")]
+    unsafe fn sum_query_dequant_neon_bits8_for_test(
+        fixture: &SumQueryDequantFixtureForTest<'_>,
+    ) -> Option<f32> {
+        Some(unsafe {
+            sum_query_dequant_neon_bits8(
+                fixture.bits8_query_scale,
+                fixture.bits8_query_offset,
+                fixture.dimensions,
+                fixture.code,
+            )
+        })
     }
 
     #[cfg(target_arch = "x86_64")]
@@ -5074,6 +5141,8 @@ mod tests {
     fn task67_kernel_features_available(features: &[&str]) -> bool {
         features.iter().all(|feature| match *feature {
             "" => true,
+            #[cfg(target_arch = "aarch64")]
+            "neon" => std::arch::is_aarch64_feature_detected!("neon"),
             #[cfg(target_arch = "x86_64")]
             "avx2" => std::arch::is_x86_feature_detected!("avx2"),
             #[cfg(target_arch = "x86_64")]
@@ -5097,6 +5166,13 @@ mod tests {
         assert!(names.contains(&"scalar_bits4"));
         assert!(names.contains(&"scalar_bits8"));
 
+        #[cfg(target_arch = "aarch64")]
+        {
+            assert!(names.contains(&"neon_bits1"));
+            assert!(names.contains(&"neon_bits4"));
+            assert!(names.contains(&"neon_bits8"));
+        }
+
         #[cfg(target_arch = "x86_64")]
         {
             assert!(names.contains(&"avx512_bits1"));
@@ -5114,7 +5190,7 @@ mod tests {
     #[test]
     fn task67_sum_query_dequant_for_test_scaffold_matches_scalar_when_available() {
         for &bits in &[1_usize, 4, 8] {
-            for &dim in &[33_usize, 96] {
+            for &dim in &[7_usize, 8, 9, 31, 32, 33, 96, 384, 1536] {
                 let packed_bytes = (dim * bits).div_ceil(8);
                 let mut code = vec![0_u8; packed_bytes + RABITQ_SCALAR_LEN];
                 for i in 0..dim {
@@ -5150,19 +5226,27 @@ mod tests {
                     .filter(|kernel| kernel.bits == bits)
                 {
                     if !task67_kernel_features_available(kernel.required_features) {
+                        eprintln!(
+                            "task36_rabitq kernel={} bits={} dim={} status=unavailable features={:?}",
+                            kernel.name, bits, dim, kernel.required_features
+                        );
                         continue;
                     }
                     // SAFETY: the feature check above covers the kernel's
                     // declared target features; fixture buffers are sized for
                     // `dim` and the selected bit width.
-                    let Some(actual) = (unsafe { (kernel.invoke)(&fixture) }) else {
-                        continue;
-                    };
+                    let actual = (unsafe { (kernel.invoke)(&fixture) }).unwrap_or_else(|| {
+                        panic!("available kernel {} declined fixture", kernel.name)
+                    });
                     let tol = 1e-4_f32 * scalar.abs().max(1.0);
                     assert!(
                         (scalar - actual).abs() <= tol,
                         "kernel={} bits={bits} dim={dim}: scalar={scalar} actual={actual}",
                         kernel.name
+                    );
+                    eprintln!(
+                        "task36_rabitq kernel={} bits={} dim={} status=exercised",
+                        kernel.name, bits, dim
                     );
                 }
             }

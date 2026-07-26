@@ -96,6 +96,16 @@ mod tests {
     };
     use crate::quant::prod::ProdQuantizer;
 
+    fn assert_host_simd_isa(actual: crate::quant::isa::Isa) {
+        let expected = crate::quant::isa::select_highest_isa(
+            crate::quant::isa::HostIsaFeatures::detect(),
+        );
+        assert_eq!(
+            actual, expected,
+            "int8 differential test did not execute the host's preferred SIMD ISA"
+        );
+    }
+
     fn vector(dimensions: usize, seed: u64) -> Vec<f32> {
         let mut state = seed ^ 0x9E37_79B9_7F4A_7C15;
         (0..dimensions)
@@ -126,19 +136,22 @@ mod tests {
 
         let block: &[&[u8]; BLOCK_WIDTH] = code_refs[..BLOCK_WIDTH].try_into().unwrap();
         let mut block_scores = vec![0.0; BLOCK_WIDTH];
-        score_int8_approx_block32(&prepared, dimensions, block, &mut block_scores);
+        let block_isa =
+            score_int8_approx_block32(&prepared, dimensions, block, &mut block_scores);
+        assert_host_simd_isa(block_isa);
         for (score, code) in block_scores.iter().zip(code_refs[..BLOCK_WIDTH].iter()) {
             let reference = score_int8_approx_scalar(&prepared, dimensions, code);
             assert_eq!(score.to_bits(), reference.to_bits());
         }
 
         let mut partial_scores = vec![0.0; 7];
-        score_int8_approx_partial(
+        let partial_isa = score_int8_approx_partial(
             &prepared,
             dimensions,
             &code_refs[BLOCK_WIDTH..],
             &mut partial_scores,
         );
+        assert_host_simd_isa(partial_isa);
         for (score, code) in partial_scores.iter().zip(code_refs[BLOCK_WIDTH..].iter()) {
             let reference = score_int8_approx_scalar(&prepared, dimensions, code);
             assert_eq!(score.to_bits(), reference.to_bits());
@@ -162,7 +175,7 @@ mod tests {
                     .collect(),
                 score_scale: 0.25,
             };
-            let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH + 5)
+            let codes: Vec<Vec<u8>> = (0..BLOCK_WIDTH + 1)
                 .map(|lane| {
                     (0..dimensions.div_ceil(2))
                         .map(|byte| {
@@ -175,26 +188,44 @@ mod tests {
                 .collect();
             let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
 
-            let block: &[&[u8]; BLOCK_WIDTH] = code_refs[..BLOCK_WIDTH].try_into().unwrap();
-            let mut block_scores = vec![0.0; BLOCK_WIDTH];
-            score_int8_approx_block32(&prepared, dimensions, block, &mut block_scores);
-            for (score, code) in block_scores.iter().zip(code_refs[..BLOCK_WIDTH].iter()) {
-                let reference = score_int8_approx_scalar(&prepared, dimensions, code);
-                assert_eq!(score.to_bits(), reference.to_bits());
-            }
-
-            let mut partial_scores = vec![0.0; 5];
-            score_int8_approx_partial(
-                &prepared,
-                dimensions,
-                &code_refs[BLOCK_WIDTH..],
-                &mut partial_scores,
-            );
-            for (score, code) in partial_scores.iter().zip(code_refs[BLOCK_WIDTH..].iter()) {
-                let reference = score_int8_approx_scalar(&prepared, dimensions, code);
-                assert_eq!(score.to_bits(), reference.to_bits());
+            for width in [1usize, 7, 8, 9, 16, 17, 31, 32, 33] {
+                let mut scores = vec![0.0; width];
+                let mut block_start = 0;
+                while block_start + BLOCK_WIDTH <= width {
+                    let block: &[&[u8]; BLOCK_WIDTH] = code_refs
+                        [block_start..block_start + BLOCK_WIDTH]
+                        .try_into()
+                        .unwrap();
+                    let isa = score_int8_approx_block32(
+                        &prepared,
+                        dimensions,
+                        block,
+                        &mut scores[block_start..block_start + BLOCK_WIDTH],
+                    );
+                    assert_host_simd_isa(isa);
+                    block_start += BLOCK_WIDTH;
+                }
+                if block_start < width {
+                    let isa = score_int8_approx_partial(
+                        &prepared,
+                        dimensions,
+                        &code_refs[block_start..width],
+                        &mut scores[block_start..],
+                    );
+                    assert_host_simd_isa(isa);
+                }
+                for (score, code) in scores.iter().zip(code_refs[..width].iter()) {
+                    let reference = score_int8_approx_scalar(&prepared, dimensions, code);
+                    assert_eq!(score.to_bits(), reference.to_bits());
+                }
             }
         }
+        #[cfg(target_arch = "aarch64")]
+        eprintln!(
+            "task36_int8_approx32 neon={} dotprod={} widths=1,7,8,9,16,17,31,32,33",
+            std::arch::is_aarch64_feature_detected!("neon"),
+            std::arch::is_aarch64_feature_detected!("dotprod")
+        );
     }
 
     /// Full-range i8 operands at the ±128 corner: 128 * 128 pair sums exceed
@@ -228,7 +259,8 @@ mod tests {
         let code_refs: Vec<&[u8]> = codes.iter().map(Vec::as_slice).collect();
         let block: &[&[u8]; BLOCK_WIDTH] = code_refs[..BLOCK_WIDTH].try_into().unwrap();
         let mut block_scores = vec![0.0; BLOCK_WIDTH];
-        score_int8_approx_block32(&prepared, dimensions, block, &mut block_scores);
+        let isa = score_int8_approx_block32(&prepared, dimensions, block, &mut block_scores);
+        assert_host_simd_isa(isa);
         for (score, code) in block_scores.iter().zip(code_refs.iter()) {
             let reference = score_int8_approx_scalar(&prepared, dimensions, code);
             assert_eq!(score.to_bits(), reference.to_bits());

@@ -1,0 +1,6 @@
+# Reviewer negative controls for scripts/run-counted-cargo-test.sh
+# head: 8923245ee, Apple M5 aarch64
+
+A wrong expected count (99 vs 3): exit=1  counted cargo test: expected 99 passed tests, observed 3
+B filter matches nothing:        exit=1  counted cargo test: expected 3 passed tests, observed 0
+C cargo itself fails:            exit=1  For more information, try '--help'.
