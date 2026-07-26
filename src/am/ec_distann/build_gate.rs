@@ -184,12 +184,13 @@ unsafe extern "C-unwind" fn invalidate_gate_function_oid(
 #[pg_guard]
 unsafe extern "C-unwind" fn invalidate_no_active_gate_cache(
     _arg: pg_sys::Datum,
-    _relation_oid: pg_sys::Oid,
+    relation_oid: pg_sys::Oid,
 ) {
     // Clearing on every relcache event is deliberately conservative. DDL is
     // much rarer than DML, and this avoids retaining a relation OID across
     // DROP EXTENSION / CREATE EXTENSION cycles.
     NO_ACTIVE_GATE.with(|cached| cached.set(false));
+    super::traversal_replica::invalidate_ready_replica_presence_cache(relation_oid);
 }
 
 /// Publish registration-table mutations through PostgreSQL's transactional
@@ -337,12 +338,62 @@ fn reject_if_gated(relation_oid: pg_sys::Oid, required_mask: i32, operation: &st
     }
 }
 
-/// Reject every gated result relation of a finished plan. `resultRelations` is
-/// the global integer list of RT indexes that any `ModifyTable` node writes,
+fn ec_distann_indexes_for_source(source_oid: pg_sys::Oid) -> Vec<pg_sys::Oid> {
+    let Some(_guard) = LookupGuard::enter() else {
+        return Vec::new();
+    };
+    Spi::connect(|client| {
+        client
+            .select(
+                "SELECT index_relation.oid AS index_oid
+                   FROM pg_catalog.pg_index index_catalog
+                   JOIN pg_catalog.pg_class index_relation
+                     ON index_relation.oid = index_catalog.indexrelid
+                   JOIN pg_catalog.pg_am access_method
+                     ON access_method.oid = index_relation.relam
+                  WHERE index_catalog.indrelid = $1::bigint::oid
+                    AND index_catalog.indisvalid
+                    AND index_catalog.indisready
+                    AND access_method.amname = 'ec_distann'
+                  ORDER BY index_relation.oid",
+                None,
+                &[i64::from(source_oid.to_u32()).into()],
+            )
+            .unwrap_or_else(|_| pgrx::error!("EC_REPLICA_INVALIDATION: source index lookup failed"))
+            .map(|row| {
+                row["index_oid"]
+                    .value::<pg_sys::Oid>()
+                    .unwrap_or_else(|_| {
+                        pgrx::error!("EC_REPLICA_INVALIDATION: source index OID decode failed")
+                    })
+                    .unwrap_or_else(|| {
+                        pgrx::error!("EC_REPLICA_INVALIDATION: source index OID is NULL")
+                    })
+            })
+            .collect()
+    })
+}
+
+fn guard_source_traversal_replicas(source_oid: pg_sys::Oid) {
+    // Do not populate an unknown cache through ordinary SPI here. Under
+    // RR/SERIALIZABLE, SPI can substitute the fixed transaction snapshot and
+    // incorrectly cache "no Ready replica" after another session commits one.
+    // The per-index guard below owns the explicit latest-snapshot lookup.
+    if super::traversal_replica::ready_replica_known_absent() {
+        return;
+    }
+    for index_oid in ec_distann_indexes_for_source(source_oid) {
+        super::traversal_replica::guard_traversal_replica_mutation(index_oid);
+    }
+}
+
+/// Guard every result relation of a finished plan. `resultRelations` is the
+/// global integer list of RT indexes that any `ModifyTable` node writes,
 /// including targets introduced by data-modifying CTEs inside an otherwise
 /// read-only `SELECT`, so no `commandType` filter is needed. Pure reads carry
-/// an empty list and never invoke the durable mask.
-unsafe fn reject_planned_result_relations(plannedstmt: *mut pg_sys::PlannedStmt) {
+/// an empty list and never invoke either the durable build mask or traversal
+/// replica invalidation.
+unsafe fn guard_planned_result_relations(plannedstmt: *mut pg_sys::PlannedStmt) {
     let Some(stmt) = (unsafe { plannedstmt.as_ref() }) else {
         return;
     };
@@ -358,14 +409,14 @@ unsafe fn reject_planned_result_relations(plannedstmt: *mut pg_sys::PlannedStmt)
         if rt_index <= 0 || rt_index > table_length {
             continue;
         }
-        let rte = unsafe {
-            pg_sys::list_nth(stmt.rtable, rt_index - 1).cast::<pg_sys::RangeTblEntry>()
-        };
+        let rte =
+            unsafe { pg_sys::list_nth(stmt.rtable, rt_index - 1).cast::<pg_sys::RangeTblEntry>() };
         let Some(rte) = (unsafe { rte.as_ref() }) else {
             continue;
         };
         if rte.rtekind == pg_sys::RTEKind::RTE_RELATION && rte.relid != pg_sys::InvalidOid {
             reject_if_gated(rte.relid, SOURCE_GATE, "source DML");
+            guard_source_traversal_replicas(rte.relid);
         }
     }
 }
@@ -403,7 +454,7 @@ unsafe extern "C-unwind" fn ec_distann_build_gate_executor_start_hook(
         && !INSIDE_GATE_LOOKUP.with(Cell::get)
     {
         if let Some(desc) = unsafe { query_desc.as_ref() } {
-            unsafe { reject_planned_result_relations(desc.plannedstmt) };
+            unsafe { guard_planned_result_relations(desc.plannedstmt) };
         }
     }
     call_next_executor_start(query_desc, eflags);

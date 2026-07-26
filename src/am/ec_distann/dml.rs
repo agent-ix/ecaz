@@ -85,11 +85,8 @@ pub(super) unsafe fn tombstone_dead_records(
     // are not already tombstoned (monotone: never re-flip).
     let mut to_tombstone: Vec<ItemPointer> = Vec::new();
     for (_vec_id, record_tid) in &directory {
-        let raw = read_raw_tuple_bytes_from_relation(
-            handle,
-            *record_tid,
-            "ec_distann tombstone scan",
-        )?;
+        let raw =
+            read_raw_tuple_bytes_from_relation(handle, *record_tid, "ec_distann tombstone scan")?;
         if raw.first().copied() != Some(DISTANN_NODE_TAG)
             || raw.len() < DISTANN_NODE_HEAP_TID_OFFSET + 6
         {
@@ -130,6 +127,7 @@ pub(super) unsafe fn tombstone_dead_records(
 #[cfg(feature = "pg_test")]
 #[pg_extern]
 fn ec_distann_debug_tombstone(index_regclass: pg_sys::Oid, vec_ids: Vec<i64>) -> i64 {
+    super::traversal_replica::guard_traversal_replica_mutation(index_regclass);
     let ids: Vec<u64> = vec_ids.iter().map(|&v| v as u64).collect();
     let guard = IndexRelationGuard::open(
         index_regclass,
@@ -180,8 +178,7 @@ pub(super) unsafe fn tombstone_by_vec_ids(
     let handle = NonNull::new(index_relation).ok_or_else(|| {
         DistannExpandError::Internal("ec_distann tombstone needs a valid index relation".to_owned())
     })?;
-    let metadata =
-        read_metadata_from_index_handle(handle).map_err(DistannExpandError::Internal)?;
+    let metadata = read_metadata_from_index_handle(handle).map_err(DistannExpandError::Internal)?;
     super::require_legacy_local_storage(&metadata, "ec_distann tombstone")
         .map_err(DistannExpandError::GenerationMissing)?;
     if vec_ids.is_empty() {
@@ -205,9 +202,12 @@ pub(super) unsafe fn tombstone_by_vec_ids(
                 "ec_distann tombstone: vec_id {vec_id:#018x} is not in the directory"
             ))
         })?;
-        let raw =
-            read_raw_tuple_bytes_from_relation(handle, record_tid, "ec_distann tombstone by vec_id")
-                .map_err(DistannExpandError::Internal)?;
+        let raw = read_raw_tuple_bytes_from_relation(
+            handle,
+            record_tid,
+            "ec_distann tombstone by vec_id",
+        )
+        .map_err(DistannExpandError::Internal)?;
         let flags = u16::from_le_bytes(
             raw[DISTANN_NODE_FLAGS_OFFSET..DISTANN_NODE_FLAGS_OFFSET + 2]
                 .try_into()
@@ -358,10 +358,7 @@ pub(super) unsafe fn delta_insert(
 /// Append one delta tuple on a freshly-extended page (one entry per page: a
 /// dim-1536 entry is ~6 KB, near a page anyway, and the buffer is bounded).
 /// WAL-logged. Returns the new tuple's TID.
-fn append_delta_tuple(
-    handle: RelationHandle,
-    payload: Vec<u8>,
-) -> Result<ItemPointer, String> {
+fn append_delta_tuple(handle: RelationHandle, payload: Vec<u8>) -> Result<ItemPointer, String> {
     let buffer = LockedBufferGuard::read_main_locked_handle(
         handle,
         P_NEW,

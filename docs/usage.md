@@ -1,5 +1,8 @@
 # Usage Guide
 
+For the optional ec_distann coordinator traversal replica, see the
+[operator runbook](EC_DISTANN_TRAVERSAL_REPLICA_RUNBOOK.md).
+
 ## Row Types
 
 Use `ecvector(dim)` for normal tables. It is the canonical exact/raw row type

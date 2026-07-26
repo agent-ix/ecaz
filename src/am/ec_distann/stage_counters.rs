@@ -5,6 +5,7 @@
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
+use std::{cell::RefCell, thread_local};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum DistannQueryStage {
@@ -308,9 +309,56 @@ impl DistannMaterializationWork {
 const WORK_COUNT: usize = DistannMaterializationWork::ALL.len();
 static MATERIALIZATION_WORK: [AtomicU64; WORK_COUNT] = [const { AtomicU64::new(0) }; WORK_COUNT];
 
+#[derive(Clone, Copy, Default)]
+struct BufferedStage {
+    elapsed_ns: u64,
+    samples: u64,
+}
+
+struct BufferedAttribution {
+    stages: [BufferedStage; STAGE_COUNT],
+    work: [u64; WORK_COUNT],
+}
+
+impl Default for BufferedAttribution {
+    fn default() -> Self {
+        Self {
+            stages: [BufferedStage::default(); STAGE_COUNT],
+            work: [0; WORK_COUNT],
+        }
+    }
+}
+
+thread_local! {
+    static BUFFERED_ATTRIBUTION: RefCell<Option<BufferedAttribution>> =
+        const { RefCell::new(None) };
+}
+
+struct AttributionBufferGuard;
+
+impl Drop for AttributionBufferGuard {
+    fn drop(&mut self) {
+        BUFFERED_ATTRIBUTION.with(|buffer| {
+            buffer.borrow_mut().take();
+        });
+    }
+}
+
 pub(crate) fn record(stage: DistannQueryStage, elapsed: Duration) {
     let index = stage.index();
     let nanos = u64::try_from(elapsed.as_nanos()).unwrap_or(u64::MAX);
+    let buffered = BUFFERED_ATTRIBUTION.with(|buffer| {
+        let mut buffer = buffer.borrow_mut();
+        let Some(buffer) = buffer.as_mut() else {
+            return false;
+        };
+        buffer.stages[index].elapsed_ns = buffer.stages[index].elapsed_ns.saturating_add(nanos);
+        buffer.stages[index].samples = buffer.stages[index].samples.saturating_add(1);
+        true
+    });
+    if buffered {
+        return;
+    }
     STAGE_ELAPSED_NS[index].fetch_add(nanos, Ordering::Relaxed);
     STAGE_SAMPLES[index].fetch_add(1, Ordering::Relaxed);
 }
@@ -320,8 +368,50 @@ pub(crate) fn record_scan() {
 }
 
 pub(crate) fn record_work(metric: DistannMaterializationWork, value: usize) {
-    MATERIALIZATION_WORK[metric.index()]
-        .fetch_add(u64::try_from(value).unwrap_or(u64::MAX), Ordering::Relaxed);
+    let index = metric.index();
+    let value = u64::try_from(value).unwrap_or(u64::MAX);
+    let buffered = BUFFERED_ATTRIBUTION.with(|buffer| {
+        let mut buffer = buffer.borrow_mut();
+        let Some(buffer) = buffer.as_mut() else {
+            return false;
+        };
+        buffer.work[index] = buffer.work[index].saturating_add(value);
+        true
+    });
+    if buffered {
+        return;
+    }
+    MATERIALIZATION_WORK[index].fetch_add(value, Ordering::Relaxed);
+}
+
+/// Buffer one speculative traversal's attribution and publish it only if the
+/// traversal succeeds. A replica failure must not leave its hop/frontier work
+/// in the same scan totals as the full owner restart.
+pub(crate) fn with_successful_attribution<T, E>(
+    operation: impl FnOnce() -> Result<T, E>,
+) -> Result<T, E> {
+    BUFFERED_ATTRIBUTION.with(|buffer| {
+        assert!(
+            buffer.borrow().is_none(),
+            "nested ec_distann attribution buffering is unsupported"
+        );
+        *buffer.borrow_mut() = Some(BufferedAttribution::default());
+    });
+    let _guard = AttributionBufferGuard;
+    let result = operation();
+    let buffered = BUFFERED_ATTRIBUTION
+        .with(|buffer| buffer.borrow_mut().take())
+        .expect("ec_distann attribution buffer disappeared");
+    if result.is_ok() {
+        for (index, stage) in buffered.stages.into_iter().enumerate() {
+            STAGE_ELAPSED_NS[index].fetch_add(stage.elapsed_ns, Ordering::Relaxed);
+            STAGE_SAMPLES[index].fetch_add(stage.samples, Ordering::Relaxed);
+        }
+        for (counter, value) in MATERIALIZATION_WORK.iter().zip(buffered.work) {
+            counter.fetch_add(value, Ordering::Relaxed);
+        }
+    }
+    result
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -406,5 +496,55 @@ mod tests {
             .all(|row| row.samples == 0 && row.elapsed_ns == 0));
         let (_, work) = materialization_work_snapshot();
         assert!(work.iter().all(|row| row.value == 0));
+    }
+
+    #[test]
+    fn speculative_attribution_commits_only_on_success() {
+        reset();
+        let failed = with_successful_attribution(|| {
+            record(
+                DistannQueryStage::ReplicaGraphVectorRead,
+                Duration::from_nanos(11),
+            );
+            record_work(DistannMaterializationWork::TraversalHopRounds, 3);
+            Err::<(), _>("fallback")
+        });
+        assert_eq!(failed, Err("fallback"));
+        let failed_replica_read = snapshot()
+            .1
+            .into_iter()
+            .find(|row| row.stage == DistannQueryStage::ReplicaGraphVectorRead)
+            .expect("replica read row after failed traversal");
+        assert_eq!(failed_replica_read.samples, 0);
+        assert_eq!(failed_replica_read.elapsed_ns, 0);
+        let failed_rounds = materialization_work_snapshot()
+            .1
+            .into_iter()
+            .find(|row| row.metric == DistannMaterializationWork::TraversalHopRounds)
+            .expect("hop rounds row after failed traversal");
+        assert_eq!(failed_rounds.value, 0);
+
+        with_successful_attribution(|| {
+            record(
+                DistannQueryStage::ReplicaGraphVectorRead,
+                Duration::from_nanos(13),
+            );
+            record_work(DistannMaterializationWork::TraversalHopRounds, 2);
+            Ok::<(), &str>(())
+        })
+        .expect("successful traversal");
+        let replica_read = snapshot()
+            .1
+            .into_iter()
+            .find(|row| row.stage == DistannQueryStage::ReplicaGraphVectorRead)
+            .expect("replica read row");
+        assert_eq!(replica_read.samples, 1);
+        assert_eq!(replica_read.elapsed_ns, 13);
+        let rounds = materialization_work_snapshot()
+            .1
+            .into_iter()
+            .find(|row| row.metric == DistannMaterializationWork::TraversalHopRounds)
+            .expect("hop rounds row");
+        assert_eq!(rounds.value, 2);
     }
 }

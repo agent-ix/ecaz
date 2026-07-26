@@ -236,6 +236,11 @@ pub(super) fn recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                         &activation_digest,
                     )?;
                 }
+                super::super::traversal_replica::retire_superseded_replicas(
+                    index_oid,
+                    logical_index_uuid,
+                    build_id,
+                )?;
                 source_lock.release_after_commit();
                 return Ok(epoch_fingerprint);
             }
@@ -520,6 +525,12 @@ pub(super) fn recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                 "registration",
             )
         })?;
+
+        super::super::traversal_replica::retire_superseded_replicas(
+            index_oid,
+            logical_index_uuid,
+            build_id,
+        )?;
 
         // Release the coordinator session locks after this swap commits.
         schedule_session_lock_release_for_control(index_oid);

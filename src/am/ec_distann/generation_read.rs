@@ -654,7 +654,6 @@ struct RetainedGenerationScan {
     owner_payload_plans: Rc<RefCell<VecDeque<CachedOwnerPayloadPlan>>>,
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 #[derive(Debug)]
 pub(crate) struct TraversalReplicaChunkRow {
     pub(crate) owner_ordinal: u32,
@@ -825,7 +824,6 @@ impl RetainedGenerationScan {
         Ok(())
     }
 
-    #[cfg(feature = "distann-head-attribution-benchmark")]
     fn traversal_replica_chunk(
         &self,
         after_vec_id: Option<i64>,
@@ -1046,7 +1044,11 @@ impl RetainedGenerationScan {
                 })
                 .collect::<Result<Vec<_>, DistannExpandError>>()
         })?;
-        candidates.sort_unstable_by(|left, right| left.dist.total_cmp(&right.dist));
+        candidates.sort_unstable_by(|left, right| {
+            left.dist
+                .total_cmp(&right.dist)
+                .then_with(|| left.vec_id.cmp(&right.vec_id))
+        });
         candidates.truncate(limit);
         Ok(candidates)
     }
@@ -1423,7 +1425,6 @@ fn duration_ns(duration: std::time::Duration) -> u64 {
     u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX)
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn local_traversal_replica_chunk(
     index_oid: pg_sys::Oid,
     epoch_fingerprint: &[u8],
@@ -1434,7 +1435,6 @@ pub(crate) fn local_traversal_replica_chunk(
         .traversal_replica_chunk(after_vec_id, limit)
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 #[pg_extern(volatile, parallel_restricted)]
 fn ec_distann_stream_traversal_replica_chunk(
     index_regclass: PgRelation,
@@ -2089,7 +2089,6 @@ fn ec_distann_materialize_physical_row_payloads_profile(
 }
 
 pub(crate) struct PhysicalGenerationScan {
-    #[cfg(feature = "distann-head-attribution-benchmark")]
     index_oid: pg_sys::Oid,
     descriptor: Arc<DistannGenerationDescriptor>,
     generation: Option<GenerationCatalogRow>,
@@ -2107,6 +2106,16 @@ pub(crate) struct PhysicalGenerationScan {
 pub(crate) struct PhysicalRemotePayload {
     pub(crate) payload_nulls: Vec<bool>,
     pub(crate) payload_values: Vec<Vec<u8>>,
+}
+
+fn bounded_replica_failure_reason(kind: &str, error: &str) -> String {
+    const MAX_ERROR_CHARS: usize = 768;
+    let bounded = error.chars().take(MAX_ERROR_CHARS).collect::<String>();
+    if error.chars().count() > MAX_ERROR_CHARS {
+        format!("{kind}: {bounded}…")
+    } else {
+        format!("{kind}: {bounded}")
+    }
 }
 
 pub(crate) fn active_generation_identity(
@@ -2324,7 +2333,6 @@ impl PhysicalGenerationScan {
             }
         };
         Ok(Self {
-            #[cfg(feature = "distann-head-attribution-benchmark")]
             index_oid,
             descriptor,
             generation,
@@ -2344,7 +2352,6 @@ impl PhysicalGenerationScan {
         self.row_relation.as_ref().map(HeapRelationGuard::as_ptr)
     }
 
-    #[cfg(feature = "distann-head-attribution-benchmark")]
     pub(crate) fn traversal_replica_source(
         &self,
     ) -> (
@@ -2417,52 +2424,104 @@ impl PhysicalGenerationScan {
             debug_fail_hop_round: super::options::debug_fail_hop_round(),
         };
         #[cfg(feature = "distann-head-attribution-benchmark")]
-        if super::options::benchmark_traversal_replica() {
-            let replica_open_started = Instant::now();
-            let logical_index_uuid =
-                Uuid::from_bytes(self.descriptor.coordinator_logical_index_uuid);
-            let local_ordinal = self
-                .generation
-                .as_ref()
-                .map(|generation| generation.owner_ordinal as usize);
-            let replica = super::traversal_replica::ReadyTraversalReplica::open(
-                self.index_oid,
-                logical_index_uuid,
-                self.build_id,
-                &self.fingerprint,
-                &self.descriptor,
-                self.descriptor_digest,
-                local_ordinal,
-                snapshot,
-                query,
-                &prepared,
-            );
-            super::stage_counters::record(
-                super::stage_counters::DistannQueryStage::ReplicaOpenValidate,
-                replica_open_started.elapsed(),
-            );
-            if let Ok(Some(mut replica)) = replica {
+        let replica_open_started = Instant::now();
+        let logical_index_uuid = Uuid::from_bytes(self.descriptor.coordinator_logical_index_uuid);
+        let local_ordinal = self
+            .generation
+            .as_ref()
+            .map(|generation| generation.owner_ordinal as usize);
+        let replica = super::traversal_replica::ReadyTraversalReplica::open(
+            self.index_oid,
+            logical_index_uuid,
+            self.build_id,
+            &self.fingerprint,
+            &self.descriptor,
+            self.descriptor_digest,
+            local_ordinal,
+            snapshot,
+            query,
+            &prepared,
+        );
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::record(
+            super::stage_counters::DistannQueryStage::ReplicaOpenValidate,
+            replica_open_started.elapsed(),
+        );
+        match replica {
+            Ok(Some(mut replica)) => {
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                if super::options::benchmark_exact_neighbor() {
+                    return Err(
+                        "EC_REPLICA_ALGORITHM_MISMATCH: exact-neighbor scoring has no traversal-replica implementation"
+                            .to_owned(),
+                    );
+                }
+                #[cfg(feature = "distann-head-attribution-benchmark")]
                 super::stage_counters::record_work(
                     super::stage_counters::DistannMaterializationWork::ReplicaScans,
                     1,
                 );
+                #[cfg(feature = "distann-head-attribution-benchmark")]
                 let traversal_started = Instant::now();
-                if let Ok((hits, counters)) = replica.search(&all_seeds, params) {
-                    super::stage_counters::record(
-                        super::stage_counters::DistannQueryStage::TraversalTotal,
-                        traversal_started.elapsed(),
-                    );
-                    return Ok(DistannHitCollection {
-                        hits,
-                        counters,
-                        multi_node: self.routes.len() > 1,
-                    });
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                let traversal = super::stage_counters::with_successful_attribution(|| {
+                    replica.search(&all_seeds, params)
+                });
+                #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                let traversal = replica.search(&all_seeds, params);
+                match traversal {
+                    Ok((hits, counters)) => {
+                        #[cfg(feature = "distann-head-attribution-benchmark")]
+                        super::stage_counters::record(
+                            super::stage_counters::DistannQueryStage::TraversalTotal,
+                            traversal_started.elapsed(),
+                        );
+                        return Ok(DistannHitCollection {
+                            hits,
+                            counters,
+                            multi_node: self.routes.len() > 1,
+                        });
+                    }
+                    Err(error) => {
+                        let reason = bounded_replica_failure_reason(
+                            "replica traversal failed",
+                            &error.to_string(),
+                        );
+                        super::traversal_replica::handle_ready_replica_failure(
+                            self.index_oid,
+                            logical_index_uuid,
+                            self.build_id,
+                            &self.fingerprint,
+                            self.descriptor_digest,
+                            &reason,
+                        )?;
+                        pgrx::warning!("{reason}; restarting through owners");
+                        #[cfg(feature = "distann-head-attribution-benchmark")]
+                        super::stage_counters::record_work(
+                            super::stage_counters::DistannMaterializationWork::ReplicaFallbacks,
+                            1,
+                        );
+                    }
                 }
             }
-            super::stage_counters::record_work(
-                super::stage_counters::DistannMaterializationWork::ReplicaFallbacks,
-                1,
-            );
+            Ok(None) => {}
+            Err(error) => {
+                let reason = bounded_replica_failure_reason("replica validation failed", &error);
+                super::traversal_replica::handle_ready_replica_failure(
+                    self.index_oid,
+                    logical_index_uuid,
+                    self.build_id,
+                    &self.fingerprint,
+                    self.descriptor_digest,
+                    &reason,
+                )?;
+                pgrx::warning!("{reason}; restarting through owners");
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::ReplicaFallbacks,
+                    1,
+                );
+            }
         }
 
         let local_expander = match (
@@ -2613,7 +2672,11 @@ impl PhysicalGenerationScan {
         for response in super::remote_transport::remote_physical_seed_batch(&requests) {
             seeds.extend(response.map_err(|error| error.to_string())?);
         }
-        seeds.sort_unstable_by(|left, right| left.dist.total_cmp(&right.dist));
+        seeds.sort_unstable_by(|left, right| {
+            left.dist
+                .total_cmp(&right.dist)
+                .then_with(|| left.vec_id.cmp(&right.vec_id))
+        });
         seeds.truncate(seed_limit);
         Ok(seeds)
     }
@@ -3015,7 +3078,7 @@ impl GenerationExpander<'_> {
                 "EC_SCHEMA_MISMATCH: frozen source vector dimension mismatch".to_owned(),
             ));
         }
-        Ok(-crate::am::ec_diskann::source_inner_product(
+        Ok(-crate::am::ec_diskann::source_inner_product_deterministic(
             self.query, &vector,
         ))
     }

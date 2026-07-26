@@ -1,0 +1,14 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz/.claude/worktrees/task-199
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=42520 rows=2000 dim=16 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=2a4a70b23161f556c44d6d1d2c960541fbcb1bdb extension_build_profile=release debug_override=false
+[distann-multicluster] physical_setup_start rows=2000 nodes=3
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=16637 rows=16637 non_owned=0 orphans=0 graph_bytes=135610368 row_bytes=391266304 directory_bytes=540672 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=16756 rows=16756 non_owned=0 orphans=0 graph_bytes=136822784 row_bytes=394190848 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=16607 rows=16607 non_owned=0 orphans=0 graph_bytes=135299072 row_bytes=393609216 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=16637 rows=16637 non_owned=0 orphans=0 graph_bytes=135610368 row_bytes=391266304 directory_bytes=540672 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=16756 rows=16756 non_owned=0 orphans=0 graph_bytes=136822784 row_bytes=394190848 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=16607 rows=16607 non_owned=0 orphans=0 graph_bytes=135299072 row_bytes=393609216 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=50000
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true expected_source_id=0002ac0d-7833-48cf-8ab0-b2bdbd872cda materialized_source_id=0002ac0d-7833-48cf-8ab0-b2bdbd872cda
+[distann-multicluster] physical_remote_owner node=3 custom_scan=true pass=true expected_source_id=00003e3b-9e53-4668-8200-ae85d21b4f5e materialized_source_id=00003e3b-9e53-4668-8200-ae85d21b4f5e

@@ -68,6 +68,9 @@ pub struct ProviderEnvArgs {
     /// Optional marker file written by every process that loads the provider.
     #[arg(long)]
     marker: Option<String>,
+    /// Optional file whose presence arms injection after the provider loads.
+    #[arg(long)]
+    arm_file: Option<String>,
 }
 
 #[derive(Args, Debug)]
@@ -99,6 +102,9 @@ pub struct ProviderRestartArgs {
     /// Marker file written by every process that loads the provider.
     #[arg(long)]
     marker: Option<PathBuf>,
+    /// Optional file whose presence arms injection after the provider loads.
+    #[arg(long)]
+    arm_file: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
@@ -351,6 +357,7 @@ fn run_provider_env(args: ProviderEnvArgs) -> Result<()> {
         args.after,
         args.latency_ms,
         marker.as_deref(),
+        args.arm_file.as_deref(),
         args.peer_match.as_deref(),
     );
     for (key, value) in env {
@@ -373,12 +380,18 @@ async fn run_provider_restart(args: ProviderRestartArgs) -> Result<()> {
     });
     std::fs::write(&marker, "")?;
     let marker_string = absolute_marker_string(&marker)?;
+    let arm_file = args
+        .arm_file
+        .as_deref()
+        .map(absolute_marker_string)
+        .transpose()?;
     let env = ecaz_fault_injection::provider_environment(
         mode,
         &args.path_match,
         args.after,
         latency_ms,
         Some(&marker_string),
+        arm_file.as_deref(),
         args.peer_match.as_deref(),
     );
     restart_pgrx_postmaster(
@@ -500,6 +513,7 @@ async fn restore_pgrx_postmaster_immediate(
         "ECAZ_FAULT_PROVIDER_AFTER",
         "ECAZ_FAULT_PROVIDER_LATENCY_MS",
         "ECAZ_FAULT_PROVIDER_MARKER",
+        "ECAZ_FAULT_PROVIDER_ARM_FILE",
         "ECAZ_FAULT_PROVIDER_PEER",
     ] {
         start.env_remove(name);
@@ -542,6 +556,7 @@ async fn restart_pgrx_postmaster(
         "ECAZ_FAULT_PROVIDER_AFTER",
         "ECAZ_FAULT_PROVIDER_LATENCY_MS",
         "ECAZ_FAULT_PROVIDER_MARKER",
+        "ECAZ_FAULT_PROVIDER_ARM_FILE",
         "ECAZ_FAULT_PROVIDER_PEER",
     ] {
         command.env_remove(name);

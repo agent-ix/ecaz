@@ -986,10 +986,17 @@ CREATE TABLE ec_distann_traversal_replica (
     peak_copy_batch_bytes bigint NOT NULL DEFAULT 0 CHECK (peak_copy_batch_bytes >= 0),
     relation_bytes bigint CHECK (relation_bytes IS NULL OR relation_bytes >= 0),
     wal_bytes bigint CHECK (wal_bytes IS NULL OR wal_bytes >= 0),
+    state_reason text NOT NULL DEFAULT 'building' CHECK (
+        length(state_reason) BETWEEN 1 AND 256
+    ),
+    last_error text CHECK (
+        last_error IS NULL OR length(last_error) BETWEEN 1 AND 1024
+    ),
     build_started_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     ready_at timestamptz,
     stale_at timestamptz,
     retiring_at timestamptz,
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (index_oid, logical_index_uuid, build_id),
     UNIQUE (index_oid, logical_index_uuid, epoch_fingerprint),
     UNIQUE (replica_relid),
@@ -1026,6 +1033,14 @@ CREATE TABLE ec_distann_traversal_replica (
          AND retiring_at IS NOT NULL)
     )
 );
+
+CREATE UNIQUE INDEX ec_distann_traversal_replica_one_active
+    ON ec_distann_traversal_replica (index_oid, logical_index_uuid)
+    WHERE state IN ('Building', 'Ready');
+
+CREATE UNIQUE INDEX ec_distann_traversal_replica_one_local_authority
+    ON ec_distann_traversal_replica (logical_index_uuid)
+    WHERE state IN ('Building', 'Ready');
 
 CREATE TABLE ec_distann_traversal_replica_owner (
     index_oid oid NOT NULL,

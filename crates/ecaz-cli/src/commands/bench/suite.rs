@@ -548,6 +548,9 @@ struct DistannLocalMultinodeStep {
     distann_stage_counters: bool,
     #[serde(default)]
     materialization_correctness: bool,
+    /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
+    #[serde(default)]
+    traversal_replica_enospc_drill: bool,
     #[serde(default)]
     base_port: Option<u16>,
     #[serde(default)]
@@ -3299,6 +3302,15 @@ impl SuiteStep {
                                 variant.name
                             )
                         }
+                        if variant.traversal_replica
+                            && variant.neighbor_score_mode == "exact_neighbor"
+                        {
+                            bail!(
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} cannot combine traversal_replica with exact_neighbor",
+                                step.name,
+                                variant.name
+                            )
+                        }
                     }
                 }
                 if step.benchmark_iterations == Some(0) {
@@ -3320,6 +3332,12 @@ impl SuiteStep {
                             step.name
                         )
                     }
+                    let effective_beam_width = |variant: &DistannBenchmarkSeedVariant| {
+                        variant.beam_width.or(step.beam_width).unwrap_or(4)
+                    };
+                    let effective_hop_rounds = |variant: &DistannBenchmarkSeedVariant| {
+                        variant.hop_rounds.or(step.hop_rounds).unwrap_or(100)
+                    };
                     let same_search =
                         |left: &DistannBenchmarkSeedVariant,
                          right: &DistannBenchmarkSeedVariant| {
@@ -3327,8 +3345,8 @@ impl SuiteStep {
                                 && left.head_search_width == right.head_search_width
                                 && left.head_seed_count == right.head_seed_count
                                 && left.neighbor_score_mode == right.neighbor_score_mode
-                                && left.beam_width == right.beam_width
-                                && left.hop_rounds == right.hop_rounds
+                                && effective_beam_width(left) == effective_beam_width(right)
+                                && effective_hop_rounds(left) == effective_hop_rounds(right)
                                 && left.traversal_replica == right.traversal_replica
                         };
                     let has_plan_pair = step.benchmark_seed_variants.iter().any(|control| {
@@ -3361,8 +3379,10 @@ impl SuiteStep {
                                     && candidate.head_search_width == control.head_search_width
                                     && candidate.head_seed_count == control.head_seed_count
                                     && candidate.neighbor_score_mode == control.neighbor_score_mode
-                                    && candidate.beam_width == control.beam_width
-                                    && candidate.hop_rounds == control.hop_rounds
+                                    && effective_beam_width(candidate)
+                                        == effective_beam_width(control)
+                                    && effective_hop_rounds(candidate)
+                                        == effective_hop_rounds(control)
                             })
                     });
                     if !has_plan_pair && !has_batch_pair && !has_traversal_pair {
@@ -4188,6 +4208,9 @@ fn expand_distann_local_multinode(
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());
     }
+    if step.traversal_replica_enospc_drill {
+        args.push("--traversal-replica-enospc-drill".into());
+    }
     push_opt_arg(
         &mut args,
         "--benchmark-iterations",
@@ -4259,52 +4282,27 @@ fn expand_distann_local_multinode(
         step.training_query_path.as_deref(),
     );
     for variant in &step.benchmark_seed_variants {
-        let mut encoded = format!(
-            "{}:{}:{}:{}:{}:{}",
+        let encoded = format!(
+            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             variant.name,
             variant.seed_strategy,
             variant.head_search_width,
             variant.head_seed_count,
             variant.neighbor_score_mode,
-            variant.materialization_batch_size
-        );
-        let has_extended_controls = variant.owner_payload_plan_cache.is_some()
-            || variant.beam_width.is_some()
-            || variant.hop_rounds.is_some()
-            || variant.traversal_replica;
-        if has_extended_controls {
-            encoded.push(':');
-            encoded.push_str(if variant.owner_payload_plan_cache.unwrap_or(false) {
+            variant.materialization_batch_size,
+            if variant.owner_payload_plan_cache.unwrap_or(false) {
                 "on"
             } else {
                 "off"
-            });
-        }
-        if variant.beam_width.is_some() || variant.hop_rounds.is_some() || variant.traversal_replica
-        {
-            encoded.push(':');
-            encoded.push_str(
-                &variant
-                    .beam_width
-                    .or(step.beam_width)
-                    .unwrap_or(4)
-                    .to_string(),
-            );
-        }
-        if variant.hop_rounds.is_some() || variant.traversal_replica {
-            encoded.push(':');
-            encoded.push_str(
-                &variant
-                    .hop_rounds
-                    .or(step.hop_rounds)
-                    .unwrap_or(100)
-                    .to_string(),
-            );
-        }
-        if variant.traversal_replica {
-            encoded.push(':');
-            encoded.push_str("on");
-        }
+            },
+            variant.beam_width.or(step.beam_width).unwrap_or(4),
+            variant.hop_rounds.or(step.hop_rounds).unwrap_or(100),
+            if variant.traversal_replica {
+                "on"
+            } else {
+                "off"
+            },
+        );
         push_arg(&mut args, "--benchmark-seed-variant", &encoded);
     }
     push_opt_arg(
@@ -5613,6 +5611,7 @@ psql header noise\n\
             "physical_benchmark": true,
             "compact_artifacts": true,
             "allow_debug_extension": true,
+            "traversal_replica_enospc_drill": true,
             "artifact_dir": "artifacts/cap-256",
             "benchmark_warmup_iterations": 7,
             "drop_extension_cleanup_drill": true,
@@ -5648,6 +5647,7 @@ psql header noise\n\
             .any(|window| window == ["--benchmark-warmup-iterations", "7"]));
         assert!(command.contains(&"--drop-extension-cleanup-drill".into()));
         assert!(command.contains(&"--allow-debug-extension".into()));
+        assert!(command.contains(&"--traversal-replica-enospc-drill".into()));
         assert_eq!(
             config.steps[0].expected_artifacts(),
             vec![PathBuf::from(
@@ -5879,7 +5879,7 @@ psql header noise\n\
     }
 
     #[test]
-    fn distann_production_variant_does_not_encode_step_search_shape() {
+    fn distann_variants_normalize_effective_search_shape() {
         let raw = r#"{
           "name": "production",
           "schema_version": 1,
@@ -5910,9 +5910,56 @@ psql header noise\n\
             window
                 == [
                     "--benchmark-seed-variant",
-                    "production:persisted_head:32:32:rabitq:10",
+                    "production:persisted_head:32:32:rabitq:10:off:4:100:off",
                 ]
         }));
+    }
+
+    #[test]
+    fn distann_traversal_pair_with_implicit_search_shape_stays_pairable() {
+        let raw = r#"{
+          "name": "replica-default-shape",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "candidate-10k",
+            "physical_benchmark": true,
+            "materialization_correctness": true,
+            "corpus_prefix": "ec_real_10k",
+            "benchmark_seed_variants": [
+              {
+                "name": "owner",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10
+              },
+              {
+                "name": "replica",
+                "seed_strategy": "persisted_head",
+                "head_search_width": 32,
+                "head_seed_count": 32,
+                "neighbor_score_mode": "rabitq",
+                "materialization_batch_size": 10,
+                "traversal_replica": true
+              }
+            ]
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("effective defaults form a valid pair");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        for expected in [
+            "owner:persisted_head:32:32:rabitq:10:off:4:100:off",
+            "replica:persisted_head:32:32:rabitq:10:off:4:100:on",
+        ] {
+            assert!(command
+                .windows(2)
+                .any(|window| { window == ["--benchmark-seed-variant", expected] }));
+        }
     }
 
     #[test]

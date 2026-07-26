@@ -1,0 +1,121 @@
+{
+  "suite": "task199-normal-release-10k-50k-100k",
+  "schema_version": 1,
+  "config": "reviews/task-199/003-release-matrix-and-decision/artifacts/task199-normal-release-10k-50k-100k.json",
+  "config_sha256": "515bf5b80c06356ce29a76637525e364ef16c3bc3fe16689032be6bb7fd0c730",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785023233674,
+  "runner_git_commit": "5738a8ffadf9fa4cc7dbd2f699063a23f9648a00",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "normal-release-ab-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task199",
+        "phase5",
+        "normal_release",
+        "ec_real_10k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-199/003-release-matrix-and-decision/artifacts/run/normal-release-ab-10k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "normal-release-ab-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task199",
+        "phase5",
+        "normal_release",
+        "ec_real_50k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-199/003-release-matrix-and-decision/artifacts/run/normal-release-ab-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "normal-release-ab-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--pgbin",
+        "/home/peter/.pgrx/18.3/pgrx-install/bin",
+        "--artifact-dir",
+        "reviews/task-199/003-release-matrix-and-decision/artifacts/run/normal-release-ab-100k",
+        "--run-dir",
+        "target/task199-normal-release-matrix",
+        "--log-file",
+        "reviews/task-199/003-release-matrix-and-decision/artifacts/run/normal-release-ab-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--materialization-correctness",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "42420",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--production-head-policy",
+        "training_landmarks_exact",
+        "--training-query-path",
+        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+        "--benchmark-seed-variant",
+        "owner-control:persisted_head:32:32:rabitq:10:off:4:100:off",
+        "--benchmark-seed-variant",
+        "coordinator-replica:persisted_head:32:32:rabitq:10:off:4:100:on",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task199",
+        "phase5",
+        "normal_release",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-199/003-release-matrix-and-decision/artifacts/run/normal-release-ab-100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785023233719,
+      "finished_at_unix_ms": 1785026874351,
+      "duration_ms": 3716044,
+      "exit_code": 0
+    }
+  ]
+}

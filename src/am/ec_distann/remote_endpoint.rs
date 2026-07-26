@@ -30,7 +30,6 @@ use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::slot_guard::TupleTableSlotGuard;
 
 use super::ambuild::read_metadata_from_index_handle;
-use super::quote_ident;
 use super::epoch::{
     compute_epoch_fingerprint, fingerprint_from_bytes, fingerprints_match,
     DISTANN_EPOCH_FINGERPRINT_V1,
@@ -40,6 +39,7 @@ use super::expand_error::DistannExpandError;
 use super::head_cache::cached_index_entry;
 use super::placement::owning_node;
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
+use super::quote_ident;
 use super::reader::{
     directory_lookup, read_directory_from_relation, read_raw_tuple_bytes_from_relation,
 };
@@ -237,6 +237,7 @@ fn ec_distann_apply_record_writes(
 ) -> i64 {
     super::lifecycle_guard::require_read_committed("ec_distann_apply_record_writes")
         .unwrap_or_else(|error| pgrx::error!("{error}"));
+    super::traversal_replica::guard_traversal_replica_mutation(index_regclass);
     apply_record_writes_impl(index_regclass, epoch_fingerprint, &tombstone_vec_ids)
         .unwrap_or_else(|e| e.raise())
 }
@@ -765,8 +766,8 @@ fn expand_nodes_impl(
     let entry = cached_index_entry(index_oid.into(), handle, &metadata)?;
     let prepared_query =
         DistannPreparedQuery::prepare(&metadata, entry.flat_codebooks.as_deref(), query)?;
-    let owner_open_validate_ns = i64::try_from(open_validate_started.elapsed().as_nanos())
-        .unwrap_or(i64::MAX);
+    let owner_open_validate_ns =
+        i64::try_from(open_validate_started.elapsed().as_nanos()).unwrap_or(i64::MAX);
     let code_len = metadata_code_len(&metadata)?;
 
     let heap_oid = index_heap_relation_oid_handle(handle);

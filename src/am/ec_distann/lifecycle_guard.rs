@@ -6,7 +6,10 @@ use pgrx::pg_sys;
 /// reject them before an endpoint acquires any lock or opens a transport.
 pub(crate) fn require_read_committed(operation: &str) -> Result<(), String> {
     let isolation = unsafe { pg_sys::XactIsoLevel };
-    if isolation != pg_sys::XACT_READ_COMMITTED as i32 {
+    // PostgreSQL implements READ UNCOMMITTED with READ COMMITTED's
+    // statement-snapshot behavior. Reject only levels that retain a
+    // transaction snapshot.
+    if isolation >= pg_sys::XACT_REPEATABLE_READ as i32 {
         return Err(format!(
             "EC_TRANSACTION_ISOLATION: {operation} requires READ COMMITTED"
         ));
