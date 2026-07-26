@@ -1,15 +1,15 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **open; Apple-M5 implementation, local PG18 validation, and source
-review complete, designated Intel/Linux execution pending** — the historical
-Linux packet proved the four-AM `ec_hnsw`/`ec_ivf`/`ec_diskann`/`ec_spire`
-surface. The current Task 38 branch adds `ec_distann` as a first-class AM with
-separate RaBitQ, TurboQuant, and grouped-PQ fixtures, exact-peer socket
-reset/latency provider modes, measured slow-disk comparison inputs, stronger
-accumulator markers, reset-safe palloc handling, armed exact-peer DistANN TCP
-and SPIRE Unix-socket drills, an executable seven-fixture systemd-scoped
-cgroup OOM drill, and repeatable seven-fixture cancellation/palloc mutation
-controls.
+Status: **open; Apple-M5 local PG18 evidence and reviewed source slices
+complete, authoritative `fault-full` aggregation and designated Intel/Linux
+execution pending** — the historical Linux packet proved the four-AM
+`ec_hnsw`/`ec_ivf`/`ec_diskann`/`ec_spire` surface. The current Task 38 branch
+adds `ec_distann` as a first-class AM with separate RaBitQ, TurboQuant, and
+grouped-PQ fixtures, exact-peer socket reset/latency provider modes, measured
+slow-disk comparison inputs, stronger accumulator markers, reset-safe palloc
+handling, armed exact-peer DistANN TCP and SPIRE Unix-socket drills, an
+executable seven-fixture systemd-scoped cgroup OOM drill, and repeatable
+seven-fixture cancellation/palloc mutation controls.
 
 The seven current fixtures flow through real build, KNN scan, insert,
 delete/vacuum, DDL, cancel/terminate, statement/idle/lock timeout, palloc,
@@ -31,17 +31,38 @@ packets 001 through 007 have outside approval for their stated implementation,
 source, inventory, and M5-local evidence scopes; those approvals do not
 substitute for the missing live Linux evidence.
 
-The Apple-M5 validation boundary is complete. Packet 006 inventories every
-explicit ECAZ interrupt boundary and files Task 200 for unpolled-loop
-classification/remediation. Packet 007 proves the production cancellation
-oracle rejects a deliberate wrong AM failure and proves the real-AM recovery
-oracle rejects an unrecovered palloc state before accepting the identical scan
-after disarm, across all seven fixtures. The remaining Task 38 hold-open matrix
-is exclusively the designated Intel/Linux execution surface:
+The three Apple-M5-verifiable gaps identified by packet 005 are complete.
+Packet 006 inventories every explicit ECAZ interrupt boundary and files Task
+200 for unpolled-loop classification/remediation. Packet 007 proves the
+production cancellation oracle rejects a deliberate wrong AM failure and
+proves the real-AM recovery oracle rejects an unrecovered palloc state before
+accepting the identical scan after disarm, across all seven fixtures.
 
-- DistANN provider-backed EIO, ENOSPC, and measured slow-disk behavior;
-- DistANN TCP reset/slow and SPIRE named-Unix reset/slow behavior; and
-- seven systemd/cgroup-v2 OOM fixture cases.
+Task 38 still has an implementation gap that can be source-reviewed on M5:
+`make fault-full` must become a genuinely authoritative aggregate rather than
+the current generic dry-run dependency list. It must include the approved
+mutation, remote-socket, and cgroup operators and must orchestrate distinct
+provider modes, restart/restore, exact markers/arm files, and same-run slow
+baselines. After that implementation is reviewed, the designated Intel/Linux
+host must execute and evidence all of the following:
+
+- all three DistANN codecs across applicable heap/index/WAL/temp paths for
+  provider-backed EIO and ENOSPC, plus a same-run measured slow-disk baseline
+  delta, with exact mode/path markers, accepted outcomes, recovery, and shared
+  postconditions;
+- DistANN owner/payload TCP reset with an accepted clean outcome, and TCP slow
+  with the expected source identity and baseline-plus-latency threshold,
+  followed by exact expected-source recovery;
+- SPIRE participant named-Unix reset/slow with a validated healthy baseline,
+  accepted reset error/degraded result, slow stable profile equal to baseline,
+  baseline-plus-latency timing, and recovered stable profile equal to
+  baseline; and
+- seven systemd/cgroup-v2 OOM cases with `Result=oom-kill`, dead scoped
+  postmaster, exact row-count equality, valid/ready index, forced AM scan,
+  shared postconditions, and clean post-recovery stop.
+
+Every executed lane must retain a postmaster log with no `PANIC` and pass the
+buffer/lock cleanup criteria.
 
 ## Scope
 
