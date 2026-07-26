@@ -45,8 +45,9 @@ message socket I/O entry points; file-provider matching remains separate.
 Provider restore removes the peer filter along with the existing LD_PRELOAD
 variables. Linux builds now enable `-Wall -Wextra` for the provider.
 
-The Linux LD_PRELOAD provider has not been compiled on any host, including CI.
-This macOS/aarch64 host cannot build or execute it
+The Linux LD_PRELOAD provider compiled successfully on Ubuntu 24.04 x86_64 in
+the manually dispatched PG18 job for this PR head. That job does not load or
+exercise the provider. This macOS/aarch64 host cannot build or execute it
 and has neither cgroup v2 nor `systemd-run`. Consequently local provider EIO,
 ENOSPC, measured slow-disk, SPIRE/DistANN exact-peer socket faults, and cgroup
 OOM remain explicitly unavailable. The socket provider and cgroup operator
@@ -103,8 +104,8 @@ upstream base across many untouched files; the packet retains that output.
 
 ## Open Linux Evidence
 
-Task 38 remains open. A Linux session must compile the provider, run a focused
-TCP `socket-reset` case against a real SPIRE SQL or DistANN owner/payload peer,
-and trace the network syscalls used by that workload. The same host must still
-capture live provider-backed DistANN EIO/ENOSPC/slow-disk evidence and the
-cgroup-v2 OOM lane before task closeout.
+Task 38 remains open. A Linux session must run a focused TCP `socket-reset`
+case against a real SPIRE SQL or DistANN owner/payload peer and trace the
+network syscalls used by that workload. The same host must still capture live
+provider-backed DistANN EIO/ENOSPC/slow-disk evidence and the cgroup-v2 OOM
+lane before task closeout.

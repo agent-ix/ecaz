@@ -174,7 +174,7 @@ The extension was installed with the repository operator helper; see
 `systemd-run` and `/sys/fs/cgroup/cgroup.controllers` are unavailable.
 Consequently:
 
-- Linux LD_PRELOAD provider compilation/execution: unavailable on this host.
+- Linux LD_PRELOAD provider execution: unavailable on this host.
 - Exact-peer socket reset/slow live run: unavailable on this host.
 - cgroup v2 user-scope OOM run: unavailable on this host.
 
@@ -231,6 +231,18 @@ the same host class as the packet, with the same LD_PRELOAD limits.
 - Change coverage: TCP-only peer validation; scalar, vectored, datagram, and
   message socket entry points; `errno` preservation; unrepresentable invalid
   DistANN fixture state; Linux provider compilation enables `-Wall -Wextra`.
-- Evidence ceiling: no Linux compile or runtime claim yet. The existing manual
-  Ubuntu workflow can establish compilation; a focused TCP reset against a
-  real peer and network syscall trace still require a Linux runtime.
+- Linux compile evidence: manual workflow run `30182597508`, PG18 job
+  `89741642068`, head `59419745e`. Its `Build operator CLI` step passed on
+  Ubuntu 24.04 x86_64. Since `ecaz-cli` directly depends on
+  `ecaz-fault-injection`, the Linux-only provider build script completed with
+  `-Wall -Wextra`.
+- Evidence ceiling: CI did not load or exercise the provider. A focused TCP
+  reset against a real peer and network syscall trace still require a Linux
+  runtime.
+
+### `2026-07-25-linux-provider-compile-ci.log`
+
+- Source: GitHub Actions run `30182597508`, job `89741642068`.
+- Key result: `Build operator CLI` completed successfully at exact head
+  `59419745e`; the full PG18 job also completed successfully.
+- Scope: Linux x86_64 compilation only. No provider runtime claim.

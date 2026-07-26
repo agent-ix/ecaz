@@ -25,6 +25,7 @@ Scope:
   Linux provider compilation enables -Wall -Wextra.
 
 Evidence ceiling:
-  This is not Linux compile or runtime evidence. The provider has not been
-  compiled on any host, including CI. A Linux compile, focused TCP socket-reset
-  run against a real peer, and network syscall trace remain required.
+  This local run is not Linux compile or runtime evidence. Subsequent manual CI
+  run 30182597508 provides Linux compile evidence only. A focused TCP
+  socket-reset run against a real peer and network syscall trace remain
+  required.
