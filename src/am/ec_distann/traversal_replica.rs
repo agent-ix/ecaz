@@ -2641,6 +2641,6 @@ mod tests {
         assert!(ready_replica_is_suppressed(index_oid, build_id));
         assert!(!ready_replica_is_suppressed(other_index, build_id));
         assert!(!ready_replica_is_suppressed(index_oid, other_build));
-        TRAVERSAL_REPLICA_SUPPRESSION.with(|suppressed| suppressed.borrow_mut().clear());
+        SUPPRESSED_READY_REPLICAS.with(|suppressed| suppressed.borrow_mut().clear());
     }
 }
