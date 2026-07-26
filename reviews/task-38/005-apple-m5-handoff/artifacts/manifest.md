@@ -17,9 +17,9 @@
 
 - Command basis: current source inspection, packet-local manifests and
   feedback, `git log`, and final M5 validation from packet 003.
-- Result: all M5-supported implementation and review requirements are
-  complete; live Linux provider/socket/cgroup behavior is missing and Task 38
-  remains open.
+- Result: the current M5 implementation/source-review slice is complete; the
+  audit separately records partial, unverified, and Linux-blocked canonical
+  criteria, so Task 38 remains open.
 - No raw corpus, polling output, operational exhaust, or remote-run data is
   included.
 
@@ -29,4 +29,3 @@
 - Packet 002 seq-02 feedback: APPROVE response.
 - Packet 003 seq-03 feedback: APPROVE response.
 - Packet 004 seq-02 feedback: APPROVE response.
-

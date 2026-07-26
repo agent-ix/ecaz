@@ -2,8 +2,9 @@
 
 ## Summary
 
-This packet records the Task 38 boundary after completing all work and review
-that is valid on the current Apple M5 host.
+This packet records the Task 38 implementation/source-review boundary reached
+on the current Apple M5 host. It does not claim that every canonical validation
+or exit criterion runnable on M5 has already been demonstrated.
 
 The canonical task status now distinguishes source/implementation completion
 from live Intel/Linux execution. DistANN is a first-class fifth AM with
@@ -33,6 +34,13 @@ Held open for the designated Intel/Linux host:
   markers and syscall traces; and
 - all seven `systemd-run --user --scope` cgroup-v2 OOM cases.
 
+Canonical validation still open on M5:
+
+- a durable cancellation-lane mutation control for the deliberately introduced
+  invalid-buffer-style bug criterion; and
+- a complete long-running-loop `CHECK_FOR_INTERRUPTS` inventory (the current
+  documentation is useful but not exhaustive).
+
 No AWS, remote-host, or GitHub Actions execution was used for this handoff.
 No CI/nightly eligibility is claimed.
 
@@ -47,7 +55,7 @@ See `artifacts/manifest.md` and `artifacts/completion-audit.md`.
   the bounded M5 validation window and is explicitly not claimed as a pass;
 - packet 003 final re-review approved implementation `aea65a78f`; and
 - the canonical task remains open for the architecture-specific runtime
-  evidence listed above.
+  evidence and the M5-verifiable validation gaps listed above.
 
 ## Reviewer Focus
 
@@ -55,4 +63,3 @@ See `artifacts/manifest.md` and `artifacts/completion-audit.md`.
 - Is the M5-versus-Intel/Linux evidence boundary stated without converting
   source review into a runtime claim?
 - Is keeping Task 38 open the correct status?
-
