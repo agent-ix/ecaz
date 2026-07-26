@@ -20,6 +20,7 @@ fn main() {
         .arg("-O2")
         .arg("-Wall")
         .arg("-Wextra")
+        .arg("-Werror")
         .arg("src/ldpreload_provider.c")
         .arg("-o")
         .arg(&provider)
