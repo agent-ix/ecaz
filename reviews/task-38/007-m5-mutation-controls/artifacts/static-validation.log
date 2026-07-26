@@ -1,0 +1,27 @@
+Task 38 packet 007 static validation
+timestamp=2026-07-26T20:32:07Z
+code_checkpoint=374166bd3c88ddabf85f42d9fffb1ac0ed1fd7bc
+host=local Apple M5 macOS arm64
+remote_execution=none
+
+command=/Users/peter/.rustup/toolchains/nightly-aarch64-apple-darwin/bin/rustfmt --edition 2021 --check crates/ecaz-cli/src/commands/dev/fault.rs
+result=PASS
+
+command=git diff --check 6cc24bf3e..374166bd3
+result=PASS (no output)
+
+command=cargo check -p ecaz-cli --message-format short
+result=PASS elapsed=2m50s
+notes=one pre-existing dead-code warning at crates/ecaz-cli/src/commands/corpus/load.rs:190
+
+command=cargo build -p ecaz-cli --message-format short
+result=PASS elapsed=31.73s
+notes=incremental build after final recovery-oracle tightening; PostgreSQL-header warnings and the pre-existing corpus/load.rs warning only
+
+command=cargo clippy -p ecaz-cli --no-deps --message-format short
+result=PASS exit=0 elapsed=20m25s
+notes=repository-existing warnings remain; no warning in the new mutation-control code
+
+command=target/debug/ecaz --database ecaz_fault_task38 --host /Users/peter/.pgrx --port 28818 --log-file reviews/task-38/007-m5-mutation-controls/artifacts/all-fixtures-mutation-control-live.log dev fault mutation-control --rows 16
+result=PASS exit=0
+key_counts=cancellation_rejected:7 resource_recovery_rejected:7 pins_zero:9 fixtures_complete:7
