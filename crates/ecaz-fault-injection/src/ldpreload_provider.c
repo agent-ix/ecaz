@@ -28,7 +28,17 @@ struct open_how {
 
 static int enabled(void) {
     const char *value = getenv("ECAZ_FAULT_PROVIDER_ENABLE");
-    return value && strcmp(value, "1") == 0;
+    if (!value || strcmp(value, "1") != 0) {
+        return 0;
+    }
+    /*
+     * Long-lived postmasters need to finish remote fixture setup before a
+     * narrowly targeted transport fault is armed. When configured, file
+     * existence is the operator-controlled gate; removing the file disarms
+     * injection without restarting the postmaster.
+     */
+    const char *arm_file = getenv("ECAZ_FAULT_PROVIDER_ARM_FILE");
+    return !arm_file || !*arm_file || access(arm_file, F_OK) == 0;
 }
 
 static int mode_is(const char *mode) {

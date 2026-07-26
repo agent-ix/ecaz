@@ -44,6 +44,7 @@ pub fn provider_environment(
     after: u64,
     latency_ms: Option<u64>,
     marker: Option<&str>,
+    arm_file: Option<&str>,
     peer_match: Option<&str>,
 ) -> Vec<(String, String)> {
     let mut env = vec![
@@ -75,6 +76,12 @@ pub fn provider_environment(
     }
     if let Some(marker) = marker {
         env.push(("ECAZ_FAULT_PROVIDER_MARKER".to_string(), marker.to_string()));
+    }
+    if let Some(arm_file) = arm_file {
+        env.push((
+            "ECAZ_FAULT_PROVIDER_ARM_FILE".to_string(),
+            arm_file.to_string(),
+        ));
     }
     if let Some(peer_match) = peer_match {
         env.push((
@@ -916,6 +923,7 @@ mod tests {
             None,
             Some("/tmp/ecaz-fault-provider.marker"),
             None,
+            None,
         );
         assert!(env.iter().any(|(key, value)| {
             key == "LD_PRELOAD" && (value.ends_with(".so") || value.contains("not built"))
@@ -936,6 +944,7 @@ mod tests {
             2,
             None,
             Some("/tmp/ecaz-fault-provider.marker"),
+            Some("/tmp/ecaz-fault-provider.arm"),
             Some("tcp:127.0.0.1:39711"),
         );
         assert!(env
@@ -943,6 +952,9 @@ mod tests {
             .any(|(key, value)| { key == "ECAZ_FAULT_PROVIDER_MODE" && value == "socket-reset" }));
         assert!(env.iter().any(|(key, value)| {
             key == "ECAZ_FAULT_PROVIDER_PEER" && value == "tcp:127.0.0.1:39711"
+        }));
+        assert!(env.iter().any(|(key, value)| {
+            key == "ECAZ_FAULT_PROVIDER_ARM_FILE" && value == "/tmp/ecaz-fault-provider.arm"
         }));
     }
 
@@ -979,6 +991,51 @@ mod tests {
             marker_content.contains("fault=1")
                 && marker_content.contains("mode=eio-read")
                 && marker_content.contains("target=/etc/hosts"),
+            "unexpected marker: {marker_content}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ldpreload_provider_arm_file_gates_injection() {
+        let provider = provider_library_path().expect("linux provider should be built");
+        let arm_file = format!("/tmp/ecaz_fault_provider_arm_{}", std::process::id());
+        let marker = format!("/tmp/ecaz_fault_provider_arm_marker_{}", std::process::id());
+        let _ = std::fs::remove_file(&arm_file);
+        let disarmed = Command::new("/bin/cat")
+            .arg("/etc/hosts")
+            .env("LD_PRELOAD", provider)
+            .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+            .env("ECAZ_FAULT_PROVIDER_MODE", "eio-read")
+            .env("ECAZ_FAULT_PROVIDER_MATCH", "/etc/hosts")
+            .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+            .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
+            .env("ECAZ_FAULT_PROVIDER_ARM_FILE", &arm_file)
+            .output()
+            .expect("run disarmed provider-backed cat");
+        assert!(
+            disarmed.status.success(),
+            "missing arm file must leave matched reads untouched"
+        );
+
+        std::fs::write(&arm_file, "").expect("create provider arm file");
+        let armed = Command::new("/bin/cat")
+            .arg("/etc/hosts")
+            .env("LD_PRELOAD", provider)
+            .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+            .env("ECAZ_FAULT_PROVIDER_MODE", "eio-read")
+            .env("ECAZ_FAULT_PROVIDER_MATCH", "/etc/hosts")
+            .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+            .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
+            .env("ECAZ_FAULT_PROVIDER_ARM_FILE", &arm_file)
+            .output()
+            .expect("run armed provider-backed cat");
+        let marker_content = std::fs::read_to_string(&marker).expect("read provider marker");
+        let _ = std::fs::remove_file(&arm_file);
+        let _ = std::fs::remove_file(&marker);
+        assert!(!armed.status.success(), "arm file must enable injection");
+        assert!(
+            marker_content.contains("fault=1") && marker_content.contains("mode=eio-read"),
             "unexpected marker: {marker_content}"
         );
     }

@@ -499,6 +499,11 @@ sessions, relation/advisory locks, prepared transactions, optional
   `tcp:[IPv6]:PORT`, or an absolute named `unix:/path`; socket modes reject a
   missing or unstable identity. Unnamed and abstract `AF_UNIX` peers never
   match because they do not have a stable pathname.
+- `--arm-file <absolute-path>` starts the provider disarmed and makes file
+  existence the injection gate. This lets a long-lived coordinator complete
+  real SPIRE/DistANN topology setup before the operator creates the arm file
+  for the targeted remote query; removing the file disarms subsequent traffic
+  so recovery can be checked without another postmaster restart.
 - `ecaz dev fault provider-restart` and `ecaz dev fault provider-restore`
   wrap the local pgrx `pg_ctl restart` step so provider-backed lanes do not
   require hand-assembled `LD_PRELOAD` commands. Marker paths passed to
@@ -584,6 +589,13 @@ socket faults. SPIRE loopback remote SQL uses Unix sockets, while DistANN
 multicluster owner/payload SQL uses loopback TCP. On Linux, start only the
 coordinator with the exact named-Unix or TCP peer filter, require a reset/slow
 `fault=1` marker, restore the provider, and run the shared postconditions.
+`make fault-distann-remote-socket-smoke` automates that sequence for a real
+two-owner physical DistANN fixture. The coordinator starts with the provider
+disarmed, proves the baseline remote owner query, creates the arm file for one
+exact-peer query, requires the reset/error or measured delay plus a matching
+`fault=1` marker, removes the arm file, and requires the next remote-owner
+query to recover successfully. Set `FAULT_SOCKET_PROVIDER_MODE` to
+`socket-reset` or `socket-slow`.
 Unnamed and abstract Unix peers are deliberately non-matchable. This macOS
 host cannot load the Linux provider, so no live socket result is claimed. SPIRE
 object-store reads remain **nonexistent**, not an unavailable transport test.

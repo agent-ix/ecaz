@@ -807,6 +807,27 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_distann_remote_socket_fault_command() {
+        let cli = Cli::try_parse_from([
+            "ecaz",
+            "dev",
+            "distann-multicluster",
+            "local-multinode-pg18",
+            "--nodes",
+            "2",
+            "--remote-socket-fault",
+            "reset",
+        ])
+        .expect("cli parses");
+        match cli.command {
+            super::Command::Dev {
+                command: crate::commands::dev::DevCommand::DistannMulticluster { command: _command },
+            } => {}
+            other => panic!("unexpected command: {other:?}"),
+        }
+    }
+
+    #[test]
     fn cli_parses_fault_provider_env_command() {
         let cli = Cli::try_parse_from([
             "ecaz",
@@ -840,6 +861,8 @@ mod tests {
             "socket-reset",
             "--peer-match",
             "tcp:127.0.0.1:39711",
+            "--arm-file",
+            "/tmp/ecaz-fault-provider.arm",
             "--after",
             "3",
         ])
