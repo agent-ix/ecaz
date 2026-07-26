@@ -27,6 +27,6 @@ Scope:
 
 Evidence ceiling:
   This local run is not Linux compile or runtime evidence. Subsequent manual CI
-  run 30182597508 provides Linux compile evidence only. A focused TCP
+  run 30183037880 provides Linux compile evidence only. A focused socket
   socket-reset run against a real peer and network syscall trace remain
   required.

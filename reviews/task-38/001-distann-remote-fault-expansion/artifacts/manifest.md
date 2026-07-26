@@ -232,8 +232,8 @@ the same host class as the packet, with the same LD_PRELOAD limits.
   abstract Unix peers rejected; scalar, vectored, datagram, and message socket
   entry points; `errno` preservation; unrepresentable invalid DistANN fixture
   state; Linux provider compilation enables `-Wall -Wextra`.
-- Linux compile evidence: manual workflow run `30182597508`, PG18 job
-  `89741642068`, head `59419745e`. Its `Build operator CLI` step passed on
+- Linux compile evidence: manual workflow run `30183037880`, PG18 job
+  `89742835246`, head `18bf5e248`. Its `Build operator CLI` step passed on
   Ubuntu 24.04 x86_64. Since `ecaz-cli` directly depends on
   `ecaz-fault-injection`, the Linux-only provider build script completed with
   `-Wall -Wextra`.
@@ -243,7 +243,7 @@ the same host class as the packet, with the same LD_PRELOAD limits.
 
 ### `2026-07-25-linux-provider-compile-ci.log`
 
-- Source: GitHub Actions run `30182597508`, job `89741642068`.
+- Source: GitHub Actions run `30183037880`, job `89742835246`.
 - Key result: `Build operator CLI` completed successfully at exact head
-  `59419745e`; the full PG18 job also completed successfully.
+  `18bf5e248`; the full PG18 job also completed successfully.
 - Scope: Linux x86_64 compilation only. No provider runtime claim.

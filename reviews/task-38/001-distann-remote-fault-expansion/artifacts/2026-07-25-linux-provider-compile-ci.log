@@ -4,12 +4,12 @@ Date: 2026-07-25 America/Los_Angeles
 Repository: agent-ix/ecaz
 Workflow: CI / ci.yml
 Trigger: workflow_dispatch
-Run: 30182597508
-Run URL: https://github.com/agent-ix/ecaz/actions/runs/30182597508
-Head: 59419745ee8f73a1f4cdc9f867128d4b9e47a492
+Run: 30183037880
+Run URL: https://github.com/agent-ix/ecaz/actions/runs/30183037880
+Head: 18bf5e24864b521e45a9c0ad692d1f6ab63a10c9
 
 Job: pgrx pg18
-Job ID: 89741642068
+Job ID: 89742835246
 Runner: Ubuntu 24.04 x86_64
 Result: success
 

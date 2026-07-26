@@ -1,6 +1,6 @@
 head=4d9bbec47
 host=macOS-26.4.1/Darwin-25.4.0/arm64
-linux_ld_preload_provider_compile=pass reason="manual CI run 30182597508 PG18 job 89741642068 built ecaz-cli at head 59419745e on Ubuntu 24.04 x86_64; ecaz-cli directly depends on ecaz-fault-injection"
+linux_ld_preload_provider_compile=pass reason="manual CI run 30183037880 PG18 job 89742835246 built ecaz-cli at head 18bf5e248 on Ubuntu 24.04 x86_64; ecaz-cli directly depends on ecaz-fault-injection"
 linux_ld_preload_provider_runtime=unavailable reason="provider was compiled but not loaded or exercised by CI; current host is macOS"
 distann_local_eio_enospc_slow_disk=unavailable reason="requires live Linux LD_PRELOAD provider and fault=1 markers"
 spire_remote_sql_socket_fault=unavailable reason="production remote SQL transport exists, but exact-peer provider cannot execute on this host"
