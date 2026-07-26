@@ -19,9 +19,10 @@ Results:
 
 Scope:
   FaultFixture is now an enum, so a DistANN fixture without a codec cannot be
-  constructed. Socket peer selection is TCP-only. The provider preserves errno
-  while probing descriptors and interposes read/write, recv/send, readv/writev,
-  recvfrom/sendto, and recvmsg/sendmsg.
+  constructed. Socket peer selection requires a TCP identity or an absolute
+  named Unix path; unnamed and abstract Unix peers cannot match. The provider
+  preserves errno while probing descriptors and interposes read/write,
+  recv/send, readv/writev, recvfrom/sendto, and recvmsg/sendmsg.
   Linux provider compilation enables -Wall -Wextra.
 
 Evidence ceiling:

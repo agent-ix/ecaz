@@ -228,9 +228,10 @@ the same host class as the packet, with the same LD_PRELOAD limits.
   `git diff --check`.
 - Key results: check PASS; fault crate `9 passed; 0 failed`; CLI fault filter
   `31 passed; 0 failed`; diff check PASS.
-- Change coverage: TCP-only peer validation; scalar, vectored, datagram, and
-  message socket entry points; `errno` preservation; unrepresentable invalid
-  DistANN fixture state; Linux provider compilation enables `-Wall -Wextra`.
+- Change coverage: stable named-Unix/TCP peer validation with unnamed and
+  abstract Unix peers rejected; scalar, vectored, datagram, and message socket
+  entry points; `errno` preservation; unrepresentable invalid DistANN fixture
+  state; Linux provider compilation enables `-Wall -Wextra`.
 - Linux compile evidence: manual workflow run `30182597508`, PG18 job
   `89741642068`, head `59419745e`. Its `Build operator CLI` step passed on
   Ubuntu 24.04 x86_64. Since `ecaz-cli` directly depends on

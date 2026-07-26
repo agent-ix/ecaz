@@ -35,13 +35,14 @@ gate records actual high-water and returned fraction and requires at least 95%
 of target. The rerun passed at 100%, 99.9%, and 100% for RaBitQ, TurboQuant,
 and grouped PQ respectively.
 
-The provider foundation now has two TCP-socket-only modes:
+The provider foundation now has two socket-only modes:
 `socket-reset` returns `ECONNRESET` and shuts down the matched connection;
 `socket-slow` applies bounded latency. Both require an exact peer identity
-(`tcp:HOST:PORT` or bracketed IPv6) resolved with `getpeername(2)`.
-Unix-domain peers are rejected because accepted sockets commonly have no
-unique peer pathname. The provider covers scalar, vectored, datagram, and
-message socket I/O entry points; file-provider matching remains separate.
+(`tcp:HOST:PORT`, bracketed IPv6, or absolute named `unix:/path`) resolved
+with `getpeername(2)`. Unnamed and abstract Unix peers never match, preventing
+an empty `unix:` selector from aliasing unrelated accepted connections. The
+provider covers scalar, vectored, datagram, and message socket I/O entry
+points; file-provider matching remains separate.
 Provider restore removes the peer filter along with the existing LD_PRELOAD
 variables. Linux builds now enable `-Wall -Wextra` for the provider.
 
@@ -94,8 +95,8 @@ upstream base across many untouched files; the packet retains that output.
   production-default-off GUC?
 - Is rejecting `--distann-codec` outside `--am distann` the right operator
   contract?
-- Does exact TCP `getpeername(2)` matching adequately isolate SPIRE SQL and
-  DistANN loopback-TCP transport faults from control traffic?
+- Does exact named-Unix/TCP `getpeername(2)` matching adequately isolate SPIRE
+  SQL and DistANN loopback-TCP transport faults from control traffic?
 - Is the quantified 95% accumulator-pressure gate strong enough for
   approximate AMs while avoiding the historical weak `count >= 64` check?
 - Are the Linux provider and cgroup deferrals stated narrowly enough to keep
