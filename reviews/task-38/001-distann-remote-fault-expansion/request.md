@@ -1,4 +1,4 @@
-# Review Request: Task 38 DistANN Fault Model Foundation
+# Review Request: Task 38 DistANN and Remote Fault Expansion
 
 ## Summary
 
@@ -20,9 +20,20 @@ TurboQuant uses the 1536-D no-QJL 4-bit lane, while RaBitQ and grouped PQ use
 test-controlled palloc sweep at build, scan, insert, bulk-delete, and vacuum
 callback boundaries.
 
-This remains a pre-live checkpoint. It does not yet request review of live
-cancellation, timeout, lifecycle, provider I/O, or remote transport evidence.
-Those follow in later code checkpoints within this same packet.
+The local PG18 fixture now has live evidence for all three codecs:
+
+- `pg_cancel_backend` and `pg_terminate_backend` during repeated DistANN KNN
+  work;
+- statement and idle-in-transaction timeout;
+- lock timeout across concurrent reindex, create-index, and vacuum-full;
+- accumulator pressure, temp-file failure/accounting, AM-backed WAL rotation,
+  insert/vacuum, and shared cleanup checks.
+
+The initial exact accumulator assertion exposed a real approximate-result
+boundary: TurboQuant returned 999 of the requested 1000 candidates. The final
+gate records actual high-water and returned fraction and requires at least 95%
+of target. The rerun passed at 100%, 99.9%, and 100% for RaBitQ, TurboQuant,
+and grouped PQ respectively.
 
 The provider foundation now has two socket-only modes:
 `socket-reset` returns `ECONNRESET` and shuts down the matched connection;
@@ -31,10 +42,11 @@ The provider foundation now has two socket-only modes:
 `getpeername(2)`. File-provider matching remains separate. Provider restore
 removes the peer filter along with the existing LD_PRELOAD variables.
 
-This macOS/aarch64 host can validate parsing and dry-run environment planning,
-but it cannot build or execute the Linux LD_PRELOAD provider and has neither
-cgroup v2 nor `systemd-run`. No live socket-fault or cgroup pass is claimed in
-this checkpoint.
+This macOS/aarch64 host cannot build or execute the Linux LD_PRELOAD provider
+and has neither cgroup v2 nor `systemd-run`. Consequently local provider EIO,
+ENOSPC, measured slow-disk, SPIRE/DistANN exact-peer socket faults, and cgroup
+OOM remain explicitly unavailable. The socket provider and cgroup operator
+plans are validated, but no `fault=1` or live cgroup pass is claimed.
 
 ## Historical Context
 
@@ -55,6 +67,15 @@ See `artifacts/manifest.md` and the packet-local logs:
 - exact-peer socket-provider environment dry run
 - focused DistANN cancel-plan dry run
 - focused grouped-PQ timeout dry run
+- full seven-fixture fault plan and `make fault-full` dry-run
+- live all-codec DistANN cancel/terminate, timeout, lock-timeout, and resource
+  lanes
+- cgroup host-capability plan
+- final PG18 recovery and cleanup SQL
+
+`cargo fmt --all -- --check` was run and recorded. It fails on the refreshed
+upstream base across many untouched files; the packet retains that output.
+`rustfmt --check` passes for the modified Rust files.
 
 ## Reviewer Focus
 
@@ -70,3 +91,8 @@ See `artifacts/manifest.md` and the packet-local logs:
   contract?
 - Does exact `getpeername(2)` matching adequately isolate SPIRE Unix-domain
   and DistANN loopback-TCP transport faults from control traffic?
+- Is the quantified 95% accumulator-pressure gate strong enough for
+  approximate AMs while avoiding the historical weak `count >= 64` check?
+- Are the Linux provider and cgroup deferrals stated narrowly enough to keep
+  Task 38 open without confusing unavailable host capability with nonexistent
+  SPIRE object-store functionality?

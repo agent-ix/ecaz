@@ -1,8 +1,9 @@
 # Artifact Manifest
 
-- Implementation HEAD: `6ca901124`
+- Implementation HEAD: `4d9bbec47`
 - Task bucket: `reviews/task-38/`
 - Packet: `reviews/task-38/001-distann-remote-fault-expansion/`
+- Current evidence capture: `2026-07-25 17:17 America/Los_Angeles`
 - Fixture shape: isolated one-table/one-index fixtures; DistANN uses one
   fixture per neighbor-code format
 - Benchmark matrix: not applicable; this checkpoint changes only
@@ -10,10 +11,16 @@
 
 ## Focused validation
 
-### `fault-injection-tests.log`
+Unless a subsection says otherwise, the final-suffixed, live, matrix, cgroup,
+formatting, install/restart, and final-status artifacts below were captured at
+the current evidence timestamp against implementation HEAD `4d9bbec47`.
+Earlier foundation logs remain provenance for their named checkpoint and are
+superseded where a final-suffixed log exists.
+
+### `fault-injection-tests-final.log`
 
 - Command: `cargo test -p ecaz-fault-injection`
-- Key result: `8 passed; 0 failed`, including five-AM coverage, all three
+- Key result: `9 passed; 0 failed`, including five-AM coverage, all three
   DistANN codecs, and the supported 1536-D TurboQuant fixture.
 
 ### `ecaz-cli-check.log`
@@ -33,6 +40,20 @@
 - Command:
   `cargo test -p ecaz-cli cli_parses_fault_socket_provider_env_command`
 - Key result: `1 passed; 0 failed; 460 filtered out`.
+
+### Final focused CLI parser logs
+
+- `ecaz-cli-distann-parsing-final.log`
+  - Command: `cargo test -p ecaz-cli cli_parses_distann`
+  - Result: `2 passed; 0 failed`; covers DistANN smoke and cgroup planning.
+- `ecaz-cli-socket-parsing-final.log`
+  - Command:
+    `cargo test -p ecaz-cli cli_parses_fault_socket_provider_env_command`
+  - Result: `1 passed; 0 failed`.
+- `ecaz-cli-slow-disk-parsing-final.log`
+  - Command:
+    `cargo test -p ecaz-cli cli_parses_measured_slow_disk_smoke_command`
+  - Result: `1 passed; 0 failed`.
 
 ### `socket-provider-env-dry-run.log`
 
@@ -60,6 +81,93 @@
 - Key result: grouped-PQ statement-timeout and idle-transaction timeout cases
   printed without connecting to PostgreSQL.
 
+### `full-fault-matrix-dry-run.log`
+
+- Command: `target/debug/ecaz --log-file <artifact> dev fault plan`
+- Shape: four original single-index fixtures plus three codec-specific
+  DistANN single-index fixtures.
+- Key result: all seven fixtures appear in every applicable lane; 42 DistANN
+  cases are printed.
+
+### `make-fault-full-dry-run.log`
+
+- Command: `make fault-full`
+- Mode: default `FAULT_SMOKE_FLAGS=--dry-run`; this is operator/Make coverage,
+  not a live aggregate or CI/nightly claim.
+- Key result: every local Make lane completes and includes all three DistANN
+  codecs.
+
+## Live PG18 DistANN
+
+All live commands used database `ecaz_fault_task38`, Unix socket
+`/Users/peter/.pgrx`, port 28818, and isolated one-index-per-table fixtures.
+The extension was installed with the repository operator helper; see
+`ecaz-pg18-install.log` and `pg18-preload-restart.log`.
+
+### `distann-all-codecs-cancel-live.log`
+
+- Command:
+  `target/debug/ecaz ... dev fault smoke --lane cancel --am distann --rows 16`
+- Phase/fault: repeated real codec KNN work; `pg_cancel_backend` and
+  `pg_terminate_backend`.
+- Key result: all six cases pass; fixture pins are zero; I/O and WAL counters
+  are nondecreasing.
+
+### `distann-all-codecs-timeout-live.log`
+
+- Command:
+  `target/debug/ecaz ... dev fault smoke --lane timeout --am distann --rows 16`
+- Phase/fault: repeated real codec KNN work; statement timeout and
+  idle-in-transaction timeout.
+- Key result: all six cases pass with zero fixture pins and clean accounting.
+
+### `distann-all-codecs-lock-timeout-live.log`
+
+- Command:
+  `target/debug/ecaz ... dev fault smoke --lane lock-timeout --am distann
+  --rows 16`
+- Phase/fault: concurrent reindex, create-index, and vacuum-full ownership
+  conflicts.
+- Key result: all codec fixtures pass and shared postconditions are clean.
+
+### `distann-all-codecs-resource-live.log`
+
+- Command:
+  `target/debug/ecaz ... dev fault smoke --lane resource --am distann
+  --rows 16`
+- Phase/fault: 4096-row codec fixtures; target 1000 accumulator pressure,
+  tiny work/maintenance memory, temp-file limit, insert/vacuum, and forced WAL
+  rotation.
+- Key result:
+  - RaBitQ: `returned=1000 returned_fraction_ppm=1000000`
+  - TurboQuant: `returned=999 returned_fraction_ppm=999000`
+  - grouped PQ: `returned=1000 returned_fraction_ppm=1000000`
+  - final fixture pins: zero; I/O/WAL totals nondecreasing.
+
+### `final-pg18-status-cleanup.log`
+
+- Command: installed `ecaz dev sql` with packet-local `--log-output`.
+- Key result: PostgreSQL 18.3, `shared_preload_libraries=ecaz`,
+  `pg_is_in_recovery=false`, zero fault sessions, zero fault locks, zero
+  prepared transactions, and `ecaz.fault_palloc_nth=-1`.
+
+## Formatting
+
+### `cargo-fmt-all-check.log`
+
+- Command: `cargo fmt --all -- --check`
+- Result: fails on the refreshed upstream base, beginning with untouched
+  `crates/ecaz-cli/src/commands/corpus/load.rs` and continuing across many
+  production files. No unrelated mass formatting was applied.
+
+### `modified-rustfmt-check.log`
+
+- Command:
+  `rustfmt --edition 2021 --check crates/ecaz-cli/src/cli.rs
+  crates/ecaz-cli/src/commands/dev/fault.rs
+  crates/ecaz-fault-injection/src/lib.rs`
+- Result: pass.
+
 ## Host
 
 `host-capability.log` records macOS 26.4.1 / Darwin 25.4.0 on arm64.
@@ -71,3 +179,11 @@ Consequently:
 - cgroup v2 user-scope OOM run: unavailable on this host.
 
 No provider `fault=1` proof is claimed yet; it requires a Linux live run.
+
+`cgroup-plan-current-host.log` records
+`availability=unavailable linux=false cgroup_v2=false systemd_run=false` and
+prints the seven host-independent scope cases. `socket-reset-env-current-host.log`
+records the exact TCP peer filter and `LD_PRELOAD=<linux-only provider not
+built>`. SPIRE remote SQL and DistANN owner/payload transport exist, but their
+live socket-provider cases are unavailable on this host. SPIRE object-store
+reads are separately classified as nonexistent.

@@ -1,0 +1,7 @@
+LD_PRELOAD=<linux-only provider not built>
+ECAZ_FAULT_PROVIDER_ENABLE=1
+ECAZ_FAULT_PROVIDER_MODE=socket-reset
+ECAZ_FAULT_PROVIDER_MATCH=base/
+ECAZ_FAULT_PROVIDER_AFTER=3
+ECAZ_FAULT_PROVIDER_MARKER=/Users/peter/dev/tqvector/.task-worktrees/task-38-distann-remote-fault-expansion/reviews/task-38/001-distann-remote-fault-expansion/artifacts/socket-reset.marker
+ECAZ_FAULT_PROVIDER_PEER=tcp:127.0.0.1:39711
