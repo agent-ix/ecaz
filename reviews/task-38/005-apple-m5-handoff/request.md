@@ -38,6 +38,8 @@ Canonical validation still open on M5:
 
 - a durable cancellation-lane mutation control for the deliberately introduced
   invalid-buffer-style bug criterion; and
+- a durable resource/palloc negative control proving the smoke detects an
+  unrecovered accumulator allocation failure; and
 - a complete long-running-loop `CHECK_FOR_INTERRUPTS` inventory (the current
   documentation is useful but not exhaustive).
 

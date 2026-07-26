@@ -48,11 +48,12 @@ M5-executed behavior, and Task 38 closeout are separate conclusions.
 | SPIRE socket reset/slow | same host, real participant named-Unix peer | Exact-peer marker, network syscall trace, accepted reset result, healthy stable slow result, and healthy stable recovery |
 | Seven cgroup OOM fixtures | Linux cgroup v2 plus working `systemd-run --user --scope` | Per-fixture `Result=oom-kill`, dead scoped postmaster, exact rows, valid/ready index, forced AM scan, and shared cleanup postconditions |
 | Cancellation mutation control | Apple M5 PG18 is sufficient | Packet-local temporary-mutation provenance and a live cancellation result showing the lane catches the deliberately introduced invalid-buffer-style defect |
+| Resource/palloc negative control | Apple M5 PG18 is sufficient | Packet-local controlled failure provenance and a five-AM/seven-fixture result proving the smoke rejects an unrecovered accumulator allocation failure |
 | Exhaustive interrupt inventory | Apple M5 source audit is sufficient | Every long-running loop mapped to an interrupt poll or a filed follow-up; include the currently omitted IVF parallel-build site |
 
 ## Conclusion
 
 The current Apple-M5 implementation/source-review slice is complete and
 outside-reviewed. Task 38 remains open, without a closeout or promotion claim,
-for two M5-verifiable canonical validation gaps and the designated Intel/Linux
+for three M5-verifiable canonical validation gaps and the designated Intel/Linux
 execution evidence.
