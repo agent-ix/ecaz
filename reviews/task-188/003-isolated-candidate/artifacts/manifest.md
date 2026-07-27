@@ -7,4 +7,5 @@
 - Lane: PG18 local, three-owner physical DistANN, isolated one-index-per-table surfaces per scale
 - Suite config: `task188-bw8-full-scale-suite.json`
 - Planned command: `ecaz bench suite audit --config reviews/task-188/003-isolated-candidate/artifacts/task188-bw8-full-scale-suite.json`, then `ecaz bench suite run` with packet-local manifest/results
+- Fixture note: the 10k evaluation fixture has 200 queries and no disjoint training slice, so its training policy intentionally uses the disjoint rows 201–400 from the 100k query fixture; evaluation remains `ec_real_10k`.
 - Decision status: candidate selected for full-scale confirmation; no production default or persisted-format change is claimed
