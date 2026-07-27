@@ -35,9 +35,14 @@ and extension code, and were measured in separate long-running builds.
 ## Interpretation
 
 The isolated single-seed attribution found broad reachability, but it did not
-transfer into the joint 32-seed beam: set cover ultimately selected the same
-membership as control. The diversity selector attacked a measured redundancy
-that was too small to matter and imposed a large query-time cost.
+transfer into the joint 32-seed beam. That result must be read narrowly: the
+gateway arm controlled only 127 positive marginal picks and frequency-filled
+the remaining 3,969 slots from the control's own candidate pool, so Jaccard
+1.0 is structurally unsurprising and does not refute a whole-cap objective
+over a larger pool. The runtime diversity selector also measured overlap in
+the 4,096-node head graph rather than the production base-graph traversal
+basin; its result is a prototype-specific, recall-flat STOP, not a family-wide
+refutation.
 
 Selection is based solely on the held-out evaluation rows 1--200. Training and
 validation diagnostics are explanatory only. The unequal tail-fill policy and
@@ -61,5 +66,6 @@ topology, storage, and the excluded pre-measurement attempts are in
    than a candidate win?
 3. Does the identical membership plus flat evaluation recall satisfy Task
    185's conditional rule for skipping the 10k/50k/100k confirmation?
-4. Is the resulting STOP and handoff to Task 186's isolated cap-8,192
-   capacity control decision-grade?
+4. Is the resulting narrow STOP and handoff to Task 186's isolated cap-8,192
+   capacity control decision-grade, while preserving the untested whole-cap
+   gateway and production traversal-basin alternatives?

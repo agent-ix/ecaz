@@ -26,7 +26,12 @@ adaptive-search candidate. Avoid an undifferentiated parameter sweep.
 Tasks 185 and 186 must freeze the best bounded head and provide same-generation
 diagnostics. If entry coverage still dominates, keep this task deferred. If the
 head approaches the owner oracle but final recall remains deficient, run the
-residual attribution.
+residual attribution. Task 185's negative gateway screen was structurally
+constrained: only 127 positive picks controlled the cap and the rest was
+frequency-filled from the control pool, while its basin selector measured the
+head graph rather than the production traversal graph. Therefore Task 188
+must not treat gateway selection or traversal-basin diversity as exhausted;
+any such candidate requires a new, explicitly larger-pool/whole-cap premise.
 
 ## Phase 1: residual attribution
 

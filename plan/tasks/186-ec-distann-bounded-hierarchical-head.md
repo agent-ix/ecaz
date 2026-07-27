@@ -32,7 +32,13 @@ Task 185 must provide one of:
 
 The entry packet freezes Task 185's best policy, corpus/query identities,
 selection evidence, and exact query-work accounting. Do not redesign the
-fixed-cap objective inside this task.
+fixed-cap objective inside this task. The Task 185 gateway arm controlled only
+127 positive marginal picks and frequency-filled the remaining 3,969 of 4,096
+slots from the control's candidate pool, so that result is not evidence that a
+whole-cap gateway objective or a larger candidate pool cannot help. Likewise,
+Task 185's basin-diversity selector measured overlap in the 4,096-node head
+graph, not the production base-graph traversal basin. Capacity work may use
+the retained frequency control, but must not treat either family as exhausted.
 
 ## Candidate screen
 

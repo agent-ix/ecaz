@@ -8,9 +8,9 @@ Date: 2026-07-23 (America/Los_Angeles)
   `reviews/task-185/003-fixed-cap-screen/`.
 - Runner head:
   `c83ea6ea8426df0ae5ddc4e8dec55f68db801a94`.
-- Extension head:
-  `df89b57264adf49903a9f407c76053510e4cb30b`.
-  The two later commits through the runner head change only CLI-side
+- Last extension-source head:
+  `23154d722eee818df1ef4b086b1e76d1d7ceb58e`.
+  The later CLI-only commits through the runner head change only CLI-side
   diagnostic aggregation, not extension code.
 - Extension profile: release, unanimous across all three PG18 nodes.
 - Installed and target extension:
@@ -77,6 +77,18 @@ stale artifacts. Step durations were 2,567,094 ms for the frequency build and
   though the gateway objective is the intended intervention.
 - Candidate selection uses only evaluation recall from rows 1--200. The
   training and validation proxy fields are diagnostics and never break a tie.
+- The gateway screen is structurally constrained: only 127 positive marginal
+  picks control the cap, while 3,969 of 4,096 slots are frequency-filled from
+  the control's candidate pool. Its Jaccard-1.0 result therefore does not
+  refute a whole-cap objective over a larger candidate pool.
+- The basin selector's runtime basin is a 32-wide walk over the persisted
+  4,096-node head graph, not the base-graph traversal basin used by the Phase-1
+  attribution. Its ~46--48 ms cost is a prototype implementation cost, not a
+  family-wide cost claim.
+- `estimated_peak_extra_bytes` is a lower bound: the compact attribution
+  estimate excludes per-query expanded-set vectors, which dominated the
+  excluded statement-context OOM attempts documented in
+  `memory-context-failure.md`.
 
 ## Key result lines
 

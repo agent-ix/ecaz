@@ -202,14 +202,14 @@ heads. Candidate training never uses evaluation queries.
 | HEAD-10 | Score all representatives, open only the best groups | conditional Task 186 |
 | HEAD-11 | Bounded per-owner heads merged at coordinator | unmeasured; owner is load balance, not semantic region |
 | HEAD-12 | Coordinator-resident compact summary of every owner head | deferred format/cache candidate |
-| HEAD-13 | Diversity-aware selection instead of nearest 32 landmarks | measured STOP in Task 185 packet 003: recall-flat and materially slower |
-| HEAD-14 | Penalize seeds sharing the same traversal basin | measured STOP in Task 185 packet 003: recall-flat and materially slower |
-| HEAD-15 | Maximal-marginal-relevance distance/graph seed selection | measured STOP in Task 185 packet 003: recall-flat and materially slower |
+| HEAD-13 | Diversity-aware selection instead of nearest 32 landmarks | measured STOP in Task 185 packet 003: the benchmark prototype's head-graph basin metric was recall-flat and materially slower; traversal-basin diversity remains untested |
+| HEAD-14 | Penalize seeds sharing the same traversal basin | measured STOP in Task 185 packet 003: the benchmark prototype's head-graph basin metric was recall-flat and materially slower; traversal-basin diversity remains untested |
+| HEAD-15 | Maximal-marginal-relevance distance/graph seed selection | measured STOP in Task 185 packet 003: the benchmark prototype's head-graph basin metric was recall-flat and materially slower; traversal-basin diversity remains untested |
 | HEAD-16 | Force seed coverage across disjoint training-query regions | unmeasured |
-| HEAD-17 | Select landmarks by marginal bounded-traversal recall gain | measured STOP in Task 185 packet 003: gateway membership Jaccard 1.0 and recall-flat |
-| HEAD-18 | Train gateway nodes that lead traversal to truth neighbors | measured STOP in Task 185 packet 003: isolated reachability did not transfer to joint beam |
-| HEAD-19 | Submodular cover over successful seed-to-result basins | measured STOP in Task 185 packet 003: no held-out recall improvement |
-| HEAD-20 | Hard-query mining on a separate validation slice | measured STOP in Task 185 packet 003: input discipline retained; no candidate |
+| HEAD-17 | Select landmarks by marginal bounded-traversal recall gain | measured STOP in Task 185 packet 003: the ≤3%-of-cap gateway prototype, drawn from the control's candidate pool, was recall-flat; whole-cap/larger-pool selection remains untested |
+| HEAD-18 | Train gateway nodes that lead traversal to truth neighbors | measured STOP in Task 185 packet 003: isolated reachability did not transfer to joint beam; the tested arm controlled only 127 positive picks and frequency-filled 3,969 slots |
+| HEAD-19 | Submodular cover over successful seed-to-result basins | measured STOP in Task 185 packet 003: no held-out recall improvement in the structurally constrained prototype; whole-cap/larger-pool cover remains untested |
+| HEAD-20 | Hard-query mining on a separate validation slice | measured STOP in Task 185 packet 003: input discipline retained; no candidate; the constrained gateway result is not family-wide refutation |
 | HEAD-21 | Allocate capacity to low-recall training-query clusters | unmeasured |
 | HEAD-22 | Lightweight query-to-region classifier | conditional Task 186 |
 | HEAD-23 | LSH/binary-code landmark-group routing | conditional Task 186 |
@@ -221,8 +221,8 @@ heads. Candidate training never uses evaluation queries.
 | HEAD-29 | Disjoint bounded multi-start seed groups | conditional Task 186 |
 | HEAD-30 | Second seed group only for low-confidence traversals | conditional Task 186/188 |
 | HEAD-31 | Adaptive 16/32/64 seeds from score gaps | low priority; unchanged-head seed widening was flat |
-| HEAD-32 | Reachability-aware rather than nearest-distance seed ranking | measured STOP in Task 185 packet 003: recall-flat at fixed cap 4,096 |
-| HEAD-33 | End-to-end traversal-success objective instead of oracle overlap | measured STOP in Task 185 packet 003: isolated-budget signal did not transfer |
+| HEAD-32 | Reachability-aware rather than nearest-distance seed ranking | measured STOP in Task 185 packet 003: the constrained fixed-cap prototype was recall-flat; whole-cap/larger-pool reachability ranking remains untested |
+| HEAD-33 | End-to-end traversal-success objective instead of oracle overlap | measured STOP in Task 185 packet 003: isolated-budget signal did not transfer; the gateway arm controlled only a 3.1% tail and the candidate pool was already the control's ranking |
 | HEAD-34 | Repeated/near-query result cache | deferred workload optimization, not corpus recall |
 
 ## Candidate ledger: traversal and remote transport

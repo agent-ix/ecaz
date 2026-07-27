@@ -40,10 +40,11 @@ No Task 185 benchmark-only policy becomes a production default. The diagnostic
 surfaces remain available only under their benchmark feature for durable
 negative-evidence reproduction.
 
-The roadmap and task index now record this STOP, the Task 185-owned HEAD rows
-are marked measured STOP, and GRAPH-13/GRAPH-16 remain conditional only on a
-new Task 186 capacity premise rather than lingering as unqualified Task 185
-conditions.
+The roadmap and task index now record this STOP, but the HEAD rows preserve
+the qualification that the gateway arm controlled only 127 of 4,096 picks
+and the basin arm used a head-graph basin rather than the production
+traversal basin. GRAPH-13/GRAPH-16 remain conditional only on a new Task 186
+capacity premise rather than lingering as unqualified Task 185 conditions.
 
 ## Review questions
 
