@@ -10,18 +10,21 @@ seq: 1
 
 ## Entry decision
 
-Task 185’s fixed-cap gateway screen stopped: the gateway policy did not
-improve membership recall and added latency. Task 186 then screened bounded
-capacity. The exact 16,384 head reached 0.9740 recall at 100k, while the
-two-level hierarchy retained zero owner-coverage misses but fell to 0.9440
-recall at 84.30 ms mean. The remaining gap to the owner oracle (0.9970 in
-Task 183) is therefore not closed by the retained bounded head, and the
-hierarchy result does not justify further head work.
+Task 185’s fixed-cap gateway screen stopped: its arm selected only 127 positive
+landmarks and filled the remaining 3,969 slots from the control, so its
+Jaccard-1 result is structurally constrained rather than a family-wide gateway
+refutation. Task 186 then screened bounded capacity. The exact 16,384 head
+reached 0.9740 recall at 100k. The two-level hierarchy retained zero
+owner-coverage misses but fell to 0.9440 recall at 84.30 ms mean; that result
+is limited to its query-time/arbitrary-representative prototype. The
+compressed head was not screened. These qualified results satisfy entry for a
+residual search-budget screen without claiming that all head families are
+exhausted.
 
 This satisfies Task 188’s conditional entry gate. The residual experiment is
 pre-registered against the best bounded head that actually remains viable:
-the exact-scored 16,384 training-landmark head, with the hierarchy excluded by
-its measured STOP result.
+the exact-scored 16,384 training-landmark head, with the hierarchy excluded
+only as a measured prototype, not rejected as a whole family.
 
 ## Fresh Phase 1 matrix
 
@@ -54,3 +57,9 @@ The checked-in suite config is the pre-registered Phase 1 matrix. Results will
 be added to packet `002-search-graph-attribution` under the packet-local
 artifact manifest; raw corpus and PostgreSQL operational logs will not be
 committed.
+
+The historical Phase 1 run completed only the head-vs-owner oracle, isolated
+BW, and isolated H comparisons. Candidate-frontier/exact-rerank containment,
+graph components/indegree/bridge/hard-query reachability, and
+monolithic-versus-sharded graph-quality audits were not run. Its result is
+therefore a search-budget screen, not attribution of the full graph family.

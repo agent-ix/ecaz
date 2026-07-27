@@ -10,6 +10,13 @@
 - Fixture note: the 10k evaluation fixture has 200 queries and no disjoint training slice, so its training policy intentionally uses the disjoint rows 201–400 from the 100k query fixture; evaluation remains `ec_real_10k`.
 - Decision status: full-scale confirmation complete; BW8 selected as the sole follow-up research candidate; no production default or persisted-format change is claimed
 - Head SHA at measurement: `c1c43a9bf66c25b390535ba47e52e0e251a5d6e7`
+- Historical runner note: every variant row in this packet has
+  `materialization_batch_size=0` because the pre-fix parser defaulted an
+  omitted variant field to eager-0. These rows are retained as unbatched
+  historical evidence and are not the final acceptance measurement.
+- Corrected confirmation: `../005-batch10-reconfirmation/`, which explicitly
+  sets production `materialization_batch_size=10` and emits paired per-query
+  recall wins/losses plus bootstrap intervals.
 - Structured suite manifest: `artifacts/run/suite-manifest.json`
 - Structured suite results: `artifacts/run/results.jsonl`
 - Concise cited result lines: `artifacts/task188-bw8-full-scale-results.log`
