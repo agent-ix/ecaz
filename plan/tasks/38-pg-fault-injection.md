@@ -1,7 +1,7 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **open; Apple-M5 local PG18 evidence and reviewed source slices
-complete, authoritative `fault-full` aggregation and designated Intel/Linux
+Status: **open; Apple-M5 local PG18 evidence, reviewed source slices, and the
+authoritative `fault-full` aggregation complete; designated Intel/Linux
 execution pending** — the historical Linux packet proved the four-AM
 `ec_hnsw`/`ec_ivf`/`ec_diskann`/`ec_spire` surface. The current Task 38 branch
 adds `ec_distann` as a first-class AM with separate RaBitQ, TurboQuant, and
@@ -9,7 +9,9 @@ grouped-PQ fixtures, exact-peer socket reset/latency provider modes, measured
 slow-disk comparison inputs, stronger accumulator markers, reset-safe palloc
 handling, armed exact-peer DistANN TCP and SPIRE Unix-socket drills, an
 executable seven-fixture systemd-scoped cgroup OOM drill, and repeatable
-seven-fixture cancellation/palloc mutation controls.
+seven-fixture cancellation/palloc mutation controls. Packet 009 adds the
+reviewed 116-case aggregate, exact-path slow-disk markers, and a checked
+baseline-plus-configured-latency oracle.
 
 The seven current fixtures flow through real build, KNN scan, insert,
 delete/vacuum, DDL, cancel/terminate, statement/idle/lock timeout, palloc,
@@ -27,7 +29,7 @@ unavailable on this host until Linux evidence lands. SPIRE remote SQL transport
 does exist and is actionable; only future SPIRE object-store reads are
 nonexistent. No CI/nightly execution is claimed, and this task stays open for
 operator-scheduled execution on the designated Intel/Linux host. Review
-packets 001 through 007 have outside approval for their stated implementation,
+packets 001 through 009 have outside approval for their stated implementation,
 source, inventory, and M5-local evidence scopes; those approvals do not
 substitute for the missing live Linux evidence.
 
@@ -38,13 +40,13 @@ production cancellation oracle rejects a deliberate wrong AM failure and
 proves the real-AM recovery oracle rejects an unrecovered palloc state before
 accepting the identical scan after disarm, across all seven fixtures.
 
-Task 38 still has an implementation gap that can be source-reviewed on M5:
-`make fault-full` must become a genuinely authoritative aggregate rather than
-the current generic dry-run dependency list. It must include the approved
-mutation, remote-socket, and cgroup operators and must orchestrate distinct
-provider modes, restart/restore, exact markers/arm files, and same-run slow
-baselines. After that implementation is reviewed, the designated Intel/Linux
-host must execute and evidence all of the following:
+The authoritative `make fault-full` aggregate is now implemented and
+source-approved in packet 009. Its host-independent plan enumerates 116 unique
+cases, while live mode orchestrates the approved mutation, remote-socket, and
+cgroup operators plus distinct provider modes, restart/restore, exact
+markers/arm files, and checked same-run slow baselines. The remaining work
+cannot execute on this Apple M5: the designated Intel/Linux host must run the
+aggregate and evidence all of the following:
 
 - all three DistANN codecs across applicable heap/index/WAL/temp paths for
   provider-backed EIO and ENOSPC, plus a same-run measured slow-disk baseline
