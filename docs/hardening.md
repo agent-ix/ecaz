@@ -491,6 +491,22 @@ sessions, relation/advisory locks, prepared transactions, optional
   provider. This is not a CI or nightly execution claim.
 - To run a live probe, clear the dry-run flag, for example:
   `make fault-timeout-smoke FAULT_SMOKE_FLAGS=`.
+- `make fault-full-plan` prints the authoritative 116-case aggregate without
+  touching PostgreSQL. It is the safe planning surface on macOS and other
+  hosts without Linux provider/cgroup prerequisites.
+- `make fault-full` is live-only and does not inherit `FAULT_SMOKE_FLAGS`.
+  It preflights Linux, the built LD_PRELOAD provider, cgroup v2, the user
+  systemd manager, the installed PG18 extension, and disjoint empty
+  evidence/runtime roots before executing. The aggregate covers all seven
+  fixtures across local smoke and mutation lanes,
+  exact heap/index/WAL/temp provider cases, DistANN TCP and SPIRE named-Unix
+  reset/slow drills, and seven cgroup OOM cases. Provider cases are armed only
+  after restart and are disarmed before restore. The final gate captures the
+  main postmaster log delta, scans packet-local PostgreSQL logs for `PANIC:`,
+  and re-runs shared cleanup postconditions. `FAULT_FULL_LOG_FILE` records the
+  aggregate output outside the initially empty artifact root; cgroup, DistANN,
+  and SPIRE base ports are separately configurable through the
+  `FAULT_FULL_*_PORT` variables.
 - `ecaz dev fault provider-env` prints the LD_PRELOAD environment for the
   built-in Linux provider. That provider can inject matched-path `EIO` reads,
   matched-path `ENOSPC` writes/creates/fsyncs, slow-disk latency, and

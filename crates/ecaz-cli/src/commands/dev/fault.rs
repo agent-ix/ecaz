@@ -38,6 +38,8 @@ pub enum FaultCommand {
     Smoke(SmokeArgs),
     /// Prove fault-lane oracles reject deliberate controlled failures.
     MutationControl(MutationControlArgs),
+    /// Run or plan the authoritative Task 38 aggregate.
+    Full(FullArgs),
     /// Print a host-independent cgroup-v2/systemd OOM operator plan.
     CgroupPlan(CgroupPlanArgs),
     /// Run isolated PostgreSQL AM workloads under a cgroup-v2 memory limit.
@@ -190,6 +192,46 @@ pub struct MutationControlArgs {
     /// Restrict ec_distann controls to one neighbor-code codec.
     #[arg(long, value_enum, requires = "am")]
     distann_codec: Option<DistannCodecArg>,
+}
+
+#[derive(Args, Debug)]
+pub struct FullArgs {
+    /// Print the complete ordered aggregate without executing it.
+    #[arg(long)]
+    dry_run: bool,
+    /// PostgreSQL major version from the local pgrx install.
+    #[arg(long, default_value_t = DEFAULT_PG_MAJOR)]
+    pg: u16,
+    /// Scratch-cluster port. Defaults to the pgrx convention, e.g. 28818 for PG18.
+    #[arg(long)]
+    port: Option<u16>,
+    /// Override PGRX_HOME.
+    #[arg(long)]
+    pgrx_home: Option<PathBuf>,
+    /// Rows loaded into each local/provider fixture.
+    #[arg(long, default_value_t = 64)]
+    rows: i64,
+    /// Provider latency used by slow disk and socket controls.
+    #[arg(long, default_value_t = 25)]
+    provider_latency_ms: u64,
+    /// systemd MemoryMax used by the seven cgroup cases.
+    #[arg(long, default_value = "512M")]
+    memory_max: String,
+    /// First port used by the cgroup OOM fixture clusters.
+    #[arg(long, default_value_t = 29_680)]
+    cgroup_base_port: u16,
+    /// First port used by the DistANN socket fixture.
+    #[arg(long, default_value_t = 39_710)]
+    distann_base_port: u16,
+    /// Coordinator port used by the SPIRE socket fixture.
+    #[arg(long, default_value_t = 39_700)]
+    spire_coord_port: u16,
+    /// Durable logs and per-case evidence.
+    #[arg(long, default_value = "target/fault-full")]
+    artifact_dir: PathBuf,
+    /// Regenerable cluster/runtime state; must not overlap evidence directories.
+    #[arg(long, default_value = "target/fault-full-runtime")]
+    runtime_dir: PathBuf,
 }
 
 #[derive(Args, Debug)]
@@ -386,6 +428,7 @@ impl FaultCommand {
             }
             FaultCommand::Smoke(args) => run_smoke(conn, args).await,
             FaultCommand::MutationControl(args) => run_mutation_control(conn, args).await,
+            FaultCommand::Full(args) => run_full(conn, args).await,
             FaultCommand::CgroupPlan(args) => run_cgroup_plan(args),
             FaultCommand::CgroupSmoke(args) => run_cgroup_smoke(args).await,
             FaultCommand::CgroupWorker(args) => run_cgroup_worker(args).await,
@@ -1441,7 +1484,15 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                     "live slow-disk requires --slow-disk-baseline-ms from the same provider-off workload"
                 )
             })?;
-            run_slow_disk_probe(conn, args.rows, &fixtures, baseline_ms, latency_ms).await?;
+            run_slow_disk_probe(
+                conn,
+                args.rows,
+                &fixtures,
+                baseline_ms,
+                latency_ms,
+                args.assume_prepared,
+            )
+            .await?;
             assert_provider_fault_marker(
                 args.provider_marker.as_deref(),
                 ProviderMode::SlowDisk,
@@ -1640,6 +1691,795 @@ async fn run_mutation_control(conn: &ConnectionOptions, args: MutationControlArg
         args.kind,
         fixtures.len()
     );
+    Ok(())
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct FullPlanCase {
+    id: String,
+    phase: &'static str,
+    fixture: String,
+    fault: &'static str,
+    expected: &'static str,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum FullProviderPath {
+    Table,
+    Index,
+    Wal,
+    Temp,
+}
+
+impl FullProviderPath {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Table => "heap",
+            Self::Index => "index",
+            Self::Wal => "wal",
+            Self::Temp => "temp",
+        }
+    }
+}
+
+fn full_plan_cases() -> Vec<FullPlanCase> {
+    let mut cases = Vec::new();
+    for (fault, expected) in [
+        ("memory", "palloc sweep and recovered real-AM scan"),
+        ("cancel", "SQLSTATE 57014 and clean postconditions"),
+        ("timeout", "timeout ERROR and clean postconditions"),
+        ("lock-timeout", "lock timeout and clean postconditions"),
+        ("resource", "pressure/accounting and clean postconditions"),
+    ] {
+        for fixture in FaultFixture::ALL {
+            cases.push(FullPlanCase {
+                id: format!("local-{}-{fault}", fixture.slug()),
+                phase: "local",
+                fixture: fixture.as_str().to_owned(),
+                fault,
+                expected,
+            });
+        }
+    }
+    for (fault, expected) in [
+        (
+            "cancel-unexpected-palloc",
+            "production cancellation oracle rejects wrong AM error",
+        ),
+        (
+            "memory-unrecovered-palloc",
+            "real-AM recovery rejects armed palloc and passes after disarm",
+        ),
+    ] {
+        for fixture in FaultFixture::ALL {
+            cases.push(FullPlanCase {
+                id: format!("mutation-{}-{fault}", fixture.slug()),
+                phase: "mutation",
+                fixture: fixture.as_str().to_owned(),
+                fault,
+                expected,
+            });
+        }
+    }
+    for fixture in FaultFixture::ALL {
+        for path in [FullProviderPath::Table, FullProviderPath::Index] {
+            for (fault, expected) in [
+                ("eio-read", "accepted clean ERROR, recovery, exact marker"),
+                (
+                    "enospc-write",
+                    "accepted clean ERROR, recovery, exact marker",
+                ),
+                (
+                    "slow-disk",
+                    "same-run baseline plus configured latency, exact marker",
+                ),
+            ] {
+                cases.push(FullPlanCase {
+                    id: format!("provider-{}-{}-{fault}", fixture.slug(), path.as_str()),
+                    phase: "provider",
+                    fixture: fixture.as_str().to_owned(),
+                    fault,
+                    expected,
+                });
+            }
+        }
+        for (path, fault, expected) in [
+            (
+                FullProviderPath::Wal,
+                "enospc-write",
+                "accepted WAL disconnect/ERROR, restore, exact marker",
+            ),
+            (
+                FullProviderPath::Temp,
+                "enospc-write",
+                "accepted temp spill ERROR, recovery, exact marker",
+            ),
+        ] {
+            cases.push(FullPlanCase {
+                id: format!("provider-{}-{}-{fault}", fixture.slug(), path.as_str()),
+                phase: "provider",
+                fixture: fixture.as_str().to_owned(),
+                fault,
+                expected,
+            });
+        }
+    }
+    for (fixture, fault, expected) in [
+        (
+            "ec_distann",
+            "tcp-reset",
+            "accepted clean reset and exact expected-source recovery",
+        ),
+        (
+            "ec_distann",
+            "tcp-slow",
+            "expected source and baseline-plus-latency result",
+        ),
+        (
+            "ec_spire",
+            "unix-reset",
+            "validated baseline, accepted reset result, recovered stable profile",
+        ),
+        (
+            "ec_spire",
+            "unix-slow",
+            "baseline-equal stable profile and baseline-plus-latency result",
+        ),
+    ] {
+        cases.push(FullPlanCase {
+            id: format!("remote-{fixture}-{fault}"),
+            phase: "remote-socket",
+            fixture: fixture.to_owned(),
+            fault,
+            expected,
+        });
+    }
+    for fixture in FaultFixture::ALL {
+        cases.push(FullPlanCase {
+            id: format!("cgroup-{}", fixture.slug()),
+            phase: "cgroup",
+            fixture: fixture.as_str().to_owned(),
+            fault: "oom-kill",
+            expected: "exact rows, valid/ready index, AM scan, clean stop",
+        });
+    }
+    cases
+}
+
+async fn run_full(conn: &ConnectionOptions, args: FullArgs) -> Result<()> {
+    validate_full_args(&args)?;
+    let cases = full_plan_cases();
+    for (ordinal, case) in cases.iter().enumerate() {
+        crate::ecaz_println!(
+            "[fault] full_case ordinal={} id={} phase={} fixture={} fault={} expected=\"{}\"",
+            ordinal + 1,
+            case.id,
+            case.phase,
+            case.fixture,
+            case.fault,
+            case.expected
+        );
+    }
+    crate::ecaz_println!(
+        "[fault] full_plan cases={} fixtures={} provider_cases={} remote_socket_cases=4 cgroup_cases=7 dry_run={}",
+        cases.len(),
+        FaultFixture::ALL.len(),
+        cases.iter().filter(|case| case.phase == "provider").count(),
+        args.dry_run
+    );
+    if args.dry_run {
+        crate::ecaz_println!(
+            "[fault] full_plan_complete live_authority=false reason=\"dry-run planning only\""
+        );
+        return Ok(());
+    }
+
+    require_full_host(&args).await?;
+    let repo = repo_root()?;
+    let artifact_root = resolve_future_path(&args.artifact_dir)?;
+    let runtime_root = resolve_future_path(&args.runtime_dir)?;
+    validate_cgroup_roots(&artifact_root, &runtime_root, &repo)?;
+    if runtime_root.starts_with(repo.join("reviews"))
+        || runtime_root.starts_with(repo.join("benchmarks"))
+    {
+        bail!(
+            "fault-full runtime {} must not be inside a review or benchmark evidence tree",
+            runtime_root.display()
+        );
+    }
+    require_empty_or_missing_directory(&artifact_root, "fault-full artifact")?;
+    require_empty_or_missing_directory(&runtime_root, "fault-full runtime")?;
+    fs::create_dir_all(&artifact_root)
+        .wrap_err_with(|| format!("creating {}", artifact_root.display()))?;
+    fs::create_dir_all(&runtime_root)
+        .wrap_err_with(|| format!("creating {}", runtime_root.display()))?;
+
+    let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref())
+        .canonicalize()
+        .wrap_err("resolving PGRX_HOME for fault-full")?;
+    let port = args
+        .port
+        .or(conn.port)
+        .unwrap_or_else(|| default_pgrx_port(args.pg));
+    let mut local_conn = conn.clone();
+    local_conn.host = Some(pgrx_home.to_string_lossy().to_string());
+    local_conn.port = Some(port);
+    let install = find_pgrx_install(args.pg, &pgrx_home)?;
+    assert_fault_install_ready(&install)?;
+    let postmaster_log = pgrx_home.join(format!("{}.log", args.pg));
+    let postmaster_log_start = fs::metadata(&postmaster_log)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+
+    let execution_result = async {
+        run_full_local_phase(&local_conn, args.rows).await?;
+        run_full_provider_phase(&local_conn, &args, &pgrx_home, port, &artifact_root).await?;
+        run_full_remote_socket_phase(&args, &pgrx_home, &artifact_root, &runtime_root).await?;
+        run_cgroup_smoke(CgroupSmokeArgs {
+            pg: args.pg,
+            pgrx_home: Some(pgrx_home.clone()),
+            memory_max: args.memory_max.clone(),
+            rows: args.rows,
+            artifact_dir: artifact_root.join("cgroup"),
+            runtime_dir: runtime_root.join("cgroup"),
+            base_port: args.cgroup_base_port,
+            am: None,
+            distann_codec: None,
+        })
+        .await
+    }
+    .await;
+    let log_result =
+        capture_and_assert_full_logs(&postmaster_log, postmaster_log_start, &artifact_root);
+    let cleanup_result = assert_postconditions(&local_conn, FaultLane::Memory, None, None).await;
+    assert_full_finalization(execution_result, log_result, cleanup_result)?;
+    crate::ecaz_println!(
+        "[fault] full_complete live_authority=true cases={} fixtures=7 no_panic=true shared_postconditions=true artifact_dir={}",
+        cases.len(),
+        artifact_root.display()
+    );
+    Ok(())
+}
+
+fn assert_full_finalization(
+    execution_result: Result<()>,
+    log_result: Result<()>,
+    cleanup_result: Result<()>,
+) -> Result<()> {
+    let mut failures = Vec::new();
+    if let Err(error) = execution_result {
+        failures.push(format!("execution: {error:#}"));
+    }
+    if let Err(error) = log_result {
+        failures.push(format!("postmaster log audit: {error:#}"));
+    }
+    if let Err(error) = cleanup_result {
+        failures.push(format!("shared postconditions: {error:#}"));
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        bail!(
+            "fault-full failed after unconditional finalization:\n{}",
+            failures.join("\n")
+        )
+    }
+}
+
+fn validate_full_args(args: &FullArgs) -> Result<()> {
+    if args.rows <= 0 {
+        bail!("--rows must be >= 1");
+    }
+    if args.provider_latency_ms == 0 {
+        bail!("--provider-latency-ms must be >= 1");
+    }
+    if args.memory_max.trim().is_empty() {
+        bail!("--memory-max must be nonempty");
+    }
+    if paths_overlap(&args.artifact_dir, &args.runtime_dir) {
+        bail!("--artifact-dir and --runtime-dir must be disjoint");
+    }
+    args.cgroup_base_port
+        .checked_add(6)
+        .ok_or_else(|| eyre!("--cgroup-base-port cannot allocate seven fixture ports"))?;
+    args.distann_base_port
+        .checked_add(1)
+        .ok_or_else(|| eyre!("--distann-base-port cannot allocate two fixture ports"))?;
+    args.spire_coord_port
+        .checked_add(3)
+        .ok_or_else(|| eyre!("--spire-coord-port cannot allocate four fixture ports"))?;
+    Ok(())
+}
+
+async fn require_full_host(args: &FullArgs) -> Result<()> {
+    if !cfg!(target_os = "linux") {
+        bail!(
+            "live fault-full requires Linux LD_PRELOAD, cgroup v2, and a user systemd manager; use --dry-run on {}",
+            std::env::consts::OS
+        );
+    }
+    require_cgroup_smoke_host().await?;
+    let provider = ecaz_fault_injection::provider_library_path()
+        .filter(|path| !path.contains("not built"))
+        .ok_or_else(|| eyre!("live fault-full requires the Linux LD_PRELOAD provider"))?;
+    if !Path::new(provider).is_file() {
+        bail!("fault provider does not exist at {provider}");
+    }
+    let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
+    let install = find_pgrx_install(args.pg, &pgrx_home)?;
+    assert_fault_install_ready(&install)
+}
+
+async fn run_full_local_phase(conn: &ConnectionOptions, rows: i64) -> Result<()> {
+    for lane in [
+        FaultLaneArg::Memory,
+        FaultLaneArg::Cancel,
+        FaultLaneArg::Timeout,
+        FaultLaneArg::LockTimeout,
+        FaultLaneArg::Resource,
+    ] {
+        run_smoke(
+            conn,
+            SmokeArgs {
+                lane,
+                dry_run: false,
+                rows,
+                am: None,
+                distann_codec: None,
+                provider_marker: None,
+                assume_prepared: false,
+                slow_disk_baseline_ms: None,
+            },
+        )
+        .await
+        .wrap_err_with(|| format!("fault-full local lane {lane:?}"))?;
+    }
+    run_mutation_control(
+        conn,
+        MutationControlArgs {
+            kind: MutationControlKindArg::All,
+            rows,
+            am: None,
+            distann_codec: None,
+        },
+    )
+    .await
+    .wrap_err("fault-full mutation controls")
+}
+
+async fn run_full_provider_phase(
+    conn: &ConnectionOptions,
+    args: &FullArgs,
+    pgrx_home: &Path,
+    port: u16,
+    artifact_root: &Path,
+) -> Result<()> {
+    let provider_root = artifact_root.join("provider");
+    fs::create_dir_all(&provider_root)
+        .wrap_err_with(|| format!("creating {}", provider_root.display()))?;
+    for fixture in FaultFixture::ALL {
+        for path in [FullProviderPath::Table, FullProviderPath::Index] {
+            for mode in [
+                ProviderModeArg::EioRead,
+                ProviderModeArg::EnospcWrite,
+                ProviderModeArg::SlowDisk,
+            ] {
+                run_full_provider_case(
+                    conn,
+                    args,
+                    pgrx_home,
+                    port,
+                    &provider_root,
+                    fixture,
+                    path,
+                    mode,
+                )
+                .await?;
+            }
+        }
+        for path in [FullProviderPath::Wal, FullProviderPath::Temp] {
+            run_full_provider_case(
+                conn,
+                args,
+                pgrx_home,
+                port,
+                &provider_root,
+                fixture,
+                path,
+                ProviderModeArg::EnospcWrite,
+            )
+            .await?;
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn run_full_provider_case(
+    conn: &ConnectionOptions,
+    args: &FullArgs,
+    pgrx_home: &Path,
+    port: u16,
+    provider_root: &Path,
+    fixture: FaultFixture,
+    path: FullProviderPath,
+    mode: ProviderModeArg,
+) -> Result<()> {
+    let mode_name = ProviderMode::from(mode).as_str();
+    let case_id = format!("{}-{}-{mode_name}", fixture.slug(), path.as_str());
+    let case_dir = provider_root.join(&case_id);
+    fs::create_dir_all(&case_dir).wrap_err_with(|| format!("creating {}", case_dir.display()))?;
+    prepare_workloads(conn, args.rows, &[fixture]).await?;
+    let path_match = match path {
+        FullProviderPath::Table => fixture_relation_path(conn, fixture, false).await?,
+        FullProviderPath::Index => fixture_relation_path(conn, fixture, true).await?,
+        FullProviderPath::Wal => "pg_wal".to_owned(),
+        FullProviderPath::Temp => "pgsql_tmp".to_owned(),
+    };
+    let baseline_ms = if matches!(mode, ProviderModeArg::SlowDisk) {
+        Some(measure_disk_workload(conn, &[fixture]).await?)
+    } else {
+        None
+    };
+    let marker = case_dir.join("provider.marker");
+    let arm_file = case_dir.join("provider.arm");
+    let restart_result = run_provider_restart(ProviderRestartArgs {
+        pg: args.pg,
+        port: Some(port),
+        pgrx_home: Some(pgrx_home.to_path_buf()),
+        mode,
+        path_match: path_match.clone(),
+        peer_match: None,
+        after: 1,
+        latency_ms: matches!(mode, ProviderModeArg::SlowDisk).then_some(args.provider_latency_ms),
+        marker: Some(marker.clone()),
+        arm_file: Some(arm_file.clone()),
+    })
+    .await;
+    if let Err(restart_error) = restart_result {
+        let restore_result = run_provider_restore(ProviderRestoreArgs {
+            pg: args.pg,
+            port: Some(port),
+            pgrx_home: Some(pgrx_home.to_path_buf()),
+        })
+        .await;
+        if let Err(restore_error) = restore_result {
+            return Err(eyre!(
+                "starting provider case {case_id} failed ({restart_error}) and provider restore failed ({restore_error})"
+            ));
+        }
+        return Err(restart_error).wrap_err_with(|| format!("starting provider case {case_id}"));
+    }
+    if let Err(arm_error) = fs::write(&arm_file, "armed\n") {
+        let restore_result = run_provider_restore(ProviderRestoreArgs {
+            pg: args.pg,
+            port: Some(port),
+            pgrx_home: Some(pgrx_home.to_path_buf()),
+        })
+        .await;
+        if let Err(restore_error) = restore_result {
+            return Err(eyre!(
+                "arming provider case {case_id} failed ({arm_error}) and provider restore failed ({restore_error})"
+            ));
+        }
+        return Err::<(), std::io::Error>(arm_error)
+            .wrap_err_with(|| format!("arming provider case {case_id}"));
+    }
+
+    let (am, distann_codec) = fixture_selection_args(fixture);
+    let lane = match (mode, path) {
+        (ProviderModeArg::SlowDisk, _) => FaultLaneArg::SlowDisk,
+        (ProviderModeArg::EnospcWrite, FullProviderPath::Temp) => FaultLaneArg::Resource,
+        _ => FaultLaneArg::Io,
+    };
+    let run_result = run_smoke(
+        conn,
+        SmokeArgs {
+            lane,
+            dry_run: false,
+            rows: args.rows,
+            am: Some(am),
+            distann_codec,
+            provider_marker: Some(marker.to_string_lossy().to_string()),
+            assume_prepared: true,
+            slow_disk_baseline_ms: baseline_ms,
+        },
+    )
+    .await;
+    let disarm_result: std::io::Result<()> = match fs::remove_file(&arm_file) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    };
+    let restore_result = run_provider_restore(ProviderRestoreArgs {
+        pg: args.pg,
+        port: Some(port),
+        pgrx_home: Some(pgrx_home.to_path_buf()),
+    })
+    .await;
+
+    if let Err(error) = disarm_result {
+        return Err::<(), std::io::Error>(error)
+            .wrap_err_with(|| format!("disarming provider case {case_id}"));
+    }
+    if let Err(error) = restore_result {
+        return Err(error).wrap_err_with(|| format!("restoring after provider case {case_id}"));
+    }
+    run_result.wrap_err_with(|| format!("running provider case {case_id}"))?;
+    assert_postconditions(conn, FaultLane::Io, None, None)
+        .await
+        .wrap_err_with(|| format!("postconditions after provider case {case_id}"))?;
+    crate::ecaz_println!(
+        "[fault] full_provider_case id={} am={} mode={} path_kind={} path_match={} baseline_ms={} recovery=true",
+        case_id,
+        fixture.as_str(),
+        mode_name,
+        path.as_str(),
+        path_match,
+        baseline_ms
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "n/a".to_owned())
+    );
+    Ok(())
+}
+
+fn fixture_selection_args(fixture: FaultFixture) -> (FaultAmArg, Option<DistannCodecArg>) {
+    let am = match fixture.access_method() {
+        FaultAm::Hnsw => FaultAmArg::Hnsw,
+        FaultAm::Ivf => FaultAmArg::Ivf,
+        FaultAm::DiskAnn => FaultAmArg::Diskann,
+        FaultAm::Spire => FaultAmArg::Spire,
+        FaultAm::DistAnn => FaultAmArg::Distann,
+    };
+    let codec = match fixture.codec() {
+        Some(DistannCodec::RaBitQ) => Some(DistannCodecArg::Rabitq),
+        Some(DistannCodec::TurboQuant) => Some(DistannCodecArg::Turboquant),
+        Some(DistannCodec::GroupedPq) => Some(DistannCodecArg::GroupedPq),
+        None => None,
+    };
+    (am, codec)
+}
+
+async fn fixture_relation_path(
+    conn: &ConnectionOptions,
+    fixture: FaultFixture,
+    index: bool,
+) -> Result<String> {
+    let client = connect_fault(conn, "full-relation-path").await?;
+    let relation = if index {
+        ecaz_fault_injection::workload_index(fixture)
+    } else {
+        ecaz_fault_injection::workload_table(fixture)
+    };
+    relation_filepath(&client, &relation).await
+}
+
+async fn measure_disk_workload(
+    conn: &ConnectionOptions,
+    fixtures: &[FaultFixture],
+) -> Result<u128> {
+    let client = connect_fault(conn, "disk-baseline").await?;
+    let started = std::time::Instant::now();
+    for &fixture in fixtures {
+        client.batch_execute(&workload_scan_sql(fixture)).await?;
+        client.batch_execute(&workload_insert_sql(fixture)).await?;
+        client.batch_execute(&workload_vacuum_sql(fixture)).await?;
+    }
+    Ok(started.elapsed().as_millis())
+}
+
+async fn run_full_remote_socket_phase(
+    args: &FullArgs,
+    pgrx_home: &Path,
+    artifact_root: &Path,
+    runtime_root: &Path,
+) -> Result<()> {
+    let executable = std::env::current_exe()
+        .wrap_err("resolving current ecaz executable")?
+        .canonicalize()
+        .wrap_err("canonicalizing current ecaz executable")?;
+    let rows = u32::try_from(args.rows).wrap_err("--rows exceeds remote fixture range")?;
+    for fault in ["reset", "slow"] {
+        let case_artifact = artifact_root.join(format!("distann-socket-{fault}"));
+        let case_runtime = runtime_root.join(format!("distann-socket-{fault}"));
+        fs::create_dir_all(&case_artifact)
+            .wrap_err_with(|| format!("creating {}", case_artifact.display()))?;
+        let mut command = Command::new(&executable);
+        command
+            .arg("dev")
+            .arg("distann-multicluster")
+            .arg("local-multinode-pg18")
+            .arg("--pg")
+            .arg(args.pg.to_string())
+            .arg("--nodes")
+            .arg("2")
+            .arg("--base-port")
+            .arg(args.distann_base_port.to_string())
+            .arg("--rows")
+            .arg(rows.to_string())
+            .arg("--dim")
+            .arg("16")
+            .arg("--skip-fault-drills")
+            .arg("--remote-socket-fault")
+            .arg(fault)
+            .arg("--remote-socket-fault-latency-ms")
+            .arg(args.provider_latency_ms.to_string())
+            .arg("--artifact-dir")
+            .arg(&case_artifact)
+            .arg("--run-dir")
+            .arg(&case_runtime)
+            .arg("--pgrx-home")
+            .arg(pgrx_home);
+        run_full_child(
+            &format!("distann-socket-{fault}"),
+            command,
+            &case_artifact.join("process.log"),
+        )
+        .await?;
+    }
+    for fault in ["reset", "slow"] {
+        let case_artifact = artifact_root.join(format!("spire-socket-{fault}"));
+        let case_runtime = runtime_root.join(format!("spire-socket-{fault}"));
+        fs::create_dir_all(&case_artifact)
+            .wrap_err_with(|| format!("creating {}", case_artifact.display()))?;
+        let mut command = Command::new(&executable);
+        command
+            .arg("dev")
+            .arg("spire-multicluster")
+            .arg("local-multinode-pg18")
+            .arg("--pg")
+            .arg(args.pg.to_string())
+            .arg("--tier")
+            .arg("correctness")
+            .arg("--coord-port")
+            .arg(args.spire_coord_port.to_string())
+            .arg("--remote1-port")
+            .arg(
+                args.spire_coord_port
+                    .checked_add(1)
+                    .ok_or_else(|| eyre!("SPIRE remote1 port overflow"))?
+                    .to_string(),
+            )
+            .arg("--remote2-port")
+            .arg(
+                args.spire_coord_port
+                    .checked_add(2)
+                    .ok_or_else(|| eyre!("SPIRE remote2 port overflow"))?
+                    .to_string(),
+            )
+            .arg("--remote3-port")
+            .arg(
+                args.spire_coord_port
+                    .checked_add(3)
+                    .ok_or_else(|| eyre!("SPIRE remote3 port overflow"))?
+                    .to_string(),
+            )
+            .arg("--skip-bench-suite")
+            .arg("--skip-fault-drills")
+            .arg("--remote-socket-fault")
+            .arg(fault)
+            .arg("--remote-socket-fault-latency-ms")
+            .arg(args.provider_latency_ms.to_string())
+            .arg("--artifact-dir")
+            .arg(&case_artifact)
+            .arg("--run-dir")
+            .arg(&case_runtime)
+            .arg("--pgrx-home")
+            .arg(pgrx_home);
+        run_full_child(
+            &format!("spire-socket-{fault}"),
+            command,
+            &case_artifact.join("process.log"),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+async fn run_full_child(label: &str, mut command: Command, log: &Path) -> Result<()> {
+    let output = command
+        .output()
+        .await
+        .wrap_err_with(|| format!("launching fault-full child {label}"))?;
+    fs::write(
+        log,
+        format!(
+            "status={}\n\n[stdout]\n{}\n[stderr]\n{}\n",
+            output.status,
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ),
+    )
+    .wrap_err_with(|| format!("writing {}", log.display()))?;
+    if !output.status.success() {
+        bail!(
+            "fault-full child {label} failed with {}; inspect {}",
+            output.status,
+            log.display()
+        );
+    }
+    crate::ecaz_println!(
+        "[fault] full_child label={} status=pass log={}",
+        label,
+        log.display()
+    );
+    Ok(())
+}
+
+fn capture_and_assert_full_logs(
+    postmaster_log: &Path,
+    start: u64,
+    artifact_root: &Path,
+) -> Result<()> {
+    let bytes = fs::read(postmaster_log)
+        .wrap_err_with(|| format!("reading {}", postmaster_log.display()))?;
+    let start = usize::try_from(start)
+        .unwrap_or(usize::MAX)
+        .min(bytes.len());
+    let main_tail = artifact_root.join("main-postmaster.log");
+    fs::write(&main_tail, &bytes[start..])
+        .wrap_err_with(|| format!("writing {}", main_tail.display()))?;
+    let mut logs = Vec::new();
+    collect_log_files(artifact_root, &mut logs)?;
+    for log in &logs {
+        let content =
+            fs::read_to_string(log).wrap_err_with(|| format!("reading {}", log.display()))?;
+        if content.lines().any(|line| line.contains("PANIC:")) {
+            bail!("fault-full found postmaster PANIC in {}", log.display());
+        }
+    }
+    fs::write(
+        artifact_root.join("no-panic-audit.log"),
+        format!(
+            "postmaster_logs_scanned={}\nresult=PASS\npattern=PANIC:\n",
+            logs.len()
+        ),
+    )?;
+    crate::ecaz_println!(
+        "[fault] full_no_panic logs_scanned={} result=pass",
+        logs.len()
+    );
+    Ok(())
+}
+
+fn collect_log_files(root: &Path, logs: &mut Vec<PathBuf>) -> Result<()> {
+    for entry in fs::read_dir(root).wrap_err_with(|| format!("reading {}", root.display()))? {
+        let entry = entry?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_log_files(&path, logs)?;
+        } else if path.extension().is_some_and(|extension| extension == "log")
+            && !matches!(
+                path.file_name(),
+                Some(name) if name == "no-panic-audit.log"
+            )
+        {
+            logs.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn require_empty_or_missing_directory(path: &Path, label: &str) -> Result<()> {
+    if !path.exists() {
+        return Ok(());
+    }
+    if !path.is_dir() {
+        bail!(
+            "{label} path {} exists and is not a directory",
+            path.display()
+        );
+    }
+    if fs::read_dir(path)
+        .wrap_err_with(|| format!("reading {}", path.display()))?
+        .next()
+        .is_some()
+    {
+        bail!(
+            "{label} directory {} must be empty so evidence cannot mix runs",
+            path.display()
+        );
+    }
     Ok(())
 }
 
@@ -2577,16 +3417,12 @@ async fn run_slow_disk_probe(
     ams: &[FaultFixture],
     baseline_ms: u128,
     configured_latency_ms: u64,
+    assume_prepared: bool,
 ) -> Result<()> {
-    prepare_workloads(conn, rows, ams).await?;
-    let client = connect_fault(conn, "slow-disk").await?;
-    let started = std::time::Instant::now();
-    for &am in ams {
-        client.batch_execute(&workload_scan_sql(am)).await?;
-        client.batch_execute(&workload_insert_sql(am)).await?;
-        client.batch_execute(&workload_vacuum_sql(am)).await?;
+    if !assume_prepared {
+        prepare_workloads(conn, rows, ams).await?;
     }
-    let provider_ms = started.elapsed().as_millis();
+    let provider_ms = measure_disk_workload(conn, ams).await?;
     crate::ecaz_println!(
         "[fault] slow_disk_timing baseline_ms={baseline_ms} provider_ms={provider_ms} configured_latency_ms={configured_latency_ms} comparison=provider-greater-than-baseline"
     );
@@ -3149,7 +3985,54 @@ fn print_leak_probes() {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
+
+    #[test]
+    fn full_plan_is_unique_and_covers_every_authoritative_surface() {
+        let cases = full_plan_cases();
+        let ids = cases
+            .iter()
+            .map(|case| case.id.as_str())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(cases.len(), 116);
+        assert_eq!(ids.len(), cases.len());
+        assert_eq!(
+            cases.iter().filter(|case| case.phase == "local").count(),
+            35
+        );
+        assert_eq!(
+            cases.iter().filter(|case| case.phase == "mutation").count(),
+            14
+        );
+        assert_eq!(
+            cases.iter().filter(|case| case.phase == "provider").count(),
+            56
+        );
+        assert_eq!(
+            cases
+                .iter()
+                .filter(|case| case.phase == "remote-socket")
+                .count(),
+            4
+        );
+        assert_eq!(
+            cases.iter().filter(|case| case.phase == "cgroup").count(),
+            7
+        );
+        for required in [
+            "provider-distann_rabitq-heap-eio-read",
+            "provider-distann_turboquant-index-slow-disk",
+            "provider-distann_grouped_pq-wal-enospc-write",
+            "provider-distann_grouped_pq-temp-enospc-write",
+            "remote-ec_distann-tcp-reset",
+            "remote-ec_spire-unix-slow",
+            "cgroup-distann_turboquant",
+        ] {
+            assert!(ids.contains(required), "missing full case {required}");
+        }
+    }
 
     #[test]
     fn cgroup_roots_must_be_disjoint_and_runtime_must_avoid_evidence_trees() {

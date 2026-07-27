@@ -4,8 +4,7 @@
 //! defines the fault model, required coverage, and post-condition probes used by
 //! the `ecaz dev fault` CLI and Makefile smoke targets.
 
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ProviderMode {
@@ -811,9 +810,10 @@ pub fn workload_temp_spill_sql(rows: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     #[cfg(target_os = "linux")]
     use std::process::Command;
+
+    use super::*;
 
     #[test]
     fn all_lanes_cover_every_access_method() {
@@ -1037,6 +1037,46 @@ mod tests {
         assert!(
             marker_content.contains("fault=1") && marker_content.contains("mode=eio-read"),
             "unexpected marker: {marker_content}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ldpreload_slow_disk_marks_only_the_matched_path() {
+        let provider = provider_library_path().expect("linux provider should be built");
+        let marker = format!(
+            "/tmp/ecaz_fault_provider_slow_marker_{}",
+            std::process::id()
+        );
+        let run = |path_match: &str| {
+            let _ = std::fs::remove_file(&marker);
+            let output = Command::new("/bin/cat")
+                .arg("/etc/hosts")
+                .env("LD_PRELOAD", provider)
+                .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+                .env("ECAZ_FAULT_PROVIDER_MODE", "slow-disk")
+                .env("ECAZ_FAULT_PROVIDER_MATCH", path_match)
+                .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+                .env("ECAZ_FAULT_PROVIDER_LATENCY_MS", "1")
+                .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
+                .output()
+                .expect("run provider-backed cat");
+            assert!(output.status.success(), "slow disk must not fail the read");
+            std::fs::read_to_string(&marker).expect("read provider marker")
+        };
+
+        let unmatched = run("/definitely/not/the/hosts/path");
+        assert!(
+            !unmatched.contains("fault=1"),
+            "unmatched path was delayed: {unmatched}"
+        );
+        let matched = run("/etc/hosts");
+        let _ = std::fs::remove_file(&marker);
+        assert!(
+            matched.contains("fault=1")
+                && matched.contains("mode=slow-disk")
+                && matched.contains("target=/etc/hosts"),
+            "unexpected marker: {matched}"
         );
     }
 

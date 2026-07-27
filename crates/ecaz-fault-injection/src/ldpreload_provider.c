@@ -249,11 +249,16 @@ static void sleep_millis(long millis) {
     nanosleep(&ts, NULL);
 }
 
-static void maybe_sleep(void) {
-    if (!enabled() || !mode_is("slow-disk")) {
-        return;
+static void maybe_sleep_path(const char *op, const char *path) {
+    if (should_fault_path("slow-disk", op, path, 0)) {
+        sleep_millis(latency_millis());
     }
-    sleep_millis(latency_millis());
+}
+
+static void maybe_sleep_fd(const char *op, int fd) {
+    if (should_fault_fd("slow-disk", op, fd, 0)) {
+        sleep_millis(latency_millis());
+    }
 }
 
 static void maybe_sleep_socket(const char *op, int fd) {
@@ -314,7 +319,7 @@ int open(const char *path, int flags, ...) {
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_path("open", path);
     int (*real_open)(const char *, int, ...) = real_symbol("open");
     if (!real_open) {
         return -1;
@@ -334,7 +339,7 @@ int open64(const char *path, int flags, ...) {
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_path("open64", path);
     int (*real_open64)(const char *, int, ...) = real_symbol("open64");
     if (!real_open64) {
         return -1;
@@ -354,7 +359,7 @@ int openat(int dirfd, const char *path, int flags, ...) {
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_path("openat", path);
     int (*real_openat)(int, const char *, int, ...) = real_symbol("openat");
     if (!real_openat) {
         return -1;
@@ -370,7 +375,7 @@ int openat2(int dirfd, const char *path, const struct open_how *how, size_t size
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_path("openat2", path);
     int (*real_openat2)(int, const char *, const struct open_how *, size_t) =
         real_symbol("openat2");
     return real_openat2 ? real_openat2(dirfd, path, how, size) : -1;
@@ -385,7 +390,7 @@ ssize_t read(int fd, void *buf, size_t count) {
         errno = EIO;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_fd("read", fd);
     ssize_t (*real_read)(int, void *, size_t) = real_symbol("read");
     return real_read ? real_read(fd, buf, count) : -1;
 }
@@ -395,7 +400,7 @@ ssize_t pread(int fd, void *buf, size_t count, off_t offset) {
         errno = EIO;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_fd("pread", fd);
     ssize_t (*real_pread)(int, void *, size_t, off_t) = real_symbol("pread");
     return real_pread ? real_pread(fd, buf, count, offset) : -1;
 }
@@ -405,7 +410,7 @@ ssize_t pread64(int fd, void *buf, size_t count, off64_t offset) {
         errno = EIO;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_fd("pread64", fd);
     ssize_t (*real_pread64)(int, void *, size_t, off64_t) = real_symbol("pread64");
     return real_pread64 ? real_pread64(fd, buf, count, offset) : -1;
 }
@@ -419,7 +424,7 @@ ssize_t write(int fd, const void *buf, size_t count) {
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_fd("write", fd);
     ssize_t (*real_write)(int, const void *, size_t) = real_symbol("write");
     return real_write ? real_write(fd, buf, count) : -1;
 }
@@ -447,6 +452,7 @@ ssize_t readv(int fd, const struct iovec *iov, int iovcnt) {
         return -1;
     }
     maybe_sleep_socket("readv", fd);
+    maybe_sleep_fd("readv", fd);
     ssize_t (*real_readv)(int, const struct iovec *, int) =
         real_symbol("readv");
     return real_readv ? real_readv(fd, iov, iovcnt) : -1;
@@ -457,6 +463,7 @@ ssize_t writev(int fd, const struct iovec *iov, int iovcnt) {
         return -1;
     }
     maybe_sleep_socket("writev", fd);
+    maybe_sleep_fd("writev", fd);
     ssize_t (*real_writev)(int, const struct iovec *, int) =
         real_symbol("writev");
     return real_writev ? real_writev(fd, iov, iovcnt) : -1;
@@ -533,7 +540,7 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_fd("pwrite", fd);
     ssize_t (*real_pwrite)(int, const void *, size_t, off_t) = real_symbol("pwrite");
     return real_pwrite ? real_pwrite(fd, buf, count, offset) : -1;
 }
@@ -543,7 +550,7 @@ ssize_t pwrite64(int fd, const void *buf, size_t count, off64_t offset) {
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_fd("pwrite64", fd);
     ssize_t (*real_pwrite64)(int, const void *, size_t, off64_t) = real_symbol("pwrite64");
     return real_pwrite64 ? real_pwrite64(fd, buf, count, offset) : -1;
 }
@@ -553,7 +560,7 @@ int fsync(int fd) {
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_fd("fsync", fd);
     int (*real_fsync)(int) = real_symbol("fsync");
     return real_fsync ? real_fsync(fd) : -1;
 }
@@ -563,7 +570,7 @@ int fdatasync(int fd) {
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_fd("fdatasync", fd);
     int (*real_fdatasync)(int) = real_symbol("fdatasync");
     return real_fdatasync ? real_fdatasync(fd) : -1;
 }
