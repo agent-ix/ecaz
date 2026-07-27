@@ -10,7 +10,7 @@
 - Fixture/query identities: `ec_real_10k` query SHA
   `a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8`,
   `ec_real_50k` query SHA
-  `95ac799257742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8`,
+  `95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3`,
   and `ec_real_100k` query SHA
   `a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782`
 - Storage/scoring: RaBitQ graph payloads, exact-scored training-landmark head,
