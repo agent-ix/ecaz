@@ -1,7 +1,7 @@
 # Task 186: ec_distann Bounded Hierarchical Head
 
-Status: **proposed, conditional on Task 185** (2026-07-19). Priority: P2 recall
-capacity/routing follow-up.
+Status: **proposed — prototype-scoped hierarchy STOP; compressed arm unscreened**
+(2026-07-26). Priority: P2 recall capacity/routing follow-up.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`. This task
 owns `HEAD-01` through `HEAD-10`, `HEAD-22` through `HEAD-24`, `HEAD-29`,
@@ -33,6 +33,13 @@ Task 185 must provide one of:
 The entry packet freezes Task 185's best policy, corpus/query identities,
 selection evidence, and exact query-work accounting. Do not redesign the
 fixed-cap objective inside this task.
+
+The entry gate was satisfied by Task 185's outside-reviewed STOP. That STOP is
+qualified evidence: its gateway arm selected 127 positive landmarks and filled
+the remaining 3,969 slots from the control policy, and its basin experiment
+was over the production head graph rather than the base traversal graph. It is
+an entry gate for this bounded prototype, not evidence that the whole gateway
+or hierarchical family is exhausted.
 
 ## Candidate screen
 
@@ -77,12 +84,23 @@ A winner requires a separate production task and an ADR or ADR-085 amendment
 when it changes persisted head format, fingerprinting, lifecycle, or upgrade
 semantics.
 
+The historical hierarchy run is a prototype-scoped STOP only. It rebuilt
+regions at query time, chose arbitrary lowest-index representatives, and used
+fixed caps of 256 representatives, 16 opened groups, and 512 scored
+landmarks. It did not emit per-query routing counters or builder peak-memory /
+spill measurements. The 0.9440 recall and 84.30 ms mean therefore do not
+refute a build-time-assigned, non-arbitrary two-level design. The compressed
+head arm was not implemented or measured and remains unscreened; it requires a
+new packet/task before any family-wide decision.
+
 ## Required review packets
 
-1. `reviews/task-186/001-entry-and-head-design/`;
-2. `reviews/task-186/002-capacity-control/`;
-3. `reviews/task-186/003-compressed-hierarchy-screen/`;
-4. `reviews/task-186/004-full-scale-decision/`.
+1. `reviews/task-186/005-entry-and-head-design/` (entry correction added
+   after the historical packets were already numbered);
+2. `reviews/task-186/001-capacity-control/`;
+3. `reviews/task-186/002-hierarchy-screen/`;
+4. `reviews/task-186/003-compressed-hierarchy-screen/`;
+5. `reviews/task-186/004-full-scale-decision/`.
 
 ## Non-goals
 
