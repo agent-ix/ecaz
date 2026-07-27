@@ -3423,15 +3423,31 @@ async fn run_slow_disk_probe(
         prepare_workloads(conn, rows, ams).await?;
     }
     let provider_ms = measure_disk_workload(conn, ams).await?;
+    let required_ms = assert_slow_disk_timing(baseline_ms, provider_ms, configured_latency_ms)?;
     crate::ecaz_println!(
-        "[fault] slow_disk_timing baseline_ms={baseline_ms} provider_ms={provider_ms} configured_latency_ms={configured_latency_ms} comparison=provider-greater-than-baseline"
+        "[fault] slow_disk_timing baseline_ms={baseline_ms} provider_ms={provider_ms} configured_latency_ms={configured_latency_ms} required_ms={required_ms} comparison=provider-at-least-baseline-plus-configured-latency"
     );
-    if provider_ms <= baseline_ms {
-        return Err(eyre!(
-            "slow-disk provider workload took {provider_ms}ms, not greater than measured baseline {baseline_ms}ms"
-        ));
-    }
     Ok(())
+}
+
+fn assert_slow_disk_timing(
+    baseline_ms: u128,
+    provider_ms: u128,
+    configured_latency_ms: u64,
+) -> Result<u128> {
+    let required_ms = baseline_ms
+        .checked_add(u128::from(configured_latency_ms))
+        .ok_or_else(|| {
+            eyre!(
+                "slow-disk threshold overflow: baseline_ms={baseline_ms} configured_latency_ms={configured_latency_ms}"
+            )
+        })?;
+    if provider_ms < required_ms {
+        bail!(
+            "slow-disk provider timing {provider_ms}ms did not meet required baseline-plus-latency threshold {required_ms}ms (baseline_ms={baseline_ms}, configured_latency_ms={configured_latency_ms})"
+        );
+    }
+    Ok(required_ms)
 }
 
 async fn prepare_workloads(
@@ -4032,6 +4048,22 @@ mod tests {
         ] {
             assert!(ids.contains(required), "missing full case {required}");
         }
+    }
+
+    #[test]
+    fn slow_disk_threshold_accepts_boundary_and_rejects_underflow_or_overflow() {
+        assert_eq!(
+            assert_slow_disk_timing(100, 125, 25).expect("exact threshold must pass"),
+            125
+        );
+        let below = assert_slow_disk_timing(100, 124, 25)
+            .expect_err("one millisecond below threshold must fail")
+            .to_string();
+        assert!(below.contains("threshold 125ms"), "{below}");
+        let overflow = assert_slow_disk_timing(u128::MAX, u128::MAX, 1)
+            .expect_err("threshold overflow must fail")
+            .to_string();
+        assert!(overflow.contains("threshold overflow"), "{overflow}");
     }
 
     #[test]
