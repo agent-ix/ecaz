@@ -7,6 +7,7 @@
 
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, Context, Result};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -1138,6 +1139,127 @@ struct BenchmarkSeedVariant {
     traversal_replica: bool,
 }
 
+#[derive(Debug, Deserialize)]
+struct PairedPredictionFile {
+    query_ids: Vec<i64>,
+    rows: Vec<PairedPredictionSweep>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PairedPredictionSweep {
+    sweep_value: i32,
+    predictions: Vec<Vec<i64>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PairedTruthCache {
+    truth: PairedTruthSet,
+}
+
+#[derive(Debug, Deserialize)]
+struct PairedTruthSet {
+    ids: Vec<Vec<i64>>,
+}
+
+fn paired_recall_line(
+    scale: &str,
+    control_path: &Path,
+    candidate_path: &Path,
+    truth_path: &Path,
+    k: usize,
+) -> Result<String> {
+    let control: PairedPredictionFile = serde_json::from_slice(&fs::read(control_path)?)
+        .wrap_err_with(|| {
+            format!(
+                "reading paired control predictions {}",
+                control_path.display()
+            )
+        })?;
+    let candidate: PairedPredictionFile = serde_json::from_slice(&fs::read(candidate_path)?)
+        .wrap_err_with(|| {
+            format!(
+                "reading paired candidate predictions {}",
+                candidate_path.display()
+            )
+        })?;
+    let truth: PairedTruthCache = serde_json::from_slice(&fs::read(truth_path)?)
+        .wrap_err_with(|| format!("reading paired truth cache {}", truth_path.display()))?;
+    let control_sweep = control
+        .rows
+        .iter()
+        .find(|row| row.sweep_value == 32)
+        .ok_or_else(|| color_eyre::eyre::eyre!("paired control predictions have no sweep 32"))?;
+    let candidate_sweep = candidate
+        .rows
+        .iter()
+        .find(|row| row.sweep_value == 32)
+        .ok_or_else(|| color_eyre::eyre::eyre!("paired candidate predictions have no sweep 32"))?;
+    let query_count = truth.truth.ids.len();
+    if control.query_ids != candidate.query_ids
+        || control.query_ids.len() != query_count
+        || control_sweep.predictions.len() != query_count
+        || candidate_sweep.predictions.len() != query_count
+        || k == 0
+    {
+        bail!(
+            "paired recall inputs are not aligned: control_queries={} candidate_queries={} truth_queries={} control_rows={} candidate_rows={} k={k}",
+            control.query_ids.len(),
+            candidate.query_ids.len(),
+            query_count,
+            control_sweep.predictions.len(),
+            candidate_sweep.predictions.len(),
+        );
+    }
+
+    let mut deltas = Vec::with_capacity(query_count);
+    let mut candidate_wins = 0usize;
+    let mut control_wins = 0usize;
+    let mut ties = 0usize;
+    for query_index in 0..query_count {
+        let truth_ids = &truth.truth.ids[query_index];
+        let query_recall = |predictions: &[i64]| {
+            predictions
+                .iter()
+                .take(k)
+                .filter(|id| truth_ids.contains(id))
+                .count() as f64
+                / k as f64
+        };
+        let control_recall = query_recall(&control_sweep.predictions[query_index]);
+        let candidate_recall = query_recall(&candidate_sweep.predictions[query_index]);
+        let delta = candidate_recall - control_recall;
+        if delta > 0.0 {
+            candidate_wins += 1;
+        } else if delta < 0.0 {
+            control_wins += 1;
+        } else {
+            ties += 1;
+        }
+        deltas.push(delta);
+    }
+
+    let mean_delta = deltas.iter().sum::<f64>() / query_count as f64;
+    let mut bootstrap = Vec::with_capacity(10_000);
+    let mut state = 0x9e3779b97f4a7c15_u64;
+    for _ in 0..10_000 {
+        let mut sum = 0.0;
+        for _ in 0..query_count {
+            state ^= state << 7;
+            state ^= state >> 9;
+            state ^= state << 8;
+            sum += deltas[(state as usize) % query_count];
+        }
+        bootstrap.push(sum / query_count as f64);
+    }
+    bootstrap.sort_by(f64::total_cmp);
+    let low = bootstrap[250];
+    let high = bootstrap[9_749];
+    Ok(format!(
+        "physical_benchmark_paired_recall scale={scale} control=bw4-control candidate=bw8-candidate query_rows={query_count} trials={} candidate_wins={candidate_wins} control_wins={control_wins} ties={ties} candidate_minus_control_mean={mean_delta:.6} paired_bootstrap_ci95_low={low:.6} paired_bootstrap_ci95_high={high:.6}",
+        query_count * k
+    ))
+}
+
 fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedVariant>> {
     let mut names = std::collections::BTreeSet::new();
     values
@@ -1188,6 +1310,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                     "benchmark seed variant neighbor score mode must be rabitq or exact_neighbor, got {neighbor_score_mode:?}"
                 );
             }
+            // Omitted variant controls inherit the normal production lazy-10
+            // path. Zero remains an explicit eager arm for Task 184-style
+            // materialization comparisons.
             let materialization_batch_size = fields
                 .get(5)
                 .map(|field| {
@@ -1198,7 +1323,7 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                     })
                 })
                 .transpose()?
-                .unwrap_or(0);
+                .unwrap_or(10);
             if materialization_batch_size > 4096 {
                 bail!(
                     "benchmark seed variant materialization batch size must be in 0..=4096, got {value:?}"
@@ -4367,6 +4492,7 @@ async fn run_physical_benchmarks(
     // run the traversal_replica=true arms. This makes the production lifecycle,
     // not a scan-path selector GUC, the A/B boundary.
     benchmark_arms.sort_by_key(|arm| arm.9);
+    let mut prediction_paths = std::collections::BTreeMap::<String, PathBuf>::new();
 
     for (
         arm,
@@ -4399,6 +4525,7 @@ async fn run_physical_benchmarks(
                 Some(build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?);
         }
         let recall_log = log_dir.join(format!("{arm}-{variant}-recall.log"));
+        let predictions_output = log_dir.join(format!("{arm}-{variant}-predictions.json"));
         let mut recall_args = common.clone();
         recall_args.extend([
             "bench".into(),
@@ -4418,6 +4545,8 @@ async fn run_physical_benchmarks(
             truth_cache.display().to_string(),
             "--log-output".into(),
             recall_log.display().to_string(),
+            "--predictions-output".into(),
+            predictions_output.display().to_string(),
             "--session-guc".into(),
             format!("ec_distann.beam_width={arm_beam_width}"),
             "--session-guc".into(),
@@ -4457,6 +4586,9 @@ async fn run_physical_benchmarks(
         let distinct_recall_ci95_low = row[13].parse::<f64>()?;
         let distinct_recall_ci95_high = row[14].parse::<f64>()?;
         let mean_ms = benchmark_ms(&row[11])?;
+        if arm == "physical" {
+            prediction_paths.insert(variant.to_owned(), predictions_output);
+        }
         lines.push(format!(
             "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
             args.head_index_cap, row[1], row[2]
@@ -4607,6 +4739,19 @@ async fn run_physical_benchmarks(
                 ));
             }
         }
+    }
+
+    if let (Some(control), Some(candidate)) = (
+        prediction_paths.get("bw4-control"),
+        prediction_paths.get("bw8-candidate"),
+    ) {
+        lines.push(paired_recall_line(
+            scale,
+            control,
+            candidate,
+            &truth_cache,
+            args.top_k as usize,
+        )?);
     }
 
     if let Some(content_digest) = traversal_replica_digest.as_deref() {
@@ -7218,8 +7363,13 @@ mod tests {
             "lazy:persisted_head:32:32:rabitq:10".to_owned(),
         ])
         .expect("variants parse");
-        assert_eq!(variants[0].materialization_batch_size, 0);
+        assert_eq!(variants[0].materialization_batch_size, 10);
         assert_eq!(variants[1].materialization_batch_size, 10);
+        let eager = parse_benchmark_seed_variants(&[
+            "eager:persisted_head:32:32:rabitq:0".to_owned(),
+        ])
+        .expect("explicit eager variant parses");
+        assert_eq!(eager[0].materialization_batch_size, 0);
     }
 
     #[test]
