@@ -1,6 +1,8 @@
 # Task 38 Packet 009 Artifact Manifest
 
-- Code checkpoint: `addeb885ae46e556b340dcdb68e02cdb57955d89`
+- Initial code checkpoint: `addeb885ae46e556b340dcdb68e02cdb57955d89`
+- Review-response checkpoint:
+  `c29c6dca5a05db33477bd87e390729b6f8c44642`
 - Task bucket: `reviews/task-38/`
 - Packet: `009-authoritative-fault-full`
 - Host: local Apple M5, macOS `26.4.1`, `arm64`
@@ -95,6 +97,26 @@
 - Architecture boundary: the new slow-disk exact-path LD_PRELOAD regression
   test and the pre-existing provider syscall tests are `target_os = "linux"`
   gated. They compile for the Linux target only and were not executed on M5.
+
+### `slow-disk-threshold-test.log`
+
+- Response timestamp: `2026-07-27T07:15:52Z`
+- Command:
+  `cargo test -p ecaz-cli
+  slow_disk_threshold_accepts_boundary_and_rejects_underflow_or_overflow
+  --color never --message-format short`
+- Code checkpoint:
+  `c29c6dca5a05db33477bd87e390729b6f8c44642`
+- Exit: `0`
+- Lines: `31`
+- SHA-256:
+  `26420f0afaf053745dd17c0da2f03b26bec1691b53193b81a94cef2ab0fb0c66`
+- Key result:
+  `1 passed; 0 failed; 471 filtered out`.
+- Boundary cases executed:
+  - provider time exactly equal to `baseline + configured latency`: pass;
+  - provider time one millisecond below the threshold: rejected; and
+  - `u128` checked-add overflow while forming the threshold: rejected.
 
 ## Additional Local Validation
 
