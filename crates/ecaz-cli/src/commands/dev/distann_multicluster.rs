@@ -4218,7 +4218,7 @@ async fn run_physical_benchmarks(
         args.queries,
         args.head_index_cap,
     ));
-    if args.head_policy.is_some() {
+    if args.head_policy.is_some() && !args.stage_counter_only {
         let coverage = coordinator
             .query_one(
                 &format!(
