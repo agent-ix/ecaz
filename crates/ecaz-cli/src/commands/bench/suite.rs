@@ -2321,6 +2321,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_recall".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_paired_recall ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_paired_recall".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_provenance ") {
             if let Some(mut values) = parse_space_key_values(rest.trim()) {
                 if let Some(unanimous) = values.get("unanimous").map(|value| value == "true") {
@@ -5213,6 +5217,25 @@ psql header noise\n\
             identity.1.get("identity_ok").map(String::as_str),
             Some("false"),
             "a nonzero mismatch fails the identity threshold"
+        );
+    }
+
+    #[test]
+    fn distann_physical_paired_recall_is_structured() {
+        let raw = "[distann-multicluster] physical_benchmark_paired_recall scale=100k control=bw4-control candidate=bw8-candidate query_rows=200 trials=2000 candidate_wins=7 control_wins=0 ties=193 candidate_minus_control_mean=0.006500 paired_bootstrap_ci95_low=0.002000 paired_bootstrap_ci95_high=0.012500\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "physical_benchmark_paired_recall");
+        assert_eq!(
+            rows[0].1.get("candidate_wins").map(String::as_str),
+            Some("7")
+        );
+        assert_eq!(
+            rows[0]
+                .1
+                .get("paired_bootstrap_ci95_high")
+                .map(String::as_str),
+            Some("0.012500")
         );
     }
 
