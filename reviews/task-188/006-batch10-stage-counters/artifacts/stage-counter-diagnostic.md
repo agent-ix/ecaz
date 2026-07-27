@@ -27,3 +27,23 @@ BW4 9.72 traversal hop rounds / 25.86 remote candidates per scan versus BW8
 5.58 / 29.56. Those rows were eager-0 and are not relabeled as batch-10
 measurements. A future fresh run needs additional disk before claiming direct
 batch-10 counter confirmation.
+
+## Efficient rerun result
+
+The efficient diagnostic completed successfully in
+`artifacts/run/efficient-20260727-r2/`. It skipped the duplicate single-index
+build, recall matrix, and seed-coverage query, and reconnected the latency
+worker every five timed queries. The physical 100k serving gate passed with
+100,000 source rows and zero orphans. Both BW4 and BW8 emitted 37 stage rows
+and 28 materialization-work rows; traversal reconciliation passed for both.
+
+Latency was 239.20 ms mean / 1213.00 ms p95 for BW4 and 234.70 ms mean /
+1191.40 ms p95 for BW8. Direct stage attribution showed custom-scan total
+233.338562 -> 228.812245 ms, remote-expand 11.691947 -> 9.218777 ms, and
+traversal total 13.439234 -> 11.034471 ms. Merged work counters showed
+traversal hop rounds 9.72 -> 5.58 per scan while remote candidates remained
+6.64 -> 6.62 per scan. These are the first fresh direct batch-10 attribution
+values for this packet. Recall remains intentionally sourced from packet 005.
+
+See the packet-local `outcome.md`, `resource-checks.md`, `results.jsonl`, and
+the two arm latency logs for the complete evidence.

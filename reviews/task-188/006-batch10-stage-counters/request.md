@@ -4,7 +4,7 @@ packet: 006-batch10-stage-counters
 role: coder
 status: open
 date: 2026-07-27
-head: c810b6e5e
+head: 193cff682
 ---
 
 # Review request: normalize paired recall and qualify batch-10 latency mechanism
@@ -25,3 +25,10 @@ failed run are used as evidence. The packet-local diagnostic note records the
 failure and the exact fallback qualification.
 
 See `artifacts/stage-counter-diagnostic.md` and packet 005's updated manifest.
+
+The follow-up efficient diagnostic subsequently completed at code checkpoint
+`193cff682`. Its packet-local evidence is under
+`artifacts/run/efficient-20260727-r2/`; the direct batch-10 stage attribution
+is summarized in `outcome.md`. Recall/storage interpretation remains tied to
+packet 005 because this targeted rerun deliberately omitted the duplicate
+recall/storage matrix.
