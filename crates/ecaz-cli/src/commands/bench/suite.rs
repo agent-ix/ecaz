@@ -3619,9 +3619,11 @@ impl SuiteStep {
                 if let Some(run_dir) = &step.run_dir {
                     artifacts.push(run_dir.join("topology.local.json"));
                 } else if let Some(run_id) = &step.run_id {
-                    artifacts.push(PathBuf::from(format!(
-                        "target/spire-local-multinode-{run_id}/topology.local.json"
-                    )));
+                    artifacts.push(
+                        crate::commands::dev::default_cluster_root()
+                            .join(format!("spire-local-multinode-{run_id}"))
+                            .join("topology.local.json"),
+                    );
                 }
                 if let Some(artifact_dir) = &step.artifact_dir {
                     if !step.skip_bench_suite {
@@ -5647,12 +5649,9 @@ psql header noise\n\
             .expected_artifacts
             .iter()
             .any(|path| path.ends_with("local-multinode.log")));
-        assert!(
-            step.expected_artifacts
-                .iter()
-                .any(|path| path
-                    .ends_with("target/spire-local-multinode-task121/topology.local.json"))
-        );
+        assert!(step.expected_artifacts.iter().any(|path| path
+            .ends_with("spire-local-multinode-task121/topology.local.json")
+            && !path.starts_with("target")));
         assert!(!step
             .expected_artifacts
             .iter()

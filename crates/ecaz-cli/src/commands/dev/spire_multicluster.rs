@@ -11,7 +11,8 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
 
 use super::support::{
-    find_pgrx_install, repo_root, resolve_pgrx_home, run_status, DEFAULT_PG_MAJOR,
+    default_cluster_root, find_pgrx_install, repo_root, resolve_pgrx_home, run_status,
+    DEFAULT_PG_MAJOR,
 };
 
 #[derive(Subcommand, Debug)]
@@ -1117,7 +1118,7 @@ async fn run_native_local_multinode_pg18(
         .unwrap_or_else(|| format!("{prefix}_remote_idx"));
     let run_dir = args
         .run_dir
-        .unwrap_or_else(|| repo_root.join(format!("target/spire-local-multinode-{run_id}")));
+        .unwrap_or_else(|| default_cluster_root().join(format!("spire-local-multinode-{run_id}")));
     let log_dir = args
         .artifact_dir
         .clone()

@@ -20,6 +20,8 @@ mod sql;
 mod support;
 mod test;
 
+pub(crate) use support::default_cluster_root;
+
 #[derive(Subcommand, Debug)]
 pub enum DevCommand {
     /// Local install/setup helpers for ecaz, pgvector, and pgvectorscale development.

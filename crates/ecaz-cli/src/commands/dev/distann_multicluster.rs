@@ -15,7 +15,9 @@ use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tokio::process::Command;
 
-use super::support::{find_pgrx_install, repo_root, resolve_pgrx_home, run_status};
+use super::support::{
+    default_cluster_root, find_pgrx_install, repo_root, resolve_pgrx_home, run_status,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum DistannMulticlusterCommand {
@@ -487,7 +489,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     let run_dir = args
         .run_dir
         .clone()
-        .unwrap_or_else(|| repo_root.join("target/distann-local-multinode"));
+        .unwrap_or_else(|| default_cluster_root().join("distann-local-multinode"));
     let mut socket_dir = run_dir.join("sockets");
     let mut log_dir = args
         .artifact_dir

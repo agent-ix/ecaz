@@ -8,8 +8,8 @@ use tokio::process::Command;
 use crate::{profiles, psql};
 
 use super::support::{
-    find_pgrx_install, repo_root, resolve_pgrx_home, run_status, DEFAULT_PG_MAJOR,
-    PG18_PRELOAD_DEFAULT_PORT,
+    default_cluster_root, find_pgrx_install, repo_root, resolve_pgrx_home, run_status,
+    DEFAULT_PG_MAJOR, PG18_PRELOAD_DEFAULT_PORT,
 };
 
 #[derive(Subcommand, Debug)]
@@ -278,12 +278,11 @@ async fn ensure_ivf_build_timing_function(conn: &psql::ConnectionOptions) -> Res
 }
 
 async fn run_pg18_preload_pgstat(args: Pg18PreloadPgstatArgs) -> Result<()> {
-    let repo_root = repo_root()?;
     let pgrx_home = resolve_pgrx_home(args.pgrx_home.as_ref());
     let install = find_pgrx_install(18, &pgrx_home)?;
     assert_preload_install_ready(&install)?;
 
-    let cluster_root = repo_root.join("target/pg18-preload-pgstat");
+    let cluster_root = default_cluster_root().join("pg18-preload-pgstat");
     let data_dir = cluster_root.join("data");
     let log_file = cluster_root.join("postgres.log");
     fs::create_dir_all(&cluster_root)
