@@ -2,7 +2,7 @@
 
 - Head SHA at plan creation: `c1c43a9bf66c25b390535ba47e52e0e251a5d6e7` (`origin/main`)
 - Task bucket: `reviews/task-188/001-entry-and-residual-plan/`
-- Entry evidence: Task 185 packet `004-full-scale-decision`; Task 186 branch packet `001-capacity-control` and `002-hierarchy-screen`
+- Entry evidence: Task 185 packet `004-full-scale-decision`; Task 186 branch packet `001-capacity-control` and `002-hierarchy-screen` (the cited Task 186 branch was unmerged and its hierarchy result was a query-time/arbitrary-representative prototype, not a production routing conclusion)
 - Fixture reserved: `ec_real_100k`, query SHA `a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782`
 - Planned lane: PG18 local, three-owner physical DistANN, isolated one-index-per-table surface with shared generation within the suite
 - Planned scoring: RabitQ stored neighbor codes, exact-scored 16,384 training-landmark head for bounded-head/control arms, BW/H isolated controls

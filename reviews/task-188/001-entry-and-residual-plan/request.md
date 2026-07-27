@@ -16,10 +16,16 @@ Jaccard-1 result is structurally constrained rather than a family-wide gateway
 refutation. Task 186 then screened bounded capacity. The exact 16,384 head
 reached 0.9740 recall at 100k. The two-level hierarchy retained zero
 owner-coverage misses but fell to 0.9440 recall at 84.30 ms mean; that result
-is limited to its query-time/arbitrary-representative prototype. The
-compressed head was not screened. These qualified results satisfy entry for a
-residual search-budget screen without claiming that all head families are
-exhausted.
+is limited to its query-time/arbitrary-representative prototype, which
+re-buckets the stored head per query. The compressed head was not screened.
+These qualified results satisfy entry for a residual search-budget screen
+without claiming that all head families are exhausted.
+
+The Task 186 packets cited by this entry were on the separate, unmerged
+`task-186-bounded-hierarchical-head` branch and had an open prototype-scoped
+review. They are inherited context, not a merged production conclusion. The
+retained exact-scored 16,384 training-landmark head is consequently an
+experimental reference surface only; Task 188 opens no promotion path for it.
 
 This satisfies Task 188’s conditional entry gate. The residual experiment is
 pre-registered against the best bounded head that actually remains viable:
