@@ -63,6 +63,16 @@ pub struct LocalMultinodePg18Args {
     /// measurement. This warms backend-local head and transport caches.
     #[arg(long, default_value_t = 0)]
     pub benchmark_warmup_iterations: u32,
+    /// Reconnect a latency worker after this many timed queries. Zero keeps
+    /// one backend for the whole arm; nonzero values bound backend-local
+    /// memory during long physical-query diagnostics.
+    #[arg(long, default_value_t = 0)]
+    pub benchmark_backend_batch_size: u32,
+    /// Run only the physical latency attribution arms. This skips the
+    /// duplicate single-index build and recall matrix when those already
+    /// exist in the owning packet.
+    #[arg(long, default_value_t = false)]
+    pub stage_counter_only: bool,
     /// Task 183 benchmark-only per-stage attribution for the physical latency
     /// arm. Requires a measurement extension exposing the stage snapshot API.
     #[arg(long, default_value_t = false)]
@@ -332,6 +342,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.distann_stage_counters && !args.physical_benchmark {
         bail!("--distann-stage-counters requires --physical-benchmark");
+    }
+    if args.stage_counter_only && (!args.physical_benchmark || !args.distann_stage_counters) {
+        bail!("--stage-counter-only requires --physical-benchmark and --distann-stage-counters");
+    }
+    if args.stage_counter_only && args.materialization_correctness {
+        bail!("--stage-counter-only cannot combine with --materialization-correctness");
     }
     if args.materialization_correctness && !args.physical_benchmark {
         bail!("--materialization-correctness requires --physical-benchmark");
@@ -4094,20 +4110,24 @@ async fn run_physical_benchmarks(
         ))
         .await?;
 
-    let single_started = Instant::now();
-    coordinator
-        .batch_execute(&format!(
-            "CREATE TABLE {single_corpus} AS
-                 SELECT id, source, embedding FROM {physical_corpus};
-             CREATE TABLE {single_queries} AS SELECT * FROM {physical_queries};
-             CREATE INDEX {single_index} ON {single_corpus}
-                 USING ec_distann (embedding ecvector_distann_ip_ops)
-                 WITH (graph_degree = {}, head_index_cap = {},
-                       neighbor_code_format = 'rabitq');",
-            args.graph_degree, args.head_index_cap
-        ))
-        .await?;
-    let single_build_ms = single_started.elapsed().as_millis();
+    let single_build_ms = if args.stage_counter_only {
+        0
+    } else {
+        let single_started = Instant::now();
+        coordinator
+            .batch_execute(&format!(
+                "CREATE TABLE {single_corpus} AS
+                     SELECT id, source, embedding FROM {physical_corpus};
+                 CREATE TABLE {single_queries} AS SELECT * FROM {physical_queries};
+                 CREATE INDEX {single_index} ON {single_corpus}
+                     USING ec_distann (embedding ecvector_distann_ip_ops)
+                     WITH (graph_degree = {}, head_index_cap = {},
+                           neighbor_code_format = 'rabitq');",
+                args.graph_degree, args.head_index_cap
+            ))
+            .await?;
+        single_started.elapsed().as_millis()
+    };
     let has_seed_strategy_provenance = coordinator
         .query_one(
             "SELECT to_regprocedure('ec_distann_physical_seed_strategy()') IS NOT NULL",
@@ -4169,8 +4189,9 @@ async fn run_physical_benchmarks(
         "postgres".to_owned(),
     ];
     let mut lines = vec![format!(
-        "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true",
-        extension_preflight.nodes
+        "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true stage_counter_only={}",
+        extension_preflight.nodes,
+        args.stage_counter_only
     )];
     if let Some(attestation) = production_head_attestation {
         lines.push(attestation);
@@ -4473,20 +4494,22 @@ async fn run_physical_benchmarks(
             variant.traversal_replica,
         ));
     }
-    benchmark_arms.push((
-        "single",
-        single_prefix.as_str(),
-        "single",
-        "single_index".to_owned(),
-        production_head_width,
-        production_head_width,
-        "rabitq".to_owned(),
-        0,
-        false,
-        false,
-        beam_width,
-        hop_rounds,
-    ));
+    if !args.stage_counter_only {
+        benchmark_arms.push((
+            "single",
+            single_prefix.as_str(),
+            "single",
+            "single_index".to_owned(),
+            production_head_width,
+            production_head_width,
+            "rabitq".to_owned(),
+            0,
+            false,
+            false,
+            beam_width,
+            hop_rounds,
+        ));
+    }
     // A traversal_replica=false arm is measured while no Ready image exists.
     // Only after every owner/single control has completed do we build Ready and
     // run the traversal_replica=true arms. This makes the production lifecycle,
@@ -4524,75 +4547,85 @@ async fn run_physical_benchmarks(
             traversal_replica_digest =
                 Some(build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?);
         }
-        let recall_log = log_dir.join(format!("{arm}-{variant}-recall.log"));
-        let predictions_output = log_dir.join(format!("{arm}-{variant}-predictions.json"));
-        let mut recall_args = common.clone();
-        recall_args.extend([
-            "bench".into(),
-            "recall".into(),
-            "--prefix".into(),
-            prefix.to_owned(),
-            "--profile".into(),
-            "ec_distann".into(),
-            "--k".into(),
-            args.top_k.to_string(),
-            "--sweep".into(),
-            "32".into(),
-            "--queries-limit".into(),
-            args.queries.to_string(),
-            "--force-index".into(),
-            "--truth-cache-file".into(),
-            truth_cache.display().to_string(),
-            "--log-output".into(),
-            recall_log.display().to_string(),
-            "--predictions-output".into(),
-            predictions_output.display().to_string(),
-            "--session-guc".into(),
-            format!("ec_distann.beam_width={arm_beam_width}"),
-            "--session-guc".into(),
-            format!("ec_distann.hop_rounds={arm_hop_rounds}"),
-        ]);
-        if arm == "physical" {
+        if !args.stage_counter_only {
+            let recall_log = log_dir.join(format!("{arm}-{variant}-recall.log"));
+            let predictions_output = log_dir.join(format!("{arm}-{variant}-predictions.json"));
+            let mut recall_args = common.clone();
             recall_args.extend([
-                "--truth-corpus-file".into(),
-                truth_corpus.display().to_string(),
+                "bench".into(),
+                "recall".into(),
+                "--prefix".into(),
+                prefix.to_owned(),
+                "--profile".into(),
+                "ec_distann".into(),
+                "--k".into(),
+                args.top_k.to_string(),
+                "--sweep".into(),
+                "32".into(),
+                "--queries-limit".into(),
+                args.queries.to_string(),
+                "--force-index".into(),
+                "--truth-cache-file".into(),
+                truth_cache.display().to_string(),
+                "--log-output".into(),
+                recall_log.display().to_string(),
+                "--predictions-output".into(),
+                predictions_output.display().to_string(),
+                "--session-guc".into(),
+                format!("ec_distann.beam_width={arm_beam_width}"),
+                "--session-guc".into(),
+                format!("ec_distann.hop_rounds={arm_hop_rounds}"),
             ]);
-            if explicit_seed_controls {
+            if arm == "physical" {
                 recall_args.extend([
-                    "--session-guc".into(),
-                    format!("ec_distann.benchmark_seed_mode={seed_strategy}"),
-                    "--session-guc".into(),
-                    format!("ec_distann.benchmark_head_search_width={head_search_width}"),
-                    "--session-guc".into(),
-                    format!("ec_distann.benchmark_head_seed_count={head_seed_count}"),
-                    "--session-guc".into(),
-                    format!(
-                        "ec_distann.benchmark_exact_neighbor={}",
-                        if neighbor_score_mode == "exact_neighbor" {
-                            "on"
-                        } else {
-                            "off"
-                        }
-                    ),
+                    "--truth-corpus-file".into(),
+                    truth_corpus.display().to_string(),
                 ]);
+                if explicit_seed_controls {
+                    recall_args.extend([
+                        "--session-guc".into(),
+                        format!("ec_distann.benchmark_seed_mode={seed_strategy}"),
+                        "--session-guc".into(),
+                        format!("ec_distann.benchmark_head_search_width={head_search_width}"),
+                        "--session-guc".into(),
+                        format!("ec_distann.benchmark_head_seed_count={head_seed_count}"),
+                        "--session-guc".into(),
+                        format!(
+                            "ec_distann.benchmark_exact_neighbor={}",
+                            if neighbor_score_mode == "exact_neighbor" {
+                                "on"
+                            } else {
+                                "off"
+                            }
+                        ),
+                    ]);
+                }
+                append_materialization_benchmark_guc(
+                    &mut recall_args,
+                    arm,
+                    materialization_batch_size,
+                );
+                append_owner_payload_plan_cache_guc(
+                    &mut recall_args,
+                    arm,
+                    owner_payload_plan_cache,
+                );
             }
-            append_materialization_benchmark_guc(&mut recall_args, arm, materialization_batch_size);
-            append_owner_payload_plan_cache_guc(&mut recall_args, arm, owner_payload_plan_cache);
+            let recall = run_physical_bench_child(recall_args).await?;
+            let row = benchmark_table_row(&recall)?;
+            let membership_recall = row[3].parse::<f64>()?;
+            let distinct_recall = row[12].parse::<f64>()?;
+            let distinct_recall_ci95_low = row[13].parse::<f64>()?;
+            let distinct_recall_ci95_high = row[14].parse::<f64>()?;
+            let mean_ms = benchmark_ms(&row[11])?;
+            if arm == "physical" {
+                prediction_paths.insert(variant.to_owned(), predictions_output);
+            }
+            lines.push(format!(
+                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
+                args.head_index_cap, row[1], row[2]
+            ));
         }
-        let recall = run_physical_bench_child(recall_args).await?;
-        let row = benchmark_table_row(&recall)?;
-        let membership_recall = row[3].parse::<f64>()?;
-        let distinct_recall = row[12].parse::<f64>()?;
-        let distinct_recall_ci95_low = row[13].parse::<f64>()?;
-        let distinct_recall_ci95_high = row[14].parse::<f64>()?;
-        let mean_ms = benchmark_ms(&row[11])?;
-        if arm == "physical" {
-            prediction_paths.insert(variant.to_owned(), predictions_output);
-        }
-        lines.push(format!(
-            "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
-            args.head_index_cap, row[1], row[2]
-        ));
 
         let latency_log = log_dir.join(format!("{arm}-{variant}-latency.log"));
         let mut latency_args = common.clone();
@@ -4623,6 +4656,12 @@ async fn run_physical_benchmarks(
             "--session-guc".into(),
             format!("ec_distann.hop_rounds={arm_hop_rounds}"),
         ]);
+        if args.benchmark_backend_batch_size > 0 {
+            latency_args.extend([
+                "--worker-batch-size".into(),
+                args.benchmark_backend_batch_size.to_string(),
+            ]);
+        }
         if arm == "physical" && explicit_seed_controls {
             latency_args.extend([
                 "--session-guc".into(),
@@ -4793,16 +4832,28 @@ async fn run_physical_benchmarks(
         );
     }
 
-    let sizes = coordinator
-        .query_one(
-            &format!(
-                "SELECT pg_total_relation_size('{single_index}'::regclass)::bigint,
-                        pg_total_relation_size('{single_corpus}'::regclass)::bigint,
-                        pg_total_relation_size('{physical_corpus}'::regclass)::bigint"
-            ),
-            &[],
-        )
-        .await?;
+    let sizes = if args.stage_counter_only {
+        coordinator
+            .query_one(
+                &format!(
+                    "SELECT 0::bigint, 0::bigint,
+                            pg_total_relation_size('{physical_corpus}'::regclass)::bigint"
+                ),
+                &[],
+            )
+            .await?
+    } else {
+        coordinator
+            .query_one(
+                &format!(
+                    "SELECT pg_total_relation_size('{single_index}'::regclass)::bigint,
+                            pg_total_relation_size('{single_corpus}'::regclass)::bigint,
+                            pg_total_relation_size('{physical_corpus}'::regclass)::bigint"
+                ),
+                &[],
+            )
+            .await?
+    };
     let physical_generation_bytes = published
         .iter()
         .map(|row| row.graph_bytes + row.row_bytes + row.directory_bytes + row.control_bytes)

@@ -545,7 +545,11 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
+    benchmark_backend_batch_size: Option<u32>,
+    #[serde(default)]
     distann_stage_counters: bool,
+    #[serde(default)]
+    stage_counter_only: bool,
     #[serde(default)]
     materialization_correctness: bool,
     /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
@@ -3329,6 +3333,20 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.stage_counter_only
+                    && (!step.physical_benchmark || !step.distann_stage_counters)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} stage_counter_only requires physical_benchmark and distann_stage_counters",
+                        step.name
+                    )
+                }
+                if step.stage_counter_only && step.materialization_correctness {
+                    bail!(
+                        "distann-local-multinode step {:?} stage_counter_only cannot combine with materialization_correctness",
+                        step.name
+                    )
+                }
                 if step.materialization_correctness {
                     if !step.physical_benchmark {
                         bail!(
@@ -4209,6 +4227,9 @@ fn expand_distann_local_multinode(
     if step.distann_stage_counters {
         args.push("--distann-stage-counters".into());
     }
+    if step.stage_counter_only {
+        args.push("--stage-counter-only".into());
+    }
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());
     }
@@ -4224,6 +4245,13 @@ fn expand_distann_local_multinode(
         &mut args,
         "--benchmark-warmup-iterations",
         step.benchmark_warmup_iterations
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--benchmark-backend-batch-size",
+        step.benchmark_backend_batch_size
             .map(|v| v.to_string())
             .as_deref(),
     );
