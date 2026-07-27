@@ -32,3 +32,10 @@ unbatched evidence.
 
 See [manifest](artifacts/manifest.md), [cited results](artifacts/task188-bw8-batch10-results.log), and the structured `ecaz bench suite` outputs under
 `artifacts/run/`.
+
+The paired-recall rows were re-normalized into `run/results.jsonl` with the
+suite report command after the reviewer found that the first parser revision
+dropped them. Packet 006 records the separate stage-counter diagnostic attempt:
+the run reached the 100k build but stopped with `ENOSPC`, so the latency
+mechanism is cited as a qualified inference from the existing instrumented
+attribution run rather than misrepresented as fresh batch-10 counters.
