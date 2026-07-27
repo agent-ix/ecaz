@@ -206,6 +206,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         "p99",
         "max",
         "cache_state",
+        "worker_batch_size",
     ];
     if args.sample_backend_memory {
         header.extend(["rss_peak_kb", "hwm_peak_kb", "memory_samples"]);
@@ -288,6 +289,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             Cell::new(format_ms(stats.p99)),
             Cell::new(format_ms(stats.max)),
             Cell::new(&args.cache_state),
+            Cell::new(args.worker_batch_size),
         ];
         if args.sample_backend_memory {
             row.extend([
@@ -486,8 +488,6 @@ async fn worker(
     } else {
         worker_batch_size
     };
-    let mut warmed_up = false;
-
     loop {
         // Each batch gets a fresh backend. This bounds memory retained by the
         // physical query/materialization path while preserving one merged
@@ -507,16 +507,17 @@ async fn worker(
         )
         .await?;
         let k_i64 = k as i64;
-        if !warmed_up {
-            for idx in 0..warmup_iterations {
-                let q = &queries[idx % queries.len()];
-                if encode_scan_query {
-                    client.query(&stmt, &[q, &bits, &seed, &k_i64]).await?;
-                } else {
-                    client.query(&stmt, &[q, &k_i64]).await?;
-                }
+        // Every reconnect starts a fresh backend. Replay the untimed warmup
+        // on each batch so the first timed query is never a reconnect/cold
+        // sample. With the default batch size of zero this executes once,
+        // preserving the historical single-backend behavior.
+        for idx in 0..warmup_iterations {
+            let q = &queries[idx % queries.len()];
+            if encode_scan_query {
+                client.query(&stmt, &[q, &bits, &seed, &k_i64]).await?;
+            } else {
+                client.query(&stmt, &[q, &k_i64]).await?;
             }
-            warmed_up = true;
         }
         if task87_candidate_batch_counters {
             super::reset_block_kernel_counters(&client).await?;

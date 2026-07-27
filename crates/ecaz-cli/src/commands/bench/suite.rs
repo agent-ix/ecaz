@@ -187,6 +187,10 @@ struct SuiteDefaults {
     queries_limit: Option<usize>,
     #[serde(default)]
     iterations: Option<usize>,
+    /// Reconnect each latency worker after this many timed queries. Zero
+    /// preserves the historical single-backend run.
+    #[serde(default)]
+    worker_batch_size: Option<usize>,
     #[serde(default)]
     force_index: Option<bool>,
     #[serde(default)]
@@ -368,6 +372,10 @@ struct LatencyStep {
     concurrency: Option<usize>,
     #[serde(default)]
     iterations: Option<usize>,
+    /// Reconnect each latency worker after this many timed queries. Zero
+    /// preserves the historical single-backend run.
+    #[serde(default)]
+    worker_batch_size: Option<usize>,
     #[serde(default)]
     rerank_width: Option<i32>,
     #[serde(default)]
@@ -4040,6 +4048,14 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
             .unwrap_or(1000)
             .to_string(),
     );
+    push_opt_arg(
+        &mut args,
+        "--worker-batch-size",
+        step.worker_batch_size
+            .or(defaults.worker_batch_size)
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
     push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
     if let Some(width) = step.rerank_width {
         push_arg(&mut args, "--rerank-width", &width.to_string());
@@ -7137,6 +7153,7 @@ psql header noise\n\
             k: None,
             concurrency: None,
             iterations: Some(10),
+            worker_batch_size: Some(5),
             rerank_width: None,
             adaptive_nprobe: None,
             adaptive_nprobe_score_gap_micros: None,
@@ -7158,6 +7175,9 @@ psql header noise\n\
         assert!(args
             .windows(2)
             .any(|w| w == ["--cache-state", "post_recall_warm"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--worker-batch-size", "5"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--session-guc", "ec_diskann.scan_profile_notice=on"]));

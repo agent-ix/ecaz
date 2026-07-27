@@ -65,7 +65,8 @@ pub struct LocalMultinodePg18Args {
     pub benchmark_warmup_iterations: u32,
     /// Reconnect a latency worker after this many timed queries. Zero keeps
     /// one backend for the whole arm; nonzero values bound backend-local
-    /// memory during long physical-query diagnostics.
+    /// memory during long physical-query diagnostics and replay the untimed
+    /// warmup before each fresh backend.
     #[arg(long, default_value_t = 0)]
     pub benchmark_backend_batch_size: u32,
     /// Run only the physical latency attribution arms. This skips the
@@ -4689,7 +4690,7 @@ async fn run_physical_benchmarks(
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -4698,6 +4699,7 @@ async fn run_physical_benchmarks(
             benchmark_ms(&row[7])?,
             benchmark_ms(&row[8])?,
             args.benchmark_warmup_iterations,
+            args.benchmark_backend_batch_size,
         ));
         if arm == "physical" && args.distann_stage_counters {
             let stage_rows = latency
