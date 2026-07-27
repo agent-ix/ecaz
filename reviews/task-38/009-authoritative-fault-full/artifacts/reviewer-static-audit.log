@@ -1,0 +1,44 @@
+Task 38 packet 009 outside-review static audit
+reviewed_branch_head=e108866f5009bb51c4cebf2ac4cf2faf4adf7b7d
+reviewed_code_checkpoint=addeb885ae46e556b340dcdb68e02cdb57955d89
+reviewed_diff=65ce1f8f9..addeb885ae46e556b340dcdb68e02cdb57955d89
+execution_boundary=static source and packet-local M5 evidence only; no Linux, Intel, remote, AWS, Docker, CI, or nightly execution
+
+artifact_sha256:
+69d6fba47b2167a667585e040c7dfdb15d9e80d551aee44a48a057c823044ddd  fault-full-plan.log
+3b5edcb6e1c45f9833e86b04ade3ad30e51f3fb25a30afffeba911e8fe9f77aa  fault-model-tests.log
+2ef84478f60fc390accae323f3445aa68065c2b4a74b7e64f3354a773643eae3  m5-build.log
+f10af636444e06adc9f1e1076ad6cbb8bc2ead877cc6762dfe5ec81b826c7d65  m5-live-preflight.log
+b1a9ebc9212b6456b63d7e1048179611432b62bff3e0c2ecd8c2564a761ec4aa  plan-counts.log
+
+independent_plan_audit:
+cases=116
+unique=116
+duplicates=0
+local=35
+mutation=14
+provider=56
+remote-socket=4
+cgroup=7
+
+m5_preflight_root_audit:
+reviews/task-38/009-authoritative-fault-full/artifacts/live-evidence=absent
+target/task38-packet009-live-runtime=absent
+
+source_audit:
+- provider preparation/baseline occurs provider-off
+- provider restart removes the arm file; aggregate creates it only after restart
+- run result is followed by disarm attempt and provider restore attempt
+- socket children receive per-case artifact/runtime roots, explicit ports, latency, PG major, rows, and PGRX_HOME
+- cgroup aggregate delegates all seven fixtures to the previously reviewed isolated operator with a distinct port range
+- aggregate execution result is followed unconditionally by main-log capture/recursive packet-log PANIC audit and shared postconditions
+- packet M5 claims remain bounded; live Linux/Intel aggregate completion is not claimed
+
+blocking_finding:
+The provider slow-disk plan promises "same-run baseline plus configured
+latency", but run_slow_disk_probe only rejects provider_ms <= baseline_ms.
+configured_latency_ms is printed but does not participate in the acceptance
+threshold. A noise-only increase smaller than the configured latency therefore
+passes all fourteen heap/index slow-disk cases.
+
+verdict=CHANGES_REQUESTED
