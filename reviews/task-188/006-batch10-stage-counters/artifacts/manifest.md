@@ -8,6 +8,9 @@
 - Diagnostic result: failed during 100k build with `ENOSPC`; no result rows
   from that failed run are included in the decision evidence
 - Durable failure note: `artifacts/stage-counter-diagnostic.md`
+- 2026-07-27 rerun: physical setup passed, but the latency backend reached
+  approximately 52 GB RSS and was terminated before emitting results;
+  `artifacts/run/rerun-20260727/outcome.md`
 - Accepted decision source: packet 005's re-normalized
   `artifacts/run/results.jsonl`, SHA-256
   `a1e0f57d9f18cfdd5d7ac1c6ed15dc70b947e655838093e939a770dc587c474e`
