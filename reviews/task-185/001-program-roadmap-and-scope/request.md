@@ -53,3 +53,10 @@ attributable and reviewable.
 NFR-017's separate stakeholder-ruling reconciliation is already pushed as
 Task 182 packet 008 and is a baseline prerequisite, not part of this candidate
 selection request.
+
+## Follow-up disposition
+
+The operator subsequently acknowledged and authorized the 185--190 split by
+approving the optimization plan and implementation session. This review is
+the program anchor; future program-wide changes should cite this packet path
+explicitly even when the change is recorded in another task bucket.

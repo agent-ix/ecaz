@@ -125,8 +125,10 @@ satisfies the recorded triggers for MAT-37/MAT-38 and motivates Tasks
 192–194 in that order. Tasks 185 recall work proceeds independently. Tasks
 186, 188--190 remain gated by their recorded prerequisites to prevent
 expensive architecture or codec work from outrunning the measured
-bottlenecks. Task 172 retains broad throughput, injected-RTT, and capacity
-characterization; Task 167 retains physical DML.
+bottlenecks. Task 172 is shelved-with-evidence: its replicated fixture
+predates FR-078 physical sharding and its historical numbers are not a live
+baseline; any resumption requires a separately scoped re-measurement packet.
+Task 167 retains physical DML.
 
 Every production-affecting winner receives a separately numbered
 productionization task. A benchmark winner is not a default change.
@@ -144,8 +146,8 @@ remain controls rather than new candidates.
 | MAT-02 | Executor cursor-driven remote payload fetch | **production mechanism**; adversarial qual/failure matrix passed |
 | MAT-03 | Adaptive payload batch size from observed qual rejection | deferred; fixed 10 already matched consumed remote rows and won end to end |
 | MAT-04 | Fixed 10/20/40 bounded batches | **fixed 10 selected**; 20/40 not advanced |
-| MAT-05 | `k + margin` fast path for provably unfiltered queries | conditional on planner proof |
-| MAT-06 | No-qual fast path with fail-closed fallback | conditional on projection/qual audit |
+| MAT-05 | `k + margin` fast path for provably unfiltered queries | conditional on planner proof; Task 191 production stage counters are recorded, but do not import this path without planner evidence |
+| MAT-06 | No-qual fast path with fail-closed fallback | conditional on projection/qual audit; Task 191 production stage counters are recorded, but do not import this path without a projection/qual proof |
 | MAT-07 | Pipeline next payload batch while executor consumes current rows | conditional on lazy batching winner |
 | MAT-08 | Start materialization during the final traversal round | conditional on stable-finalist evidence |
 | MAT-09 | Speculative payload prefetch for likely final candidates | deferred; account for wasted work |
@@ -200,14 +202,14 @@ heads. Candidate training never uses evaluation queries.
 | HEAD-10 | Score all representatives, open only the best groups | conditional Task 186 |
 | HEAD-11 | Bounded per-owner heads merged at coordinator | unmeasured; owner is load balance, not semantic region |
 | HEAD-12 | Coordinator-resident compact summary of every owner head | deferred format/cache candidate |
-| HEAD-13 | Diversity-aware selection instead of nearest 32 landmarks | active Task 185 |
-| HEAD-14 | Penalize seeds sharing the same traversal basin | active Task 185 |
-| HEAD-15 | Maximal-marginal-relevance distance/graph seed selection | active Task 185 diagnostic |
+| HEAD-13 | Diversity-aware selection instead of nearest 32 landmarks | measured STOP in Task 185 packet 003: recall-flat and materially slower |
+| HEAD-14 | Penalize seeds sharing the same traversal basin | measured STOP in Task 185 packet 003: recall-flat and materially slower |
+| HEAD-15 | Maximal-marginal-relevance distance/graph seed selection | measured STOP in Task 185 packet 003: recall-flat and materially slower |
 | HEAD-16 | Force seed coverage across disjoint training-query regions | unmeasured |
-| HEAD-17 | Select landmarks by marginal bounded-traversal recall gain | active Task 185 primary candidate |
-| HEAD-18 | Train gateway nodes that lead traversal to truth neighbors | active Task 185 primary candidate |
-| HEAD-19 | Submodular cover over successful seed-to-result basins | active Task 185 alternative |
-| HEAD-20 | Hard-query mining on a separate validation slice | active Task 185 input discipline |
+| HEAD-17 | Select landmarks by marginal bounded-traversal recall gain | measured STOP in Task 185 packet 003: gateway membership Jaccard 1.0 and recall-flat |
+| HEAD-18 | Train gateway nodes that lead traversal to truth neighbors | measured STOP in Task 185 packet 003: isolated reachability did not transfer to joint beam |
+| HEAD-19 | Submodular cover over successful seed-to-result basins | measured STOP in Task 185 packet 003: no held-out recall improvement |
+| HEAD-20 | Hard-query mining on a separate validation slice | measured STOP in Task 185 packet 003: input discipline retained; no candidate |
 | HEAD-21 | Allocate capacity to low-recall training-query clusters | unmeasured |
 | HEAD-22 | Lightweight query-to-region classifier | conditional Task 186 |
 | HEAD-23 | LSH/binary-code landmark-group routing | conditional Task 186 |
@@ -219,8 +221,8 @@ heads. Candidate training never uses evaluation queries.
 | HEAD-29 | Disjoint bounded multi-start seed groups | conditional Task 186 |
 | HEAD-30 | Second seed group only for low-confidence traversals | conditional Task 186/188 |
 | HEAD-31 | Adaptive 16/32/64 seeds from score gaps | low priority; unchanged-head seed widening was flat |
-| HEAD-32 | Reachability-aware rather than nearest-distance seed ranking | active Task 185 |
-| HEAD-33 | End-to-end traversal-success objective instead of oracle overlap | active Task 185 governing hypothesis |
+| HEAD-32 | Reachability-aware rather than nearest-distance seed ranking | measured STOP in Task 185 packet 003: recall-flat at fixed cap 4,096 |
+| HEAD-33 | End-to-end traversal-success objective instead of oracle overlap | measured STOP in Task 185 packet 003: isolated-budget signal did not transfer |
 | HEAD-34 | Repeated/near-query result cache | deferred workload optimization, not corpus recall |
 
 ## Candidate ledger: traversal and remote transport
@@ -278,10 +280,10 @@ Task 188 owns this family only after bounded entry work quantifies the residual.
 | GRAPH-10 | Connectivity and reachability audit | active Task 188 prerequisite |
 | GRAPH-11 | Reverse-edge repair for low-indegree nodes | conditional on GRAPH-10 |
 | GRAPH-12 | Bridge edges between weak regions | conditional on GRAPH-10 |
-| GRAPH-13 | Seed-aware landmark-to-region shortcuts | conditional on Task 185 gateway evidence |
+| GRAPH-13 | Seed-aware landmark-to-region shortcuts | conditional on new Task 186 capacity evidence; Task 185 fixed-cap gateway evidence was negative |
 | GRAPH-14 | Alternate deterministic graph-build seeds | unmeasured stability diagnostic |
 | GRAPH-15 | Bounded second-graph ensemble | deferred storage/build candidate |
-| GRAPH-16 | Training-query-aware gateway augmentation | conditional on Task 185 |
+| GRAPH-16 | Training-query-aware gateway augmentation | conditional on new Task 186 capacity evidence; Task 185 fixed-cap gateway evidence was negative |
 | GRAPH-17 | Query-difficulty adaptive search budget | conditional after confidence diagnostics |
 | GRAPH-18 | Attribute owner-oracle residual to graph, BW/H, or rerank | active Task 188 decision requirement |
 
@@ -392,5 +394,11 @@ or replacing a map do not require an ADR unless they alter a durable contract.
   profile, and STOP.
 - Task 184 packets 001--004: materialization attribution, fixed-window
   candidate, adversarial semantics/failure matrix, full-scale PROMOTE.
+- Task 185 packets 001--004: roadmap scope, gateway attribution, fixed-cap
+  screen, and STOP; program-wide review routing remains anchored at
+  `reviews/task-185/001-program-roadmap-and-scope/`.
+- Task 191 packet 003 full-scale results: production stage counters used to
+  keep MAT-05/MAT-06 conditional pending planner/projection proof;
+  `reviews/task-191/003-production-full-scale/artifacts/full-run/results.jsonl`.
 - NFR-007 and NFR-017 through NFR-020: evidence, comparison, storage, bounded
   work, and failure contracts.

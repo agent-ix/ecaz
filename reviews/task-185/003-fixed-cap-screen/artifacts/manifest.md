@@ -47,6 +47,9 @@ Date: 2026-07-23 (America/Los_Angeles)
 The checked-in config is
 `fixed-cap-screen-100k-suite.json` (SHA-256
 `fbc30ea711f0b6a41a74803cf01edb373a179ead1790ed37bff0180d819a995f`).
+This bespoke SuiteConfig is intentional: the four-cell gateway/basin A/B has
+no counterpart in the reusable current lane configs, so a task-local checked-
+in config is required to preserve its distinct membership/selector axes.
 The complete command was:
 
 ```text

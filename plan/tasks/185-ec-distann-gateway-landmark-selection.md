@@ -1,6 +1,6 @@
 # Task 185: ec_distann Gateway Landmark Selection
 
-Status: **proposed** (2026-07-19). Priority: P1 bounded-recall follow-up,
+Status: **complete — STOP** (2026-07-23). Priority: P1 bounded-recall follow-up,
 independent of Task 184.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`. This task
