@@ -1,0 +1,92 @@
+{
+  "suite": "task188-review-fixes-equivalence",
+  "schema_version": 1,
+  "config": "reviews/task-188/007-review-fixes/artifacts/task188-review-fixes-equivalence-suite.json",
+  "config_sha256": "811820e620c57ff9ea698912d4c280d694c75c3d7054691dcfcc2d39a5110d4e",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785185155984,
+  "runner_git_commit": "1426c838be8c760267565f3b566f14b4699606d2",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release",
+    "git_commit": "c1c43a9bf66c25b390535ba47e52e0e251a5d6e7",
+    "sha256": "d13711dff678c6112cbc07098c6279ad11a90205ecdebdffdd919025d5d75f1d",
+    "path": "/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so"
+  },
+  "steps": [
+    {
+      "name": "load-10k-hnsw",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task188",
+        "review-fixes",
+        "equivalence",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-188/007-review-fixes/artifacts/run/equivalence/pre-refactor-1426c838b/load-10k-hnsw.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "latency-10k-hnsw",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task188_review_fixes_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "30",
+        "--sweep",
+        "64",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-188/007-review-fixes/artifacts/run/equivalence/pre-refactor-1426c838b/latency-10k-hnsw.log"
+      ],
+      "selected": true,
+      "tags": [
+        "task188",
+        "review-fixes",
+        "equivalence",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-188/007-review-fixes/artifacts/run/equivalence/pre-refactor-1426c838b/latency-10k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785185157220,
+      "finished_at_unix_ms": 1785185157641,
+      "duration_ms": 417,
+      "exit_code": 0
+    }
+  ]
+}
