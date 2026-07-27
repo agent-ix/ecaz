@@ -20,4 +20,11 @@ width/count, topology, and query fixture fixed within each scale. It does not
 combine a graph rebuild with an adaptive policy and does not alter production
 defaults.
 
-Results and the final candidate decision will be added after the suite run.
+The full-scale suite completed successfully. BW8 remains the selected
+research candidate: it is recall-neutral at 10k, gains 0.0025 recall at 50k,
+and gains 0.0065 recall at 100k, with identical storage at every scale. The
+50k latency cost is material, so this packet selects BW8 for a follow-up
+productionization/acceptance task without changing a production default.
+
+See `artifacts/task188-bw8-full-scale-results.log` for the cited result lines
+and `artifacts/run/results.jsonl` for the structured suite source of truth.
