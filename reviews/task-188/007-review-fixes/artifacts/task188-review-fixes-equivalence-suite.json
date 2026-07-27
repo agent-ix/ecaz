@@ -1,0 +1,41 @@
+{
+  "name": "task188-review-fixes-equivalence",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-188/007-review-fixes/artifacts/run/equivalence",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx",
+    "iterations": 30,
+    "force_index": true
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "load",
+      "name": "load-10k-hnsw",
+      "tags": ["task188", "review-fixes", "equivalence", "load"],
+      "prefix": "task188_review_fixes_hnsw",
+      "profile": "ec_hnsw",
+      "corpus_file": "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged/ec_real_10k_corpus.tsv",
+      "queries_file": "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged/ec_real_10k_queries.tsv",
+      "allow_manifest_mismatch": true,
+      "m": [16],
+      "ef_construction": 128,
+      "log_file": "${artifact_dir}/load-10k-hnsw.log"
+    },
+    {
+      "kind": "latency",
+      "name": "latency-10k-hnsw",
+      "tags": ["task188", "review-fixes", "equivalence", "latency"],
+      "prefix": "task188_review_fixes_hnsw",
+      "profile": "ec_hnsw",
+      "k": 10,
+      "sweep": [64],
+      "concurrency": 1,
+      "iterations": 30,
+      "force_index": true,
+      "cache_state": "post_recall_warm",
+      "log_output": "${artifact_dir}/latency-10k-hnsw.log"
+    }
+  ]
+}

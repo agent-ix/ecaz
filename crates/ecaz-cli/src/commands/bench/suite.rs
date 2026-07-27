@@ -187,6 +187,10 @@ struct SuiteDefaults {
     queries_limit: Option<usize>,
     #[serde(default)]
     iterations: Option<usize>,
+    /// Reconnect each latency worker after this many timed queries. Zero
+    /// preserves the historical single-backend run.
+    #[serde(default)]
+    worker_batch_size: Option<usize>,
     #[serde(default)]
     force_index: Option<bool>,
     #[serde(default)]
@@ -368,6 +372,10 @@ struct LatencyStep {
     concurrency: Option<usize>,
     #[serde(default)]
     iterations: Option<usize>,
+    /// Reconnect each latency worker after this many timed queries. Zero
+    /// preserves the historical single-backend run.
+    #[serde(default)]
+    worker_batch_size: Option<usize>,
     #[serde(default)]
     rerank_width: Option<i32>,
     #[serde(default)]
@@ -545,7 +553,11 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
+    benchmark_backend_batch_size: Option<u32>,
+    #[serde(default)]
     distann_stage_counters: bool,
+    #[serde(default)]
+    stage_counter_only: bool,
     #[serde(default)]
     materialization_correctness: bool,
     /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
@@ -2321,6 +2333,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_recall".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_paired_recall ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_paired_recall".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_provenance ") {
             if let Some(mut values) = parse_space_key_values(rest.trim()) {
                 if let Some(unanimous) = values.get("unanimous").map(|value| value == "true") {
@@ -3325,6 +3341,20 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.stage_counter_only
+                    && (!step.physical_benchmark || !step.distann_stage_counters)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} stage_counter_only requires physical_benchmark and distann_stage_counters",
+                        step.name
+                    )
+                }
+                if step.stage_counter_only && step.materialization_correctness {
+                    bail!(
+                        "distann-local-multinode step {:?} stage_counter_only cannot combine with materialization_correctness",
+                        step.name
+                    )
+                }
                 if step.materialization_correctness {
                     if !step.physical_benchmark {
                         bail!(
@@ -4018,6 +4048,14 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
             .unwrap_or(1000)
             .to_string(),
     );
+    push_opt_arg(
+        &mut args,
+        "--worker-batch-size",
+        step.worker_batch_size
+            .or(defaults.worker_batch_size)
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
     push_arg(&mut args, "--sweep", &join_i32(&step.sweep));
     if let Some(width) = step.rerank_width {
         push_arg(&mut args, "--rerank-width", &width.to_string());
@@ -4205,6 +4243,9 @@ fn expand_distann_local_multinode(
     if step.distann_stage_counters {
         args.push("--distann-stage-counters".into());
     }
+    if step.stage_counter_only {
+        args.push("--stage-counter-only".into());
+    }
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());
     }
@@ -4220,6 +4261,13 @@ fn expand_distann_local_multinode(
         &mut args,
         "--benchmark-warmup-iterations",
         step.benchmark_warmup_iterations
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--benchmark-backend-batch-size",
+        step.benchmark_backend_batch_size
             .map(|v| v.to_string())
             .as_deref(),
     );
@@ -5213,6 +5261,25 @@ psql header noise\n\
             identity.1.get("identity_ok").map(String::as_str),
             Some("false"),
             "a nonzero mismatch fails the identity threshold"
+        );
+    }
+
+    #[test]
+    fn distann_physical_paired_recall_is_structured() {
+        let raw = "[distann-multicluster] physical_benchmark_paired_recall scale=100k control=bw4-control candidate=bw8-candidate query_rows=200 trials=2000 candidate_wins=7 control_wins=0 ties=193 candidate_minus_control_mean=0.006500 paired_bootstrap_ci95_low=0.002000 paired_bootstrap_ci95_high=0.012500\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "physical_benchmark_paired_recall");
+        assert_eq!(
+            rows[0].1.get("candidate_wins").map(String::as_str),
+            Some("7")
+        );
+        assert_eq!(
+            rows[0]
+                .1
+                .get("paired_bootstrap_ci95_high")
+                .map(String::as_str),
+            Some("0.012500")
         );
     }
 
@@ -7086,6 +7153,7 @@ psql header noise\n\
             k: None,
             concurrency: None,
             iterations: Some(10),
+            worker_batch_size: Some(5),
             rerank_width: None,
             adaptive_nprobe: None,
             adaptive_nprobe_score_gap_micros: None,
@@ -7107,6 +7175,9 @@ psql header noise\n\
         assert!(args
             .windows(2)
             .any(|w| w == ["--cache-state", "post_recall_warm"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--worker-batch-size", "5"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--session-guc", "ec_diskann.scan_profile_notice=on"]));

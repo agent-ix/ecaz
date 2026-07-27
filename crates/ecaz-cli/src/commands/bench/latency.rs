@@ -55,6 +55,11 @@ pub struct LatencyArgs {
     /// samples; zero preserves the historical behavior.
     #[arg(long, default_value_t = 0)]
     pub warmup_iterations: usize,
+    /// Reconnect each worker after this many timed queries. Zero preserves the
+    /// historical single-backend run and nonzero values bound backend-local
+    /// memory retained by long physical-query diagnostics.
+    #[arg(long, default_value_t = 0)]
+    pub worker_batch_size: usize,
     /// Sweep values for the profile's tuning axis. Accepts `--sweep 100,200`
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
@@ -201,6 +206,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         "p99",
         "max",
         "cache_state",
+        "worker_batch_size",
     ];
     if args.sample_backend_memory {
         header.extend(["rss_peak_kb", "hwm_peak_kb", "memory_samples"]);
@@ -226,6 +232,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             args.concurrency,
             args.iterations,
             args.warmup_iterations,
+            args.worker_batch_size,
             profile.encode_scan_query,
             args.force_index,
             args.rerank_width,
@@ -282,6 +289,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             Cell::new(format_ms(stats.p99)),
             Cell::new(format_ms(stats.max)),
             Cell::new(&args.cache_state),
+            Cell::new(args.worker_batch_size),
         ];
         if args.sample_backend_memory {
             row.extend([
@@ -336,6 +344,7 @@ async fn run_sweep_point(
     concurrency: usize,
     iterations: usize,
     warmup_iterations: usize,
+    worker_batch_size: usize,
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
@@ -389,6 +398,7 @@ async fn run_sweep_point(
                 counter,
                 iterations,
                 warmup_iterations,
+                worker_batch_size,
                 encode_scan_query,
                 force_index,
                 rerank_width,
@@ -449,6 +459,7 @@ async fn worker(
     counter: Arc<AtomicUsize>,
     iterations: usize,
     warmup_iterations: usize,
+    worker_batch_size: usize,
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
@@ -466,130 +477,191 @@ async fn worker(
     distann_stage_counters: bool,
     bar: Arc<ProgressBar>,
 ) -> Result<LatencyWorkerResult> {
-    // Each worker needs its own connection so the session-local GUC sticks.
-    let client = psql::connect(&conn).await?;
+    let mut durations = Vec::new();
+    let mut memory = MemorySample::default();
+    let mut task87_counter_sets = Vec::new();
+    let mut ivf_stage_counter_sets = Vec::new();
+    let mut distann_stage_counter_sets = Vec::new();
+    let mut distann_materialization_work_sets = Vec::new();
+    let batch_size = if worker_batch_size == 0 {
+        iterations
+    } else {
+        worker_batch_size
+    };
+    loop {
+        // Each batch gets a fresh backend. This bounds memory retained by the
+        // physical query/materialization path while preserving one merged
+        // latency and attribution result for the whole worker.
+        let (client, stmt) = open_worker_client(
+            &conn,
+            profile,
+            &guc,
+            value,
+            &sql,
+            rerank_width,
+            rerank_width_guc.as_deref(),
+            &session_gucs,
+            adaptive_nprobe_options,
+            ivf_scratch_soa_batch_decode,
+            force_index,
+        )
+        .await?;
+        let k_i64 = k as i64;
+        // Every reconnect starts a fresh backend. Replay the untimed warmup
+        // on each batch so the first timed query is never a reconnect/cold
+        // sample. With the default batch size of zero this executes once,
+        // preserving the historical single-backend behavior.
+        for idx in 0..warmup_iterations {
+            let q = &queries[idx % queries.len()];
+            if encode_scan_query {
+                client.query(&stmt, &[q, &bits, &seed, &k_i64]).await?;
+            } else {
+                client.query(&stmt, &[q, &k_i64]).await?;
+            }
+        }
+        if task87_candidate_batch_counters {
+            super::reset_block_kernel_counters(&client).await?;
+        }
+        if ivf_stage_counters {
+            super::reset_ivf_stage_counters(&client).await?;
+        }
+        if distann_stage_counters {
+            super::reset_distann_stage_counters(&client).await?;
+        }
+
+        let batch_memory = Arc::new(Mutex::new(MemorySample::default()));
+        let stop_memory_monitor = Arc::new(AtomicBool::new(false));
+        let memory_monitor = if sample_backend_memory {
+            let backend_pid: i32 = client
+                .query_one("SELECT pg_backend_pid()", &[])
+                .await
+                .wrap_err("fetching latency worker backend pid")?
+                .get(0);
+            Some(tokio::spawn(monitor_backend_memory(
+                backend_pid,
+                memory_sample_interval_ms,
+                Arc::clone(&stop_memory_monitor),
+                Arc::clone(&batch_memory),
+            )))
+        } else {
+            None
+        };
+
+        let mut batch_durations = Vec::with_capacity(batch_size);
+        let mut batch_result_rows = 0_i64;
+        let mut exhausted = false;
+        let batch_result: Result<()> = loop {
+            if batch_durations.len() >= batch_size {
+                break Ok(());
+            }
+            let idx = counter.fetch_add(1, Ordering::Relaxed);
+            if idx >= iterations {
+                exhausted = true;
+                break Ok(());
+            }
+            let q = &queries[idx % queries.len()];
+            let t0 = Instant::now();
+            let query_result = if encode_scan_query {
+                client.query(&stmt, &[q, &bits, &seed, &k_i64]).await
+            } else {
+                client.query(&stmt, &[q, &k_i64]).await
+            };
+            let rows = match query_result {
+                Ok(rows) => rows,
+                Err(err) => break Err(err.into()),
+            };
+            batch_result_rows =
+                batch_result_rows.saturating_add(i64::try_from(rows.len()).unwrap_or(i64::MAX));
+            batch_durations.push(t0.elapsed());
+            bar.inc(1);
+        };
+
+        stop_memory_monitor.store(true, Ordering::SeqCst);
+        if let Some(memory_monitor) = memory_monitor {
+            memory_monitor
+                .await
+                .map_err(|e| eyre!("latency memory monitor task failed: {e}"))??;
+        }
+        memory.merge(*batch_memory.lock().await);
+        batch_result?;
+
+        task87_counter_sets.push(if task87_candidate_batch_counters {
+            super::snapshot_block_kernel_counters(&client).await?
+        } else {
+            super::BlockKernelCounterSnapshots::default()
+        });
+        ivf_stage_counter_sets.push(if ivf_stage_counters {
+            super::snapshot_ivf_stage_counters(&client).await?
+        } else {
+            Vec::new()
+        });
+        distann_stage_counter_sets.push(if distann_stage_counters {
+            super::snapshot_distann_stage_counters(&client).await?
+        } else {
+            Vec::new()
+        });
+        if distann_stage_counters {
+            let mut work = super::snapshot_distann_materialization_work(&client).await?;
+            work.push(super::DistannMaterializationWorkSnapshot {
+                metric: "client_result_rows".into(),
+                scans: i64::try_from(batch_durations.len()).unwrap_or(i64::MAX),
+                value: batch_result_rows,
+            });
+            distann_materialization_work_sets.push(work);
+        } else {
+            distann_materialization_work_sets.push(Vec::new());
+        }
+        durations.extend(batch_durations);
+        if exhausted {
+            break;
+        }
+    }
+
+    Ok(LatencyWorkerResult {
+        durations,
+        memory,
+        task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
+        ivf_stage_counters: super::merge_ivf_stage_counters(ivf_stage_counter_sets),
+        distann_stage_counters: super::merge_distann_stage_counters(distann_stage_counter_sets),
+        distann_materialization_work: super::merge_distann_materialization_work(
+            distann_materialization_work_sets,
+        ),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn open_worker_client(
+    conn: &ConnectionOptions,
+    profile: &'static profiles::IndexProfile,
+    guc: &str,
+    value: i32,
+    sql: &str,
+    rerank_width: Option<i32>,
+    rerank_width_guc: Option<&str>,
+    session_gucs: &[(String, String)],
+    adaptive_nprobe_options: super::AdaptiveNprobeBenchOptions,
+    ivf_scratch_soa_batch_decode: bool,
+    force_index: bool,
+) -> Result<(tokio_postgres::Client, tokio_postgres::Statement)> {
+    let client = psql::connect(conn).await?;
     psql::prefer_ordered_ann_path(&client).await?;
     client
         .batch_execute(&format!("SET {guc} = {value}"))
         .await?;
-    if let Some(rerank_width) = rerank_width {
-        if let Some(rerank_width_guc) = rerank_width_guc {
-            client
-                .batch_execute(&format!("SET {rerank_width_guc} = {rerank_width}"))
-                .await?;
-        }
+    if let (Some(rerank_width), Some(rerank_width_guc)) = (rerank_width, rerank_width_guc) {
+        client
+            .batch_execute(&format!("SET {rerank_width_guc} = {rerank_width}"))
+            .await?;
     }
-    super::apply_session_gucs(&client, &session_gucs).await?;
+    super::apply_session_gucs(&client, session_gucs).await?;
     super::apply_adaptive_nprobe_options(&client, profile, adaptive_nprobe_options).await?;
     super::apply_ivf_scratch_soa_batch_decode(&client, profile, ivf_scratch_soa_batch_decode)
         .await?;
     if force_index {
         client.batch_execute("SET enable_seqscan = off").await?;
     }
-    let stmt = client.prepare(&sql).await?;
-    let k_i64 = k as i64;
-    for idx in 0..warmup_iterations {
-        let q = &queries[idx % queries.len()];
-        if encode_scan_query {
-            client.query(&stmt, &[q, &bits, &seed, &k_i64]).await?;
-        } else {
-            client.query(&stmt, &[q, &k_i64]).await?;
-        }
-    }
-    // Timed-run counters exclude warmup work.
-    if task87_candidate_batch_counters {
-        super::reset_block_kernel_counters(&client).await?;
-    }
-    if ivf_stage_counters {
-        super::reset_ivf_stage_counters(&client).await?;
-    }
-    if distann_stage_counters {
-        super::reset_distann_stage_counters(&client).await?;
-    }
-    let memory = Arc::new(Mutex::new(MemorySample::default()));
-    let stop_memory_monitor = Arc::new(AtomicBool::new(false));
-    let memory_monitor = if sample_backend_memory {
-        let backend_pid: i32 = client
-            .query_one("SELECT pg_backend_pid()", &[])
-            .await
-            .wrap_err("fetching latency worker backend pid")?
-            .get(0);
-        Some(tokio::spawn(monitor_backend_memory(
-            backend_pid,
-            memory_sample_interval_ms,
-            Arc::clone(&stop_memory_monitor),
-            Arc::clone(&memory),
-        )))
-    } else {
-        None
-    };
-    let mut durations = Vec::new();
-    let mut client_result_rows = 0_i64;
-    let query_result: Result<()> = loop {
-        let idx = counter.fetch_add(1, Ordering::Relaxed);
-        if idx >= iterations {
-            break Ok(());
-        }
-        let q = &queries[idx % queries.len()];
-        let t0 = Instant::now();
-        let query_result = if encode_scan_query {
-            client.query(&stmt, &[q, &bits, &seed, &k_i64]).await
-        } else {
-            client.query(&stmt, &[q, &k_i64]).await
-        };
-        let rows = match query_result {
-            Ok(rows) => rows,
-            Err(err) => break Err(err.into()),
-        };
-        client_result_rows =
-            client_result_rows.saturating_add(i64::try_from(rows.len()).unwrap_or(i64::MAX));
-        durations.push(t0.elapsed());
-        bar.inc(1);
-    };
-
-    stop_memory_monitor.store(true, Ordering::SeqCst);
-    if let Some(memory_monitor) = memory_monitor {
-        memory_monitor
-            .await
-            .map_err(|e| eyre!("latency memory monitor task failed: {e}"))??;
-    }
-    query_result?;
-    let task87_candidate_batch_counters = if task87_candidate_batch_counters {
-        super::snapshot_block_kernel_counters(&client).await?
-    } else {
-        super::BlockKernelCounterSnapshots::default()
-    };
-    let ivf_stage_counters = if ivf_stage_counters {
-        super::snapshot_ivf_stage_counters(&client).await?
-    } else {
-        Vec::new()
-    };
-    let distann_stage_counter_snapshots = if distann_stage_counters {
-        super::snapshot_distann_stage_counters(&client).await?
-    } else {
-        Vec::new()
-    };
-    let mut distann_materialization_work = if distann_stage_counters {
-        super::snapshot_distann_materialization_work(&client).await?
-    } else {
-        Vec::new()
-    };
-    if distann_stage_counters {
-        distann_materialization_work.push(super::DistannMaterializationWorkSnapshot {
-            metric: "client_result_rows".into(),
-            scans: i64::try_from(durations.len()).unwrap_or(i64::MAX),
-            value: client_result_rows,
-        });
-    }
-    let memory = *memory.lock().await;
-    Ok(LatencyWorkerResult {
-        durations,
-        memory,
-        task87_candidate_batch_counters,
-        ivf_stage_counters,
-        distann_stage_counters: distann_stage_counter_snapshots,
-        distann_materialization_work,
-    })
+    let stmt = client.prepare(sql).await?;
+    Ok((client, stmt))
 }
 
 fn validate_rerank_width_arg(
