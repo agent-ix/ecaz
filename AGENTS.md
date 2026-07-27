@@ -122,6 +122,62 @@ committing exhaust — stop and prune before requesting review. `.gitignore`
 prevents new commits of this cruft, but already-tracked copies must be removed
 with an explicit `git rm` pass.
 
+### Where Runtime Output Goes: `--run-dir`, `target/`, and Worktrees
+
+On 2026-07-27 this dev host filled a 1TB disk to 100%. Roughly 450G was Rust
+build output duplicated across 23 checkouts, and roughly 200G was **bench
+PostgreSQL clusters written into `target/`** — multi-GB PGDATA trees that read
+as compiled output to anyone auditing disk usage, and that `cargo clean` does
+not touch. They survived every previous cleanup because of where they were put.
+
+**`target/` is for Cargo build output and nothing else.** Never write PGDATA,
+corpus data, truth caches, or run artifacts there.
+
+#### `--run-dir` on multinode fixtures
+
+The multinode fixtures (`ecaz dev spire-multicluster`,
+`ecaz dev distann-multicluster`) default their run directory to
+`$ECAZ_CLUSTER_ROOT` (default `~/.ecaz/clusters/`), which is outside the repo
+and outside `target/`. The default is resolved by `default_cluster_root()` in
+`crates/ecaz-cli/src/commands/dev/support.rs`.
+
+- **`spire-multicluster`: omit `--run-dir` and pass `--run-id`.** The run id is
+  already part of the default path, so distinct arms get distinct directories
+  without naming one. An explicit `--run-dir` is the exception here.
+- **`distann-multicluster`: has no `--run-id`,** and its default is a single
+  fixed `distann-local-multinode` directory, so concurrent or per-arm runs do
+  need `--run-dir`. Point it **under `$ECAZ_CLUSTER_ROOT`**
+  (e.g. `~/.ecaz/clusters/distann-<arm>`), never inside the repo.
+- **Never point `--run-dir` inside the repo**, and never at `target/...`.
+  `--run-dir target/task188-bw8-100k` is exactly the pattern that filled the
+  disk.
+- Any other `--run-dir` target — e.g. staging clusters on a different volume —
+  needs a genuine reason **stated in the packet `manifest.md`**.
+- **Clusters are not review evidence.** Cite the result logs under the packet's
+  `artifacts/`, not the cluster directory. Remove the run directory once the
+  cited results are captured; a fixture left resident is many GB per arm.
+
+#### Build output and `CARGO_TARGET_DIR`
+
+- Local dev hosts may point every worktree at one shared `CARGO_TARGET_DIR`
+  (this host uses `~/.cargo-target`). Cargo namespaces artifacts by package and
+  hash, so sharing is safe, and it collapses the per-worktree dependency graph.
+- **Do not assume built artifacts are at `<repo>/target/`.** In Rust, resolve
+  through `cargo_target_dir()` in `crates/ecaz-cli/src/commands/dev/support.rs`.
+  In shell, use `${CARGO_TARGET_DIR:-target}`.
+- Do not commit an absolute `build.target-dir` to the repo's `.cargo/config.toml`
+  — it is machine-specific and would break other hosts and CI.
+
+#### Worktrees
+
+- A worktree per task is fine; a worktree per task **forever** is not. Reap it
+  once the task's branch merges.
+- Use `ecaz dev worktree-prune` to see what is reclaimable. It reports only
+  unless given `--apply`, and refuses to remove worktrees that are unmerged,
+  recently active, or hold uncommitted changes.
+- The checkout is shared with other agents. Never remove, reset, or switch a
+  worktree or branch you do not own.
+
 ### Legacy `review/` Holding Area
 
 `review/` is now a temporary legacy holding area only. It currently contains
