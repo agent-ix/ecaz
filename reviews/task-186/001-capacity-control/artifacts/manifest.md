@@ -8,7 +8,17 @@
 - Surface: each arm used an isolated one-index-per-table physical surface; the runner also built the required single-index comparator in that arm
 - Commands: `ecaz bench suite audit --config reviews/task-186/001-capacity-control/artifacts/task186-capacity-control-100k-suite.json`; the 4096/8192 arms were run with `ecaz bench suite run` into `artifacts/run-benchmark-feature`; the conditional 16384 arm was run with `--only trained-cap-16384-candidate-100k` into `artifacts/run-cap16384`
 - Timestamp: `2026-07-26` (runs started at approximately 12:57 PDT, 13:35 PDT, and 14:16 PDT respectively)
-- Suite configs/manifests/results: `task186-capacity-control-100k-suite.json`, `run-benchmark-feature/suite-manifest.json`, `run-benchmark-feature/results.jsonl`, `run-cap16384/suite-manifest.json`, and `run-cap16384/results.jsonl`
+- Suite/config provenance: the original two-arm pre-16,384 config is
+  `task186-capacity-control-100k-suite.pre16384.json`, SHA-256
+  `87e59b638f1572abd609d04c03aa8600014d63ee624de2a531455f0487bbdad6`, and
+  produced `run-benchmark-feature/` (4096 and 8192). The amended conditional
+  three-arm config is `task186-capacity-control-100k-suite.json`, SHA-256
+  `edbf80d33be171e7845507dd97450fad610d148d649eaf063bbcc797ce9deba8`, and
+  produced `run-cap16384/` (the 16384-only run). The amended config is retained
+  for the conditional run, but does not claim to reproduce the earlier two-arm
+  run. Manifests/results are `run-benchmark-feature/suite-manifest.json`,
+  `run-benchmark-feature/results.jsonl`, `run-cap16384/suite-manifest.json`,
+  and `run-cap16384/results.jsonl`.
 - Cited result summary: `task186-capacity-control-results.log`
 
 The raw corpus/query TSVs and PostgreSQL operational logs are intentionally not part of the review evidence commit. The packet records the corpus/query identities and retains the structured suite results plus the cited result summary.
