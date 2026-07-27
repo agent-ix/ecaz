@@ -1,0 +1,35 @@
+Task 188 Phase 1 residual attribution — fresh 100k physical PG18
+
+Provenance: extension c1c43a9bf66c25b390535ba47e52e0e251a5d6e7, release,
+ec_real_100k, query SHA a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782,
+three owners, shared physical generation, isolated one-index-per-table surface.
+
+Entry coverage: zero_fraction=0, owner_membership_rate=0.61546875,
+bounded_overlap_rate=0.5440625, exact_overlap_rate=0.5628125,
+mean_best_score_gap=0.0307640441, p95_best_score_gap=0.1623819768.
+
+| arm | seeds | BW/H | recall (95% CI) | warm latency mean / p50 / p95 | remote work | traversal nodes/scan |
+| --- | --- | --- | --- | --- | --- | --- |
+| bounded-head | exact head | 4/100 | 0.9740 (0.9661–0.9801) | 42.40 / 41.70 / 49.00 ms | 9.52 | 38.88 |
+| owner-oracle | owner scan | 4/100 | 0.9970 (0.9935–0.9986) | 2487.70 / 2484.50 / 2536.70 ms | 9.52 | not comparable |
+| bw2-h100 | same exact head | 2/100 | 0.9735 (0.9655–0.9797) | 43.20 / 42.70 / 50.90 ms | 25.06 remote candidates; 8.695 ms remote-expand* | 37.64* |
+| bw8-h100 | same exact head | 8/100 | 0.9805 (0.9735–0.9857) | 42.70 / 41.80 / 53.20 ms | 29.56 remote candidates; 4.932 ms remote-expand* | 44.64 |
+| bw4-h50 | same exact head | 4/50 | 0.9740 (0.9661–0.9801) | 41.00 / 40.30 / 47.30 ms | — | — |
+
+The starred/omitted work cells are not used for the decision; the complete
+stage/work rows are retained in the structured suite artifact. For the
+bounded-head control, stage counters report head_score 9.3625 ms/scan,
+local_expand 1.3576 ms/scan over 384 samples, remote_expand 6.2289 ms/scan
+over 476 samples, traversal_total 7.7047 ms/scan, 751.62 frontier insertions
+and 9.72 hop rounds per scan. It requested 38.88 traversal nodes and 25.86
+remote candidates per scan. BW8 requested 44.64 nodes and 29.56 remote
+candidates per scan, with 846.52 frontier insertions and 5.58 hop rounds per
+scan; traversal_total was 6.4426 ms/scan.
+
+Storage was unchanged across arms: physical_generation_bytes=2496634880,
+head_sample_bytes=101122048, head_graph_bytes=2460471,
+head_cache_estimated_bytes=103582519. All engagement and topology gates passed.
+
+Decision: advance only `bw8-h100` to the full 10k/50k/100k matrix. It is the
+only isolated control with a clear recall improvement at roughly flat mean
+latency; its tail/remote-work cost must be checked at all staged scales.
