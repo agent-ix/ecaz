@@ -1,7 +1,7 @@
 # Task 188: ec_distann Graph and Search Residual Recall
 
-Status: **in review — corrected batch-10 confirmation running** (2026-07-26).
-Priority: P2 residual-recall follow-up.
+Status: **complete — accept BW8 search-budget candidate; no production change**
+(2026-07-26). Priority: P2 residual-recall follow-up.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 families `GRAPH-01` through `GRAPH-18` plus gateway-derived `HEAD-27` and

@@ -1,0 +1,17 @@
+Task 188 corrected batch-10 confirmation; PG18 local three-owner physical lane
+with explicit materialization_batch_size=10, 200 shared queries, 2000 trials,
+50 warm iterations after 10 warmups.
+
+| scale | arm | recall | paired result | warm mean / p95 | physical bytes |
+| --- | --- | ---: | --- | ---: | ---: |
+| 10k | BW4 control | 1.0000 | 0 candidate wins / 0 control wins / 200 ties | 20.90 / 25.20 ms | 242794496 |
+| 10k | BW8 candidate | 1.0000 | same paired set | 19.90 / 24.00 ms | 242794496 |
+| 50k | BW4 control | 0.9840 | 5 candidate wins / 0 control wins / 195 ties | 26.50 / 29.60 ms | 1242750976 |
+| 50k | BW8 candidate | 0.9865 | paired delta +0.002500; bootstrap 95% [+0.000500,+0.005000] | 25.20 / 28.70 ms | 1242750976 |
+| 100k | BW4 control | 0.9740 | 7 candidate wins / 0 control wins / 193 ties | 28.80 / 32.60 ms | 2496659456 |
+| 100k | BW8 candidate | 0.9805 | paired delta +0.006500; bootstrap 95% [+0.002000,+0.012500] | 26.50 / 29.50 ms | 2496659456 |
+
+Exact cited source lines are in the packet-local per-scale
+`run/*/distann-multinode-summary.log` files and normalized
+`run/results.jsonl`. Build/publish milliseconds were shared within each scale:
+10k 120140/133248, 50k 541900/606949, and 100k 1005372/1136055.
