@@ -37,13 +37,23 @@ worker every five timed queries. The physical 100k serving gate passed with
 100,000 source rows and zero orphans. Both BW4 and BW8 emitted 37 stage rows
 and 28 materialization-work rows; traversal reconciliation passed for both.
 
-Latency was 239.20 ms mean / 1213.00 ms p95 for BW4 and 234.70 ms mean /
-1191.40 ms p95 for BW8. Direct stage attribution showed custom-scan total
-233.338562 -> 228.812245 ms, remote-expand 11.691947 -> 9.218777 ms, and
-traversal total 13.439234 -> 11.034471 ms. Merged work counters showed
-traversal hop rounds 9.72 -> 5.58 per scan while remote candidates remained
-6.64 -> 6.62 per scan. These are the first fresh direct batch-10 attribution
-values for this packet. Recall remains intentionally sourced from packet 005.
+The run's only latency value used for comparison is p50: 28.10 ms for BW4 and
+25.80 ms for BW8. Its mean/p95/p99 samples are harness-affected because the
+worker did not re-warm after reconnecting, so the first timed query of each
+five-query batch was cold. In particular, the reported custom-scan means
+`233.338562 -> 228.812245 ms` are contaminated in the same way and are not
+warm per-scan costs. The direct stage values worth retaining are
+remote-expand `11.691947 -> 9.218777 ms` and traversal-total
+`13.439234 -> 11.034471 ms`.
+
+The first fresh direct batch-10 work attribution showed traversal hop rounds
+`9.72 -> 5.58` per scan. Remote candidates are the stronger result:
+packet-002 eager-0 rows were `25.86 / 29.56` per scan for BW4/BW8, while this
+explicit batch-10 rerun measured `6.64 / 6.62`. The roughly four-fold change is
+from batch deduplication/materialization semantics, not a unit change: the
+same candidate work is counted after being coalesced into the ranked batch.
+This removes BW8's earlier remote-work penalty and brings it to parity with
+BW4. Recall remains intentionally sourced from packet 005.
 
 See the packet-local `outcome.md`, `resource-checks.md`, `results.jsonl`, and
 the two arm latency logs for the complete evidence.
