@@ -13,10 +13,10 @@ Decision: **STOP with conditional skip; no hybrid distance or codec candidate.**
 
 Task 183 already showed that unchanged exact-neighbor scoring is not a useful
 codec direction: it reduced same-seed recall from 0.9625 to 0.9605 and raised
-warm p50 from 43.8 ms to 113.1 ms. Task 188's attribution identifies search
-entry/traversal budget as the optimization signal, with no query-level proof
-that RaBitQ ordering loses a reachable candidate and no actionable error
-margin for selective correction.
+warm p50 from 43.8 ms to 113.1 ms. Task 188's completed attribution and
+full-scale confirmation identify search entry/traversal budget as the useful
+optimization signal, with no query-level proof that RaBitQ ordering loses a
+reachable candidate and no actionable error margin for selective correction.
 
 No codec code, persisted format, default, DML/vacuum path, or upgrade contract
 changed. A future attempt must reopen the entry gate with new same-seed
