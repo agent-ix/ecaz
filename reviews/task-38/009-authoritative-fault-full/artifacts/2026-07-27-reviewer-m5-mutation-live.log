@@ -1,0 +1,11 @@
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/88891782	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/88891792
+[fault] cancellation_mutation_control am=ec_distann/rabitq injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] mutation_control_complete kind=CancelUnexpectedPalloc fixtures=1 clean_postconditions=true
