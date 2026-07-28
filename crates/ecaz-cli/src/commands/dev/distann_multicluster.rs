@@ -4078,6 +4078,7 @@ async fn run_coverage_memory_regression(
     sample_interval_ms: u64,
     log_dir: &Path,
 ) -> Result<String> {
+    const WARMUP_INVOCATIONS: u32 = 5;
     let pid = coordinator
         .query_one("SELECT pg_backend_pid()", &[])
         .await?
@@ -4119,11 +4120,13 @@ async fn run_coverage_memory_regression(
 
     let result = async {
         coordinator.batch_execute("BEGIN").await?;
-        // The first coverage call acquires the bounded working set needed by
-        // the scan. Discard samples collected during it so the regression
+        // The first few coverage calls acquire the bounded working set needed
+        // by the scan. Discard samples collected during them so the regression
         // statistic covers the stable post-warm-up segment rather than cold
         // page/cache acquisition.
-        coordinator.query_one(&coverage_sql(1), &[]).await?;
+        coordinator
+            .query_one(&coverage_sql(WARMUP_INVOCATIONS), &[])
+            .await?;
         series.lock().await.clear();
         let rows = match coordinator.query_one(&coverage_sql(iterations), &[]).await {
             Ok(row) => row.get::<_, i64>(0),
@@ -4181,7 +4184,7 @@ async fn run_coverage_memory_regression(
         .wrap_err_with(|| format!("writing {}", series_path.display()))?;
     let pass = slope <= max_slope_kb_per_s && (delta as f64) <= max_delta_kb;
     let line = format!(
-        "physical_benchmark_memory_regression scale={scale} warmup_invocations=1 coverage_invocations={iterations} rows_returned={rows} samples={} rss_first_kb={first} rss_last_kb={last} rss_peak_to_trough_kb={delta} max_delta_kb={max_delta_kb:.2} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
+        "physical_benchmark_memory_regression scale={scale} warmup_invocations={WARMUP_INVOCATIONS} coverage_invocations={iterations} rows_returned={rows} samples={} rss_first_kb={first} rss_last_kb={last} rss_peak_to_trough_kb={delta} max_delta_kb={max_delta_kb:.2} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
         points.len(),
         series_path.display(),
     );

@@ -161,6 +161,20 @@ fn create_distann_physical_generation_fixture_with_payload_type(
     build_marker: u8,
     payload_type: &str,
 ) -> DistannPhysicalGenerationFixture {
+    create_distann_physical_generation_fixture_with_payload_type_and_graph_degree(
+        stem,
+        build_marker,
+        payload_type,
+        4,
+    )
+}
+
+fn create_distann_physical_generation_fixture_with_payload_type_and_graph_degree(
+    stem: &str,
+    build_marker: u8,
+    payload_type: &str,
+    graph_degree: u32,
+) -> DistannPhysicalGenerationFixture {
     assert!(
         stem.bytes()
             .all(|byte| byte.is_ascii_lowercase() || byte == b'_'),
@@ -195,7 +209,7 @@ fn create_distann_physical_generation_fixture_with_payload_type(
          WITH (
              distributed_control = true,
              source_identity = 'include',
-             graph_degree = 4,
+             graph_degree = {graph_degree},
              neighbor_code_format = 'rabitq'
          )"
     ))
@@ -393,6 +407,19 @@ fn distann_stage_batch_fixture_with_entries(
         });
     }
     entries.sort_by_key(|entry| entry.vec_id);
+    if shape.graph_degree > 4 {
+        let vec_ids = entries.iter().map(|entry| entry.vec_id).collect::<Vec<_>>();
+        for entry in &mut entries {
+            let neighbor_count = shape.graph_degree.min(vec_ids.len().saturating_sub(1));
+            entry.neighbor_vec_ids = vec_ids
+                .iter()
+                .copied()
+                .filter(|vec_id| *vec_id != entry.vec_id)
+                .take(neighbor_count)
+                .collect();
+            entry.neighbor_codes = vec![0; neighbor_count * shape.code_stride];
+        }
+    }
     let batch = crate::am::ec_distann::DistannHandoffBatch {
         epoch: 7,
         build_id: *fixture.build_id.as_bytes(),
@@ -5732,7 +5759,16 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
     build_marker: u8,
     row_count: usize,
 ) -> DistannParticipantLifecycleFixture {
-    let generation = create_distann_physical_generation_fixture(stem, build_marker);
+    let generation = if row_count > 1 {
+        create_distann_physical_generation_fixture_with_payload_type_and_graph_degree(
+            stem,
+            build_marker,
+            "text",
+            256,
+        )
+    } else {
+        create_distann_physical_generation_fixture(stem, build_marker)
+    };
     let (batch_digest, encoded_batch, _) =
         distann_stage_batch_fixture_with_entries(
             &generation,
@@ -5993,13 +6029,14 @@ fn test_distann_participant_publish_negative_guards() {
 /// `pg_test` feature, which includes the benchmark endpoint used here. The
 /// endpoint exercises the same owner graph-record bytea conversion as the
 /// real three-owner gate, while this test builds a one-owner physical
-/// generation inside the normal PG18 test transaction. The 2,048-row graph
-/// makes the pre-fix per-row detoast retention exceed the fixed budget.
+/// generation inside the normal PG18 test transaction. The 512-row graph uses
+/// 256-neighbor records large enough to exercise PostgreSQL's toasted-bytea
+/// path, making pre-fix per-row detoast retention exceed the fixed budget.
 #[cfg(feature = "pg_test")]
 #[pg_test]
 fn test_distann_physical_seed_detoast_memory_is_bounded() {
     const ITERATIONS: usize = 300;
-    const ROWS: usize = 2_048;
+    const ROWS: usize = 512;
     const MAX_GROWTH_BYTES: i64 = 4 * 1024 * 1024;
 
     let fixture = create_distann_participant_lifecycle_fixture_with_rows(
