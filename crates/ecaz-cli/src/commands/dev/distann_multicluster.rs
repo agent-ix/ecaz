@@ -100,6 +100,9 @@ pub struct LocalMultinodePg18Args {
     /// Maximum allowed RSS slope for the Task 200 coverage regression gate.
     #[arg(long, default_value_t = 100.0)]
     pub coverage_memory_regression_max_slope_kb_per_s: f64,
+    /// Maximum RSS peak-to-trough range after the one-call warm-up phase.
+    #[arg(long, default_value_t = 4096.0)]
+    pub coverage_memory_regression_max_delta_kb: f64,
     /// Sample the latency backend's RSS/HWM series at a fixed interval.
     #[arg(long, default_value_t = false)]
     pub sample_backend_memory: bool,
@@ -420,6 +423,11 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             bail!(
                 "--coverage-memory-regression-max-slope-kb-per-s must be finite and non-negative"
             );
+        }
+        if !args.coverage_memory_regression_max_delta_kb.is_finite()
+            || args.coverage_memory_regression_max_delta_kb < 0.0
+        {
+            bail!("--coverage-memory-regression-max-delta-kb must be finite and non-negative");
         }
     }
     if args.sample_backend_memory && args.memory_sample_interval_ms == 0 {
@@ -4066,6 +4074,7 @@ async fn run_coverage_memory_regression(
     scale: &str,
     iterations: u32,
     max_slope_kb_per_s: f64,
+    max_delta_kb: f64,
     sample_interval_ms: u64,
     log_dir: &Path,
 ) -> Result<String> {
@@ -4088,9 +4097,10 @@ async fn run_coverage_memory_regression(
         None,
     ));
 
-    let sql = format!(
-        "SELECT count(*)::bigint
-           FROM generate_series(1, {iterations}) AS calls(repeat_no)
+    let coverage_sql = |call_count: u32| {
+        format!(
+            "SELECT count(*)::bigint
+           FROM generate_series(1, {call_count}) AS calls(repeat_no)
           CROSS JOIN LATERAL (
               SELECT count(*)::bigint AS query_count
                 FROM {physical_queries}
@@ -4104,11 +4114,18 @@ async fn run_coverage_memory_regression(
           ) query_row
           CROSS JOIN LATERAL ec_distann_physical_seed_coverage_benchmark(
               'dm_idx'::regclass, query_row.source, 32, 32) coverage"
-    );
+        )
+    };
 
     let result = async {
         coordinator.batch_execute("BEGIN").await?;
-        let rows = match coordinator.query_one(&sql, &[]).await {
+        // The first coverage call acquires the bounded working set needed by
+        // the scan. Discard samples collected during it so the regression
+        // statistic covers the stable post-warm-up segment rather than cold
+        // page/cache acquisition.
+        coordinator.query_one(&coverage_sql(1), &[]).await?;
+        series.lock().await.clear();
+        let rows = match coordinator.query_one(&coverage_sql(iterations), &[]).await {
             Ok(row) => row.get::<_, i64>(0),
             Err(error) => {
                 let _ = coordinator.batch_execute("ROLLBACK").await;
@@ -4138,6 +4155,17 @@ async fn run_coverage_memory_regression(
     })?;
     let first = points.first().map(|point| point.rss_kb).unwrap_or_default();
     let last = points.last().map(|point| point.rss_kb).unwrap_or_default();
+    let minimum = points
+        .iter()
+        .map(|point| point.rss_kb)
+        .min()
+        .unwrap_or(first);
+    let maximum = points
+        .iter()
+        .map(|point| point.rss_kb)
+        .max()
+        .unwrap_or(last);
+    let delta = maximum.saturating_sub(minimum);
     let series_path = log_dir.join("coverage-memory-regression.series.log");
     let series_text = points
         .iter()
@@ -4151,11 +4179,10 @@ async fn run_coverage_memory_regression(
         .join("\n");
     fs::write(&series_path, format!("{series_text}\n"))
         .wrap_err_with(|| format!("writing {}", series_path.display()))?;
-    let pass = slope <= max_slope_kb_per_s;
+    let pass = slope <= max_slope_kb_per_s && (delta as f64) <= max_delta_kb;
     let line = format!(
-        "physical_benchmark_memory_regression scale={scale} coverage_invocations={iterations} rows_returned={rows} samples={} rss_first_kb={first} rss_last_kb={last} rss_delta_kb={} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
+        "physical_benchmark_memory_regression scale={scale} warmup_invocations=1 coverage_invocations={iterations} rows_returned={rows} samples={} rss_first_kb={first} rss_last_kb={last} rss_peak_to_trough_kb={delta} max_delta_kb={max_delta_kb:.2} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
         points.len(),
-        last - first,
         series_path.display(),
     );
     if !pass {
@@ -4437,6 +4464,7 @@ async fn run_physical_benchmarks(
                 &scale,
                 iterations,
                 args.coverage_memory_regression_max_slope_kb_per_s,
+                args.coverage_memory_regression_max_delta_kb,
                 args.memory_sample_interval_ms,
                 log_dir,
             )

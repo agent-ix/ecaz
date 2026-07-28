@@ -317,6 +317,15 @@ fn distann_stage_batch_fixture(
     batch_seq: u64,
     identity_marker: u8,
 ) -> (Vec<u8>, Vec<u8>, u64) {
+    distann_stage_batch_fixture_with_entries(fixture, batch_seq, identity_marker, 1)
+}
+
+fn distann_stage_batch_fixture_with_entries(
+    fixture: &DistannPhysicalGenerationFixture,
+    batch_seq: u64,
+    identity_marker: u8,
+    entry_count: usize,
+) -> (Vec<u8>, Vec<u8>, u64) {
     let descriptor =
         crate::am::ec_distann::DistannGenerationDescriptor::decode(&fixture.descriptor)
             .expect("generation descriptor should decode");
@@ -331,23 +340,17 @@ fn distann_stage_batch_fixture(
         graph_degree: usize::from(descriptor.graph_degree),
         non_dropped_attribute_count: descriptor.row_schema.non_dropped_count(),
     };
-    let mut identity = [identity_marker; 16];
-    identity[6] = (identity[6] & 0x0f) | 0x40;
-    identity[8] = (identity[8] & 0x3f) | 0x80;
-    let identity_uuid = pgrx::datum::Uuid::from_bytes(identity);
-    let (identity_bytes, payload_bytes, embedding_bytes, generated_bytes) =
+    let (payload_bytes, embedding_bytes, generated_bytes) =
         Spi::connect(|client| {
             client
                 .select(
-                    "SELECT pg_catalog.uuid_send($1::uuid) AS identity_bytes,
-                            pg_catalog.textsend($2::text) AS payload_bytes,
+                    "SELECT pg_catalog.textsend($1::text) AS payload_bytes,
                             ecvector_send(
                                 encode_to_ecvector(ARRAY[1.0,0.0,0.0,0.0], 4, 42)
                             ) AS embedding_bytes,
-                            pg_catalog.textsend($3::text) AS generated_bytes",
+                            pg_catalog.textsend($2::text) AS generated_bytes",
                     None,
                     &[
-                        identity_uuid.into(),
                         "captured payload".to_owned().into(),
                         "captured payload:generated".to_owned().into(),
                     ],
@@ -355,7 +358,6 @@ fn distann_stage_batch_fixture(
                 .expect("binary row payload should encode")
                 .map(|row| {
                     (
-                        row["identity_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
                         row["payload_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
                         row["embedding_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
                         row["generated_bytes"].value::<Vec<u8>>().unwrap().unwrap(),
@@ -364,23 +366,32 @@ fn distann_stage_batch_fixture(
                 .next()
                 .expect("binary row payload should return one row")
         });
-    assert_eq!(identity_bytes, identity);
-    let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
-    let entry = crate::am::ec_distann::DistannHandoffEntry {
-        vec_id,
-        source_identity: identity.to_vec(),
-        graph_flags: 0,
-        search_code: vec![0x5a; shape.code_stride],
-        neighbor_vec_ids: Vec::new(),
-        neighbor_codes: Vec::new(),
-        row_null_bitmap: vec![0],
-        row_values: vec![
-            identity_bytes,
-            payload_bytes,
-            embedding_bytes,
-            generated_bytes,
-        ],
-    };
+    let mut entries = Vec::with_capacity(entry_count);
+    let mut first_vec_id = None;
+    for entry_number in 0..entry_count {
+        let mut identity = [identity_marker; 16];
+        identity[1..9].copy_from_slice(&(entry_number as u64).to_le_bytes());
+        identity[6] = (identity[6] & 0x0f) | 0x40;
+        identity[8] = (identity[8] & 0x3f) | 0x80;
+        let identity_bytes = identity.to_vec();
+        let vec_id = crate::am::ec_distann::vec_id_from_source_identity(&identity);
+        first_vec_id.get_or_insert(vec_id);
+        entries.push(crate::am::ec_distann::DistannHandoffEntry {
+            vec_id,
+            source_identity: identity.to_vec(),
+            graph_flags: 0,
+            search_code: vec![0x5a; shape.code_stride],
+            neighbor_vec_ids: Vec::new(),
+            neighbor_codes: Vec::new(),
+            row_null_bitmap: vec![0],
+            row_values: vec![
+                identity_bytes,
+                payload_bytes.clone(),
+                embedding_bytes.clone(),
+                generated_bytes.clone(),
+            ],
+        });
+    }
     let batch = crate::am::ec_distann::DistannHandoffBatch {
         epoch: 7,
         build_id: *fixture.build_id.as_bytes(),
@@ -396,11 +407,15 @@ fn distann_stage_batch_fixture(
             .expect("row schema fingerprint"),
         index_format_version: crate::am::ec_distann::DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
         neighbor_codec_kind: descriptor.neighbor_codec_kind,
-        entries: vec![entry],
+        entries,
     };
     let digest = batch.digest(shape).expect("batch digest").to_vec();
     let encoded = batch.encode(shape).expect("batch encoding");
-    (digest, encoded, vec_id)
+    (
+        digest,
+        encoded,
+        first_vec_id.expect("stage batch fixture must contain one entry"),
+    )
 }
 
 fn distann_empty_stage_batch_fixture(
@@ -5708,9 +5723,22 @@ fn create_distann_participant_lifecycle_fixture(
     stem: &str,
     build_marker: u8,
 ) -> DistannParticipantLifecycleFixture {
+    create_distann_participant_lifecycle_fixture_with_rows(stem, build_marker, 1)
+}
+
+fn create_distann_participant_lifecycle_fixture_with_rows(
+    stem: &str,
+    build_marker: u8,
+    row_count: usize,
+) -> DistannParticipantLifecycleFixture {
     let generation = create_distann_physical_generation_fixture(stem, build_marker);
     let (batch_digest, encoded_batch, _) =
-        distann_stage_batch_fixture(&generation, 0, build_marker.wrapping_add(1));
+        distann_stage_batch_fixture_with_entries(
+            &generation,
+            0,
+            build_marker.wrapping_add(1),
+            row_count,
+        );
     let owner_digest = distann_owner_digest_for_batch(&generation, &encoded_batch);
     begin_distann_physical_generation_count(&generation, 1, &owner_digest);
     stage_distann_physical_batch(&generation, 0, &batch_digest, &encoded_batch);
@@ -5765,7 +5793,7 @@ fn create_distann_participant_lifecycle_fixture(
         },
         row_schema_fingerprint: descriptor.row_schema.fingerprint().unwrap(),
         head_sample_digest: [0x33; 32],
-        global_record_count: 1,
+        global_record_count: row_count as u64,
         global_graph_digest: receipt.persisted_graph_digest,
         global_row_tier_digest: receipt.persisted_row_tier_digest,
         participant_receipts: vec![receipt],
@@ -5960,22 +5988,33 @@ fn test_distann_participant_publish_negative_guards() {
     );
 }
 
-/// Task 200's unattended mechanism check. The benchmark-only endpoint is
-/// deliberately used here because it exercises the same owner graph-record
-/// bytea conversion as the real three-owner gate, while this test can build a
-/// one-owner physical generation inside the normal PG18 test transaction.
-#[cfg(feature = "distann-head-attribution-benchmark")]
+/// Task 200's unattended mechanism check. `cargo pgrx test pg18` enables the
+/// `pg_test` feature, which includes the benchmark endpoint used here. The
+/// endpoint exercises the same owner graph-record bytea conversion as the
+/// real three-owner gate, while this test builds a one-owner physical
+/// generation inside the normal PG18 test transaction. The 2,048-row graph
+/// makes the pre-fix per-row detoast retention exceed the fixed budget.
+#[cfg(feature = "pg_test")]
 #[pg_test]
 fn test_distann_physical_seed_detoast_memory_is_bounded() {
     const ITERATIONS: usize = 300;
+    const ROWS: usize = 2_048;
     const MAX_GROWTH_BYTES: i64 = 4 * 1024 * 1024;
 
-    let fixture = create_distann_participant_lifecycle_fixture(
+    let fixture = create_distann_participant_lifecycle_fixture_with_rows(
         "ec_distann_seed_memory_regression",
         0x6a,
+        ROWS,
     );
     publish_distann_participant(&fixture);
     let fingerprint_hex = hex::encode(&fixture.fingerprint);
+    let graph_relation = canonical_index_locator(fixture.relations.1);
+    assert_eq!(
+        Spi::get_one::<i64>(&format!("SELECT count(*) FROM {graph_relation}"))
+            .unwrap(),
+        Some(ROWS as i64),
+        "the regression graph must contain the intended row count"
+    );
     let memory_bytes = || {
         Spi::get_one::<i64>(
             "SELECT COALESCE(sum(total_bytes), 0)::bigint
@@ -5995,7 +6034,7 @@ fn test_distann_physical_seed_detoast_memory_is_bounded() {
         ))
         .expect("physical seed benchmark call should succeed")
         .expect("physical seed benchmark count should exist");
-        assert_eq!(rows, 1, "the one-row physical graph should yield one seed");
+        assert_eq!(rows, 1, "the physical graph should yield one requested seed");
     }
     let after = memory_bytes();
     let growth = after.saturating_sub(before);

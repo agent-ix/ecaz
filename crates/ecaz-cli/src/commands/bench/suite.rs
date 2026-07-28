@@ -567,6 +567,8 @@ struct DistannLocalMultinodeStep {
     coverage_memory_regression_iterations: Option<u32>,
     #[serde(default)]
     coverage_memory_regression_max_slope_kb_per_s: Option<f64>,
+    #[serde(default)]
+    coverage_memory_regression_max_delta_kb: Option<f64>,
     /// Record a timestamped /proc RSS/HWM series for each latency backend.
     #[serde(default)]
     sample_backend_memory: bool,
@@ -4324,6 +4326,13 @@ fn expand_distann_local_multinode(
         &mut args,
         "--coverage-memory-regression-max-slope-kb-per-s",
         step.coverage_memory_regression_max_slope_kb_per_s
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--coverage-memory-regression-max-delta-kb",
+        step.coverage_memory_regression_max_delta_kb
             .map(|v| v.to_string())
             .as_deref(),
     );
