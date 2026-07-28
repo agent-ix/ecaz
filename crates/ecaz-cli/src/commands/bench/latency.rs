@@ -61,6 +61,11 @@ pub struct LatencyArgs {
     /// memory retained by long physical-query diagnostics.
     #[arg(long, default_value_t = 0)]
     pub worker_batch_size: usize,
+    /// Keep the single worker backend in one explicit transaction for the
+    /// timed queries, then commit before collecting the final memory sample.
+    /// This is a diagnostic mode for transaction-lifetime retention.
+    #[arg(long, default_value_t = false)]
+    pub hold_transaction: bool,
     /// Sweep values for the profile's tuning axis. Accepts `--sweep 100,200`
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
@@ -128,6 +133,9 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     }
     if args.memory_sample_interval_ms == 0 {
         return Err(eyre!("--memory-sample-interval-ms must be >= 1"));
+    }
+    if args.hold_transaction && args.worker_batch_size != 0 {
+        return Err(eyre!("--hold-transaction requires --worker-batch-size 0"));
     }
     let profile = profiles::resolve(&args.profile).ok_or_else(|| {
         eyre!(
@@ -260,6 +268,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             args.iterations,
             args.warmup_iterations,
             args.worker_batch_size,
+            args.hold_transaction,
             profile.encode_scan_query,
             args.force_index,
             args.rerank_width,
@@ -383,6 +392,7 @@ async fn run_sweep_point(
     iterations: usize,
     warmup_iterations: usize,
     worker_batch_size: usize,
+    hold_transaction: bool,
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
@@ -440,6 +450,7 @@ async fn run_sweep_point(
                 iterations,
                 warmup_iterations,
                 worker_batch_size,
+                hold_transaction,
                 encode_scan_query,
                 force_index,
                 rerank_width,
@@ -506,6 +517,7 @@ async fn worker(
     iterations: usize,
     warmup_iterations: usize,
     worker_batch_size: usize,
+    hold_transaction: bool,
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
@@ -577,6 +589,9 @@ async fn worker(
         if distann_stage_counters {
             super::reset_distann_stage_counters(&client).await?;
         }
+        if hold_transaction {
+            client.batch_execute("BEGIN").await?;
+        }
 
         let batch_memory = Arc::new(Mutex::new(MemorySample::default()));
         let batch_memory_series = Arc::new(Mutex::new(Vec::new()));
@@ -629,6 +644,13 @@ async fn worker(
             bar.inc(1);
         };
 
+        if hold_transaction {
+            if batch_result.is_ok() {
+                client.batch_execute("COMMIT").await?;
+            } else {
+                let _ = client.batch_execute("ROLLBACK").await;
+            }
+        }
         stop_memory_monitor.store(true, Ordering::SeqCst);
         if let Some(memory_monitor) = memory_monitor {
             memory_monitor

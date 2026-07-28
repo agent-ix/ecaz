@@ -51,6 +51,11 @@ pub struct LocalMultinodePg18Args {
     /// Build-affecting provenance must match; the default remains rebuild.
     #[arg(long, default_value_t = false)]
     pub reuse_fixture: bool,
+    /// Packet-local or external directory containing the immutable benchmark
+    /// provenance used to attest a reused fixture. When omitted, preserve the
+    /// historical sibling-directory lookup.
+    #[arg(long)]
+    pub reuse_provenance_dir: Option<PathBuf>,
     /// Number of physical owners. Node 1 is also the coordinator unless
     /// `--coordinator-outside-roster` is set.
     #[arg(long, default_value_t = 3)]
@@ -75,6 +80,11 @@ pub struct LocalMultinodePg18Args {
     /// warmup before each fresh backend.
     #[arg(long, default_value_t = 0)]
     pub benchmark_backend_batch_size: u32,
+    /// Keep the single physical latency backend in one explicit transaction
+    /// for the timed queries. Diagnostic mode for transaction-lifetime memory
+    /// retention; requires one backend for the whole arm.
+    #[arg(long, default_value_t = false)]
+    pub benchmark_hold_transaction: bool,
     /// Sample the latency backend's RSS/HWM series at a fixed interval.
     #[arg(long, default_value_t = false)]
     pub sample_backend_memory: bool,
@@ -376,6 +386,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.benchmark_iterations == 0 {
         bail!("--benchmark-iterations must be at least 1");
+    }
+    if args.benchmark_hold_transaction && args.benchmark_backend_batch_size != 0 {
+        bail!("--benchmark-hold-transaction requires --benchmark-backend-batch-size 0");
     }
     if args.sample_backend_memory && args.memory_sample_interval_ms == 0 {
         bail!("--memory-sample-interval-ms must be at least 1");
@@ -4719,6 +4732,9 @@ async fn run_physical_benchmarks(
                 args.benchmark_backend_batch_size.to_string(),
             ]);
         }
+        if arm == "physical" && args.benchmark_hold_transaction {
+            latency_args.push("--hold-transaction".into());
+        }
         if arm == "physical" && args.sample_backend_memory {
             latency_args.extend([
                 "--sample-backend-memory".into(),
@@ -4758,7 +4774,7 @@ async fn run_physical_benchmarks(
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -4768,6 +4784,7 @@ async fn run_physical_benchmarks(
             benchmark_ms(&row[8])?,
             args.benchmark_warmup_iterations,
             args.benchmark_backend_batch_size,
+            args.benchmark_hold_transaction && arm == "physical",
         ));
         if arm == "physical" && args.distann_stage_counters {
             let stage_rows = latency
@@ -5039,9 +5056,11 @@ async fn validate_reused_physical_fixture(
     let scale = corpus_prefix
         .strip_prefix("ec_real_")
         .unwrap_or(corpus_prefix);
-    let prior_log_dir = log_dir
-        .parent()
-        .map(|parent| parent.join("counters-off-100k"));
+    let prior_log_dir = args.reuse_provenance_dir.clone().or_else(|| {
+        log_dir
+            .parent()
+            .map(|parent| parent.join("counters-off-100k"))
+    });
     let provenance_dirs = prior_log_dir
         .into_iter()
         .chain(std::iter::once(log_dir.to_owned()));
