@@ -12,8 +12,15 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 use tokio::process::Command;
+use tokio::sync::Mutex;
+
+use crate::commands::bench::latency::{monitor_backend_memory, rss_slope_kb_per_second};
 
 use super::support::{
     default_cluster_root, find_pgrx_install, repo_root, resolve_pgrx_home, run_status,
@@ -85,6 +92,14 @@ pub struct LocalMultinodePg18Args {
     /// retention; requires one backend for the whole arm.
     #[arg(long, default_value_t = false)]
     pub benchmark_hold_transaction: bool,
+    /// Run repeated benchmark-only physical seed-coverage calls in one
+    /// transaction and fail on a positive RSS slope. This is the executable
+    /// regression gate for Task 200.
+    #[arg(long)]
+    pub coverage_memory_regression_iterations: Option<u32>,
+    /// Maximum allowed RSS slope for the Task 200 coverage regression gate.
+    #[arg(long, default_value_t = 1024.0)]
+    pub coverage_memory_regression_max_slope_kb_per_s: f64,
     /// Sample the latency backend's RSS/HWM series at a fixed interval.
     #[arg(long, default_value_t = false)]
     pub sample_backend_memory: bool,
@@ -389,6 +404,23 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.benchmark_hold_transaction && args.benchmark_backend_batch_size != 0 {
         bail!("--benchmark-hold-transaction requires --benchmark-backend-batch-size 0");
+    }
+    if let Some(iterations) = args.coverage_memory_regression_iterations {
+        if iterations < 20 {
+            bail!("--coverage-memory-regression-iterations must be at least 20");
+        }
+        if !args.physical_benchmark {
+            bail!("--coverage-memory-regression-iterations requires --physical-benchmark");
+        }
+        if !args
+            .coverage_memory_regression_max_slope_kb_per_s
+            .is_finite()
+            || args.coverage_memory_regression_max_slope_kb_per_s < 0.0
+        {
+            bail!(
+                "--coverage-memory-regression-max-slope-kb-per-s must be finite and non-negative"
+            );
+        }
     }
     if args.sample_backend_memory && args.memory_sample_interval_ms == 0 {
         bail!("--memory-sample-interval-ms must be at least 1");
@@ -4028,6 +4060,110 @@ async fn run_materialization_correctness(
     Ok(lines)
 }
 
+async fn run_coverage_memory_regression(
+    coordinator: &tokio_postgres::Client,
+    physical_queries: &str,
+    scale: &str,
+    iterations: u32,
+    max_slope_kb_per_s: f64,
+    sample_interval_ms: u64,
+    log_dir: &Path,
+) -> Result<String> {
+    let pid = coordinator
+        .query_one("SELECT pg_backend_pid()", &[])
+        .await?
+        .get::<_, i32>(0);
+    let stop = Arc::new(AtomicBool::new(false));
+    let peak = Arc::new(Mutex::new(
+        crate::commands::bench::latency::MemorySample::default(),
+    ));
+    let series = Arc::new(Mutex::new(Vec::new()));
+    let monitor = tokio::spawn(monitor_backend_memory(
+        pid,
+        sample_interval_ms,
+        Arc::clone(&stop),
+        peak,
+        Arc::clone(&series),
+        "coverage-regression".to_owned(),
+        None,
+    ));
+
+    let sql = format!(
+        "SELECT count(*)::bigint
+           FROM generate_series(1, {iterations}) AS calls(repeat_no)
+          CROSS JOIN LATERAL (
+              SELECT count(*)::bigint AS query_count
+                FROM {physical_queries}
+          ) query_cardinality
+          CROSS JOIN LATERAL (
+              SELECT source
+                FROM {physical_queries}
+               ORDER BY id
+               LIMIT 1
+              OFFSET ((calls.repeat_no - 1) % query_cardinality.query_count)
+          ) query_row
+          CROSS JOIN LATERAL ec_distann_physical_seed_coverage_benchmark(
+              'dm_idx'::regclass, query_row.source, 32, 32) coverage"
+    );
+
+    let result = async {
+        coordinator.batch_execute("BEGIN").await?;
+        let rows = match coordinator.query_one(&sql, &[]).await {
+            Ok(row) => row.get::<_, i64>(0),
+            Err(error) => {
+                let _ = coordinator.batch_execute("ROLLBACK").await;
+                return Err(error);
+            }
+        };
+        coordinator.batch_execute("COMMIT").await?;
+        Ok::<i64, tokio_postgres::Error>(rows)
+    }
+    .await;
+
+    stop.store(true, Ordering::Relaxed);
+    monitor
+        .await
+        .map_err(|error| color_eyre::eyre::eyre!("RSS monitor task failed: {error}"))??;
+    let points = series.lock().await.clone();
+    let rows = result.wrap_err("running Task 200 coverage memory regression")?;
+    if rows < i64::from(iterations) {
+        bail!(
+            "Task 200 coverage memory regression executed {rows} rows, expected at least {iterations}"
+        );
+    }
+    let slope = rss_slope_kb_per_second(&points).ok_or_else(|| {
+        color_eyre::eyre::eyre!(
+            "Task 200 coverage memory regression collected fewer than two RSS samples"
+        )
+    })?;
+    let first = points.first().map(|point| point.rss_kb).unwrap_or_default();
+    let last = points.last().map(|point| point.rss_kb).unwrap_or_default();
+    let series_path = log_dir.join("coverage-memory-regression.series.log");
+    let series_text = points
+        .iter()
+        .map(|point| {
+            format!(
+                "[backend-memory] pid={} elapsed_ms={} rss_kb={} hwm_kb={}",
+                point.pid, point.elapsed_ms, point.rss_kb, point.hwm_kb
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    fs::write(&series_path, format!("{series_text}\n"))
+        .wrap_err_with(|| format!("writing {}", series_path.display()))?;
+    let pass = slope <= max_slope_kb_per_s;
+    let line = format!(
+        "physical_benchmark_memory_regression scale={scale} coverage_invocations={iterations} rows_returned={rows} samples={} rss_first_kb={first} rss_last_kb={last} rss_delta_kb={} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
+        points.len(),
+        last - first,
+        series_path.display(),
+    );
+    if !pass {
+        bail!("Task 200 coverage memory regression FAILED: {line}");
+    }
+    Ok(line)
+}
+
 async fn run_physical_benchmarks(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
@@ -4293,6 +4429,20 @@ async fn run_physical_benchmarks(
         args.queries,
         args.head_index_cap,
     ));
+    if let Some(iterations) = args.coverage_memory_regression_iterations {
+        lines.push(
+            run_coverage_memory_regression(
+                coordinator,
+                &physical_queries,
+                &scale,
+                iterations,
+                args.coverage_memory_regression_max_slope_kb_per_s,
+                args.memory_sample_interval_ms,
+                log_dir,
+            )
+            .await?,
+        );
+    }
     if args.head_policy.is_some() && !args.stage_counter_only && !args.skip_recall {
         let coverage = coordinator
             .query_one(

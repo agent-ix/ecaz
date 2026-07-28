@@ -864,6 +864,30 @@ pub(crate) struct BackendMemoryPoint {
     pub(crate) hwm_kb: i64,
 }
 
+/// Fit RSS against elapsed time. A peak can stay below a fixed threshold while
+/// a transaction-scoped leak continues to grow, so regression gates should use
+/// this slope instead of a peak-only assertion.
+pub(crate) fn rss_slope_kb_per_second(points: &[BackendMemoryPoint]) -> Option<f64> {
+    if points.len() < 2 {
+        return None;
+    }
+    let mean_x = points
+        .iter()
+        .map(|point| point.elapsed_ms as f64 / 1000.0)
+        .sum::<f64>()
+        / points.len() as f64;
+    let mean_y = points.iter().map(|point| point.rss_kb as f64).sum::<f64>() / points.len() as f64;
+    let mut covariance = 0.0;
+    let mut variance = 0.0;
+    for point in points {
+        let x = point.elapsed_ms as f64 / 1000.0 - mean_x;
+        let y = point.rss_kb as f64 - mean_y;
+        covariance += x * y;
+        variance += x * x;
+    }
+    (variance > 0.0).then_some(covariance / variance)
+}
+
 impl MemorySample {
     pub(crate) fn merge(&mut self, other: Self) {
         self.rss_peak_kb = self.rss_peak_kb.max(other.rss_peak_kb);
@@ -946,6 +970,37 @@ fn parse_status_kb(value: &str) -> Result<i64> {
         .ok_or_else(|| eyre!("missing /proc status memory value"))?
         .parse::<i64>()
         .wrap_err("parsing /proc status memory value")
+}
+
+#[cfg(test)]
+mod memory_regression_tests {
+    use super::{rss_slope_kb_per_second, BackendMemoryPoint};
+
+    #[test]
+    fn rss_slope_is_not_a_peak_check() {
+        let points = [
+            BackendMemoryPoint {
+                pid: 1,
+                elapsed_ms: 0,
+                rss_kb: 100,
+                hwm_kb: 100,
+            },
+            BackendMemoryPoint {
+                pid: 1,
+                elapsed_ms: 1000,
+                rss_kb: 1100,
+                hwm_kb: 1100,
+            },
+            BackendMemoryPoint {
+                pid: 1,
+                elapsed_ms: 2000,
+                rss_kb: 2100,
+                hwm_kb: 2100,
+            },
+        ];
+        assert_eq!(rss_slope_kb_per_second(&points), Some(1000.0));
+        assert!(rss_slope_kb_per_second(&points[..1]).is_none());
+    }
 }
 
 /// Linear-interpolated percentile from a pre-sorted ascending sample.

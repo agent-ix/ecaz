@@ -558,6 +558,12 @@ struct DistannLocalMultinodeStep {
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
     benchmark_backend_batch_size: Option<u32>,
+    /// Run the Task 200 repeated coverage-call RSS regression in one backend
+    /// transaction. The fixture is reused when `reuse_fixture` is true.
+    #[serde(default)]
+    coverage_memory_regression_iterations: Option<u32>,
+    #[serde(default)]
+    coverage_memory_regression_max_slope_kb_per_s: Option<f64>,
     /// Record a timestamped /proc RSS/HWM series for each latency backend.
     #[serde(default)]
     sample_backend_memory: bool,
@@ -4296,6 +4302,20 @@ fn expand_distann_local_multinode(
         &mut args,
         "--benchmark-backend-batch-size",
         step.benchmark_backend_batch_size
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--coverage-memory-regression-iterations",
+        step.coverage_memory_regression_iterations
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--coverage-memory-regression-max-slope-kb-per-s",
+        step.coverage_memory_regression_max_slope_kb_per_s
             .map(|v| v.to_string())
             .as_deref(),
     );
