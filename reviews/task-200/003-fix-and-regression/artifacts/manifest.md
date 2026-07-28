@@ -65,4 +65,7 @@
 - Measurement surface: one shared three-owner physical `dm_idx` generation;
   one coordinator backend held one explicit transaction for all 300 coverage
   calls. No one-index-per-table control was used in this diagnostic.
+- After the cited artifacts were captured, the stopped 6.7G fixture under
+  `/home/peter/.ecaz/clusters/task200-counters-off-100k` and raw operational
+  logs were removed. No corpus or PGDATA is committed.
 - Sibling conversion audit: `sibling-conversion-audit.md`.
