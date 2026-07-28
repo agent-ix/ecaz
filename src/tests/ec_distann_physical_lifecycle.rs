@@ -5960,6 +5960,51 @@ fn test_distann_participant_publish_negative_guards() {
     );
 }
 
+/// Task 200's unattended mechanism check. The benchmark-only endpoint is
+/// deliberately used here because it exercises the same owner graph-record
+/// bytea conversion as the real three-owner gate, while this test can build a
+/// one-owner physical generation inside the normal PG18 test transaction.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_test]
+fn test_distann_physical_seed_detoast_memory_is_bounded() {
+    const ITERATIONS: usize = 300;
+    const MAX_GROWTH_BYTES: i64 = 4 * 1024 * 1024;
+
+    let fixture = create_distann_participant_lifecycle_fixture(
+        "ec_distann_seed_memory_regression",
+        0x6a,
+    );
+    publish_distann_participant(&fixture);
+    let fingerprint_hex = hex::encode(&fixture.fingerprint);
+    let memory_bytes = || {
+        Spi::get_one::<i64>(
+            "SELECT COALESCE(sum(total_bytes), 0)::bigint
+               FROM pg_backend_memory_contexts",
+        )
+        .expect("backend memory context query should succeed")
+        .expect("backend memory total should exist")
+    };
+
+    let before = memory_bytes();
+    for _ in 0..ITERATIONS {
+        let rows = Spi::get_one::<i64>(&format!(
+            "SELECT count(*) FROM ec_distann_physical_seed_candidates_benchmark(
+                 '{}'::regclass, decode('{}', 'hex'),
+                 ARRAY[1.0, 0.0, 0.0, 0.0]::real[], 1)",
+            fixture.generation.index_name, fingerprint_hex
+        ))
+        .expect("physical seed benchmark call should succeed")
+        .expect("physical seed benchmark count should exist");
+        assert_eq!(rows, 1, "the one-row physical graph should yield one seed");
+    }
+    let after = memory_bytes();
+    let growth = after.saturating_sub(before);
+    assert!(
+        growth <= MAX_GROWTH_BYTES,
+        "owner seed conversion retained {growth} bytes after {ITERATIONS} calls"
+    );
+}
+
 #[pg_test]
 fn test_distann_participant_publish_status_replay_and_conflict() {
     let fixture =

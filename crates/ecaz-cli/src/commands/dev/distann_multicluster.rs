@@ -98,7 +98,7 @@ pub struct LocalMultinodePg18Args {
     #[arg(long)]
     pub coverage_memory_regression_iterations: Option<u32>,
     /// Maximum allowed RSS slope for the Task 200 coverage regression gate.
-    #[arg(long, default_value_t = 1024.0)]
+    #[arg(long, default_value_t = 100.0)]
     pub coverage_memory_regression_max_slope_kb_per_s: f64,
     /// Sample the latency backend's RSS/HWM series at a fixed interval.
     #[arg(long, default_value_t = false)]
