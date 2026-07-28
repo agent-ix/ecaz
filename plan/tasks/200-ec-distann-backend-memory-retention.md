@@ -1,7 +1,8 @@
 # Task 200: ec_distann Backend Memory Retention
 
-Status: **complete — root cause fixed and clean held-transaction regression
-passes** (2026-07-28). Priority: P2 after the production A1 came back bounded.
+Status: **in progress — root cause fixed; executable regression gate added,
+integration run pending** (2026-07-28). Priority: P2 after the production A1
+came back bounded.
 Phases 1 and 2 have run and several premises in the original filing were wrong —
 see *Established* below before doing any work.
 
@@ -247,6 +248,17 @@ figures are not latency evidence.
   both clean Task 200 A1 and regression runs used one backend without the
   reconnect workaround. The historical packet was not rewritten, preserving
   its measurement provenance.
+
+## Reviewer follow-up (2026-07-28)
+
+The prior 300-call result was hand-run SQL evidence, not an executable
+regression test. Task 200 remains open until the new
+`coverage_memory_regression_iterations` suite step runs the coverage helper on
+one backend inside one transaction and enforces an RSS slope threshold. The
+new gate is packet-configured at 300 calls with a 1024 KB/s maximum slope and
+also has a unit test for the slope calculation. The sibling conversion audit
+records the production `generation_read.rs` and `remote_endpoint.rs` array
+sites and ties their boundedness to the clean held-transaction A1 evidence.
 
 ## References
 

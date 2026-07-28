@@ -42,3 +42,11 @@
   used one backend without reconnects, so no live reconnect workaround remains
   to mask this defect.
 - No corpus, query TSV, PGDATA, or cluster directory is committed.
+- Executable gate config: `task200-coverage-memory-regression-suite.json`.
+  The suite dry-run expands the packet-local command with
+  `--reuse-fixture --coverage-memory-regression-iterations 300` and
+  `--coverage-memory-regression-max-slope-kb-per-s 1024`; its generated
+  `executable-regression-run/suite-manifest.json` records the command. The
+  actual integration run is pending because the previously reused fixture was
+  removed after the manual evidence run.
+- Sibling conversion audit: `sibling-conversion-audit.md`.

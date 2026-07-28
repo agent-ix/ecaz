@@ -6,7 +6,7 @@ date: 2026-07-28
 seq: 3
 ---
 
-# Task 200 fix and regression
+# Task 200 fix and executable regression
 
 The root cause is corrected in code checkpoint `fa84ff3b0`. In
 `RetainedGenerationScan::seed_candidates`, the old `value::<Vec<u8>>()` bytea
@@ -30,3 +30,18 @@ one held transaction. Its RSS rose during initial setup from 251,892 to
 the 10.8-second series; it showed no unbounded per-query growth. The fix is in
 the benchmark-only diagnostic owner seed path and leaves the production read
 path unchanged, so the conditional 10/50/100k matrix waiver applies.
+
+Reviewer follow-up identified that the SQL loop above was hand-run evidence,
+not an executable regression test. This request remains open until the new
+gate runs. `task200-coverage-memory-regression-suite.json` expands to
+`--coverage-memory-regression-iterations 300` and enforces an RSS slope
+threshold in the CLI while reusing the 100k fixture. The gate writes a
+packet-local RSS series and fails nonzero on a positive slope above the
+configured threshold. The suite dry-run is recorded in the packet manifest;
+the integration run is the remaining closeout action because the previously
+reused fixture was removed after the manual run.
+
+The sibling conversion audit is in
+`artifacts/sibling-conversion-audit.md`; it covers the production
+`remote_endpoint.rs:538` array conversion and the corresponding
+`generation_read.rs:1327` site, with A1 as the boundedness evidence.
