@@ -5741,10 +5741,10 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
             row_count,
         );
     let owner_digest = distann_owner_digest_for_batch(&generation, &encoded_batch);
-    begin_distann_physical_generation_count(&generation, 1, &owner_digest);
+    begin_distann_physical_generation_count(&generation, row_count as i64, &owner_digest);
     stage_distann_physical_batch(&generation, 0, &batch_digest, &encoded_batch);
     let receipt = crate::am::ec_distann::DistannReadyReceipt::decode(
-        &seal_distann_physical_generation(&generation, 1, &owner_digest),
+        &seal_distann_physical_generation(&generation, row_count as i64, &owner_digest),
     )
     .expect("participant lifecycle Ready receipt should decode");
     let descriptor =
