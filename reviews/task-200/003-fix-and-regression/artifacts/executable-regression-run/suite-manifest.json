@@ -2,10 +2,10 @@
   "suite": "task200-coverage-memory-regression",
   "schema_version": 1,
   "config": "reviews/task-200/003-fix-and-regression/artifacts/task200-coverage-memory-regression-suite.json",
-  "config_sha256": "60bca55cf87b103992b2391913b7c42cb2acc7b6ad8d303803130cbe9456191c",
-  "dry_run": true,
-  "generated_at_unix_ms": 1785264486079,
-  "runner_git_commit": "e566ebec1f3a6c9f8d4d657d07c629ff77a0f461-dirty",
+  "config_sha256": "20318ff7775857a47bc8fee0dcead4fb7d298adf1ada162541cc6d7d8c92cc4b",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785270585631,
+  "runner_git_commit": "9368990a44036b1180bd61a6bcc8f55bcc9e9bf2-dirty",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -29,6 +29,8 @@
         "reviews/task-200/003-fix-and-regression/artifacts/executable-regression-run",
         "--run-dir",
         "/home/peter/.ecaz/clusters/task200-counters-off-100k",
+        "--reuse-provenance-dir",
+        "reviews/task-200/003-fix-and-regression/artifacts/fixture-bootstrap-run",
         "--log-file",
         "reviews/task-200/003-fix-and-regression/artifacts/executable-regression-run/distann-local-multinode.log",
         "--nodes",
@@ -54,10 +56,18 @@
         "4",
         "--hop-rounds",
         "100",
+        "--seed-strategy",
+        "persisted_head",
+        "--head-search-width",
+        "32",
+        "--head-seed-count",
+        "32",
+        "--neighbor-score-mode",
+        "rabitq",
         "--head-policy",
         "training_landmarks",
         "--training-query-path",
-        "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+        "/home/peter/dev/ecaz/data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
         "--reuse-fixture",
         "--queries",
         "200",
@@ -67,7 +77,7 @@
         "--corpus-prefix",
         "ec_real_100k",
         "--staged-dir",
-        "/home/peter/dev/ecaz/data/staged-current"
+        "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
       ],
       "selected": true,
       "tags": [
@@ -85,7 +95,11 @@
         "reviews/task-200/003-fix-and-regression/artifacts/executable-regression-run/single-recall.log",
         "reviews/task-200/003-fix-and-regression/artifacts/executable-regression-run/single-latency.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1785270585653,
+      "finished_at_unix_ms": 1785271148090,
+      "duration_ms": 595212,
+      "exit_code": 0
     }
   ]
 }

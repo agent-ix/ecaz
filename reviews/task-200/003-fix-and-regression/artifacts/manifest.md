@@ -43,10 +43,26 @@
   to mask this defect.
 - No corpus, query TSV, PGDATA, or cluster directory is committed.
 - Executable gate config: `task200-coverage-memory-regression-suite.json`.
-  The suite dry-run expands the packet-local command with
-  `--reuse-fixture --coverage-memory-regression-iterations 300` and
-  `--coverage-memory-regression-max-slope-kb-per-s 1024`; its generated
-  `executable-regression-run/suite-manifest.json` records the command. The
-  actual integration run is pending because the previously reused fixture was
-  removed after the manual evidence run.
+  The suite run used the existing corpus under
+  `data/task106_full_sweep_100k/`, a one-time bootstrap fixture build, and
+  then `--reuse-fixture --coverage-memory-regression-iterations 300` with
+  `--coverage-memory-regression-max-slope-kb-per-s 1024`. The final generated
+  `executable-regression-run/suite-manifest.json` records the exact command,
+  config SHA, and successful step.
+- Bootstrap artifact: `fixture-bootstrap-run/distann-local-multinode.log`
+  records release extension `fa84ff3b0`, 100,000 source rows, three Published
+  owners, `physical_ms=1023268`, and `publish_ms=1156605`. The bootstrap used
+  the existing corpus TSVs; it did not regenerate corpus data.
+- Final regression result from
+  `executable-regression-run/distann-local-multinode.log`:
+  `coverage_invocations=300 rows_returned=300 samples=16609
+  rss_first_kb=19556 rss_last_kb=396632 rss_delta_kb=377076
+  rss_slope_kb_per_s=5.82 max_slope_kb_per_s=1024.00 pass=true`.
+  The RSS series is `coverage-memory-regression.series.log`; the normalized
+  result is in `results.jsonl`. The large first-to-last ramp is startup/working
+  set acquisition; the gate is slope-based as required and shows no
+  per-invocation unbounded growth.
+- Measurement surface: one shared three-owner physical `dm_idx` generation;
+  one coordinator backend held one explicit transaction for all 300 coverage
+  calls. No one-index-per-table control was used in this diagnostic.
 - Sibling conversion audit: `sibling-conversion-audit.md`.

@@ -32,14 +32,16 @@ the benchmark-only diagnostic owner seed path and leaves the production read
 path unchanged, so the conditional 10/50/100k matrix waiver applies.
 
 Reviewer follow-up identified that the SQL loop above was hand-run evidence,
-not an executable regression test. This request remains open until the new
-gate runs. `task200-coverage-memory-regression-suite.json` expands to
-`--coverage-memory-regression-iterations 300` and enforces an RSS slope
-threshold in the CLI while reusing the 100k fixture. The gate writes a
-packet-local RSS series and fails nonzero on a positive slope above the
-configured threshold. The suite dry-run is recorded in the packet manifest;
-the integration run is the remaining closeout action because the previously
-reused fixture was removed after the manual run.
+not an executable regression test. The executable gate is now run and passes.
+The suite reused a newly bootstrapped 100k fixture from the existing staged
+corpus and executed 300 coverage invocations on one coordinator backend in
+one transaction. It returned 300 rows, collected 16,609 RSS samples, and
+reported a fitted slope of +5.82 KB/s against the 1,024 KB/s limit. The
+packet-local series and normalized suite results are committed as evidence.
+
+The suite runner also now forwards `reuse_provenance_dir`, so reuse is
+attested from the packet-local bootstrap result instead of rebuilding. The
+sibling conversion audit remains in `artifacts/sibling-conversion-audit.md`.
 
 The sibling conversion audit is in
 `artifacts/sibling-conversion-audit.md`; it covers the production
