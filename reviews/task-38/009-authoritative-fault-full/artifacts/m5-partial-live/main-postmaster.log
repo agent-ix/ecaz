@@ -1,0 +1,1546 @@
+2026-07-28 00:36:54.507 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_hnsw ambuild result (allocation #1)
+2026-07-28 00:36:54.507 PDT [93245] STATEMENT:  CREATE INDEX ecaz_fault_hnsw_idx ON ecaz_fault_hnsw USING ec_hnsw (embedding ecvector_ip_ops) WITH (m = 8, ef_construction = 16)
+2026-07-28 00:36:54.515 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf ambuild result (allocation #1)
+2026-07-28 00:36:54.515 PDT [93245] STATEMENT:  CREATE INDEX ecaz_fault_ivf_idx ON ecaz_fault_ivf USING ec_ivf (embedding ecvector_ip_ops) WITH (nlists = 4, nprobe = 4, training_sample_rows = 16, storage_format = 'turboquant', rerank = 'heap_f32', rerank_width = 10)
+2026-07-28 00:36:54.521 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_diskann ambuild result (allocation #1)
+2026-07-28 00:36:54.521 PDT [93245] STATEMENT:  CREATE INDEX ecaz_fault_diskann_idx ON ecaz_fault_diskann USING ec_diskann (embedding ecvector_diskann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, list_size = 20, rerank_budget = 8)
+2026-07-28 00:36:54.528 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_spire ambuild result (allocation #1)
+2026-07-28 00:36:54.528 PDT [93245] STATEMENT:  CREATE INDEX ecaz_fault_spire_idx ON ecaz_fault_spire USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 4, nprobe = 4, storage_format = 'rabitq')
+2026-07-28 00:36:54.535 PDT [93245] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:36:54.535 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann ambuild result (allocation #1)
+2026-07-28 00:36:54.535 PDT [93245] STATEMENT:  CREATE INDEX ecaz_fault_distann_rabitq_idx ON ecaz_fault_distann_rabitq USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = 'rabitq')
+2026-07-28 00:36:54.537 PDT [93245] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:36:54.546 PDT [93245] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:36:54.548 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann ambuild result (allocation #1)
+2026-07-28 00:36:54.548 PDT [93245] STATEMENT:  CREATE INDEX ecaz_fault_distann_turboquant_idx ON ecaz_fault_distann_turboquant USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = 'turboquant')
+2026-07-28 00:36:54.556 PDT [93245] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:36:54.559 PDT [93245] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:36:54.559 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann ambuild result (allocation #1)
+2026-07-28 00:36:54.559 PDT [93245] STATEMENT:  CREATE INDEX ecaz_fault_distann_grouped_pq_idx ON ecaz_fault_distann_grouped_pq USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = 'grouped_pq')
+2026-07-28 00:36:54.562 PDT [93245] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:36:54.582 PDT [93246] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:36:54.590 PDT [93246] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:36:54.594 PDT [93246] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:36:54.596 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_hnsw ambeginscan opaque (allocation #1)
+2026-07-28 00:36:54.596 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_hnsw
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.596 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_hnsw scan query values (allocation #2)
+2026-07-28 00:36:54.596 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_hnsw
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.597 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_hnsw scan orderby values (allocation #3)
+2026-07-28 00:36:54.597 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_hnsw
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.597 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_hnsw scan orderby nulls (allocation #4)
+2026-07-28 00:36:54.597 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_hnsw
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.597 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_hnsw aminsert entry (allocation #1)
+2026-07-28 00:36:54.597 PDT [93245] STATEMENT:  INSERT INTO ecaz_fault_hnsw (embedding)
+	         VALUES (encode_to_ecvector(ARRAY[
+	                 cos((991 * 0.000001)::double precision)::real,
+	                 sin((991 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[], 4, 42))
+2026-07-28 00:36:54.598 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_hnsw vacuum stats (allocation #1)
+2026-07-28 00:36:54.598 PDT [93245] CONTEXT:  while vacuuming index "ecaz_fault_hnsw_idx" of relation "public.ecaz_fault_hnsw"
+2026-07-28 00:36:54.598 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_hnsw
+2026-07-28 00:36:54.599 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf ambeginscan opaque (allocation #1)
+2026-07-28 00:36:54.599 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_ivf
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.599 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf failed to allocate scan query state (allocation #2)
+2026-07-28 00:36:54.599 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_ivf
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.600 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf failed to allocate centroid score state (allocation #3)
+2026-07-28 00:36:54.600 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_ivf
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.600 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf failed to allocate selected-list state (allocation #4)
+2026-07-28 00:36:54.600 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_ivf
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.600 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf failed to allocate posting candidate state (allocation #5)
+2026-07-28 00:36:54.600 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_ivf
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.600 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf scan orderby values (allocation #6)
+2026-07-28 00:36:54.600 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_ivf
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.601 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf scan orderby nulls (allocation #7)
+2026-07-28 00:36:54.601 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_ivf
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.601 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf aminsert entry (allocation #1)
+2026-07-28 00:36:54.601 PDT [93245] STATEMENT:  INSERT INTO ecaz_fault_ivf (embedding)
+	         VALUES (encode_to_ecvector(ARRAY[
+	                 cos((991 * 0.000001)::double precision)::real,
+	                 sin((991 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[], 4, 42))
+2026-07-28 00:36:54.602 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_ivf bulkdelete stats (allocation #1)
+2026-07-28 00:36:54.602 PDT [93245] CONTEXT:  while vacuuming index "ecaz_fault_ivf_idx" of relation "public.ecaz_fault_ivf"
+2026-07-28 00:36:54.602 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_ivf
+2026-07-28 00:36:54.603 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_diskann ambeginscan opaque (allocation #1)
+2026-07-28 00:36:54.603 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_diskann
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.604 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_diskann aminsert entry (allocation #1)
+2026-07-28 00:36:54.604 PDT [93245] STATEMENT:  INSERT INTO ecaz_fault_diskann (embedding)
+	         VALUES (encode_to_ecvector(ARRAY[
+	                 cos((991 * 0.000001)::double precision)::real,
+	                 sin((991 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[], 4, 42))
+2026-07-28 00:36:54.605 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_diskann bulkdelete stats (allocation #1)
+2026-07-28 00:36:54.605 PDT [93245] CONTEXT:  while vacuuming index "ecaz_fault_diskann_idx" of relation "public.ecaz_fault_diskann"
+2026-07-28 00:36:54.605 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_diskann
+2026-07-28 00:36:54.605 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_spire ambeginscan opaque (allocation #1)
+2026-07-28 00:36:54.605 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_spire
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.606 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_spire scan orderby values (allocation #2)
+2026-07-28 00:36:54.606 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_spire
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.607 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_spire scan orderby nulls (allocation #3)
+2026-07-28 00:36:54.607 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_spire
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:36:54.607 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_spire aminsert entry (allocation #1)
+2026-07-28 00:36:54.607 PDT [93245] STATEMENT:  INSERT INTO ecaz_fault_spire (embedding)
+	         VALUES (encode_to_ecvector(ARRAY[
+	                 cos((991 * 0.000001)::double precision)::real,
+	                 sin((991 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[], 4, 42))
+2026-07-28 00:36:54.608 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_spire vacuum stats (allocation #1)
+2026-07-28 00:36:54.608 PDT [93245] CONTEXT:  while vacuuming index "ecaz_fault_spire_idx" of relation "public.ecaz_fault_spire"
+2026-07-28 00:36:54.608 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_spire
+2026-07-28 00:36:54.609 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #1)
+2026-07-28 00:36:54.609 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_distann_rabitq
+	         ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((1 * 0.000001 * (d + 1))::double precision) +
+	                     cos((1 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	         LIMIT 5
+2026-07-28 00:36:54.609 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann aminsert entry (allocation #1)
+2026-07-28 00:36:54.609 PDT [93245] STATEMENT:  INSERT INTO ecaz_fault_distann_rabitq (embedding)
+	         VALUES (encode_to_ecvector(ARRAY(
+	                 SELECT (
+	                     sin((991 * 0.000001 * (d + 1))::double precision) +
+	                     cos((991 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             ), 4, 42))
+2026-07-28 00:36:54.610 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann bulkdelete stats (allocation #1)
+2026-07-28 00:36:54.610 PDT [93245] CONTEXT:  while vacuuming index "ecaz_fault_distann_rabitq_idx" of relation "public.ecaz_fault_distann_rabitq"
+2026-07-28 00:36:54.610 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_distann_rabitq
+2026-07-28 00:36:54.611 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann vacuum stats (allocation #2)
+2026-07-28 00:36:54.611 PDT [93245] CONTEXT:  while cleaning up index "ecaz_fault_distann_rabitq_idx" of relation "public.ecaz_fault_distann_rabitq"
+2026-07-28 00:36:54.611 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_distann_rabitq
+2026-07-28 00:36:54.612 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #1)
+2026-07-28 00:36:54.612 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_distann_turboquant
+	         ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((1 * 0.000001 * (d + 1))::double precision) +
+	                     cos((1 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             )
+	         LIMIT 5
+2026-07-28 00:36:54.614 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann aminsert entry (allocation #1)
+2026-07-28 00:36:54.614 PDT [93245] STATEMENT:  INSERT INTO ecaz_fault_distann_turboquant (embedding)
+	         VALUES (encode_to_ecvector(ARRAY(
+	                 SELECT (
+	                     sin((991 * 0.000001 * (d + 1))::double precision) +
+	                     cos((991 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             ), 4, 42))
+2026-07-28 00:36:54.615 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann bulkdelete stats (allocation #1)
+2026-07-28 00:36:54.615 PDT [93245] CONTEXT:  while vacuuming index "ecaz_fault_distann_turboquant_idx" of relation "public.ecaz_fault_distann_turboquant"
+2026-07-28 00:36:54.615 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_distann_turboquant
+2026-07-28 00:36:54.616 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann vacuum stats (allocation #2)
+2026-07-28 00:36:54.616 PDT [93245] CONTEXT:  while cleaning up index "ecaz_fault_distann_turboquant_idx" of relation "public.ecaz_fault_distann_turboquant"
+2026-07-28 00:36:54.616 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_distann_turboquant
+2026-07-28 00:36:54.617 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #1)
+2026-07-28 00:36:54.617 PDT [93245] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_distann_grouped_pq
+	         ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((1 * 0.000001 * (d + 1))::double precision) +
+	                     cos((1 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	         LIMIT 5
+2026-07-28 00:36:54.617 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann aminsert entry (allocation #1)
+2026-07-28 00:36:54.617 PDT [93245] STATEMENT:  INSERT INTO ecaz_fault_distann_grouped_pq (embedding)
+	         VALUES (encode_to_ecvector(ARRAY(
+	                 SELECT (
+	                     sin((991 * 0.000001 * (d + 1))::double precision) +
+	                     cos((991 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             ), 4, 42))
+2026-07-28 00:36:54.618 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann bulkdelete stats (allocation #1)
+2026-07-28 00:36:54.618 PDT [93245] CONTEXT:  while vacuuming index "ecaz_fault_distann_grouped_pq_idx" of relation "public.ecaz_fault_distann_grouped_pq"
+2026-07-28 00:36:54.618 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_distann_grouped_pq
+2026-07-28 00:36:54.618 PDT [93245] ERROR:  ecaz fault injection palloc failure at ec_distann vacuum stats (allocation #2)
+2026-07-28 00:36:54.618 PDT [93245] CONTEXT:  while cleaning up index "ecaz_fault_distann_grouped_pq_idx" of relation "public.ecaz_fault_distann_grouped_pq"
+2026-07-28 00:36:54.618 PDT [93245] STATEMENT:  VACUUM (ANALYZE) ecaz_fault_distann_grouped_pq
+2026-07-28 00:36:54.678 PDT [91787] LOG:  client backend (PID 93248) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:54.678 PDT [91787] DETAIL:  Failed process was running: CREATE INDEX ecaz_fault_hnsw_idx ON ecaz_fault_hnsw USING ec_hnsw (embedding ecvector_ip_ops) WITH (m = 8, ef_construction = 16)
+2026-07-28 00:36:54.678 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:54.679 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:54.708 PDT [93265] LOG:  database system was interrupted; last known up at 2026-07-28 00:35:15 PDT
+2026-07-28 00:36:54.782 PDT [93268] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:54.886 PDT [93269] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:54.990 PDT [93270] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:55.092 PDT [93271] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:55.094 PDT [93265] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:55.109 PDT [93265] LOG:  redo starts at C0/8B04B790
+2026-07-28 00:36:55.135 PDT [93265] LOG:  invalid record length at C0/8B5BF880: expected at least 24, got 0
+2026-07-28 00:36:55.135 PDT [93265] LOG:  redo done at C0/8B5BE9B8 system usage: CPU: user: 0.00 s, system: 0.01 s, elapsed: 0.02 s
+2026-07-28 00:36:55.151 PDT [93266] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:55.157 PDT [93266] LOG:  checkpoint complete: wrote 429 buffers (2.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.003 s, total=0.006 s; sync files=101, longest=0.001 s, average=0.001 s; distance=5584 kB, estimate=5584 kB; lsn=C0/8B5BF880, redo lsn=C0/8B5BF880
+2026-07-28 00:36:55.158 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:55.250 PDT [91787] LOG:  client backend (PID 93278) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:55.250 PDT [91787] DETAIL:  Failed process was running: SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 400000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_hnsw
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:36:55.251 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:55.251 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:55.262 PDT [93295] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:55 PDT
+2026-07-28 00:36:55.354 PDT [93298] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:55.456 PDT [93299] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:55.465 PDT [93295] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:55.475 PDT [93295] LOG:  redo starts at C0/8B5BF8F8
+2026-07-28 00:36:55.476 PDT [93295] LOG:  invalid record length at C0/8B660C90: expected at least 24, got 0
+2026-07-28 00:36:55.476 PDT [93295] LOG:  redo done at C0/8B65FD88 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:55.491 PDT [93296] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:55.494 PDT [93296] LOG:  checkpoint complete: wrote 90 buffers (0.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.003 s; sync files=42, longest=0.001 s, average=0.001 s; distance=645 kB, estimate=645 kB; lsn=C0/8B660C90, redo lsn=C0/8B660C90
+2026-07-28 00:36:55.495 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:55.615 PDT [91787] LOG:  client backend (PID 93319) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:55.615 PDT [91787] DETAIL:  Failed process was running: INSERT INTO ecaz_fault_hnsw (embedding)
+	         SELECT encode_to_ecvector(
+	             ARRAY[
+	             cos((gs * 0.017)::double precision)::real,
+	             sin((gs * 0.017)::double precision)::real,
+	             0.0::real,
+	             0.0::real
+	         ]::real[],
+	             4,
+	             42
+	         )
+	         FROM generate_series(1, 20000) AS gs
+2026-07-28 00:36:55.615 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:55.616 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:55.626 PDT [93336] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:55 PDT
+2026-07-28 00:36:55.719 PDT [93339] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:55.823 PDT [93340] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:55.828 PDT [93336] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:55.838 PDT [93336] LOG:  redo starts at C0/8B660D08
+2026-07-28 00:36:55.839 PDT [93336] LOG:  invalid record length at C0/8B6FE178: expected at least 24, got 0
+2026-07-28 00:36:55.839 PDT [93336] LOG:  redo done at C0/8B6FD1D8 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:55.853 PDT [93337] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:55.856 PDT [93337] LOG:  checkpoint complete: wrote 87 buffers (0.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.003 s; sync files=40, longest=0.001 s, average=0.001 s; distance=629 kB, estimate=629 kB; lsn=C0/8B6FE178, redo lsn=C0/8B6FE178
+2026-07-28 00:36:55.856 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:55.991 PDT [91787] LOG:  client backend (PID 93346) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:55.991 PDT [91787] DETAIL:  Failed process was running: SELECT pg_sleep(10)
+2026-07-28 00:36:55.991 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:55.992 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:56.002 PDT [93363] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:55 PDT
+2026-07-28 00:36:56.095 PDT [93366] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:56.199 PDT [93367] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:56.205 PDT [93363] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:56.215 PDT [93363] LOG:  redo starts at C0/8B6FE1F0
+2026-07-28 00:36:56.222 PDT [93363] LOG:  invalid record length at C0/8BA99FC8: expected at least 24, got 0
+2026-07-28 00:36:56.222 PDT [93363] LOG:  redo done at C0/8BA99EB0 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:56.236 PDT [93364] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:56.239 PDT [93364] LOG:  checkpoint complete: wrote 318 buffers (1.9%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.004 s; sync files=40, longest=0.001 s, average=0.001 s; distance=3695 kB, estimate=3695 kB; lsn=C0/8BA99FC8, redo lsn=C0/8BA99FC8
+2026-07-28 00:36:56.240 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:56.356 PDT [91787] LOG:  client backend (PID 93375) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:56.356 PDT [91787] DETAIL:  Failed process was running: SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 400000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_ivf
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:36:56.356 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:56.357 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:56.367 PDT [93392] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:56 PDT
+2026-07-28 00:36:56.458 PDT [93395] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:56.561 PDT [93396] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:56.568 PDT [93392] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:56.578 PDT [93392] LOG:  redo starts at C0/8BA9A058
+2026-07-28 00:36:56.579 PDT [93392] LOG:  invalid record length at C0/8BB10120: expected at least 24, got 0
+2026-07-28 00:36:56.579 PDT [93392] LOG:  redo done at C0/8BB0F180 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:56.594 PDT [93393] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:56.596 PDT [93393] LOG:  checkpoint complete: wrote 74 buffers (0.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.003 s; sync files=38, longest=0.001 s, average=0.001 s; distance=472 kB, estimate=472 kB; lsn=C0/8BB10120, redo lsn=C0/8BB10120
+2026-07-28 00:36:56.597 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:56.723 PDT [91787] LOG:  client backend (PID 93402) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:56.723 PDT [91787] DETAIL:  Failed process was running: INSERT INTO ecaz_fault_ivf (embedding)
+	         SELECT encode_to_ecvector(
+	             ARRAY[
+	             cos((gs * 0.017)::double precision)::real,
+	             sin((gs * 0.017)::double precision)::real,
+	             0.0::real,
+	             0.0::real
+	         ]::real[],
+	             4,
+	             42
+	         )
+	         FROM generate_series(1, 20000) AS gs
+2026-07-28 00:36:56.723 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:56.723 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:56.734 PDT [93419] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:56 PDT
+2026-07-28 00:36:56.826 PDT [93422] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:56.930 PDT [93423] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:56.935 PDT [93419] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:56.946 PDT [93419] LOG:  redo starts at C0/8BB10198
+2026-07-28 00:36:56.948 PDT [93419] LOG:  unexpected pageaddr C0/43D1A000 in WAL segment 00000001000000C00000008B, LSN C0/8BD1A000, offset 13737984
+2026-07-28 00:36:56.948 PDT [93419] LOG:  redo done at C0/8BD18DC8 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:56.962 PDT [93420] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:56.965 PDT [93420] LOG:  checkpoint complete: wrote 75 buffers (0.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.003 s; sync files=42, longest=0.001 s, average=0.001 s; distance=2087 kB, estimate=2087 kB; lsn=C0/8BD1A048, redo lsn=C0/8BD1A048
+2026-07-28 00:36:56.966 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:57.097 PDT [91787] LOG:  client backend (PID 93429) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:57.097 PDT [91787] DETAIL:  Failed process was running: CREATE INDEX ecaz_fault_diskann_idx ON ecaz_fault_diskann USING ec_diskann (embedding ecvector_diskann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, list_size = 20, rerank_budget = 8)
+2026-07-28 00:36:57.097 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:57.098 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:57.108 PDT [93446] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:56 PDT
+2026-07-28 00:36:57.201 PDT [93450] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:57.305 PDT [93451] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:57.311 PDT [93446] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:57.320 PDT [93446] LOG:  redo starts at C0/8BD1A0C0
+2026-07-28 00:36:57.327 PDT [93446] LOG:  invalid record length at C0/8C032780: expected at least 24, got 0
+2026-07-28 00:36:57.327 PDT [93446] LOG:  redo done at C0/8C0318A0 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:57.341 PDT [93447] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:57.345 PDT [93447] LOG:  checkpoint complete: wrote 251 buffers (1.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 1 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.004 s; sync files=39, longest=0.001 s, average=0.001 s; distance=3169 kB, estimate=3169 kB; lsn=C0/8C032780, redo lsn=C0/8C032780
+2026-07-28 00:36:57.346 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:57.460 PDT [91787] LOG:  client backend (PID 93458) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:57.460 PDT [91787] DETAIL:  Failed process was running: SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 400000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_diskann
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:36:57.460 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:57.461 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:57.472 PDT [93475] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:57 PDT
+2026-07-28 00:36:57.564 PDT [93478] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:57.668 PDT [93479] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:57.673 PDT [93475] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:57.683 PDT [93475] LOG:  redo starts at C0/8C0327F8
+2026-07-28 00:36:57.684 PDT [93475] LOG:  invalid record length at C0/8C0A95F8: expected at least 24, got 0
+2026-07-28 00:36:57.684 PDT [93475] LOG:  redo done at C0/8C0A8708 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:57.698 PDT [93476] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:57.701 PDT [93476] LOG:  checkpoint complete: wrote 70 buffers (0.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.003 s; sync files=40, longest=0.001 s, average=0.001 s; distance=475 kB, estimate=475 kB; lsn=C0/8C0A95F8, redo lsn=C0/8C0A95F8
+2026-07-28 00:36:57.701 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:57.828 PDT [91787] LOG:  client backend (PID 93485) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:57.828 PDT [91787] DETAIL:  Failed process was running: INSERT INTO ecaz_fault_diskann (embedding)
+	         SELECT encode_to_ecvector(
+	             ARRAY[
+	             cos((gs * 0.017)::double precision)::real,
+	             sin((gs * 0.017)::double precision)::real,
+	             0.0::real,
+	             0.0::real
+	         ]::real[],
+	             4,
+	             42
+	         )
+	         FROM generate_series(1, 20000) AS gs
+2026-07-28 00:36:57.828 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:57.829 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:57.839 PDT [93502] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:57 PDT
+2026-07-28 00:36:57.932 PDT [93505] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:58.035 PDT [93506] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:58.040 PDT [93502] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:58.050 PDT [93502] LOG:  redo starts at C0/8C0A9670
+2026-07-28 00:36:58.052 PDT [93502] LOG:  invalid record length at C0/8C121248: expected at least 24, got 0
+2026-07-28 00:36:58.052 PDT [93502] LOG:  redo done at C0/8C1202C0 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:58.066 PDT [93503] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:58.068 PDT [93503] LOG:  checkpoint complete: wrote 69 buffers (0.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.003 s; sync files=40, longest=0.001 s, average=0.001 s; distance=479 kB, estimate=479 kB; lsn=C0/8C121248, redo lsn=C0/8C121248
+2026-07-28 00:36:58.069 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:58.207 PDT [91787] LOG:  client backend (PID 93512) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:58.207 PDT [91787] DETAIL:  Failed process was running: SELECT pg_sleep(10)
+2026-07-28 00:36:58.207 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:58.208 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:58.219 PDT [93529] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:58 PDT
+2026-07-28 00:36:58.311 PDT [93532] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:58.415 PDT [93533] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:58.420 PDT [93529] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:58.430 PDT [93529] LOG:  redo starts at C0/8C1212C0
+2026-07-28 00:36:58.437 PDT [93529] LOG:  invalid record length at C0/8C515EB8: expected at least 24, got 0
+2026-07-28 00:36:58.437 PDT [93529] LOG:  redo done at C0/8C515DA0 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:58.451 PDT [93530] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:58.455 PDT [93530] LOG:  checkpoint complete: wrote 363 buffers (2.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.002 s, total=0.004 s; sync files=43, longest=0.001 s, average=0.001 s; distance=4051 kB, estimate=4051 kB; lsn=C0/8C515EB8, redo lsn=C0/8C515EB8
+2026-07-28 00:36:58.456 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:58.572 PDT [91787] LOG:  client backend (PID 93540) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:58.572 PDT [91787] DETAIL:  Failed process was running: SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 400000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_spire
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:36:58.572 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:58.573 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:58.579 PDT [93557] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:58 PDT
+2026-07-28 00:36:58.675 PDT [93560] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:58.779 PDT [93561] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:58.782 PDT [93557] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:58.792 PDT [93557] LOG:  redo starts at C0/8C515F30
+2026-07-28 00:36:58.793 PDT [93557] LOG:  invalid record length at C0/8C58B098: expected at least 24, got 0
+2026-07-28 00:36:58.793 PDT [93557] LOG:  redo done at C0/8C58A110 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:58.807 PDT [93558] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:58.810 PDT [93558] LOG:  checkpoint complete: wrote 70 buffers (0.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.003 s; sync files=42, longest=0.001 s, average=0.001 s; distance=468 kB, estimate=468 kB; lsn=C0/8C58B098, redo lsn=C0/8C58B098
+2026-07-28 00:36:58.811 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:58.933 PDT [91787] LOG:  client backend (PID 93567) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:58.933 PDT [91787] DETAIL:  Failed process was running: INSERT INTO ecaz_fault_spire (embedding)
+	         SELECT encode_to_ecvector(
+	             ARRAY[
+	             cos((gs * 0.017)::double precision)::real,
+	             sin((gs * 0.017)::double precision)::real,
+	             0.0::real,
+	             0.0::real
+	         ]::real[],
+	             4,
+	             42
+	         )
+	         FROM generate_series(1, 20000) AS gs
+2026-07-28 00:36:58.933 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:58.934 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:58.945 PDT [93584] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:58 PDT
+2026-07-28 00:36:59.037 PDT [93587] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:59.141 PDT [93588] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:59.147 PDT [93584] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:59.157 PDT [93584] LOG:  redo starts at C0/8C58B110
+2026-07-28 00:36:59.159 PDT [93584] LOG:  unexpected pageaddr C0/447A2000 in WAL segment 00000001000000C00000008C, LSN C0/8C7A2000, offset 8003584
+2026-07-28 00:36:59.159 PDT [93584] LOG:  redo done at C0/8C7A0C60 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:59.174 PDT [93585] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:59.176 PDT [93585] LOG:  checkpoint complete: wrote 72 buffers (0.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.003 s; sync files=40, longest=0.001 s, average=0.001 s; distance=2139 kB, estimate=2139 kB; lsn=C0/8C7A2048, redo lsn=C0/8C7A2048
+2026-07-28 00:36:59.177 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:36:59.637 PDT [93595] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:36:59.665 PDT [91787] LOG:  client backend (PID 93595) was terminated by signal 9: Killed: 9
+2026-07-28 00:36:59.665 PDT [91787] DETAIL:  Failed process was running: CREATE INDEX ecaz_fault_distann_rabitq_idx ON ecaz_fault_distann_rabitq USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = 'rabitq')
+2026-07-28 00:36:59.665 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:36:59.665 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:36:59.675 PDT [93612] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:59 PDT
+2026-07-28 00:36:59.767 PDT [93615] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:59.870 PDT [93616] FATAL:  the database system is in recovery mode
+2026-07-28 00:36:59.877 PDT [93612] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:36:59.886 PDT [93612] LOG:  redo starts at C0/8C7A20C0
+2026-07-28 00:36:59.894 PDT [93612] LOG:  invalid record length at C0/8CF82338: expected at least 24, got 0
+2026-07-28 00:36:59.894 PDT [93612] LOG:  redo done at C0/8CF81458 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:36:59.908 PDT [93613] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:36:59.914 PDT [93613] LOG:  checkpoint complete: wrote 848 buffers (5.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.006 s; sync files=41, longest=0.001 s, average=0.001 s; distance=8064 kB, estimate=8064 kB; lsn=C0/8CF82338, redo lsn=C0/8CF82338
+2026-07-28 00:36:59.915 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:37:00.010 PDT [93621] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:00.055 PDT [91787] LOG:  client backend (PID 93622) was terminated by signal 9: Killed: 9
+2026-07-28 00:37:00.055 PDT [91787] DETAIL:  Failed process was running: SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 400000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_rabitq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:00.055 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:37:00.055 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:37:00.066 PDT [93639] LOG:  database system was interrupted; last known up at 2026-07-28 00:36:59 PDT
+2026-07-28 00:37:00.159 PDT [93642] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:00.263 PDT [93643] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:00.268 PDT [93639] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:37:00.277 PDT [93639] LOG:  redo starts at C0/8CF823B0
+2026-07-28 00:37:00.279 PDT [93639] LOG:  invalid record length at C0/8D0716B8: expected at least 24, got 0
+2026-07-28 00:37:00.279 PDT [93639] LOG:  redo done at C0/8D0707C8 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:37:00.294 PDT [93640] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:37:00.297 PDT [93640] LOG:  checkpoint complete: wrote 126 buffers (0.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 1 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.004 s; sync files=41, longest=0.001 s, average=0.001 s; distance=956 kB, estimate=956 kB; lsn=C0/8D0716B8, redo lsn=C0/8D0716B8
+2026-07-28 00:37:00.320 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:37:00.396 PDT [93648] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:00.439 PDT [91787] LOG:  client backend (PID 93649) was terminated by signal 9: Killed: 9
+2026-07-28 00:37:00.439 PDT [91787] DETAIL:  Failed process was running: INSERT INTO ecaz_fault_distann_rabitq (embedding)
+	         SELECT encode_to_ecvector(
+	             ARRAY(
+	                 SELECT (
+	                     sin((gs * 0.017 * (d + 1))::double precision) +
+	                     cos((gs * 0.0041 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             ),
+	             4,
+	             42
+	         )
+	         FROM generate_series(1, 20000) AS gs
+2026-07-28 00:37:00.439 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:37:00.440 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:37:00.451 PDT [93666] LOG:  database system was interrupted; last known up at 2026-07-28 00:37:00 PDT
+2026-07-28 00:37:00.543 PDT [93669] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:00.647 PDT [93670] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:00.652 PDT [93666] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:37:00.662 PDT [93666] LOG:  redo starts at C0/8D071730
+2026-07-28 00:37:00.663 PDT [93666] LOG:  invalid record length at C0/8D16A488: expected at least 24, got 0
+2026-07-28 00:37:00.663 PDT [93666] LOG:  redo done at C0/8D1694E8 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:37:00.678 PDT [93667] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:37:00.680 PDT [93667] LOG:  checkpoint complete: wrote 135 buffers (0.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.002 s, total=0.003 s; sync files=42, longest=0.001 s, average=0.001 s; distance=995 kB, estimate=995 kB; lsn=C0/8D16A488, redo lsn=C0/8D16A488
+2026-07-28 00:37:00.681 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:37:08.403 PDT [91787] LOG:  client backend (PID 93685) was terminated by signal 9: Killed: 9
+2026-07-28 00:37:08.403 PDT [91787] DETAIL:  Failed process was running: CREATE INDEX ecaz_fault_distann_turboquant_idx ON ecaz_fault_distann_turboquant USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = 'turboquant')
+2026-07-28 00:37:08.403 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:37:08.409 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:37:08.416 PDT [93702] LOG:  database system was interrupted; last known up at 2026-07-28 00:37:00 PDT
+2026-07-28 00:37:08.506 PDT [93706] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:08.611 PDT [93707] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:08.635 PDT [93702] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:37:08.641 PDT [93702] LOG:  redo starts at C0/8D16A500
+2026-07-28 00:37:08.715 PDT [93709] FATAL:  the database system is not yet accepting connections
+2026-07-28 00:37:08.715 PDT [93709] DETAIL:  Consistent recovery state has not been yet reached.
+2026-07-28 00:37:08.732 PDT [93702] LOG:  invalid magic number 0000 in WAL segment 00000001000000C000000095, LSN C0/95480000, offset 4718592
+2026-07-28 00:37:08.732 PDT [93702] LOG:  redo done at C0/9547F4D0 system usage: CPU: user: 0.05 s, system: 0.03 s, elapsed: 0.09 s
+2026-07-28 00:37:08.741 PDT [93703] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:37:08.785 PDT [93703] LOG:  checkpoint complete: wrote 16382 buffers (100.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 8 recycled; write=0.042 s, sync=0.002 s, total=0.045 s; sync files=42, longest=0.001 s, average=0.001 s; distance=134230 kB, estimate=134230 kB; lsn=C0/95480048, redo lsn=C0/95480048
+2026-07-28 00:37:08.787 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:37:09.217 PDT [93714] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:37:09.408 PDT [91787] LOG:  client backend (PID 93715) was terminated by signal 9: Killed: 9
+2026-07-28 00:37:09.408 PDT [91787] DETAIL:  Failed process was running: SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 400000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_turboquant
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:09.408 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:37:09.409 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:37:09.417 PDT [93732] LOG:  database system was interrupted; last known up at 2026-07-28 00:37:08 PDT
+2026-07-28 00:37:09.512 PDT [93735] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:09.606 PDT [93732] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:37:09.612 PDT [93732] LOG:  redo starts at C0/954800C0
+2026-07-28 00:37:09.615 PDT [93736] FATAL:  the database system is not yet accepting connections
+2026-07-28 00:37:09.615 PDT [93736] DETAIL:  Consistent recovery state has not been yet reached.
+2026-07-28 00:37:09.620 PDT [93732] LOG:  invalid record length at C0/962C6F58: expected at least 24, got 0
+2026-07-28 00:37:09.620 PDT [93732] LOG:  redo done at C0/962C6ED8 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:37:09.629 PDT [93733] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:37:09.638 PDT [93733] LOG:  checkpoint complete: wrote 2188 buffers (13.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 1 removed, 0 recycled; write=0.008 s, sync=0.002 s, total=0.010 s; sync files=41, longest=0.001 s, average=0.001 s; distance=14619 kB, estimate=14619 kB; lsn=C0/962C6F58, redo lsn=C0/962C6F58
+2026-07-28 00:37:09.639 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:37:10.134 PDT [93741] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:37:10.329 PDT [91787] LOG:  client backend (PID 93742) was terminated by signal 9: Killed: 9
+2026-07-28 00:37:10.329 PDT [91787] DETAIL:  Failed process was running: INSERT INTO ecaz_fault_distann_turboquant (embedding)
+	         SELECT encode_to_ecvector(
+	             ARRAY(
+	                 SELECT (
+	                     sin((gs * 0.017 * (d + 1))::double precision) +
+	                     cos((gs * 0.0041 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             ),
+	             4,
+	             42
+	         )
+	         FROM generate_series(1, 20000) AS gs
+2026-07-28 00:37:10.329 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:37:10.330 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:37:10.336 PDT [93759] LOG:  database system was interrupted; last known up at 2026-07-28 00:37:09 PDT
+2026-07-28 00:37:10.433 PDT [93762] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:10.526 PDT [93759] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:37:10.532 PDT [93759] LOG:  redo starts at C0/962C6FD0
+2026-07-28 00:37:10.537 PDT [93763] FATAL:  the database system is not yet accepting connections
+2026-07-28 00:37:10.537 PDT [93763] DETAIL:  Consistent recovery state has not been yet reached.
+2026-07-28 00:37:10.540 PDT [93759] LOG:  invalid record length at C0/9710A150: expected at least 24, got 0
+2026-07-28 00:37:10.540 PDT [93759] LOG:  redo done at C0/971091B0 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:37:10.549 PDT [93760] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:37:10.562 PDT [93760] LOG:  checkpoint complete: wrote 2185 buffers (13.3%), wrote 3 SLRU buffers; 0 WAL file(s) added, 1 removed, 0 recycled; write=0.008 s, sync=0.002 s, total=0.014 s; sync files=38, longest=0.001 s, average=0.001 s; distance=14604 kB, estimate=14604 kB; lsn=C0/9710A150, redo lsn=C0/9710A150
+2026-07-28 00:37:10.563 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:37:10.996 PDT [93769] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:11.025 PDT [91787] LOG:  client backend (PID 93769) was terminated by signal 9: Killed: 9
+2026-07-28 00:37:11.025 PDT [91787] DETAIL:  Failed process was running: CREATE INDEX ecaz_fault_distann_grouped_pq_idx ON ecaz_fault_distann_grouped_pq USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = 'grouped_pq')
+2026-07-28 00:37:11.025 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:37:11.026 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:37:11.034 PDT [93786] LOG:  database system was interrupted; last known up at 2026-07-28 00:37:10 PDT
+2026-07-28 00:37:11.129 PDT [93789] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:11.227 PDT [93786] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:37:11.232 PDT [93786] LOG:  redo starts at C0/9710A1C8
+2026-07-28 00:37:11.233 PDT [93790] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:11.241 PDT [93786] LOG:  invalid record length at C0/978E9940: expected at least 24, got 0
+2026-07-28 00:37:11.241 PDT [93786] LOG:  redo done at C0/978E8A78 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:37:11.249 PDT [93787] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:37:11.254 PDT [93787] LOG:  checkpoint complete: wrote 847 buffers (5.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.002 s, total=0.006 s; sync files=39, longest=0.001 s, average=0.001 s; distance=8061 kB, estimate=8061 kB; lsn=C0/978E9940, redo lsn=C0/978E9940
+2026-07-28 00:37:11.255 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:37:11.368 PDT [93795] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:11.413 PDT [91787] LOG:  client backend (PID 93796) was terminated by signal 9: Killed: 9
+2026-07-28 00:37:11.413 PDT [91787] DETAIL:  Failed process was running: SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 400000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_grouped_pq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:11.413 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:37:11.413 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:37:11.420 PDT [93814] LOG:  database system was interrupted; last known up at 2026-07-28 00:37:11 PDT
+2026-07-28 00:37:11.516 PDT [93818] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:11.615 PDT [93814] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:37:11.620 PDT [93819] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:11.621 PDT [93814] LOG:  redo starts at C0/978E99B8
+2026-07-28 00:37:11.623 PDT [93814] LOG:  invalid record length at C0/979B6428: expected at least 24, got 0
+2026-07-28 00:37:11.623 PDT [93814] LOG:  redo done at C0/979B5520 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:37:11.632 PDT [93815] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:37:11.634 PDT [93815] LOG:  checkpoint complete: wrote 109 buffers (0.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.003 s; sync files=40, longest=0.001 s, average=0.001 s; distance=818 kB, estimate=818 kB; lsn=C0/979B6428, redo lsn=C0/979B6428
+2026-07-28 00:37:11.635 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:37:11.758 PDT [93824] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:11.805 PDT [91787] LOG:  client backend (PID 93825) was terminated by signal 9: Killed: 9
+2026-07-28 00:37:11.805 PDT [91787] DETAIL:  Failed process was running: INSERT INTO ecaz_fault_distann_grouped_pq (embedding)
+	         SELECT encode_to_ecvector(
+	             ARRAY(
+	                 SELECT (
+	                     sin((gs * 0.017 * (d + 1))::double precision) +
+	                     cos((gs * 0.0041 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             ),
+	             4,
+	             42
+	         )
+	         FROM generate_series(1, 20000) AS gs
+2026-07-28 00:37:11.805 PDT [91787] LOG:  terminating any other active server processes
+2026-07-28 00:37:11.806 PDT [91787] LOG:  all server processes terminated; reinitializing
+2026-07-28 00:37:11.813 PDT [93842] LOG:  database system was interrupted; last known up at 2026-07-28 00:37:11 PDT
+2026-07-28 00:37:11.909 PDT [93845] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:12.007 PDT [93842] LOG:  database system was not properly shut down; automatic recovery in progress
+2026-07-28 00:37:12.013 PDT [93842] LOG:  redo starts at C0/979B64A0
+2026-07-28 00:37:12.013 PDT [93847] FATAL:  the database system is in recovery mode
+2026-07-28 00:37:12.014 PDT [93842] LOG:  invalid record length at C0/97A824B8: expected at least 24, got 0
+2026-07-28 00:37:12.014 PDT [93842] LOG:  redo done at C0/97A81518 system usage: CPU: user: 0.00 s, system: 0.00 s, elapsed: 0.00 s
+2026-07-28 00:37:12.023 PDT [93843] LOG:  checkpoint starting: end-of-recovery immediate wait
+2026-07-28 00:37:12.026 PDT [93843] LOG:  checkpoint complete: wrote 108 buffers (0.7%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.002 s, total=0.003 s; sync files=42, longest=0.001 s, average=0.001 s; distance=816 kB, estimate=816 kB; lsn=C0/97A824B8, redo lsn=C0/97A824B8
+2026-07-28 00:37:12.026 PDT [91787] LOG:  database system is ready to accept connections
+2026-07-28 00:37:12.208 PDT [93855] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:12.216 PDT [93855] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:37:12.221 PDT [93855] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:12.278 PDT [93856] ERROR:  canceling statement due to user request
+2026-07-28 00:37:12.278 PDT [93856] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_hnsw
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.335 PDT [93858] FATAL:  terminating connection due to administrator command
+2026-07-28 00:37:12.335 PDT [93858] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_hnsw
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.392 PDT [93860] ERROR:  canceling statement due to user request
+2026-07-28 00:37:12.392 PDT [93860] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_ivf
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.448 PDT [93862] FATAL:  terminating connection due to administrator command
+2026-07-28 00:37:12.448 PDT [93862] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_ivf
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.503 PDT [93864] ERROR:  canceling statement due to user request
+2026-07-28 00:37:12.503 PDT [93864] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_diskann
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.559 PDT [93866] FATAL:  terminating connection due to administrator command
+2026-07-28 00:37:12.559 PDT [93866] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_diskann
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.615 PDT [93868] ERROR:  canceling statement due to user request
+2026-07-28 00:37:12.615 PDT [93868] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_spire
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.672 PDT [93870] FATAL:  terminating connection due to administrator command
+2026-07-28 00:37:12.672 PDT [93870] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_spire
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.728 PDT [93872] ERROR:  canceling statement due to user request
+2026-07-28 00:37:12.728 PDT [93872] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_rabitq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.784 PDT [93874] FATAL:  terminating connection due to administrator command
+2026-07-28 00:37:12.784 PDT [93874] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_rabitq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.839 PDT [93876] ERROR:  canceling statement due to user request
+2026-07-28 00:37:12.839 PDT [93876] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_turboquant
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.895 PDT [93878] FATAL:  terminating connection due to administrator command
+2026-07-28 00:37:12.895 PDT [93878] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_turboquant
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:12.948 PDT [93880] ERROR:  canceling statement due to user request
+2026-07-28 00:37:12.948 PDT [93880] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_grouped_pq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:13.004 PDT [93882] FATAL:  terminating connection due to administrator command
+2026-07-28 00:37:13.004 PDT [93882] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_grouped_pq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:13.060 PDT [93886] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:13.068 PDT [93886] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:37:13.072 PDT [93886] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:13.080 PDT [93887] ERROR:  canceling statement due to statement timeout
+2026-07-28 00:37:13.080 PDT [93887] STATEMENT:  SET statement_timeout = '5ms'; SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_hnsw
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:13.086 PDT [93887] ERROR:  canceling statement due to statement timeout
+2026-07-28 00:37:13.086 PDT [93887] STATEMENT:  SET statement_timeout = '5ms'; SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_ivf
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:13.092 PDT [93887] ERROR:  canceling statement due to statement timeout
+2026-07-28 00:37:13.092 PDT [93887] STATEMENT:  SET statement_timeout = '5ms'; SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_diskann
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:13.097 PDT [93887] ERROR:  canceling statement due to statement timeout
+2026-07-28 00:37:13.097 PDT [93887] STATEMENT:  SET statement_timeout = '5ms'; SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_spire
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:13.103 PDT [93887] ERROR:  canceling statement due to statement timeout
+2026-07-28 00:37:13.103 PDT [93887] STATEMENT:  SET statement_timeout = '5ms'; SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_rabitq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:13.110 PDT [93887] ERROR:  canceling statement due to statement timeout
+2026-07-28 00:37:13.110 PDT [93887] STATEMENT:  SET statement_timeout = '5ms'; SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_turboquant
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:13.116 PDT [93887] ERROR:  canceling statement due to statement timeout
+2026-07-28 00:37:13.116 PDT [93887] STATEMENT:  SET statement_timeout = '5ms'; SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_grouped_pq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:13.173 PDT [93888] FATAL:  terminating connection due to idle-in-transaction timeout
+2026-07-28 00:37:13.335 PDT [93889] FATAL:  terminating connection due to idle-in-transaction timeout
+2026-07-28 00:37:13.496 PDT [93890] FATAL:  terminating connection due to idle-in-transaction timeout
+2026-07-28 00:37:13.656 PDT [93894] FATAL:  terminating connection due to idle-in-transaction timeout
+2026-07-28 00:37:13.814 PDT [93895] FATAL:  terminating connection due to idle-in-transaction timeout
+2026-07-28 00:37:13.979 PDT [93896] FATAL:  terminating connection due to idle-in-transaction timeout
+2026-07-28 00:37:14.140 PDT [93897] FATAL:  terminating connection due to idle-in-transaction timeout
+2026-07-28 00:37:14.323 PDT [93900] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:14.332 PDT [93900] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:37:14.337 PDT [93900] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:14.354 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.354 PDT [93902] STATEMENT:  REINDEX INDEX CONCURRENTLY ecaz_fault_hnsw_idx
+2026-07-28 00:37:14.366 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.366 PDT [93902] STATEMENT:  CREATE INDEX ecaz_fault_hnsw_lock_probe_idx ON ecaz_fault_hnsw USING ec_hnsw (embedding ecvector_ip_ops) WITH (m = 8, ef_construction = 16)
+2026-07-28 00:37:14.378 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.378 PDT [93902] STATEMENT:  VACUUM (FULL) ecaz_fault_hnsw
+2026-07-28 00:37:14.391 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.391 PDT [93902] STATEMENT:  REINDEX INDEX CONCURRENTLY ecaz_fault_ivf_idx
+2026-07-28 00:37:14.401 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.401 PDT [93902] STATEMENT:  CREATE INDEX ecaz_fault_ivf_lock_probe_idx ON ecaz_fault_ivf USING ec_ivf (embedding ecvector_ip_ops) WITH (nlists = 4, nprobe = 4, training_sample_rows = 16, storage_format = 'turboquant', rerank = 'heap_f32', rerank_width = 10)
+2026-07-28 00:37:14.412 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.412 PDT [93902] STATEMENT:  VACUUM (FULL) ecaz_fault_ivf
+2026-07-28 00:37:14.423 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.423 PDT [93902] STATEMENT:  REINDEX INDEX CONCURRENTLY ecaz_fault_diskann_idx
+2026-07-28 00:37:14.436 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.436 PDT [93902] STATEMENT:  CREATE INDEX ecaz_fault_diskann_lock_probe_idx ON ecaz_fault_diskann USING ec_diskann (embedding ecvector_diskann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, list_size = 20, rerank_budget = 8)
+2026-07-28 00:37:14.448 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.448 PDT [93902] STATEMENT:  VACUUM (FULL) ecaz_fault_diskann
+2026-07-28 00:37:14.459 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.459 PDT [93902] STATEMENT:  REINDEX INDEX CONCURRENTLY ecaz_fault_spire_idx
+2026-07-28 00:37:14.471 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.471 PDT [93902] STATEMENT:  CREATE INDEX ecaz_fault_spire_lock_probe_idx ON ecaz_fault_spire USING ec_spire (embedding ecvector_spire_ip_ops) WITH (nlists = 4, nprobe = 4, storage_format = 'rabitq')
+2026-07-28 00:37:14.482 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.482 PDT [93902] STATEMENT:  VACUUM (FULL) ecaz_fault_spire
+2026-07-28 00:37:14.492 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.492 PDT [93902] STATEMENT:  REINDEX INDEX CONCURRENTLY ecaz_fault_distann_rabitq_idx
+2026-07-28 00:37:14.504 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.504 PDT [93902] STATEMENT:  CREATE INDEX ecaz_fault_distann_rabitq_lock_probe_idx ON ecaz_fault_distann_rabitq USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = 'rabitq')
+2026-07-28 00:37:14.516 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.516 PDT [93902] STATEMENT:  VACUUM (FULL) ecaz_fault_distann_rabitq
+2026-07-28 00:37:14.528 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.528 PDT [93902] STATEMENT:  REINDEX INDEX CONCURRENTLY ecaz_fault_distann_turboquant_idx
+2026-07-28 00:37:14.541 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.541 PDT [93902] STATEMENT:  CREATE INDEX ecaz_fault_distann_turboquant_lock_probe_idx ON ecaz_fault_distann_turboquant USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = 'turboquant')
+2026-07-28 00:37:14.554 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.554 PDT [93902] STATEMENT:  VACUUM (FULL) ecaz_fault_distann_turboquant
+2026-07-28 00:37:14.566 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.566 PDT [93902] STATEMENT:  REINDEX INDEX CONCURRENTLY ecaz_fault_distann_grouped_pq_idx
+2026-07-28 00:37:14.579 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.579 PDT [93902] STATEMENT:  CREATE INDEX ecaz_fault_distann_grouped_pq_lock_probe_idx ON ecaz_fault_distann_grouped_pq USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = 8, build_list_size = 20, head_index_cap = 64, neighbor_code_format = 'grouped_pq')
+2026-07-28 00:37:14.590 PDT [93902] ERROR:  canceling statement due to lock timeout
+2026-07-28 00:37:14.590 PDT [93902] STATEMENT:  VACUUM (FULL) ecaz_fault_distann_grouped_pq
+2026-07-28 00:37:14.831 PDT [93905] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:16.371 PDT [93905] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:37:16.925 PDT [93905] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:16.988 PDT [93909] ERROR:  temporary file size exceeds "temp_file_limit" (64kB)
+2026-07-28 00:37:16.988 PDT [93909] STATEMENT:  SET work_mem = '64kB';
+	             SET temp_file_limit = '64kB';
+	             SELECT count(*)
+	         FROM (
+	             SELECT repeat(md5(gs::text), 8) AS payload
+	             FROM generate_series(1, 100000) AS gs
+	             ORDER BY payload
+	         ) AS spilled
+2026-07-28 00:37:17.030 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.070 PDT [93843] LOG:  checkpoint complete: wrote 10448 buffers (63.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 5 recycled; write=0.030 s, sync=0.008 s, total=0.041 s; sync files=215, longest=0.002 s, average=0.001 s; distance=78038 kB, estimate=78038 kB; lsn=C0/9C6B7FE0, redo lsn=C0/9C6B7F88
+2026-07-28 00:37:17.084 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.084 PDT [93843] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.001 s, sync=0.000 s, total=0.001 s; sync files=0, longest=0.000 s, average=0.000 s; distance=9504 kB, estimate=71185 kB; lsn=C0/9D000080, redo lsn=C0/9D000028
+2026-07-28 00:37:17.092 PDT [93909] ERROR:  temporary file size exceeds "temp_file_limit" (64kB)
+2026-07-28 00:37:17.092 PDT [93909] STATEMENT:  SET work_mem = '64kB';
+	             SET temp_file_limit = '64kB';
+	             SELECT count(*)
+	         FROM (
+	             SELECT repeat(md5(gs::text), 8) AS payload
+	             FROM generate_series(1, 100000) AS gs
+	             ORDER BY payload
+	         ) AS spilled
+2026-07-28 00:37:17.095 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.097 PDT [93843] LOG:  checkpoint complete: wrote 53 buffers (0.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.002 s; sync files=14, longest=0.001 s, average=0.001 s; distance=875 kB, estimate=64154 kB; lsn=C0/9D0DAE10, redo lsn=C0/9D0DADB8
+2026-07-28 00:37:17.123 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.124 PDT [93843] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.001 s, sync=0.000 s, total=0.001 s; sync files=0, longest=0.000 s, average=0.000 s; distance=15508 kB, estimate=59289 kB; lsn=C0/9E000080, redo lsn=C0/9E000028
+2026-07-28 00:37:17.128 PDT [93909] ERROR:  temporary file size exceeds "temp_file_limit" (64kB)
+2026-07-28 00:37:17.128 PDT [93909] STATEMENT:  SET work_mem = '64kB';
+	             SET temp_file_limit = '64kB';
+	             SELECT count(*)
+	         FROM (
+	             SELECT repeat(md5(gs::text), 8) AS payload
+	             FROM generate_series(1, 100000) AS gs
+	             ORDER BY payload
+	         ) AS spilled
+2026-07-28 00:37:17.174 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.178 PDT [93843] LOG:  checkpoint complete: wrote 51 buffers (0.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.004 s, total=0.004 s; sync files=12, longest=0.003 s, average=0.001 s; distance=1037 kB, estimate=53464 kB; lsn=C0/9E103550, redo lsn=C0/9E1034F8
+2026-07-28 00:37:17.206 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.207 PDT [93843] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.001 s, sync=0.000 s, total=0.001 s; sync files=0, longest=0.000 s, average=0.000 s; distance=15346 kB, estimate=49652 kB; lsn=C0/9F000080, redo lsn=C0/9F000028
+2026-07-28 00:37:17.219 PDT [93909] ERROR:  temporary file size exceeds "temp_file_limit" (64kB)
+2026-07-28 00:37:17.219 PDT [93909] STATEMENT:  SET work_mem = '64kB';
+	             SET temp_file_limit = '64kB';
+	             SELECT count(*)
+	         FROM (
+	             SELECT repeat(md5(gs::text), 8) AS payload
+	             FROM generate_series(1, 100000) AS gs
+	             ORDER BY payload
+	         ) AS spilled
+2026-07-28 00:37:17.258 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.260 PDT [93843] LOG:  checkpoint complete: wrote 114 buffers (0.7%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.002 s, sync=0.001 s, total=0.002 s; sync files=14, longest=0.001 s, average=0.001 s; distance=15658 kB, estimate=46253 kB; lsn=C0/9FF4AB30, redo lsn=C0/9FF4AAD8
+2026-07-28 00:37:17.260 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.261 PDT [93843] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.001 s, sync=0.000 s, total=0.001 s; sync files=0, longest=0.000 s, average=0.000 s; distance=725 kB, estimate=41700 kB; lsn=C0/A0000080, redo lsn=C0/A0000028
+2026-07-28 00:37:17.278 PDT [93909] ERROR:  temporary file size exceeds "temp_file_limit" (64kB)
+2026-07-28 00:37:17.278 PDT [93909] STATEMENT:  SET work_mem = '64kB';
+	             SET temp_file_limit = '64kB';
+	             SELECT count(*)
+	         FROM (
+	             SELECT repeat(md5(gs::text), 8) AS payload
+	             FROM generate_series(1, 100000) AS gs
+	             ORDER BY payload
+	         ) AS spilled
+2026-07-28 00:37:17.282 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.283 PDT [93843] LOG:  checkpoint complete: wrote 233 buffers (1.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.002 s; sync files=13, longest=0.001 s, average=0.001 s; distance=1348 kB, estimate=37665 kB; lsn=C0/A01511E0, redo lsn=C0/A0151188
+2026-07-28 00:37:17.309 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.310 PDT [93843] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 1 removed, 0 recycled; write=0.001 s, sync=0.000 s, total=0.001 s; sync files=0, longest=0.000 s, average=0.000 s; distance=15035 kB, estimate=35402 kB; lsn=C0/A1000080, redo lsn=C0/A1000028
+2026-07-28 00:37:17.518 PDT [93909] ERROR:  temporary file size exceeds "temp_file_limit" (64kB)
+2026-07-28 00:37:17.518 PDT [93909] STATEMENT:  SET work_mem = '64kB';
+	             SET temp_file_limit = '64kB';
+	             SELECT count(*)
+	         FROM (
+	             SELECT repeat(md5(gs::text), 8) AS payload
+	             FROM generate_series(1, 100000) AS gs
+	             ORDER BY payload
+	         ) AS spilled
+2026-07-28 00:37:17.543 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.558 PDT [93843] LOG:  checkpoint complete: wrote 4278 buffers (26.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.009 s, sync=0.006 s, total=0.015 s; sync files=17, longest=0.006 s, average=0.001 s; distance=27392 kB, estimate=34601 kB; lsn=C0/A2AC01D8, redo lsn=C0/A2AC0180
+2026-07-28 00:37:17.562 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.562 PDT [93843] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.001 s, sync=0.000 s, total=0.001 s; sync files=0, longest=0.000 s, average=0.000 s; distance=5375 kB, estimate=31678 kB; lsn=C0/A3000080, redo lsn=C0/A3000028
+2026-07-28 00:37:17.579 PDT [93909] ERROR:  temporary file size exceeds "temp_file_limit" (64kB)
+2026-07-28 00:37:17.579 PDT [93909] STATEMENT:  SET work_mem = '64kB';
+	             SET temp_file_limit = '64kB';
+	             SELECT count(*)
+	         FROM (
+	             SELECT repeat(md5(gs::text), 8) AS payload
+	             FROM generate_series(1, 100000) AS gs
+	             ORDER BY payload
+	         ) AS spilled
+2026-07-28 00:37:17.583 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.585 PDT [93843] LOG:  checkpoint complete: wrote 234 buffers (1.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.002 s; sync files=14, longest=0.001 s, average=0.001 s; distance=1351 kB, estimate=28645 kB; lsn=C0/A3151C98, redo lsn=C0/A3151C40
+2026-07-28 00:37:17.612 PDT [93843] LOG:  checkpoint starting: immediate force wait
+2026-07-28 00:37:17.612 PDT [93843] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 1 removed, 0 recycled; write=0.001 s, sync=0.000 s, total=0.001 s; sync files=0, longest=0.000 s, average=0.000 s; distance=15032 kB, estimate=27284 kB; lsn=C0/A4000080, redo lsn=C0/A4000028
+2026-07-28 00:37:17.673 PDT [93914] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:17.681 PDT [93914] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 41.3214 at position 0
+2026-07-28 00:37:17.689 PDT [93914] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 11.2588 at position 0
+2026-07-28 00:37:17.702 PDT [93916] ERROR:  ecaz fault injection palloc failure at ec_hnsw ambeginscan opaque (allocation #1)
+2026-07-28 00:37:17.702 PDT [93916] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_hnsw
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:17.751 PDT [93917] WARNING:  PID 93916 is not a PostgreSQL backend process
+2026-07-28 00:37:17.757 PDT [93918] ERROR:  ecaz fault injection palloc failure at ec_ivf ambeginscan opaque (allocation #1)
+2026-07-28 00:37:17.757 PDT [93918] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_ivf
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:17.808 PDT [93919] WARNING:  PID 93918 is not a PostgreSQL backend process
+2026-07-28 00:37:17.814 PDT [93920] ERROR:  ecaz fault injection palloc failure at ec_diskann ambeginscan opaque (allocation #1)
+2026-07-28 00:37:17.814 PDT [93920] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_diskann
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:17.865 PDT [93921] WARNING:  PID 93920 is not a PostgreSQL backend process
+2026-07-28 00:37:17.872 PDT [93922] ERROR:  ecaz fault injection palloc failure at ec_spire ambeginscan opaque (allocation #1)
+2026-07-28 00:37:17.872 PDT [93922] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_spire
+	             ORDER BY embedding <#> ARRAY[
+	                 cos((probe.i * 0.000001)::double precision)::real,
+	                 sin((probe.i * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:17.922 PDT [93923] WARNING:  PID 93922 is not a PostgreSQL backend process
+2026-07-28 00:37:17.932 PDT [93924] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #1)
+2026-07-28 00:37:17.932 PDT [93924] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_rabitq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:17.980 PDT [93925] WARNING:  PID 93924 is not a PostgreSQL backend process
+2026-07-28 00:37:17.991 PDT [93926] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #1)
+2026-07-28 00:37:17.991 PDT [93926] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_turboquant
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:18.039 PDT [93927] WARNING:  PID 93926 is not a PostgreSQL backend process
+2026-07-28 00:37:18.050 PDT [93928] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #1)
+2026-07-28 00:37:18.050 PDT [93928] STATEMENT:  SET enable_seqscan = off;
+	         SELECT count(*)
+	         FROM generate_series(1, 100000) AS probe(i)
+	         CROSS JOIN LATERAL (
+	             SELECT id FROM ecaz_fault_distann_grouped_pq
+	             ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((probe.i * 0.000001 * (d + 1))::double precision) +
+	                     cos((probe.i * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	             LIMIT 5
+	         ) AS nearest
+2026-07-28 00:37:18.098 PDT [93929] WARNING:  PID 93928 is not a PostgreSQL backend process
+2026-07-28 00:37:18.153 PDT [93934] ERROR:  ecaz fault injection palloc failure at ec_hnsw ambeginscan opaque (allocation #1)
+2026-07-28 00:37:18.153 PDT [93934] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_hnsw
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:37:18.153 PDT [93934] ERROR:  ecaz fault injection palloc failure at ec_hnsw ambeginscan opaque (allocation #2)
+2026-07-28 00:37:18.153 PDT [93934] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_hnsw
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:37:18.203 PDT [93937] ERROR:  ecaz fault injection palloc failure at ec_ivf ambeginscan opaque (allocation #1)
+2026-07-28 00:37:18.203 PDT [93937] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_ivf
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:37:18.203 PDT [93937] ERROR:  ecaz fault injection palloc failure at ec_ivf ambeginscan opaque (allocation #2)
+2026-07-28 00:37:18.203 PDT [93937] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_ivf
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:37:18.249 PDT [93940] ERROR:  ecaz fault injection palloc failure at ec_diskann ambeginscan opaque (allocation #1)
+2026-07-28 00:37:18.249 PDT [93940] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_diskann
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:37:18.249 PDT [93940] ERROR:  ecaz fault injection palloc failure at ec_diskann ambeginscan opaque (allocation #2)
+2026-07-28 00:37:18.249 PDT [93940] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_diskann
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:37:18.291 PDT [93943] ERROR:  ecaz fault injection palloc failure at ec_spire ambeginscan opaque (allocation #1)
+2026-07-28 00:37:18.291 PDT [93943] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_spire
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:37:18.291 PDT [93943] ERROR:  ecaz fault injection palloc failure at ec_spire ambeginscan opaque (allocation #2)
+2026-07-28 00:37:18.291 PDT [93943] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_spire
+	         ORDER BY embedding <#> ARRAY[
+	                 cos((1 * 0.000001)::double precision)::real,
+	                 sin((1 * 0.000001)::double precision)::real,
+	                 0.0::real,
+	                 0.0::real
+	             ]::real[]
+	         LIMIT 5
+2026-07-28 00:37:18.332 PDT [93946] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #1)
+2026-07-28 00:37:18.332 PDT [93946] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_distann_rabitq
+	         ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((1 * 0.000001 * (d + 1))::double precision) +
+	                     cos((1 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	         LIMIT 5
+2026-07-28 00:37:18.332 PDT [93946] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #2)
+2026-07-28 00:37:18.332 PDT [93946] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_distann_rabitq
+	         ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((1 * 0.000001 * (d + 1))::double precision) +
+	                     cos((1 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	         LIMIT 5
+2026-07-28 00:37:18.374 PDT [93949] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #1)
+2026-07-28 00:37:18.374 PDT [93949] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_distann_turboquant
+	         ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((1 * 0.000001 * (d + 1))::double precision) +
+	                     cos((1 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             )
+	         LIMIT 5
+2026-07-28 00:37:18.374 PDT [93949] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #2)
+2026-07-28 00:37:18.374 PDT [93949] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_distann_turboquant
+	         ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((1 * 0.000001 * (d + 1))::double precision) +
+	                     cos((1 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 1536 - 1) AS d
+	             )
+	         LIMIT 5
+2026-07-28 00:37:18.417 PDT [93952] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #1)
+2026-07-28 00:37:18.417 PDT [93952] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_distann_grouped_pq
+	         ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((1 * 0.000001 * (d + 1))::double precision) +
+	                     cos((1 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	         LIMIT 5
+2026-07-28 00:37:18.417 PDT [93952] ERROR:  ecaz fault injection palloc failure at ec_distann ambeginscan opaque (allocation #2)
+2026-07-28 00:37:18.417 PDT [93952] STATEMENT:  SET enable_seqscan = off;
+	         SET enable_bitmapscan = off;
+	         SET enable_sort = off;
+	         SELECT id FROM ecaz_fault_distann_grouped_pq
+	         ORDER BY embedding <#> ARRAY(
+	                 SELECT (
+	                     sin((1 * 0.000001 * (d + 1))::double precision) +
+	                     cos((1 * 0.0000031 * (d + 1))::double precision)
+	                 )::real
+	                 FROM generate_series(0, 64 - 1) AS d
+	             )
+	         LIMIT 5

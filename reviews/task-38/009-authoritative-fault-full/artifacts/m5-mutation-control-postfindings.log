@@ -1,0 +1,58 @@
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/88891795	index=ecaz_fault_hnsw_idx	index_path=base/88881031/88891805
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/88891807	index=ecaz_fault_ivf_idx	index_path=base/88881031/88891817
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/88891819	index=ecaz_fault_diskann_idx	index_path=base/88881031/88891829
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/88891831	index=ecaz_fault_spire_idx	index_path=base/88881031/88891841
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/88891843	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/88891853
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/88891855	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/88891881
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/88891883	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/88891893
+[fault] cancellation_mutation_control am=ec_hnsw injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_ivf injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_diskann injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_spire injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_distann/rabitq injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_distann/turboquant injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_distann/grouped_pq injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113567347 after=113567347
+[fault] pg_stat_wal_records_before=359068133 after=359068139 bytes_before=407714853103 after=407714853525
+[fault] resource_palloc_mutation_control am=ec_hnsw injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113567347 after=113567347
+[fault] pg_stat_wal_records_before=359068141 after=359068141 bytes_before=407714861784 after=407714861784
+[fault] resource_palloc_mutation_control am=ec_ivf injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113567347 after=113567347
+[fault] pg_stat_wal_records_before=359068141 after=359068141 bytes_before=407714861784 after=407714861784
+[fault] resource_palloc_mutation_control am=ec_diskann injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113567347 after=113567347
+[fault] pg_stat_wal_records_before=359068141 after=359068141 bytes_before=407714861784 after=407714861784
+[fault] resource_palloc_mutation_control am=ec_spire injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113567347 after=113567347
+[fault] pg_stat_wal_records_before=359068141 after=359068141 bytes_before=407714861784 after=407714861784
+[fault] resource_palloc_mutation_control am=ec_distann/rabitq injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113567347 after=113567347
+[fault] pg_stat_wal_records_before=359068141 after=359068141 bytes_before=407714861784 after=407714861784
+[fault] resource_palloc_mutation_control am=ec_distann/turboquant injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113567347 after=113567347
+[fault] pg_stat_wal_records_before=359068141 after=359068141 bytes_before=407714861784 after=407714861784
+[fault] resource_palloc_mutation_control am=ec_distann/grouped_pq injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113567347 after=113567347
+[fault] pg_stat_wal_records_before=359068141 after=359068141 bytes_before=407714861784 after=407714861784
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=113567238 after=113567347
+[fault] pg_stat_wal_records_before=359065709 after=359068141 bytes_before=407713909540 after=407714861784
+[fault] mutation_control_complete kind=All fixtures=7 clean_postconditions=true

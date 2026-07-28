@@ -3,14 +3,19 @@
 - Initial code checkpoint: `addeb885ae46e556b340dcdb68e02cdb57955d89`
 - Review-response checkpoint:
   `c29c6dca5a05db33477bd87e390729b6f8c44642`
+- M5 findings checkpoint:
+  `147d44d05`
+- DiskANN physical-page checkpoint:
+  `a35d1cd71`
 - Task bucket: `reviews/task-38/`
 - Packet: `009-authoritative-fault-full`
 - Host: local Apple M5, macOS `26.4.1`, `arm64`
 - PostgreSQL target: PG18
-- Run timestamp: `2026-07-27T05:47:16Z`
+- Initial run timestamp: `2026-07-27T05:47:16Z`
+- M5 response run timestamp: `2026-07-28T07:36:54Z`
 - Remote/AWS/CI/nightly/Docker/Intel execution: none
-- Fixture isolation: aggregate plan requires one index per fixture table;
-  live fixture execution was not attempted on macOS
+- Fixture isolation: one index per fixture table; the M5 partial aggregate
+  executed the local and mutation phases against those isolated surfaces
 
 ## Artifacts
 
@@ -118,6 +123,92 @@
   - provider time one millisecond below the threshold: rejected; and
   - `u128` checked-add overflow while forming the threshold: rejected.
 
+### `m5-mutation-control-postfindings.log`
+
+- Command: `make fault-mutation-control` against local PG18 at
+  `/Users/peter/.pgrx`, port `28818`, database `ecaz_fault_task38`.
+- Exit: `0`
+- Lines: `58`
+- SHA-256:
+  `a6296963a6f6611e16fd9c6c40966a1d68727f187efdec057818991ec92a9fd8`
+- Key result:
+  `mutation_control_complete kind=All fixtures=7 clean_postconditions=true`.
+- Pgstat result: every mutation gate reports numeric
+  `pg_stat_io_ops_before/after` and `pg_stat_wal_records_before/after`; there
+  are no false `unavailable` or `baseline_absent` markers.
+
+### `m5-install-postfindings.log`
+
+- Command:
+  `/Users/peter/dev/tqvector/target/debug/ecaz --log-file
+  reviews/task-38/009-authoritative-fault-full/artifacts/m5-install-postfindings.log
+  dev install ecaz-pg-test --pg 18 --pgrx-home /Users/peter/.pgrx`
+- Exit: `0`
+- Lines: `6`
+- SHA-256:
+  `334f7bd8fe3e3dc937416327a49dd6e28f90e8a0c388b24d2c6781f4cce1f575`
+- Installed backend:
+  `/opt/homebrew/lib/postgresql@18/ecaz.dylib`
+- Installed SHA-256:
+  `75f1462b19a54a38ba10a18ea2df1045c2b10fcff5fc735dc2c9c38e086721f2`
+
+### `m5-partial-live.log`
+
+- Command:
+  `make fault-full FAULT_DATABASE=ecaz_fault_task38
+  FAULT_HOST=/Users/peter/.pgrx FAULT_PORT=28818 FAULT_ROWS=16
+  FAULT_FULL_LOG_FILE=reviews/task-38/009-authoritative-fault-full/artifacts/m5-partial-live.log
+  FAULT_FULL_ARTIFACT_DIR=reviews/task-38/009-authoritative-fault-full/artifacts/m5-partial-live
+  FAULT_FULL_RUNTIME_DIR=target/task38-p009-m5-partial-runtime`
+- Exit: `0`
+- Lines: `542`
+- SHA-256:
+  `5ab004905f2987e7d6e5d55d0741389ae8798cd67d21dc88d4590e07aae29e74`
+- Isolation: one index per fixture table; runtime state under the named
+  `target/` root; durable logs under this packet.
+- Key results:
+  - `full_phase_skipped phase=provider reason=linux-only cases=56`
+  - `full_phase_skipped phase=remote-socket reason=linux-only cases=4`
+  - `full_phase_skipped phase=cgroup reason=linux-only cases=7`
+  - `mutation_control_complete kind=All fixtures=7
+    clean_postconditions=true`
+  - `full_no_panic logs_scanned=1 result=pass failures=0`
+  - `full_complete live_authority=partial executed=49 skipped=67 cases=116
+    fixtures=7 no_panic=true shared_postconditions=true`
+- Pgstat result: numeric baselines and final values are present throughout;
+  crash-recovery resets are explicitly recognized for counters that reset
+  after SIGKILL recovery.
+
+### `m5-partial-live/main-postmaster.log`
+
+- Source: main PG18 postmaster log delta captured unconditionally by
+  `fault-full`.
+- Lines: `1546`
+- SHA-256:
+  `117e8c69243bdd5245ecbf0a9822ddb97638f9d5d7b51ea159d9866fa33b83f9`
+- Key result: all AM build/scan/insert SIGKILL probes recover the postmaster;
+  the final no-panic audit found no `PANIC:` marker.
+
+### `m5-partial-live/no-panic-audit.log`
+
+- Lines: `3`
+- SHA-256:
+  `ef0a0e93c48953f603ce7e30247bc77d6afd3ad778bfb8522728243dfdde8a50`
+- Key result: `postmaster_logs_scanned=1`, `result=PASS`,
+  `pattern=PANIC:`.
+
+### `diskann-physical-page-materialization-test.log`
+
+- Command:
+  `cargo test -p ecaz data_page_materialization_ --lib --color never`
+- Exit: `0`
+- Lines: `31`
+- SHA-256:
+  `28365106284aa93c2fe2fed43bbc3b3fc57b56af67da910b15c019659c63cf31`
+- Key result: `2 passed; 0 failed; 2522 filtered out`.
+- Coverage: physical unused-line-pointer offsets remain stable, and
+  materialization uses PostgreSQL-equivalent `PageAddItem` accounting.
+
 ## Additional Local Validation
 
 - Nightly `rustfmt` was applied to both changed Rust files.
@@ -127,12 +218,19 @@
 - `cargo clippy -p ecaz-cli --tests` exited `0`. Its full-repository warning
   set contained pre-existing MSRV, complexity, and unrelated-module warnings;
   the two new aggregate warnings were corrected before the final build.
+- Stable `rustfmt --check` passed for all Rust files changed by the M5
+  response (with only the repository's nightly-option warnings).
+- `cargo check -p ecaz-cli -p ecaz-fault-injection` passed before the live
+  aggregate; the only warning was the existing unused `corpus/load.rs:path`.
+- The authoritative `make fault-full` invocation rebuilt both `ecaz` and
+  `ecaz-cli` successfully before executing the live phases.
 
 ## Evidence Boundary
 
 This packet proves source compilation, host-independent matrix construction,
-case uniqueness/counts, M5-safe preflight behavior, and M5-applicable unit
-tests. It does not prove Linux LD_PRELOAD syscalls, DistANN/SPIRE socket
-fault behavior, cgroup-v2 OOM behavior, Intel behavior, or live aggregate
-completion. Those exact gates remain open and must be evidenced by running
+case uniqueness/counts, both mutation controls across seven fixtures, and live
+completion of all 49 Apple-M5-compatible aggregate cases with shared
+postconditions and no-panic audit. It does not prove Linux LD_PRELOAD syscalls,
+DistANN/SPIRE socket fault behavior, cgroup-v2 OOM behavior, or Intel behavior.
+Those 67 exact gates remain open and must be evidenced by running
 `make fault-full` on the designated Intel/Linux host.

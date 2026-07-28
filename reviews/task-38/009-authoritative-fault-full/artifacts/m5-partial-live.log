@@ -1,0 +1,542 @@
+[fault] full_case ordinal=1 id=local-hnsw-memory phase=local fixture=ec_hnsw fault=memory expected="palloc sweep and recovered real-AM scan"
+[fault] full_case ordinal=2 id=local-ivf-memory phase=local fixture=ec_ivf fault=memory expected="palloc sweep and recovered real-AM scan"
+[fault] full_case ordinal=3 id=local-diskann-memory phase=local fixture=ec_diskann fault=memory expected="palloc sweep and recovered real-AM scan"
+[fault] full_case ordinal=4 id=local-spire-memory phase=local fixture=ec_spire fault=memory expected="palloc sweep and recovered real-AM scan"
+[fault] full_case ordinal=5 id=local-distann_rabitq-memory phase=local fixture=ec_distann/rabitq fault=memory expected="palloc sweep and recovered real-AM scan"
+[fault] full_case ordinal=6 id=local-distann_turboquant-memory phase=local fixture=ec_distann/turboquant fault=memory expected="palloc sweep and recovered real-AM scan"
+[fault] full_case ordinal=7 id=local-distann_grouped_pq-memory phase=local fixture=ec_distann/grouped_pq fault=memory expected="palloc sweep and recovered real-AM scan"
+[fault] full_case ordinal=8 id=local-hnsw-cancel phase=local fixture=ec_hnsw fault=cancel expected="SQLSTATE 57014 and clean postconditions"
+[fault] full_case ordinal=9 id=local-ivf-cancel phase=local fixture=ec_ivf fault=cancel expected="SQLSTATE 57014 and clean postconditions"
+[fault] full_case ordinal=10 id=local-diskann-cancel phase=local fixture=ec_diskann fault=cancel expected="SQLSTATE 57014 and clean postconditions"
+[fault] full_case ordinal=11 id=local-spire-cancel phase=local fixture=ec_spire fault=cancel expected="SQLSTATE 57014 and clean postconditions"
+[fault] full_case ordinal=12 id=local-distann_rabitq-cancel phase=local fixture=ec_distann/rabitq fault=cancel expected="SQLSTATE 57014 and clean postconditions"
+[fault] full_case ordinal=13 id=local-distann_turboquant-cancel phase=local fixture=ec_distann/turboquant fault=cancel expected="SQLSTATE 57014 and clean postconditions"
+[fault] full_case ordinal=14 id=local-distann_grouped_pq-cancel phase=local fixture=ec_distann/grouped_pq fault=cancel expected="SQLSTATE 57014 and clean postconditions"
+[fault] full_case ordinal=15 id=local-hnsw-timeout phase=local fixture=ec_hnsw fault=timeout expected="timeout ERROR and clean postconditions"
+[fault] full_case ordinal=16 id=local-ivf-timeout phase=local fixture=ec_ivf fault=timeout expected="timeout ERROR and clean postconditions"
+[fault] full_case ordinal=17 id=local-diskann-timeout phase=local fixture=ec_diskann fault=timeout expected="timeout ERROR and clean postconditions"
+[fault] full_case ordinal=18 id=local-spire-timeout phase=local fixture=ec_spire fault=timeout expected="timeout ERROR and clean postconditions"
+[fault] full_case ordinal=19 id=local-distann_rabitq-timeout phase=local fixture=ec_distann/rabitq fault=timeout expected="timeout ERROR and clean postconditions"
+[fault] full_case ordinal=20 id=local-distann_turboquant-timeout phase=local fixture=ec_distann/turboquant fault=timeout expected="timeout ERROR and clean postconditions"
+[fault] full_case ordinal=21 id=local-distann_grouped_pq-timeout phase=local fixture=ec_distann/grouped_pq fault=timeout expected="timeout ERROR and clean postconditions"
+[fault] full_case ordinal=22 id=local-hnsw-lock-timeout phase=local fixture=ec_hnsw fault=lock-timeout expected="lock timeout and clean postconditions"
+[fault] full_case ordinal=23 id=local-ivf-lock-timeout phase=local fixture=ec_ivf fault=lock-timeout expected="lock timeout and clean postconditions"
+[fault] full_case ordinal=24 id=local-diskann-lock-timeout phase=local fixture=ec_diskann fault=lock-timeout expected="lock timeout and clean postconditions"
+[fault] full_case ordinal=25 id=local-spire-lock-timeout phase=local fixture=ec_spire fault=lock-timeout expected="lock timeout and clean postconditions"
+[fault] full_case ordinal=26 id=local-distann_rabitq-lock-timeout phase=local fixture=ec_distann/rabitq fault=lock-timeout expected="lock timeout and clean postconditions"
+[fault] full_case ordinal=27 id=local-distann_turboquant-lock-timeout phase=local fixture=ec_distann/turboquant fault=lock-timeout expected="lock timeout and clean postconditions"
+[fault] full_case ordinal=28 id=local-distann_grouped_pq-lock-timeout phase=local fixture=ec_distann/grouped_pq fault=lock-timeout expected="lock timeout and clean postconditions"
+[fault] full_case ordinal=29 id=local-hnsw-resource phase=local fixture=ec_hnsw fault=resource expected="pressure/accounting and clean postconditions"
+[fault] full_case ordinal=30 id=local-ivf-resource phase=local fixture=ec_ivf fault=resource expected="pressure/accounting and clean postconditions"
+[fault] full_case ordinal=31 id=local-diskann-resource phase=local fixture=ec_diskann fault=resource expected="pressure/accounting and clean postconditions"
+[fault] full_case ordinal=32 id=local-spire-resource phase=local fixture=ec_spire fault=resource expected="pressure/accounting and clean postconditions"
+[fault] full_case ordinal=33 id=local-distann_rabitq-resource phase=local fixture=ec_distann/rabitq fault=resource expected="pressure/accounting and clean postconditions"
+[fault] full_case ordinal=34 id=local-distann_turboquant-resource phase=local fixture=ec_distann/turboquant fault=resource expected="pressure/accounting and clean postconditions"
+[fault] full_case ordinal=35 id=local-distann_grouped_pq-resource phase=local fixture=ec_distann/grouped_pq fault=resource expected="pressure/accounting and clean postconditions"
+[fault] full_case ordinal=36 id=mutation-hnsw-cancel-unexpected-palloc phase=mutation fixture=ec_hnsw fault=cancel-unexpected-palloc expected="production cancellation oracle rejects wrong AM error"
+[fault] full_case ordinal=37 id=mutation-ivf-cancel-unexpected-palloc phase=mutation fixture=ec_ivf fault=cancel-unexpected-palloc expected="production cancellation oracle rejects wrong AM error"
+[fault] full_case ordinal=38 id=mutation-diskann-cancel-unexpected-palloc phase=mutation fixture=ec_diskann fault=cancel-unexpected-palloc expected="production cancellation oracle rejects wrong AM error"
+[fault] full_case ordinal=39 id=mutation-spire-cancel-unexpected-palloc phase=mutation fixture=ec_spire fault=cancel-unexpected-palloc expected="production cancellation oracle rejects wrong AM error"
+[fault] full_case ordinal=40 id=mutation-distann_rabitq-cancel-unexpected-palloc phase=mutation fixture=ec_distann/rabitq fault=cancel-unexpected-palloc expected="production cancellation oracle rejects wrong AM error"
+[fault] full_case ordinal=41 id=mutation-distann_turboquant-cancel-unexpected-palloc phase=mutation fixture=ec_distann/turboquant fault=cancel-unexpected-palloc expected="production cancellation oracle rejects wrong AM error"
+[fault] full_case ordinal=42 id=mutation-distann_grouped_pq-cancel-unexpected-palloc phase=mutation fixture=ec_distann/grouped_pq fault=cancel-unexpected-palloc expected="production cancellation oracle rejects wrong AM error"
+[fault] full_case ordinal=43 id=mutation-hnsw-memory-unrecovered-palloc phase=mutation fixture=ec_hnsw fault=memory-unrecovered-palloc expected="real-AM recovery rejects armed palloc and passes after disarm"
+[fault] full_case ordinal=44 id=mutation-ivf-memory-unrecovered-palloc phase=mutation fixture=ec_ivf fault=memory-unrecovered-palloc expected="real-AM recovery rejects armed palloc and passes after disarm"
+[fault] full_case ordinal=45 id=mutation-diskann-memory-unrecovered-palloc phase=mutation fixture=ec_diskann fault=memory-unrecovered-palloc expected="real-AM recovery rejects armed palloc and passes after disarm"
+[fault] full_case ordinal=46 id=mutation-spire-memory-unrecovered-palloc phase=mutation fixture=ec_spire fault=memory-unrecovered-palloc expected="real-AM recovery rejects armed palloc and passes after disarm"
+[fault] full_case ordinal=47 id=mutation-distann_rabitq-memory-unrecovered-palloc phase=mutation fixture=ec_distann/rabitq fault=memory-unrecovered-palloc expected="real-AM recovery rejects armed palloc and passes after disarm"
+[fault] full_case ordinal=48 id=mutation-distann_turboquant-memory-unrecovered-palloc phase=mutation fixture=ec_distann/turboquant fault=memory-unrecovered-palloc expected="real-AM recovery rejects armed palloc and passes after disarm"
+[fault] full_case ordinal=49 id=mutation-distann_grouped_pq-memory-unrecovered-palloc phase=mutation fixture=ec_distann/grouped_pq fault=memory-unrecovered-palloc expected="real-AM recovery rejects armed palloc and passes after disarm"
+[fault] full_case ordinal=50 id=provider-hnsw-heap-eio-read phase=provider fixture=ec_hnsw fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=51 id=provider-hnsw-heap-enospc-write phase=provider fixture=ec_hnsw fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=52 id=provider-hnsw-heap-slow-disk phase=provider fixture=ec_hnsw fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=53 id=provider-hnsw-index-eio-read phase=provider fixture=ec_hnsw fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=54 id=provider-hnsw-index-enospc-write phase=provider fixture=ec_hnsw fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=55 id=provider-hnsw-index-slow-disk phase=provider fixture=ec_hnsw fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=56 id=provider-hnsw-wal-enospc-write phase=provider fixture=ec_hnsw fault=enospc-write expected="accepted WAL disconnect/ERROR, restore, exact marker"
+[fault] full_case ordinal=57 id=provider-hnsw-temp-enospc-write phase=provider fixture=ec_hnsw fault=enospc-write expected="accepted temp spill ERROR, recovery, exact marker"
+[fault] full_case ordinal=58 id=provider-ivf-heap-eio-read phase=provider fixture=ec_ivf fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=59 id=provider-ivf-heap-enospc-write phase=provider fixture=ec_ivf fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=60 id=provider-ivf-heap-slow-disk phase=provider fixture=ec_ivf fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=61 id=provider-ivf-index-eio-read phase=provider fixture=ec_ivf fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=62 id=provider-ivf-index-enospc-write phase=provider fixture=ec_ivf fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=63 id=provider-ivf-index-slow-disk phase=provider fixture=ec_ivf fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=64 id=provider-ivf-wal-enospc-write phase=provider fixture=ec_ivf fault=enospc-write expected="accepted WAL disconnect/ERROR, restore, exact marker"
+[fault] full_case ordinal=65 id=provider-ivf-temp-enospc-write phase=provider fixture=ec_ivf fault=enospc-write expected="accepted temp spill ERROR, recovery, exact marker"
+[fault] full_case ordinal=66 id=provider-diskann-heap-eio-read phase=provider fixture=ec_diskann fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=67 id=provider-diskann-heap-enospc-write phase=provider fixture=ec_diskann fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=68 id=provider-diskann-heap-slow-disk phase=provider fixture=ec_diskann fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=69 id=provider-diskann-index-eio-read phase=provider fixture=ec_diskann fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=70 id=provider-diskann-index-enospc-write phase=provider fixture=ec_diskann fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=71 id=provider-diskann-index-slow-disk phase=provider fixture=ec_diskann fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=72 id=provider-diskann-wal-enospc-write phase=provider fixture=ec_diskann fault=enospc-write expected="accepted WAL disconnect/ERROR, restore, exact marker"
+[fault] full_case ordinal=73 id=provider-diskann-temp-enospc-write phase=provider fixture=ec_diskann fault=enospc-write expected="accepted temp spill ERROR, recovery, exact marker"
+[fault] full_case ordinal=74 id=provider-spire-heap-eio-read phase=provider fixture=ec_spire fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=75 id=provider-spire-heap-enospc-write phase=provider fixture=ec_spire fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=76 id=provider-spire-heap-slow-disk phase=provider fixture=ec_spire fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=77 id=provider-spire-index-eio-read phase=provider fixture=ec_spire fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=78 id=provider-spire-index-enospc-write phase=provider fixture=ec_spire fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=79 id=provider-spire-index-slow-disk phase=provider fixture=ec_spire fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=80 id=provider-spire-wal-enospc-write phase=provider fixture=ec_spire fault=enospc-write expected="accepted WAL disconnect/ERROR, restore, exact marker"
+[fault] full_case ordinal=81 id=provider-spire-temp-enospc-write phase=provider fixture=ec_spire fault=enospc-write expected="accepted temp spill ERROR, recovery, exact marker"
+[fault] full_case ordinal=82 id=provider-distann_rabitq-heap-eio-read phase=provider fixture=ec_distann/rabitq fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=83 id=provider-distann_rabitq-heap-enospc-write phase=provider fixture=ec_distann/rabitq fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=84 id=provider-distann_rabitq-heap-slow-disk phase=provider fixture=ec_distann/rabitq fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=85 id=provider-distann_rabitq-index-eio-read phase=provider fixture=ec_distann/rabitq fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=86 id=provider-distann_rabitq-index-enospc-write phase=provider fixture=ec_distann/rabitq fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=87 id=provider-distann_rabitq-index-slow-disk phase=provider fixture=ec_distann/rabitq fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=88 id=provider-distann_rabitq-wal-enospc-write phase=provider fixture=ec_distann/rabitq fault=enospc-write expected="accepted WAL disconnect/ERROR, restore, exact marker"
+[fault] full_case ordinal=89 id=provider-distann_rabitq-temp-enospc-write phase=provider fixture=ec_distann/rabitq fault=enospc-write expected="accepted temp spill ERROR, recovery, exact marker"
+[fault] full_case ordinal=90 id=provider-distann_turboquant-heap-eio-read phase=provider fixture=ec_distann/turboquant fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=91 id=provider-distann_turboquant-heap-enospc-write phase=provider fixture=ec_distann/turboquant fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=92 id=provider-distann_turboquant-heap-slow-disk phase=provider fixture=ec_distann/turboquant fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=93 id=provider-distann_turboquant-index-eio-read phase=provider fixture=ec_distann/turboquant fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=94 id=provider-distann_turboquant-index-enospc-write phase=provider fixture=ec_distann/turboquant fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=95 id=provider-distann_turboquant-index-slow-disk phase=provider fixture=ec_distann/turboquant fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=96 id=provider-distann_turboquant-wal-enospc-write phase=provider fixture=ec_distann/turboquant fault=enospc-write expected="accepted WAL disconnect/ERROR, restore, exact marker"
+[fault] full_case ordinal=97 id=provider-distann_turboquant-temp-enospc-write phase=provider fixture=ec_distann/turboquant fault=enospc-write expected="accepted temp spill ERROR, recovery, exact marker"
+[fault] full_case ordinal=98 id=provider-distann_grouped_pq-heap-eio-read phase=provider fixture=ec_distann/grouped_pq fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=99 id=provider-distann_grouped_pq-heap-enospc-write phase=provider fixture=ec_distann/grouped_pq fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=100 id=provider-distann_grouped_pq-heap-slow-disk phase=provider fixture=ec_distann/grouped_pq fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=101 id=provider-distann_grouped_pq-index-eio-read phase=provider fixture=ec_distann/grouped_pq fault=eio-read expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=102 id=provider-distann_grouped_pq-index-enospc-write phase=provider fixture=ec_distann/grouped_pq fault=enospc-write expected="accepted clean ERROR, recovery, exact marker"
+[fault] full_case ordinal=103 id=provider-distann_grouped_pq-index-slow-disk phase=provider fixture=ec_distann/grouped_pq fault=slow-disk expected="same-run baseline plus configured latency, exact marker"
+[fault] full_case ordinal=104 id=provider-distann_grouped_pq-wal-enospc-write phase=provider fixture=ec_distann/grouped_pq fault=enospc-write expected="accepted WAL disconnect/ERROR, restore, exact marker"
+[fault] full_case ordinal=105 id=provider-distann_grouped_pq-temp-enospc-write phase=provider fixture=ec_distann/grouped_pq fault=enospc-write expected="accepted temp spill ERROR, recovery, exact marker"
+[fault] full_case ordinal=106 id=remote-ec_distann-tcp-reset phase=remote-socket fixture=ec_distann fault=tcp-reset expected="accepted clean reset and exact expected-source recovery"
+[fault] full_case ordinal=107 id=remote-ec_distann-tcp-slow phase=remote-socket fixture=ec_distann fault=tcp-slow expected="expected source and baseline-plus-latency result"
+[fault] full_case ordinal=108 id=remote-ec_spire-unix-reset phase=remote-socket fixture=ec_spire fault=unix-reset expected="validated baseline, accepted reset result, recovered stable profile"
+[fault] full_case ordinal=109 id=remote-ec_spire-unix-slow phase=remote-socket fixture=ec_spire fault=unix-slow expected="baseline-equal stable profile and baseline-plus-latency result"
+[fault] full_case ordinal=110 id=cgroup-hnsw phase=cgroup fixture=ec_hnsw fault=oom-kill expected="exact rows, valid/ready index, AM scan, clean stop"
+[fault] full_case ordinal=111 id=cgroup-ivf phase=cgroup fixture=ec_ivf fault=oom-kill expected="exact rows, valid/ready index, AM scan, clean stop"
+[fault] full_case ordinal=112 id=cgroup-diskann phase=cgroup fixture=ec_diskann fault=oom-kill expected="exact rows, valid/ready index, AM scan, clean stop"
+[fault] full_case ordinal=113 id=cgroup-spire phase=cgroup fixture=ec_spire fault=oom-kill expected="exact rows, valid/ready index, AM scan, clean stop"
+[fault] full_case ordinal=114 id=cgroup-distann_rabitq phase=cgroup fixture=ec_distann/rabitq fault=oom-kill expected="exact rows, valid/ready index, AM scan, clean stop"
+[fault] full_case ordinal=115 id=cgroup-distann_turboquant phase=cgroup fixture=ec_distann/turboquant fault=oom-kill expected="exact rows, valid/ready index, AM scan, clean stop"
+[fault] full_case ordinal=116 id=cgroup-distann_grouped_pq phase=cgroup fixture=ec_distann/grouped_pq fault=oom-kill expected="exact rows, valid/ready index, AM scan, clean stop"
+[fault] full_plan cases=116 fixtures=7 local_cases=35 mutation_cases=14 provider_cases=56 remote_socket_cases=4 cgroup_cases=7 dry_run=false
+[fault] full_phase_skipped phase=provider reason=linux-only cases=56
+[fault] full_phase_skipped phase=remote-socket reason=linux-only cases=4
+[fault] full_phase_skipped phase=cgroup reason=linux-only cases=7
+ec_hnsw-memory-palloc-nth-failure	memory	ec_hnsw	n/a	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_hnsw-memory-backend-sigkill-oom-proxy	memory	ec_hnsw	n/a	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_hnsw-memory-backend-rlimit-oom	memory	ec_hnsw	n/a	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_ivf-memory-palloc-nth-failure	memory	ec_ivf	n/a	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_ivf-memory-backend-sigkill-oom-proxy	memory	ec_ivf	n/a	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_ivf-memory-backend-rlimit-oom	memory	ec_ivf	n/a	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_diskann-memory-palloc-nth-failure	memory	ec_diskann	n/a	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_diskann-memory-backend-sigkill-oom-proxy	memory	ec_diskann	n/a	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_diskann-memory-backend-rlimit-oom	memory	ec_diskann	n/a	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_spire-memory-palloc-nth-failure	memory	ec_spire	n/a	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_spire-memory-backend-sigkill-oom-proxy	memory	ec_spire	n/a	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_spire-memory-backend-rlimit-oom	memory	ec_spire	n/a	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_distann-rabitq-memory-palloc-nth-failure	memory	ec_distann	rabitq	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_distann-rabitq-memory-backend-sigkill-oom-proxy	memory	ec_distann	rabitq	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_distann-rabitq-memory-backend-rlimit-oom	memory	ec_distann	rabitq	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_distann-turboquant-memory-palloc-nth-failure	memory	ec_distann	turboquant	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_distann-turboquant-memory-backend-sigkill-oom-proxy	memory	ec_distann	turboquant	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_distann-turboquant-memory-backend-rlimit-oom	memory	ec_distann	turboquant	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+ec_distann-grouped_pq-memory-palloc-nth-failure	memory	ec_distann	grouped_pq	palloc-nth-failure	clean ERROR; Rust guards release PG resources
+ec_distann-grouped_pq-memory-backend-sigkill-oom-proxy	memory	ec_distann	grouped_pq	backend-sigkill-oom-proxy	postmaster recovers; no leaked fault state remains
+ec_distann-grouped_pq-memory-backend-rlimit-oom	memory	ec_distann	grouped_pq	backend-rlimit-oom	backend reports an OOM-class failure or disconnects; new sessions remain usable
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=build first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_ivf lane=build first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_diskann lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_diskann lane=build first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_spire lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_spire lane=build first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/rabitq lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_distann/rabitq lane=build first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/turboquant lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_distann/turboquant lane=build first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/grouped_pq lane=build nth=1
+[fault] memory_palloc_sweep_completed am=ec_distann/grouped_pq lane=build first_success_nth=2
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/89426407	index=ecaz_fault_hnsw_idx	index_path=base/88881031/89426417
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/89426419	index=ecaz_fault_ivf_idx	index_path=base/88881031/89426429
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/89426431	index=ecaz_fault_diskann_idx	index_path=base/88881031/89426441
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/89426443	index=ecaz_fault_spire_idx	index_path=base/88881031/89426453
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/89426455	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/89426465
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/89426467	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/89426493
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/89426495	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/89426505
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=scan nth=1
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=scan nth=2
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=scan nth=3
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=scan nth=4
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=scan first_success_nth=5
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_hnsw lane=vacuum nth=1
+[fault] memory_palloc_sweep_completed am=ec_hnsw lane=vacuum first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=scan nth=1
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=scan nth=2
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=scan nth=3
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=scan nth=4
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=scan nth=5
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=scan nth=6
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=scan nth=7
+[fault] memory_palloc_sweep_completed am=ec_ivf lane=scan first_success_nth=8
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_ivf lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_ivf lane=vacuum nth=1
+[fault] memory_palloc_sweep_completed am=ec_ivf lane=vacuum first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_diskann lane=scan nth=1
+[fault] memory_palloc_sweep_completed am=ec_diskann lane=scan first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_diskann lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_diskann lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_diskann lane=vacuum nth=1
+[fault] memory_palloc_sweep_completed am=ec_diskann lane=vacuum first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_spire lane=scan nth=1
+[fault] memory_palloc_sweep_fault am=ec_spire lane=scan nth=2
+[fault] memory_palloc_sweep_fault am=ec_spire lane=scan nth=3
+[fault] memory_palloc_sweep_completed am=ec_spire lane=scan first_success_nth=4
+[fault] memory_palloc_sweep_fault am=ec_spire lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_spire lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_spire lane=vacuum nth=1
+[fault] memory_palloc_sweep_completed am=ec_spire lane=vacuum first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/rabitq lane=scan nth=1
+[fault] memory_palloc_sweep_completed am=ec_distann/rabitq lane=scan first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/rabitq lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_distann/rabitq lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/rabitq lane=vacuum nth=1
+[fault] memory_palloc_sweep_fault am=ec_distann/rabitq lane=vacuum nth=2
+[fault] memory_palloc_sweep_completed am=ec_distann/rabitq lane=vacuum first_success_nth=3
+[fault] memory_palloc_sweep_fault am=ec_distann/turboquant lane=scan nth=1
+[fault] memory_palloc_sweep_completed am=ec_distann/turboquant lane=scan first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/turboquant lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_distann/turboquant lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/turboquant lane=vacuum nth=1
+[fault] memory_palloc_sweep_fault am=ec_distann/turboquant lane=vacuum nth=2
+[fault] memory_palloc_sweep_completed am=ec_distann/turboquant lane=vacuum first_success_nth=3
+[fault] memory_palloc_sweep_fault am=ec_distann/grouped_pq lane=scan nth=1
+[fault] memory_palloc_sweep_completed am=ec_distann/grouped_pq lane=scan first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/grouped_pq lane=insert nth=1
+[fault] memory_palloc_sweep_completed am=ec_distann/grouped_pq lane=insert first_success_nth=2
+[fault] memory_palloc_sweep_fault am=ec_distann/grouped_pq lane=vacuum nth=1
+[fault] memory_palloc_sweep_fault am=ec_distann/grouped_pq lane=vacuum nth=2
+[fault] memory_palloc_sweep_completed am=ec_distann/grouped_pq lane=vacuum first_success_nth=3
+[fault] memory_rlimit_oom_skipped target_os=macos ams=ec_hnsw,ec_ivf,ec_diskann,ec_spire,ec_distann/rabitq,ec_distann/turboquant,ec_distann/grouped_pq reason=linux-only
+[fault] memory oom-kill ec_hnsw build sigkill_pid=93248 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:54.678154Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_hnsw build postmaster_recovered=true
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/89434399	index=ecaz_fault_hnsw_idx	index_path=base/88881031/89434409
+[fault] memory oom-kill ec_hnsw scan sigkill_pid=93278 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:55.250972Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_hnsw scan postmaster_recovered=true
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/89442591	index=ecaz_fault_hnsw_idx	index_path=base/88881031/89442601
+[fault] memory oom-kill ec_hnsw insert sigkill_pid=93319 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:55.615304Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_hnsw insert postmaster_recovered=true
+[fault] memory oom-kill ec_ivf build sigkill_pid=93346 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:55.991423Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_ivf build postmaster_recovered=true
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/89458975	index=ecaz_fault_ivf_idx	index_path=base/88881031/89458985
+[fault] memory oom-kill ec_ivf scan sigkill_pid=93375 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:56.356324Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_ivf scan postmaster_recovered=true
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/89467167	index=ecaz_fault_ivf_idx	index_path=base/88881031/89467177
+[fault] memory oom-kill ec_ivf insert sigkill_pid=93402 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:56.723130Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_ivf insert postmaster_recovered=true
+[fault] memory oom-kill ec_diskann build sigkill_pid=93429 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:57.097832Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_diskann build postmaster_recovered=true
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/89483551	index=ecaz_fault_diskann_idx	index_path=base/88881031/89483561
+[fault] memory oom-kill ec_diskann scan sigkill_pid=93458 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:57.460850Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_diskann scan postmaster_recovered=true
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/89491743	index=ecaz_fault_diskann_idx	index_path=base/88881031/89491753
+[fault] memory oom-kill ec_diskann insert sigkill_pid=93485 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:57.828818Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_diskann insert postmaster_recovered=true
+[fault] memory oom-kill ec_spire build sigkill_pid=93512 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:58.207647Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_spire build postmaster_recovered=true
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/89508127	index=ecaz_fault_spire_idx	index_path=base/88881031/89508137
+[fault] memory oom-kill ec_spire scan sigkill_pid=93540 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:58.572687Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_spire scan postmaster_recovered=true
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/89516319	index=ecaz_fault_spire_idx	index_path=base/88881031/89516329
+[fault] memory oom-kill ec_spire insert sigkill_pid=93567 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:58.933815Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_spire insert postmaster_recovered=true
+[fault] memory oom-kill ec_distann/rabitq build sigkill_pid=93595 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:36:59.664958Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_distann/rabitq build postmaster_recovered=true
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/89532703	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/89532713
+[fault] memory oom-kill ec_distann/rabitq scan sigkill_pid=93622 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:37:00.055150Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_distann/rabitq scan postmaster_recovered=true
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/89540895	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/89540905
+[fault] memory oom-kill ec_distann/rabitq insert sigkill_pid=93649 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:37:00.439858Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_distann/rabitq insert postmaster_recovered=true
+[fault] memory oom-kill ec_distann/turboquant build sigkill_pid=93685 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:37:08.403097Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_distann/turboquant build postmaster_recovered=true
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/89573663	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/89574697
+[fault] memory oom-kill ec_distann/turboquant scan sigkill_pid=93715 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:37:09.408228Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_distann/turboquant scan postmaster_recovered=true
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/89581855	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/89582889
+[fault] memory oom-kill ec_distann/turboquant insert sigkill_pid=93742 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:37:10.329374Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_distann/turboquant insert postmaster_recovered=true
+[fault] memory oom-kill ec_distann/grouped_pq build sigkill_pid=93769 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:37:11.025470Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_distann/grouped_pq build postmaster_recovered=true
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/89598239	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/89598249
+[fault] memory oom-kill ec_distann/grouped_pq scan sigkill_pid=93796 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:37:11.413041Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_distann/grouped_pq scan postmaster_recovered=true
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/89606431	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/89606441
+[fault] memory oom-kill ec_distann/grouped_pq insert sigkill_pid=93825 delay_ms=25 timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof
+2026-07-28T07:37:11.805769Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] memory oom-kill ec_distann/grouped_pq insert postmaster_recovered=true
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=466 after=72
+[fault] pg_stat_io_reset_after_crash_recovery=true before=466 after=72
+[fault] pg_stat_wal_records_before=2803 after=3 bytes_before=1365752 after=7755
+[fault] pg_stat_wal_reset_after_crash_recovery=true records_before=2803 records_after=3 bytes_before=1365752 bytes_after=7755
+ec_hnsw-cancel-pg-cancel-backend	cancel	ec_hnsw	n/a	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_hnsw-cancel-pg-terminate-backend	cancel	ec_hnsw	n/a	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_ivf-cancel-pg-cancel-backend	cancel	ec_ivf	n/a	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_ivf-cancel-pg-terminate-backend	cancel	ec_ivf	n/a	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_diskann-cancel-pg-cancel-backend	cancel	ec_diskann	n/a	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_diskann-cancel-pg-terminate-backend	cancel	ec_diskann	n/a	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_spire-cancel-pg-cancel-backend	cancel	ec_spire	n/a	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_spire-cancel-pg-terminate-backend	cancel	ec_spire	n/a	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_distann-rabitq-cancel-pg-cancel-backend	cancel	ec_distann	rabitq	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_distann-rabitq-cancel-pg-terminate-backend	cancel	ec_distann	rabitq	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_distann-turboquant-cancel-pg-cancel-backend	cancel	ec_distann	turboquant	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_distann-turboquant-cancel-pg-terminate-backend	cancel	ec_distann	turboquant	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+ec_distann-grouped_pq-cancel-pg-cancel-backend	cancel	ec_distann	grouped_pq	pg-cancel-backend	query cancels promptly; no leaked pins or locks
+ec_distann-grouped_pq-cancel-pg-terminate-backend	cancel	ec_distann	grouped_pq	pg-terminate-backend	backend exits cleanly; no leaked pins or locks
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/89614623	index=ecaz_fault_hnsw_idx	index_path=base/88881031/89614633
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/89614635	index=ecaz_fault_ivf_idx	index_path=base/88881031/89614645
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/89614647	index=ecaz_fault_diskann_idx	index_path=base/88881031/89614657
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/89614659	index=ecaz_fault_spire_idx	index_path=base/88881031/89614669
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/89614671	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/89614681
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/89614683	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/89614709
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/89614711	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/89614721
+2026-07-28T07:37:12.336419Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+2026-07-28T07:37:12.449170Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+2026-07-28T07:37:12.560279Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+2026-07-28T07:37:12.673199Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+2026-07-28T07:37:12.785503Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+2026-07-28T07:37:12.895972Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+2026-07-28T07:37:13.005647Z ERROR ecaz::psql: postgres connection task failed error=connection closed
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=198 after=478
+[fault] pg_stat_wal_records_before=6 after=2485 bytes_before=28726 after=1057271
+ec_hnsw-timeout-statement-timeout	timeout	ec_hnsw	n/a	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_hnsw-timeout-idle-in-transaction-timeout	timeout	ec_hnsw	n/a	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_ivf-timeout-statement-timeout	timeout	ec_ivf	n/a	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_ivf-timeout-idle-in-transaction-timeout	timeout	ec_ivf	n/a	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_diskann-timeout-statement-timeout	timeout	ec_diskann	n/a	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_diskann-timeout-idle-in-transaction-timeout	timeout	ec_diskann	n/a	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_spire-timeout-statement-timeout	timeout	ec_spire	n/a	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_spire-timeout-idle-in-transaction-timeout	timeout	ec_spire	n/a	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_distann-rabitq-timeout-statement-timeout	timeout	ec_distann	rabitq	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_distann-rabitq-timeout-idle-in-transaction-timeout	timeout	ec_distann	rabitq	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_distann-turboquant-timeout-statement-timeout	timeout	ec_distann	turboquant	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_distann-turboquant-timeout-idle-in-transaction-timeout	timeout	ec_distann	turboquant	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+ec_distann-grouped_pq-timeout-statement-timeout	timeout	ec_distann	grouped_pq	statement-timeout	timeout ERROR; all retained AM state is dropped
+ec_distann-grouped_pq-timeout-idle-in-transaction-timeout	timeout	ec_distann	grouped_pq	idle-in-transaction-timeout	idle session is terminated; transaction state is rolled back
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/89614723	index=ecaz_fault_hnsw_idx	index_path=base/88881031/89614733
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/89614735	index=ecaz_fault_ivf_idx	index_path=base/88881031/89614745
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/89614747	index=ecaz_fault_diskann_idx	index_path=base/88881031/89614757
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/89614759	index=ecaz_fault_spire_idx	index_path=base/88881031/89614769
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/89614771	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/89614781
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/89614783	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/89614809
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/89614811	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/89614821
+2026-07-28T07:37:13.173616Z ERROR ecaz::psql: postgres connection task failed error=db error
+2026-07-28T07:37:13.335184Z ERROR ecaz::psql: postgres connection task failed error=db error
+2026-07-28T07:37:13.504920Z ERROR ecaz::psql: postgres connection task failed error=db error
+2026-07-28T07:37:13.656361Z ERROR ecaz::psql: postgres connection task failed error=db error
+2026-07-28T07:37:13.814622Z ERROR ecaz::psql: postgres connection task failed error=db error
+2026-07-28T07:37:13.979800Z ERROR ecaz::psql: postgres connection task failed error=db error
+2026-07-28T07:37:14.140701Z ERROR ecaz::psql: postgres connection task failed error=db error
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=478 after=586
+[fault] pg_stat_wal_records_before=2485 after=4900 bytes_before=1057271 after=1707179
+ec_hnsw-lock-timeout-lock-timeout	lock-timeout	ec_hnsw	n/a	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_ivf-lock-timeout-lock-timeout	lock-timeout	ec_ivf	n/a	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_diskann-lock-timeout-lock-timeout	lock-timeout	ec_diskann	n/a	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_spire-lock-timeout-lock-timeout	lock-timeout	ec_spire	n/a	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_distann-rabitq-lock-timeout-lock-timeout	lock-timeout	ec_distann	rabitq	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_distann-turboquant-lock-timeout-lock-timeout	lock-timeout	ec_distann	turboquant	lock-timeout	lock timeout ERROR; no relation lock survives the session
+ec_distann-grouped_pq-lock-timeout-lock-timeout	lock-timeout	ec_distann	grouped_pq	lock-timeout	lock timeout ERROR; no relation lock survives the session
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/89614823	index=ecaz_fault_hnsw_idx	index_path=base/88881031/89614833
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/89614835	index=ecaz_fault_ivf_idx	index_path=base/88881031/89614845
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/89614847	index=ecaz_fault_diskann_idx	index_path=base/88881031/89614857
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/89614859	index=ecaz_fault_spire_idx	index_path=base/88881031/89614869
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/89614871	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/89614881
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/89614883	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/89614909
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/89614911	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/89614921
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=586 after=697
+[fault] pg_stat_wal_records_before=4901 after=7363 bytes_before=1707235 after=2369055
+ec_hnsw-resource-tiny-work-mem	resource	ec_hnsw	n/a	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_hnsw-resource-temp-file-limit	resource	ec_hnsw	n/a	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_hnsw-resource-wal-rotation-accounting	resource	ec_hnsw	n/a	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_ivf-resource-tiny-work-mem	resource	ec_ivf	n/a	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_ivf-resource-temp-file-limit	resource	ec_ivf	n/a	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_ivf-resource-wal-rotation-accounting	resource	ec_ivf	n/a	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_diskann-resource-tiny-work-mem	resource	ec_diskann	n/a	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_diskann-resource-temp-file-limit	resource	ec_diskann	n/a	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_diskann-resource-wal-rotation-accounting	resource	ec_diskann	n/a	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_spire-resource-tiny-work-mem	resource	ec_spire	n/a	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_spire-resource-temp-file-limit	resource	ec_spire	n/a	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_spire-resource-wal-rotation-accounting	resource	ec_spire	n/a	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_distann-rabitq-resource-tiny-work-mem	resource	ec_distann	rabitq	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_distann-rabitq-resource-temp-file-limit	resource	ec_distann	rabitq	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_distann-rabitq-resource-wal-rotation-accounting	resource	ec_distann	rabitq	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_distann-turboquant-resource-tiny-work-mem	resource	ec_distann	turboquant	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_distann-turboquant-resource-temp-file-limit	resource	ec_distann	turboquant	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_distann-turboquant-resource-wal-rotation-accounting	resource	ec_distann	turboquant	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+ec_distann-grouped_pq-resource-tiny-work-mem	resource	ec_distann	grouped_pq	tiny-work-mem	clean ERROR or successful bounded execution; no negative counters
+ec_distann-grouped_pq-resource-temp-file-limit	resource	ec_distann	grouped_pq	temp-file-limit	clean ERROR; backend remains usable and temp state is released
+ec_distann-grouped_pq-resource-wal-rotation-accounting	resource	ec_distann	grouped_pq	wal-rotation-accounting	WAL LSN advances and pg_stat_wal counters remain readable and non-decreasing
+postcondition probes:
+SELECT count(*) FROM pg_stat_activity WHERE datname = current_database() AND application_name LIKE 'ecaz-fault-%' AND pid <> pg_backend_pid()
+SELECT count(*) FROM pg_locks l JOIN pg_stat_activity a USING (pid) WHERE a.datname = current_database() AND a.application_name LIKE 'ecaz-fault-%' AND a.pid <> pg_backend_pid()
+SELECT count(*) FROM pg_prepared_xacts WHERE database = current_database()
+pg_buffercache fixture pin count
+pg_stat_io non-decreasing total operation count
+pg_stat_wal non-decreasing record and byte counters
+pg_stat_database temp_bytes before/after resource temp-spill accounting
+[fault] resource_accumulator_prepare rows=4096 limit=1000 work_mem=64kB
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/89614923	index=ecaz_fault_hnsw_idx	index_path=base/88881031/89614933
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/89614935	index=ecaz_fault_ivf_idx	index_path=base/88881031/89614945
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/89614947	index=ecaz_fault_diskann_idx	index_path=base/88881031/89614957
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/89614959	index=ecaz_fault_spire_idx	index_path=base/88881031/89614969
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/89614971	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/89614981
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/89614983	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/89619089
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/89619091	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/89619101
+[fault] resource_accumulator_pressure am=ec_hnsw rows=4096 limit=1000 target=1000 returned=1000 returned_fraction_ppm=1000000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_hnsw mode=temp_file_limit temp_bytes_before=0 after=0 delta=0
+[fault] wal_rotation_accounting am=ec_hnsw lsn_before=C0/9C2C8AA0 lsn_after=C0/9D000120 records_before=106118 records_after=106928 bytes_before=75327849 bytes_after=79550025
+[fault] resource_accumulator_pressure am=ec_ivf rows=4096 limit=1000 target=1000 returned=1000 returned_fraction_ppm=1000000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_ivf mode=temp_file_limit temp_bytes_before=65536 after=65536 delta=0
+[fault] wal_rotation_accounting am=ec_ivf lsn_before=C0/9D055700 lsn_after=C0/9E000120 records_before=106928 records_after=107359 bytes_before=79550025 bytes_after=80442228
+[fault] resource_accumulator_pressure am=ec_diskann rows=4096 limit=1000 target=1000 returned=1000 returned_fraction_ppm=1000000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_diskann mode=temp_file_limit temp_bytes_before=131072 after=131072 delta=0
+[fault] wal_rotation_accounting am=ec_diskann lsn_before=C0/9E050790 lsn_after=C0/9F000120 records_before=107359 records_after=107774 bytes_before=80442228 bytes_after=81499851
+[fault] resource_accumulator_pressure am=ec_spire rows=4096 limit=1000 target=1000 returned=1000 returned_fraction_ppm=1000000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_spire mode=temp_file_limit temp_bytes_before=196608 after=196608 delta=0
+[fault] wal_rotation_accounting am=ec_spire lsn_before=C0/9F073B48 lsn_after=C0/A0000120 records_before=107774 records_after=111675 bytes_before=81499851 bytes_after=97468639
+[fault] resource_accumulator_pressure am=ec_distann/rabitq rows=4096 limit=1000 target=1000 returned=1000 returned_fraction_ppm=1000000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_distann/rabitq mode=temp_file_limit temp_bytes_before=262144 after=262144 delta=0
+[fault] wal_rotation_accounting am=ec_distann/rabitq lsn_before=C0/A0142678 lsn_after=C0/A1000120 records_before=111675 records_after=112268 bytes_before=97468639 bytes_after=98843219
+[fault] resource_accumulator_pressure am=ec_distann/turboquant rows=4096 limit=1000 target=1000 returned=999 returned_fraction_ppm=999000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_distann/turboquant mode=temp_file_limit temp_bytes_before=327680 after=327680 delta=0
+[fault] wal_rotation_accounting am=ec_distann/turboquant lsn_before=C0/A29EFE78 lsn_after=C0/A3000120 records_before=112268 records_after=125433 bytes_before=98843219 bytes_after=126743572
+[fault] resource_accumulator_pressure am=ec_distann/grouped_pq rows=4096 limit=1000 target=1000 returned=1000 returned_fraction_ppm=1000000 workload_high_water_marker=returned_count work_mem=64kB effective_cache_size=1MB
+[fault] resource_temp_spill_accounting am=ec_distann/grouped_pq mode=temp_file_limit temp_bytes_before=457728 after=457728 delta=0
+[fault] wal_rotation_accounting am=ec_distann/grouped_pq lsn_before=C0/A3143130 lsn_after=C0/A4000120 records_before=125433 records_after=126027 bytes_before=126743572 bytes_after=128120892
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=697 after=11401
+[fault] pg_stat_wal_records_before=7363 after=126027 bytes_before=2369055 after=128120892
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/89619168	index=ecaz_fault_hnsw_idx	index_path=base/88881031/89619178
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/89619180	index=ecaz_fault_ivf_idx	index_path=base/88881031/89619190
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/89619192	index=ecaz_fault_diskann_idx	index_path=base/88881031/89619202
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/89619204	index=ecaz_fault_spire_idx	index_path=base/88881031/89619214
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/89619216	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/89619226
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/89619228	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/89619254
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/89619256	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/89619266
+[fault] cancellation_mutation_control am=ec_hnsw injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_ivf injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_diskann injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_spire injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_distann/rabitq injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_distann/turboquant injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_distann/grouped_pq injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11508 after=11510
+[fault] pg_stat_wal_records_before=128482 after=128484 bytes_before=129173983 after=129174091
+[fault] resource_palloc_mutation_control am=ec_hnsw injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11510 after=11510
+[fault] pg_stat_wal_records_before=128484 after=128484 bytes_before=129174091 after=129174091
+[fault] resource_palloc_mutation_control am=ec_ivf injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11510 after=11510
+[fault] pg_stat_wal_records_before=128484 after=128484 bytes_before=129174091 after=129174091
+[fault] resource_palloc_mutation_control am=ec_diskann injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11510 after=11510
+[fault] pg_stat_wal_records_before=128484 after=128484 bytes_before=129174091 after=129174091
+[fault] resource_palloc_mutation_control am=ec_spire injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11510 after=11510
+[fault] pg_stat_wal_records_before=128484 after=128484 bytes_before=129174091 after=129174091
+[fault] resource_palloc_mutation_control am=ec_distann/rabitq injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11510 after=11510
+[fault] pg_stat_wal_records_before=128484 after=128484 bytes_before=129174091 after=129174091
+[fault] resource_palloc_mutation_control am=ec_distann/turboquant injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11510 after=11510
+[fault] pg_stat_wal_records_before=128484 after=128484 bytes_before=129174091 after=129174091
+[fault] resource_palloc_mutation_control am=ec_distann/grouped_pq injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11510 after=11510
+[fault] pg_stat_wal_records_before=128484 after=128484 bytes_before=129174091 after=129174091
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11401 after=11510
+[fault] pg_stat_wal_records_before=126027 after=128484 bytes_before=128120892 after=129174091
+[fault] mutation_control_complete kind=All fixtures=7 clean_postconditions=true
+[fault] full_no_panic logs_scanned=1 result=pass failures=0
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=413 after=11510
+[fault] pg_stat_wal_records_before=2803 after=128484 bytes_before=1365752 after=129174091
+[fault] full_complete live_authority=partial executed=49 skipped=67 cases=116 fixtures=7 no_panic=true shared_postconditions=true artifact_dir=/Users/peter/dev/tqvector/reviews/task-38/009-authoritative-fault-full/artifacts/m5-partial-live

@@ -98,3 +98,57 @@ The exact-checkpoint focused test result is stored in
 `artifacts/slow-disk-threshold-test.log`. The live fourteen-case provider
 execution remains designated Intel/Linux work and is not claimed by this
 response.
+
+## Review Response: 2026-07-27 Sequence 1
+
+Code checkpoints `147d44d05` and `a35d1cd71` address every finding in
+`feedback/2026-07-27-01-reviewer.md` and close the Apple-M5 scope:
+
+1. Every live postcondition gate now captures an explicit `pg_stat_io` /
+   `pg_stat_wal` baseline. A missing baseline is reported as
+   `baseline_absent`, while `unavailable` remains reserved for a query that
+   proves the view is unavailable.
+2. `make fault-full` now executes the 35 local plus 14 mutation cases on
+   macOS, emits three phase-specific Linux-only skip markers, and closes with
+   `live_authority=partial executed=49 skipped=67`.
+3. The LD_PRELOAD provider preserves `errno` across enable checks, fd matching,
+   and fault-event recording.
+4. The Linux-gated slow-disk regression uses a 500 ms delay and checks matched
+   and unmatched wall-clock behavior.
+5. Slow-disk baselines are measured after a provider-off restart, matching the
+   provider-on measurement's cold-start shape.
+6. All phase counts are derived from the case plan.
+7. The no-panic audit uses lossy reads, accumulates failures, and writes its
+   audit result even when a log cannot be read cleanly.
+8. SPIRE sockets now remain below the supplied aggregate runtime root.
+
+The repeated operator surface also accepts Make parameters, so local runs no
+longer need approval-sensitive leading environment assignments:
+
+```text
+make fault-full FAULT_DATABASE=ecaz_fault_task38 \
+  FAULT_HOST=/Users/peter/.pgrx FAULT_PORT=28818
+```
+
+The live M5 run exposed and then verified a separate DiskANN materialization
+defect. Physical pages can contain unused line pointers, and PostgreSQL's
+`PageAddItem` space accounting differs from the synthetic chain's conservative
+capacity estimate. Checkpoint `a35d1cd71` preserves physical block/offset
+addresses, skips unused slots during graph iteration, and materializes
+already-accepted tuples with PostgreSQL-equivalent accounting.
+
+Packet-local evidence includes:
+
+- `artifacts/m5-mutation-control-postfindings.log`: all seven fixtures pass
+  both mutation controls with real pgstat baselines;
+- `artifacts/m5-partial-live.log`: the authoritative M5 aggregate passes
+  `49/49` executable cases and explicitly skips `67` Linux-only cases;
+- `artifacts/m5-partial-live/main-postmaster.log` and
+  `artifacts/m5-partial-live/no-panic-audit.log`: crash-recovery and no-panic
+  evidence; and
+- `artifacts/diskann-physical-page-materialization-test.log`: both focused
+  physical-page tests pass.
+
+No AWS, remote host, CI, nightly, Docker, or Intel command was run. Task 38
+remains open for the 67 provider/remote-socket/cgroup cases on the designated
+Intel/Linux host; the Apple-M5 scope is complete.
