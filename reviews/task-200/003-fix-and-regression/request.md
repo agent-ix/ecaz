@@ -41,7 +41,12 @@ packet-local series and normalized suite results are committed as evidence.
 
 The suite runner also now forwards `reuse_provenance_dir`, so reuse is
 attested from the packet-local bootstrap result instead of rebuilding. The
-sibling conversion audit remains in `artifacts/sibling-conversion-audit.md`.
+executable gate now has a 100 KB/s default calibrated from the fixed +1.42 and
++5.82 KB/s observations. The same gate fails against `fa84ff3b0^` at
+98,380.15 KB/s, proving the assertion detects the original defect. The
+unattended PG18 test passes 300 one-owner conversions with a 4 MiB bounded
+growth assertion; its output is in `artifacts/pg18-seed-memory-regression.log`.
+The sibling conversion audit remains in `artifacts/sibling-conversion-audit.md`.
 
 The sibling conversion audit is in
 `artifacts/sibling-conversion-audit.md`; it covers the production

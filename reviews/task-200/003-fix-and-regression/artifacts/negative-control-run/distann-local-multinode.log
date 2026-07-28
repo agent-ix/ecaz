@@ -1,0 +1,13 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=42380 rows=2000 dim=16 head_index_cap=16384
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=897c69045249a876de151c1da0544001ead82352-dirty extension_build_profile=release debug_override=false
+[distann-multicluster] fixture_decision action=reuse run_dir=/home/peter/.ecaz/clusters/task200-counters-on-100k scale=100k source_rows=100000 extension_git_sha=897c69045249a876de151c1da0544001ead82352-dirty extension_build_profile=release
+
+   0: [91mTask 200 coverage memory regression FAILED: physical_benchmark_memory_regression scale=100k coverage_invocations=20 rows_returned=20 samples=2022 rss_first_kb=21216 rss_last_kb=266792 rss_delta_kb=245576 rss_slope_kb_per_s=98380.15 max_slope_kb_per_s=100.00 series=/home/peter/dev/ecaz/reviews/task-200/003-fix-and-regression/artifacts/negative-control-run/coverage-memory-regression.series.log pass=false[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m4162[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

@@ -1,10 +1,13 @@
 # Task 200 fix/regression artifacts
 
 - Packet: `reviews/task-200/003-fix-and-regression/`
-- Code head: `fa84ff3b0` (pushed).
-- Fixture: `/home/peter/.ecaz/clusters/task200-counters-off-100k`; reused for
-  every attribution and regression run. No corpus/index rebuild occurred after
-  the source fix; only the extension was rebuilt/installed when source changed.
+- Code heads: root fix `fa84ff3b0`; executable-test checkpoint `e3136e0c2`
+  (both pushed).
+- Fixture: `/home/peter/.ecaz/clusters/task200-counters-off-100k` for the clean
+  fixed run. The required pre-fix control reused the separately preserved
+  `/home/peter/.ecaz/clusters/task200-counters-on-100k`. No corpus or index
+  rebuild occurred for either regression run; only the extension was rebuilt
+  when switching source versions.
 - Clean provenance build: detached worktree at `fa84ff3b0`, using
   `CARGO_TARGET_DIR=/home/peter/.cargo-target`:
   `PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo
@@ -45,10 +48,13 @@
 - Executable gate config: `task200-coverage-memory-regression-suite.json`.
   The suite run used the existing corpus under
   `data/task106_full_sweep_100k/`, a one-time bootstrap fixture build, and
-  then `--reuse-fixture --coverage-memory-regression-iterations 300` with
-  `--coverage-memory-regression-max-slope-kb-per-s 1024`. The final generated
-  `executable-regression-run/suite-manifest.json` records the exact command,
-  config SHA, and successful step.
+  then `--reuse-fixture --coverage-memory-regression-iterations 300`. The
+  calibrated configured limit is now 100 KB/s: the fixed clean run measured
+  +5.82 KB/s, while the earlier clean floor was +1.42 KB/s. The 100 KB/s limit
+  leaves a 17x margin over the observed executable-gate slope and remains far
+  below the pre-fix 98,380.15 KB/s slope. The generated manifest records the
+  historical live run's original 1024 KB/s invocation; its measured slope is
+  explicitly below the calibrated limit.
 - Bootstrap artifact: `fixture-bootstrap-run/distann-local-multinode.log`
   records release extension `fa84ff3b0`, 100,000 source rows, three Published
   owners, `physical_ms=1023268`, and `publish_ms=1156605`. The bootstrap used
@@ -62,10 +68,30 @@
   result is in `results.jsonl`. The large first-to-last ramp is startup/working
   set acquisition; the gate is slope-based as required and shows no
   per-invocation unbounded growth.
+- Required pre-fix negative control: the same suite gate ran against the
+  preserved 100k fixture with the extension built from `fa84ff3b0^` (`897c690`
+  plus the fixture's existing dirty provenance marker). It executed 20 calls
+  and failed as intended: `rss_first_kb=21216 rss_last_kb=266792
+  rss_delta_kb=245576 rss_slope_kb_per_s=98380.15
+  max_slope_kb_per_s=100.00 pass=false`. Evidence is in
+  `negative-control-run/distann-local-multinode.log` and
+  `negative-control-run/coverage-memory-regression.series.log`.
+- Unattended PG18 mechanism test: `cargo pgrx test pg18
+  test_distann_physical_seed_detoast_memory_is_bounded --no-default-features
+  --features 'pg18 pg_test distann-head-attribution-benchmark'` passed 300
+  owner-seed conversions in one test transaction and asserted backend memory
+  growth stayed below 4 MiB. The captured output is
+  `pg18-seed-memory-regression.log`.
+- Latency comparability note: the A1 mean of 36.2 ms versus the Phase 1 mean
+  of 27.50 ms is neither a regression nor a win. Those runs used different
+  held-transaction/single-snapshot versus autocommit protocols, a target/debug
+  CLI driver, and benchmark-only cfg code that cannot execute in the
+  production arm.
 - Measurement surface: one shared three-owner physical `dm_idx` generation;
   one coordinator backend held one explicit transaction for all 300 coverage
   calls. No one-index-per-table control was used in this diagnostic.
-- After the cited artifacts were captured, the stopped 6.7G fixture under
-  `/home/peter/.ecaz/clusters/task200-counters-off-100k` and raw operational
-  logs were removed. No corpus or PGDATA is committed.
+- After the cited artifacts were captured, both stopped 6.7G fixtures under
+  `/home/peter/.ecaz/clusters/task200-counters-off-100k` and
+  `/home/peter/.ecaz/clusters/task200-counters-on-100k` were removed, along
+  with raw operational logs. No corpus or PGDATA is committed.
 - Sibling conversion audit: `sibling-conversion-audit.md`.

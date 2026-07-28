@@ -1,7 +1,7 @@
 # Task 200: ec_distann Backend Memory Retention
 
-Status: **complete — root cause fixed and executable held-transaction
-regression passes** (2026-07-28). Priority: P2 after the production A1 came
+Status: **complete — root cause fixed, executable integration gate and
+unattended PG18 regression pass** (2026-07-28). Priority: P2 after the production A1 came
 back bounded.
 Phases 1 and 2 have run and several premises in the original filing were wrong —
 see *Established* below before doing any work.
@@ -255,13 +255,15 @@ The prior 300-call result was hand-run SQL evidence, not an executable
 regression test. The new
 `coverage_memory_regression_iterations` suite step runs the coverage helper on
 one backend inside one transaction and enforces an RSS slope threshold. The
-new gate is packet-configured at 300 calls with a 1024 KB/s maximum slope and
+new gate is packet-configured at 300 calls with a calibrated 100 KB/s maximum slope and
 also has a unit test for the slope calculation. The sibling conversion audit
 records the production `generation_read.rs` and `remote_endpoint.rs` array
 sites and ties their boundedness to the clean held-transaction A1 evidence.
 The live gate then passed against a reused 100k three-owner fixture: 300
 coverage calls, 300 returned rows, 16,609 RSS samples, and +5.82 KB/s slope
-against the 1,024 KB/s limit.
+against the historical 1,024 KB/s limit. The same gate failed against
+`fa84ff3b0^` at +98,380.15 KB/s, and the unattended PG18 test passed 300
+one-owner calls with a 4 MiB bound.
 
 ## References
 
