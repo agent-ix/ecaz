@@ -528,6 +528,10 @@ struct DistannLocalMultinodeStep {
     artifact_dir: Option<PathBuf>,
     #[serde(default)]
     run_dir: Option<PathBuf>,
+    /// Reuse a stopped, provenance-matched distann fixture. Rebuild remains
+    /// the default when this opt-in is absent.
+    #[serde(default)]
+    reuse_fixture: bool,
     #[serde(default)]
     log_file: Option<PathBuf>,
     /// Keep only the compact summary as durable evidence. Raw fixture and
@@ -554,10 +558,20 @@ struct DistannLocalMultinodeStep {
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
     benchmark_backend_batch_size: Option<u32>,
+    /// Record a timestamped /proc RSS/HWM series for each latency backend.
+    #[serde(default)]
+    sample_backend_memory: bool,
+    /// Milliseconds between backend RSS/HWM samples.
+    #[serde(default)]
+    memory_sample_interval_ms: Option<u64>,
     #[serde(default)]
     distann_stage_counters: bool,
     #[serde(default)]
     stage_counter_only: bool,
+    #[serde(default)]
+    skip_recall: bool,
+    #[serde(default)]
+    skip_single_control: bool,
     #[serde(default)]
     materialization_correctness: bool,
     /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
@@ -3335,6 +3349,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.sample_backend_memory && step.memory_sample_interval_ms == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set memory_sample_interval_ms >= 1",
+                        step.name
+                    )
+                }
                 if step.distann_stage_counters && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} distann_stage_counters requires physical_benchmark",
@@ -4248,6 +4268,12 @@ fn expand_distann_local_multinode(
     if step.stage_counter_only {
         args.push("--stage-counter-only".into());
     }
+    if step.skip_recall {
+        args.push("--skip-recall".into());
+    }
+    if step.skip_single_control {
+        args.push("--skip-single-control".into());
+    }
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());
     }
@@ -4273,6 +4299,14 @@ fn expand_distann_local_multinode(
             .map(|v| v.to_string())
             .as_deref(),
     );
+    if step.sample_backend_memory {
+        args.push("--sample-backend-memory".into());
+        push_arg(
+            &mut args,
+            "--memory-sample-interval-ms",
+            &step.memory_sample_interval_ms.unwrap_or(25).to_string(),
+        );
+    }
     push_opt_u16(&mut args, "--base-port", step.base_port);
     push_opt_arg(
         &mut args,
@@ -4331,6 +4365,9 @@ fn expand_distann_local_multinode(
         "--training-query-path",
         step.training_query_path.as_deref(),
     );
+    if step.reuse_fixture {
+        args.push("--reuse-fixture".into());
+    }
     for variant in &step.benchmark_seed_variants {
         let encoded = format!(
             "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
@@ -7174,9 +7211,7 @@ psql header noise\n\
         assert!(args
             .windows(2)
             .any(|w| w == ["--cache-state", "post_recall_warm"]));
-        assert!(args
-            .windows(2)
-            .any(|w| w == ["--worker-batch-size", "5"]));
+        assert!(args.windows(2).any(|w| w == ["--worker-batch-size", "5"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--session-guc", "ec_diskann.scan_profile_notice=on"]));

@@ -47,6 +47,10 @@ pub struct LocalMultinodePg18Args {
     pub run_dir: Option<PathBuf>,
     #[arg(long)]
     pub artifact_dir: Option<PathBuf>,
+    /// Reuse a stopped, attested physical fixture instead of rebuilding it.
+    /// Build-affecting provenance must match; the default remains rebuild.
+    #[arg(long, default_value_t = false)]
+    pub reuse_fixture: bool,
     /// Number of physical owners. Node 1 is also the coordinator unless
     /// `--coordinator-outside-roster` is set.
     #[arg(long, default_value_t = 3)]
@@ -71,11 +75,23 @@ pub struct LocalMultinodePg18Args {
     /// warmup before each fresh backend.
     #[arg(long, default_value_t = 0)]
     pub benchmark_backend_batch_size: u32,
+    /// Sample the latency backend's RSS/HWM series at a fixed interval.
+    #[arg(long, default_value_t = false)]
+    pub sample_backend_memory: bool,
+    /// Milliseconds between backend RSS/HWM samples.
+    #[arg(long, default_value_t = 25)]
+    pub memory_sample_interval_ms: u64,
     /// Run only the physical latency attribution arms. This skips the
     /// duplicate single-index build and recall matrix when those already
     /// exist in the owning packet.
     #[arg(long, default_value_t = false)]
     pub stage_counter_only: bool,
+    /// Skip the recall child for a latency-only memory reproduction.
+    #[arg(long, default_value_t = false)]
+    pub skip_recall: bool,
+    /// Skip building and measuring the single-index control arm.
+    #[arg(long, default_value_t = false)]
+    pub skip_single_control: bool,
     /// Task 183 benchmark-only per-stage attribution for the physical latency
     /// arm. Requires a measurement extension exposing the stage snapshot API.
     #[arg(long, default_value_t = false)]
@@ -361,6 +377,19 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.benchmark_iterations == 0 {
         bail!("--benchmark-iterations must be at least 1");
     }
+    if args.sample_backend_memory && args.memory_sample_interval_ms == 0 {
+        bail!("--memory-sample-interval-ms must be at least 1");
+    }
+    if args.reuse_fixture && mode != FixtureMode::Physical {
+        bail!("--reuse-fixture requires the physical fixture");
+    }
+    if args.reuse_fixture
+        && (args.traversal_replica_enospc_drill
+            || args.drop_extension_cleanup_drill
+            || args.materialization_correctness)
+    {
+        bail!("--reuse-fixture cannot combine with fixture-mutating drills");
+    }
     if !(16..=1_048_576).contains(&args.head_index_cap) {
         bail!("--head-index-cap must be in 16..=1048576");
     }
@@ -495,7 +524,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         .artifact_dir
         .clone()
         .unwrap_or_else(|| run_dir.join("logs"));
-    if run_dir.exists() {
+    if run_dir.exists() && !args.reuse_fixture {
         // Best-effort stop of a prior run before wiping.
         for k in 0..instance_count {
             let data_dir = run_dir.join(format!("node{}", k + 1));
@@ -511,6 +540,11 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
                 .await;
         }
         fs::remove_dir_all(&run_dir).wrap_err_with(|| format!("clearing {}", run_dir.display()))?;
+    } else if args.reuse_fixture && !run_dir.exists() {
+        bail!(
+            "--reuse-fixture requested but run directory does not exist: {}",
+            run_dir.display()
+        );
     }
     fs::create_dir_all(&socket_dir)?;
     fs::create_dir_all(&log_dir)?;
@@ -569,8 +603,20 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         args.head_index_cap
     );
 
-    // initdb + start + extension on every node.
+    // initdb + start + extension on every node. Reuse deliberately skips
+    // initdb and starts the exact stopped PGDATA trees after provenance is
+    // checked below; it never silently rebuilds a mismatched fixture.
     for node in &nodes {
+        if args.reuse_fixture {
+            if !node.data_dir.join("PG_VERSION").is_file() {
+                bail!(
+                    "--reuse-fixture found no PG_VERSION for node {} at {}",
+                    node.node_id,
+                    node.data_dir.display()
+                );
+            }
+            continue;
+        }
         let mut command = Command::new(&pg_ctl);
         command
             .arg("initdb")
@@ -643,17 +689,30 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
 
         match mode {
             FixtureMode::Physical => {
-                drive_physical_fixture(
-                    args,
-                    &pg_ctl,
-                    &psql,
-                    &socket_dir,
-                    &nodes,
-                    log_dir.as_path(),
-                    &extension_preflight,
-                    enospc_fixture.as_ref(),
-                )
-                .await
+                if args.reuse_fixture {
+                    drive_reused_physical_fixture(
+                        args,
+                        &pg_ctl,
+                        &psql,
+                        &socket_dir,
+                        &nodes,
+                        log_dir.as_path(),
+                        &extension_preflight,
+                    )
+                    .await
+                } else {
+                    drive_physical_fixture(
+                        args,
+                        &pg_ctl,
+                        &psql,
+                        &socket_dir,
+                        &nodes,
+                        log_dir.as_path(),
+                        &extension_preflight,
+                        enospc_fixture.as_ref(),
+                    )
+                    .await
+                }
             }
             FixtureMode::ReplicatedServingControl => {
                 drive_fixture(args, &pg_ctl, &psql, &socket_dir, &nodes, log_dir.as_path()).await
@@ -1697,10 +1756,7 @@ async fn task199_crash_after_control_commit_drill(
         .query_one(&task199_real_insert_sql(corpus), &[])
         .await
         .expect_err("injected post-control-commit crash must terminate the mutating backend");
-    let terminated = crash
-        .code()
-        .is_some_and(|code| code.code() == "57P01")
-        || crash.is_closed();
+    let terminated = crash.code().is_some_and(|code| code.code() == "57P01") || crash.is_closed();
     let _ = mutator_connection.await;
 
     let state = coordinator
@@ -1856,10 +1912,7 @@ async fn task199_enospc_replica_build_drill(
         )
         .await?
         .get::<_, String>(0);
-    let tablespace_path = fixture
-        .tablespace_dir
-        .to_string_lossy()
-        .replace('\'', "''");
+    let tablespace_path = fixture.tablespace_dir.to_string_lossy().replace('\'', "''");
     coordinator
         .batch_execute(&format!(
             "CREATE TABLESPACE task199_replica_enospc LOCATION '{tablespace_path}'"
@@ -1966,9 +2019,7 @@ async fn task199_enospc_replica_build_drill(
     Ok(())
 }
 
-async fn task199_physical_graph_digest(
-    coordinator: &tokio_postgres::Client,
-) -> Result<String> {
+async fn task199_physical_graph_digest(coordinator: &tokio_postgres::Client) -> Result<String> {
     Ok(coordinator
         .query_one(
             "SELECT encode(graph_digest, 'hex')
@@ -3402,9 +3453,7 @@ async fn run_task199_replica_lifecycle_drills(
     let vacuum_state = vacuum_status.get::<_, String>(0);
     let vacuum_reason = vacuum_status.get::<_, String>(1);
     if vacuum_state != "Stale" || vacuum_reason != "vacuum" {
-        bail!(
-            "Task 199 VACUUM disposition failed: state={vacuum_state} reason={vacuum_reason}"
-        );
+        bail!("Task 199 VACUUM disposition failed: state={vacuum_state} reason={vacuum_reason}");
     }
     lines.push(format!(
         "physical_benchmark_traversal_replica_fault scale={scale} scenario=vacuum_demotes_and_continues pass=true hot_updated_rows=1 state=Stale reason=vacuum"
@@ -4089,15 +4138,21 @@ async fn run_physical_benchmarks(
     } else {
         "current_sample".to_owned()
     };
-    if args.production_head_policy.is_none() && benchmark_head_policy != requested_head_policy {
+    if args.production_head_policy.is_none()
+        && !args.reuse_fixture
+        && benchmark_head_policy != requested_head_policy
+    {
         bail!(
             "physical head-policy attestation mismatch: requested {requested_head_policy}, got {benchmark_head_policy}"
         );
     }
-    let attested_head_policy = args
-        .production_head_policy
-        .clone()
-        .unwrap_or(benchmark_head_policy);
+    let attested_head_policy = if args.reuse_fixture {
+        benchmark_head_policy.clone()
+    } else {
+        args.production_head_policy
+            .clone()
+            .unwrap_or(benchmark_head_policy)
+    };
     let physical_prefix = format!("task179_physical_{scale}");
     let single_prefix = format!("task179_single_{scale}");
     let physical_corpus = format!("{physical_prefix}_corpus");
@@ -4105,15 +4160,19 @@ async fn run_physical_benchmarks(
     let single_corpus = format!("{single_prefix}_corpus");
     let single_queries = format!("{single_prefix}_queries");
     let single_index = format!("{single_prefix}_idx");
-    coordinator
-        .batch_execute(&format!(
-            "RESET enable_seqscan;
-             ALTER TABLE dm RENAME TO {physical_corpus};
-             ALTER TABLE dm_queries RENAME TO {physical_queries};"
-        ))
-        .await?;
+    if !args.reuse_fixture {
+        coordinator
+            .batch_execute(&format!(
+                "RESET enable_seqscan;
+                 ALTER TABLE dm RENAME TO {physical_corpus};
+                 ALTER TABLE dm_queries RENAME TO {physical_queries};"
+            ))
+            .await?;
+    } else {
+        coordinator.batch_execute("RESET enable_seqscan").await?;
+    }
 
-    let single_build_ms = if args.stage_counter_only {
+    let single_build_ms = if args.stage_counter_only || args.skip_single_control {
         0
     } else {
         let single_started = Instant::now();
@@ -4221,7 +4280,7 @@ async fn run_physical_benchmarks(
         args.queries,
         args.head_index_cap,
     ));
-    if args.head_policy.is_some() && !args.stage_counter_only {
+    if args.head_policy.is_some() && !args.stage_counter_only && !args.skip_recall {
         let coverage = coordinator
             .query_one(
                 &format!(
@@ -4342,13 +4401,8 @@ async fn run_physical_benchmarks(
         if !outage_pass {
             bail!("Task 198 owner-outage build drill left residue or did not fail");
         }
-        task199_no_replica_insert_throughput(
-            coordinator,
-            scale,
-            &physical_corpus,
-            &mut lines,
-        )
-        .await?;
+        task199_no_replica_insert_throughput(coordinator, scale, &physical_corpus, &mut lines)
+            .await?;
     }
     let mut same_seed_digests =
         std::collections::HashMap::<(String, u32, u32), (String, String)>::new();
@@ -4497,7 +4551,7 @@ async fn run_physical_benchmarks(
             variant.traversal_replica,
         ));
     }
-    if !args.stage_counter_only {
+    if !args.stage_counter_only && !args.skip_single_control {
         benchmark_arms.push((
             "single",
             single_prefix.as_str(),
@@ -4550,7 +4604,7 @@ async fn run_physical_benchmarks(
             traversal_replica_digest =
                 Some(build_and_attest_traversal_replica(coordinator, scale, &mut lines).await?);
         }
-        if !args.stage_counter_only {
+        if !args.stage_counter_only && !args.skip_recall {
             let recall_log = log_dir.join(format!("{arm}-{variant}-recall.log"));
             let predictions_output = log_dir.join(format!("{arm}-{variant}-predictions.json"));
             let mut recall_args = common.clone();
@@ -4663,6 +4717,18 @@ async fn run_physical_benchmarks(
             latency_args.extend([
                 "--worker-batch-size".into(),
                 args.benchmark_backend_batch_size.to_string(),
+            ]);
+        }
+        if arm == "physical" && args.sample_backend_memory {
+            latency_args.extend([
+                "--sample-backend-memory".into(),
+                "--memory-sample-interval-ms".into(),
+                args.memory_sample_interval_ms.to_string(),
+                "--memory-series-output".into(),
+                latency_log
+                    .with_extension("memory-series.log")
+                    .display()
+                    .to_string(),
             ]);
         }
         if arm == "physical" && explicit_seed_controls {
@@ -4836,7 +4902,7 @@ async fn run_physical_benchmarks(
         );
     }
 
-    let sizes = if args.stage_counter_only {
+    let sizes = if args.stage_counter_only || args.skip_single_control {
         coordinator
             .query_one(
                 &format!(
@@ -4947,6 +5013,288 @@ async fn run_physical_benchmarks(
         ));
     }
     Ok(lines)
+}
+
+fn benchmark_log_value(line: &str, key: &str) -> Option<String> {
+    line.split_whitespace()
+        .find_map(|field| field.strip_prefix(&format!("{key}=")))
+        .map(ToOwned::to_owned)
+}
+
+fn benchmark_log_line<'a>(contents: &'a str, prefix: &str) -> Option<&'a str> {
+    contents.lines().find(|line| line.contains(prefix))
+}
+
+async fn validate_reused_physical_fixture(
+    args: &LocalMultinodePg18Args,
+    socket_dir: &Path,
+    nodes: &[Node],
+    log_dir: &Path,
+    extension_preflight: &ExtensionPreflight,
+) -> Result<(String, i64)> {
+    let corpus_prefix = args
+        .corpus_prefix
+        .as_deref()
+        .ok_or_else(|| color_eyre::eyre::eyre!("fixture reuse requires corpus_prefix"))?;
+    let scale = corpus_prefix
+        .strip_prefix("ec_real_")
+        .unwrap_or(corpus_prefix);
+    let prior_log_dir = log_dir
+        .parent()
+        .map(|parent| parent.join("counters-off-100k"));
+    let provenance_dirs = prior_log_dir
+        .into_iter()
+        .chain(std::iter::once(log_dir.to_owned()));
+    let contents = provenance_dirs
+        .filter_map(|directory| {
+            let summary_path = directory.join("distann-multinode-summary.log");
+            let log_path = directory.join("distann-local-multinode.log");
+            fs::read_to_string(summary_path)
+                .ok()
+                .or_else(|| fs::read_to_string(log_path).ok())
+        })
+        .next()
+        .ok_or_else(|| {
+            color_eyre::eyre::eyre!(
+                "--reuse-fixture requires an attested benchmark log under {}",
+                log_dir.display()
+            )
+        })?;
+    let provenance = benchmark_log_line(&contents, "physical_benchmark_provenance")
+        .ok_or_else(|| color_eyre::eyre::eyre!("reuse log has no physical provenance line"))?;
+    let build = benchmark_log_line(&contents, "physical_benchmark_build")
+        .ok_or_else(|| color_eyre::eyre::eyre!("reuse log has no physical build line"))?;
+    let expected_sha = &extension_preflight.git_sha;
+    let expected_profile = &extension_preflight.build_profile;
+    let expected_query_sha = {
+        let staged_dir = args
+            .staged_dir
+            .clone()
+            .unwrap_or(repo_root()?.join("data/staged-current"));
+        let query_path = fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_queries.tsv")))?;
+        hex::encode(Sha256::digest(fs::read(query_path)?))
+    };
+    let expected_source_count = {
+        let staged_dir = args
+            .staged_dir
+            .clone()
+            .unwrap_or(repo_root()?.join("data/staged-current"));
+        let corpus_path = fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_corpus.tsv")))?;
+        fs::read_to_string(corpus_path)?.lines().count() as i64
+    };
+    let beam_width = args.beam_width.unwrap_or(4);
+    let expected_seed = args.seed_strategy.as_deref().unwrap_or("head_sample_exact");
+    let expected_head_width = args.head_search_width.unwrap_or((beam_width * 2).max(32));
+    let expected_head_count = args.head_seed_count.unwrap_or(expected_head_width);
+    let expected_neighbor = args.neighbor_score_mode.as_deref().unwrap_or("rabitq");
+    let expected_head_cap = args.head_index_cap.to_string();
+    let expected_head_width = expected_head_width.to_string();
+    let expected_head_count = expected_head_count.to_string();
+    let checks = [
+        ("scale", scale, benchmark_log_value(provenance, "scale")),
+        (
+            "corpus_prefix",
+            corpus_prefix,
+            benchmark_log_value(provenance, "corpus_prefix"),
+        ),
+        (
+            "query_sha256",
+            expected_query_sha.as_str(),
+            benchmark_log_value(provenance, "query_sha256"),
+        ),
+        (
+            "extension_git_sha",
+            expected_sha.as_str(),
+            benchmark_log_value(provenance, "extension_git_sha"),
+        ),
+        (
+            "extension_build_profile",
+            expected_profile.as_str(),
+            benchmark_log_value(provenance, "extension_build_profile"),
+        ),
+        (
+            "head_index_cap",
+            expected_head_cap.as_str(),
+            benchmark_log_value(build, "head_index_cap"),
+        ),
+        (
+            "seed_strategy",
+            expected_seed,
+            benchmark_log_value(build, "seed_strategy"),
+        ),
+        (
+            "head_search_width",
+            expected_head_width.as_str(),
+            benchmark_log_value(build, "head_search_width"),
+        ),
+        (
+            "head_seed_count",
+            expected_head_count.as_str(),
+            benchmark_log_value(build, "head_seed_count"),
+        ),
+        (
+            "neighbor_score_mode",
+            expected_neighbor,
+            benchmark_log_value(build, "neighbor_score_mode"),
+        ),
+        (
+            "stored_neighbor_code_format",
+            "rabitq",
+            benchmark_log_value(build, "stored_neighbor_code_format"),
+        ),
+    ];
+    for (key, expected, actual) in checks {
+        let actual = actual.ok_or_else(|| {
+            color_eyre::eyre::eyre!("reuse provenance is missing required field {key}")
+        })?;
+        if actual != expected {
+            bail!(
+                "--reuse-fixture provenance mismatch for {key}: requested {expected}, existing {actual}"
+            );
+        }
+    }
+    let (coordinator, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, nodes[0].port), tokio_postgres::NoTls)
+            .await
+            .wrap_err("connecting to reused physical fixture")?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let reloptions = coordinator
+        .query_one(
+            "SELECT coalesce(array_to_string(reloptions, ','), '')
+               FROM pg_class WHERE oid = 'public.dm_idx'::regclass",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    let options = reloptions.replace(' ', "");
+    if !options
+        .split(',')
+        .any(|option| option == format!("graph_degree={}", args.graph_degree))
+    {
+        connection_task.abort();
+        bail!(
+            "--reuse-fixture graph_degree mismatch: requested {}, existing reloptions={reloptions}",
+            args.graph_degree
+        );
+    }
+    if !options.contains("neighbor_code_format=rabitq") {
+        connection_task.abort();
+        bail!("--reuse-fixture codec mismatch: existing index is not rabitq");
+    }
+    let physical_corpus = format!("task179_physical_{scale}_corpus");
+    let source_count = coordinator
+        .query_one(
+            &format!("SELECT count(*)::bigint FROM {physical_corpus}"),
+            &[],
+        )
+        .await?
+        .get::<_, i64>(0);
+    connection_task.abort();
+    if source_count != expected_source_count {
+        bail!(
+            "--reuse-fixture row-count mismatch: corpus expects {}, existing {}",
+            expected_source_count,
+            source_count
+        );
+    }
+    Ok((scale.to_owned(), source_count))
+}
+
+async fn drive_reused_physical_fixture(
+    args: &LocalMultinodePg18Args,
+    pg_ctl: &Path,
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+    log_dir: &Path,
+    extension_preflight: &ExtensionPreflight,
+) -> Result<()> {
+    let (scale, source_count) =
+        validate_reused_physical_fixture(args, socket_dir, nodes, log_dir, extension_preflight)
+            .await?;
+    let coordinator_conninfo = conninfo(socket_dir, nodes[0].port);
+    let (coordinator, connection) =
+        tokio_postgres::connect(&coordinator_conninfo, tokio_postgres::NoTls)
+            .await
+            .wrap_err("connecting persistent reused physical coordinator session")?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let fingerprint = coordinator
+        .query_one(
+            "SELECT encode(epoch_fingerprint, 'hex')
+               FROM ec_distann_active_epoch
+              WHERE index_oid = 'public.dm_idx'::regclass::oid",
+            &[],
+        )
+        .await?
+        .get::<_, String>(0);
+    let selector = format!(
+        "ec_distann_epoch_topology('public.dm_idx'::regclass, decode('{fingerprint}', 'hex'))"
+    );
+    let owners = if args.coordinator_outside_roster {
+        &nodes[1..]
+    } else {
+        nodes
+    };
+    let mut published = Vec::with_capacity(owners.len());
+    for node in owners {
+        published.push(physical_topology(psql, socket_dir, node, &selector).await?);
+    }
+    validate_physical_topology("reused", &published, "Published", source_count)?;
+    crate::ecaz_println!(
+        "[distann-multicluster] fixture_decision action=reuse run_dir={} scale={} source_rows={} extension_git_sha={} extension_build_profile={}",
+        nodes[0].data_dir.parent().unwrap_or(nodes[0].data_dir.as_path()).display(),
+        scale,
+        source_count,
+        extension_preflight.git_sha,
+        extension_preflight.build_profile
+    );
+    let benchmark_lines = if args.physical_benchmark {
+        run_physical_benchmarks(
+            args,
+            &coordinator,
+            nodes[0].port,
+            pg_ctl,
+            socket_dir,
+            owners,
+            &published,
+            log_dir,
+            0,
+            0,
+            extension_preflight,
+            None,
+        )
+        .await?
+    } else {
+        Vec::new()
+    };
+    for line in &benchmark_lines {
+        crate::ecaz_println!("[distann-multicluster] {line}");
+    }
+    drop(coordinator);
+    connection_task.abort();
+    let mut summary = format!(
+        "physical_fixture_decision action=reuse scale={scale} source_rows={source_count}\n"
+    );
+    for row in &published {
+        summary.push_str(&format!(
+            "[distann-multicluster] physical_topology phase=reused node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}\n",
+            row.node_id,
+            row.state,
+            row.records,
+            row.rows,
+            row.non_owned_live + row.non_owned_tombstones,
+            row.orphan_records + row.orphan_rows,
+            row.graph_bytes,
+            row.row_bytes,
+            row.directory_bytes,
+            row.control_bytes,
+        ));
+    }
+    for line in &benchmark_lines {
+        summary.push_str(&format!("[distann-multicluster] {line}\n"));
+    }
+    fs::write(log_dir.join("distann-multinode-summary.log"), summary)?;
+    Ok(())
 }
 
 async fn drive_physical_fixture(
@@ -7420,10 +7768,9 @@ mod tests {
         .expect("variants parse");
         assert_eq!(variants[0].materialization_batch_size, 10);
         assert_eq!(variants[1].materialization_batch_size, 10);
-        let eager = parse_benchmark_seed_variants(&[
-            "eager:persisted_head:32:32:rabitq:0".to_owned(),
-        ])
-        .expect("explicit eager variant parses");
+        let eager =
+            parse_benchmark_seed_variants(&["eager:persisted_head:32:32:rabitq:0".to_owned()])
+                .expect("explicit eager variant parses");
         assert_eq!(eager[0].materialization_batch_size, 0);
     }
 
