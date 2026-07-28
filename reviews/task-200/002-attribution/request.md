@@ -2,21 +2,29 @@
 agent: codex
 role: coder
 model: GPT-5
-date: 2026-07-27
-seq: 1
+date: 2026-07-28
+seq: 2
 ---
 
-# Task 200 attribution
+# Task 200 attribution — root cause found
 
-The RSS growth is isolated to the benchmark-only seed-coverage diagnostic.
-The production physical latency path remains flat with stage counters both off
-and on, using one backend for all 300 queries. PostgreSQL’s memory-context
-dump during the standalone coverage statement reached 8.32 GB of backend
-memory, while the production latency backend remained near 260 MB.
+The held-transaction production A1 remains bounded: 300 ordinary physical
+latency queries on one backend stayed at 252,360–259,596 KB RSS. The leak is in
+the benchmark-only owner seed path, not `PhysicalGenerationScan::open`:
 
-No production read-path fix is warranted by this evidence. The benchmark-only
-coverage helper should be bounded or documented separately from production
-latency closeout; the next packet records the regression/closeout decision.
+- one and 200 isolated `PhysicalGenerationScan::open` calls both ended at
+  `TopTransactionContext: 142606336 total`;
+- 20 repeated `owner_scan_seed_candidates` calls reached
+  `TopTransactionContext: 5595201536 total`;
+- the exact leaking operation was pgrx `value::<Vec<u8>>()` on `graph_record`.
+  Its bytea conversion detoasts into the transaction context and retains each
+  copy until commit.
 
-See [`artifacts/attribution-summary.md`](artifacts/attribution-summary.md) and
-the cited reproduction packet for raw series and node-log evidence.
+The fix is implemented in the next packet: read the raw SPI datum and wrap it
+in the repository `DetoastedVarlena` guard, which frees each detoast copy after
+decoding. The attribution endpoints are benchmark-feature-only.
+
+See [`artifacts/physical-open-1.log`](artifacts/physical-open-1.log),
+[`artifacts/physical-open-200.log`](artifacts/physical-open-200.log),
+[`artifacts/owner-seed-20.log`](artifacts/owner-seed-20.log), and
+[`artifacts/attribution-node1-postgres.log`](artifacts/attribution-node1-postgres.log).

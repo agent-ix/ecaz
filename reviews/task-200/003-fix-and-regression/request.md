@@ -2,19 +2,26 @@
 agent: codex
 role: coder
 model: GPT-5
-date: 2026-07-27
-seq: 1
+date: 2026-07-28
+seq: 2
 ---
 
-# Task 200 fix and regression decision
+# Task 200 fix and regression
 
-Attribution does not support a production read-path fix: the required
-one-backend production latency A/B is flat with stage counters off and on.
-The submitted implementation is diagnostic infrastructure only—durable RSS
-series capture plus safe, provenance-checked reuse of lengthy distann
-fixtures. The default build behavior is unchanged.
+The root cause is corrected in code checkpoint `fa84ff3b0`. In
+`RetainedGenerationScan::seed_candidates`, the old
+`value::<Vec<u8>>()` bytea conversion allocated detoast copies in
+`TopTransactionContext` and retained them for the transaction. The fixed path
+reads the raw SPI datum with `SpiTupleTable::get_datum_by_name`, decodes through
+`DetoastedVarlena`, and frees each copy at the end of the row.
 
-The production series and reuse-run validation are cited in the packet-local
-manifest. The benchmark-only coverage helper remains a separate diagnostic
-concern and is not being presented as a production regression or a fabricated
-performance win.
+Definitive regression: 200 coverage calls in one `BEGIN`/`COMMIT` transaction
+completed successfully on the reused 100k fixture. RSS stayed between 402,780
+and 403,300 KB over 7m24s, and the final memory dump reported
+`TopTransactionContext: 142606336 total`; the unfixed 20-call owner arm had
+reached 5,595,201,536 bytes. The packet-local RSS series and SQL/context logs
+are cited in the manifest.
+
+The production A1 held-transaction run is also flat, so no 10/50/100k recall/
+latency/storage matrix is required: the fix is in the benchmark-only
+diagnostic owner seed path and leaves the production read path unchanged.
