@@ -201,6 +201,14 @@ pub(super) fn materialize_chain_from_index_handle(
     let block_count = crate::storage::relation::main_fork_block_count_handle(handle);
     let mut chain = DataPageChain::new(page_size);
     for block_number in FIRST_DATA_BLOCK_NUMBER..block_count {
+        let current_block = chain
+            .pages()
+            .last()
+            .expect("materialized chain always has a first page")
+            .block_number();
+        if current_block < block_number {
+            chain.append_empty_pages((block_number - current_block) as usize);
+        }
         let buffer = LockedBufferGuard::read_main_handle(
             handle,
             block_number,
@@ -217,8 +225,18 @@ pub(super) fn materialize_chain_from_index_handle(
             let visit = buffer.visit_tuple_bytes(tid, "ec_diskann data block", |tuple_bytes| {
                 Ok(tuple_bytes.to_vec())
             })?;
-            if let LockedPageTupleVisit::Present(tuple_bytes) = visit {
-                chain.insert_raw_tuple(tuple_bytes)?;
+            let page = chain
+                .get_page_mut(block_number)
+                .expect("physical block must have a matching materialized page");
+            match visit {
+                LockedPageTupleVisit::Present(tuple_bytes) => {
+                    let materialized_tid = page.insert_existing_raw_tuple(tuple_bytes)?;
+                    debug_assert_eq!(materialized_tid, tid);
+                }
+                LockedPageTupleVisit::Unused => {
+                    let materialized_tid = page.insert_unused_slot()?;
+                    debug_assert_eq!(materialized_tid, tid);
+                }
             }
         }
     }
