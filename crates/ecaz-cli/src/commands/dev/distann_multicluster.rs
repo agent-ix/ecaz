@@ -4084,19 +4084,7 @@ async fn run_coverage_memory_regression(
         .await?
         .get::<_, i32>(0);
     let stop = Arc::new(AtomicBool::new(false));
-    let peak = Arc::new(Mutex::new(
-        crate::commands::bench::latency::MemorySample::default(),
-    ));
     let series = Arc::new(Mutex::new(Vec::new()));
-    let monitor = tokio::spawn(monitor_backend_memory(
-        pid,
-        sample_interval_ms,
-        Arc::clone(&stop),
-        peak,
-        Arc::clone(&series),
-        "coverage-regression".to_owned(),
-        None,
-    ));
 
     let coverage_sql = |call_count: u32| {
         format!(
@@ -4128,22 +4116,38 @@ async fn run_coverage_memory_regression(
             .query_one(&coverage_sql(WARMUP_INVOCATIONS), &[])
             .await?;
         series.lock().await.clear();
+        let peak = Arc::new(Mutex::new(
+            crate::commands::bench::latency::MemorySample::default(),
+        ));
+        let monitor = tokio::spawn(monitor_backend_memory(
+            pid,
+            sample_interval_ms,
+            Arc::clone(&stop),
+            peak,
+            Arc::clone(&series),
+            "coverage-regression".to_owned(),
+            None,
+        ));
         let rows = match coordinator.query_one(&coverage_sql(iterations), &[]).await {
             Ok(row) => row.get::<_, i64>(0),
             Err(error) => {
+                stop.store(true, Ordering::Relaxed);
+                let _ = monitor.await;
                 let _ = coordinator.batch_execute("ROLLBACK").await;
-                return Err(error);
+                return Err(error.into());
             }
         };
+        // Stop sampling before COMMIT resets TopTransactionContext; the
+        // statistic must describe the held-transaction query window only.
+        stop.store(true, Ordering::Relaxed);
+        monitor
+            .await
+            .map_err(|error| color_eyre::eyre::eyre!("RSS monitor task failed: {error}"))??;
         coordinator.batch_execute("COMMIT").await?;
-        Ok::<i64, tokio_postgres::Error>(rows)
+        Ok::<i64, color_eyre::Report>(rows)
     }
     .await;
 
-    stop.store(true, Ordering::Relaxed);
-    monitor
-        .await
-        .map_err(|error| color_eyre::eyre::eyre!("RSS monitor task failed: {error}"))??;
     let points = series.lock().await.clone();
     let rows = result.wrap_err("running Task 200 coverage memory regression")?;
     if rows < i64::from(iterations) {
