@@ -7,8 +7,10 @@ backend (`benchmark-backend-batch-size=0`), 300 timed iterations, 10 warmups,
 and the 250 ms sampler. The observed query below was a pre-latency physical
 recall/coverage query, before the latency child opened its sampler.
 
-The run was stopped after the pre-latency physical query began to consume host
-memory.
+The run was stopped after the benchmark-only
+`ec_distann_physical_seed_coverage_benchmark` query began to consume host
+memory. This is not evidence that the ordinary production CustomScan was the
+caller.
 The same coordinator backend (PID 553229) was sampled read-only with `ps` and
 `pg_stat_activity`:
 
@@ -21,8 +23,9 @@ The same coordinator backend (PID 553229) was sampled read-only with `ps` and
 
 The process was then interrupted and all three exact Task 200 PostgreSQL
 clusters were stopped. No latency or recall result from this incomplete run is
-used as benchmark evidence. The observation establishes that the growth is
-present with stage counters disabled and is not caused by the stage-counter
-reporting path, but it is not latency closeout evidence. A rerun with streaming
-sampler output and the optional pre-latency diagnostics skipped is required to
+used as benchmark evidence. The observation establishes that growth is
+present with stage counters disabled in the benchmark-only coverage statement;
+it does not attribute the growth to the production read path or establish
+that stage-counter reporting is the cause. A rerun with streaming sampler
+output and the optional pre-latency diagnostics skipped is required to
 preserve the requested interval series through a safety stop.

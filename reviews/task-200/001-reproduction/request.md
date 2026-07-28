@@ -2,8 +2,8 @@
 agent: codex
 role: coder
 model: GPT-5
-date: 2026-07-27
-seq: 1
+date: 2026-07-28
+seq: 2
 ---
 
 # Task 200 Phase 1 reproduction
@@ -20,10 +20,13 @@ Production physical latency is flat in both arms:
 - counters on: 300 queries, mean 26.50 ms; RSS 260024→261024 KB over 7817 ms
   (127.93 KB/s)
 
-The large RSS growth is not in the production latency path. The standalone
-benchmark-only `ec_distann_physical_seed_coverage_benchmark` statement grows
-the same backend rapidly; PostgreSQL reported 8.32 GB of backend memory at a
-captured point. Separate coverage statements show the same growth pattern.
+The large RSS growth is in the benchmark-only
+`ec_distann_physical_seed_coverage_benchmark` statement; PostgreSQL reported
+8.32 GB of backend memory at a captured point. The statement text is retained
+in `run-latency-rerun/diagnostic-node1.log`. The old
+`coverage-separate-200.log` artifact is explicitly excluded: its 200 calls
+were sent in one simple-query protocol message and therefore one implicit
+transaction, so it cannot distinguish statement from transaction lifetime.
 Those diagnostics were canceled before the known multi-GB failure point, with
 the result and memory-context logs retained in the packet.
 

@@ -1,0 +1,7 @@
+ ecaz_build_git_sha            | ecaz_build_profile 
+------------------------------------------+--------------------
+ fa84ff3b06bccec2a8f202338003da489a5ca105 | release
+(1 row)
+
+# Query: SELECT ecaz_build_git_sha(), ecaz_build_profile();
+# Host: 127.0.0.1:42080, database postgres, after restarting the reused fixture.

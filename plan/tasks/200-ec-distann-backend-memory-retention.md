@@ -1,7 +1,7 @@
 # Task 200: ec_distann Backend Memory Retention
 
-Status: **in progress** (updated 2026-07-28). Priority: **P1 until the
-in-transaction production test in Phase 3 comes back flat**; P2 after that.
+Status: **complete — root cause fixed and clean held-transaction regression
+passes** (2026-07-28). Priority: P2 after the production A1 came back bounded.
 Phases 1 and 2 have run and several premises in the original filing were wrong —
 see *Established* below before doing any work.
 
@@ -222,6 +222,31 @@ figures are not latency evidence.
 - Recall, graph, head, or codec work.
 - Allocator-level tooling (heaptrack, massif, jemalloc stats) unless
   `pg_log_backend_memory_contexts` proves insufficient, which it has not.
+
+## Closeout record (2026-07-28)
+
+- A1 was rerun against the reused 100k fixture with the committed release
+  extension `fa84ff3b06bccec2a8f202338003da489a5ca105`. Three hundred ordinary
+  production ANN queries ran inside one held transaction; RSS rose during
+  initial setup and plateaued at 260780 KB, with no unbounded per-query growth.
+- A2 attributed the retention to the owner scan call site
+  `RetainedGenerationScan::seed_candidates`, specifically pgrx's
+  `value::<Vec<u8>>()` conversion of `graph_record`; direct `open()` calls were
+  flat while repeated owner scans grew `TopTransactionContext` to
+  5595201536 bytes.
+- The fix in `fa84ff3b0` reads the raw SPI datum and uses the owning
+  `DetoastedVarlena` guard, freeing each detoast copy after row decoding.
+- The clean committed-source regression completed 300 coverage calls in one
+  transaction. RSS slope was +1.42 KB/s with an 828 KB observed range, and the
+  final context was `TopTransactionContext: 142606336 total`.
+- The 10k/50k/100k matrix is waived conditionally because the production read
+  path is unchanged; the fix is confined to the benchmark-only owner-seed
+  diagnostic path. The conditional waiver lapses if that changes.
+- The Task 188 `benchmark_backend_batch_size=5` setting remains only in its
+  immutable historical diagnostic artifact; the active default is zero, and
+  both clean Task 200 A1 and regression runs used one backend without the
+  reconnect workaround. The historical packet was not rewritten, preserving
+  its measurement provenance.
 
 ## References
 

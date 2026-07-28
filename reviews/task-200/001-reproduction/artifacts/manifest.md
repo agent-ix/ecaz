@@ -22,7 +22,11 @@
 | `run-latency-rerun/counters-on-100k/distann-local-multinode.log` | Reuse decision and provenance | `fixture_decision action=reuse`, source rows 100000, unanimous release extension provenance. |
 | `run-latency-rerun/coverage-only.log` | Standalone coverage statement | Backend PID 589846 entered the coverage statement; the statement was canceled after the RSS safety limit. |
 | `run-latency-rerun/diagnostic-node1.log` | PostgreSQL memory-context dumps | At ~6.8 GB RSS, `Grand total: 8323959872 bytes ... 8314784136 used`; the SQL statement is recorded in the node log. |
-| `run-latency-rerun/coverage-separate-200.log` | Separate-statement comparison | 14 separate coverage calls completed before cancellation; the same backend RSS rose from ~1.9 GB to ~3.6 GB in ~32 s. |
 | `run-latency-rerun/reuse-suite-manifest.json` and `reuse-results.jsonl` | Suite provenance/result records | Records the reused run command and normalized result rows. |
 
 The large diagnostic logs are intentionally packet-local. No corpus TSV, PGDATA, or external cluster directory is committed.
+
+`run-latency-rerun/coverage-separate-200.log` is retained but excluded from
+the cited evidence. The node log shows all calls were sent in one simple-query
+protocol message, hence one implicit transaction; it cannot support a claim
+about retention across transaction or statement boundaries.

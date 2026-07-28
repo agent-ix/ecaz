@@ -1,0 +1,170 @@
+2026-07-28 10:52:11.779 PDT [656179] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-28 10:52:11.791 PDT [656179] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-28 10:52:11.791 PDT [656179] LOG:  listening on IPv4 address "127.0.0.1", port 42080
+2026-07-28 10:52:11.798 PDT [656192] LOG:  database system was shut down at 2026-07-28 10:52:06 PDT
+2026-07-28 10:52:11.802 PDT [656179] LOG:  database system is ready to accept connections
+2026-07-28 10:52:25.591 PDT [656293] ERROR:  EC_NODE_DESCRIPTOR: conninfo secret is unavailable
+2026-07-28 10:52:25.591 PDT [656293] STATEMENT:  BEGIN; SELECT count(*) FROM (SELECT repeat_no, q.id, c.* FROM generate_series(1,2) AS repeats(repeat_no) CROSS JOIN task179_physical_100k_queries q CROSS JOIN LATERAL ec_distann_physical_seed_coverage_benchmark('dm_idx'::regclass, q.source, 32, 32) c ORDER BY repeat_no, q.id LIMIT 300) coverage; SELECT pg_log_backend_memory_contexts(pg_backend_pid()); COMMIT;
+2026-07-28 10:52:53.851 PDT [656463] ERROR:  EC_NODE_DESCRIPTOR: conninfo secret is unavailable
+2026-07-28 10:52:53.851 PDT [656463] STATEMENT:  BEGIN; SELECT count(*) FROM (SELECT repeat_no, q.id, c.* FROM generate_series(1,2) AS repeats(repeat_no) CROSS JOIN task179_physical_100k_queries q CROSS JOIN LATERAL ec_distann_physical_seed_coverage_benchmark('dm_idx'::regclass, q.source, 32, 32) c ORDER BY repeat_no, q.id LIMIT 300) coverage; SELECT pg_log_backend_memory_contexts(pg_backend_pid()); COMMIT;
+2026-07-28 10:53:12.956 PDT [656179] LOG:  received fast shutdown request
+2026-07-28 10:53:12.960 PDT [656179] LOG:  aborting any active transactions
+2026-07-28 10:53:12.960 PDT [656179] LOG:  background worker "logical replication launcher" (PID 656207) exited with exit code 1
+2026-07-28 10:53:12.960 PDT [656190] LOG:  shutting down
+2026-07-28 10:53:12.963 PDT [656190] LOG:  checkpoint starting: shutdown immediate
+2026-07-28 10:53:12.986 PDT [656190] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.008 s, sync=0.003 s, total=0.027 s; sync files=2, longest=0.002 s, average=0.002 s; distance=0 kB, estimate=0 kB; lsn=0/B3C18428, redo lsn=0/B3C18428
+2026-07-28 10:53:13.006 PDT [656179] LOG:  database system is shut down
+2026-07-28 10:53:25.274 PDT [656782] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-28 10:53:25.285 PDT [656782] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-28 10:53:25.285 PDT [656782] LOG:  listening on IPv4 address "127.0.0.1", port 42080
+2026-07-28 10:53:25.291 PDT [656789] LOG:  database system was shut down at 2026-07-28 10:53:12 PDT
+2026-07-28 10:53:25.295 PDT [656782] LOG:  database system is ready to accept connections
+2026-07-28 10:58:25.606 PDT [656787] LOG:  checkpoint starting: time
+2026-07-28 10:58:25.625 PDT [656787] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.004 s, sync=0.003 s, total=0.019 s; sync files=2, longest=0.002 s, average=0.002 s; distance=0 kB, estimate=0 kB; lsn=0/B3C18530, redo lsn=0/B3C184D8
+2026-07-28 11:00:53.862 PDT [656937] LOG:  logging memory contexts of PID 656937
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 1; TopMemoryContext: 132256 total in 6 blocks; 27208 free (15 chunks); 105048 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; Operator lookup cache: 24576 total in 2 blocks; 10776 free (3 chunks); 13800 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; CFuncHash: 8192 total in 1 blocks; 576 free (0 chunks); 7616 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; TableSpace cache: 8192 total in 1 blocks; 2112 free (0 chunks); 6080 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; Map from relid to OID of cached composite type: 8192 total in 1 blocks; 2512 free (0 chunks); 5680 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; Type information cache: 24640 total in 2 blocks; 2640 free (0 chunks); 22000 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; Record information cache: 8192 total in 1 blocks; 1600 free (0 chunks); 6592 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; search_path processing cache: 8192 total in 1 blocks; 5408 free (9 chunks); 2784 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; RowDescriptionContext: 8192 total in 1 blocks; 6912 free (0 chunks); 1280 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; MessageContext: 16384 total in 2 blocks; 5896 free (0 chunks); 10488 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; per-parsetree message context: 8192 total in 1 blocks; 640 free (0 chunks); 7552 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; Operator class cache: 8192 total in 1 blocks; 576 free (0 chunks); 7616 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; smgr relation table: 32768 total in 3 blocks; 8624 free (8 chunks); 24144 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; PgStat Shared Ref Hash: 9280 total in 2 blocks; 704 free (0 chunks); 8576 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; PgStat Shared Ref: 16384 total in 5 blocks; 7824 free (3 chunks); 8560 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; PgStat Pending: 32768 total in 7 blocks; 7264 free (14 chunks); 25504 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; TopTransactionContext: 142606336 total in 27 blocks; 3509472 free (87 chunks); 139096864 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; TransactionAbortContext: 32768 total in 1 blocks; 32528 free (0 chunks); 240 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; Portal hash: 8192 total in 1 blocks; 576 free (0 chunks); 7616 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; TopPortalContext: 8192 total in 1 blocks; 7680 free (0 chunks); 512 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; PortalContext: 1024 total in 1 blocks; 616 free (0 chunks); 408 used: <unnamed>
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 4; ExecutorState: 8192 total in 1 blocks; 3560 free (0 chunks); 4632 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 5; printtup: 8192 total in 1 blocks; 7952 free (0 chunks); 240 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 5; ExprContext: 8192 total in 1 blocks; 7952 free (0 chunks); 240 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; Relcache by OID: 16384 total in 2 blocks; 2488 free (2 chunks); 13896 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 2; CacheMemoryContext: 1069936 total in 9 blocks; 105208 free (1 chunks); 964728 used
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1064 free (2 chunks); 2008 used: pg_toast_318935_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 640 free (2 chunks); 1408 used: _ecdz_dir_318929_71717171717141718171717171717171
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 560 free (1 chunks); 2512 used: ec_distann_generation_fingerprint_unique
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 640 free (2 chunks); 1408 used: ec_distann_generation_directory_relid_key
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 640 free (2 chunks); 1408 used: ec_distann_generation_graph_store_relid_key
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 640 free (2 chunks); 1408 used: ec_distann_generation_row_tier_relid_key
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 800 free (1 chunks); 2272 used: ec_distann_generation_pkey
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 848 free (1 chunks); 2224 used: ec_distann_build_participant_one_local
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 4416 total in 3 blocks; 568 free (0 chunks); 3848 used: ec_distann_build_participant__index_oid_logical_index_uuid_key3
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2240 total in 2 blocks; 40 free (0 chunks); 2200 used: ec_distann_build_participant__index_oid_logical_index_uuid_key2
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2240 total in 2 blocks; 40 free (0 chunks); 2200 used: ec_distann_build_participant__index_oid_logical_index_uuid_key1
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2240 total in 2 blocks; 40 free (0 chunks); 2200 used: ec_distann_build_participant__index_oid_logical_index_uuid__key
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2240 total in 2 blocks; 40 free (0 chunks); 2200 used: ec_distann_build_participant_binding_pkey
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1064 free (2 chunks); 2008 used: pg_toast_16930_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1064 free (2 chunks); 2008 used: pg_toast_2619_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2240 total in 2 blocks; 40 free (0 chunks); 2200 used: ec_distann_generation_head_sa_index_oid_logical_index_uuid__key
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2240 total in 2 blocks; 40 free (0 chunks); 2200 used: ec_distann_generation_head_sample_pkey
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 768 free (1 chunks); 2304 used: ec_distann_generation_head_state_pkey
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1064 free (2 chunks); 2008 used: pg_toast_16848_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 4416 total in 3 blocks; 168 free (0 chunks); 4248 used: ec_distann_build_candidate_index_oid_logical_index_uuid_bui_key
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1040 free (1 chunks); 2032 used: ec_distann_build_candidate_pkey
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 880 free (1 chunks); 2192 used: ec_distann_retire_decision_pkey
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 848 free (1 chunks); 2224 used: ec_distann_active_epoch_index_oid_logical_index_uuid_epoch__key
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1144 free (2 chunks); 1928 used: ec_distann_active_epoch_pkey
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1064 free (2 chunks); 2008 used: pg_attrdef_adrelid_adnum_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 1024 total in 1 blocks; 192 free (0 chunks); 832 used: dm_idx
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1064 free (2 chunks); 2008 used: pg_toast_317719_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (1 chunks); 1456 used: pg_index_indrelid_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 928 free (1 chunks); 2144 used: pg_constraint_conrelid_contypid_conname_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 672 free (1 chunks); 1376 used: pg_statistic_ext_relid_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1032 free (1 chunks); 2040 used: pg_db_role_setting_databaseid_rol_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 960 free (1 chunks); 2112 used: pg_opclass_am_name_nsp_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 720 free (3 chunks); 1328 used: pg_foreign_data_wrapper_name_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_enum_oid_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 984 free (2 chunks); 2088 used: pg_class_relname_nsp_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_foreign_server_oid_index
+2026-07-28 11:00:53.862 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_publication_pubname_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 768 free (1 chunks); 2304 used: pg_statistic_relid_att_inh_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 984 free (2 chunks); 2088 used: pg_cast_source_target_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_language_name_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_transform_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 672 free (2 chunks); 1376 used: pg_collation_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3264 total in 3 blocks; 736 free (2 chunks); 2528 used: pg_amop_fam_strat_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_index_indexrelid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1224 free (3 chunks); 1848 used: pg_ts_template_tmplname_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1120 free (1 chunks); 1952 used: pg_ts_config_map_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_opclass_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 720 free (3 chunks); 1328 used: pg_foreign_data_wrapper_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 720 free (3 chunks); 1328 used: pg_publication_namespace_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_event_trigger_evtname_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1224 free (3 chunks); 1848 used: pg_statistic_ext_name_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_publication_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_ts_dict_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_event_trigger_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2240 total in 2 blocks; 152 free (0 chunks); 2088 used: pg_conversion_default_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3264 total in 3 blocks; 816 free (2 chunks); 2448 used: pg_operator_oprname_l_r_n_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1064 free (2 chunks); 2008 used: pg_trigger_tgrelid_tgname_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_extension_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1224 free (3 chunks); 1848 used: pg_enum_typid_label_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_ts_config_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_user_mapping_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1120 free (1 chunks); 1952 used: pg_opfamily_am_name_nsp_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_foreign_table_relid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_type_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_aggregate_fnoid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_constraint_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1224 free (3 chunks); 1848 used: pg_rewrite_rel_rulename_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1224 free (3 chunks); 1848 used: pg_ts_parser_prsname_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1224 free (3 chunks); 1848 used: pg_ts_config_cfgname_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_ts_parser_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1192 free (2 chunks); 1880 used: pg_publication_rel_prrelid_prpubid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_operator_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_namespace_nspname_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_ts_template_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 800 free (1 chunks); 2272 used: pg_amop_opr_fam_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1088 free (2 chunks); 1984 used: pg_default_acl_role_nsp_obj_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1040 free (1 chunks); 2032 used: pg_collation_name_enc_nsp_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_publication_rel_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_range_rngtypid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1224 free (3 chunks); 1848 used: pg_ts_dict_dictname_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 984 free (2 chunks); 2088 used: pg_type_typname_nsp_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_opfamily_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_statistic_ext_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1192 free (2 chunks); 1880 used: pg_statistic_ext_data_stxoid_inh_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_class_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 960 free (1 chunks); 2112 used: pg_proc_proname_args_nsp_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 720 free (3 chunks); 1328 used: pg_partitioned_table_partrelid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_range_rngmultitypid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1224 free (3 chunks); 1848 used: pg_transform_type_lang_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 984 free (2 chunks); 2088 used: pg_attribute_relid_attnum_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_proc_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_language_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 592 free (2 chunks); 1456 used: pg_namespace_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3264 total in 3 blocks; 736 free (2 chunks); 2528 used: pg_amproc_fam_proc_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_foreign_server_name_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1144 free (2 chunks); 1928 used: pg_attribute_relid_attnam_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1192 free (2 chunks); 1880 used: pg_publication_namespace_pnnspid_pnpubid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 2048 total in 2 blocks; 752 free (2 chunks); 1296 used: pg_conversion_oid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1192 free (2 chunks); 1880 used: pg_user_mapping_user_server_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; index info: 3072 total in 2 blocks; 1192 free (2 chunks); 1880 used: pg_subscription_rel_srrelid_srsubid_index
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 2; 17 more child contexts containing 39936 total in 34 blocks; 13744 free (37 chunks); 26192 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 2; LOCALLOCK hash: 16384 total in 2 blocks; 4616 free (2 chunks); 11768 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 2; WAL record construction: 49776 total in 2 blocks; 6384 free (0 chunks); 43392 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 2; PrivateRefCount: 16384 total in 2 blocks; 7672 free (2 chunks); 8712 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 2; MdSmgr: 8192 total in 1 blocks; 5648 free (0 chunks); 2544 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 2; Custom Scan Methods: 16384 total in 2 blocks; 6680 free (3 chunks); 9704 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 2; GUCMemoryContext: 73728 total in 4 blocks; 28680 free (4 chunks); 45048 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 3; GUC hash table: 32768 total in 3 blocks; 8432 free (6 chunks); 24336 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 2; Timezones: 104128 total in 2 blocks; 2640 free (0 chunks); 101488 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  level: 2; ErrorContext: 8192 total in 1 blocks; 7952 free (4 chunks); 240 used
+2026-07-28 11:00:53.863 PDT [656937] LOG:  Grand total: 144745408 bytes in 339 blocks; 3940776 free (374 chunks); 140804632 used
+2026-07-28 11:03:25.914 PDT [656787] LOG:  checkpoint starting: time
+2026-07-28 11:03:25.930 PDT [656787] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.003 s, sync=0.002 s, total=0.017 s; sync files=1, longest=0.002 s, average=0.002 s; distance=1 kB, estimate=1 kB; lsn=0/B3C18A50, redo lsn=0/B3C189F8
+2026-07-28 11:06:10.011 PDT [656782] LOG:  received fast shutdown request
+2026-07-28 11:06:10.015 PDT [656782] LOG:  aborting any active transactions
+2026-07-28 11:06:10.016 PDT [656782] LOG:  background worker "logical replication launcher" (PID 656792) exited with exit code 1
+2026-07-28 11:06:10.016 PDT [656787] LOG:  shutting down
+2026-07-28 11:06:10.018 PDT [656787] LOG:  checkpoint starting: shutdown immediate
+2026-07-28 11:06:10.029 PDT [656787] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.014 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=1 kB; lsn=0/B3C18B00, redo lsn=0/B3C18B00
+2026-07-28 11:06:10.053 PDT [656782] LOG:  database system is shut down
