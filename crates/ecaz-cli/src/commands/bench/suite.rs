@@ -532,6 +532,9 @@ struct DistannLocalMultinodeStep {
     /// the default when this opt-in is absent.
     #[serde(default)]
     reuse_fixture: bool,
+    /// Packet-local provenance directory used to attest a reused fixture.
+    #[serde(default)]
+    reuse_provenance_dir: Option<PathBuf>,
     #[serde(default)]
     log_file: Option<PathBuf>,
     /// Keep only the compact summary as durable evidence. Raw fixture and
@@ -4253,6 +4256,11 @@ fn expand_distann_local_multinode(
     push_opt_path(&mut args, "--pgbin", step.pgbin.as_deref());
     push_opt_path(&mut args, "--artifact-dir", step.artifact_dir.as_deref());
     push_opt_path(&mut args, "--run-dir", step.run_dir.as_deref());
+    push_opt_path(
+        &mut args,
+        "--reuse-provenance-dir",
+        step.reuse_provenance_dir.as_deref(),
+    );
     push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
     push_opt_arg(
         &mut args,
