@@ -1,0 +1,15 @@
+warning: ecaz@0.1.1:   882 | pgstat_hash_hash_key(const void *d, size_t size, void *arg)
+warning: ecaz@0.1.1:       |                                                        ^
+warning: ecaz@0.1.1: 6 warnings generated.
+   Compiling ecaz-cli v0.1.0 (/Users/peter/dev/tqvector/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 25m 58s
+     Running unittests src/main.rs (target/debug/deps/ecaz-637565616cd2a632)
+
+running 4 tests
+test commands::dev::fault::tests::cgroup_roots_must_be_disjoint_and_runtime_must_avoid_evidence_trees ... ok
+test commands::dev::fault::tests::socket_provider_requires_stable_peer_identity ... ok
+test commands::dev::fault::tests::slow_disk_threshold_accepts_boundary_and_rejects_underflow_or_overflow ... ok
+test commands::dev::fault::tests::full_plan_is_unique_and_covers_every_authoritative_surface ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 468 filtered out; finished in 0.00s
+
