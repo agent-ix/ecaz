@@ -1164,7 +1164,7 @@ async fn run_native_local_multinode_pg18(
             .as_ref()
             .map(|artifact_dir| artifact_dir.join("local-multinode.log"))
     });
-    let socket_dir = repo_root.join(format!("target/spire-local-multinode-sockets-{run_id}"));
+    let socket_dir = run_dir.join("sockets");
     let topology = run_dir.join("topology.local.json");
     let work_dir = run_dir.join("work");
     let ecaz_bin = env::current_exe().wrap_err("resolving current ecaz executable")?;

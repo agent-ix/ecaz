@@ -311,6 +311,10 @@ FAULT_PROVIDER_MARKER ?= /tmp/ecaz-fault-provider-$(FAULT_PROVIDER_MODE)-pg18.ma
 FAULT_PROVIDER_ARM_FILE ?=
 FAULT_PROVIDER_PEER ?= tcp:127.0.0.1:39711
 FAULT_ROWS ?= 64
+FAULT_DATABASE ?=
+FAULT_HOST ?=
+FAULT_PORT ?=
+FAULT_CONNECTION_ARGS = $(if $(FAULT_DATABASE),--database $(FAULT_DATABASE)) $(if $(FAULT_HOST),--host $(FAULT_HOST)) $(if $(FAULT_PORT),--port $(FAULT_PORT))
 FAULT_SLOW_DISK_BASELINE_ARG ?=
 FAULT_CGROUP_MEMORY_MAX ?= 512M
 FAULT_CGROUP_ARTIFACT_DIR ?= target/fault-cgroup
@@ -318,6 +322,7 @@ FAULT_CGROUP_RUNTIME_DIR ?= target/fault-cgroup-runtime
 FAULT_DISTANN_REMOTE_ARTIFACT_DIR ?= target/distann-remote-socket-fault
 FAULT_SPIRE_REMOTE_ARTIFACT_DIR ?= target/spire-remote-socket-fault
 FAULT_MUTATION_KIND ?= all
+FAULT_MUTATION_LOG_FILE ?= target/fault-mutation-control.log
 FAULT_FULL_ARTIFACT_DIR ?= target/fault-full
 FAULT_FULL_RUNTIME_DIR ?= target/fault-full-runtime
 FAULT_FULL_LOG_FILE ?= target/fault-full.log
@@ -363,7 +368,7 @@ fault-slow-disk-smoke:
 	cargo run -p ecaz-cli -- dev fault smoke --lane slow-disk $(FAULT_SMOKE_FLAGS) $(FAULT_SLOW_DISK_BASELINE_ARG)
 
 fault-mutation-control:
-	cargo run -p ecaz-cli -- dev fault mutation-control --kind $(FAULT_MUTATION_KIND) --rows $(FAULT_ROWS)
+	cargo run -p ecaz-cli -- $(FAULT_CONNECTION_ARGS) --log-file $(FAULT_MUTATION_LOG_FILE) dev fault mutation-control --kind $(FAULT_MUTATION_KIND) --rows $(FAULT_ROWS)
 
 fault-distann-plan:
 	cargo run -p ecaz-cli -- dev fault plan --am distann
@@ -387,10 +392,10 @@ fault-cgroup-smoke:
 	cargo run -p ecaz-cli -- dev fault cgroup-smoke --memory-max $(FAULT_CGROUP_MEMORY_MAX) --rows $(FAULT_ROWS) --artifact-dir $(FAULT_CGROUP_ARTIFACT_DIR) --runtime-dir $(FAULT_CGROUP_RUNTIME_DIR)
 
 fault-full-plan:
-	cargo run -p ecaz-cli -- --log-file $(FAULT_FULL_PLAN_LOG_FILE) dev fault full --dry-run --rows $(FAULT_ROWS) --provider-latency-ms $(FAULT_PROVIDER_LATENCY_MS) --memory-max $(FAULT_CGROUP_MEMORY_MAX) --cgroup-base-port $(FAULT_FULL_CGROUP_BASE_PORT) --distann-base-port $(FAULT_FULL_DISTANN_BASE_PORT) --spire-coord-port $(FAULT_FULL_SPIRE_COORD_PORT) --artifact-dir $(FAULT_FULL_ARTIFACT_DIR) --runtime-dir $(FAULT_FULL_RUNTIME_DIR)
+	cargo run -p ecaz-cli -- $(FAULT_CONNECTION_ARGS) --log-file $(FAULT_FULL_PLAN_LOG_FILE) dev fault full --dry-run --rows $(FAULT_ROWS) --provider-latency-ms $(FAULT_PROVIDER_LATENCY_MS) --memory-max $(FAULT_CGROUP_MEMORY_MAX) --cgroup-base-port $(FAULT_FULL_CGROUP_BASE_PORT) --distann-base-port $(FAULT_FULL_DISTANN_BASE_PORT) --spire-coord-port $(FAULT_FULL_SPIRE_COORD_PORT) --artifact-dir $(FAULT_FULL_ARTIFACT_DIR) --runtime-dir $(FAULT_FULL_RUNTIME_DIR)
 
 fault-full:
-	cargo run -p ecaz-cli -- --log-file $(FAULT_FULL_LOG_FILE) dev fault full --rows $(FAULT_ROWS) --provider-latency-ms $(FAULT_PROVIDER_LATENCY_MS) --memory-max $(FAULT_CGROUP_MEMORY_MAX) --cgroup-base-port $(FAULT_FULL_CGROUP_BASE_PORT) --distann-base-port $(FAULT_FULL_DISTANN_BASE_PORT) --spire-coord-port $(FAULT_FULL_SPIRE_COORD_PORT) --artifact-dir $(FAULT_FULL_ARTIFACT_DIR) --runtime-dir $(FAULT_FULL_RUNTIME_DIR)
+	cargo run -p ecaz-cli -- $(FAULT_CONNECTION_ARGS) --log-file $(FAULT_FULL_LOG_FILE) dev fault full --rows $(FAULT_ROWS) --provider-latency-ms $(FAULT_PROVIDER_LATENCY_MS) --memory-max $(FAULT_CGROUP_MEMORY_MAX) --cgroup-base-port $(FAULT_FULL_CGROUP_BASE_PORT) --distann-base-port $(FAULT_FULL_DISTANN_BASE_PORT) --spire-coord-port $(FAULT_FULL_SPIRE_COORD_PORT) --artifact-dir $(FAULT_FULL_ARTIFACT_DIR) --runtime-dir $(FAULT_FULL_RUNTIME_DIR)
 
 ffi-leak-smoke: fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke
 

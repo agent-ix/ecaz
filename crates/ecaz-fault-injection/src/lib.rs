@@ -1050,6 +1050,7 @@ mod tests {
         );
         let run = |path_match: &str| {
             let _ = std::fs::remove_file(&marker);
+            let started = std::time::Instant::now();
             let output = Command::new("/bin/cat")
                 .arg("/etc/hosts")
                 .env("LD_PRELOAD", provider)
@@ -1057,26 +1058,38 @@ mod tests {
                 .env("ECAZ_FAULT_PROVIDER_MODE", "slow-disk")
                 .env("ECAZ_FAULT_PROVIDER_MATCH", path_match)
                 .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
-                .env("ECAZ_FAULT_PROVIDER_LATENCY_MS", "1")
+                .env("ECAZ_FAULT_PROVIDER_LATENCY_MS", "500")
                 .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
                 .output()
                 .expect("run provider-backed cat");
+            let elapsed = started.elapsed();
             assert!(output.status.success(), "slow disk must not fail the read");
-            std::fs::read_to_string(&marker).expect("read provider marker")
+            (
+                std::fs::read_to_string(&marker).expect("read provider marker"),
+                elapsed,
+            )
         };
 
-        let unmatched = run("/definitely/not/the/hosts/path");
+        let (unmatched, unmatched_elapsed) = run("/definitely/not/the/hosts/path");
         assert!(
             !unmatched.contains("fault=1"),
             "unmatched path was delayed: {unmatched}"
         );
-        let matched = run("/etc/hosts");
+        assert!(
+            unmatched_elapsed < std::time::Duration::from_millis(500),
+            "unmatched path took {unmatched_elapsed:?}, expected less than injected latency"
+        );
+        let (matched, matched_elapsed) = run("/etc/hosts");
         let _ = std::fs::remove_file(&marker);
         assert!(
             matched.contains("fault=1")
                 && matched.contains("mode=slow-disk")
                 && matched.contains("target=/etc/hosts"),
             "unexpected marker: {matched}"
+        );
+        assert!(
+            matched_elapsed >= std::time::Duration::from_millis(500),
+            "matched path took {matched_elapsed:?}, expected at least the injected latency"
         );
     }
 

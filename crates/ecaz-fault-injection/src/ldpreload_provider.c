@@ -27,9 +27,12 @@ struct open_how {
 };
 
 static int enabled(void) {
+    int saved_errno = errno;
     const char *value = getenv("ECAZ_FAULT_PROVIDER_ENABLE");
+    int result = 0;
     if (!value || strcmp(value, "1") != 0) {
-        return 0;
+        errno = saved_errno;
+        return result;
     }
     /*
      * Long-lived postmasters need to finish remote fixture setup before a
@@ -38,7 +41,9 @@ static int enabled(void) {
      * injection without restarting the postmaster.
      */
     const char *arm_file = getenv("ECAZ_FAULT_PROVIDER_ARM_FILE");
-    return !arm_file || !*arm_file || access(arm_file, F_OK) == 0;
+    result = !arm_file || !*arm_file || access(arm_file, F_OK) == 0;
+    errno = saved_errno;
+    return result;
 }
 
 static int mode_is(const char *mode) {
@@ -86,6 +91,7 @@ static void record_fault_event(
     const char *target,
     unsigned long long count,
     int errnum) {
+    int saved_errno = errno;
     char line[512];
     int len = snprintf(
         line,
@@ -103,9 +109,11 @@ static void record_fault_event(
         }
         append_marker_line(line, (size_t)len);
     }
+    errno = saved_errno;
 }
 
 static int fd_target_matches(int fd, char *target, size_t target_size) {
+    int saved_errno = errno;
     char link_path[64];
     snprintf(link_path, sizeof(link_path), "/proc/self/fd/%d", fd);
     ssize_t len = readlink(link_path, target, target_size - 1);
@@ -113,10 +121,14 @@ static int fd_target_matches(int fd, char *target, size_t target_size) {
         if (target_size > 0) {
             target[0] = '\0';
         }
-        return path_matches("");
+        int result = path_matches("");
+        errno = saved_errno;
+        return result;
     }
     target[len] = '\0';
-    return path_matches(target);
+    int result = path_matches(target);
+    errno = saved_errno;
+    return result;
 }
 
 static int peer_target_matches(int fd, char *target, size_t target_size) {

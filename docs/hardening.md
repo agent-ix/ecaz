@@ -492,13 +492,18 @@ sessions, relation/advisory locks, prepared transactions, optional
 - To run a live probe, clear the dry-run flag, for example:
   `make fault-timeout-smoke FAULT_SMOKE_FLAGS=`.
 - `make fault-full-plan` prints the authoritative 116-case aggregate without
-  touching PostgreSQL. It is the safe planning surface on macOS and other
-  hosts without Linux provider/cgroup prerequisites.
+  touching PostgreSQL.
 - `make fault-full` is live-only and does not inherit `FAULT_SMOKE_FLAGS`.
-  It preflights Linux, the built LD_PRELOAD provider, cgroup v2, the user
+  Set `FAULT_DATABASE`, `FAULT_HOST`, and `FAULT_PORT` as Make parameters when
+  the target PG18 connection differs from the CLI defaults; this keeps the
+  operator invocation under the stable `make fault-full` approval surface.
+  On macOS it executes the 49 host-independent local smoke and mutation cases,
+  emits explicit Linux-only phase skips for the remaining 67 cases, and
+  reports `live_authority=partial executed=49 skipped=67`. On Linux it
+  additionally preflights the built LD_PRELOAD provider, cgroup v2, the user
   systemd manager, the installed PG18 extension, and disjoint empty
-  evidence/runtime roots before executing. The aggregate covers all seven
-  fixtures across local smoke and mutation lanes,
+  evidence/runtime roots before executing all 116 cases. The aggregate covers
+  all seven fixtures across local smoke and mutation lanes,
   exact heap/index/WAL/temp provider cases, DistANN TCP and SPIRE named-Unix
   reset/slow drills, and seven cgroup OOM cases. Provider cases are armed only
   after restart and are disarmed before restore. The final gate captures the
@@ -507,6 +512,9 @@ sessions, relation/advisory locks, prepared transactions, optional
   aggregate output outside the initially empty artifact root; cgroup, DistANN,
   and SPIRE base ports are separately configurable through the
   `FAULT_FULL_*_PORT` variables.
+  PostgreSQL I/O and WAL baselines are captured before each applicable lane;
+  when a statistics view is genuinely unavailable the log records an explicit
+  baseline-absent skip instead of presenting a synthetic delta.
 - `ecaz dev fault provider-env` prints the LD_PRELOAD environment for the
   built-in Linux provider. That provider can inject matched-path `EIO` reads,
   matched-path `ENOSPC` writes/creates/fsyncs, slow-disk latency, and
@@ -550,6 +558,7 @@ sessions, relation/advisory locks, prepared transactions, optional
   fault, requires that identical probe to pass, and checks shared
   postconditions. Use `FAULT_MUTATION_KIND=cancel-unexpected-palloc` or
   `FAULT_MUTATION_KIND=memory-unrecovered-palloc` for one control.
+  `FAULT_MUTATION_LOG_FILE` selects its durable output log.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, `ec_spire`, and all three `ec_distann` codec shapes, then directly exercises cancellation and

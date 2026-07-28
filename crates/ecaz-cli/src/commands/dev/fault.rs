@@ -997,6 +997,7 @@ async fn run_cgroup_recover(args: CgroupRecoverArgs) -> Result<()> {
     let conn = isolated_fault_connection(&socket_dir, args.port);
     let client = connect_isolated_fault(&conn, "cgroup recovery").await?;
     client.simple_query("SELECT 1").await?;
+    let postcondition_baseline = capture_postcondition_baseline(&conn, "cgroup-recovery").await?;
     let index = ecaz_fault_injection::workload_index(fixture);
     let index_state = client
         .query_one(
@@ -1035,7 +1036,7 @@ async fn run_cgroup_recover(args: CgroupRecoverArgs) -> Result<()> {
         .await
         .wrap_err_with(|| format!("running recovered {} AM scan", fixture.as_str()))?;
     drop(client);
-    assert_postconditions(&conn, FaultLane::Memory, None, None).await?;
+    assert_postconditions(&conn, FaultLane::Memory, postcondition_baseline).await?;
     guard.stop().await?;
     crate::ecaz_println!(
         "[fault] cgroup_recovery am={} postmaster_started=true query_usable=true expected_rows={} recovered_rows={} index_exists=true index_valid=true index_ready=true am_scan=true shared_postconditions=true clean_stop=true",
@@ -1400,20 +1401,17 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
         .collect::<Vec<_>>();
     print_cases(&cases);
     print_leak_probes();
-    let pg_stat_io_before = if args.dry_run {
+    let postcondition_baseline = if args.dry_run {
         None
     } else {
-        capture_pg_stat_io_total(conn).await?
-    };
-    let pg_stat_wal_before = if args.dry_run {
-        None
-    } else {
-        capture_pg_stat_wal_snapshot(conn).await?
+        Some(capture_postcondition_baseline(conn, "smoke").await?)
     };
 
     if args.dry_run {
         return Ok(());
     }
+    let postcondition_baseline =
+        postcondition_baseline.expect("live smoke captures postcondition baseline");
 
     match lane {
         FaultLane::Io => {
@@ -1439,19 +1437,19 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                 );
                 return Ok(());
             }
-            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
+            assert_postconditions(conn, lane, postcondition_baseline).await
         }
         FaultLane::Cancel => {
             run_cancel_probe(conn, args.rows, &fixtures).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
+            assert_postconditions(conn, lane, postcondition_baseline).await
         }
         FaultLane::Timeout => {
             run_timeout_probe(conn, args.rows, &fixtures).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
+            assert_postconditions(conn, lane, postcondition_baseline).await
         }
         FaultLane::LockTimeout => {
             run_lock_timeout_probe(conn, args.rows, &fixtures).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
+            assert_postconditions(conn, lane, postcondition_baseline).await
         }
         FaultLane::Resource => {
             let provider_marker = args
@@ -1470,11 +1468,11 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                     )?;
                 }
             }
-            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
+            assert_postconditions(conn, lane, postcondition_baseline).await
         }
         FaultLane::Memory => {
             run_memory_probe(conn, args.rows, &fixtures).await?;
-            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
+            assert_postconditions(conn, lane, postcondition_baseline).await
         }
         FaultLane::SlowDisk => {
             let marker = read_provider_marker(args.provider_marker.as_deref(), lane)?;
@@ -1499,7 +1497,7 @@ async fn run_smoke(conn: &ConnectionOptions, args: SmokeArgs) -> Result<()> {
                 &provider_path_match_from_marker(&marker)?,
                 "slow-disk timing",
             )?;
-            assert_postconditions(conn, lane, pg_stat_io_before, pg_stat_wal_before).await
+            assert_postconditions(conn, lane, postcondition_baseline).await
         }
     }
 }
@@ -1669,6 +1667,7 @@ async fn run_mutation_control(conn: &ConnectionOptions, args: MutationControlArg
     if args.rows <= 0 {
         bail!("--rows must be >= 1");
     }
+    let postcondition_baseline = capture_postcondition_baseline(conn, "mutation-control").await?;
     let fixtures = selected_fixtures(args.am, args.distann_codec)?;
     prepare_workloads(conn, args.rows, &fixtures).await?;
 
@@ -1685,7 +1684,7 @@ async fn run_mutation_control(conn: &ConnectionOptions, args: MutationControlArg
         run_memory_unrecovered_palloc_control(conn, &fixtures).await?;
     }
 
-    assert_postconditions(conn, FaultLane::Memory, None, None).await?;
+    assert_postconditions(conn, FaultLane::Memory, postcondition_baseline).await?;
     crate::ecaz_println!(
         "[fault] mutation_control_complete kind={:?} fixtures={} clean_postconditions=true",
         args.kind,
@@ -1849,6 +1848,14 @@ fn full_plan_cases() -> Vec<FullPlanCase> {
 async fn run_full(conn: &ConnectionOptions, args: FullArgs) -> Result<()> {
     validate_full_args(&args)?;
     let cases = full_plan_cases();
+    let local_cases = cases.iter().filter(|case| case.phase == "local").count();
+    let mutation_cases = cases.iter().filter(|case| case.phase == "mutation").count();
+    let provider_cases = cases.iter().filter(|case| case.phase == "provider").count();
+    let remote_socket_cases = cases
+        .iter()
+        .filter(|case| case.phase == "remote-socket")
+        .count();
+    let cgroup_cases = cases.iter().filter(|case| case.phase == "cgroup").count();
     for (ordinal, case) in cases.iter().enumerate() {
         crate::ecaz_println!(
             "[fault] full_case ordinal={} id={} phase={} fixture={} fault={} expected=\"{}\"",
@@ -1861,10 +1868,14 @@ async fn run_full(conn: &ConnectionOptions, args: FullArgs) -> Result<()> {
         );
     }
     crate::ecaz_println!(
-        "[fault] full_plan cases={} fixtures={} provider_cases={} remote_socket_cases=4 cgroup_cases=7 dry_run={}",
+        "[fault] full_plan cases={} fixtures={} local_cases={} mutation_cases={} provider_cases={} remote_socket_cases={} cgroup_cases={} dry_run={}",
         cases.len(),
         FaultFixture::ALL.len(),
-        cases.iter().filter(|case| case.phase == "provider").count(),
+        local_cases,
+        mutation_cases,
+        provider_cases,
+        remote_socket_cases,
+        cgroup_cases,
         args.dry_run
     );
     if args.dry_run {
@@ -1874,7 +1885,6 @@ async fn run_full(conn: &ConnectionOptions, args: FullArgs) -> Result<()> {
         return Ok(());
     }
 
-    require_full_host(&args).await?;
     let repo = repo_root()?;
     let artifact_root = resolve_future_path(&args.artifact_dir)?;
     let runtime_root = resolve_future_path(&args.runtime_dir)?;
@@ -1904,38 +1914,69 @@ async fn run_full(conn: &ConnectionOptions, args: FullArgs) -> Result<()> {
     let mut local_conn = conn.clone();
     local_conn.host = Some(pgrx_home.to_string_lossy().to_string());
     local_conn.port = Some(port);
-    let install = find_pgrx_install(args.pg, &pgrx_home)?;
-    assert_fault_install_ready(&install)?;
+    let linux_phases = cfg!(target_os = "linux");
+    if linux_phases {
+        let install = find_pgrx_install(args.pg, &pgrx_home)?;
+        assert_fault_install_ready(&install)?;
+    }
     let postmaster_log = pgrx_home.join(format!("{}.log", args.pg));
     let postmaster_log_start = fs::metadata(&postmaster_log)
         .map(|metadata| metadata.len())
         .unwrap_or(0);
+    let final_baseline = capture_postcondition_baseline(&local_conn, "fault-full-final").await?;
+    if linux_phases {
+        require_full_host(&args).await?;
+    } else {
+        for (phase, count) in [
+            ("provider", provider_cases),
+            ("remote-socket", remote_socket_cases),
+            ("cgroup", cgroup_cases),
+        ] {
+            crate::ecaz_println!(
+                "[fault] full_phase_skipped phase={phase} reason=linux-only cases={count}"
+            );
+        }
+    }
 
     let execution_result = async {
         run_full_local_phase(&local_conn, args.rows).await?;
-        run_full_provider_phase(&local_conn, &args, &pgrx_home, port, &artifact_root).await?;
-        run_full_remote_socket_phase(&args, &pgrx_home, &artifact_root, &runtime_root).await?;
-        run_cgroup_smoke(CgroupSmokeArgs {
-            pg: args.pg,
-            pgrx_home: Some(pgrx_home.clone()),
-            memory_max: args.memory_max.clone(),
-            rows: args.rows,
-            artifact_dir: artifact_root.join("cgroup"),
-            runtime_dir: runtime_root.join("cgroup"),
-            base_port: args.cgroup_base_port,
-            am: None,
-            distann_codec: None,
-        })
-        .await
+        if linux_phases {
+            run_full_provider_phase(&local_conn, &args, &pgrx_home, port, &artifact_root).await?;
+            run_full_remote_socket_phase(&args, &pgrx_home, &artifact_root, &runtime_root).await?;
+            run_cgroup_smoke(CgroupSmokeArgs {
+                pg: args.pg,
+                pgrx_home: Some(pgrx_home.clone()),
+                memory_max: args.memory_max.clone(),
+                rows: args.rows,
+                artifact_dir: artifact_root.join("cgroup"),
+                runtime_dir: runtime_root.join("cgroup"),
+                base_port: args.cgroup_base_port,
+                am: None,
+                distann_codec: None,
+            })
+            .await?;
+        }
+        Ok(())
     }
     .await;
     let log_result =
         capture_and_assert_full_logs(&postmaster_log, postmaster_log_start, &artifact_root);
-    let cleanup_result = assert_postconditions(&local_conn, FaultLane::Memory, None, None).await;
+    let cleanup_result =
+        assert_postconditions(&local_conn, FaultLane::Memory, final_baseline).await;
     assert_full_finalization(execution_result, log_result, cleanup_result)?;
+    let (authority, executed, skipped) = if linux_phases {
+        ("true", cases.len(), 0)
+    } else {
+        (
+            "partial",
+            local_cases + mutation_cases,
+            provider_cases + remote_socket_cases + cgroup_cases,
+        )
+    };
     crate::ecaz_println!(
-        "[fault] full_complete live_authority=true cases={} fixtures=7 no_panic=true shared_postconditions=true artifact_dir={}",
+        "[fault] full_complete live_authority={authority} executed={executed} skipped={skipped} cases={} fixtures={} no_panic=true shared_postconditions=true artifact_dir={}",
         cases.len(),
+        FaultFixture::ALL.len(),
         artifact_root.display()
     );
     Ok(())
@@ -2117,10 +2158,23 @@ async fn run_full_provider_case(
         FullProviderPath::Temp => "pgsql_tmp".to_owned(),
     };
     let baseline_ms = if matches!(mode, ProviderModeArg::SlowDisk) {
-        Some(measure_disk_workload(conn, &[fixture]).await?)
+        run_provider_restore(ProviderRestoreArgs {
+            pg: args.pg,
+            port: Some(port),
+            pgrx_home: Some(pgrx_home.to_path_buf()),
+        })
+        .await
+        .wrap_err_with(|| format!("starting provider-off baseline for {case_id}"))?;
+        let baseline_ms = measure_disk_workload(conn, &[fixture]).await?;
+        crate::ecaz_println!(
+            "[fault] full_provider_baseline id={case_id} provider=off restart_matched=true baseline_ms={baseline_ms}"
+        );
+        Some(baseline_ms)
     } else {
         None
     };
+    let postcondition_baseline =
+        capture_postcondition_baseline(conn, &format!("provider-{case_id}")).await?;
     let marker = case_dir.join("provider.marker");
     let arm_file = case_dir.join("provider.arm");
     let restart_result = run_provider_restart(ProviderRestartArgs {
@@ -2206,7 +2260,7 @@ async fn run_full_provider_case(
         return Err(error).wrap_err_with(|| format!("restoring after provider case {case_id}"));
     }
     run_result.wrap_err_with(|| format!("running provider case {case_id}"))?;
-    assert_postconditions(conn, FaultLane::Io, None, None)
+    assert_postconditions(conn, FaultLane::Io, postcondition_baseline)
         .await
         .wrap_err_with(|| format!("postconditions after provider case {case_id}"))?;
     crate::ecaz_println!(
@@ -2411,35 +2465,73 @@ fn capture_and_assert_full_logs(
     start: u64,
     artifact_root: &Path,
 ) -> Result<()> {
-    let bytes = fs::read(postmaster_log)
-        .wrap_err_with(|| format!("reading {}", postmaster_log.display()))?;
-    let start = usize::try_from(start)
-        .unwrap_or(usize::MAX)
-        .min(bytes.len());
     let main_tail = artifact_root.join("main-postmaster.log");
-    fs::write(&main_tail, &bytes[start..])
-        .wrap_err_with(|| format!("writing {}", main_tail.display()))?;
+    let mut failures = Vec::new();
+    match fs::read(postmaster_log) {
+        Ok(bytes) => {
+            let start = usize::try_from(start)
+                .unwrap_or(usize::MAX)
+                .min(bytes.len());
+            if let Err(error) = fs::write(&main_tail, &bytes[start..]) {
+                failures.push(format!(
+                    "write_error path={} error={error}",
+                    main_tail.display()
+                ));
+            }
+        }
+        Err(error) => failures.push(format!(
+            "read_error path={} error={error}",
+            postmaster_log.display()
+        )),
+    }
     let mut logs = Vec::new();
-    collect_log_files(artifact_root, &mut logs)?;
+    if let Err(error) = collect_log_files(artifact_root, &mut logs) {
+        failures.push(format!(
+            "walk_error path={} error={error:#}",
+            artifact_root.display()
+        ));
+    }
+    logs.sort();
     for log in &logs {
-        let content =
-            fs::read_to_string(log).wrap_err_with(|| format!("reading {}", log.display()))?;
-        if content.lines().any(|line| line.contains("PANIC:")) {
-            bail!("fault-full found postmaster PANIC in {}", log.display());
+        match fs::read(log) {
+            Ok(bytes) => {
+                let content = String::from_utf8_lossy(&bytes);
+                if content.lines().any(|line| line.contains("PANIC:")) {
+                    failures.push(format!("panic path={}", log.display()));
+                }
+            }
+            Err(error) => {
+                failures.push(format!("read_error path={} error={error}", log.display()));
+            }
         }
     }
+    let result = if failures.is_empty() { "PASS" } else { "FAIL" };
+    let failure_lines = failures
+        .iter()
+        .map(|failure| format!("failure={failure}\n"))
+        .collect::<String>();
     fs::write(
         artifact_root.join("no-panic-audit.log"),
         format!(
-            "postmaster_logs_scanned={}\nresult=PASS\npattern=PANIC:\n",
-            logs.len()
+            "postmaster_logs_scanned={}\nresult={result}\npattern=PANIC:\n{failure_lines}",
+            logs.len(),
         ),
     )?;
     crate::ecaz_println!(
-        "[fault] full_no_panic logs_scanned={} result=pass",
-        logs.len()
+        "[fault] full_no_panic logs_scanned={} result={} failures={}",
+        logs.len(),
+        result.to_ascii_lowercase(),
+        failures.len()
     );
-    Ok(())
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        bail!(
+            "fault-full postmaster log audit found {} failure(s); inspect {}",
+            failures.len(),
+            artifact_root.join("no-panic-audit.log").display()
+        )
+    }
 }
 
 fn collect_log_files(root: &Path, logs: &mut Vec<PathBuf>) -> Result<()> {
@@ -2489,6 +2581,7 @@ async fn run_cancel_unexpected_palloc_control(
     fixtures: &[FaultFixture],
 ) -> Result<()> {
     const SETUP: &str = "SELECT ecaz_fault_reset_palloc_counter(); SET ecaz.fault_palloc_nth = 1;";
+    let postcondition_baseline = capture_postcondition_baseline(conn, "cancel-mutation").await?;
     for &fixture in fixtures {
         let result = run_backend_interrupt_case(
             conn,
@@ -2523,7 +2616,7 @@ async fn run_cancel_unexpected_palloc_control(
             }
         }
     }
-    assert_postconditions(conn, FaultLane::Cancel, None, None).await
+    assert_postconditions(conn, FaultLane::Cancel, postcondition_baseline).await
 }
 
 async fn run_memory_unrecovered_palloc_control(
@@ -2531,6 +2624,8 @@ async fn run_memory_unrecovered_palloc_control(
     fixtures: &[FaultFixture],
 ) -> Result<()> {
     for &fixture in fixtures {
+        let postcondition_baseline =
+            capture_postcondition_baseline(conn, "memory-mutation").await?;
         let worker = connect_fault(conn, "mutation-memory-unrecovered").await?;
         worker
             .batch_execute(
@@ -2579,7 +2674,7 @@ async fn run_memory_unrecovered_palloc_control(
                 )
             })?;
         drop(worker);
-        assert_postconditions(conn, FaultLane::Memory, None, None)
+        assert_postconditions(conn, FaultLane::Memory, postcondition_baseline)
             .await
             .wrap_err_with(|| {
                 format!(
@@ -3300,10 +3395,15 @@ async fn run_memory_oom_kill_case(
         .await?
         .get::<_, i32>(0);
     let label = format!("memory oom-kill {} {workload}", am.as_str());
+    // Keep the backend alive after a fast workload so the OOM-proxy SIGKILL
+    // remains deterministic on fast local hosts. Use a separate round trip so
+    // a completed workload commits before the hold; this lane does not claim
+    // that the signal lands in an AM critical section.
     let sql = sql.to_owned();
     let worker_task = tokio::spawn(async move {
+        worker.batch_execute(&sql).await?;
         worker
-            .batch_execute(&sql)
+            .batch_execute("SELECT pg_sleep(10)")
             .await
             .map_err(color_eyre::Report::from)
     });
@@ -3311,7 +3411,7 @@ async fn run_memory_oom_kill_case(
     let delay_ms = oom_kill_delay_ms();
     tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
     crate::ecaz_println!(
-        "[fault] {label} sigkill_pid={pid} delay_ms={delay_ms} timing_semantics=probability-tuning-not-critical-section-proof"
+        "[fault] {label} sigkill_pid={pid} delay_ms={delay_ms} timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof"
     );
     send_sigkill(pid).await?;
 
@@ -3612,8 +3712,7 @@ async fn connect_fault(conn: &ConnectionOptions, label: &str) -> Result<tokio_po
 async fn assert_postconditions(
     conn: &ConnectionOptions,
     lane: FaultLane,
-    pg_stat_io_before: Option<i64>,
-    pg_stat_wal_before: Option<PgStatWalSnapshot>,
+    baseline: PostconditionBaseline,
 ) -> Result<()> {
     tokio::time::sleep(std::time::Duration::from_millis(25)).await;
     let client = connect_fault(conn, "postcondition").await?;
@@ -3625,14 +3724,9 @@ async fn assert_postconditions(
         }
     }
     assert_pg_buffercache_fixture_pins(&client, lane).await?;
-    assert_pg_stat_io_non_decreasing(&client, lane, pg_stat_io_before).await?;
-    assert_pg_stat_wal_non_decreasing(&client, lane, pg_stat_wal_before).await?;
+    assert_pg_stat_io_non_decreasing(&client, lane, baseline.pg_stat_io).await?;
+    assert_pg_stat_wal_non_decreasing(&client, lane, baseline.pg_stat_wal).await?;
     Ok(())
-}
-
-async fn capture_pg_stat_io_total(conn: &ConnectionOptions) -> Result<Option<i64>> {
-    let client = connect_fault(conn, "precondition").await?;
-    pg_stat_io_total(&client).await
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -3641,11 +3735,33 @@ struct PgStatWalSnapshot {
     bytes: i64,
 }
 
-async fn capture_pg_stat_wal_snapshot(
+#[derive(Clone, Copy, Debug)]
+struct PostconditionBaseline {
+    pg_stat_io: Option<i64>,
+    pg_stat_wal: Option<PgStatWalSnapshot>,
+}
+
+async fn capture_postcondition_baseline(
     conn: &ConnectionOptions,
-) -> Result<Option<PgStatWalSnapshot>> {
-    let client = connect_fault(conn, "wal-precondition").await?;
-    pg_stat_wal_snapshot(&client).await
+    scope: &str,
+) -> Result<PostconditionBaseline> {
+    let client = connect_fault(conn, &format!("{scope}-precondition")).await?;
+    let pg_stat_io = pg_stat_io_total(&client).await?;
+    let pg_stat_wal = pg_stat_wal_snapshot(&client).await?;
+    if pg_stat_io.is_none() {
+        crate::ecaz_println!(
+            "[fault] pg_stat_io unavailable scope={scope} reason=view-or-columns-missing"
+        );
+    }
+    if pg_stat_wal.is_none() {
+        crate::ecaz_println!(
+            "[fault] pg_stat_wal unavailable scope={scope} reason=view-or-columns-missing"
+        );
+    }
+    Ok(PostconditionBaseline {
+        pg_stat_io,
+        pg_stat_wal,
+    })
 }
 
 async fn assert_pg_buffercache_fixture_pins(
@@ -3707,7 +3823,9 @@ async fn assert_pg_stat_io_non_decreasing(
     before: Option<i64>,
 ) -> Result<()> {
     let Some(before) = before else {
-        crate::ecaz_println!("[fault] pg_stat_io unavailable; skipping io counter probe");
+        crate::ecaz_println!(
+            "[fault] pg_stat_io_baseline_absent scope=assert_postconditions lane={lane} action=skip"
+        );
         return Ok(());
     };
     let Some(after) = pg_stat_io_total(client).await? else {
@@ -3737,7 +3855,9 @@ async fn assert_pg_stat_wal_non_decreasing(
     before: Option<PgStatWalSnapshot>,
 ) -> Result<()> {
     let Some(before) = before else {
-        crate::ecaz_println!("[fault] pg_stat_wal unavailable; skipping wal counter probe");
+        crate::ecaz_println!(
+            "[fault] pg_stat_wal_baseline_absent scope=assert_postconditions lane={lane} action=skip"
+        );
         return Ok(());
     };
     let Some(after) = pg_stat_wal_snapshot(client).await? else {
