@@ -1,7 +1,9 @@
 # Task 200: ec_distann Backend Memory Retention
 
-Status: **proposed** (2026-07-27). Priority: P1 — severity is unknown and the
-plausible worst case is a production defect.
+Status: **in progress** (updated 2026-07-28). Priority: **P1 until the
+in-transaction production test in Phase 3 comes back flat**; P2 after that.
+Phases 1 and 2 have run and several premises in the original filing were wrong —
+see *Established* below before doing any work.
 
 ## Why
 
@@ -9,121 +11,229 @@ During the Task 188 packet-006 rerun, a PostgreSQL backend serving the repeated
 physical query phase grew to approximately **52 GB RSS** and was still climbing
 when the run was terminated to protect the host
 (`reviews/task-188/006-batch10-stage-counters/artifacts/run/rerun-20260727/outcome.md`).
-Over at most 60 queries that is on the order of **a gigabyte retained per
-query** — unbounded per-query growth, not a large working set.
+Task 200's own Phase 1 hit the same wall at **14.5 GB** and was also killed.
+
+Two runs have now been destroyed by this. That is the reason the task exists,
+and it remains true regardless of which code path turns out to be responsible.
 
 Task 188 worked around it by reconnecting the benchmark backend every five
 queries, which was the right call to finish the diagnostic but leaves the defect
-unexamined. The workaround also means nothing in the current benchmark path will
-surface a recurrence.
+unexamined.
 
-The growth occurred while executing the ordinary semantic ANN SQL through the
-coordinator's CustomScan — the production read path — not a benchmark-only
-`pg_extern`. It is therefore **not** the same mechanism as the Task 185
-diagnostic-memory fixes (`df89b5726`, `c83ea6ea8`), which bounded
-`#[cfg]`-gated functions that do not exist in a production build.
+## Established (2026-07-28) — do not re-derive
 
-The measurement was taken with `--distann-stage-counters` enabled and the same
-loop has never been run with counters off, so the observation is confounded.
-Resolving that confound is the first job.
+Evidence: `reviews/task-200/001-reproduction/`, `002-attribution/`,
+`003-fix-and-regression/`.
 
-## Why it matters more than a benchmark nuisance
+**The production read path is flat under autocommit.** 100k three-owner physical
+generation, one backend, `worker_batch_size=0`, 300 timed queries, 250 ms
+sampling, both stage-counter settings on the *same* generation:
 
-If the retention is on the read path, the benchmark did not create the problem —
-it found it faster by hammering one backend. Production connections are
-long-lived, so a pooled connection serving thousands of queries is the real
-exposure, and it would present as gradual backend bloat that nobody attributes to
-`ec_distann`.
+| arm | samples | elapsed | RSS first→last | slope |
+| --- | ---: | ---: | ---: | ---: |
+| counters off | 33 | 8067 ms | 260104→261028 KB | 114.54 KB/s |
+| counters on | 32 | 7817 ms | 260024→261024 KB | 127.93 KB/s |
 
-These subsystems also hold large state in Rust-allocated `static` and
-`thread_local` structures, **outside PostgreSQL's memory contexts**. Statement and
-transaction cleanup cannot reclaim any of it and `pg_backend_memory_contexts`
-will not show it, so ordinary PostgreSQL memory diagnostics are blind to this
-class of growth.
+**The growth reproduces in a benchmark-only function.** It is
+`ec_distann_physical_seed_coverage_benchmark`
+(`src/am/ec_distann/generation_read.rs`), which is
+`#[cfg(feature = "distann-head-attribution-benchmark")]` and absent from
+production builds. The benchmark fixture issues it as a 200-way
+`CROSS JOIN LATERAL` before the latency phase whenever `head_policy` is set and
+neither `--stage-counter-only` nor `--skip-recall` is passed
+(`crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:4229`). Task 188's
+config satisfied that gate, so its 52 GB is plausibly this same statement.
+
+**The memory is in `TopTransactionContext`.** From
+`pg_log_backend_memory_contexts` during the coverage statement
+(`001-reproduction/artifacts/run-latency-rerun/diagnostic-node1.log:127`):
+
+```
+level: 2; TopTransactionContext: 8321499136 total in 1002 blocks;
+          8603128 free (6895 chunks); 8312896008 used
+Grand total: 8323959872 bytes
+```
+
+99.97% of the total, in one context. Every other context is trivial
+(`CacheMemoryContext` 1.07 MB, `ExecutorState` 82 KB). 1002 blocks for 8.32 GB is
+~8.3 MB per block — on the order of **five large allocations per lateral
+invocation**, not many small ones.
+
+**Consequences of that context, which drive everything below:**
+
+- The memory is **PostgreSQL-allocated and PostgreSQL-visible**. The original
+  filing claimed this class of growth lives in Rust `static`/`thread_local` state
+  outside PostgreSQL's contexts and that `pg_backend_memory_contexts` would be
+  blind to it. **That was wrong.** `pg_log_backend_memory_contexts(pid)` found it
+  in one call. Allocator tooling was not needed.
+- `TopTransactionContext` is **transaction**-lifetime. It is reset at
+  commit/abort. This is why the autocommit loop above is flat — one transaction
+  per query, discarded 300 times — and why one long statement grows without
+  bound.
+- It is therefore **not** "a gigabyte retained per query" as originally filed.
+  It is unbounded accumulation *within a transaction*. Still a defect: a
+  transaction that reaches 52 GB kills the host long before it can commit.
+
+**Also corrected in the original filing:**
+
+- "The growth occurred while executing the ordinary semantic ANN SQL through the
+  coordinator's CustomScan — the production read path — not a benchmark-only
+  `pg_extern`." Wrong on both counts, per the above. It *is* a benchmark-only
+  `pg_extern`, and by the same reasoning it is closer to the Task 185 class
+  (`df89b5726`, `c83ea6ea8`) than the filing allowed.
+- `remote_transport.rs` was a "suggested starting point." **Ruled out.**
+  `DistannTransportState` is a single `thread_local` holding one current-thread
+  tokio runtime plus connections pooled by `lifecycle_connection_key(conninfo)`;
+  `PooledConnection::Drop` aborts its task and `with_transport_state` clears the
+  map on an observed interrupt. Nothing accumulates across calls.
+- `head_cache.rs` bounded, as originally stated. Confirmed:
+  `HashMap<u32, Arc<…>>` keyed on `index_oid`, `insert` replaces.
+
+**One diagnostic result must not be cited.** `coverage-separate-200.log` was run
+as 200 statements in a **single simple-query protocol message**
+(`diagnostic-node1.log:279`), which PostgreSQL executes in one implicit
+transaction. Separate statements, one transaction — so it cannot discriminate
+statement-scoped from backend-scoped retention, and its 1.9→3.6 GB figure is
+exactly what transaction-scoped accumulation predicts. Re-run per Phase 3 A.
 
 ## Goal
 
-Determine whether the growth is on the production physical read path or confined
-to benchmark instrumentation, then bound it, with a regression test that would
-catch a recurrence.
+Bound the allocation, prove the production read path is unaffected under a held
+transaction, and leave a regression test that fails if either regresses.
 
-## Phase 1: the decisive experiment
+Diagnosis is done. What remains is the fix and the proof.
 
-One 100k three-owner physical generation, one backend, no reconnect
-(`benchmark_backend_batch_size=0` / `worker_batch_size=0`), several hundred
-repeated queries, RSS sampled at a fixed interval:
+## Phase 3 A: close the two open questions
 
-1. `distann_stage_counters=false` — the production configuration;
-2. `distann_stage_counters=true` — the Task 188 configuration.
+Both run on the retained fixture at
+`/home/peter/.ecaz/clusters/task200-counters-off-100k` (100k, three owners,
+published, 6.8 GB). **Do not rebuild it** — `ecaz bench suite` gained
+`--reuse-fixture` in `9de8b4fa2`; rebuild remains the default, so pass it
+explicitly. Preserve that directory until Phase 3 B lands.
 
-Report peak and slope of RSS for each. Flat with counters off scopes the issue to
-instrumentation; growth with counters off makes it a production defect and
-promotes this task's priority.
+**A1 — is the production read path safe inside a held transaction?**
+This is the gate on this task's priority and on any claim that production is
+unaffected. The Phase 1 A/B ran in autocommit, which resets
+`TopTransactionContext` between queries and therefore **cannot detect this class
+of defect**. Run, one backend, sampler attached:
 
-Report the query count and sampling interval; do not report a single peak without
-the series.
+```
+BEGIN;
+  -- 300 ordinary ANN queries through the CustomScan, identical to the
+  -- Phase 1 latency arm
+COMMIT;
+```
 
-## Phase 2: attribution
+- Flat → production is unaffected, priority drops to P2, and the closeout takes
+  the instrumentation branch below.
+- Grows → this is a production defect, priority stays P1, and closeout requires
+  the read-path branch including the 10k/50k/100k A/B.
 
-Only if Phase 1 shows growth. Attribute the allocation to a call site.
-PostgreSQL's own memory reporting will not help for Rust-side allocations —
-expect to need RSS plus allocator-level attribution (heaptrack, massif, or
-jemalloc statistics), and record which tool produced the attribution.
+Report the series, not a peak. A batch/ETL path holding a transaction across many
+ANN queries is an ordinary production shape; this is not a hypothetical.
 
-**Already ruled out by source inspection at `c1c43a9bf`** — do not re-derive
-these:
+**A2 — which call site allocates?**
+Attribute to a **call site**, not a function. "The coverage helper" is where
+packet 002 already stands and is not sufficient.
 
-- `stage_counters.rs`: 37 atomics plus a fixed-size `BufferedAttribution` array;
-  cannot produce GB regardless of scan count.
-- `head_cache.rs`: `HashMap` keyed by `index_oid`, insert replaces the entry.
-- `PHYSICAL_EPOCH_CACHE` (capacity 2) and `RETAINED_EPOCH_CACHE` (capacity 4) in
-  `generation_read.rs`: correct LRU. The `push_back` without eviction is the
-  *lookup* path, which does `remove(position)` first, so size is unchanged.
-- `PHYSICAL_PREPARED_QUERY_CACHE` (capacity 4) and the owner payload plan cache:
-  both evict.
-- `scan_registry.rs`: fixed-capacity shared-memory slot arrays.
+Constraints that narrow the search — use them, don't re-derive them:
 
-Since every deliberate cache is bounded, the likely shape is a per-scan
-allocation that is never released. Suggested starting points: remote transport
-buffers (`remote_transport.rs`), materialization maps, and CustomScan per-scan
-state.
+- There is **no `MemoryContextSwitchTo` anywhere in production `src/`** (only in
+  `src/tests/ec_distann_basic.rs`). Nothing deliberately targets
+  `TopTransactionContext`; the allocations land there because
+  `CurrentMemoryContext` *is* that context when they run.
+- ~5 allocations of ~8 MB per invocation.
+- No SPI contexts appear in the dump, so SPI result retention is not the holder.
 
-## Decision and closeout
+Leading candidate: the helper calls
+`PhysicalGenerationScan::open(index_regclass.oid())` on **every** lateral
+invocation (`generation_read.rs:1735`), where the production CustomScan opens
+once per scan. Test it directly — loop `open()` 200 times with the rest of the
+helper body removed, sample RSS. If flat, move to the owner scan
+(`owner_scan_seed_candidates`), then the head searches.
 
-- If the retention is on the production read path: bound it, and add a regression
-  test that runs a few hundred queries on a single backend and asserts bounded
-  RSS. Because the fix touches the read path, closeout requires a **10k / 50k /
-  100k A/B** showing recall exact against the current numbers and no latency
-  regression, per the repository closeout rule and NFR-007 provenance.
-- If it is confined to instrumentation: bound it anyway, document the mechanism,
-  and record why the production path is unaffected — with the counters-off series
-  from Phase 1 as the evidence, not an argument from code reading.
-- If Phase 1 cannot reproduce the growth at all: say so explicitly, retain the
-  series, and close as unreproduced rather than fixed. Do not close on the
-  reconnect workaround.
+`pg_log_backend_memory_contexts` is the working tool here; heaptrack/massif are
+**not** required and the earlier instruction to expect them is withdrawn.
+
+## Phase 3 B: bound it, and keep it bounded
+
+Required in every outcome except "unreproduced", which no longer applies —
+including if A1 comes back flat and this is confined to instrumentation.
+"Benchmark-only" is not a reason to leave it: it has destroyed two runs and it
+will destroy the next one.
+
+1. **Bound the allocation** at the call site A2 identifies. Whichever shape fits:
+   hoist the per-invocation work out of the lateral, reset a per-call context, or
+   free explicitly. Record which, and why it is the right one.
+2. **Document the mechanism** in the packet — the call site, why it lands in
+   `TopTransactionContext`, and why the production path does or does not reach
+   it. Cite the Phase 1 series and the A1 series as evidence, not a code-reading
+   argument.
+3. **Regression test.** Several hundred coverage calls on one backend inside a
+   single transaction, asserting bounded RSS. Assert on **slope**, not peak: the
+   noise floor is under 1 MB across 300 queries against a ~100 MB per-invocation
+   signal, so ~20 iterations is enough and a peak threshold silently passes any
+   leak that stays under it. If A1 grew, the same test is required for the
+   production read path under a held transaction.
+4. **Remove the Task 188 reconnect workaround** once the bound is in and the
+   regression test passes — it exists only to survive this defect. Confirm with
+   the Task 188 owner before touching that lane.
+
+## Closeout
+
+- **If A1 grows** (production defect): bound it, regression test, and a
+  **10k/50k/100k A/B** showing recall exact against current numbers and no
+  latency regression, per the repository closeout rule and NFR-007.
+- **If A1 is flat** (instrumentation): bound it anyway, document the mechanism,
+  and record why the production path is unaffected — with the Phase 1
+  counters-off series *and* the A1 in-transaction series as the evidence. No
+  10k/50k/100k matrix, since the read path is unchanged. State that waiver as
+  conditional on the read path staying unchanged.
+- Do not close on the reconnect workaround.
+- Do not close with the fix outstanding. Packet 003 is
+  `fix-and-regression`; diagnostic tooling alone does not satisfy it.
 
 ## Required review packets
 
-1. `reviews/task-200/001-reproduction/`: Phase 1 series for both counter
-   configurations, with the suite config checked in;
-2. `reviews/task-200/002-attribution/`: conditional call-site attribution;
-3. `reviews/task-200/003-fix-and-regression/`: conditional fix, regression test,
-   and the A/B matrix if the read path changed.
+1. `reviews/task-200/001-reproduction/` — **submitted.** Phase 1 series for both
+   counter configurations, suite config checked in.
+2. `reviews/task-200/002-attribution/` — **submitted, changes requested.** Needs
+   the `TopTransactionContext` citation and the A2 call site.
+3. `reviews/task-200/003-fix-and-regression/` — **open.** Currently holds the
+   diagnostic CLI checkpoint only; needs A1, the bound, and the regression test.
+
+## Provenance debt
+
+Every result so far reports
+`extension_git_sha=897c69045249a876de151c1da0544001ead82352-dirty`, with the
+measurement binary recorded as built from "the equivalent pre-commit working
+tree." That is not reconstructible. Before closeout, state in the packet manifest
+whether the ~30 modified `src/am/**` files were in the measured build and whose
+they are, and measure anything cited as closeout evidence from a committed tree.
+The extension was release and attested
+(`release_profile_preflight status=passed … unanimous=true`); the `target/debug`
+driver is acceptable for memory diagnostics but its `mean 27.50 ms` / `26.50 ms`
+figures are not latency evidence.
 
 ## Non-goals
 
 - BW8 promotion or any Task 188 candidate decision.
-- The Task 188 benchmark-harness refactor and its pre-merge gates, which stay in
-  that task.
+- The Task 188 benchmark-harness refactor and its pre-merge gates.
 - Recall, graph, head, or codec work.
-- Removing the Task 188 reconnect workaround before Phase 1 answers the question;
-  it is currently the only thing keeping long benchmark runs alive.
+- Allocator-level tooling (heaptrack, massif, jemalloc stats) unless
+  `pg_log_backend_memory_contexts` proves insufficient, which it has not.
 
 ## References
 
-- `reviews/task-188/006-batch10-stage-counters/` — the rerun outcome, the
-  efficient rerun, and reviewer feedback `2026-07-27-02-reviewer.md` and
-  `2026-07-27-03-reviewer.md`.
-- Task 185 `df89b5726` / `c83ea6ea8` — the *different*, diagnostic-only
-  statement-context fixes.
+- `reviews/task-200/001-reproduction/` — Phase 1 series, memory-context dumps,
+  reviewer feedback `2026-07-27-{01,02,03}-reviewer.md`.
+- `reviews/task-200/002-attribution/feedback/2026-07-28-01-reviewer.md` —
+  `TopTransactionContext` attribution and the invalid separate-statement test.
+- `reviews/task-200/003-fix-and-regression/feedback/2026-07-28-01-reviewer.md` —
+  the autocommit gap in the closeout claim.
+- `9de8b4fa2` — `--memory-series-output` and `--reuse-fixture` in
+  `ecaz bench suite`.
+- `reviews/task-188/006-batch10-stage-counters/` — the original 52 GB outcome.
+- Task 185 `df89b5726` / `c83ea6ea8` — the diagnostic-only statement-context
+  fixes this now appears related to.
 - NFR-007 benchmark provenance; FR-080, FR-082.
