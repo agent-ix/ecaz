@@ -4079,6 +4079,7 @@ async fn run_coverage_memory_regression(
     log_dir: &Path,
 ) -> Result<String> {
     const WARMUP_INVOCATIONS: u32 = 5;
+    const WARMUP_SETTLE_MS: u64 = 1_000;
     let pid = coordinator
         .query_one("SELECT pg_backend_pid()", &[])
         .await?
@@ -4115,7 +4116,6 @@ async fn run_coverage_memory_regression(
         coordinator
             .query_one(&coverage_sql(WARMUP_INVOCATIONS), &[])
             .await?;
-        series.lock().await.clear();
         let peak = Arc::new(Mutex::new(
             crate::commands::bench::latency::MemorySample::default(),
         ));
@@ -4128,6 +4128,8 @@ async fn run_coverage_memory_regression(
             "coverage-regression".to_owned(),
             None,
         ));
+        tokio::time::sleep(Duration::from_millis(WARMUP_SETTLE_MS)).await;
+        series.lock().await.clear();
         let rows = match coordinator.query_one(&coverage_sql(iterations), &[]).await {
             Ok(row) => row.get::<_, i64>(0),
             Err(error) => {
@@ -4188,7 +4190,7 @@ async fn run_coverage_memory_regression(
         .wrap_err_with(|| format!("writing {}", series_path.display()))?;
     let pass = slope <= max_slope_kb_per_s && (delta as f64) <= max_delta_kb;
     let line = format!(
-        "physical_benchmark_memory_regression scale={scale} warmup_invocations={WARMUP_INVOCATIONS} coverage_invocations={iterations} rows_returned={rows} samples={} rss_first_kb={first} rss_last_kb={last} rss_peak_to_trough_kb={delta} max_delta_kb={max_delta_kb:.2} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
+        "physical_benchmark_memory_regression scale={scale} warmup_invocations={WARMUP_INVOCATIONS} warmup_settle_ms={WARMUP_SETTLE_MS} coverage_invocations={iterations} rows_returned={rows} samples={} rss_first_kb={first} rss_last_kb={last} rss_peak_to_trough_kb={delta} max_delta_kb={max_delta_kb:.2} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
         points.len(),
         series_path.display(),
     );
