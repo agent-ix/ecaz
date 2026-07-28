@@ -392,6 +392,7 @@ fn distann_stage_batch_fixture_with_entries(
             ],
         });
     }
+    entries.sort_by_key(|entry| entry.vec_id);
     let batch = crate::am::ec_distann::DistannHandoffBatch {
         epoch: 7,
         build_id: *fixture.build_id.as_bytes(),
