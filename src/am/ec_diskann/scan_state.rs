@@ -204,7 +204,7 @@ pub(super) fn materialize_chain_from_index_handle(
         let current_block = chain
             .pages()
             .last()
-            .expect("materialized chain always has a first page")
+            .ok_or_else(|| "ec_diskann materialized chain has no first data page".to_owned())?
             .block_number();
         if current_block < block_number {
             chain.append_empty_pages((block_number - current_block) as usize);
@@ -225,18 +225,25 @@ pub(super) fn materialize_chain_from_index_handle(
             let visit = buffer.visit_tuple_bytes(tid, "ec_diskann data block", |tuple_bytes| {
                 Ok(tuple_bytes.to_vec())
             })?;
-            let page = chain
-                .get_page_mut(block_number)
-                .expect("physical block must have a matching materialized page");
-            match visit {
+            let page = chain.get_page_mut(block_number).ok_or_else(|| {
+                format!(
+                    "ec_diskann physical block {block_number} has no matching materialized page"
+                )
+            })?;
+            let materialized_tid = match visit {
                 LockedPageTupleVisit::Present(tuple_bytes) => {
-                    let materialized_tid = page.insert_existing_raw_tuple(tuple_bytes)?;
-                    debug_assert_eq!(materialized_tid, tid);
+                    page.insert_existing_raw_tuple(tuple_bytes)?
                 }
-                LockedPageTupleVisit::Unused => {
-                    let materialized_tid = page.insert_unused_slot()?;
-                    debug_assert_eq!(materialized_tid, tid);
-                }
+                LockedPageTupleVisit::Unused => page.insert_unused_slot()?,
+            };
+            if materialized_tid != tid {
+                return Err(format!(
+                    "ec_diskann materialized tid ({},{}) diverged from physical tid ({},{})",
+                    materialized_tid.block_number,
+                    materialized_tid.offset_number,
+                    tid.block_number,
+                    tid.offset_number
+                ));
             }
         }
     }

@@ -2108,9 +2108,12 @@ mod tests {
         VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_SEARCH_CODEC_RABITQ, VAMANA_SEARCH_CODEC_TURBOQUANT,
     };
     use crate::storage::{
+        buffer_guard::LockedBufferGuard,
         page::{DataPageChain, ItemPointer},
+        relation,
         relation_guard::{HeapRelationGuard, IndexRelationGuard},
         slot_guard::TupleTableSlotGuard,
+        wal,
     };
     use pgrx::{pg_sys, pg_test, Spi};
     use std::{
@@ -2182,6 +2185,43 @@ mod tests {
             .expect("guard keeps the index relation open");
         scan_state::materialize_chain_from_index_handle(handle)
             .expect("materialize_chain_from_index should succeed")
+    }
+
+    fn append_unused_line_pointer(index_name: &str) -> ItemPointer {
+        let index_relation = IndexRelationGuard::open(
+            index_oid(index_name),
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+            "append_unused_line_pointer",
+        );
+        let handle = index_relation.handle();
+        let block_count = relation::main_fork_block_count_handle(handle);
+        assert!(
+            block_count > crate::storage::page::FIRST_DATA_BLOCK_NUMBER,
+            "fixture index should have at least one data block"
+        );
+        let block_number = block_count - 1;
+        let buffer = LockedBufferGuard::read_main_handle(
+            handle,
+            block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .expect("last index data block should open");
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+        let offset_number = {
+            let mut page = wal_txn.register_page(&buffer);
+            let offset_number = page
+                .add_item(&[0xFF])
+                .expect("fixture line pointer should fit");
+            page.mark_item_unused(offset_number)
+                .expect("fixture line pointer should become unused");
+            offset_number
+        };
+        wal_txn.finish();
+        ItemPointer {
+            block_number,
+            offset_number,
+        }
     }
 
     fn heap_tid_distance(tid: ItemPointer) -> f32 {
@@ -2283,6 +2323,88 @@ mod tests {
             relation_results, chain_results,
             "relation-backed scan should match materialized-chain scan results",
         );
+    }
+
+    #[pg_test]
+    fn test_ec_diskann_unused_line_pointer_scan() {
+        Spi::run(
+            "CREATE TABLE ec_diskann_unused_line_pointer (
+                id bigint primary key,
+                embedding ecvector
+            )",
+        )
+        .expect("table creation should succeed");
+        Spi::run(
+            "INSERT INTO ec_diskann_unused_line_pointer
+             SELECT id,
+                    encode_to_ecvector(
+                        ARRAY[
+                            cos((id * 0.17)::double precision)::real,
+                            sin((id * 0.17)::double precision)::real,
+                            0.0::real,
+                            0.0::real
+                        ],
+                        4,
+                        42
+                    )
+             FROM generate_series(1, 32) AS id",
+        )
+        .expect("seed rows should insert");
+        Spi::run(
+            "CREATE INDEX ec_diskann_unused_line_pointer_idx
+             ON ec_diskann_unused_line_pointer
+             USING ec_diskann (embedding ecvector_diskann_ip_ops)
+             WITH (graph_degree = 8, build_list_size = 20, list_size = 20,
+                   rerank_budget = 8)",
+        )
+        .expect("index creation should succeed");
+
+        let unused_tid = append_unused_line_pointer("ec_diskann_unused_line_pointer_idx");
+        assert!(
+            index_materialized_chain("ec_diskann_unused_line_pointer_idx")
+                .1
+                .get_page(unused_tid.block_number)
+                .expect("unused slot page should materialize")
+                .raw_tuple(unused_tid)
+                .expect_err("unused line pointer must not decode")
+                .contains("is unused")
+        );
+
+        Spi::run(
+            "INSERT INTO ec_diskann_unused_line_pointer VALUES
+             (999, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
+        )
+        .expect("insert after unused line pointer should succeed");
+
+        let inserted_heap_tid = heap_tid_for_row("ec_diskann_unused_line_pointer", 999);
+        let (metadata, chain) = index_materialized_chain("ec_diskann_unused_line_pointer_idx");
+        let reader = PersistedGraphReader::new(
+            &chain,
+            metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(&metadata),
+            scan_state::metadata_search_code_len(&metadata),
+        );
+        let inserted_tid = reader
+            .iter_live_tids()
+            .collect::<Result<Vec<_>, _>>()
+            .expect("materialized node iteration should succeed")
+            .into_iter()
+            .find_map(|(tid, tuple)| (tuple.primary_heaptid == inserted_heap_tid).then_some(tid))
+            .expect("inserted node should remain addressable");
+        assert_eq!(inserted_tid.block_number, unused_tid.block_number);
+        assert!(inserted_tid.offset_number > unused_tid.offset_number);
+
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+        let nearest = Spi::get_one::<i64>(
+            "SELECT id FROM ec_diskann_unused_line_pointer
+             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
+             LIMIT 1",
+        )
+        .expect("ordered scan should succeed")
+        .expect("ordered scan should return a row");
+        assert_eq!(nearest, 999);
     }
 
     #[pg_test]

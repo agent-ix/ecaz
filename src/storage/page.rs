@@ -66,6 +66,7 @@ pub struct DataPage {
     pub(crate) page_size: usize,
     pub(crate) used_bytes: usize,
     pub(crate) tuples: Vec<Vec<u8>>,
+    unused_slots: Vec<bool>,
 }
 
 impl DataPage {
@@ -75,6 +76,7 @@ impl DataPage {
             page_size,
             used_bytes: PAGE_HEADER_BYTES,
             tuples: Vec::new(),
+            unused_slots: Vec::new(),
         }
     }
 
@@ -108,11 +110,14 @@ impl DataPage {
             ));
         }
 
+        let offset_number = u16::try_from(self.tuples.len() + 1)
+            .map_err(|_| "tuple count exceeds u16".to_owned())?;
         self.used_bytes += aligned_tuple_bytes(payload.len());
         self.tuples.push(payload);
+        self.unused_slots.push(false);
         Ok(ItemPointer {
             block_number: self.block_number,
-            offset_number: u16::try_from(self.tuples.len()).expect("tuple count should fit in u16"),
+            offset_number,
         })
     }
 
@@ -133,11 +138,14 @@ impl DataPage {
                 self.free_bytes()
             ));
         }
+        let offset_number = u16::try_from(self.tuples.len() + 1)
+            .map_err(|_| "tuple count exceeds u16".to_owned())?;
         self.used_bytes += physical_bytes;
         self.tuples.push(payload);
+        self.unused_slots.push(false);
         Ok(ItemPointer {
             block_number: self.block_number,
-            offset_number: u16::try_from(self.tuples.len()).expect("tuple count should fit in u16"),
+            offset_number,
         })
     }
 
@@ -152,11 +160,14 @@ impl DataPage {
                 self.free_bytes()
             ));
         }
+        let offset_number = u16::try_from(self.tuples.len() + 1)
+            .map_err(|_| "tuple count exceeds u16".to_owned())?;
         self.used_bytes += LINE_POINTER_BYTES;
         self.tuples.push(Vec::new());
+        self.unused_slots.push(true);
         Ok(ItemPointer {
             block_number: self.block_number,
-            offset_number: u16::try_from(self.tuples.len()).expect("tuple count should fit in u16"),
+            offset_number,
         })
     }
 
@@ -172,10 +183,21 @@ impl DataPage {
         }
 
         let index = (tid.offset_number - 1) as usize;
+        if self.unused_slots.get(index).copied().unwrap_or(false) {
+            return Err(format!("tuple offset {} is unused", tid.offset_number));
+        }
         self.tuples
             .get(index)
             .map(Vec::as_slice)
             .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))
+    }
+
+    pub(crate) fn occupied_offsets(&self) -> impl Iterator<Item = u16> + '_ {
+        self.unused_slots
+            .iter()
+            .enumerate()
+            .filter(|(_, unused)| !**unused)
+            .filter_map(|(index, _)| u16::try_from(index + 1).ok())
     }
 
     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {
@@ -194,6 +216,9 @@ impl DataPage {
             .tuples
             .get_mut(index)
             .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))?;
+        if self.unused_slots.get(index).copied().unwrap_or(false) {
+            return Err(format!("tuple offset {} is unused", tid.offset_number));
+        }
         if payload.len() != existing.len() {
             return Err(format!(
                 "tuple length mismatch: got {}, expected {}",
@@ -466,6 +491,11 @@ mod tests {
         assert_eq!(first.offset_number, 1);
         assert_eq!(unused.offset_number, 2);
         assert_eq!(third.offset_number, 3);
+        assert_eq!(
+            page.raw_tuple(unused).unwrap_err(),
+            "tuple offset 2 is unused"
+        );
+        assert_eq!(page.occupied_offsets().collect::<Vec<_>>(), vec![1, 3]);
         assert_eq!(page.raw_tuple(third).unwrap(), third_payload.as_slice());
     }
 
