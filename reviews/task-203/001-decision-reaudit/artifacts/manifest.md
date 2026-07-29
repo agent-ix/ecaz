@@ -95,11 +95,11 @@ head index 2.5 billion vectors over a 50 billion vector slice. Figure 4 grid:
 | replica holds full-precision vector per vec_id | `src/am/ec_distann/traversal_replica.rs:275-283`; `spec/functional/index/distann/FR-084-...md:26-28` |
 | replica columns | `src/am/ec_distann/traversal_replica.rs:448-464` |
 | NFR-017 excludes replicated full index from satisfying the gate | `spec/non-functional/NFR-017-distann-latency-recall-gate.md:38-39` |
-| NFR-018 excludes the lane; `non-owner graph records = 0` | `spec/non-functional/NFR-018-...md:35-36`, `:62` (pre-amendment line numbers) |
-| FR-078 coordinator stores only its own shard | `spec/functional/index/distann/FR-078-distann-hash-placement.md:491-501` |
+| NFR-018 excludes the lane; `non-owner graph records = 0` | `spec/non-functional/NFR-018-...md:36`, `:62`, verification duty `:66` — **all at `78b46889c`, before this packet's amendment renumbered the file** |
+| FR-078 coordinator stores only its own shard | `spec/functional/index/distann/FR-078-distann-hash-placement.md:492-501` |
 | ADR-086 cites no NFR; acknowledges linear per-coordinator amplification | `spec/adr/ADR-086-ec-distann-coordinator-traversal-replica.md:163-166` |
 | ADR-086 per-coordinator storage ceiling | `ADR-086:79-86`; measured result `:144-147` |
-| ADR-067 storage-scale-out rejection rationale | `spec/adr/ADR-067-spire-customscan-distributed-scan.md:47-51`, `:196` |
+| ADR-067 storage-scale-out rejection rationale | `spec/adr/ADR-067-spire-customscan-distributed-scan.md:47-51`, `:198` |
 | Task 190 narrowing dropped `TRAV-30` | `plan/tasks/190-ec-distann-architecture-escalation-gate.md:70-79`, `:100-112` |
 | Task 190 storage budget 2,496,626,688 bytes/coordinator | `plan/tasks/190-...md:113-118` |
 | Task 198 Phase 2 linear per-coordinator amplification | `plan/tasks/198-ec-distann-coordinator-traversal-replica.md` Phase 2 capacity bullet |

@@ -204,9 +204,9 @@ entirely coordinator-local and owners are contacted only for payload columns.
 - `NFR-017:38` — the latency/recall gate itself: "A replicated full index with
   serving-ownership filtering or tombstoned non-owner records is an optional
   control lane and **cannot satisfy this NFR**."
-- `NFR-018:35` — "not a valid NFR-018 distributed measurement lane", with metric
+- `NFR-018:36` (pre-amendment, at `78b46889c`) — "not a valid NFR-018 distributed measurement lane", with metric
   row `non-owner graph records in the measured lane | 0 | 0`.
-- `FR-078:491-501` — "A coordinator inside the serving roster SHALL store only
+- `FR-078:492-501` — "A coordinator inside the serving roster SHALL store only
   its own graph-node shard ... A replicated full index hidden behind
   serving-ownership filtering SHALL NOT satisfy this requirement."
 
@@ -230,7 +230,7 @@ CustomScan design because:
 > coordinator's single-machine storage capacity. The 'distributed' property is
 > limited to compute parallelism on a shared dataset, not storage scale-out."
 
-and at `:196`, "at the cost of **the most important architectural property of a
+and at `:198`, "at the cost of **the most important architectural property of a
 distributed vector search system**." That rationale lived only in an ADR's
 rejection note and was never lifted into a requirement — which is why nothing
 caught it the second time. `NFR-021`, landed with this packet, fixes that.
@@ -278,7 +278,7 @@ even in principle.
 
 `cluster_index_space_amplification`, the real NFR-018 ratio emitter at
 `distann_multicluster.rs:7419-7482`, exists and **ran for Tasks 172 and 197**. It
-was **not run for 198/199**. `NFR-018:66` requires "the ratio row appears in the
+was **not run for 198/199**. `NFR-018:66` (pre-amendment, at `78b46889c`) requires "the ratio row appears in the
 packet manifest per scale"; it appears in none of the three. Two mutually
 inconsistent hand-computed ratios stand in for it: 66.5% in Task 198
 (`005-.../artifacts/manifest.md:67-71`, denominator 2,496,659,456) and 52.0% in
@@ -319,7 +319,7 @@ outstanding check is named.
 | 165 | partial — "replicated-serving control only" | **fail** | **fail** | fail | ? | **INVALID (self-declared)** | As 164 |
 | 166 | measured — "single-instance control only" | **fail** | ok | fail | ? | **INVALID (self-declared)** | Single-instance control is exactly what NFR-022 now forbids as a decider |
 | 167 | partial, needs physical adaptation | — | — | — | ? | **PENDING** | DML path; no disposition to invalidate |
-| 172 | SHELVED — replicated fixture | n/a | n/a | n/a | ok | **SOUND** | The shelving is correct and is the precedent that produced NFR-018:35. Re-check whether FR-078 sharding now permits unshelving |
+| 172 | SHELVED — replicated fixture | n/a | n/a | n/a | ok | **SOUND** | The shelving is correct and is the precedent that produced the NFR-018 exclusion clause. Re-check whether FR-078 sharding now permits unshelving |
 | 179 | physical hash-shard generations | ok | ok | fail | ? | **SOUND (impl) / SUSPECT (BW16/H25)** | Packet 066 tested at **fixed BW x H = 400**; it cannot speak to raising the budget. Reviewer's `2026-07-13-01` BW=4 finding never actioned |
 | 180 | completed — measured negative, width/seed | ok | ok | **fail** | ok | **SUSPECT** | `NEG-01` swept seeds {32,64,128} at BW=4, where the beam pops 4/round and extra seeds are structurally unusable. Valid for BW=4 only |
 | 181 | completed — GO | ok | ok | fail | ok | **SOUND** | Strongest result in the program: membership, not search, bounds recall. Points directly at §3, which the follow-on tasks did not pursue |
@@ -353,7 +353,7 @@ arms" asserted something the metric cannot express. This is not confined to
 198/199 and is the reason several rows above carry `T4 = ?`. The full sweep is
 the outstanding work item for packet 002.
 
-**Missing NFR-018 ratio row.** Required per scale by `NFR-018:66`. Present in
+**Missing NFR-018 ratio row.** Required per scale by `NFR-018:66` (pre-amendment, at `78b46889c`). Present in
 Tasks 172 and 197; absent from 198/199. The remaining gate packets need the same
 check.
 
