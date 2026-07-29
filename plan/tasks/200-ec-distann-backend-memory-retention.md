@@ -1,8 +1,8 @@
 # Task 200: ec_distann Backend Memory Retention
 
-Status: **complete — root cause fixed, executable integration gate and
-unattended PG18 regression pass** (2026-07-28). Priority: P2 after the production A1 came
-back bounded.
+Status: **complete — root cause fixed, executable integration gate, unattended
+PG18 regression, and Task 188 no-reconnect follow-up pass** (2026-07-29).
+Priority: P2 after the production A1 and Task 188 follow-up came back bounded.
 Phases 1 and 2 have run and several premises in the original filing were wrong —
 see *Established* below before doing any work.
 
@@ -104,15 +104,15 @@ transaction, and leave a regression test that fails if either regresses.
 
 Diagnosis is done. What remains is the fix and the proof.
 
-## Phase 3 A: close the two open questions
+## Phase 3 A: close the two open questions (complete)
 
-Both run on the retained fixture at
+These were run on the retained fixture at
 `/home/peter/.ecaz/clusters/task200-counters-off-100k` (100k, three owners,
 published, 6.8 GB). **Do not rebuild it** — `ecaz bench suite` gained
 `--reuse-fixture` in `9de8b4fa2`; rebuild remains the default, so pass it
 explicitly. Preserve that directory until Phase 3 B lands.
 
-**A1 — is the production read path safe inside a held transaction?**
+**A1 — production read path safe inside a held transaction: bounded.**
 This is the gate on this task's priority and on any claim that production is
 unaffected. The Phase 1 A/B ran in autocommit, which resets
 `TopTransactionContext` between queries and therefore **cannot detect this class
@@ -133,7 +133,7 @@ COMMIT;
 Report the series, not a peak. A batch/ETL path holding a transaction across many
 ANN queries is an ordinary production shape; this is not a hypothetical.
 
-**A2 — which call site allocates?**
+**A2 — allocating call site: identified and fixed.**
 Attribute to a **call site**, not a function. "The coverage helper" is where
 packet 002 already stands and is not sufficient.
 
@@ -148,10 +148,9 @@ Constraints that narrow the search — use them, don't re-derive them:
 
 Leading candidate: the helper calls
 `PhysicalGenerationScan::open(index_regclass.oid())` on **every** lateral
-invocation (`generation_read.rs:1735`), where the production CustomScan opens
-once per scan. Test it directly — loop `open()` 200 times with the rest of the
-helper body removed, sample RSS. If flat, move to the owner scan
-(`owner_scan_seed_candidates`), then the head searches.
+invocation (`generation_read.rs:1735`) was tested directly and remained flat.
+The retention was then isolated to `owner_scan_seed_candidates`, specifically
+the pgrx `value::<Vec<u8>>()` conversion of `graph_record`.
 
 `pg_log_backend_memory_contexts` is the working tool here; heaptrack/massif are
 **not** required and the earlier instruction to expect them is withdrawn.
@@ -200,22 +199,21 @@ will destroy the next one.
 
 ## Required review packets
 
-1. `reviews/task-200/001-reproduction/` — **submitted.** Phase 1 series for both
+1. `reviews/task-200/001-reproduction/` — **submitted and addressed.** Phase 1 series for both
    counter configurations, suite config checked in.
-2. `reviews/task-200/002-attribution/` — **submitted, changes requested.** Needs
-   the `TopTransactionContext` citation and the A2 call site.
-3. `reviews/task-200/003-fix-and-regression/` — **open.** Currently holds the
-   diagnostic CLI checkpoint only; needs A1, the bound, and the regression test.
+2. `reviews/task-200/002-attribution/` — **submitted and addressed.** The
+   `TopTransactionContext` citation and A2 call site are recorded.
+3. `reviews/task-200/003-fix-and-regression/` — **submitted and addressed.**
+   It contains A1, the bound, the executable regression, fixed-green/pre-fix-red
+   evidence, and the Task 188 no-reconnect follow-up.
 
-## Provenance debt
+## Provenance closeout
 
-Every result so far reports
-`extension_git_sha=897c69045249a876de151c1da0544001ead82352-dirty`, with the
-measurement binary recorded as built from "the equivalent pre-commit working
-tree." That is not reconstructible. Before closeout, state in the packet manifest
-whether the ~30 modified `src/am/**` files were in the measured build and whose
-they are, and measure anything cited as closeout evidence from a committed tree.
-The extension was release and attested
+Historical diagnostic results report
+`extension_git_sha=897c69045249a876de151c1da0544001ead82352-dirty` and remain
+labeled as historical. All closeout evidence cited for the fix and regression is
+from committed, provenance-attested trees; the Task 188 follow-up used clean
+committed tree `d845d8e4347d59dafd2b1ed28cd252d7d7c6e134`. The extension was release and attested
 (`release_profile_preflight status=passed … unanimous=true`); the `target/debug`
 driver is acceptable for memory diagnostics but its `mean 27.50 ms` / `26.50 ms`
 figures are not latency evidence.
