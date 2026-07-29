@@ -66,6 +66,7 @@ pub struct DataPage {
     pub(crate) page_size: usize,
     pub(crate) used_bytes: usize,
     pub(crate) tuples: Vec<Vec<u8>>,
+    unused_slots: Vec<bool>,
 }
 
 impl DataPage {
@@ -75,6 +76,7 @@ impl DataPage {
             page_size,
             used_bytes: PAGE_HEADER_BYTES,
             tuples: Vec::new(),
+            unused_slots: Vec::new(),
         }
     }
 
@@ -108,11 +110,64 @@ impl DataPage {
             ));
         }
 
+        let offset_number = u16::try_from(self.tuples.len() + 1)
+            .map_err(|_| "tuple count exceeds u16".to_owned())?;
         self.used_bytes += aligned_tuple_bytes(payload.len());
         self.tuples.push(payload);
+        self.unused_slots.push(false);
         Ok(ItemPointer {
             block_number: self.block_number,
-            offset_number: u16::try_from(self.tuples.len()).expect("tuple count should fit in u16"),
+            offset_number,
+        })
+    }
+
+    /// Materialize a tuple that PostgreSQL has already accepted on a physical
+    /// page. `PageAddItemExtended` consumes a MAXALIGN'd item plus its line
+    /// pointer; the synthetic chain's conservative tuple-capacity estimate
+    /// includes an additional header and can reject otherwise valid pages.
+    pub(crate) fn insert_existing_raw_tuple(
+        &mut self,
+        payload: Vec<u8>,
+    ) -> Result<ItemPointer, String> {
+        let physical_bytes = align_up(payload.len(), ALIGNMENT_BYTES) + LINE_POINTER_BYTES;
+        if physical_bytes > self.free_bytes() {
+            return Err(format!(
+                "existing tuple payload {} does not fit on block {} with {} bytes free",
+                payload.len(),
+                self.block_number,
+                self.free_bytes()
+            ));
+        }
+        let offset_number = u16::try_from(self.tuples.len() + 1)
+            .map_err(|_| "tuple count exceeds u16".to_owned())?;
+        self.used_bytes += physical_bytes;
+        self.tuples.push(payload);
+        self.unused_slots.push(false);
+        Ok(ItemPointer {
+            block_number: self.block_number,
+            offset_number,
+        })
+    }
+
+    /// Preserve an unused PostgreSQL line-pointer slot while materializing a
+    /// physical page. The empty payload is a sentinel and must not be decoded;
+    /// retaining the slot keeps every later physical TID addressable.
+    pub(crate) fn insert_unused_slot(&mut self) -> Result<ItemPointer, String> {
+        if LINE_POINTER_BYTES > self.free_bytes() {
+            return Err(format!(
+                "unused line pointer does not fit on block {} with {} bytes free",
+                self.block_number,
+                self.free_bytes()
+            ));
+        }
+        let offset_number = u16::try_from(self.tuples.len() + 1)
+            .map_err(|_| "tuple count exceeds u16".to_owned())?;
+        self.used_bytes += LINE_POINTER_BYTES;
+        self.tuples.push(Vec::new());
+        self.unused_slots.push(true);
+        Ok(ItemPointer {
+            block_number: self.block_number,
+            offset_number,
         })
     }
 
@@ -128,10 +183,21 @@ impl DataPage {
         }
 
         let index = (tid.offset_number - 1) as usize;
+        if self.unused_slots.get(index).copied().unwrap_or(false) {
+            return Err(format!("tuple offset {} is unused", tid.offset_number));
+        }
         self.tuples
             .get(index)
             .map(Vec::as_slice)
             .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))
+    }
+
+    pub(crate) fn occupied_offsets(&self) -> impl Iterator<Item = u16> + '_ {
+        self.unused_slots
+            .iter()
+            .enumerate()
+            .filter(|(_, unused)| !**unused)
+            .filter_map(|(index, _)| u16::try_from(index + 1).ok())
     }
 
     pub fn update_raw_tuple(&mut self, tid: ItemPointer, payload: Vec<u8>) -> Result<(), String> {
@@ -150,6 +216,9 @@ impl DataPage {
             .tuples
             .get_mut(index)
             .ok_or_else(|| format!("tuple offset {} out of range", tid.offset_number))?;
+        if self.unused_slots.get(index).copied().unwrap_or(false) {
+            return Err(format!("tuple offset {} is unused", tid.offset_number));
+        }
         if payload.len() != existing.len() {
             return Err(format!(
                 "tuple length mismatch: got {}, expected {}",
@@ -341,8 +410,22 @@ mod tests {
         assert_eq!(second.block_number, base, "same page while it fits");
         assert_eq!(third.block_number, base + 1, "next page is base+1");
         // Lookups resolve against the base.
-        assert_eq!(chain.get_page(first.block_number).unwrap().raw_tuple(first).unwrap(), &[1; 32]);
-        assert_eq!(chain.get_page(third.block_number).unwrap().raw_tuple(third).unwrap(), &[3; 32]);
+        assert_eq!(
+            chain
+                .get_page(first.block_number)
+                .unwrap()
+                .raw_tuple(first)
+                .unwrap(),
+            &[1; 32]
+        );
+        assert_eq!(
+            chain
+                .get_page(third.block_number)
+                .unwrap()
+                .raw_tuple(third)
+                .unwrap(),
+            &[3; 32]
+        );
         // Below-base blocks are not in this chain.
         assert!(chain.get_page(base - 1).is_none());
         // pages() carry the base-relative block numbers for write_data_pages.
@@ -393,6 +476,39 @@ mod tests {
         assert_eq!(tid.block_number, FIRST_DATA_BLOCK_NUMBER);
         assert_eq!(tid.offset_number, 1);
         assert_eq!(page.raw_tuple(tid).unwrap(), payload.as_slice());
+    }
+
+    #[test]
+    fn data_page_materialization_preserves_unused_line_pointer_offsets() {
+        let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, DEFAULT_PAGE_SIZE);
+        let first = page.insert_existing_raw_tuple(vec![0x11; 16]).unwrap();
+        let unused = page.insert_unused_slot().unwrap();
+        let third_payload = vec![0x33; 16];
+        let third = page
+            .insert_existing_raw_tuple(third_payload.clone())
+            .unwrap();
+
+        assert_eq!(first.offset_number, 1);
+        assert_eq!(unused.offset_number, 2);
+        assert_eq!(third.offset_number, 3);
+        assert_eq!(
+            page.raw_tuple(unused).unwrap_err(),
+            "tuple offset 2 is unused"
+        );
+        assert_eq!(page.occupied_offsets().collect::<Vec<_>>(), vec![1, 3]);
+        assert_eq!(page.raw_tuple(third).unwrap(), third_payload.as_slice());
+    }
+
+    #[test]
+    fn data_page_materialization_uses_physical_pageadditem_accounting() {
+        let mut page = DataPage::new(FIRST_DATA_BLOCK_NUMBER, 112);
+        page.insert_unused_slot().unwrap();
+
+        assert!(!page.can_fit_raw_tuple(77));
+        let tid = page.insert_existing_raw_tuple(vec![0x44; 77]).unwrap();
+
+        assert_eq!(tid.offset_number, 2);
+        assert_eq!(page.free_bytes(), 0);
     }
 
     #[test]

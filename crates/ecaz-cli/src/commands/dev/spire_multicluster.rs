@@ -1,7 +1,8 @@
 use clap::{Args, Subcommand, ValueEnum};
 use color_eyre::eyre::{bail, eyre, Context, Result};
+use ecaz_fault_injection::ProviderMode;
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::env;
 use std::fs;
 use std::io::{BufRead, BufReader, Write};
@@ -514,6 +515,29 @@ pub struct LocalMultinodePg18Args {
     /// Skip cargo pgrx install before starting fixture clusters.
     #[arg(long)]
     skip_install: bool,
+
+    /// Inject one exact-peer provider fault into the first remote SQL peer.
+    #[arg(long, value_enum)]
+    remote_socket_fault: Option<RemoteSocketFaultArg>,
+
+    /// Per-operation delay for --remote-socket-fault slow.
+    #[arg(long, default_value_t = 25)]
+    remote_socket_fault_latency_ms: u64,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub enum RemoteSocketFaultArg {
+    Reset,
+    Slow,
+}
+
+impl RemoteSocketFaultArg {
+    fn provider_mode(self) -> ProviderMode {
+        match self {
+            Self::Reset => ProviderMode::SocketReset,
+            Self::Slow => ProviderMode::SocketSlow,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1075,6 +1099,14 @@ struct LocalPgCluster {
     nodes: Vec<LocalPgNode>,
 }
 
+struct LocalRemoteSocketFaultConfig {
+    fault: RemoteSocketFaultArg,
+    latency_ms: u64,
+    peer: String,
+    marker: PathBuf,
+    arm_file: PathBuf,
+}
+
 impl LocalPgCluster {
     async fn stop_all(&self) {
         for node in &self.nodes {
@@ -1097,6 +1129,11 @@ async fn run_native_local_multinode_pg18(
     pgbin: PathBuf,
     args: LocalMultinodePg18Args,
 ) -> Result<()> {
+    if args.remote_socket_fault == Some(RemoteSocketFaultArg::Slow)
+        && args.remote_socket_fault_latency_ms == 0
+    {
+        bail!("--remote-socket-fault-latency-ms must be at least 1");
+    }
     let run_id = args.run_id.unwrap_or_else(default_local_multinode_run_id);
     let coord_port = args.coord_port.unwrap_or(39700);
     let remote1_port = args.remote1_port.unwrap_or(39701);
@@ -1128,7 +1165,7 @@ async fn run_native_local_multinode_pg18(
             .as_ref()
             .map(|artifact_dir| artifact_dir.join("local-multinode.log"))
     });
-    let socket_dir = repo_root.join(format!("target/spire-local-multinode-sockets-{run_id}"));
+    let socket_dir = run_dir.join("sockets");
     let topology = run_dir.join("topology.local.json");
     let work_dir = run_dir.join("work");
     let ecaz_bin = env::current_exe().wrap_err("resolving current ecaz executable")?;
@@ -1143,6 +1180,8 @@ async fn run_native_local_multinode_pg18(
         .wrap_err_with(|| format!("creating {}", socket_dir.display()))?;
     fs::create_dir_all(&run_dir).wrap_err_with(|| format!("creating {}", run_dir.display()))?;
     fs::create_dir_all(&work_dir).wrap_err_with(|| format!("creating {}", work_dir.display()))?;
+    let log_dir = fs::canonicalize(&log_dir)
+        .wrap_err_with(|| format!("canonicalizing {}", log_dir.display()))?;
 
     log_local_multinode(
         smoke_log.as_deref(),
@@ -1227,10 +1266,34 @@ async fn run_native_local_multinode_pg18(
         psql,
         nodes,
     };
+    let remote_fault = args
+        .remote_socket_fault
+        .map(|fault| {
+            let provider = ecaz_fault_injection::provider_library_path()
+                .filter(|path| !path.contains("not built"))
+                .ok_or_else(|| {
+                    eyre!("--remote-socket-fault requires the Linux LD_PRELOAD provider")
+                })?;
+            if !Path::new(provider).is_file() {
+                bail!("fault provider does not exist at {provider}");
+            }
+            Ok(LocalRemoteSocketFaultConfig {
+                fault,
+                latency_ms: args.remote_socket_fault_latency_ms,
+                peer: format!("unix:{}/.s.PGSQL.{remote1_port}", socket_dir.display()),
+                marker: log_dir.join("spire-remote-socket-fault.marker"),
+                arm_file: log_dir.join("spire-remote-socket-fault.arm"),
+            })
+        })
+        .transpose()?;
+    if let Some(config) = &remote_fault {
+        let _ = fs::remove_file(&config.marker);
+        let _ = fs::remove_file(&config.arm_file);
+    }
 
     let result = async {
         init_local_pg_nodes(&cluster).await?;
-        start_local_pg_nodes(&cluster, &socket_dir).await?;
+        start_local_pg_nodes(&cluster, &socket_dir, remote_fault.as_ref()).await?;
         setup_local_pg_nodes(&cluster, &socket_dir).await?;
         write_local_topology(&topology, &socket_dir, &cluster.nodes)?;
 
@@ -1255,6 +1318,18 @@ async fn run_native_local_multinode_pg18(
             args.prepared_dir.as_deref(),
         )
         .await?;
+
+        if let Some(config) = &remote_fault {
+            run_spire_remote_socket_fault_probe(
+                &socket_dir,
+                coord_port,
+                &log_dir,
+                &prefix,
+                &coord_index,
+                config,
+            )
+            .await?;
+        }
 
         run_local_multinode_smoke(
             &repo_root,
@@ -1331,17 +1406,21 @@ async fn init_local_pg_nodes(cluster: &LocalPgCluster) -> Result<()> {
     Ok(())
 }
 
-async fn start_local_pg_nodes(cluster: &LocalPgCluster, socket_dir: &Path) -> Result<()> {
+async fn start_local_pg_nodes(
+    cluster: &LocalPgCluster,
+    socket_dir: &Path,
+    remote_fault: Option<&LocalRemoteSocketFaultConfig>,
+) -> Result<()> {
     let conninfo_env = local_conninfo_env(&cluster.nodes, socket_dir)?;
     for node in cluster.nodes.iter().filter(|node| node.node_id != 1) {
-        start_one_local_pg_node(cluster, node, socket_dir, &conninfo_env).await?;
+        start_one_local_pg_node(cluster, node, socket_dir, &conninfo_env, None).await?;
     }
     let coord = cluster
         .nodes
         .iter()
         .find(|node| node.node_id == 1)
         .ok_or_else(|| eyre!("missing coordinator node"))?;
-    start_one_local_pg_node(cluster, coord, socket_dir, &conninfo_env).await
+    start_one_local_pg_node(cluster, coord, socket_dir, &conninfo_env, remote_fault).await
 }
 
 async fn start_one_local_pg_node(
@@ -1349,6 +1428,7 @@ async fn start_one_local_pg_node(
     node: &LocalPgNode,
     socket_dir: &Path,
     conninfo_env: &[(String, String)],
+    remote_fault: Option<&LocalRemoteSocketFaultConfig>,
 ) -> Result<()> {
     let mut command = Command::new(&cluster.pg_ctl);
     command
@@ -1368,6 +1448,21 @@ async fn start_one_local_pg_node(
         .stderr(Stdio::inherit());
     for (name, value) in conninfo_env {
         command.env(name, value);
+    }
+    if let Some(config) = remote_fault {
+        let marker = config.marker.display().to_string();
+        let arm_file = config.arm_file.display().to_string();
+        for (name, value) in ecaz_fault_injection::provider_environment(
+            config.fault.provider_mode(),
+            "",
+            1,
+            (config.fault == RemoteSocketFaultArg::Slow).then_some(config.latency_ms),
+            Some(&marker),
+            Some(&arm_file),
+            Some(&config.peer),
+        ) {
+            command.env(name, value);
+        }
     }
     run_status(command)
         .await
@@ -2361,6 +2456,274 @@ async fn run_local_multinode_smoke(
         .wrap_err("running local multinode pipeline smoke")
 }
 
+async fn run_spire_remote_socket_fault_probe(
+    socket_dir: &Path,
+    coord_port: u16,
+    log_dir: &Path,
+    prefix: &str,
+    coord_index: &str,
+    config: &LocalRemoteSocketFaultConfig,
+) -> Result<()> {
+    const PROFILE_TOP_K: i64 = 10;
+
+    let conninfo = format!(
+        "host={} port={} dbname=postgres user=ecaz_coord connect_timeout=2",
+        socket_dir.display(),
+        coord_port
+    );
+    let (client, connection) = tokio_postgres::connect(&conninfo, tokio_postgres::NoTls)
+        .await
+        .wrap_err("connecting SPIRE socket-fault coordinator session")?;
+    let connection_task = tokio::spawn(connection);
+    let query_table = sql_identifier(&format!("{prefix}_queries"));
+    let profile_sql = format!(
+        "SELECT metric, value
+         FROM ec_spire_remote_search_production_read_profile(
+             {}::regclass,
+             (SELECT source FROM {query_table} ORDER BY id LIMIT 1)::real[],
+             10
+         )",
+        sql_string_literal(coord_index)
+    );
+    client
+        .batch_execute("SET enable_seqscan = off; SET enable_indexscan = off;")
+        .await
+        .wrap_err("configuring SPIRE remote socket probe session")?;
+
+    let baseline_started = Instant::now();
+    let baseline = query_spire_remote_profile(&client, &profile_sql)
+        .await
+        .wrap_err("running disarmed SPIRE remote socket baseline")?;
+    validate_spire_remote_profile_health(&baseline, PROFILE_TOP_K)
+        .wrap_err("validating disarmed SPIRE remote socket baseline")?;
+    let baseline_ms = baseline_started.elapsed().as_millis();
+    let baseline_stable = stable_spire_remote_profile(&baseline)?;
+
+    fs::write(&config.arm_file, "")
+        .wrap_err_with(|| format!("arming {}", config.arm_file.display()))?;
+    let fault_started = Instant::now();
+    let outcome = query_spire_remote_profile(&client, &profile_sql).await;
+    let fault_ms = fault_started.elapsed().as_millis();
+    fs::remove_file(&config.arm_file)
+        .wrap_err_with(|| format!("disarming {}", config.arm_file.display()))?;
+
+    let outcome_ok = outcome.is_ok();
+    let mut armed_summary = "clean-error".to_owned();
+    if config.fault == RemoteSocketFaultArg::Slow {
+        let armed = outcome.wrap_err("armed SPIRE socket-slow query failed")?;
+        let armed_stable = stable_spire_remote_profile(&armed)?;
+        if armed_stable != baseline_stable {
+            bail!(
+                "armed SPIRE socket-slow stable profile differed from its disarmed baseline: baseline={} armed={}",
+                summarize_spire_remote_profile(&baseline)?,
+                summarize_spire_remote_profile(&armed)?
+            );
+        }
+        let required_fault_ms = baseline_ms.saturating_add(u128::from(config.latency_ms));
+        if fault_ms < required_fault_ms {
+            bail!(
+                "armed SPIRE socket-slow query took {fault_ms} ms versus {baseline_ms} ms baseline, below required baseline-plus-latency {required_fault_ms} ms"
+            );
+        }
+        armed_summary = summarize_spire_remote_profile(&armed)?;
+    } else if let Ok(armed) = &outcome {
+        armed_summary = summarize_spire_remote_profile(armed)?;
+    }
+    let armed_outcome = if outcome_ok { "success" } else { "clean-error" };
+
+    let marker_content = fs::read_to_string(&config.marker)
+        .wrap_err_with(|| format!("reading {}", config.marker.display()))?;
+    let expected_mode = config.fault.provider_mode().as_str();
+    if !marker_content.lines().any(|line| {
+        line.contains("fault=1")
+            && line.contains(&format!("mode={expected_mode}"))
+            && line.contains(&format!("target={}", config.peer))
+    }) {
+        bail!(
+            "SPIRE remote socket marker has no exact-peer fault event for {expected_mode} {}",
+            config.peer
+        );
+    }
+
+    let recovered = query_spire_remote_profile(&client, &profile_sql)
+        .await
+        .wrap_err("running disarmed SPIRE remote socket recovery query")?;
+    let recovered_stable = stable_spire_remote_profile(&recovered)?;
+    if recovered_stable != baseline_stable {
+        bail!(
+            "disarmed SPIRE remote socket recovery profile differed from baseline: baseline={} recovery={}",
+            summarize_spire_remote_profile(&baseline)?,
+            summarize_spire_remote_profile(&recovered)?
+        );
+    }
+    connection_task.abort();
+    let baseline_summary = summarize_spire_remote_profile(&baseline)?;
+    let recovered_summary = summarize_spire_remote_profile(&recovered)?;
+    let line = format!(
+        "remote_socket_fault mode={expected_mode} peer={} baseline_ms={baseline_ms} fault_ms={fault_ms} baseline_profile={} armed_outcome={armed_outcome} armed_profile={} recovered_profile={} stable_profile_match=true fault_event=true disarmed=true recovery=true",
+        config.peer,
+        baseline_summary,
+        armed_summary,
+        recovered_summary
+    );
+    fs::write(
+        log_dir.join("spire-remote-socket-fault.log"),
+        format!("{line}\n"),
+    )
+    .wrap_err("writing SPIRE remote socket fault summary")?;
+    crate::ecaz_println!("[spire-multicluster] {line}");
+    Ok(())
+}
+
+const SPIRE_REMOTE_FAULT_STABLE_METRICS: &[&str] = &[
+    "requested_epoch",
+    "consistency_mode_source",
+    "consistency_mode",
+    "effective_nprobe",
+    "selected_pid_count",
+    "local_pid_count",
+    "remote_pid_count",
+    "skipped_pid_count",
+    "dispatch_count",
+    "compact_candidate_count",
+    "remote_heap_ready_dispatch_count",
+    "remote_heap_failed_dispatch_count",
+    "remote_heap_candidate_count",
+    "local_heap_candidate_count",
+    "returned_candidate_count",
+    "result_source",
+    "final_heap_fetch_status",
+    "next_blocker",
+    "status",
+    "recommendation",
+];
+
+async fn query_spire_remote_profile(
+    client: &tokio_postgres::Client,
+    sql: &str,
+) -> Result<BTreeMap<String, String>> {
+    let rows = client.query(sql, &[]).await?;
+    if rows.is_empty() {
+        bail!("SPIRE production read profile returned no metrics");
+    }
+    let mut profile = BTreeMap::new();
+    for row in rows {
+        let metric = row.get::<_, String>(0);
+        let value = row.get::<_, String>(1);
+        if profile.insert(metric.clone(), value).is_some() {
+            bail!("SPIRE production read profile returned duplicate metric {metric}");
+        }
+    }
+    let remote_pid_count = spire_remote_profile_i64(&profile, "remote_pid_count")?;
+    if remote_pid_count <= 0 {
+        bail!("SPIRE production read profile had no remote participants");
+    }
+    Ok(profile)
+}
+
+fn stable_spire_remote_profile(
+    profile: &BTreeMap<String, String>,
+) -> Result<BTreeMap<String, String>> {
+    SPIRE_REMOTE_FAULT_STABLE_METRICS
+        .iter()
+        .map(|metric| {
+            profile
+                .get(*metric)
+                .cloned()
+                .map(|value| ((*metric).to_owned(), value))
+                .ok_or_else(|| eyre!("SPIRE production read profile missing metric {metric}"))
+        })
+        .collect()
+}
+
+fn spire_remote_profile_i64(profile: &BTreeMap<String, String>, metric: &str) -> Result<i64> {
+    profile
+        .get(metric)
+        .ok_or_else(|| eyre!("SPIRE production read profile missing metric {metric}"))?
+        .parse::<i64>()
+        .wrap_err_with(|| format!("parsing SPIRE production read profile metric {metric}"))
+}
+
+fn validate_spire_remote_profile_health(
+    profile: &BTreeMap<String, String>,
+    expected_top_k: i64,
+) -> Result<()> {
+    let metric = |name: &str| {
+        profile
+            .get(name)
+            .map(String::as_str)
+            .ok_or_else(|| eyre!("SPIRE production read profile missing metric {name}"))
+    };
+    let require_value = |name: &str, expected: &str| -> Result<()> {
+        let actual = metric(name)?;
+        if actual != expected {
+            bail!(
+                "SPIRE production read profile metric {name} was {actual:?}, expected {expected:?}"
+            );
+        }
+        Ok(())
+    };
+
+    require_value("status", "ready")?;
+    require_value("result_source", "remote_heap_candidates")?;
+    require_value("final_heap_fetch_status", "remote_ready")?;
+
+    let remote_pid_count = spire_remote_profile_i64(profile, "remote_pid_count")?;
+    if remote_pid_count <= 0 {
+        bail!("SPIRE production read profile had no remote participants");
+    }
+    let returned_candidate_count = spire_remote_profile_i64(profile, "returned_candidate_count")?;
+    if returned_candidate_count != expected_top_k {
+        bail!(
+            "SPIRE production read profile returned {returned_candidate_count} candidates, expected {expected_top_k}"
+        );
+    }
+    let skipped_pid_count = spire_remote_profile_i64(profile, "skipped_pid_count")?;
+    if skipped_pid_count != 0 {
+        bail!("SPIRE production read profile skipped {skipped_pid_count} selected PIDs");
+    }
+    let failed_dispatch_count =
+        spire_remote_profile_i64(profile, "remote_heap_failed_dispatch_count")?;
+    if failed_dispatch_count != 0 {
+        bail!(
+            "SPIRE production read profile had {failed_dispatch_count} failed remote heap dispatches"
+        );
+    }
+    let dispatch_count = spire_remote_profile_i64(profile, "dispatch_count")?;
+    let ready_dispatch_count =
+        spire_remote_profile_i64(profile, "remote_heap_ready_dispatch_count")?;
+    if dispatch_count <= 0 || ready_dispatch_count != dispatch_count {
+        bail!(
+            "SPIRE production read profile had {ready_dispatch_count} ready remote heap dispatches for {dispatch_count} selected dispatches"
+        );
+    }
+    let remote_candidate_count = spire_remote_profile_i64(profile, "remote_heap_candidate_count")?;
+    if remote_candidate_count < returned_candidate_count {
+        bail!(
+            "SPIRE production read profile had {remote_candidate_count} remote heap candidates for {returned_candidate_count} returned candidates"
+        );
+    }
+    Ok(())
+}
+
+fn summarize_spire_remote_profile(profile: &BTreeMap<String, String>) -> Result<String> {
+    Ok(format!(
+        "remote_pids:{},skipped_pids:{},ready_dispatches:{},failed_dispatches:{},returned_candidates:{},status:{}",
+        spire_remote_profile_i64(profile, "remote_pid_count")?,
+        spire_remote_profile_i64(profile, "skipped_pid_count")?,
+        spire_remote_profile_i64(profile, "remote_heap_ready_dispatch_count")?,
+        spire_remote_profile_i64(profile, "remote_heap_failed_dispatch_count")?,
+        spire_remote_profile_i64(profile, "returned_candidate_count")?,
+        profile
+            .get("status")
+            .ok_or_else(|| eyre!("SPIRE production read profile missing metric status"))?
+    ))
+}
+
+fn sql_identifier(value: &str) -> String {
+    format!("\"{}\"", value.replace('"', "\"\""))
+}
+
 async fn run_ecaz_dev_sql_string_logged(
     repo_root: &Path,
     ecaz_bin: &Path,
@@ -2677,6 +3040,72 @@ fn parse_u16_list(raw: &str) -> Result<Vec<u16>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn healthy_socket_fault_profile() -> BTreeMap<String, String> {
+        let mut profile = SPIRE_REMOTE_FAULT_STABLE_METRICS
+            .iter()
+            .map(|metric| ((*metric).to_owned(), "1".to_owned()))
+            .collect::<BTreeMap<_, _>>();
+        for (metric, value) in [
+            ("remote_pid_count", "3"),
+            ("skipped_pid_count", "0"),
+            ("dispatch_count", "3"),
+            ("remote_heap_ready_dispatch_count", "3"),
+            ("remote_heap_failed_dispatch_count", "0"),
+            ("remote_heap_candidate_count", "30"),
+            ("returned_candidate_count", "10"),
+            ("result_source", "remote_heap_candidates"),
+            ("final_heap_fetch_status", "remote_ready"),
+            ("next_blocker", "none"),
+            ("status", "ready"),
+            ("recommendation", "none"),
+        ] {
+            profile.insert(metric.to_owned(), value.to_owned());
+        }
+        profile
+    }
+
+    #[test]
+    fn socket_fault_stable_profile_ignores_timings_but_tracks_participation() {
+        let mut baseline = healthy_socket_fault_profile();
+        baseline.insert("total_elapsed_ms".to_owned(), "12".to_owned());
+        let mut same_result = baseline.clone();
+        same_result.insert("total_elapsed_ms".to_owned(), "37".to_owned());
+
+        assert_eq!(
+            stable_spire_remote_profile(&baseline).unwrap(),
+            stable_spire_remote_profile(&same_result).unwrap()
+        );
+
+        same_result.insert("remote_pid_count".to_owned(), "2".to_owned());
+        assert_ne!(
+            stable_spire_remote_profile(&baseline).unwrap(),
+            stable_spire_remote_profile(&same_result).unwrap()
+        );
+    }
+
+    #[test]
+    fn socket_fault_profile_health_rejects_degraded_or_empty_baselines() {
+        let healthy = healthy_socket_fault_profile();
+        validate_spire_remote_profile_health(&healthy, 10).unwrap();
+
+        for (metric, unhealthy_value) in [
+            ("status", "degraded"),
+            ("result_source", "none"),
+            ("final_heap_fetch_status", "remote_failed"),
+            ("returned_candidate_count", "0"),
+            ("skipped_pid_count", "1"),
+            ("remote_heap_failed_dispatch_count", "1"),
+            ("remote_heap_ready_dispatch_count", "2"),
+        ] {
+            let mut unhealthy = healthy.clone();
+            unhealthy.insert(metric.to_owned(), unhealthy_value.to_owned());
+            assert!(
+                validate_spire_remote_profile_health(&unhealthy, 10).is_err(),
+                "{metric}={unhealthy_value} must not become a socket-fault baseline"
+            );
+        }
+    }
 
     #[test]
     fn parses_bench_production_read_variant() {

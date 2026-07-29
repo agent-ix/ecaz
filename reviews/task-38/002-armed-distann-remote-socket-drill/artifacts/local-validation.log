@@ -1,0 +1,37 @@
+Task 38 packet 002 local validation
+Implementation HEAD: b3a70764c
+Host: macOS arm64
+
+rustfmt modified Rust files
+result=pass
+notes=stable rustfmt reported only repository nightly-option warnings
+
+git diff --check
+result=pass
+
+cargo check -p ecaz-cli
+result=pass
+elapsed=26m22s
+warning=pre-existing LoadedDistributedPlacementConfig.path dead_code
+warning=PostgreSQL header unused-parameter warnings from pg18_pgstat_shim.c
+
+cargo test -p ecaz-fault-injection
+result=pass
+tests=9 passed; 0 failed
+linux_arm_file_runtime_test=not_executed target_os=macos
+
+cargo clippy -p ecaz-cli -- -D warnings
+result=blocked-pre-existing
+first_error=crates/ecaz-cloud/src/commands/bench.rs:180 remote_suite_script too_many_arguments
+
+cargo clippy -p ecaz-cli --no-deps -- -A dead_code -D warnings
+result=blocked-pre-existing
+error_count=29
+new_probe_diagnostic=none
+
+cargo test -p ecaz-cli cli_parses_distann_remote_socket_fault_command
+result=not_completed
+reason=second full ecaz code-generation cycle stopped after production cargo check passed
+
+linux_provider_runtime=not_available
+live_fault_event=not_claimed

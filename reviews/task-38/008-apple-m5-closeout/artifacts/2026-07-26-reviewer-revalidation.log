@@ -1,0 +1,39 @@
+Task 38 packet 008 outside-review response revalidation
+Date: 2026-07-26
+Corrected canonical status: af908f44c
+Packet response head: e23924a3a
+
+Scope:
+- seq01 findings only
+- local static source/artifact inspection
+- no Cargo, tests, PostgreSQL workloads, remote hosts, AWS, CI, or Intel work
+
+Finding 1:
+- canonical status no longer calls the Linux matrix exclusive
+- M5 status is narrowed to local PG18 evidence and reviewed source slices
+- authoritative fault-full aggregate implementation/source review is open
+- designated-host aggregate execution is separately open
+- result: closed
+
+Finding 2:
+- all three DistANN codecs and applicable heap/index/WAL/temp provider paths
+- exact mode/path markers, accepted outcomes, recovery/shared postconditions,
+  and same-run slow baseline delta
+- DistANN accepted reset outcome, expected source, baseline+latency, and exact
+  expected-source recovery
+- SPIRE healthy baseline, accepted reset error/degraded result, stable slow
+  equality, baseline+latency timing, and recovered-profile equality
+- cgroup exact rows, valid/ready index, forced scan, shared postconditions,
+  clean stop
+- global no-PANIC postmaster log and buffer/lock cleanup gates
+- result: closed
+
+Finding 3:
+- audit says armed/disarmed recovery evidence
+- identifies seven armed rejection markers plus the final seven-fixture
+  completion marker and approved control flow
+- result: closed
+
+Static checks:
+- git diff --check aa57d7286..e23924a3a: pass
+- git diff --check 67177c713..e23924a3a: pass

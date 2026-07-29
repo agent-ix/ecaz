@@ -4,8 +4,7 @@
 //! defines the fault model, required coverage, and post-condition probes used by
 //! the `ecaz dev fault` CLI and Makefile smoke targets.
 
-use std::fmt;
-use std::str::FromStr;
+use std::{fmt, str::FromStr};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum ProviderMode {
@@ -811,11 +810,12 @@ pub fn workload_temp_spill_sql(rows: i64) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     #[cfg(target_os = "linux")]
     use std::os::fd::AsRawFd;
     #[cfg(target_os = "linux")]
     use std::process::Command;
+
+    use super::*;
 
     #[test]
     fn all_lanes_cover_every_access_method() {
@@ -949,7 +949,7 @@ mod tests {
             2,
             None,
             Some("/tmp/ecaz-fault-provider.marker"),
-            None,
+            Some("/tmp/ecaz-fault-provider.arm"),
             Some("tcp:127.0.0.1:39711"),
         );
         assert!(env
@@ -957,6 +957,9 @@ mod tests {
             .any(|(key, value)| { key == "ECAZ_FAULT_PROVIDER_MODE" && value == "socket-reset" }));
         assert!(env.iter().any(|(key, value)| {
             key == "ECAZ_FAULT_PROVIDER_PEER" && value == "tcp:127.0.0.1:39711"
+        }));
+        assert!(env.iter().any(|(key, value)| {
+            key == "ECAZ_FAULT_PROVIDER_ARM_FILE" && value == "/tmp/ecaz-fault-provider.arm"
         }));
     }
 
@@ -994,6 +997,104 @@ mod tests {
                 && marker_content.contains("mode=eio-read")
                 && marker_content.contains("target=/etc/hosts"),
             "unexpected marker: {marker_content}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ldpreload_provider_arm_file_gates_injection() {
+        let provider = provider_library_path().expect("linux provider should be built");
+        let arm_file = format!("/tmp/ecaz_fault_provider_arm_{}", std::process::id());
+        let marker = format!("/tmp/ecaz_fault_provider_arm_marker_{}", std::process::id());
+        let _ = std::fs::remove_file(&arm_file);
+        let disarmed = Command::new("/bin/cat")
+            .arg("/etc/hosts")
+            .env("LD_PRELOAD", provider)
+            .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+            .env("ECAZ_FAULT_PROVIDER_MODE", "eio-read")
+            .env("ECAZ_FAULT_PROVIDER_MATCH", "/etc/hosts")
+            .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+            .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
+            .env("ECAZ_FAULT_PROVIDER_ARM_FILE", &arm_file)
+            .output()
+            .expect("run disarmed provider-backed cat");
+        assert!(
+            disarmed.status.success(),
+            "missing arm file must leave matched reads untouched"
+        );
+
+        std::fs::write(&arm_file, "").expect("create provider arm file");
+        let armed = Command::new("/bin/cat")
+            .arg("/etc/hosts")
+            .env("LD_PRELOAD", provider)
+            .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+            .env("ECAZ_FAULT_PROVIDER_MODE", "eio-read")
+            .env("ECAZ_FAULT_PROVIDER_MATCH", "/etc/hosts")
+            .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+            .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
+            .env("ECAZ_FAULT_PROVIDER_ARM_FILE", &arm_file)
+            .output()
+            .expect("run armed provider-backed cat");
+        let marker_content = std::fs::read_to_string(&marker).expect("read provider marker");
+        let _ = std::fs::remove_file(&arm_file);
+        let _ = std::fs::remove_file(&marker);
+        assert!(!armed.status.success(), "arm file must enable injection");
+        assert!(
+            marker_content.contains("fault=1") && marker_content.contains("mode=eio-read"),
+            "unexpected marker: {marker_content}"
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn ldpreload_slow_disk_marks_only_the_matched_path() {
+        let provider = provider_library_path().expect("linux provider should be built");
+        let marker = format!(
+            "/tmp/ecaz_fault_provider_slow_marker_{}",
+            std::process::id()
+        );
+        let run = |path_match: &str| {
+            let _ = std::fs::remove_file(&marker);
+            let started = std::time::Instant::now();
+            let output = Command::new("/bin/cat")
+                .arg("/etc/hosts")
+                .env("LD_PRELOAD", provider)
+                .env("ECAZ_FAULT_PROVIDER_ENABLE", "1")
+                .env("ECAZ_FAULT_PROVIDER_MODE", "slow-disk")
+                .env("ECAZ_FAULT_PROVIDER_MATCH", path_match)
+                .env("ECAZ_FAULT_PROVIDER_AFTER", "1")
+                .env("ECAZ_FAULT_PROVIDER_LATENCY_MS", "500")
+                .env("ECAZ_FAULT_PROVIDER_MARKER", &marker)
+                .output()
+                .expect("run provider-backed cat");
+            let elapsed = started.elapsed();
+            assert!(output.status.success(), "slow disk must not fail the read");
+            (
+                std::fs::read_to_string(&marker).expect("read provider marker"),
+                elapsed,
+            )
+        };
+
+        let (unmatched, unmatched_elapsed) = run("/definitely/not/the/hosts/path");
+        assert!(
+            !unmatched.contains("fault=1"),
+            "unmatched path was delayed: {unmatched}"
+        );
+        assert!(
+            unmatched_elapsed < std::time::Duration::from_millis(500),
+            "unmatched path took {unmatched_elapsed:?}, expected less than injected latency"
+        );
+        let (matched, matched_elapsed) = run("/etc/hosts");
+        let _ = std::fs::remove_file(&marker);
+        assert!(
+            matched.contains("fault=1")
+                && matched.contains("mode=slow-disk")
+                && matched.contains("target=/etc/hosts"),
+            "unexpected marker: {matched}"
+        );
+        assert!(
+            matched_elapsed >= std::time::Duration::from_millis(500),
+            "matched path took {matched_elapsed:?}, expected at least the injected latency"
         );
     }
 

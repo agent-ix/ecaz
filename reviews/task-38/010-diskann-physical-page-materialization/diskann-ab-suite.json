@@ -1,0 +1,241 @@
+{
+  "name": "task38-p010-diskann-physical-page-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/Users/peter/.pgrx",
+    "bits": 4,
+    "seed": 42,
+    "queries_limit": 200,
+    "iterations": 200,
+    "force_index": true,
+    "sample_backend_memory": true,
+    "memory_sample_interval_ms": 25
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "load",
+      "name": "baseline-load-10k-diskann",
+      "tags": ["baseline", "load", "m5-local", "ec_real_10k", "diskann"],
+      "prefix": "task38_p010_baseline_real10k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "baseline-recall-10k-diskann",
+      "tags": ["baseline", "recall", "m5-local", "ec_real_10k", "diskann"],
+      "prefix": "task38_p010_baseline_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800]
+    },
+    {
+      "kind": "latency",
+      "name": "baseline-latency-10k-diskann",
+      "tags": ["baseline", "latency", "m5-local", "ec_real_10k", "diskann"],
+      "prefix": "task38_p010_baseline_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "baseline-storage-10k-diskann",
+      "tags": ["baseline", "storage", "m5-local", "ec_real_10k", "diskann"],
+      "prefix": "task38_p010_baseline_real10k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "baseline-load-50k-diskann",
+      "tags": ["baseline", "load", "m5-local", "ec_real_50k", "diskann"],
+      "prefix": "task38_p010_baseline_real50k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "baseline-recall-50k-diskann",
+      "tags": ["baseline", "recall", "m5-local", "ec_real_50k", "diskann"],
+      "prefix": "task38_p010_baseline_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800]
+    },
+    {
+      "kind": "latency",
+      "name": "baseline-latency-50k-diskann",
+      "tags": ["baseline", "latency", "m5-local", "ec_real_50k", "diskann"],
+      "prefix": "task38_p010_baseline_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "baseline-storage-50k-diskann",
+      "tags": ["baseline", "storage", "m5-local", "ec_real_50k", "diskann"],
+      "prefix": "task38_p010_baseline_real50k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "baseline-load-100k-diskann",
+      "tags": ["baseline", "load", "m5-local", "ec_real_100k", "diskann"],
+      "prefix": "task38_p010_baseline_real100k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "baseline-recall-100k-diskann",
+      "tags": ["baseline", "recall", "m5-local", "ec_real_100k", "diskann"],
+      "prefix": "task38_p010_baseline_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800]
+    },
+    {
+      "kind": "latency",
+      "name": "baseline-latency-100k-diskann",
+      "tags": ["baseline", "latency", "m5-local", "ec_real_100k", "diskann"],
+      "prefix": "task38_p010_baseline_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "baseline-storage-100k-diskann",
+      "tags": ["baseline", "storage", "m5-local", "ec_real_100k", "diskann"],
+      "prefix": "task38_p010_baseline_real100k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "candidate-load-10k-diskann",
+      "tags": ["candidate", "load", "m5-local", "ec_real_10k", "diskann"],
+      "prefix": "task38_p010_candidate_real10k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_10k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_10k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_10k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "candidate-recall-10k-diskann",
+      "tags": ["candidate", "recall", "m5-local", "ec_real_10k", "diskann"],
+      "prefix": "task38_p010_candidate_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800]
+    },
+    {
+      "kind": "latency",
+      "name": "candidate-latency-10k-diskann",
+      "tags": ["candidate", "latency", "m5-local", "ec_real_10k", "diskann"],
+      "prefix": "task38_p010_candidate_real10k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "candidate-storage-10k-diskann",
+      "tags": ["candidate", "storage", "m5-local", "ec_real_10k", "diskann"],
+      "prefix": "task38_p010_candidate_real10k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "candidate-load-50k-diskann",
+      "tags": ["candidate", "load", "m5-local", "ec_real_50k", "diskann"],
+      "prefix": "task38_p010_candidate_real50k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_50k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_50k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_50k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "candidate-recall-50k-diskann",
+      "tags": ["candidate", "recall", "m5-local", "ec_real_50k", "diskann"],
+      "prefix": "task38_p010_candidate_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800]
+    },
+    {
+      "kind": "latency",
+      "name": "candidate-latency-50k-diskann",
+      "tags": ["candidate", "latency", "m5-local", "ec_real_50k", "diskann"],
+      "prefix": "task38_p010_candidate_real50k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "candidate-storage-50k-diskann",
+      "tags": ["candidate", "storage", "m5-local", "ec_real_50k", "diskann"],
+      "prefix": "task38_p010_candidate_real50k_diskann"
+    },
+    {
+      "kind": "load",
+      "name": "candidate-load-100k-diskann",
+      "tags": ["candidate", "load", "m5-local", "ec_real_100k", "diskann"],
+      "prefix": "task38_p010_candidate_real100k_diskann",
+      "profile": "ec_diskann",
+      "corpus_file": "data/staged-current/ec_real_100k_corpus.tsv",
+      "queries_file": "data/staged-current/ec_real_100k_queries.tsv",
+      "manifest_file": "data/staged-current/ec_real_100k_manifest.json",
+      "allow_manifest_mismatch": true
+    },
+    {
+      "kind": "recall",
+      "name": "candidate-recall-100k-diskann",
+      "tags": ["candidate", "recall", "m5-local", "ec_real_100k", "diskann"],
+      "prefix": "task38_p010_candidate_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800]
+    },
+    {
+      "kind": "latency",
+      "name": "candidate-latency-100k-diskann",
+      "tags": ["candidate", "latency", "m5-local", "ec_real_100k", "diskann"],
+      "prefix": "task38_p010_candidate_real100k_diskann",
+      "profile": "ec_diskann",
+      "k": 10,
+      "sweep": [64, 128, 200, 400, 800],
+      "concurrency": 1,
+      "cache_state": "post_recall_warm"
+    },
+    {
+      "kind": "storage",
+      "name": "candidate-storage-100k-diskann",
+      "tags": ["candidate", "storage", "m5-local", "ec_real_100k", "diskann"],
+      "prefix": "task38_p010_candidate_real100k_diskann"
+    }
+  ]
+}

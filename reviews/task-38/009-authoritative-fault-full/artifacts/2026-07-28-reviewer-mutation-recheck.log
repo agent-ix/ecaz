@@ -1,0 +1,16 @@
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/89619270	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/89619280
+[fault] cancellation_mutation_control am=ec_distann/rabitq injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11560 after=11560
+[fault] pg_stat_wal_records_before=129604 after=129605 bytes_before=130733601 after=130733653
+[fault] resource_palloc_mutation_control am=ec_distann/rabitq injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11560 after=11560
+[fault] pg_stat_wal_records_before=129608 after=129608 bytes_before=130747645 after=130747645
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io_ops_before=11553 after=11560
+[fault] pg_stat_wal_records_before=129273 after=129610 bytes_before=130390501 after=130747813
+[fault] mutation_control_complete kind=All fixtures=1 clean_postconditions=true

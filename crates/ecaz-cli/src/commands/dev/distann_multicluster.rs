@@ -5,8 +5,9 @@
 //! The historical replicated-serving fixture remains available under an
 //! explicit control-only subcommand.
 
-use clap::{Args, Subcommand};
-use color_eyre::eyre::{bail, Context, Result};
+use clap::{Args, Subcommand, ValueEnum};
+use color_eyre::eyre::{bail, eyre, Context, Result};
+use ecaz_fault_injection::ProviderMode;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -223,6 +224,27 @@ pub struct LocalMultinodePg18Args {
     /// `data/staged-current`). Only used with `--corpus-prefix`.
     #[arg(long)]
     pub staged_dir: Option<PathBuf>,
+    /// Inject one exact-peer provider fault into the first remote owner query.
+    #[arg(long, value_enum)]
+    pub remote_socket_fault: Option<RemoteSocketFaultArg>,
+    /// Per-operation delay for --remote-socket-fault slow.
+    #[arg(long, default_value_t = 25)]
+    pub remote_socket_fault_latency_ms: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, ValueEnum)]
+pub enum RemoteSocketFaultArg {
+    Reset,
+    Slow,
+}
+
+impl RemoteSocketFaultArg {
+    fn provider_mode(self) -> ProviderMode {
+        match self {
+            Self::Reset => ProviderMode::SocketReset,
+            Self::Slow => ProviderMode::SocketSlow,
+        }
+    }
 }
 
 impl DistannMulticlusterCommand {
@@ -383,6 +405,17 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if mode == FixtureMode::ReplicatedServingControl && args.coordinator_outside_roster {
         bail!("replicated-serving-control does not support an outside coordinator");
+    }
+    if args.remote_socket_fault.is_some() && mode != FixtureMode::Physical {
+        bail!("--remote-socket-fault requires the physical fixture");
+    }
+    if args.remote_socket_fault.is_some() && !args.coordinator_outside_roster && args.nodes < 2 {
+        bail!("--remote-socket-fault requires at least one remote owner");
+    }
+    if args.remote_socket_fault == Some(RemoteSocketFaultArg::Slow)
+        && args.remote_socket_fault_latency_ms == 0
+    {
+        bail!("--remote-socket-fault-latency-ms must be at least 1");
     }
     if args.physical_benchmark && args.corpus_prefix.is_none() {
         bail!("--physical-benchmark requires --corpus-prefix");
@@ -638,6 +671,22 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             log_file: log_dir.join(format!("node{}-postgres.log", k + 1)),
         })
         .collect();
+    let remote_fault_marker = log_dir.join("distann-remote-socket-fault.marker");
+    let remote_fault_arm = log_dir.join("distann-remote-socket-fault.arm");
+    if args.remote_socket_fault.is_some() {
+        let provider = ecaz_fault_injection::provider_library_path()
+            .filter(|path| !path.contains("not built"))
+            .ok_or_else(|| {
+                color_eyre::eyre::eyre!(
+                    "--remote-socket-fault requires the Linux LD_PRELOAD provider"
+                )
+            })?;
+        if !Path::new(provider).is_file() {
+            bail!("fault provider does not exist at {provider}");
+        }
+        let _ = fs::remove_file(&remote_fault_marker);
+        let _ = fs::remove_file(&remote_fault_arm);
+    }
 
     crate::ecaz_println!("[distann-multicluster] repo={}", repo_root.display());
     crate::ecaz_println!("[distann-multicluster] pgbin={}", pgbin.display());
@@ -707,6 +756,23 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             );
         }
         if node.node_id == 1 {
+            if let Some(fault) = args.remote_socket_fault {
+                let peer = format!("tcp:127.0.0.1:{}", nodes[1].port);
+                let marker = remote_fault_marker.display().to_string();
+                let arm_file = remote_fault_arm.display().to_string();
+                for (name, value) in ecaz_fault_injection::provider_environment(
+                    fault.provider_mode(),
+                    "",
+                    1,
+                    (fault == RemoteSocketFaultArg::Slow)
+                        .then_some(args.remote_socket_fault_latency_ms),
+                    Some(&marker),
+                    Some(&arm_file),
+                    Some(&peer),
+                ) {
+                    command.env(name, value);
+                }
+            }
             if let Some(fixture) = enospc_fixture.as_ref() {
                 let path_match = format!("pg_tblspc/|{}", fixture.tablespace_dir.to_string_lossy());
                 let environment = ecaz_fault_injection::provider_environment(
@@ -5765,6 +5831,7 @@ async fn drive_physical_fixture(
         bail!("physical serving returned {served} rows, expected {query_limit}");
     }
     let mut remote_verified = 0_usize;
+    let mut remote_fault_lines = Vec::new();
     let remote_owners = if args.coordinator_outside_roster {
         owners
     } else {
@@ -5851,6 +5918,23 @@ async fn drive_physical_fixture(
                 node.node_id,
                 owner_plan
             );
+        }
+        if node.node_id == 2 {
+            if let Some(fault) = args.remote_socket_fault {
+                let line = run_remote_socket_fault_probe(
+                    &coordinator,
+                    &owner_query,
+                    fault,
+                    args.remote_socket_fault_latency_ms,
+                    &log_dir.join("distann-remote-socket-fault.arm"),
+                    &log_dir.join("distann-remote-socket-fault.marker"),
+                    node.port,
+                    source_id,
+                )
+                .await?;
+                crate::ecaz_println!("[distann-multicluster] {line}");
+                remote_fault_lines.push(line);
+            }
         }
         let materialized_source_id = coordinator
             .query_one(
@@ -5962,6 +6046,9 @@ async fn drive_physical_fixture(
     for line in &drop_extension_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
+    for line in &remote_fault_lines {
+        summary.push_str(&format!("[distann-multicluster] {line}\n"));
+    }
     summary.push_str(&format!(
         "[distann-multicluster] physical_topology_gate pass=true owners={} remote_verified={remote_verified} source_rows={source_count}\n",
         owners.len()
@@ -5974,6 +6061,97 @@ async fn drive_physical_fixture(
         summary_path.display()
     );
     Ok(())
+}
+
+async fn run_remote_socket_fault_probe(
+    coordinator: &tokio_postgres::Client,
+    owner_query: &str,
+    fault: RemoteSocketFaultArg,
+    latency_ms: u64,
+    arm_file: &Path,
+    marker: &Path,
+    peer_port: u16,
+    expected_source_id: &str,
+) -> Result<String> {
+    let probe_sql = format!("SELECT source_id::text FROM ({owner_query}) q");
+    let baseline_started = Instant::now();
+    let baseline = coordinator
+        .query_opt(&probe_sql, &[])
+        .await
+        .wrap_err("running disarmed DistANN remote socket baseline")?;
+    let baseline_source_id = baseline
+        .map(|row| row.get::<_, String>(0))
+        .ok_or_else(|| eyre!("disarmed DistANN remote socket baseline returned no row"))?;
+    if baseline_source_id != expected_source_id {
+        bail!(
+            "disarmed DistANN remote socket baseline returned {baseline_source_id}, expected {expected_source_id}"
+        );
+    }
+    let baseline_ms = baseline_started.elapsed().as_millis();
+
+    fs::write(arm_file, "").wrap_err_with(|| format!("arming {}", arm_file.display()))?;
+    let fault_started = Instant::now();
+    let outcome = coordinator.query_opt(&probe_sql, &[]).await;
+    let fault_ms = fault_started.elapsed().as_millis();
+    fs::remove_file(arm_file).wrap_err_with(|| format!("disarming {}", arm_file.display()))?;
+
+    match fault {
+        RemoteSocketFaultArg::Reset if outcome.is_ok() => {
+            bail!("armed DistANN socket-reset query unexpectedly succeeded")
+        }
+        RemoteSocketFaultArg::Reset => {}
+        RemoteSocketFaultArg::Slow => {
+            let fault_source_id = outcome
+                .wrap_err("armed DistANN socket-slow query failed")?
+                .map(|row| row.get::<_, String>(0))
+                .ok_or_else(|| eyre!("armed DistANN socket-slow query returned no row"))?;
+            if fault_source_id != expected_source_id {
+                bail!(
+                    "armed DistANN socket-slow query returned {fault_source_id}, expected {expected_source_id}"
+                );
+            }
+            let required_fault_ms = baseline_ms.saturating_add(u128::from(latency_ms));
+            if fault_ms < required_fault_ms {
+                bail!(
+                    "armed DistANN socket-slow query took {fault_ms} ms versus {baseline_ms} ms baseline, below required baseline-plus-latency {required_fault_ms} ms"
+                );
+            }
+        }
+    }
+
+    let marker_content =
+        fs::read_to_string(marker).wrap_err_with(|| format!("reading {}", marker.display()))?;
+    let expected_mode = fault.provider_mode().as_str();
+    let expected_target = format!("target=tcp:127.0.0.1:{peer_port}");
+    if !marker_content.lines().any(|line| {
+        line.contains("fault=1")
+            && line.contains(&format!("mode={expected_mode}"))
+            && line.contains(&expected_target)
+    }) {
+        bail!(
+            "DistANN remote socket marker has no exact-peer fault event for {expected_mode} {expected_target}"
+        );
+    }
+    let recovered_source_id = coordinator
+        .query_opt(&probe_sql, &[])
+        .await
+        .wrap_err("running disarmed DistANN remote socket recovery query")?
+        .map(|row| row.get::<_, String>(0))
+        .ok_or_else(|| eyre!("disarmed DistANN remote socket recovery returned no row"))?;
+    if recovered_source_id != expected_source_id {
+        bail!(
+            "disarmed DistANN remote socket recovery returned {recovered_source_id}, expected {expected_source_id}"
+        );
+    }
+    Ok(format!(
+        "remote_socket_fault mode={} peer=tcp:127.0.0.1:{} baseline_ms={} fault_ms={} expected_source_id={} recovered_source_id={} fault_event=true disarmed=true recovery=true",
+        expected_mode,
+        peer_port,
+        baseline_ms,
+        fault_ms,
+        expected_source_id,
+        recovered_source_id
+    ))
 }
 
 async fn physical_drop_extension_cleanup_drill(

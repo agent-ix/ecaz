@@ -1,0 +1,19 @@
+# Reviewer probe: pg_stat_io / pg_stat_wal availability on the M5 fault host
+# host: /Users/peter/.pgrx port 28818 (pgrx PG18), checkpoint 9364abb79
+
+$ SELECT version();
+PostgreSQL 18.3 (Homebrew) on aarch64-apple-darwin25.2.0
+
+$ SELECT count(*) FROM pg_stat_io;
+79
+
+$ SELECT coalesce(sum(reads + writes + writebacks + extends + fsyncs), 0)::bigint FROM pg_stat_io;   -- exact pg_stat_io_total() query
+113567203
+
+$ SELECT wal_records::bigint, wal_bytes::bigint FROM pg_stat_wal;   -- exact pg_stat_wal_snapshot() query
+359065291	407713486649
+
+Both views and both exact probe queries succeed on this host.
+The lanes nevertheless print 'pg_stat_io unavailable' / 'pg_stat_wal unavailable'
+because assert_postconditions() was called with before=None, not because the
+view or column is missing.

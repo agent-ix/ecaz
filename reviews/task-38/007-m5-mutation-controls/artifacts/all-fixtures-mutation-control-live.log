@@ -1,0 +1,58 @@
+ec_hnsw	table=ecaz_fault_hnsw	table_path=base/88881031/88891681	index=ecaz_fault_hnsw_idx	index_path=base/88881031/88891691
+ec_ivf	table=ecaz_fault_ivf	table_path=base/88881031/88891693	index=ecaz_fault_ivf_idx	index_path=base/88881031/88891703
+ec_diskann	table=ecaz_fault_diskann	table_path=base/88881031/88891705	index=ecaz_fault_diskann_idx	index_path=base/88881031/88891715
+ec_spire	table=ecaz_fault_spire	table_path=base/88881031/88891717	index=ecaz_fault_spire_idx	index_path=base/88881031/88891727
+ec_distann/rabitq	table=ecaz_fault_distann_rabitq	table_path=base/88881031/88891729	index=ecaz_fault_distann_rabitq_idx	index_path=base/88881031/88891739
+ec_distann/turboquant	table=ecaz_fault_distann_turboquant	table_path=base/88881031/88891741	index=ecaz_fault_distann_turboquant_idx	index_path=base/88881031/88891767
+ec_distann/grouped_pq	table=ecaz_fault_distann_grouped_pq	table_path=base/88881031/88891769	index=ecaz_fault_distann_grouped_pq_idx	index_path=base/88881031/88891779
+[fault] cancellation_mutation_control am=ec_hnsw injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_ivf injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_diskann injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_spire injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_distann/rabitq injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_distann/turboquant injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] cancellation_mutation_control am=ec_distann/grouped_pq injected=palloc_nth_1 normal_cancel_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] resource_palloc_mutation_control am=ec_hnsw injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] resource_palloc_mutation_control am=ec_ivf injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] resource_palloc_mutation_control am=ec_diskann injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] resource_palloc_mutation_control am=ec_spire injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] resource_palloc_mutation_control am=ec_distann/rabitq injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] resource_palloc_mutation_control am=ec_distann/turboquant injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] resource_palloc_mutation_control am=ec_distann/grouped_pq injected=palloc_nth_1 recovery_without_disarm=true normal_recovery_oracle=rejected
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] pg_buffercache_fixture_pins=0
+[fault] pg_buffercache_fixture_pins_ok=true pins=0
+[fault] pg_stat_io unavailable; skipping io counter probe
+[fault] pg_stat_wal unavailable; skipping wal counter probe
+[fault] mutation_control_complete kind=All fixtures=7 clean_postconditions=true

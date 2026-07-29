@@ -1,12 +1,17 @@
 # Task 38: PG-Level Fault Injection (I/O, OOM, Cancellation, Timeouts)
 
-Status: **open; five-AM local model implemented, current live expansion review
-pending** — the historical Linux packet proved the four-AM
+Status: **open; Apple-M5 local PG18 evidence, reviewed source slices, and the
+authoritative `fault-full` aggregation complete; designated Intel/Linux
+execution pending** — the historical Linux packet proved the four-AM
 `ec_hnsw`/`ec_ivf`/`ec_diskann`/`ec_spire` surface. The current Task 38 branch
 adds `ec_distann` as a first-class AM with separate RaBitQ, TurboQuant, and
 grouped-PQ fixtures, exact-peer socket reset/latency provider modes, measured
 slow-disk comparison inputs, stronger accumulator markers, reset-safe palloc
-handling, and host-independent cgroup planning.
+handling, armed exact-peer DistANN TCP and SPIRE Unix-socket drills, an
+executable seven-fixture systemd-scoped cgroup OOM drill, and repeatable
+seven-fixture cancellation/palloc mutation controls. Packet 009 adds the
+reviewed 116-case aggregate, exact-path slow-disk markers, and a checked
+baseline-plus-configured-latency oracle.
 
 The seven current fixtures flow through real build, KNN scan, insert,
 delete/vacuum, DDL, cancel/terminate, statement/idle/lock timeout, palloc,
@@ -23,7 +28,43 @@ EIO/ENOSPC/slow-disk, SPIRE/DistANN socket faults, and cgroup OOM remain
 unavailable on this host until Linux evidence lands. SPIRE remote SQL transport
 does exist and is actionable; only future SPIRE object-store reads are
 nonexistent. No CI/nightly execution is claimed, and this task stays open for
-outside review.
+operator-scheduled execution on the designated Intel/Linux host. Review
+packets 001 through 009 have outside approval for their stated implementation,
+source, inventory, and M5-local evidence scopes; those approvals do not
+substitute for the missing live Linux evidence.
+
+The three Apple-M5-verifiable gaps identified by packet 005 are complete.
+Packet 006 inventories every explicit ECAZ interrupt boundary and files Task
+200 for unpolled-loop classification/remediation. Packet 007 proves the
+production cancellation oracle rejects a deliberate wrong AM failure and
+proves the real-AM recovery oracle rejects an unrecovered palloc state before
+accepting the identical scan after disarm, across all seven fixtures.
+
+The authoritative `make fault-full` aggregate is now implemented and
+source-approved in packet 009. Its host-independent plan enumerates 116 unique
+cases, while live mode orchestrates the approved mutation, remote-socket, and
+cgroup operators plus distinct provider modes, restart/restore, exact
+markers/arm files, and checked same-run slow baselines. The remaining work
+cannot execute on this Apple M5: the designated Intel/Linux host must run the
+aggregate and evidence all of the following:
+
+- all three DistANN codecs across applicable heap/index/WAL/temp paths for
+  provider-backed EIO and ENOSPC, plus a same-run measured slow-disk baseline
+  delta, with exact mode/path markers, accepted outcomes, recovery, and shared
+  postconditions;
+- DistANN owner/payload TCP reset with an accepted clean outcome, and TCP slow
+  with the expected source identity and baseline-plus-latency threshold,
+  followed by exact expected-source recovery;
+- SPIRE participant named-Unix reset/slow with a validated healthy baseline,
+  accepted reset error/degraded result, slow stable profile equal to baseline,
+  baseline-plus-latency timing, and recovered stable profile equal to
+  baseline; and
+- seven systemd/cgroup-v2 OOM cases with `Result=oom-kill`, dead scoped
+  postmaster, exact row-count equality, valid/ready index, forced AM scan,
+  shared postconditions, and clean post-recovery stop.
+
+Every executed lane must retain a postmaster log with no `PANIC` and pass the
+buffer/lock cleanup criteria.
 
 ## Scope
 
@@ -61,8 +102,10 @@ adversarial operational conditions:
 - `statement_timeout` fires asynchronously; any code path that holds a buffer
   pin or LWLock when it fires can leak.
 
-None of these are exercised today. Task 37 covers `SIGKILL` recovery, but not
-the in-process cleanup paths.
+Task 38 now exercises the local in-process cleanup paths and supplies armed
+Linux provider/cgroup operators. Task 37 remains the historical source of the
+general `SIGKILL` recovery model; the live Task 38 Linux provider, socket, and
+cgroup matrix remains pending as stated above.
 
 ## Approach
 

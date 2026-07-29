@@ -1,0 +1,23 @@
+Task 38 packet 006 reviewer static validation
+Date: 2026-07-26
+Reviewed head: f00eed4f5
+
+Scope:
+- local source and packet inspection only
+- no Cargo, PostgreSQL, remote-host, AWS, or CI execution
+
+Explicit-poll cross-check:
+- The packet artifact lists macro/helper calls across all five AM trees and
+  SPIRE's dynamic PostgreSQL flag poll.
+- Source also contains DistANN's asynchronous flag poll at
+  src/am/ec_distann/remote_transport.rs:92-119:
+  postgres_interrupt_signal() polls InterruptPending, QueryCancelPending, and
+  ProcDiePending every POSTGRES_INTERRUPT_POLL_MS (5 ms).
+- Those DistANN flag-poll lines are absent from explicit-interrupt-sites.log.
+
+Static diff check:
+Command: git diff --check 476407ed9..f00eed4f5
+Result: fail
+plan/tasks/200-task38-interrupt-poll-followups.md:64: new blank line at EOF.
+reviews/task-38/006-interrupt-boundary-inventory/artifacts/manifest.md:26: new blank line at EOF.
+reviews/task-38/006-interrupt-boundary-inventory/request.md:42: new blank line at EOF.

@@ -2,7 +2,7 @@
 .PHONY: bench bench-iai dhat-encode dhat-score proptest simd-diff on-disk-fixtures endian-qemu upgrade-smoke pg-upgrade-smoke layout-check miri miri-expanded miri-tree miri-many-seeds miri-full careful
 .PHONY: fuzz-parse-text fuzz-unpack fuzz-element-decode fuzz-neighbor-decode fuzz-diskann-metadata fuzz-item-pointer fuzz-vector-normalize fuzz-all-short afl-decoders
 .PHONY: loom-real shuttle-real sim-spire-remote sim-spire-remote-deep kani sanitizer-asan sanitizer-lsan sanitizer-tsan sanitizer-msan sanitizer-pg18-asan sanitizer-pg18-tsan sqlsmith-pg18
-.PHONY: fault-provider-env fault-socket-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-distann-plan fault-distann-local-smoke fault-cgroup-plan fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report coverage-baseline-check test-quality-ci-audit mutants mutants-full flake-hunt
+.PHONY: fault-provider-env fault-socket-provider-env fault-provider-restart fault-provider-restore fault-prepare fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke fault-mutation-control fault-distann-plan fault-distann-local-smoke fault-distann-remote-socket-smoke fault-spire-remote-socket-smoke fault-cgroup-plan fault-cgroup-smoke fault-full-plan fault-full ffi-leak-smoke hardening-local hardening-nightly-local hardening-validate hardening-tiers-report coverage coverage-report coverage-baseline-check test-quality-ci-audit mutants mutants-full flake-hunt
 .PHONY: ci-quick ci-nightly spire-multicluster-smoke spire-multicluster-transport-overlap
 .PHONY: recall-gate recall-gate-full cross-am-gate cost-gate
 
@@ -308,16 +308,34 @@ FAULT_PROVIDER_MATCH ?= base/
 FAULT_PROVIDER_AFTER ?= 1
 FAULT_PROVIDER_LATENCY_MS ?= 25
 FAULT_PROVIDER_MARKER ?= /tmp/ecaz-fault-provider-$(FAULT_PROVIDER_MODE)-pg18.marker
+FAULT_PROVIDER_ARM_FILE ?=
 FAULT_PROVIDER_PEER ?= tcp:127.0.0.1:39711
 FAULT_ROWS ?= 64
+FAULT_DATABASE ?=
+FAULT_HOST ?=
+FAULT_PORT ?=
+FAULT_CONNECTION_ARGS = $(if $(FAULT_DATABASE),--database $(FAULT_DATABASE)) $(if $(FAULT_HOST),--host $(FAULT_HOST)) $(if $(FAULT_PORT),--port $(FAULT_PORT))
 FAULT_SLOW_DISK_BASELINE_ARG ?=
 FAULT_CGROUP_MEMORY_MAX ?= 512M
+FAULT_CGROUP_ARTIFACT_DIR ?= target/fault-cgroup
+FAULT_CGROUP_RUNTIME_DIR ?= target/fault-cgroup-runtime
+FAULT_DISTANN_REMOTE_ARTIFACT_DIR ?= target/distann-remote-socket-fault
+FAULT_SPIRE_REMOTE_ARTIFACT_DIR ?= target/spire-remote-socket-fault
+FAULT_MUTATION_KIND ?= all
+FAULT_MUTATION_LOG_FILE ?= target/fault-mutation-control.log
+FAULT_FULL_ARTIFACT_DIR ?= target/fault-full
+FAULT_FULL_RUNTIME_DIR ?= target/fault-full-runtime
+FAULT_FULL_LOG_FILE ?= target/fault-full.log
+FAULT_FULL_PLAN_LOG_FILE ?= target/fault-full-plan.log
+FAULT_FULL_CGROUP_BASE_PORT ?= 29680
+FAULT_FULL_DISTANN_BASE_PORT ?= 39710
+FAULT_FULL_SPIRE_COORD_PORT ?= 39700
 
 fault-provider-env:
 	cargo run -p ecaz-cli -- dev fault provider-env --mode $(FAULT_PROVIDER_MODE) --path-match $(FAULT_PROVIDER_MATCH) --after $(FAULT_PROVIDER_AFTER) --latency-ms $(FAULT_PROVIDER_LATENCY_MS) --marker $(FAULT_PROVIDER_MARKER)
 
 fault-socket-provider-env:
-	cargo run -p ecaz-cli -- dev fault provider-env --mode $(FAULT_SOCKET_PROVIDER_MODE) --peer-match $(FAULT_PROVIDER_PEER) --after $(FAULT_PROVIDER_AFTER) --latency-ms $(FAULT_PROVIDER_LATENCY_MS) --marker $(FAULT_PROVIDER_MARKER)
+	cargo run -p ecaz-cli -- dev fault provider-env --mode $(FAULT_SOCKET_PROVIDER_MODE) --peer-match $(FAULT_PROVIDER_PEER) --after $(FAULT_PROVIDER_AFTER) --latency-ms $(FAULT_PROVIDER_LATENCY_MS) --marker $(FAULT_PROVIDER_MARKER) $(if $(FAULT_PROVIDER_ARM_FILE),--arm-file $(FAULT_PROVIDER_ARM_FILE),)
 
 fault-provider-restart:
 	cargo run -p ecaz-cli -- dev fault provider-restart --mode $(FAULT_PROVIDER_MODE) --path-match $(FAULT_PROVIDER_MATCH) --after $(FAULT_PROVIDER_AFTER) --latency-ms $(FAULT_PROVIDER_LATENCY_MS) --marker $(FAULT_PROVIDER_MARKER)
@@ -349,6 +367,9 @@ fault-resource-smoke:
 fault-slow-disk-smoke:
 	cargo run -p ecaz-cli -- dev fault smoke --lane slow-disk $(FAULT_SMOKE_FLAGS) $(FAULT_SLOW_DISK_BASELINE_ARG)
 
+fault-mutation-control:
+	cargo run -p ecaz-cli -- $(FAULT_CONNECTION_ARGS) --log-file $(FAULT_MUTATION_LOG_FILE) dev fault mutation-control --kind $(FAULT_MUTATION_KIND) --rows $(FAULT_ROWS)
+
 fault-distann-plan:
 	cargo run -p ecaz-cli -- dev fault plan --am distann
 
@@ -358,10 +379,23 @@ fault-distann-local-smoke:
 	cargo run -p ecaz-cli -- dev fault smoke --lane lock-timeout --am distann $(FAULT_SMOKE_FLAGS)
 	cargo run -p ecaz-cli -- dev fault smoke --lane resource --am distann $(FAULT_SMOKE_FLAGS)
 
+fault-distann-remote-socket-smoke:
+	cargo run -p ecaz-cli -- dev distann-multicluster local-multinode-pg18 --nodes 2 --rows $(FAULT_ROWS) --dim 16 --skip-fault-drills --allow-debug-extension --remote-socket-fault $(patsubst socket-%,%,$(FAULT_SOCKET_PROVIDER_MODE)) --remote-socket-fault-latency-ms $(FAULT_PROVIDER_LATENCY_MS) --artifact-dir $(FAULT_DISTANN_REMOTE_ARTIFACT_DIR)
+
+fault-spire-remote-socket-smoke:
+	cargo run -p ecaz-cli -- dev spire-multicluster local-multinode-pg18 --tier correctness --skip-bench-suite --skip-fault-drills --remote-socket-fault $(patsubst socket-%,%,$(FAULT_SOCKET_PROVIDER_MODE)) --remote-socket-fault-latency-ms $(FAULT_PROVIDER_LATENCY_MS) --artifact-dir $(FAULT_SPIRE_REMOTE_ARTIFACT_DIR)
+
 fault-cgroup-plan:
 	cargo run -p ecaz-cli -- dev fault cgroup-plan --memory-max $(FAULT_CGROUP_MEMORY_MAX) --rows $(FAULT_ROWS)
 
-fault-full: fault-io-smoke fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke fault-slow-disk-smoke
+fault-cgroup-smoke:
+	cargo run -p ecaz-cli -- dev fault cgroup-smoke --memory-max $(FAULT_CGROUP_MEMORY_MAX) --rows $(FAULT_ROWS) --artifact-dir $(FAULT_CGROUP_ARTIFACT_DIR) --runtime-dir $(FAULT_CGROUP_RUNTIME_DIR)
+
+fault-full-plan:
+	cargo run -p ecaz-cli -- $(FAULT_CONNECTION_ARGS) --log-file $(FAULT_FULL_PLAN_LOG_FILE) dev fault full --dry-run --rows $(FAULT_ROWS) --provider-latency-ms $(FAULT_PROVIDER_LATENCY_MS) --memory-max $(FAULT_CGROUP_MEMORY_MAX) --cgroup-base-port $(FAULT_FULL_CGROUP_BASE_PORT) --distann-base-port $(FAULT_FULL_DISTANN_BASE_PORT) --spire-coord-port $(FAULT_FULL_SPIRE_COORD_PORT) --artifact-dir $(FAULT_FULL_ARTIFACT_DIR) --runtime-dir $(FAULT_FULL_RUNTIME_DIR)
+
+fault-full:
+	cargo run -p ecaz-cli -- $(FAULT_CONNECTION_ARGS) --log-file $(FAULT_FULL_LOG_FILE) dev fault full --rows $(FAULT_ROWS) --provider-latency-ms $(FAULT_PROVIDER_LATENCY_MS) --memory-max $(FAULT_CGROUP_MEMORY_MAX) --cgroup-base-port $(FAULT_FULL_CGROUP_BASE_PORT) --distann-base-port $(FAULT_FULL_DISTANN_BASE_PORT) --spire-coord-port $(FAULT_FULL_SPIRE_COORD_PORT) --artifact-dir $(FAULT_FULL_ARTIFACT_DIR) --runtime-dir $(FAULT_FULL_RUNTIME_DIR)
 
 ffi-leak-smoke: fault-mem-smoke fault-cancel-smoke fault-timeout-smoke fault-lock-smoke fault-resource-smoke
 

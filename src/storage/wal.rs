@@ -248,6 +248,39 @@ impl RegisteredBufferPage<'_, '_> {
             Ok(offset)
         }
     }
+
+    #[cfg(any(test, feature = "pg_test"))]
+    pub(crate) fn mark_item_unused(
+        &mut self,
+        offset_number: pg_sys::OffsetNumber,
+    ) -> Result<(), String> {
+        // SAFETY: this page is the WAL-registered writable image. The offset
+        // is bounds-checked before the line pointer is changed to PostgreSQL's
+        // canonical LP_UNUSED representation. This matches ItemIdSetUnused:
+        // lp_off, lp_flags, and lp_len are all cleared. VACUUM callers also
+        // set PD_HAS_FREE_LINES so PageAddItemExtended searches for the
+        // recyclable slot.
+        unsafe {
+            let max_offset = pg_sys::PageGetMaxOffsetNumber(self.page);
+            if offset_number == pg_sys::InvalidOffsetNumber || offset_number > max_offset {
+                return Err(format!(
+                    "cannot mark invalid line pointer {offset_number} unused (max {max_offset})"
+                ));
+            }
+            let item_id = pg_sys::PageGetItemId(self.page, offset_number);
+            if item_id.is_null() {
+                return Err(format!(
+                    "line pointer {offset_number} returned a null item id"
+                ));
+            }
+            let item_id = &mut *item_id;
+            item_id.set_lp_off(0);
+            item_id.set_lp_flags(0);
+            item_id.set_lp_len(0);
+            pg_sys::PageSetHasFreeLinePointers(self.page);
+        }
+        Ok(())
+    }
 }
 
 /// Error returned by [`RegisteredBufferPage::add_item`] when PostgreSQL's

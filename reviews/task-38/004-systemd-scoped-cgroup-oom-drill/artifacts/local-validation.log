@@ -1,0 +1,36 @@
+Task 38 packet 004 local validation
+Implementation HEAD: 79af1107b
+Host: macOS arm64
+
+rustfmt --edition 2021 --check crates/ecaz-cli/src/commands/dev/fault.rs crates/ecaz-cli/src/cli.rs
+result=pass
+notes=stable rustfmt reported only repository nightly-option warnings
+
+git diff --check
+result=pass
+
+cargo check -p ecaz-cli
+result=pass
+elapsed_final=11.77s
+elapsed_initial=28.41s
+warning=pre-existing LoadedDistributedPlacementConfig.path dead_code
+warning=PostgreSQL header unused-parameter warnings from pg18_pgstat_shim.c
+
+cargo run -p ecaz-cli -- dev fault cgroup-smoke --memory-max 384M --rows 8 --am hnsw --artifact-dir target/fault-cgroup-host-check
+result=expected_unavailable
+build_elapsed=8m20s
+dispatch=pass
+error=cgroup smoke requires Linux; current target is macos
+artifact_dir_created=false
+runtime_dir_created=false
+
+cargo fmt --all -- --check
+result=blocked-unrelated
+notes=existing formatting drift outside Task 38 files; command made no changes
+
+cargo test -p ecaz-cli cli_parses_distann_cgroup_smoke_command
+result=not_run
+reason=production CLI route parsed and dispatched successfully
+
+linux_cgroup_runtime=not_available
+live_oom_event=not_claimed

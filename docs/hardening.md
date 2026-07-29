@@ -491,6 +491,30 @@ sessions, relation/advisory locks, prepared transactions, optional
   provider. This is not a CI or nightly execution claim.
 - To run a live probe, clear the dry-run flag, for example:
   `make fault-timeout-smoke FAULT_SMOKE_FLAGS=`.
+- `make fault-full-plan` prints the authoritative 116-case aggregate without
+  touching PostgreSQL.
+- `make fault-full` is live-only and does not inherit `FAULT_SMOKE_FLAGS`.
+  Set `FAULT_DATABASE`, `FAULT_HOST`, and `FAULT_PORT` as Make parameters when
+  the target PG18 connection differs from the CLI defaults; this keeps the
+  operator invocation under the stable `make fault-full` approval surface.
+  On macOS it executes the 49 host-independent local smoke and mutation cases,
+  emits explicit Linux-only phase skips for the remaining 67 cases, and
+  reports `live_authority=partial executed=49 skipped=67`. On Linux it
+  additionally preflights the built LD_PRELOAD provider, cgroup v2, the user
+  systemd manager, the installed PG18 extension, and disjoint empty
+  evidence/runtime roots before executing all 116 cases. The aggregate covers
+  all seven fixtures across local smoke and mutation lanes,
+  exact heap/index/WAL/temp provider cases, DistANN TCP and SPIRE named-Unix
+  reset/slow drills, and seven cgroup OOM cases. Provider cases are armed only
+  after restart and are disarmed before restore. The final gate captures the
+  main postmaster log delta, scans packet-local PostgreSQL logs for `PANIC:`,
+  and re-runs shared cleanup postconditions. `FAULT_FULL_LOG_FILE` records the
+  aggregate output outside the initially empty artifact root; cgroup, DistANN,
+  and SPIRE base ports are separately configurable through the
+  `FAULT_FULL_*_PORT` variables.
+  PostgreSQL I/O and WAL baselines are captured before each applicable lane;
+  when a statistics view is genuinely unavailable the log records an explicit
+  baseline-absent skip instead of presenting a synthetic delta.
 - `ecaz dev fault provider-env` prints the LD_PRELOAD environment for the
   built-in Linux provider. That provider can inject matched-path `EIO` reads,
   matched-path `ENOSPC` writes/creates/fsyncs, slow-disk latency, and
@@ -499,6 +523,11 @@ sessions, relation/advisory locks, prepared transactions, optional
   `tcp:[IPv6]:PORT`, or an absolute named `unix:/path`; socket modes reject a
   missing or unstable identity. Unnamed and abstract `AF_UNIX` peers never
   match because they do not have a stable pathname.
+- `--arm-file <absolute-path>` starts the provider disarmed and makes file
+  existence the injection gate. This lets a long-lived coordinator complete
+  real SPIRE/DistANN topology setup before the operator creates the arm file
+  for the targeted remote query; removing the file disarms subsequent traffic
+  so recovery can be checked without another postmaster restart.
 - `ecaz dev fault provider-restart` and `ecaz dev fault provider-restore`
   wrap the local pgrx `pg_ctl restart` step so provider-backed lanes do not
   require hand-assembled `LD_PRELOAD` commands. Marker paths passed to
@@ -517,7 +546,19 @@ sessions, relation/advisory locks, prepared transactions, optional
   insert, and vacuum callback boundary, and sweeps the first few Nth allocation
   points for each AM scan workload. The runner attempts to disable the GUC and
   reset its counter after every workload result, including unexpected errors;
-  a workload error plus reset error is a hard failure.
+  a workload error plus reset error is a hard failure. After scan, insert, and
+  vacuum palloc faults, the normal recovery oracle also runs a real AM scan and
+  requires the AM/backend to be usable.
+- `make fault-mutation-control` runs the live, repeatable negative controls for
+  every fixture. The cancellation control injects a deliberate palloc error
+  into the normal cancel worker and requires the cancellation SQLSTATE oracle
+  to reject that wrong failure class. The resource/palloc control leaves the
+  palloc fault armed after the expected scan ERROR and requires the same real
+  AM recovery probe to reject the unrecovered backend; it then disarms the
+  fault, requires that identical probe to pass, and checks shared
+  postconditions. Use `FAULT_MUTATION_KIND=cancel-unexpected-palloc` or
+  `FAULT_MUTATION_KIND=memory-unrecovered-palloc` for one control.
+  `FAULT_MUTATION_LOG_FILE` selects its durable output log.
 
 The current live CLI smoke creates AM-specific fixtures for `ec_hnsw`, `ec_ivf`,
 `ec_diskann`, `ec_spire`, and all three `ec_distann` codec shapes, then directly exercises cancellation and
@@ -584,15 +625,46 @@ socket faults. SPIRE loopback remote SQL uses Unix sockets, while DistANN
 multicluster owner/payload SQL uses loopback TCP. On Linux, start only the
 coordinator with the exact named-Unix or TCP peer filter, require a reset/slow
 `fault=1` marker, restore the provider, and run the shared postconditions.
+`make fault-distann-remote-socket-smoke` automates that sequence for a real
+two-owner physical DistANN fixture. The coordinator starts with the provider
+disarmed, proves the baseline remote owner query, creates the arm file for one
+exact-peer query, requires the reset/error or measured delay plus a matching
+`fault=1` marker, removes the arm file, and requires an expected-source
+recovery query before reporting success. Slow mode requires the armed duration
+to reach the same-run baseline plus the configured latency. Set
+`FAULT_SOCKET_PROVIDER_MODE` to `socket-reset` or `socket-slow`.
+`make fault-spire-remote-socket-smoke` applies the same armed sequence to the
+native one-coordinator/three-worker SPIRE fixture. Only the coordinator loads
+the provider; the exact peer is remote worker 1's named Unix socket. The probe
+runs the production read profile before, during, and after the fault, captures
+its correctness and participation metrics instead of discarding returned rows,
+requires the exact-peer marker, accepts SPIRE's documented clean degraded
+result or clean ERROR for reset, and requires the recovered stable profile to
+equal the baseline. Slow mode also requires its armed stable profile to equal
+the baseline and its duration to reach baseline plus configured latency.
 Unnamed and abstract Unix peers are deliberately non-matchable. This macOS
 host cannot load the Linux provider, so no live socket result is claimed. SPIRE
 object-store reads remain **nonexistent**, not an unavailable transport test.
 
 `ecaz dev fault cgroup-plan` reports Linux, cgroup-v2, and `systemd-run`
 capability and prints the isolated one-index-per-table MemoryMax plan. A live
-run must place the isolated PG18 postmaster and workload in a user
-`systemd-run --scope`; direct `/sys/fs/cgroup` writes are forbidden. The
-current macOS host reports this lane unavailable.
+run uses `make fault-cgroup-smoke` to place a fresh isolated PG18 postmaster,
+the selected AM workload, and a resident-memory pressure task in one user
+`systemd-run --scope`. Each of the seven fixtures runs separately with
+`MemoryMax` and `OOMPolicy=kill`. The worker commits a valid fixture index
+before entering the interrupted DROP/CREATE build loop. The outer operator
+requires systemd `Result=oom-kill` after the repeated real AM-build marker,
+restarts the killed cluster outside the scope, requires the exact fixture row
+count, the expected valid/ready index, a successful forced AM scan, and the
+shared leak/lock/pin postconditions, then stops it cleanly. Scope and recovery
+logs land below
+`FAULT_CGROUP_ARTIFACT_DIR`; transient data directories live below
+`FAULT_CGROUP_RUNTIME_DIR` and are removed only after successful recovery, so
+PostgreSQL data files cannot accidentally enter a review packet. Equal or
+ancestor/descendant evidence/runtime roots are rejected, as are runtime roots
+inside `reviews/` or `benchmarks/`. Direct `/sys/fs/cgroup` writes are
+forbidden. The current macOS host reports this lane unavailable and cannot
+supply live evidence.
 
 Provider ENOSPC can surface PostgreSQL checkpoint failures as `XX000`. The
 allowance is restricted to messages containing `checkpoint request failed` or
@@ -600,19 +672,25 @@ allowance is restricted to messages containing `checkpoint request failed` or
 
 Current interrupt inventory:
 
-- DiskANN build/scan paths call `maybe_check_for_interrupts()` from
-  `src/am/ec_diskann/mod.rs`, including the scan loop and build/import loops in
-  `src/am/ec_diskann/scan.rs` and `src/am/ec_diskann/routine.rs`.
-- SPIRE remote candidate dispatch polls PostgreSQL interrupt and statement
-  timeout flags in `src/am/ec_spire/coordinator/remote_candidates/dispatch.rs`.
-- DistANN build and scan paths poll around physical generation, traversal,
-  owner scoring, and payload work. The codec fixtures keep interrupt workloads
-  in repeated real scoring rather than substituting `pg_sleep`.
-- HNSW parallel build calls `pg_sys::ProcessInterrupts()` in
-  `src/am/ec_hnsw/build_parallel.rs`.
+| AM / surface | Backend interrupt boundary |
+| --- | --- |
+| HNSW parallel-build leader wait | `src/am/ec_hnsw/build_parallel.rs`: calls `pg_sys::ProcessInterrupts()` before sleeping when no worker queue made progress |
+| IVF parallel-build leader wait | `src/am/ec_ivf/build_parallel.rs`: calls `pg_sys::ProcessInterrupts()` before sleeping when no worker queue made progress |
+| DiskANN scan | `src/am/ec_diskann/scan.rs`: both profiled and unprofiled greedy-descent frontier loops call `maybe_check_for_interrupts()` once per outer beam iteration |
+| DiskANN vacuum | `src/am/ec_diskann/routine.rs`: bulk-delete node passes, neighbor-fill targets, and repair candidates call `maybe_check_for_interrupts()` |
+| SPIRE remote dispatch | `src/am/ec_spire/coordinator/remote_candidates/dispatch.rs`: the local-cancel future polls PostgreSQL `InterruptPending`/`QueryCancelPending` and the statement-timeout indicator at a bounded interval |
+| DistANN physical shard build | `src/am/ec_distann/shard_build.rs`: membership assignment, sequential shard builds, parallel completion receipt/timeouts, stitch groups, and reachability repair call `maybe_check_for_interrupts()` |
+| DistANN remote transport | `src/am/ec_distann/remote_transport.rs`: every remote await races a 5 ms poll of `InterruptPending`, `QueryCancelPending`, and `ProcDiePending`; observation marks the transport interrupted and attempts bounded remote cancel, the thread-local state then clears pooled connections, and `maybe_check_for_interrupts()` immediately outside the borrow raises the PostgreSQL interrupt |
 
-Missing or newly discovered long-running loops should be added to this list
-with either an interrupt check or a follow-up task.
+This table inventories every explicit interrupt poll currently present under
+the five AM source trees. It is not a claim that every potentially
+long-running loop already has a poll. Task 200 owns the source audit and
+remediation/follow-up decisions for the known unpolled or ambiguous surfaces:
+HNSW/IVF eager `amrescan` work, sequential build/page traversal, SPIRE local
+build/scan CPU loops, DiskANN page flush/import work, and DistANN legacy/local
+build plus eager orchestration outside the physical-shard and remote-transport
+boundaries. Newly discovered surfaces must be added to Task 200 rather than
+silently extending this list.
 
 ## Concurrency And Formal Pilots
 

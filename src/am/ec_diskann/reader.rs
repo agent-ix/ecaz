@@ -128,11 +128,11 @@ impl<'a> PersistedGraphReader<'a> {
     pub fn iter_tids(&self) -> impl Iterator<Item = ItemPointer> + '_ {
         self.chain.pages().iter().flat_map(|page| {
             let blk = page.block_number();
-            let count = page.tuple_count();
-            (1..=count).map(move |offset| ItemPointer {
-                block_number: blk,
-                offset_number: offset as u16,
-            })
+            page.occupied_offsets()
+                .map(move |offset_number| ItemPointer {
+                    block_number: blk,
+                    offset_number,
+                })
         })
     }
 
