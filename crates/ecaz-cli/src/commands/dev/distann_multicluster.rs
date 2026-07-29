@@ -4161,19 +4161,37 @@ async fn run_coverage_memory_regression(
             "Task 200 coverage memory regression executed {rows} rows, expected at least {iterations}"
         );
     }
-    let slope = rss_slope_kb_per_second(&points).ok_or_else(|| {
+    let trim_samples = usize::try_from((1_000 / sample_interval_ms.max(1)).max(1))
+        .unwrap_or(1);
+    if points.len() <= trim_samples.saturating_mul(2).saturating_add(1) {
+        bail!(
+            "Task 200 coverage memory regression collected too few samples ({}) after edge trimming",
+            points.len()
+        );
+    }
+    // The first and last sampler ticks can race working-set reacquisition and
+    // query completion respectively. Trim one settle-second at each edge;
+    // the interior remains the held-transaction measurement window.
+    let stable_points = &points[trim_samples..points.len() - trim_samples];
+    let slope = rss_slope_kb_per_second(stable_points).ok_or_else(|| {
         color_eyre::eyre::eyre!(
             "Task 200 coverage memory regression collected fewer than two RSS samples"
         )
     })?;
-    let first = points.first().map(|point| point.rss_kb).unwrap_or_default();
-    let last = points.last().map(|point| point.rss_kb).unwrap_or_default();
-    let minimum = points
+    let first = stable_points
+        .first()
+        .map(|point| point.rss_kb)
+        .unwrap_or_default();
+    let last = stable_points
+        .last()
+        .map(|point| point.rss_kb)
+        .unwrap_or_default();
+    let minimum = stable_points
         .iter()
         .map(|point| point.rss_kb)
         .min()
         .unwrap_or(first);
-    let maximum = points
+    let maximum = stable_points
         .iter()
         .map(|point| point.rss_kb)
         .max()
@@ -4194,9 +4212,10 @@ async fn run_coverage_memory_regression(
         .wrap_err_with(|| format!("writing {}", series_path.display()))?;
     let pass = slope <= max_slope_kb_per_s && (delta as f64) <= max_delta_kb;
     let line = format!(
-        "physical_benchmark_memory_regression scale={scale} warmup_invocations={} warmup_settle_ms={WARMUP_SETTLE_MS} coverage_invocations={iterations} rows_returned={rows} samples={} rss_first_kb={first} rss_last_kb={last} rss_peak_to_trough_kb={delta} max_delta_kb={max_delta_kb:.2} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
+        "physical_benchmark_memory_regression scale={scale} warmup_invocations={} warmup_settle_ms={WARMUP_SETTLE_MS} trimmed_edge_samples={trim_samples} coverage_invocations={iterations} rows_returned={rows} samples={} stable_samples={} rss_first_kb={first} rss_last_kb={last} rss_peak_to_trough_kb={delta} max_delta_kb={max_delta_kb:.2} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
         WARMUP_INVOCATIONS + SETTLE_INVOCATIONS,
         points.len(),
+        stable_points.len(),
         series_path.display(),
     );
     if !pass {
