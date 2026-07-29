@@ -1,7 +1,7 @@
 # Task 199: ec_distann Coordinator Traversal Replica Productionization
 
-Status: **in progress — outside-review findings are mandatory entry gates**
-(2026-07-24). Priority: P1 production promotion and operations.
+Status: **complete — outside-reviewed PROMOTE** (2026-07-26). Priority: P1
+production promotion and operations.
 
 ## Why
 

@@ -1,6 +1,6 @@
 # ec_distann Recall and Latency Optimization Roadmap
 
-Status: active planning ledger (2026-07-20). This document records the option
+Status: active planning ledger (2026-07-29). This document records the option
 space after Tasks 180--183. It is not an ADR and does not authorize a production
 default, format, protocol, or placement change. Canonical execution scope lives
 in `plan/tasks/`; accepted architectural decisions live in an ADR.
@@ -103,6 +103,8 @@ validity requirements.
 | 195 | Owner schema cache productionization | complete — outside-reviewed ACCEPT; PROMOTE | exact recall; warm mean -8.33%/-13.28%/-18.11%; selector removed |
 | 196 | Lazy10 stable-prefix duplicate | complete — outside-reviewed ACCEPT; PROMOTE | exact-distance rank shift attributed; identity-keyed reuse passes nine semantic cases and exact-recall/work 10k/50k/100k A/B |
 | 197 | Multinode release-profile preflight | complete — outside-reviewed ACCEPT; PROMOTE | pre-setup unanimous release/SHA gate, explicit suite diagnostic override, structured evidence |
+| 201 | Post-replica latency residual | proposed — executable after Task 199 | fresh 100k attribution, at most one isolated latency candidate, then 10k/50k/100k release A/B if useful |
+| 202 | Cross-ISA ordered identity | proposed — portability gate | canonical-generation x86_64/aarch64 result identity and release/upgrade verdict |
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -130,6 +132,29 @@ characterization; Task 167 retains physical DML.
 
 Every production-affecting winner receives a separately numbered
 productionization task. A benchmark winner is not a default change.
+
+## Post-199/200 handoff
+
+Task 199 is now outside-reviewed and promoted. Its accepted release matrix is
+the current latency control: the normal coordinator traversal replica reduced
+warm mean from 18.3/20.4/19.9 ms to 15.3/16.4/16.2 ms at 10k/50k/100k,
+respectively, with exact recall and unchanged storage between the owner and
+replica arms. Task 200 then fixed and regression-tested benchmark-only
+owner-seed detoast retention; it did not alter the production read path.
+
+The remaining work is split deliberately:
+
+- Task 201 owns fresh post-replica latency attribution and one isolated
+  payload/executor or local-traversal optimization. It must reuse the Task 199
+  control rather than repeat the already accepted replica A/B, and it must not
+  change the head, graph, neighbor codec, or replica lifecycle semantics.
+- Task 202 owns the cross-ISA ordered-identity portability gate explicitly
+  waived by Task 199. It is a correctness/release gate, not a latency tuning
+  task, and it changes no production behavior by itself.
+
+Task 188's BW8 result remains a research candidate only: it was paired with an
+experimental 16,384-landmark head, so it is not imported into Task 201 without
+a new current-production-head validation.
 
 ## Candidate ledger: remote payload materialization
 
