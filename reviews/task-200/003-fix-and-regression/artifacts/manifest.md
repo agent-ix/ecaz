@@ -1,8 +1,8 @@
 # Task 200 fix/regression artifacts
 
 - Packet: `reviews/task-200/003-fix-and-regression/`
-- Code heads: root fix `fa84ff3b0`; executable-test checkpoint `e3136e0c2`
-  (both pushed).
+- Code heads: root fix `fa84ff3b0`; latest executable-gate implementation
+  `9fffefffb` (both pushed).
 - Fixture: `/home/peter/.ecaz/clusters/task200-counters-off-100k` for the clean
   fixed run. The required pre-fix control reused the separately preserved
   `/home/peter/.ecaz/clusters/task200-counters-on-100k`. No corpus or index
@@ -15,16 +15,18 @@
   /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features
   --features 'pg18 distann-head-attribution-benchmark'`. Runtime verification
   is in `clean-extension-provenance.log`.
-- Clean final regression command: `BEGIN; SELECT count(*) FROM (SELECT
-  repeat_no, q.id, c.* FROM generate_series(1,2) AS repeats(repeat_no) CROSS
-  JOIN task179_physical_100k_queries q CROSS JOIN LATERAL
-  ec_distann_physical_seed_coverage_benchmark('dm_idx', q.source, 32, 32) c
-  ORDER BY repeat_no, q.id LIMIT 300) coverage; SELECT
-  pg_log_backend_memory_contexts(pg_backend_pid()); COMMIT;`.
-- Clean final result: 300 rows; RSS series in `final-rss-series-clean.log`
-  (401820–402648 KB, fitted slope +1.42 KB/s); final context in
-  `clean-final-node1-postgres.log` at 11:00:53:
-  `TopTransactionContext: 142606336 total` and `Grand total: 144745408`.
+- Clean final regression command: `ecaz bench suite run --config
+  reviews/task-200/003-fix-and-regression/artifacts/task200-coverage-memory-regression-suite.json
+  --artifact-dir
+  reviews/task-200/003-fix-and-regression/artifacts/post-warmup-regression-run
+  --manifest-output
+  reviews/task-200/003-fix-and-regression/artifacts/post-warmup-regression-run/suite-manifest.json`.
+- Clean final result: the reused fixture emitted 300 rows and 16,569 RSS
+  samples. After six warm-up invocations, a one-second settle, and 40 samples
+  trimmed from each edge, the stable series had RSS p01=401,756 KB,
+  p99=402,776 KB, p01-to-p99 delta=1,020 KB, and fitted slope=+1.02 KB/s.
+  The committed limits are 4,096 KB and 100 KB/s; the gate passed. The full
+  series is `post-warmup-regression-run/coverage-memory-regression.series.log`.
 - Clean production A1 command: `ecaz bench latency --prefix
   task179_physical_100k --profile ec_distann --iterations 300
   --hold-transaction --sample-backend-memory`, with the same reused fixture
@@ -46,28 +48,32 @@
   to mask this defect.
 - No corpus, query TSV, PGDATA, or cluster directory is committed.
 - Executable gate config: `task200-coverage-memory-regression-suite.json`.
-  The suite run used the existing corpus under
-  `data/task106_full_sweep_100k/`, a one-time bootstrap fixture build, and
-  then `--reuse-fixture --coverage-memory-regression-iterations 300`. The
-  calibrated configured limit is now 100 KB/s: the fixed clean run measured
-  +5.82 KB/s, while the earlier clean floor was +1.42 KB/s. The 100 KB/s limit
-  leaves a 17x margin over the observed executable-gate slope and remains far
-  below the pre-fix 98,380.15 KB/s slope. The generated manifest records the
-  historical live run's original 1024 KB/s invocation; its measured slope is
-  explicitly below the calibrated limit.
-- Bootstrap artifact: `fixture-bootstrap-run/distann-local-multinode.log`
-  records release extension `fa84ff3b0`, 100,000 source rows, three Published
-  owners, `physical_ms=1023268`, and `publish_ms=1156605`. The bootstrap used
-  the existing corpus TSVs; it did not regenerate corpus data.
+  The suite used the existing corpus under
+  `data/task106_full_sweep_100k/`, performed one bootstrap fixture build, and
+  then used `--reuse-fixture` for the regression run. The packet config sets
+  `coverage_memory_regression_max_slope_kb_per_s=100.0` and
+  `coverage_memory_regression_max_delta_kb=4096.0`. The final acceptance line
+  is in `post-warmup-regression-run/distann-local-multinode.log`; it records
+  `warmup_invocations=6`, `warmup_settle_ms=1000`, `stable_samples=16489`,
+  `rss_p01_to_p99_kb=1020`, `rss_slope_kb_per_s=1.02`, and `pass=true`.
+  The earlier 1,024 KB/s run is historical only and is not used to establish
+  the current threshold.
+- Bootstrap artifact: `fixture-bootstrap-postwarmup/distann-local-multinode.log`
+  records 100,000 source rows, three Published owners, and release fixture
+  construction followed by `--reuse-fixture` gate execution. The bootstrap
+  used the existing corpus TSVs; it did not regenerate corpus data. Its suite
+  manifest records the bootstrap runner and config provenance.
 - Final regression result from
-  `executable-regression-run/distann-local-multinode.log`:
-  `coverage_invocations=300 rows_returned=300 samples=16609
-  rss_first_kb=19556 rss_last_kb=396632 rss_delta_kb=377076
-  rss_slope_kb_per_s=5.82 max_slope_kb_per_s=1024.00 pass=true`.
-  The RSS series is `coverage-memory-regression.series.log`; the normalized
-  result is in `results.jsonl`. The large first-to-last ramp is startup/working
-  set acquisition; the gate is slope-based as required and shows no
-  per-invocation unbounded growth.
+  `post-warmup-regression-run/distann-local-multinode.log`:
+  `coverage_invocations=300 rows_returned=300 samples=16569
+  stable_samples=16489 rss_first_kb=402064 rss_last_kb=402780
+  rss_p01_kb=401756 rss_p99_kb=402776 rss_p01_to_p99_kb=1020
+  max_delta_kb=4096.00 rss_slope_kb_per_s=1.02
+  max_slope_kb_per_s=100.00 pass=true`.
+  The full RSS series is preserved. The p01-to-p99 statistic intentionally
+  excludes the one-percent tails where the operating system can reclaim or
+  reacquire working-set pages; it supplies the requested absolute post-warm-up
+  bound while the full series remains available for audit.
 - Required pre-fix negative control: the same suite gate ran against the
   preserved 100k fixture with the extension built from `fa84ff3b0^` (`897c690`
   plus the fixture's existing dirty provenance marker). It executed 20 calls
@@ -77,11 +83,15 @@
   `negative-control-run/distann-local-multinode.log` and
   `negative-control-run/coverage-memory-regression.series.log`.
 - Unattended PG18 mechanism test: `cargo pgrx test pg18
-  test_distann_physical_seed_detoast_memory_is_bounded --no-default-features
-  --features 'pg18 pg_test distann-head-attribution-benchmark'` passed 300
-  owner-seed conversions in one test transaction and asserted backend memory
-  growth stayed below 4 MiB. The captured output is
-  `pg18-seed-memory-regression.log`.
+  test_distann_physical_seed_detoast_memory_is_bounded --no-default-features`
+  passed 300 owner-seed conversions in one test transaction and asserted
+  backend memory growth stayed below 4 MiB. The standard command resolves
+  `PGRX_FEATURES="pg18 pg_test"`, and `pg_test` includes
+  `distann-head-attribution-benchmark`, so the test is not hidden behind an
+  extra feature flag. Its fixture has 512 graph rows with 256-neighbor toasted
+  records. The fixed output is `pg18-seed-memory-regression-standard.log`;
+  the same command on `fa84ff3b0^` fails with 1,258,283,008 bytes retained,
+  recorded in `pg18-seed-memory-regression-pref-fix.log`.
 - Latency comparability note: the A1 mean of 36.2 ms versus the Phase 1 mean
   of 27.50 ms is neither a regression nor a win. Those runs used different
   held-transaction/single-snapshot versus autocommit protocols, a target/debug
@@ -90,8 +100,8 @@
 - Measurement surface: one shared three-owner physical `dm_idx` generation;
   one coordinator backend held one explicit transaction for all 300 coverage
   calls. No one-index-per-table control was used in this diagnostic.
-- After the cited artifacts were captured, both stopped 6.7G fixtures under
-  `/home/peter/.ecaz/clusters/task200-counters-off-100k` and
-  `/home/peter/.ecaz/clusters/task200-counters-on-100k` were removed, along
-  with raw operational logs. No corpus or PGDATA is committed.
+- The final gate explicitly reports `fixture_decision action=reuse`, with
+  source rows=100,000 and the packet bootstrap provenance. No corpus or
+  PGDATA is committed; the stopped 6.7G final fixture directory was removed
+  after the packet-local evidence was captured.
 - Sibling conversion audit: `sibling-conversion-audit.md`.

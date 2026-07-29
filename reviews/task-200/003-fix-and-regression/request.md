@@ -33,19 +33,25 @@ path unchanged, so the conditional 10/50/100k matrix waiver applies.
 
 Reviewer follow-up identified that the SQL loop above was hand-run evidence,
 not an executable regression test. The executable gate is now run and passes.
-The suite reused a newly bootstrapped 100k fixture from the existing staged
-corpus and executed 300 coverage invocations on one coordinator backend in
-one transaction. It returned 300 rows, collected 16,609 RSS samples, and
-reported a fitted slope of +5.82 KB/s against the 1,024 KB/s limit. The
-packet-local series and normalized suite results are committed as evidence.
+It reused the packet-local 100k fixture bootstrap and existing staged corpus;
+the gate did not rebuild the corpus or index. After six warm-up invocations and
+a one-second settle, it executed 300 coverage invocations on one coordinator
+backend in one transaction. It returned 300 rows and collected 16,569 RSS
+samples. On the stable interior, the fitted slope was +1.02 KB/s and the
+absolute p01-to-p99 RSS delta was 1,020 KB, both below the committed limits of
+100 KB/s and 4,096 KB. The full series and normalized suite results are
+packet-local evidence.
 
 The suite runner also now forwards `reuse_provenance_dir`, so reuse is
 attested from the packet-local bootstrap result instead of rebuilding. The
-executable gate now has a 100 KB/s default calibrated from the fixed +1.42 and
-+5.82 KB/s observations. The same gate fails against `fa84ff3b0^` at
-98,380.15 KB/s, proving the assertion detects the original defect. The
-unattended PG18 test passes 300 one-owner conversions with a 4 MiB bounded
-growth assertion; its output is in `artifacts/pg18-seed-memory-regression.log`.
+required pre-fix PG18 control uses the same standard command and the same
+fail-capable fixture: it fails after 300 calls with 1,258,283,008 bytes of
+retained growth versus the 4 MiB assertion. The fixed standard command passes
+with the 512-row, 256-neighbor toasted fixture. Because `pg_test` includes
+`distann-head-attribution-benchmark`, the ordinary `cargo pgrx test pg18 ...
+--no-default-features` invocation exercises the regression test without an
+extra feature flag. The older 1,024 KB/s executable result remains in the
+packet only as historical context and is not the acceptance result.
 The sibling conversion audit remains in `artifacts/sibling-conversion-audit.md`.
 
 The sibling conversion audit is in

@@ -34,6 +34,7 @@
       "benchmark_backend_batch_size": 0,
       "coverage_memory_regression_iterations": 20,
       "coverage_memory_regression_max_slope_kb_per_s": 100.0,
+      "coverage_memory_regression_max_delta_kb": 4096.0,
       "memory_sample_interval_ms": 250,
       "skip_fault_drills": true,
       "compact_artifacts": false,

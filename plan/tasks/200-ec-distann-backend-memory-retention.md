@@ -171,7 +171,8 @@ will destroy the next one.
    it. Cite the Phase 1 series and the A1 series as evidence, not a code-reading
    argument.
 3. **Regression test.** Several hundred coverage calls on one backend inside a
-   single transaction, asserting bounded RSS. Assert on **slope**, not peak: the
+   single transaction, asserting bounded RSS. Assert on **post-warm-up slope and
+   absolute working-set delta**, not an unqualified startup peak: the
    noise floor is under 1 MB across 300 queries against a ~100 MB per-invocation
    signal, so ~20 iterations is enough and a peak threshold silently passes any
    leak that stays under it. If A1 grew, the same test is required for the
@@ -238,8 +239,10 @@ figures are not latency evidence.
 - The fix in `fa84ff3b0` reads the raw SPI datum and uses the owning
   `DetoastedVarlena` guard, freeing each detoast copy after row decoding.
 - The clean committed-source regression completed 300 coverage calls in one
-  transaction. RSS slope was +1.42 KB/s with an 828 KB observed range, and the
-  final context was `TopTransactionContext: 142606336 total`.
+  transaction. The fail-capable fixture uses 512 graph rows with 256-neighbor
+  toasted records. The standard PG18 test passes on the fix and fails on
+  `fa84ff3b0^` after 300 calls with 1,258,283,008 bytes retained against its 4 MiB
+  bound.
 - The 10k/50k/100k matrix is waived conditionally because the production read
   path is unchanged; the fix is confined to the benchmark-only owner-seed
   diagnostic path. The conditional waiver lapses if that changes.
@@ -255,15 +258,14 @@ The prior 300-call result was hand-run SQL evidence, not an executable
 regression test. The new
 `coverage_memory_regression_iterations` suite step runs the coverage helper on
 one backend inside one transaction and enforces an RSS slope threshold. The
-new gate is packet-configured at 300 calls with a calibrated 100 KB/s maximum slope and
-also has a unit test for the slope calculation. The sibling conversion audit
-records the production `generation_read.rs` and `remote_endpoint.rs` array
-sites and ties their boundedness to the clean held-transaction A1 evidence.
-The live gate then passed against a reused 100k three-owner fixture: 300
-coverage calls, 300 returned rows, 16,609 RSS samples, and +5.82 KB/s slope
-against the historical 1,024 KB/s limit. The same gate failed against
-`fa84ff3b0^` at +98,380.15 KB/s, and the unattended PG18 test passed 300
-one-owner calls with a 4 MiB bound.
+new gate is packet-configured at 300 calls with a 100 KB/s maximum slope and a
+4,096 KB p01-to-p99 absolute delta. It warms the backend six times, settles for
+one second, trims 40 samples from each edge, and records the full series. The
+live gate passed against the reused 100k three-owner fixture: 300 coverage
+calls, 300 returned rows, 16,569 RSS samples, stable p01-to-p99 delta 1,020 KB,
+and +1.02 KB/s slope. The older 1,024 KB/s result is historical only. The
+unattended PG18 test is enabled by the standard `pg_test` feature set and has
+both fixed-green and pre-fix-red evidence.
 
 ## References
 
