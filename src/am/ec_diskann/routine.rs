@@ -2102,7 +2102,9 @@ pub extern "C-unwind" fn pg_finfo_ec_diskann_handler() -> *const pg_sys::Pg_finf
 #[cfg(any(test, feature = "pg_test"))]
 #[pgrx::pg_schema]
 mod tests {
-    use super::{insert, scan, scan_state, GraphReader, PersistedGraphReader, ScanParams};
+    use super::{
+        insert, scan, scan_state, GraphReader, PersistedGraphReader, ScanParams, VamanaNodeTuple,
+    };
     use crate::am::ec_diskann::page::{
         VamanaMetadataPage, PAYLOAD_FLAG_BINARY_SIDECAR, PAYLOAD_FLAG_GROUPED_SEARCH_CODE,
         VAMANA_SEARCH_CODEC_GROUPED_PQ, VAMANA_SEARCH_CODEC_RABITQ, VAMANA_SEARCH_CODEC_TURBOQUANT,
@@ -2224,6 +2226,244 @@ mod tests {
         }
     }
 
+    fn mark_line_pointer_unused(index_name: &str, tid: ItemPointer) {
+        let index_relation = IndexRelationGuard::open(
+            index_oid(index_name),
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+            "mark_line_pointer_unused",
+        );
+        let handle = index_relation.handle();
+        let buffer = LockedBufferGuard::read_main_handle(
+            handle,
+            tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .expect("index data block should open");
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+        {
+            let mut page = wal_txn.register_page(&buffer);
+            page.mark_item_unused(tid.offset_number)
+                .expect("fixture line pointer should become unused");
+        }
+        wal_txn.finish();
+    }
+
+    fn line_pointer_fields(index_name: &str, tid: ItemPointer) -> (u32, u32, u32, bool) {
+        let index_relation =
+            IndexRelationGuard::access_share(index_oid(index_name), "line_pointer_fields");
+        let buffer = LockedBufferGuard::read_main_handle(
+            index_relation.handle(),
+            tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_SHARE as i32,
+        )
+        .expect("index data block should open");
+        // SAFETY: the locked buffer owns a valid page, and the caller supplies
+        // a TID produced from that page. The offset is checked before reading
+        // the line-pointer bitfields.
+        unsafe {
+            let max_offset = pg_sys::PageGetMaxOffsetNumber(buffer.page());
+            assert!(
+                tid.offset_number != pg_sys::InvalidOffsetNumber && tid.offset_number <= max_offset,
+                "fixture TID {:?} should be present (max offset {})",
+                tid,
+                max_offset,
+            );
+            let item_id = pg_sys::PageGetItemId(buffer.page(), tid.offset_number);
+            assert!(
+                !item_id.is_null(),
+                "fixture line pointer should not be null"
+            );
+            let item_id = &*item_id;
+            (
+                item_id.lp_off(),
+                item_id.lp_flags(),
+                item_id.lp_len(),
+                pg_sys::PageHasFreeLinePointers(buffer.page()),
+            )
+        }
+    }
+
+    fn assert_page_cannot_reuse_gap(index_name: &str, tid: ItemPointer, encoded_node_len: usize) {
+        let index_relation = IndexRelationGuard::open(
+            index_oid(index_name),
+            pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+            "assert_page_cannot_reuse_gap",
+        );
+        let handle = index_relation.handle();
+        let buffer = LockedBufferGuard::read_main_handle(
+            handle,
+            tid.block_number,
+            pg_sys::ReadBufferMode::RBM_NORMAL,
+            pg_sys::BUFFER_LOCK_EXCLUSIVE as i32,
+        )
+        .expect("persistent-gap data block should open");
+        let mut wal_txn = wal::WalTxnScope::start_handle(handle);
+        {
+            let mut page = wal_txn.register_page(&buffer);
+            assert!(
+                page.add_item(&vec![0; encoded_node_len]).is_err(),
+                "the next fixed-size node must not fit on the persistent-gap page"
+            );
+        }
+        wal_txn.finish();
+    }
+
+    fn persistent_gap_candidate(
+        index_name: &str,
+        encoded_node_len: usize,
+    ) -> (ItemPointer, ItemPointer, usize) {
+        let index_relation =
+            IndexRelationGuard::access_share(index_oid(index_name), "persistent_gap_candidate");
+        let handle = index_relation.handle();
+        let block_count = relation::main_fork_block_count_handle(handle);
+        let aligned_node_len = encoded_node_len
+            .checked_add(pg_sys::MAXIMUM_ALIGNOF as usize - 1)
+            .expect("encoded node length alignment should not overflow")
+            & !(pg_sys::MAXIMUM_ALIGNOF as usize - 1);
+
+        for block_number in crate::storage::page::FIRST_DATA_BLOCK_NUMBER..block_count {
+            let buffer = LockedBufferGuard::read_main_handle(
+                handle,
+                block_number,
+                pg_sys::ReadBufferMode::RBM_NORMAL,
+                pg_sys::BUFFER_LOCK_SHARE as i32,
+            )
+            .expect("index data block should open");
+            let page = buffer.page();
+            // SAFETY: the buffer owns a valid shared lock for the page while
+            // page header and line pointers are inspected.
+            let (max_offset, exact_free) = unsafe {
+                (
+                    pg_sys::PageGetMaxOffsetNumber(page),
+                    pg_sys::PageGetExactFreeSpace(page) as usize,
+                )
+            };
+            if max_offset < 2 || exact_free >= aligned_node_len {
+                continue;
+            }
+
+            for offset_number in 1..max_offset {
+                // SAFETY: both offsets are within PageGetMaxOffsetNumber.
+                let current_is_normal = unsafe {
+                    let item_id = pg_sys::PageGetItemId(page, offset_number);
+                    !item_id.is_null() && (&*item_id).lp_flags() == 1
+                };
+                if !current_is_normal {
+                    continue;
+                }
+                let later_offset = ((offset_number + 1)..=max_offset).find(|later_offset| {
+                    // SAFETY: the candidate offset is bounded by max_offset.
+                    unsafe {
+                        let item_id = pg_sys::PageGetItemId(page, *later_offset);
+                        !item_id.is_null() && (&*item_id).lp_flags() == 1
+                    }
+                });
+                if let Some(later_offset) = later_offset {
+                    return (
+                        ItemPointer {
+                            block_number,
+                            offset_number,
+                        },
+                        ItemPointer {
+                            block_number,
+                            offset_number: later_offset,
+                        },
+                        exact_free,
+                    );
+                }
+            }
+        }
+
+        panic!(
+            "fixture should contain a full data page with two occupied offsets and less than {aligned_node_len} bytes free"
+        );
+    }
+
+    fn build_unused_line_pointer_fixture(
+        table_name: &str,
+        index_name: &str,
+        rows: usize,
+        graph_degree: usize,
+    ) {
+        Spi::run(&format!(
+            "CREATE TABLE {table_name} (
+                id bigint primary key,
+                embedding ecvector
+            )"
+        ))
+        .expect("table creation should succeed");
+        Spi::run(&format!(
+            "INSERT INTO {table_name}
+             SELECT id,
+                    encode_to_ecvector(
+                        ARRAY[
+                            cos((id * 0.17)::double precision)::real,
+                            sin((id * 0.17)::double precision)::real,
+                            0.0::real,
+                            0.0::real
+                        ],
+                        4,
+                        42
+                    )
+             FROM generate_series(1, {rows}) AS id"
+        ))
+        .expect("seed rows should insert");
+        Spi::run(&format!(
+            "CREATE INDEX {index_name}
+             ON {table_name}
+             USING ec_diskann (embedding ecvector_diskann_ip_ops)
+             WITH (graph_degree = {graph_degree},
+                   build_list_size = {}, list_size = 20,
+                   rerank_budget = 8)",
+            graph_degree.max(20)
+        ))
+        .expect("index creation should succeed");
+    }
+
+    fn insert_exact_query_row(table_name: &str) -> ItemPointer {
+        Spi::run(&format!(
+            "INSERT INTO {table_name} VALUES
+             (999, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))"
+        ))
+        .expect("insert after unused line pointer should succeed");
+        heap_tid_for_row(table_name, 999)
+    }
+
+    fn diskann_tid_for_heap_tid(
+        metadata: &VamanaMetadataPage,
+        chain: &DataPageChain,
+        heap_tid: ItemPointer,
+    ) -> ItemPointer {
+        PersistedGraphReader::new(
+            chain,
+            metadata.graph_degree_r,
+            scan_state::metadata_binary_word_count(metadata),
+            scan_state::metadata_search_code_len(metadata),
+        )
+        .iter_live_tids()
+        .collect::<Result<Vec<_>, _>>()
+        .expect("materialized node iteration should succeed")
+        .into_iter()
+        .find_map(|(tid, tuple)| (tuple.primary_heaptid == heap_tid).then_some(tid))
+        .expect("inserted node should remain addressable")
+    }
+
+    fn assert_exact_query_uses_diskann(table_name: &str) {
+        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
+        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
+        let nearest = Spi::get_one::<i64>(&format!(
+            "SELECT id FROM {table_name}
+             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
+             LIMIT 1"
+        ))
+        .expect("ordered scan should succeed")
+        .expect("ordered scan should return a row");
+        assert_eq!(nearest, 999);
+    }
+
     fn heap_tid_distance(tid: ItemPointer) -> f32 {
         (tid.block_number as f32 * 1024.0) + tid.offset_number as f32
     }
@@ -2327,84 +2567,104 @@ mod tests {
 
     #[pg_test]
     fn test_ec_diskann_unused_line_pointer_scan() {
-        Spi::run(
-            "CREATE TABLE ec_diskann_unused_line_pointer (
-                id bigint primary key,
-                embedding ecvector
-            )",
-        )
-        .expect("table creation should succeed");
-        Spi::run(
-            "INSERT INTO ec_diskann_unused_line_pointer
-             SELECT id,
-                    encode_to_ecvector(
-                        ARRAY[
-                            cos((id * 0.17)::double precision)::real,
-                            sin((id * 0.17)::double precision)::real,
-                            0.0::real,
-                            0.0::real
-                        ],
-                        4,
-                        42
-                    )
-             FROM generate_series(1, 32) AS id",
-        )
-        .expect("seed rows should insert");
-        Spi::run(
-            "CREATE INDEX ec_diskann_unused_line_pointer_idx
-             ON ec_diskann_unused_line_pointer
-             USING ec_diskann (embedding ecvector_diskann_ip_ops)
-             WITH (graph_degree = 8, build_list_size = 20, list_size = 20,
-                   rerank_budget = 8)",
-        )
-        .expect("index creation should succeed");
+        let table_name = "ec_diskann_unused_line_pointer";
+        let index_name = "ec_diskann_unused_line_pointer_idx";
+        build_unused_line_pointer_fixture(table_name, index_name, 32, 8);
 
-        let unused_tid = append_unused_line_pointer("ec_diskann_unused_line_pointer_idx");
-        assert!(
-            index_materialized_chain("ec_diskann_unused_line_pointer_idx")
-                .1
-                .get_page(unused_tid.block_number)
-                .expect("unused slot page should materialize")
-                .raw_tuple(unused_tid)
-                .expect_err("unused line pointer must not decode")
-                .contains("is unused")
+        let unused_tid = append_unused_line_pointer(index_name);
+        assert_eq!(
+            line_pointer_fields(index_name, unused_tid),
+            (0, 0, 0, true),
+            "fixture must match PostgreSQL ItemIdSetUnused plus PD_HAS_FREE_LINES"
         );
+        assert!(index_materialized_chain(index_name)
+            .1
+            .get_page(unused_tid.block_number)
+            .expect("unused slot page should materialize")
+            .raw_tuple(unused_tid)
+            .expect_err("unused line pointer must not decode")
+            .contains("is unused"));
 
-        Spi::run(
-            "INSERT INTO ec_diskann_unused_line_pointer VALUES
-             (999, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42))",
-        )
-        .expect("insert after unused line pointer should succeed");
+        let inserted_heap_tid = insert_exact_query_row(table_name);
+        let (metadata, chain) = index_materialized_chain(index_name);
+        let inserted_tid = diskann_tid_for_heap_tid(&metadata, &chain, inserted_heap_tid);
+        assert_eq!(
+            inserted_tid, unused_tid,
+            "PageAddItemExtended should recycle a canonical LP_UNUSED slot"
+        );
+        assert_exact_query_uses_diskann(table_name);
+    }
 
-        let inserted_heap_tid = heap_tid_for_row("ec_diskann_unused_line_pointer", 999);
-        let (metadata, chain) = index_materialized_chain("ec_diskann_unused_line_pointer_idx");
-        let reader = PersistedGraphReader::new(
-            &chain,
+    #[pg_test]
+    fn test_ec_diskann_persistent_unused_line_pointer_scan() {
+        let table_name = "ec_diskann_persistent_unused_line_pointer";
+        let index_name = "ec_diskann_persistent_unused_line_pointer_idx";
+        build_unused_line_pointer_fixture(table_name, index_name, 128, 256);
+
+        let metadata = index_metadata(index_name);
+        let encoded_node_len = VamanaNodeTuple::encoded_len(
             metadata.graph_degree_r,
             scan_state::metadata_binary_word_count(&metadata),
             scan_state::metadata_search_code_len(&metadata),
         );
-        let inserted_tid = reader
-            .iter_live_tids()
-            .collect::<Result<Vec<_>, _>>()
-            .expect("materialized node iteration should succeed")
-            .into_iter()
-            .find_map(|(tid, tuple)| (tuple.primary_heaptid == inserted_heap_tid).then_some(tid))
-            .expect("inserted node should remain addressable");
-        assert_eq!(inserted_tid.block_number, unused_tid.block_number);
-        assert!(inserted_tid.offset_number > unused_tid.offset_number);
+        let (unused_tid, later_tid, exact_free) =
+            persistent_gap_candidate(index_name, encoded_node_len);
+        let later_tuple_before = index_materialized_chain(index_name)
+            .1
+            .get_page(later_tid.block_number)
+            .expect("later tuple page should materialize")
+            .raw_tuple(later_tid)
+            .expect("later tuple should decode before creating the gap")
+            .to_vec();
 
-        Spi::run("SET LOCAL enable_seqscan = off").expect("SET LOCAL should succeed");
-        Spi::run("SET LOCAL enable_bitmapscan = off").expect("SET LOCAL should succeed");
-        Spi::run("SET LOCAL enable_sort = off").expect("SET LOCAL should succeed");
-        let nearest = Spi::get_one::<i64>(
-            "SELECT id FROM ec_diskann_unused_line_pointer
-             ORDER BY embedding <#> ARRAY[1.0, 0.0, 0.0, 0.0]::real[]
-             LIMIT 1",
-        )
-        .expect("ordered scan should succeed")
-        .expect("ordered scan should return a row");
-        assert_eq!(nearest, 999);
+        mark_line_pointer_unused(index_name, unused_tid);
+        assert_eq!(
+            line_pointer_fields(index_name, unused_tid),
+            (0, 0, 0, true),
+            "persistent gap must match PostgreSQL ItemIdSetUnused plus PD_HAS_FREE_LINES"
+        );
+        let aligned_node_len = encoded_node_len
+            .checked_add(pg_sys::MAXIMUM_ALIGNOF as usize - 1)
+            .expect("encoded node length alignment should not overflow")
+            & !(pg_sys::MAXIMUM_ALIGNOF as usize - 1);
+        assert!(
+            exact_free < aligned_node_len,
+            "persistent-gap page should have no room for the next fixed-size node"
+        );
+
+        let (_, chain_with_gap) = index_materialized_chain(index_name);
+        let materialized_page = chain_with_gap
+            .get_page(unused_tid.block_number)
+            .expect("persistent-gap page should materialize");
+        assert!(materialized_page
+            .raw_tuple(unused_tid)
+            .expect_err("persistent unused line pointer must not decode")
+            .contains("is unused"));
+        assert_eq!(
+            materialized_page
+                .raw_tuple(later_tid)
+                .expect("later physical tuple should remain addressable"),
+            later_tuple_before,
+            "materialization must preserve the later tuple's physical offset"
+        );
+
+        assert_page_cannot_reuse_gap(index_name, unused_tid, encoded_node_len);
+        let (_, chain_after_insert_attempt) = index_materialized_chain(index_name);
+        assert!(chain_after_insert_attempt
+            .get_page(unused_tid.block_number)
+            .expect("persistent-gap page should remain materialized")
+            .raw_tuple(unused_tid)
+            .expect_err("persistent gap must survive the next-node insertion attempt")
+            .contains("is unused"));
+        assert_eq!(
+            chain_after_insert_attempt
+                .get_page(later_tid.block_number)
+                .expect("later tuple page should remain materialized")
+                .raw_tuple(later_tid)
+                .expect("later physical tuple should remain addressable"),
+            later_tuple_before,
+            "the failed next-node insertion must not shift a later physical offset"
+        );
     }
 
     #[pg_test]
