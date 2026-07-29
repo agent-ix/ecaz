@@ -4,6 +4,8 @@
   `2100e73101fdab4fc4fa268cb7415ddaf4813f2f`
 - DiskANN candidate checkpoint:
   `50b7690d84024ec58bc570bc506cfa6719c23c9e`
+- Canonical unused-slot regression checkpoint:
+  `73a3a7849b17c8a8488357dcd8f5fff76f8a377c`
 - DiskANN baseline checkpoint:
   `147d44d05f0fe2d95a590a5730c6af55091d11c1`
 - Task bucket: `reviews/task-38/`
@@ -64,6 +66,52 @@
   complete successfully.
 - Coverage: real DiskANN index creation, an LP_UNUSED physical offset, a later
   occupied node, chain materialization, and forced nearest-neighbour scan.
+- Status: superseded by the byte-faithful canonical-slot coverage in
+  `finding11-canonical-unused-pg18.log`.
+
+### `finding11-install.log`
+
+- Source checkout: repository root.
+- Source content: checkpoint
+  `73a3a7849b17c8a8488357dcd8f5fff76f8a377c`; the install preceded the commit,
+  with the two tracked source files containing the exact content subsequently
+  committed at that checkpoint.
+- Command:
+  `/Users/peter/dev/tqvector/target/debug/ecaz --log-file
+  /Users/peter/dev/tqvector/reviews/task-38/010-diskann-physical-page-materialization/artifacts/finding11-install.log
+  dev install ecaz-pg-test --pg 18 --pgrx-home /Users/peter/.pgrx`
+- Exit: `0`.
+- Timestamp: `2026-07-28T23:35:27-0700`.
+- Log SHA-256:
+  `9ca049793587fb7f6d58247c0bd82d48e18ba0d2cc82f18d7efb4849ccc8ce71`.
+- Installed release backend SHA-256:
+  `37754507e17f11496e5a5e0123a0e8ac0a687b89aa00389ee2d64725d9025401`.
+
+### `finding11-canonical-unused-pg18.log`
+
+- Database: fresh `task38_p010_finding11`, dropped after validation.
+- Command:
+  `/Users/peter/.cargo/bin/ecaz dev sql --pg 18 --db
+  task38_p010_finding11 --socket-dir /Users/peter/.pgrx --port 28818 --raw
+  --sql "CREATE EXTENSION ecaz;
+  SELECT tests.test_ec_diskann_unused_line_pointer_scan();
+  SELECT tests.test_ec_diskann_persistent_unused_line_pointer_scan();"
+  --log-output
+  reviews/task-38/010-diskann-physical-page-materialization/artifacts/finding11-canonical-unused-pg18.log`
+- Exit: `0`.
+- Timestamp: `2026-07-28T23:35:46-0700`.
+- SHA-256:
+  `ad1341ed171b5fd6961ea959aae80ea5ebba0f2a12c3c1ba7fecd5b2ad502664`.
+- Key result: extension creation and both focused PG18 regression functions
+  complete successfully.
+- Coverage:
+  - canonical `(lp_off, lp_flags, lp_len) = (0, 0, 0)` plus
+    `PD_HAS_FREE_LINES`;
+  - normal `PageAddItemExtended` recycling and addressability at the recycled
+    physical TID, followed by a forced DiskANN scan; and
+  - a canonical persistent gap on a page too full for the next fixed-size
+    node, with a later occupied tuple remaining byte-identical and addressable
+    at its original physical TID.
 
 ## Suite Configuration
 
@@ -231,6 +279,9 @@ configuration, and raw result table used to construct `results.jsonl`.
 
 - All 15 pairs of `recall@k`, `recall_worst`, and `ndcg@k` values are
   identical between baseline and candidate.
+- Freshly built benchmark indexes contain no unused line pointers, so the
+  bit-identical recall is no-regression evidence for the unchanged path; the
+  focused PG18 tests above exercise the changed LP_UNUSED branch.
 - DiskANN `size_bytes` and `per_row_bytes` are identical at 10k, 50k, and
   100k.
 - Candidate mean-latency deltas over the complete 15-point sweep range from

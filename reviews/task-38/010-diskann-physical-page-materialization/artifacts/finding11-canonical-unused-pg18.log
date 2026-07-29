@@ -1,0 +1,15 @@
+CREATE EXTENSION
+ test_ec_diskann_unused_line_pointer_scan
+------------------------------------------
+
+(1 row)
+
+ test_ec_diskann_persistent_unused_line_pointer_scan
+-----------------------------------------------------
+
+(1 row)
+
+NOTICE:  ec_diskann_vamana_pass_timing index=ec_diskann_unused_line_pointer_idx pass=0 alpha=1.2 elapsed_ms=0 greedy_search_ms=0 candidate_pool_ms=0 robust_prune_ms=0 backlink_ms=0 greedy_distance_calls=0 candidate_pool_distance_calls=0 robust_prune_distance_calls=0 backlink_distance_calls=0 visited_mean=14.09 visited_p95=20 candidate_pool_mean=14.06 candidate_pool_p95=20 reprunes=2
+NOTICE:  ec_diskann_ambuild_timing index=ec_diskann_unused_line_pointer_idx phase=complete heap_tuples=32 scanned_tuples=32 unique_tuples=32 data_pages=1 heap_scan_ms=0 source_ref_ms=0 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=0 build_persist_ms=0 core_medoid_ms=0 core_graph_ms=0 core_persist_ms=0 parallel_requested_workers=0 parallel_effective_workers=0 parallel_requested_batch_size=704 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=false parallel_alpha_growth_disabled=false parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 parallel_stale_read_ppm=0 overflow_ms=0 codebook_ms=0 write_pages_ms=0 metadata_ms=0 flush_total_ms=0 total_ms=0
+NOTICE:  ec_diskann_vamana_pass_timing index=ec_diskann_persistent_unused_line_pointer_idx pass=0 alpha=1.2 elapsed_ms=0 greedy_search_ms=0 candidate_pool_ms=0 robust_prune_ms=0 backlink_ms=0 greedy_distance_calls=0 candidate_pool_distance_calls=0 robust_prune_distance_calls=0 backlink_distance_calls=0 visited_mean=63.90 visited_p95=121 candidate_pool_mean=63.89 candidate_pool_p95=121 reprunes=0
+NOTICE:  ec_diskann_ambuild_timing index=ec_diskann_persistent_unused_line_pointer_idx phase=complete heap_tuples=128 scanned_tuples=128 unique_tuples=128 data_pages=26 heap_scan_ms=0 source_ref_ms=0 training_ms=0 sidecar_setup_ms=0 payload_derivation_ms=0 build_persist_ms=0 core_medoid_ms=0 core_graph_ms=0 core_persist_ms=0 parallel_requested_workers=0 parallel_effective_workers=0 parallel_requested_batch_size=704 parallel_batch_size=704 parallel_flush_rate=0 parallel_rayon_scaffold=false parallel_alpha_growth_disabled=false parallel_epochs=0 parallel_proposal_ms=0 parallel_reducer_ms=0 parallel_same_epoch_candidate_reads=0 parallel_total_candidate_reads=0 parallel_stale_read_ppm=0 overflow_ms=0 codebook_ms=0 write_pages_ms=0 metadata_ms=0 flush_total_ms=1 total_ms=1

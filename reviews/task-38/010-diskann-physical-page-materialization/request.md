@@ -32,8 +32,9 @@ materialization:
   panics;
 - unused line pointers have explicit state and `raw_tuple` rejects them;
 - graph iteration visits only occupied physical offsets; and
-- a PG18 end-to-end regression creates a real unused line pointer, appends a
-  later node, materializes the chain, and forces a nearest-neighbour scan.
+- PG18 regressions cover both PostgreSQL's canonical recycled LP_UNUSED state
+  and a persistent canonical gap on a page with no room for another fixed-size
+  node.
 
 ## PG18 Regression Evidence
 
@@ -111,3 +112,28 @@ the measurements:
   of the correctness hardening.
 
 No code or raw evidence changed in this response.
+
+## Review Response: Sequence 2
+
+Finding 11 in `feedback/2026-07-28-03-reviewer.md` is addressed by checkpoint
+`73a3a7849b17c8a8488357dcd8f5fff76f8a377c`:
+
+- the PG test helper now matches `ItemIdSetUnused` by clearing `lp_off`,
+  `lp_flags`, and `lp_len`, and sets `PD_HAS_FREE_LINES` as VACUUM does;
+- the recycled-slot regression asserts the next DiskANN node is addressable at
+  the exact recycled physical TID and completes a forced nearest-neighbour
+  scan; and
+- the persistent-gap regression selects a page with less free space than one
+  fixed-size node, creates a canonical gap before a later occupied offset,
+  proves `PageAddItemExtended` cannot place the next node there, and verifies
+  materialization keeps both the unused gap and later tuple at their physical
+  offsets.
+
+`artifacts/finding11-canonical-unused-pg18.log` records both PG18 regression
+functions passing against the release backend installed by
+`artifacts/finding11-install.log`.
+
+The A/B suite was not rerun: its freshly built benchmark indexes contain no
+unused line pointers, so bit-identical recall is no-regression evidence for the
+unchanged path. The focused PG18 regressions are the evidence that exercises
+the changed unused-line-pointer branch.
