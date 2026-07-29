@@ -2,7 +2,7 @@
 id: NFR-018
 title: Distann Space Amplification Budget
 type: NFR
-status: PROPOSED
+status: APPROVED
 quality_attribute: performance_efficiency
 relationships:
   - target: "ix://agent-ix/ecaz/FR-076"
@@ -21,6 +21,20 @@ unique local directories, codec artifacts, generation/manifest metadata,
 logical control index, and head sample, summed across nodes) SHALL NOT exceed
 4× the raw vector bytes of the indexed corpus.
 
+The summed budget above is necessary but not sufficient. **No single node's
+graph-side bytes SHALL exceed the summed budget divided by the roster size,
+plus the bounded structures NFR-021 permits.** A cluster in which one node holds
+the whole index satisfies the summed budget and is nonetheless a breach.
+
+**A full index replica — including a replica whose non-owned records are
+filtered or tombstoned, and including a derived, optional, or rebuildable
+performance object that holds graph records or full-precision vectors for
+vec_ids the node does not own — SHALL NOT be built, and is not a valid
+distributed measurement lane.** The FR-084 coordinator traversal replica as
+specified is an instance of this excluded class. See
+[NFR-021](./NFR-021-distann-distribution-invariant.md) for the governing
+per-node invariant.
+
 ## Scope
 
 - Applies to: published-epoch storage at 10k/50k/100k on the standard
@@ -33,7 +47,13 @@ logical control index, and head sample, summed across nodes) SHALL NOT exceed
   vectors and defines the 1.0× raw baseline; it is excluded from the index
   numerator. Non-vector payload bytes in the row tier are reported separately.
 - A full index replica, including a replica whose non-owned records are filtered
-  or tombstoned, is not a valid NFR-018 distributed measurement lane.
+  or tombstoned, is not a valid NFR-018 distributed measurement lane. This
+  exclusion is normative in the Statement above; it is restated here because it
+  also governs which lanes may produce a reportable ratio.
+- Derived, optional, and rebuildable relations count toward both the summed
+  budget and the per-node bound. A relation is not excluded because it is a
+  cache, a replica, a sample, or a performance object, nor because it is
+  disabled by default.
 - Retained old epochs and unpublished Building/Ready generations are reported as
   lifecycle overhead rows rather than silently folded into the active-epoch
   index ratio.
@@ -54,7 +74,10 @@ measurement rather than assumed.
 
 | Metric | Target | Threshold | Method |
 |--------|--------|-----------|--------|
-| index bytes ÷ raw vector bytes, 100k | ≤ 3.0 | ≤ 4.0 | `ecaz bench suite` storage step |
+| index bytes ÷ raw vector bytes, 100k (summed across nodes) | ≤ 3.0 | ≤ 4.0 | `ecaz bench suite` storage step |
+| **max single-node graph-side bytes ÷ raw vector bytes, 100k** | ≈ summed ratio ÷ roster size | ≤ (summed threshold ÷ roster size) + bounded structures | per-node storage audit, measured per arm |
+| **max single-node graph-side bytes, growth 100k ÷ 10k** | flat or sublinear | ≤ 2.0 | per-node storage audit across scales |
+| derived/optional relation bytes attributed to their node | reported per relation | no unreported index-derived relation | per-node storage audit |
 | published-epoch bytes vs transient build peak | recorded | recorded | build instrumentation in epoch manifest |
 | active epoch row-tier vector bytes across all owners | ≈ 1.0× raw vectors | exactly one row-tier vector per vec_id | topology/storage audit |
 | row-tier heap/TOAST bytes and end-to-end cluster bytes | recorded per owner and summed | recorded; no omitted owner/TOAST relation | topology/storage audit |
@@ -63,9 +86,18 @@ measurement rather than assumed.
 
 ## Verification
 
-Every gate benchmark run includes the storage step; the ratio row appears in
-the packet manifest per scale. A threshold breach fails the milestone
-closeout.
+Every gate benchmark run includes the storage step; the summed ratio row and the
+per-node maximum row appear in the packet manifest per scale. A threshold breach
+fails the milestone closeout.
+
+The storage step SHALL be measured **per arm**, inside the arm loop, and its
+values SHALL be emitted into `results.jsonl`. A storage row computed once and
+replayed across arms is not a measurement: it cannot express a difference
+between arms and SHALL NOT be cited as evidence that arms have equal storage.
+Every index-derived relation, including optional and disabled-by-default
+relations, SHALL be attributed to the node holding it and included in that
+node's bytes. A relation reported only in a log sidecar and absent from
+`results.jsonl` does not satisfy this requirement.
 
 Multinode measurement mechanism: the suite's storage step runs once per node
 and the suite report sums the per-node graph, TOAST, directory, generation

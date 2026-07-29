@@ -135,26 +135,95 @@ productionization task. A benchmark winner is not a default change.
 
 ## Post-199/200 handoff
 
-Task 199 is now outside-reviewed and promoted. Its accepted release matrix is
-the current latency control: the normal coordinator traversal replica reduced
-warm mean from 18.3/20.4/19.9 ms to 15.3/16.4/16.2 ms at 10k/50k/100k,
-respectively, with exact recall and unchanged storage between the owner and
-replica arms. Task 200 then fixed and regression-tested benchmark-only
-owner-seed detoast retention; it did not alter the production read path.
+> **CONFORMANCE CORRECTION (2026-07-29).** The replica arm is withdrawn as the
+> program's latency control. The **owner-traversal arm — 18.3/20.4/19.9 ms at
+> 10k/50k/100k — is the baseline.** See "Conformance correction" below.
+
+Task 199 was outside-reviewed and promoted. Its release matrix recorded the
+normal coordinator traversal replica reducing warm mean from 18.3/20.4/19.9 ms
+to 15.3/16.4/16.2 ms at 10k/50k/100k with exact recall. That result is not
+admissible as a control under [NFR-022](../../spec/non-functional/NFR-022-distann-control-validity.md):
+the replica arm holds every owner's graph record and full-precision vector on
+one coordinator (1.660 GB at 100k, linear in N), so it does not satisfy
+[NFR-021](../../spec/non-functional/NFR-021-distann-distribution-invariant.md)
+and is a comparison against a single-node index rather than against ec_distann.
+
+The accompanying claim of "unchanged storage between the owner and replica arms"
+is also not a measurement. The suite's storage step computes its scalars once,
+before the arm loop (`crates/ecaz-cli/src/commands/dev/distann_multicluster.rs:5153-5160`),
+and reprints them inside it (`:5209-5212`), so the arms are byte-identical by
+construction. The replica's 1,659,518,976 bytes appear only in a log-only metric
+never parsed into `results.jsonl`, and `cluster_index_space_amplification` — the
+NFR-018 ratio emitter that already exists at `distann_multicluster.rs:7419-7482`
+and ran for Tasks 172 and 197 — was not run for 198/199.
+
+Task 200 then fixed and regression-tested benchmark-only owner-seed detoast
+retention; it did not alter the production read path and is unaffected.
 
 The remaining work is split deliberately:
 
-- Task 201 owns fresh post-replica latency attribution and one isolated
-  payload/executor or local-traversal optimization. It must reuse the Task 199
-  control rather than repeat the already accepted replica A/B, and it must not
-  change the head, graph, neighbor codec, or replica lifecycle semantics.
+- Task 201 owns fresh latency attribution and one isolated payload/executor or
+  local-traversal optimization. **Its frozen control must be re-pinned to the
+  owner-traversal arm**; as written it places the Task 199 replica inside the
+  control and forbids replica questions from entering the screen, so it cannot
+  surface this defect. Its candidate must carry an NFR-021 admissibility verdict
+  at pre-registration.
 - Task 202 owns the cross-ISA ordered-identity portability gate explicitly
   waived by Task 199. It is a correctness/release gate, not a latency tuning
   task, and it changes no production behavior by itself.
 
 Task 188's BW8 result remains a research candidate only: it was paired with an
 experimental 16,384-landmark head, so it is not imported into Task 201 without
-a new current-production-head validation.
+a new current-production-head validation. Note also that it was measured without
+the Algorithm 1 pushdown (below), which bounds what it can say about beam width.
+
+## Conformance correction (2026-07-29)
+
+An audit of Tasks 161--202 against `DISTRIBUTEDANN` (arXiv:2509.06046) found the
+program had drifted from the reference design on four axes. Task 203 owns the
+per-task decision re-audit; this section records the ledger consequences.
+
+**1. The traversal regime was never applied.** Task 162's G0 kill-check — the
+measurement that unblocked the program — concluded that "wide beam, few rounds
+is the only viable multinode shape ... multinode wants >=32", with BW=32/H=8
+reaching 0.9940 recall at 20.3--28.3 ms projected, versus BW=4/H=64 at
+77.6--141.6 ms ("far over"). The default was never changed. `mod.rs:253` is still
+`BEAM_WIDTH = 4` and every distann suite from Task 179 onward is pinned at
+BW=4/H=100. BW=4 was inherited from `ec_diskann`, whose Task 168 A/B tuned it to
+fill 32-wide local SIMD kernels with no network in the loop.
+`ECDISTANN_MAX_BEAM_WIDTH = 64` makes the paper's grid (BW 96--192) unreachable
+even as a session GUC. BW >= 32 has never been run on the distributed path.
+
+**2. The pushdown that makes wide beams affordable is absent.** Paper Algorithm 1
+pushes threshold `t` and candidate limit `l` to each storage host, which prunes
+before returning; §2.4 supplies `t = peek_worst(H_C)` per round. In ecaz
+`code_threshold` is hardcoded `None` at the sole call site (`scan.rs:215`),
+discarded by the production expander (`generation_read.rs:3146-3149`), `l` does
+not exist, and owners return every neighbor unsorted and untruncated. FR-079
+defaulted it off deliberately (FND-006) without recording that this removes the
+mechanism the paper's beam depends on. `TRAV-14`/`TRAV-15` are void accordingly.
+
+**3. The head diverges from §2.2/§3 on every axis.** Tasks 181 and 185 established
+that head *membership* bounds recall (0.9625 vs the 0.9970 same-graph oracle) and
+that three different 4,096-row objectives yielded identical top-32 seeds. Paper
+§3 names the cause: the head must be built "from the union of the top layers of
+each partition's graph, rather than the top layers of the stitched-together
+graph". ecaz builds from the stitched global graph. The head is also not sharded
+(§2.2) and not replicated (§4.1), and the promoted policy bypasses the persisted
+Vamana graph in favour of a 4,096-point exact scan. `HEAD-11` and `HEAD-12` — the
+paper's two structural remedies — are the live recall direction, not `HEAD-01`
+capacity growth.
+
+**4. The replica abandoned the distributed premise.** Covered above and in
+`TRAV-28`/`TRAV-30`.
+
+These interlock: BW=4 forces ~10 sequential rounds, which produce the transport
+wait that motivated Task 190's architecture escalation, which produced the
+replica, which removed transport wait by removing distribution. Each step was
+locally reasonable; the chain begins at a parameter its own entry gate called
+non-viable. Sequencing for the correction is **pushdown -> regime -> head**,
+since neither the wide-beam nor the seed-width question can be answered without
+the pushdown in place.
 
 ## Candidate ledger: remote payload materialization
 
@@ -194,9 +263,9 @@ remain controls rather than new candidates.
 | MAT-27 | Covering row-tier layout for common scalar projections | deferred; format/storage decision |
 | MAT-28 | Exclude large/toasted columns unless planner proof requires them | deferred; Task 184 preserved existing planner projection proof |
 | MAT-29 | Strengthen minimal projection derivation | deferred; current endpoint already accepts attnums |
-| MAT-30 | Generation-scoped coordinator payload cache | conditional on cross-query hit-rate evidence |
-| MAT-31 | Bounded hot cache keyed by generation, vec_id, and projection | conditional on MAT-30 |
-| MAT-32 | Bounded coordinator hot-payload replica | deferred; storage/lifecycle decision |
+| MAT-30 | Generation-scoped coordinator payload cache | conditional on cross-query hit-rate evidence; **NFR-021 screen required** — a generation-scoped cache is O(N) if unbounded and must carry an explicit fixed bound |
+| MAT-31 | Bounded hot cache keyed by generation, vec_id, and projection | conditional on MAT-30; **NFR-021 screen required** — the bound must be a constant, not a fraction of N |
+| MAT-32 | Bounded coordinator hot-payload replica | deferred; **NFR-021 screen required** — 'replica' here must remain bounded-in-N; the FR-084 precedent shows how a bounded-sounding entry becomes a full copy without the ledger changing |
 | MAT-33 | Compress wide varlena payloads | conditional on wire-byte dominance |
 | MAT-34 | Streaming binary response instead of row/array results | deferred; protocol change |
 | MAT-35 | Combine final exact ranking and materialization in one owner endpoint | conditional on redundant owner work |
@@ -267,8 +336,8 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-11 | Pipeline consecutive hop rounds | conditional on RTT/round dominance |
 | TRAV-12 | Bounded owner-local subsearch per RPC | conditional on hop-RTT dominance |
 | TRAV-13 | Baton-passing owner orchestration | deferred until ADR-085 RTT reopen trigger |
-| TRAV-14 | More nodes per round at fixed BW x H work | measured STOP Task 194 packet 007: nodes 40.0→47.04; mean 24.30→24.20 ms; p95 regressed |
-| TRAV-15 | Wider rounds with fewer hops | measured STOP Task 194 packet 007: hops 10.0→5.88 and transport wait -0.744 ms, but no useful e2e win |
+| TRAV-14 | More nodes per round at fixed BW x H work | **STOP VOID — reopened.** Task 194 packet 007 measured BW=8 (a 2× step) with `code_threshold` inert and no candidate-limit pushdown, so widening bought wire traffic instead of savings. Not evidence about the paper's BW=128/H=5 regime. Re-test after the pushdown protocol lands. |
+| TRAV-15 | Wider rounds with fewer hops | **STOP VOID — reopened.** Same run, same defect. It recorded the predicted signature of widening without pushdown: hops 10.0→5.88 and transport wait −0.744 ms, but expanded nodes 40.0→47.04 and straggler spread 0.411→0.736 ms. Recall improved 0.9625→0.9675. |
 | TRAV-16 | Confidence-based early termination for easy queries | conditional Task 188/187 |
 | TRAV-17 | Extra rounds for hard queries under a fixed maximum | conditional Task 188 |
 | TRAV-18 | Frontier-stability/score-gap adaptive work | conditional Task 188 |
@@ -281,9 +350,9 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-25 | Reduce async runtime/context transitions | conditional on client/runtime share |
 | TRAV-26 | Persist owner query-preparation state | unmeasured; query-digest reuse already exists |
 | TRAV-27 | Straggler-aware owner scheduling and tail accounting | active diagnostic |
-| TRAV-28 | Replicated coordinator top-layer graph | selected by Task 190 as the broader fingerprint-bound traversal-replica direction; Task 198 gates feasibility and full replica scope |
+| TRAV-28 | Replicated coordinator top-layer graph | **SCOPE DRIFT — entry not delivered as written.** Selected by Task 190, but Tasks 198/199 shipped a **full-graph** replica (every vec_id's graph record + full-precision vector, 1.660 GB at 100k, linear in N on one node), not the bounded top-layer structure this row describes. The delivered artifact violates NFR-021, NFR-018's per-node bound, NFR-017:38, and FR-078:491. A bounded top-layer candidate remains unbuilt and unmeasured. |
 | TRAV-29 | Replicated frequently traversed bridge nodes | deferred Task 190 architecture |
-| TRAV-30 | Routing-only gateway copies without full graph replication | deferred Task 190 architecture |
+| TRAV-30 | Routing-only gateway copies without full graph replication | **ACTIVE** — the NFR-021-conforming direction. Listed in Task 190's family 1 but dropped at the narrowing step, which carried only `ARCH-02`/`TRAV-28` into the final comparison; the one compared candidate that preserved sharding was never evaluated. Reinstated as the successor direction to the withdrawn replica. |
 
 ## Candidate ledger: graph construction and adaptive search
 
@@ -356,7 +425,7 @@ Task 190 may compare architectures but may not implement several together.
 
 | ID | Result | Disposition |
 | --- | --- | --- |
-| NEG-01 | Width64/seeds64 was recall-flat and not faster than width32/seeds32 | reject unchanged width/seed tuning |
+| NEG-01 | Width64/seeds64 was recall-flat and not faster than width32/seeds32 | **QUALIFIED — measured only at BW=4.** Task 180 screen B swept head_seed_count ∈ {32,64,128} with the beam popping 4 candidates per round, where additional seeds are structurally unusable. The negative is valid for BW=4 and says nothing about `k_head` at the paper's wide-beam regime (k_head=200 at BW=128). Re-test at wide beam before treating seed width as closed. |
 | NEG-02 | Exact scoring of the unchanged cap-4,096 sample did not recover recall | membership, not head-score precision, was limiting |
 | NEG-03 | Random cap-16,384 reached only 0.9440 at 100k | do not treat random linear cap growth as validation |
 | NEG-04 | Owner scan reached 0.9970 but cost roughly 2.45 s at 100k | diagnostic only; O(N) production scan forbidden |
