@@ -124,3 +124,20 @@
   PGDATA is committed; the stopped 6.8G rerun fixture will be removed after
   these packet artifacts are committed.
 - Sibling conversion audit: `sibling-conversion-audit.md`.
+- Task 188 follow-up rerun: `task188-fixed-no-reconnect-run-r2/` was driven by
+  `task188-fixed-no-reconnect-suite.json` on the clean committed fixed build
+  `d845d8e4347d59dafd2b1ed28cd252d7d7c6e134`. It used the staged
+  `ec_real_100k` corpus, one necessary 100k fixture bootstrap, stage counters
+  on, `benchmark_backend_batch_size=0`, no reconnect, no `skip_recall`, both
+  Task 188 seed variants, and backend memory sampling. The suite succeeded
+  in 3,090,025 ms; its manifest records the exact command and provenance.
+- Task 188 coverage completed for 200 queries with `zero_fraction=0` and
+  `physical_topology_gate pass=true`. The `bw4-control` memory series has 6
+  samples over 1263 ms, RSS 246792→254764 KB, delta 7972 KB, and constant
+  HWM 378020 KB. The `bw8-candidate` series has 5 samples over 1010 ms, RSS
+  249388→256636 KB, delta 7248 KB, and constant HWM 379348 KB. These are
+  startup working-set rises, not the prior multi-GB retention. See
+  `task188-fixed-no-reconnect-outcome.md` for the concise outcome.
+- This evidence supports removing the reconnect workaround, but Task 200
+  does not edit Task 188's config or lane. Removal requires confirmation and
+  coordination with the Task 188 owner.

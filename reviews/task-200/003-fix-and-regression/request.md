@@ -66,3 +66,25 @@ The sibling conversion audit is in
 `artifacts/sibling-conversion-audit.md`; it covers the production
 `remote_endpoint.rs:538` array conversion and the corresponding
 `generation_read.rs:1327` site, with A1 as the boundedness evidence.
+
+## Task 188 follow-up
+
+The previously missed follow-up was rerun from the fixed committed tree using
+`artifacts/task188-fixed-no-reconnect-suite.json`. The run kept stage counters
+enabled, set `benchmark_backend_batch_size=0`, omitted `skip_recall` so the
+coverage statement executed, used both Task 188 seed variants, sampled backend
+memory, and did not reconnect the backend. It completed successfully on the
+100k three-owner fixture:
+
+- coverage: 200 queries, `zero_fraction=0`, topology gate passed;
+- `bw4-control`: 6 samples, RSS `246792 -> 254764 KB`, HWM fixed at
+  `378020 KB`;
+- `bw8-candidate`: 5 samples, RSS `249388 -> 256636 KB`, HWM fixed at
+  `379348 KB`.
+
+The only observed rise is the small startup working-set change; the prior
+multi-GB growth did not recur with batch size zero and no reconnect. The
+workaround therefore appears removable, but Task 200 leaves Task 188's config
+unchanged pending confirmation with its owner. Full evidence is in
+`artifacts/task188-fixed-no-reconnect-run-r2/` and the concise outcome is in
+`artifacts/task188-fixed-no-reconnect-outcome.md`.

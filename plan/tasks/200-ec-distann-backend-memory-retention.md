@@ -177,9 +177,12 @@ will destroy the next one.
    signal, so ~20 iterations is enough and a peak threshold silently passes any
    leak that stays under it. If A1 grew, the same test is required for the
    production read path under a held transaction.
-4. **Remove the Task 188 reconnect workaround** once the bound is in and the
-   regression test passes — it exists only to survive this defect. Confirm with
-   the Task 188 owner before touching that lane.
+4. **Remove the Task 188 reconnect workaround only after the Task 188-owned
+   stage-counter step is rerun on the fixed committed build with
+   `benchmark_backend_batch_size=0`, `skip_recall` absent, both seed variants,
+   and backend memory sampling.** A bounded series supports removing the
+   workaround; continued growth means it stays. Confirm with the Task 188
+   owner before touching that lane or its config.
 
 ## Closeout
 
@@ -267,6 +270,16 @@ one second, trims 40 samples from each edge, and records the full series. The
 	result and the prior dirty-tree run are historical only. The unattended PG18
 	test is enabled by the standard `pg_test` feature set and has both fixed-green
 	and pre-fix-red evidence.
+
+The Task 188-owned follow-up was subsequently rerun from fixed committed tree
+`d845d8e4347d59dafd2b1ed28cd252d7d7c6e134` with stage counters on, batch size
+zero, coverage enabled, both seed variants, no reconnect, and backend memory
+sampling. The 100k run completed with `zero_fraction=0` and topology gate
+passing. Both memory series showed only a 7–8 MB startup working-set rise and
+constant HWM, with no multi-GB growth. The evidence is packet-local under
+`reviews/task-200/003-fix-and-regression/artifacts/task188-fixed-no-reconnect-run-r2/`.
+This supports removing the workaround, subject to Task 188 owner coordination;
+Task 200 did not edit the Task 188 config.
 
 ## References
 
