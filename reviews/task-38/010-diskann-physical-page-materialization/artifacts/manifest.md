@@ -237,8 +237,13 @@ configuration, and raw result table used to construct `results.jsonl`.
   `-17.4%` to `+7.2%`.
 - At list size 200, candidate deltas are `-5.1%` at 10k, `+5.0%` at 50k,
   and `-8.8%` at 100k.
-- The correctness hardening is therefore recall-neutral and storage-neutral;
-  the latency samples show no systematic regression.
+- At 50k, candidate mean latency is slower at every list size: `+1.4%` at 64,
+  `+1.1%` at 128, `+5.0%` at 200, `+2.2%` at 400, and `+7.2%` at 800.
+- Latency is mixed and inconclusive from this single sequential A/B. The
+  packet does not attribute the differences to variance or claim latency
+  neutrality.
+- The correctness hardening is proven recall-neutral and storage-neutral; its
+  acceptance retains the observed 50k latency slowdown explicitly.
 
 ## Evidence Boundary
 

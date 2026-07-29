@@ -171,7 +171,10 @@ isolated in the new review packet
 `../010-diskann-physical-page-materialization/`. Its checked-in
 `ecaz bench suite` configuration completed baseline/candidate recall, latency,
 and storage at 10k, 50k, and 100k. Recall and DiskANN storage are identical at
-every measured point, with no systematic latency regression.
+every measured point. Latency is mixed and inconclusive from the single
+sequential A/B, including a five-point 50k candidate slowdown of `+1.1%` to
+`+7.2%`; packet 010 retains that observation without attributing it to
+variance.
 
 No AWS, remote host, CI, nightly, Docker, or Intel command was run. The M5
 findings are ready for outside re-review; Task 38 remains open for the 67

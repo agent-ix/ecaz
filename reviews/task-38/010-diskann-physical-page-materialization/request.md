@@ -73,10 +73,13 @@ At list size 200:
 | 100k | 0.9845 / 0.9845 | 1.59 ms | 1.45 ms | 43,096,474 / 43,096,474 |
 
 Across the complete 15-point latency sweep, candidate mean-latency deltas range
-from `-17.4%` to `+7.2%`, consistent with run-to-run local variance and with no
-systematic regression. The results support the intended conclusion: the
-correctness hardening is recall-neutral and storage-neutral, with no evidenced
-latency regression.
+from `-17.4%` to `+7.2%`. The latency result is mixed and inconclusive from one
+sequential A/B: candidate latency is faster or equal at four of five 10k points,
+slower at all five 50k points (`+1.1%` to `+7.2%`), and faster at all five 100k
+points. This packet does not attribute those differences to variance or claim
+latency neutrality. It accepts the correctness hardening on the measured
+recall-neutral and storage-neutral result while retaining the 50k slowdown as
+an explicit observation.
 
 ## Requested Review
 
@@ -94,3 +97,17 @@ Please verify:
 No AWS, remote host, CI, Docker, Intel, or Linux-only command was run. This
 packet closes the Apple-M5 findings only. Task 38 remains open for the 67
 provider, remote-socket, and cgroup cases designated for Intel/Linux.
+
+## Review Response: Sequence 1
+
+The sole evidence-interpretation finding in
+`feedback/2026-07-28-01-reviewer.md` is addressed without changing or rerunning
+the measurements:
+
+- the unsupported run-to-run variance explanation is removed;
+- latency is characterized as mixed and inconclusive from one sequential A/B;
+- the five-point 50k slowdown (`+1.1%` to `+7.2%`) is retained explicitly; and
+- the acceptance claim is limited to the proven recall and storage neutrality
+  of the correctness hardening.
+
+No code or raw evidence changed in this response.
