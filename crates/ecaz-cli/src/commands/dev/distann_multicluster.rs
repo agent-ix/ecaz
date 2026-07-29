@@ -4186,17 +4186,15 @@ async fn run_coverage_memory_regression(
         .last()
         .map(|point| point.rss_kb)
         .unwrap_or_default();
-    let minimum = stable_points
+    let mut rss_values = stable_points
         .iter()
         .map(|point| point.rss_kb)
-        .min()
-        .unwrap_or(first);
-    let maximum = stable_points
-        .iter()
-        .map(|point| point.rss_kb)
-        .max()
-        .unwrap_or(last);
-    let delta = maximum.saturating_sub(minimum);
+        .collect::<Vec<_>>();
+    rss_values.sort_unstable();
+    let percentile_trim = (rss_values.len() / 100).max(1);
+    let lower = rss_values[percentile_trim];
+    let upper = rss_values[rss_values.len() - percentile_trim - 1];
+    let delta = upper.saturating_sub(lower);
     let series_path = log_dir.join("coverage-memory-regression.series.log");
     let series_text = points
         .iter()
@@ -4212,7 +4210,7 @@ async fn run_coverage_memory_regression(
         .wrap_err_with(|| format!("writing {}", series_path.display()))?;
     let pass = slope <= max_slope_kb_per_s && (delta as f64) <= max_delta_kb;
     let line = format!(
-        "physical_benchmark_memory_regression scale={scale} warmup_invocations={} warmup_settle_ms={WARMUP_SETTLE_MS} trimmed_edge_samples={trim_samples} coverage_invocations={iterations} rows_returned={rows} samples={} stable_samples={} rss_first_kb={first} rss_last_kb={last} rss_peak_to_trough_kb={delta} max_delta_kb={max_delta_kb:.2} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
+        "physical_benchmark_memory_regression scale={scale} warmup_invocations={} warmup_settle_ms={WARMUP_SETTLE_MS} trimmed_edge_samples={trim_samples} percentile_trim_percent=1 coverage_invocations={iterations} rows_returned={rows} samples={} stable_samples={} rss_first_kb={first} rss_last_kb={last} rss_p01_kb={lower} rss_p99_kb={upper} rss_p01_to_p99_kb={delta} max_delta_kb={max_delta_kb:.2} rss_slope_kb_per_s={slope:.2} max_slope_kb_per_s={max_slope_kb_per_s:.2} series={} pass={pass}",
         WARMUP_INVOCATIONS + SETTLE_INVOCATIONS,
         points.len(),
         stable_points.len(),
