@@ -261,11 +261,12 @@ one backend inside one transaction and enforces an RSS slope threshold. The
 new gate is packet-configured at 300 calls with a 100 KB/s maximum slope and a
 4,096 KB p01-to-p99 absolute delta. It warms the backend six times, settles for
 one second, trims 40 samples from each edge, and records the full series. The
-live gate passed against the reused 100k three-owner fixture: 300 coverage
-calls, 300 returned rows, 16,569 RSS samples, stable p01-to-p99 delta 1,020 KB,
-and +1.02 KB/s slope. The older 1,024 KB/s result is historical only. The
-unattended PG18 test is enabled by the standard `pg_test` feature set and has
-both fixed-green and pre-fix-red evidence.
+	live gate passed against the reused 100k three-owner fixture from the clean
+	committed tree: 300 coverage calls, 300 returned rows, 16,586 RSS samples,
+	stable p01-to-p99 delta 952 KB, and +1.10 KB/s slope. The older 1,024 KB/s
+	result and the prior dirty-tree run are historical only. The unattended PG18
+	test is enabled by the standard `pg_test` feature set and has both fixed-green
+	and pre-fix-red evidence.
 
 ## References
 

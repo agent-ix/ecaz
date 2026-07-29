@@ -43,15 +43,23 @@ absolute p01-to-p99 RSS delta was 1,020 KB, both below the committed limits of
 packet-local evidence.
 
 The suite runner also now forwards `reuse_provenance_dir`, so reuse is
-attested from the packet-local bootstrap result instead of rebuilding. The
-required pre-fix PG18 control uses the same standard command and the same
+attested from the packet-local bootstrap result instead of rebuilding. A clean
+committed-tree rerun reused that fixture and passed the shipped statistic with
+`rss_p01_to_p99_kb=952`, `rss_slope_kb_per_s=1.10`,
+`max_delta_kb=4096`, and `max_slope_kb_per_s=100`.
+
+The required pre-fix PG18 control uses the same standard command and the same
 fail-capable fixture: it fails after 300 calls with 1,258,283,008 bytes of
 retained growth versus the 4 MiB assertion. The fixed standard command passes
-with the 512-row, 256-neighbor toasted fixture. Because `pg_test` includes
-`distann-head-attribution-benchmark`, the ordinary `cargo pgrx test pg18 ...
---no-default-features` invocation exercises the regression test without an
-extra feature flag. The older 1,024 KB/s executable result remains in the
-packet only as historical context and is not the acceptance result.
+with the 512-row, 256-neighbor toasted fixture. The preserved executable
+negative control predates the shipped warm-up/percentile statistic, but its
+98,380.15 KB/s slope and 245,576 KB raw delta are respectively about 984x and
+60x beyond the shipped limits, so the new bound cannot plausibly mask it. A
+second 100k pre-fix fixture build was not performed solely to restage identical
+data. Because `pg_test` includes `distann-head-attribution-benchmark`, the
+ordinary `cargo pgrx test pg18 ... --no-default-features` invocation exercises
+the regression test without an extra feature flag. The older 1,024 KB/s
+executable result remains in the packet only as historical context.
 The sibling conversion audit remains in `artifacts/sibling-conversion-audit.md`.
 
 The sibling conversion audit is in

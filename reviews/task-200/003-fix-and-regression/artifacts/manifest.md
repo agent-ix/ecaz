@@ -2,7 +2,7 @@
 
 - Packet: `reviews/task-200/003-fix-and-regression/`
 - Code heads: root fix `fa84ff3b0`; latest executable-gate implementation
-  `9fffefffb` (both pushed).
+  `9fffefffb`; clean committed rerun at `d845d8e43` (all pushed).
 - Fixture: `/home/peter/.ecaz/clusters/task200-counters-off-100k` for the clean
   fixed run. The required pre-fix control reused the separately preserved
   `/home/peter/.ecaz/clusters/task200-counters-on-100k`. No corpus or index
@@ -46,7 +46,10 @@
   packet artifact; the active default is zero. The clean A1 and regression both
   used one backend without reconnects, so no live reconnect workaround remains
   to mask this defect.
-- No corpus, query TSV, PGDATA, or cluster directory is committed.
+- No corpus, query TSV, PGDATA, or cluster directory is committed. The clean
+  committed rerun performed one necessary fixture bootstrap from the existing
+  staged corpus after the prior stopped fixture had been removed; all gate
+  attempts after that bootstrap used `--reuse-fixture`.
 - Executable gate config: `task200-coverage-memory-regression-suite.json`.
   The suite used the existing corpus under
   `data/task106_full_sweep_100k/`, performed one bootstrap fixture build, and
@@ -74,6 +77,22 @@
   excludes the one-percent tails where the operating system can reclaim or
   reacquire working-set pages; it supplies the requested absolute post-warm-up
   bound while the full series remains available for audit.
+- Clean committed-tree acceptance rerun: `clean-committed-positive-run/` was
+  run with the same suite config and reused the clean bootstrap fixture. Its
+  release extension provenance is `d845d8e4347d59dafd2b1ed28cd252d7d7c6e134`
+  with no dirty suffix. The shipped statistic passed at
+  `samples=16586 stable_samples=16506 rss_p01_kb=401880
+  rss_p99_kb=402832 rss_p01_to_p99_kb=952 max_delta_kb=4096.00
+  rss_slope_kb_per_s=1.10 max_slope_kb_per_s=100.00 pass=true`.
+- Negative-control follow-up: the preserved pre-fix control predates the
+  warm-up/percentile implementation and therefore reports only the earlier
+  slope fields. It failed at `rss_slope_kb_per_s=98380.15` and raw
+  `rss_delta_kb=245576`, versus shipped limits of 100 KB/s and 4,096 KB.
+  Warm-up removal and a one-percent tail trim cannot plausibly erase either
+  margin (approximately 984x on slope and 60x on raw delta), so the existing
+  red control remains decision-grade evidence; the clean committed positive
+  run directly exercises the shipped statistic. A second pre-fix fixture build
+  was not performed solely to restage identical 100k data.
 - Required pre-fix negative control: the same suite gate ran against the
   preserved 100k fixture with the extension built from `fa84ff3b0^` (`897c690`
   plus the fixture's existing dirty provenance marker). It executed 20 calls
@@ -102,6 +121,6 @@
   calls. No one-index-per-table control was used in this diagnostic.
 - The final gate explicitly reports `fixture_decision action=reuse`, with
   source rows=100,000 and the packet bootstrap provenance. No corpus or
-  PGDATA is committed; the stopped 6.7G final fixture directory was removed
-  after the packet-local evidence was captured.
+  PGDATA is committed; the stopped 6.8G rerun fixture will be removed after
+  these packet artifacts are committed.
 - Sibling conversion audit: `sibling-conversion-audit.md`.

@@ -12,7 +12,7 @@
       "artifact_dir": "${artifact_dir}",
       "run_dir": "/home/peter/.ecaz/clusters/task200-counters-off-100k",
       "reuse_fixture": true,
-      "reuse_provenance_dir": "reviews/task-200/003-fix-and-regression/artifacts/fixture-bootstrap-postwarmup",
+      "reuse_provenance_dir": "/home/peter/dev/ecaz/reviews/task-200/003-fix-and-regression/artifacts/fixture-bootstrap-clean-tree",
       "nodes": 3,
       "base_port": 42080,
       "graph_degree": 32,
