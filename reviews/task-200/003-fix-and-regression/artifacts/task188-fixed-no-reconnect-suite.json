@@ -1,0 +1,41 @@
+{
+  "name": "task188-fixed-no-reconnect",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-200/003-fix-and-regression/artifacts/task188-fixed-no-reconnect-run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "bw8-100k-stage-counters-fixed-no-reconnect",
+      "tags": ["task188", "task200", "fixed", "no-reconnect", "stage-counters", "100k"],
+      "artifact_dir": "${artifact_dir}",
+      "run_dir": "/home/peter/.ecaz/clusters/task188-fixed-no-reconnect-100k-r2",
+      "nodes": 3,
+      "base_port": 42930,
+      "graph_degree": 32,
+      "head_index_cap": 16384,
+      "head_policy": "training_landmarks",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "distann_stage_counters": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "benchmark_backend_batch_size": 0,
+      "sample_backend_memory": true,
+      "memory_sample_interval_ms": 250,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "bw4-control", "seed_strategy": "head_sample_exact", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "materialization_batch_size": 10, "beam_width": 4, "hop_rounds": 100 },
+        { "name": "bw8-candidate", "seed_strategy": "head_sample_exact", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "materialization_batch_size": 10, "beam_width": 8, "hop_rounds": 100 }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}

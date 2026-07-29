@@ -1,0 +1,6 @@
+ backend_pid | before_log 
+-------------+------------
+      589846 | t
+(1 row)
+
+ERROR:  canceling statement due to user request

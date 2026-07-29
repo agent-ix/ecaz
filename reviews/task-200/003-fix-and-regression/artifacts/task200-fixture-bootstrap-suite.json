@@ -1,0 +1,36 @@
+{
+  "name": "task200-fixture-bootstrap",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-200/003-fix-and-regression/artifacts/fixture-bootstrap-run",
+  "defaults": { "pg": 18 },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "build-100k-fixture-once",
+      "tags": ["task200", "fixture-bootstrap", "100k"],
+      "artifact_dir": "${artifact_dir}",
+      "run_dir": "/home/peter/.ecaz/clusters/task200-counters-off-100k",
+      "nodes": 3,
+      "base_port": 42080,
+      "graph_degree": 32,
+      "head_index_cap": 16384,
+      "head_policy": "training_landmarks",
+      "training_query_path": "/home/peter/dev/ecaz/data/task106_full_sweep_100k/ec_real_100k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "skip_recall": true,
+      "skip_single_control": true,
+      "benchmark_iterations": 1,
+      "benchmark_backend_batch_size": 0,
+      "memory_sample_interval_ms": 250,
+      "skip_fault_drills": true,
+      "compact_artifacts": false,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+# Final clean-commit raw-Datum fix: backend 656937, one BEGIN/COMMIT, 300 calls.
+# Samples were taken from the PostgreSQL backend with ps; elapsed is query time.
+# Columns: elapsed rss_kb vsz_kb
+00:07 401816 490120
+00:48 402068 490120
+01:26 401820 490120
+02:04 402352 490120
+02:43 402372 490120
+03:21 402084 490120
+04:00 402180 490120
+04:43 402308 490120
+05:23 402468 490120
+06:03 402416 490120
+06:46 402336 490376
+07:25 402648 490376
+
+# Linear RSS slope over these samples: +1.42 KB/s; no monotonic growth.
+# Observed range: 828 KB peak-to-trough across approximately 7m35s.
+# Final context: TopTransactionContext 142606336 total; Grand total 144745408 bytes.
+# Full PostgreSQL dump: clean-final-node1-postgres.log at 2026-07-28 11:00:53.

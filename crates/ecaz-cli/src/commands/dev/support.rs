@@ -50,6 +50,49 @@ fn find_repo_root_from(anchor: &Path) -> Option<PathBuf> {
     None
 }
 
+/// Cargo's build output directory for this checkout.
+///
+/// Honors `CARGO_TARGET_DIR` so a target directory shared across git worktrees
+/// still resolves built artifacts correctly — without this, artifact lookups
+/// silently miss (or, worse, match a stale copy left in `<repo>/target` by an
+/// earlier unshared build).
+///
+/// Note this reads the environment only; a `build.target-dir` set in
+/// `.cargo/config.toml` is not visible here.
+pub(crate) fn cargo_target_dir(repo_root: &Path) -> PathBuf {
+    match env::var_os("CARGO_TARGET_DIR") {
+        Some(dir) => {
+            let dir = PathBuf::from(dir);
+            // Cargo resolves a relative CARGO_TARGET_DIR against the workspace
+            // root, not the process cwd.
+            if dir.is_absolute() {
+                dir
+            } else {
+                repo_root.join(dir)
+            }
+        }
+        None => repo_root.join("target"),
+    }
+}
+
+/// Root for local benchmark/test PostgreSQL clusters (PGDATA trees).
+///
+/// Deliberately outside the repo: these are multi-GB per run, are not build
+/// output, and are invisible to `cargo clean` — so parking them under
+/// `target/` made them survive every build-artifact cleanup while reading as
+/// compiled output to anyone auditing disk usage. A shared `CARGO_TARGET_DIR`
+/// across git worktrees would additionally alias one worktree's clusters onto
+/// another's.
+///
+/// Override with `ECAZ_CLUSTER_ROOT` (e.g. to place clusters on a scratch
+/// volume); defaults to `~/.ecaz/clusters`.
+pub(crate) fn default_cluster_root() -> PathBuf {
+    env::var_os("ECAZ_CLUSTER_ROOT")
+        .map(PathBuf::from)
+        .or_else(|| env::var_os("HOME").map(|home| PathBuf::from(home).join(".ecaz/clusters")))
+        .unwrap_or_else(|| PathBuf::from(".ecaz/clusters"))
+}
+
 pub(crate) fn default_pgrx_home() -> PathBuf {
     env::var_os("PGRX_HOME")
         .map(PathBuf::from)

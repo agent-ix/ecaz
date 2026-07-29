@@ -1,0 +1,38 @@
+┌───────┬───────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────┬─────────────┬───────────────────┬─────────────┬─────────────┬────────────────┐
+│ top_k ┆ count ┆ mean    ┆ stddev  ┆ min     ┆ p50     ┆ p95     ┆ p99     ┆ max     ┆ cache_state ┆ worker_batch_size ┆ rss_peak_kb ┆ hwm_peak_kb ┆ memory_samples │
+╞═══════╪═══════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════╪═════════════╪═══════════════════╪═════════════╪═════════════╪════════════════╡
+│ 32    ┆ 300   ┆ 27.5 ms ┆ 1.99 ms ┆ 23.3 ms ┆ 27.3 ms ┆ 30.7 ms ┆ 33.6 ms ┆ 34.8 ms ┆ warm        ┆ 0                 ┆ 261028      ┆ 394996      ┆ 33             │
+└───────┴───────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────┴─────────────┴───────────────────┴─────────────┴─────────────┴────────────────┘
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=0 rss_kb=260104 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=251 rss_kb=260232 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=503 rss_kb=260424 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=754 rss_kb=260520 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=1006 rss_kb=260632 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=1260 rss_kb=260668 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=1511 rss_kb=260748 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=1764 rss_kb=260804 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=2015 rss_kb=260856 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=2267 rss_kb=260888 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=2520 rss_kb=260888 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=2772 rss_kb=260896 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=3025 rss_kb=260928 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=3276 rss_kb=260928 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=3529 rss_kb=260952 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=3780 rss_kb=260952 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=4033 rss_kb=260984 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=4286 rss_kb=260984 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=4538 rss_kb=261012 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=4791 rss_kb=261012 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=5043 rss_kb=261012 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=5295 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=5548 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=5801 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=6052 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=6304 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=6555 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=6807 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=7059 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=7312 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=7564 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=7815 rss_kb=261028 hwm_kb=394996
+[backend-memory] sweep=top_k=32 pid=574340 elapsed_ms=8067 rss_kb=261028 hwm_kb=394996

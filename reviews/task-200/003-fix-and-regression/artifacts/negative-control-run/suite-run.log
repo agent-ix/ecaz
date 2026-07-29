@@ -1,0 +1,12 @@
+[suite:task200-coverage-memory-regression-negative-control] wrote reviews/task-200/003-fix-and-regression/artifacts/negative-control-run/suite-manifest.json
+[suite:task200-coverage-memory-regression-negative-control] coverage-held-transaction-100k-pref-fix -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-200/003-fix-and-regression/artifacts/negative-control-run --run-dir /home/peter/.ecaz/clusters/task200-counters-on-100k --reuse-provenance-dir reviews/task-200/001-reproduction/artifacts/run-latency-rerun/counters-on-100k --log-file reviews/task-200/003-fix-and-regression/artifacts/negative-control-run/distann-local-multinode.log --nodes 3 --physical-benchmark --skip-recall --skip-single-control --benchmark-iterations 1 --benchmark-backend-batch-size 0 --coverage-memory-regression-iterations 20 --coverage-memory-regression-max-slope-kb-per-s 100 --base-port 42380 --graph-degree 32 --head-index-cap 16384 --beam-width 4 --hop-rounds 100 --seed-strategy head_sample_exact --head-search-width 32 --head-seed-count 32 --neighbor-score-mode rabitq --head-policy training_landmarks --training-query-path /home/peter/dev/ecaz/data/task106_full_sweep_100k/ec_real_100k_queries.tsv --reuse-fixture --queries 200 --top-k 10 --skip-fault-drills --corpus-prefix ec_real_100k --staged-dir /home/peter/dev/ecaz/data/task106_full_sweep_100k
+[suite:task200-coverage-memory-regression-negative-control] wrote reviews/task-200/003-fix-and-regression/artifacts/negative-control-run/suite-manifest.json
+[suite:task200-coverage-memory-regression-negative-control] wrote reviews/task-200/003-fix-and-regression/artifacts/negative-control-run/suite-manifest.json
+
+   0: [91msuite step "coverage-held-transaction-100k-pref-fix" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1139[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

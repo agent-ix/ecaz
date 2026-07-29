@@ -8,7 +8,8 @@ use std::process::Command as StdCommand;
 use tokio::process::Command;
 
 use super::support::{
-    find_pgrx_install, repo_root, resolve_pgrx_home, run_status, PgrxInstall, DEFAULT_PG_MAJOR,
+    cargo_target_dir, find_pgrx_install, repo_root, resolve_pgrx_home, run_status, PgrxInstall,
+    DEFAULT_PG_MAJOR,
 };
 
 #[derive(Subcommand, Debug)]
@@ -118,8 +119,8 @@ async fn run_ecaz_pg_test(args: InstallEcazPgTestArgs) -> Result<()> {
         .env("PGRX_HOME", &pgrx_home);
     run_status(command).await?;
 
-    let release_artifact = repo_root
-        .join("target/release")
+    let release_artifact = cargo_target_dir(&repo_root)
+        .join("release")
         .join(ecaz_built_library_name());
     let installed_backend =
         pg_config_value(&install.pg_config, "--pkglibdir")?.join(ecaz_installed_library_name());

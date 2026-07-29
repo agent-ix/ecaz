@@ -528,6 +528,13 @@ struct DistannLocalMultinodeStep {
     artifact_dir: Option<PathBuf>,
     #[serde(default)]
     run_dir: Option<PathBuf>,
+    /// Reuse a stopped, provenance-matched distann fixture. Rebuild remains
+    /// the default when this opt-in is absent.
+    #[serde(default)]
+    reuse_fixture: bool,
+    /// Packet-local provenance directory used to attest a reused fixture.
+    #[serde(default)]
+    reuse_provenance_dir: Option<PathBuf>,
     #[serde(default)]
     log_file: Option<PathBuf>,
     /// Keep only the compact summary as durable evidence. Raw fixture and
@@ -554,10 +561,28 @@ struct DistannLocalMultinodeStep {
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
     benchmark_backend_batch_size: Option<u32>,
+    /// Run the Task 200 repeated coverage-call RSS regression in one backend
+    /// transaction. The fixture is reused when `reuse_fixture` is true.
+    #[serde(default)]
+    coverage_memory_regression_iterations: Option<u32>,
+    #[serde(default)]
+    coverage_memory_regression_max_slope_kb_per_s: Option<f64>,
+    #[serde(default)]
+    coverage_memory_regression_max_delta_kb: Option<f64>,
+    /// Record a timestamped /proc RSS/HWM series for each latency backend.
+    #[serde(default)]
+    sample_backend_memory: bool,
+    /// Milliseconds between backend RSS/HWM samples.
+    #[serde(default)]
+    memory_sample_interval_ms: Option<u64>,
     #[serde(default)]
     distann_stage_counters: bool,
     #[serde(default)]
     stage_counter_only: bool,
+    #[serde(default)]
+    skip_recall: bool,
+    #[serde(default)]
+    skip_single_control: bool,
     #[serde(default)]
     materialization_correctness: bool,
     /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
@@ -3335,6 +3360,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.sample_backend_memory && step.memory_sample_interval_ms == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set memory_sample_interval_ms >= 1",
+                        step.name
+                    )
+                }
                 if step.distann_stage_counters && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} distann_stage_counters requires physical_benchmark",
@@ -3619,9 +3650,11 @@ impl SuiteStep {
                 if let Some(run_dir) = &step.run_dir {
                     artifacts.push(run_dir.join("topology.local.json"));
                 } else if let Some(run_id) = &step.run_id {
-                    artifacts.push(PathBuf::from(format!(
-                        "target/spire-local-multinode-{run_id}/topology.local.json"
-                    )));
+                    artifacts.push(
+                        crate::commands::dev::default_cluster_root()
+                            .join(format!("spire-local-multinode-{run_id}"))
+                            .join("topology.local.json"),
+                    );
                 }
                 if let Some(artifact_dir) = &step.artifact_dir {
                     if !step.skip_bench_suite {
@@ -4225,6 +4258,11 @@ fn expand_distann_local_multinode(
     push_opt_path(&mut args, "--pgbin", step.pgbin.as_deref());
     push_opt_path(&mut args, "--artifact-dir", step.artifact_dir.as_deref());
     push_opt_path(&mut args, "--run-dir", step.run_dir.as_deref());
+    push_opt_path(
+        &mut args,
+        "--reuse-provenance-dir",
+        step.reuse_provenance_dir.as_deref(),
+    );
     push_opt_path(&mut args, "--log-file", step.log_file.as_deref());
     push_opt_arg(
         &mut args,
@@ -4245,6 +4283,12 @@ fn expand_distann_local_multinode(
     }
     if step.stage_counter_only {
         args.push("--stage-counter-only".into());
+    }
+    if step.skip_recall {
+        args.push("--skip-recall".into());
+    }
+    if step.skip_single_control {
+        args.push("--skip-single-control".into());
     }
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());
@@ -4271,6 +4315,35 @@ fn expand_distann_local_multinode(
             .map(|v| v.to_string())
             .as_deref(),
     );
+    push_opt_arg(
+        &mut args,
+        "--coverage-memory-regression-iterations",
+        step.coverage_memory_regression_iterations
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--coverage-memory-regression-max-slope-kb-per-s",
+        step.coverage_memory_regression_max_slope_kb_per_s
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--coverage-memory-regression-max-delta-kb",
+        step.coverage_memory_regression_max_delta_kb
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    if step.sample_backend_memory {
+        args.push("--sample-backend-memory".into());
+        push_arg(
+            &mut args,
+            "--memory-sample-interval-ms",
+            &step.memory_sample_interval_ms.unwrap_or(25).to_string(),
+        );
+    }
     push_opt_u16(&mut args, "--base-port", step.base_port);
     push_opt_arg(
         &mut args,
@@ -4329,6 +4402,9 @@ fn expand_distann_local_multinode(
         "--training-query-path",
         step.training_query_path.as_deref(),
     );
+    if step.reuse_fixture {
+        args.push("--reuse-fixture".into());
+    }
     for variant in &step.benchmark_seed_variants {
         let encoded = format!(
             "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
@@ -5647,12 +5723,9 @@ psql header noise\n\
             .expected_artifacts
             .iter()
             .any(|path| path.ends_with("local-multinode.log")));
-        assert!(
-            step.expected_artifacts
-                .iter()
-                .any(|path| path
-                    .ends_with("target/spire-local-multinode-task121/topology.local.json"))
-        );
+        assert!(step.expected_artifacts.iter().any(|path| path
+            .ends_with("spire-local-multinode-task121/topology.local.json")
+            && !path.starts_with("target")));
         assert!(!step
             .expected_artifacts
             .iter()
@@ -7175,9 +7248,7 @@ psql header noise\n\
         assert!(args
             .windows(2)
             .any(|w| w == ["--cache-state", "post_recall_warm"]));
-        assert!(args
-            .windows(2)
-            .any(|w| w == ["--worker-batch-size", "5"]));
+        assert!(args.windows(2).any(|w| w == ["--worker-batch-size", "5"]));
         assert!(args
             .windows(2)
             .any(|w| w == ["--session-guc", "ec_diskann.scan_profile_notice=on"]));

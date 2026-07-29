@@ -1,0 +1,12 @@
+BEGIN
+ ec_distann_physical_owner_seed_scan_benchmark 
+-----------------------------------------------
+                                            20
+(1 row)
+
+ pg_log_backend_memory_contexts 
+--------------------------------
+ t
+(1 row)
+
+COMMIT

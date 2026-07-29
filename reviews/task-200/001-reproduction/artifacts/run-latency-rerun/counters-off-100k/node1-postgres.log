@@ -1,0 +1,124 @@
+2026-07-27 19:33:12.311 PDT [561203] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-27 19:33:12.322 PDT [561203] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-27 19:33:12.322 PDT [561203] LOG:  listening on IPv4 address "127.0.0.1", port 42080
+2026-07-27 19:33:12.327 PDT [561209] LOG:  database system was shut down at 2026-07-27 19:33:09 PDT
+2026-07-27 19:33:12.330 PDT [561203] LOG:  database system is ready to accept connections
+2026-07-27 19:33:50.386 PDT [561249] ERROR:  canceling statement due to user request
+2026-07-27 19:33:50.386 PDT [561249] CONTEXT:  COPY dm_stage, line 40676
+2026-07-27 19:33:50.386 PDT [561249] STATEMENT:  DROP TABLE IF EXISTS dm CASCADE;
+	        DROP TABLE IF EXISTS dm_queries;
+	        CREATE TABLE dm (
+	            id bigint, source_id uuid NOT NULL, source real[], embedding ecvector(1536)
+	        ) WITH (
+	            autovacuum_enabled = false,
+	            toast.autovacuum_enabled = false
+	        );
+	         CREATE TEMP TABLE dm_stage (id bigint, vec text);
+	             COPY dm_stage (id, vec) FROM '/home/peter/dev/ecaz/data/task106_full_sweep_100k/ec_real_100k_corpus.tsv' WITH (FORMAT text, DELIMITER E'\t');
+	             INSERT INTO dm (id, source_id, source, embedding)
+	             SELECT id,
+	                    (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||
+	                     substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||
+	                     substr(md5(id::text),21,12))::uuid,
+	                    translate(vec, '[]', '{}')::real[],
+	                    encode_to_ecvector(translate(vec, '[]', '{}')::real[], 4, 42)
+	               FROM dm_stage ORDER BY id;
+	             CREATE TABLE dm_queries (id bigint, source real[]);
+	             CREATE TEMP TABLE dmq_stage (id bigint, vec text);
+	             COPY dmq_stage (id, vec) FROM '/home/peter/dev/ecaz/data/task106_full_sweep_100k/ec_real_100k_queries.tsv' WITH (FORMAT text, DELIMITER E'\t');
+	             INSERT INTO dm_queries
+	             SELECT id, translate(vec, '[]', '{}')::real[]
+	               FROM dmq_stage ORDER BY id LIMIT 200;
+	         
+	         ANALYZE dm;
+	         CREATE INDEX dm_idx ON dm USING ec_distann
+	             (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
+	             WITH (distributed_control = true, source_identity = 'include',
+	                   graph_degree = 32, head_index_cap = 16384,
+	                   neighbor_code_format = 'rabitq');
+2026-07-27 19:35:18.543 PDT [561203] LOG:  received immediate shutdown request
+2026-07-27 19:35:18.550 PDT [561203] LOG:  database system is shut down
+2026-07-27 19:35:22.549 PDT [563848] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-27 19:35:22.559 PDT [563848] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-27 19:35:22.559 PDT [563848] LOG:  listening on IPv4 address "127.0.0.1", port 42080
+2026-07-27 19:35:22.565 PDT [563854] LOG:  database system was shut down at 2026-07-27 19:35:19 PDT
+2026-07-27 19:35:22.569 PDT [563848] LOG:  database system is ready to accept connections
+2026-07-27 19:35:27.371 PDT [563894] ERROR:  canceling statement due to user request
+2026-07-27 19:35:27.371 PDT [563894] CONTEXT:  COPY dm_stage, line 3784
+2026-07-27 19:35:27.371 PDT [563894] STATEMENT:  DROP TABLE IF EXISTS dm CASCADE;
+	        DROP TABLE IF EXISTS dm_queries;
+	        CREATE TABLE dm (
+	            id bigint, source_id uuid NOT NULL, source real[], embedding ecvector(1536)
+	        ) WITH (
+	            autovacuum_enabled = false,
+	            toast.autovacuum_enabled = false
+	        );
+	         CREATE TEMP TABLE dm_stage (id bigint, vec text);
+	             COPY dm_stage (id, vec) FROM '/home/peter/dev/ecaz/data/task106_full_sweep_100k/ec_real_100k_corpus.tsv' WITH (FORMAT text, DELIMITER E'\t');
+	             INSERT INTO dm (id, source_id, source, embedding)
+	             SELECT id,
+	                    (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||
+	                     substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||
+	                     substr(md5(id::text),21,12))::uuid,
+	                    translate(vec, '[]', '{}')::real[],
+	                    encode_to_ecvector(translate(vec, '[]', '{}')::real[], 4, 42)
+	               FROM dm_stage ORDER BY id;
+	             CREATE TABLE dm_queries (id bigint, source real[]);
+	             CREATE TEMP TABLE dmq_stage (id bigint, vec text);
+	             COPY dmq_stage (id, vec) FROM '/home/peter/dev/ecaz/data/task106_full_sweep_100k/ec_real_100k_queries.tsv' WITH (FORMAT text, DELIMITER E'\t');
+	             INSERT INTO dm_queries
+	             SELECT id, translate(vec, '[]', '{}')::real[]
+	               FROM dmq_stage ORDER BY id LIMIT 200;
+	         
+	         ANALYZE dm;
+	         CREATE INDEX dm_idx ON dm USING ec_distann
+	             (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
+	             WITH (distributed_control = true, source_identity = 'include',
+	                   graph_degree = 32, head_index_cap = 16384,
+	                   neighbor_code_format = 'rabitq');
+2026-07-27 19:36:56.480 PDT [563848] LOG:  received immediate shutdown request
+2026-07-27 19:36:56.489 PDT [563848] LOG:  database system is shut down
+2026-07-27 19:37:00.377 PDT [566155] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-27 19:37:00.387 PDT [566155] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-27 19:37:00.387 PDT [566155] LOG:  listening on IPv4 address "127.0.0.1", port 42080
+2026-07-27 19:37:00.393 PDT [566161] LOG:  database system was shut down at 2026-07-27 19:36:57 PDT
+2026-07-27 19:37:00.397 PDT [566155] LOG:  database system is ready to accept connections
+2026-07-27 19:41:07.660 PDT [566159] LOG:  checkpoint starting: wal
+2026-07-27 19:41:17.304 PDT [566159] LOG:  checkpoint complete: wrote 93 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 1 removed, 32 recycled; write=8.331 s, sync=1.106 s, total=9.645 s; sync files=258, longest=0.701 s, average=0.005 s; distance=537256 kB, estimate=537256 kB; lsn=0/41AAA990, redo lsn=0/223FE820
+2026-07-27 19:41:17.602 PDT [566159] LOG:  checkpoints are occurring too frequently (10 seconds apart)
+2026-07-27 19:41:17.602 PDT [566159] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-27 19:41:17.602 PDT [566159] LOG:  checkpoint starting: wal
+2026-07-27 19:45:47.128 PDT [566159] LOG:  checkpoint complete: wrote 92 buffers (0.6%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.423 s, sync=0.021 s, total=269.526 s; sync files=65, longest=0.003 s, average=0.001 s; distance=540670 kB, estimate=540670 kB; lsn=0/5306C4C8, redo lsn=0/433FE2F8
+2026-07-27 19:53:05.498 PDT [566159] LOG:  checkpoint starting: wal
+2026-07-27 19:57:35.219 PDT [566159] LOG:  checkpoint complete: wrote 132 buffers (0.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.539 s, sync=0.069 s, total=269.721 s; sync files=62, longest=0.015 s, average=0.002 s; distance=539395 kB, estimate=540543 kB; lsn=0/805D56A0, redo lsn=0/642BF138
+2026-07-27 19:58:05.037 PDT [566159] LOG:  checkpoint starting: time
+2026-07-27 19:58:06.039 PDT [566159] LOG:  checkpoint complete: wrote 15 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 32 recycled; write=0.889 s, sync=0.023 s, total=1.002 s; sync files=34, longest=0.004 s, average=0.001 s; distance=525416 kB, estimate=539030 kB; lsn=0/843D92E0, redo lsn=0/843D9288
+2026-07-27 19:59:08.178 PDT [566159] LOG:  checkpoint starting: wal
+2026-07-27 20:03:38.167 PDT [566159] LOG:  checkpoint complete: wrote 7610 buffers (46.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.881 s, sync=0.023 s, total=269.989 s; sync files=70, longest=0.002 s, average=0.001 s; distance=537711 kB, estimate=538898 kB; lsn=0/B3BF3A88, redo lsn=0/A50F4F50
+2026-07-27 20:03:44.456 PDT [566155] LOG:  received immediate shutdown request
+2026-07-27 20:03:44.888 PDT [566155] LOG:  database system is shut down
+2026-07-27 20:05:28.460 PDT [571490] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-27 20:05:28.473 PDT [571490] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-27 20:05:28.473 PDT [571490] LOG:  listening on IPv4 address "127.0.0.1", port 42080
+2026-07-27 20:05:28.483 PDT [571496] LOG:  database system was shut down at 2026-07-27 20:05:25 PDT
+2026-07-27 20:05:28.488 PDT [571490] LOG:  database system is ready to accept connections
+2026-07-27 20:09:33.951 PDT [571494] LOG:  checkpoint starting: wal
+2026-07-27 20:09:45.110 PDT [571494] LOG:  checkpoint complete: wrote 93 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 2 removed, 31 recycled; write=9.392 s, sync=1.488 s, total=11.160 s; sync files=258, longest=0.993 s, average=0.006 s; distance=537256 kB, estimate=537256 kB; lsn=0/4297A578, redo lsn=0/223FE8C8
+2026-07-27 20:09:45.111 PDT [571494] LOG:  checkpoints are occurring too frequently (12 seconds apart)
+2026-07-27 20:09:45.111 PDT [571494] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-27 20:09:45.111 PDT [571494] LOG:  checkpoint starting: wal
+2026-07-27 20:14:15.190 PDT [571494] LOG:  checkpoint complete: wrote 92 buffers (0.6%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.976 s, sync=0.020 s, total=270.080 s; sync files=65, longest=0.003 s, average=0.001 s; distance=546611 kB, estimate=546611 kB; lsn=0/53076538, redo lsn=0/439CB680
+2026-07-27 20:21:31.908 PDT [571494] LOG:  checkpoint starting: wal
+2026-07-27 20:26:00.769 PDT [571494] LOG:  checkpoint complete: wrote 132 buffers (0.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=268.575 s, sync=0.085 s, total=268.862 s; sync files=62, longest=0.025 s, average=0.002 s; distance=533494 kB, estimate=545299 kB; lsn=0/81EDE378, redo lsn=0/642C91A8
+2026-07-27 20:26:31.575 PDT [571494] LOG:  checkpoint starting: time
+2026-07-27 20:26:31.736 PDT [571494] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 32 recycled; write=0.002 s, sync=0.033 s, total=0.162 s; sync files=34, longest=0.006 s, average=0.001 s; distance=525416 kB, estimate=543311 kB; lsn=0/843E3350, redo lsn=0/843E32F8
+2026-07-27 20:27:37.631 PDT [571494] LOG:  checkpoint starting: wal
+2026-07-27 20:30:50.507 PDT [572067] LOG:  could not receive data from client: Connection reset by peer
+2026-07-27 20:30:50.508 PDT [571490] LOG:  received fast shutdown request
+2026-07-27 20:30:50.512 PDT [571490] LOG:  aborting any active transactions
+2026-07-27 20:30:50.513 PDT [571490] LOG:  background worker "logical replication launcher" (PID 571499) exited with exit code 1
+2026-07-27 20:30:50.669 PDT [571494] LOG:  checkpoint complete: wrote 7433 buffers (45.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=192.923 s, sync=0.027 s, total=193.038 s; sync files=68, longest=0.005 s, average=0.001 s; distance=537032 kB, estimate=542683 kB; lsn=0/B3C00E70, redo lsn=0/A5055408
+2026-07-27 20:30:50.669 PDT [571494] LOG:  shutting down
+2026-07-27 20:30:50.671 PDT [571494] LOG:  checkpoint starting: shutdown immediate
+2026-07-27 20:30:50.716 PDT [571494] LOG:  checkpoint complete: wrote 13 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 14 recycled; write=0.002 s, sync=0.005 s, total=0.047 s; sync files=11, longest=0.002 s, average=0.001 s; distance=241326 kB, estimate=512547 kB; lsn=0/B3C00EE8, redo lsn=0/B3C00EE8
+2026-07-27 20:30:50.741 PDT [571490] LOG:  database system is shut down

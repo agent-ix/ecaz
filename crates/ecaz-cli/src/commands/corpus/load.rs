@@ -2175,12 +2175,16 @@ async fn ensure_index(
             .await?
             .unwrap_or_default();
         let peak = Arc::new(Mutex::new(before));
+        let series = Arc::new(Mutex::new(Vec::new()));
         let stop = Arc::new(AtomicBool::new(false));
         let task = tokio::spawn(crate::commands::bench::latency::monitor_backend_memory(
             backend_pid,
             memory_sample_interval_ms,
             Arc::clone(&stop),
             Arc::clone(&peak),
+            series,
+            String::from("corpus-load"),
+            None,
         ));
         Some((backend_pid, before, peak, stop, task))
     } else {
@@ -2191,8 +2195,8 @@ async fn ensure_index(
         stop.store(true, Ordering::SeqCst);
         task.await
             .map_err(|error| eyre!("build memory monitor task failed: {error}"))??;
-        if let Some(after) = crate::commands::bench::latency::read_proc_status_memory(backend_pid)
-            .await?
+        if let Some(after) =
+            crate::commands::bench::latency::read_proc_status_memory(backend_pid).await?
         {
             peak.lock().await.merge(after);
         }

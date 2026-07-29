@@ -1,0 +1,12 @@
+BEGIN
+ count 
+-------
+   200
+(1 row)
+
+ pg_log_backend_memory_contexts 
+--------------------------------
+ t
+(1 row)
+
+COMMIT
