@@ -1,0 +1,6 @@
+[install] repo=/Users/peter/dev/tqvector/.task-worktrees/task38-p010-baseline
+[install] pgrx_home=/Users/peter/.pgrx
+[install] pg_config=/opt/homebrew/opt/postgresql@18/bin/pg_config
+[install] backend artifact assertion passed
+[install] installed_backend=/opt/homebrew/lib/postgresql@18/ecaz.dylib
+[install] sha256=cc6a69fd4f8fad5c0ee01b07c629cf7571c9398a79028ec0c62cc4a373917630

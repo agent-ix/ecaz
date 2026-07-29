@@ -1,0 +1,770 @@
+{
+  "suite": "task38-p010-diskann-physical-page-ab",
+  "schema_version": 1,
+  "config": "reviews/task-38/010-diskann-physical-page-materialization/diskann-ab-suite.json",
+  "config_sha256": "3d6f9e9aefc5e278b4e4c41a661771bd2831ff9d8afd58e1afbbfbc6da749996",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785285292192,
+  "connection": {
+    "database": "task38_p010_baseline",
+    "host": "/Users/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "backend": {
+    "build_profile": "release"
+  },
+  "steps": [
+    {
+      "name": "baseline-load-10k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-load-10k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task38_p010_baseline_real10k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "data/staged-current/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_10k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_10k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "load",
+        "m5-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-load-10k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285292195,
+      "finished_at_unix_ms": 1785285303027,
+      "duration_ms": 10831,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-recall-10k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task38_p010_baseline_real10k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-recall-10k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "recall",
+        "m5-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-recall-10k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285303029,
+      "finished_at_unix_ms": 1785285304500,
+      "duration_ms": 1470,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-latency-10k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task38_p010_baseline_real10k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-latency-10k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "latency",
+        "m5-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-latency-10k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285304500,
+      "finished_at_unix_ms": 1785285305497,
+      "duration_ms": 997,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-storage-10k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-storage-10k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task38_p010_baseline_real10k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "storage",
+        "m5-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-storage-10k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285305498,
+      "finished_at_unix_ms": 1785285305509,
+      "duration_ms": 11,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-load-50k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-load-50k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task38_p010_baseline_real50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "data/staged-current/ec_real_50k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_50k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_50k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "load",
+        "m5-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-load-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285305509,
+      "finished_at_unix_ms": 1785285416423,
+      "duration_ms": 110913,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-recall-50k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task38_p010_baseline_real50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-recall-50k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "recall",
+        "m5-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-recall-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285416423,
+      "finished_at_unix_ms": 1785285420824,
+      "duration_ms": 4401,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-latency-50k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task38_p010_baseline_real50k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-latency-50k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "latency",
+        "m5-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-latency-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285420825,
+      "finished_at_unix_ms": 1785285422489,
+      "duration_ms": 1664,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-storage-50k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-storage-50k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task38_p010_baseline_real50k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "storage",
+        "m5-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-storage-50k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285422489,
+      "finished_at_unix_ms": 1785285422502,
+      "duration_ms": 12,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-load-100k-diskann",
+      "kind": "load",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-load-100k-diskann.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task38_p010_baseline_real100k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--corpus-file",
+        "data/staged-current/ec_real_100k_corpus.tsv",
+        "--queries-file",
+        "data/staged-current/ec_real_100k_queries.tsv",
+        "--manifest-file",
+        "data/staged-current/ec_real_100k_manifest.json",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "load",
+        "m5-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-load-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285422502,
+      "finished_at_unix_ms": 1785285687381,
+      "duration_ms": 264880,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-recall-100k-diskann",
+      "kind": "recall",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "recall",
+        "--prefix",
+        "task38_p010_baseline_real100k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--sweep",
+        "64,128,200,400,800",
+        "--queries-limit",
+        "200",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--log-output",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-recall-100k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "recall",
+        "m5-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-recall-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285687382,
+      "finished_at_unix_ms": 1785285695601,
+      "duration_ms": 8218,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-latency-100k-diskann",
+      "kind": "latency",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "bench",
+        "latency",
+        "--prefix",
+        "task38_p010_baseline_real100k_diskann",
+        "--profile",
+        "ec_diskann",
+        "--k",
+        "10",
+        "--concurrency",
+        "1",
+        "--iterations",
+        "200",
+        "--sweep",
+        "64,128,200,400,800",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--force-index",
+        "--sample-backend-memory",
+        "--cache-state",
+        "post_recall_warm",
+        "--memory-sample-interval-ms",
+        "25",
+        "--log-output",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-latency-100k-diskann.log"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "latency",
+        "m5-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-latency-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285695601,
+      "finished_at_unix_ms": 1785285697980,
+      "duration_ms": 2379,
+      "exit_code": 0
+    },
+    {
+      "name": "baseline-storage-100k-diskann",
+      "kind": "storage",
+      "command": [
+        "--database",
+        "task38_p010_baseline",
+        "--host",
+        "/Users/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-storage-100k-diskann.log",
+        "bench",
+        "storage",
+        "--prefix",
+        "task38_p010_baseline_real100k_diskann"
+      ],
+      "selected": true,
+      "tags": [
+        "baseline",
+        "storage",
+        "m5-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/baseline-storage-100k-diskann.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785285697981,
+      "finished_at_unix_ms": 1785285697995,
+      "duration_ms": 14,
+      "exit_code": 0
+    },
+    {
+      "name": "candidate-load-10k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "load",
+        "m5-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-load-10k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-recall-10k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "recall",
+        "m5-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-recall-10k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-latency-10k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "latency",
+        "m5-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-latency-10k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-storage-10k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "storage",
+        "m5-local",
+        "ec_real_10k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-storage-10k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-load-50k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "load",
+        "m5-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-load-50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-recall-50k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "recall",
+        "m5-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-recall-50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-latency-50k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "latency",
+        "m5-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-latency-50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-storage-50k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "storage",
+        "m5-local",
+        "ec_real_50k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-storage-50k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-load-100k-diskann",
+      "kind": "load",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "load",
+        "m5-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-load-100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-recall-100k-diskann",
+      "kind": "recall",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "recall",
+        "m5-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-recall-100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-latency-100k-diskann",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "latency",
+        "m5-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-latency-100k-diskann.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "candidate-storage-100k-diskann",
+      "kind": "storage",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "candidate",
+        "storage",
+        "m5-local",
+        "ec_real_100k",
+        "diskann"
+      ],
+      "expected_artifacts": [
+        "reviews/task-38/010-diskann-physical-page-materialization/artifacts/bench/baseline/candidate-storage-100k-diskann.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

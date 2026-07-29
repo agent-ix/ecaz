@@ -152,3 +152,27 @@ Packet-local evidence includes:
 No AWS, remote host, CI, nightly, Docker, or Intel command was run. Task 38
 remains open for the 67 provider/remote-socket/cgroup cases on the designated
 Intel/Linux host; the Apple-M5 scope is complete.
+
+## Review Response: 2026-07-28 Sequence 2
+
+Findings 9 and 10 in `feedback/2026-07-28-02-reviewer.md` are addressed by
+checkpoints `2100e7310` and `50b7690d8`.
+
+- The OOM lane now marks its AM SQL and, immediately before SIGKILL, requires
+  `pg_stat_activity` to show that PID actively executing the marked workload.
+  A completed workload parked in the safety hold is rejected.
+- DiskANN physical TID divergence and missing-page states are returned errors
+  in release builds; unused slots have explicit state and cannot be returned as
+  successful empty tuples.
+- A PG18 regression creates and scans across a real unused line pointer.
+
+The production DiskANN change and its required release-backend A/B evidence are
+isolated in the new review packet
+`../010-diskann-physical-page-materialization/`. Its checked-in
+`ecaz bench suite` configuration completed baseline/candidate recall, latency,
+and storage at 10k, 50k, and 100k. Recall and DiskANN storage are identical at
+every measured point, with no systematic latency regression.
+
+No AWS, remote host, CI, nightly, Docker, or Intel command was run. The M5
+findings are ready for outside re-review; Task 38 remains open for the 67
+Intel/Linux cases.
