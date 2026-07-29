@@ -3390,16 +3390,21 @@ async fn run_memory_oom_kill_case(
     sql: &str,
 ) -> Result<()> {
     let worker = connect_fault(conn, &format!("oom-kill-{workload}-worker")).await?;
+    let observer = connect_fault(conn, &format!("oom-kill-{workload}-observer")).await?;
     let pid = worker
         .query_one("SELECT pg_backend_pid()", &[])
         .await?
         .get::<_, i32>(0);
     let label = format!("memory oom-kill {} {workload}", am.as_str());
+    let activity_marker = format!(
+        "/* ecaz-oom-kill:{}:{workload} */",
+        am.as_str().replace('/', "_")
+    );
     // Keep the backend alive after a fast workload so the OOM-proxy SIGKILL
-    // remains deterministic on fast local hosts. Use a separate round trip so
-    // a completed workload commits before the hold; this lane does not claim
-    // that the signal lands in an AM critical section.
-    let sql = sql.to_owned();
+    // has a deterministic cleanup target, but require pg_stat_activity to show
+    // that the backend is still executing the marked AM workload immediately
+    // before signaling. A backend that reached the hold fails this oracle.
+    let sql = format!("{activity_marker}\n{sql}");
     let worker_task = tokio::spawn(async move {
         worker.batch_execute(&sql).await?;
         worker
@@ -3410,16 +3415,59 @@ async fn run_memory_oom_kill_case(
 
     let delay_ms = oom_kill_delay_ms();
     tokio::time::sleep(std::time::Duration::from_millis(delay_ms)).await;
-    crate::ecaz_println!(
-        "[fault] {label} sigkill_pid={pid} delay_ms={delay_ms} timing_semantics=workload-then-hold-oom-proxy-not-critical-section-proof"
-    );
+    let activity = observer
+        .query_opt(
+            "SELECT state, query FROM pg_stat_activity WHERE pid = $1",
+            &[&pid],
+        )
+        .await?;
+    let activity_result = validate_oom_kill_activity(&label, &activity_marker, activity.as_ref());
+    match &activity_result {
+        Ok(()) => crate::ecaz_println!(
+            "[fault] {label} sigkill_pid={pid} delay_ms={delay_ms} signal_landed_in=workload activity_marker={activity_marker}"
+        ),
+        Err(error) => crate::ecaz_println!(
+            "[fault] {label} sigkill_pid={pid} delay_ms={delay_ms} signal_landed_in=unverified oracle=fail reason={error}"
+        ),
+    }
     send_sigkill(pid).await?;
 
     match worker_task.await? {
         Ok(()) => return Err(eyre!("{label} unexpectedly completed before SIGKILL")),
         Err(_) => {}
     }
-    wait_for_postmaster_recovery(conn, &label).await
+    wait_for_postmaster_recovery(conn, &label).await?;
+    activity_result
+}
+
+fn validate_oom_kill_activity(
+    label: &str,
+    activity_marker: &str,
+    activity: Option<&tokio_postgres::Row>,
+) -> Result<()> {
+    let row = activity.ok_or_else(|| eyre!("{label} backend disappeared before SIGKILL"))?;
+    let state = row.get::<_, Option<String>>(0);
+    let query = row.get::<_, Option<String>>(1);
+    validate_oom_kill_activity_values(label, activity_marker, state.as_deref(), query.as_deref())
+}
+
+fn validate_oom_kill_activity_values(
+    label: &str,
+    activity_marker: &str,
+    state: Option<&str>,
+    query: Option<&str>,
+) -> Result<()> {
+    if state != Some("active") {
+        return Err(eyre!(
+            "{label} backend was not active before SIGKILL: state={state:?}"
+        ));
+    }
+    if !query.is_some_and(|query| query.starts_with(activity_marker)) {
+        return Err(eyre!(
+            "{label} backend left the AM workload before SIGKILL: query={query:?}"
+        ));
+    }
+    Ok(())
 }
 
 fn oom_kill_workload_rows(rows: i64) -> i64 {
@@ -4233,6 +4281,29 @@ mod tests {
                 validate_provider_options(ProviderMode::SocketReset, None, Some(unstable_peer))
                     .expect_err("unstable peer identities are unsupported");
             assert!(error.to_string().contains("absolute named unix:/path"));
+        }
+    }
+
+    #[test]
+    fn oom_kill_activity_marker_distinguishes_workload_from_hold_query() {
+        let marker = "/* ecaz-oom-kill:ec_diskann:insert */";
+        validate_oom_kill_activity_values(
+            "fixture",
+            marker,
+            Some("active"),
+            Some("/* ecaz-oom-kill:ec_diskann:insert */\nINSERT INTO fixture"),
+        )
+        .expect("marked active workload should pass");
+        for (state, query) in [
+            (Some("active"), Some("SELECT pg_sleep(10)")),
+            (Some("idle"), Some(marker)),
+            (None, Some(marker)),
+            (Some("active"), None),
+        ] {
+            assert!(
+                validate_oom_kill_activity_values("fixture", marker, state, query).is_err(),
+                "state={state:?} query={query:?} should fail"
+            );
         }
     }
 }
