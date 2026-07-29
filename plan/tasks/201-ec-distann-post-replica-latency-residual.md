@@ -1,7 +1,31 @@
 # Task 201: ec_distann Post-Replica Latency Residual
 
-Status: **proposed — latency lane for the current PC** (2026-07-29). Priority:
-P1 latency follow-up after Task 199.
+Status: **SUPERSEDED by Tasks 205 and 206** (2026-07-29). Do not start this task
+as written.
+
+> **Why superseded.** This task's Frozen control section (below) places the Task
+> 199 coordinator traversal replica *inside* the control, and its scope rules
+> forbid replica format/design questions from entering the screen. Task 203's
+> audit found the replica holds every owner's graph record and full-precision
+> vector on one coordinator (1.660 GB at 100k, linear in N), so it does not
+> satisfy `NFR-021` and is inadmissible as a decision control under `NFR-022`. A
+> latency attribution run against it would measure a single-node index and
+> produce another uninterpretable result — and as written this task could not
+> surface that, because the questions are ruled out of scope.
+>
+> The latency lane is now **Task 205** (Algorithm 1 expansion pushdown) followed
+> by **Task 206** (traversal regime), both controlled against the
+> owner-traversal arm. Whatever residual remains after 206 reports is attributed
+> there, or in a successor task pinned to a conforming control.
+>
+> Evidence: `reviews/task-203/001-decision-reaudit/` and
+> `reviews/task-201/001-control-validity-supersession/`.
+>
+> The material below is retained unchanged for history. Its Phase 1 attribution
+> decomposition is still a good contract and should be reused by 205/206; only
+> its control is invalid.
+
+Priority: P1 latency follow-up after Task 199 (historical).
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`. This task
 owns the post-replica latency attribution and one isolated optimization; it
