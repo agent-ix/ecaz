@@ -1,0 +1,5 @@
+[backend-memory] sweep=top_k=32 pid=871552 elapsed_ms=0 rss_kb=249388 hwm_kb=379348
+[backend-memory] sweep=top_k=32 pid=871552 elapsed_ms=252 rss_kb=249580 hwm_kb=379348
+[backend-memory] sweep=top_k=32 pid=871552 elapsed_ms=504 rss_kb=253840 hwm_kb=379348
+[backend-memory] sweep=top_k=32 pid=871552 elapsed_ms=757 rss_kb=255116 hwm_kb=379348
+[backend-memory] sweep=top_k=32 pid=871552 elapsed_ms=1010 rss_kb=256636 hwm_kb=379348

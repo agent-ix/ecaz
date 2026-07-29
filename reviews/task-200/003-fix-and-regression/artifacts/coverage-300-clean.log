@@ -1,0 +1,27 @@
+BEGIN
+ count 
+-------
+   300
+(1 row)
+
+ pg_log_backend_memory_contexts 
+--------------------------------
+ t
+(1 row)
+
+COMMIT
+
+# Command ran with EC_SPIRE_REMOTE_CONNINFO_DISTANN_NODE_1/2/3 set to the
+# existing 42080/42081/42082 fixture owners:
+# BEGIN;
+# SELECT count(*) FROM (
+#   SELECT repeat_no, q.id, c.*
+#   FROM generate_series(1,2) AS repeats(repeat_no)
+#   CROSS JOIN task179_physical_100k_queries q
+#   CROSS JOIN LATERAL ec_distann_physical_seed_coverage_benchmark(
+#     'dm_idx'::regclass, q.source, 32, 32) c
+#   ORDER BY repeat_no, q.id LIMIT 300
+# ) coverage;
+# SELECT pg_log_backend_memory_contexts(pg_backend_pid());
+# COMMIT;
+# Runtime provenance verified separately: fa84ff3b06bccec2a8f202338003da489a5ca105, release.

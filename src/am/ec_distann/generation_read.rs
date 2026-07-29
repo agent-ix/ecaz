@@ -992,8 +992,12 @@ impl RetainedGenerationScan {
             &self.descriptor,
             query,
         )?;
+        // Do not ask pgrx to convert bytea to Vec<u8>: that conversion
+        // detoasts into TopTransactionContext and leaks the copy until commit.
+        // Keep the original Datum, detoast it with the repository's owning
+        // guard, and let the guard pfree each copy before the next row/call.
         let mut candidates = Spi::connect(|client| {
-            client
+            let mut rows = client
                 .select(
                     &format!(
                         "SELECT graph_record FROM {} ORDER BY vec_id",
@@ -1006,43 +1010,52 @@ impl RetainedGenerationScan {
                     DistannExpandError::GenerationMissing(format!(
                         "physical seed scan failed: {error}"
                     ))
-                })?
-                .map(|row| {
-                    let bytes = row["graph_record"]
-                        .value::<Vec<u8>>()
-                        .map_err(|error| {
-                            DistannExpandError::GenerationMissing(format!(
-                                "physical seed graph record decode failed: {error}"
-                            ))
-                        })?
-                        .ok_or_else(|| {
-                            DistannExpandError::GenerationMissing(
-                                "physical seed graph record is NULL".to_owned(),
-                            )
-                        })?;
-                    let node = DistannNodeTuple::decode_physical_v1(
-                        &bytes,
-                        self.descriptor.graph_degree,
-                        self.code_len,
+                })?;
+            let mut candidates = Vec::with_capacity(rows.len());
+            while rows.next().is_some() {
+                let datum = rows
+                    .get_datum_by_name("graph_record")
+                    .map_err(|error| {
+                        DistannExpandError::GenerationMissing(format!(
+                            "physical seed graph record lookup failed: {error}"
+                        ))
+                    })?
+                    .ok_or_else(|| {
+                        DistannExpandError::GenerationMissing(
+                            "physical seed graph record is NULL".to_owned(),
+                        )
+                    })?;
+                let record = unsafe {
+                    crate::am::common::detoast::DetoastedVarlena::packed_from_datum(datum)
+                }
+                .ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(
+                        "physical seed graph record is NULL".to_owned(),
                     )
-                    .map_err(DistannExpandError::GenerationMissing)?;
-                    let owner = super::placement::owning_node(
-                        node.vec_id,
-                        self.descriptor.roster.len(),
-                        self.descriptor.placement_hash_version,
-                    );
-                    if owner != self.generation.owner_ordinal as usize {
-                        return Err(DistannExpandError::Placement(format!(
-                            "stored vec_id {:#018x} belongs to roster ordinal {owner}, not {}",
-                            node.vec_id, self.generation.owner_ordinal
-                        )));
-                    }
-                    Ok(DistannSeedCandidate {
-                        vec_id: node.vec_id,
-                        dist: prepared.score_dist(&node.search_code),
-                    })
-                })
-                .collect::<Result<Vec<_>, DistannExpandError>>()
+                })?;
+                let node = DistannNodeTuple::decode_physical_v1(
+                    record.as_bytes(),
+                    self.descriptor.graph_degree,
+                    self.code_len,
+                )
+                .map_err(DistannExpandError::GenerationMissing)?;
+                let owner = super::placement::owning_node(
+                    node.vec_id,
+                    self.descriptor.roster.len(),
+                    self.descriptor.placement_hash_version,
+                );
+                if owner != self.generation.owner_ordinal as usize {
+                    return Err(DistannExpandError::Placement(format!(
+                        "stored vec_id {:#018x} belongs to roster ordinal {owner}, not {}",
+                        node.vec_id, self.generation.owner_ordinal
+                    )));
+                }
+                candidates.push(DistannSeedCandidate {
+                    vec_id: node.vec_id,
+                    dist: prepared.score_dist(&node.search_code),
+                });
+            }
+            Ok(candidates)
         })?;
         candidates.sort_unstable_by(|left, right| {
             left.dist
@@ -1779,6 +1792,51 @@ fn ec_distann_physical_seed_coverage_benchmark(
         head_best,
     );
     TableIterator::once(row)
+}
+
+/// Task 200 attribution endpoint.  This intentionally repeats only the
+/// coordinator-side `PhysicalGenerationScan::open` call and drops each scan;
+/// it excludes owner seed scanning and head searches from the measurement.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_scan_open_benchmark(index_regclass: PgRelation, iterations: i32) -> i32 {
+    let iterations = usize::try_from(iterations)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("scan-open iterations must be in 1..=4096"));
+    for _ in 0..iterations {
+        PhysicalGenerationScan::open(index_regclass.oid())
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+    }
+    i32::try_from(iterations).expect("scan-open iterations fit integer")
+}
+
+/// Task 200 attribution endpoint.  The physical scan is opened once, then
+/// only the owner-side seed path is repeated.  This is the next attribution
+/// arm if the coordinator open-only experiment remains bounded.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_owner_seed_scan_benchmark(
+    index_regclass: PgRelation,
+    query: Vec<f32>,
+    iterations: i32,
+    seed_count: i32,
+) -> i32 {
+    let iterations = usize::try_from(iterations)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("owner-scan iterations must be in 1..=4096"));
+    let seed_count = usize::try_from(seed_count)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("owner-scan seed count must be in 1..=4096"));
+    let scan = PhysicalGenerationScan::open(index_regclass.oid())
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    for _ in 0..iterations {
+        scan.owner_scan_seed_candidates(&query, seed_count)
+            .unwrap_or_else(|error| pgrx::error!("{error}"));
+    }
+    i32::try_from(iterations).expect("owner-scan iterations fit integer")
 }
 
 /// Task 183 same-seed attribution helper. The digest covers the ordered seed

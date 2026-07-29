@@ -30,7 +30,7 @@ path = "./src/bin/pgrx_embed.rs"
 default = ["pg18"]
 pg17 = ["pgrx/pg17", "pgrx-tests/pg17"]
 pg18 = ["pgrx/pg18", "pgrx-tests/pg18"]
-pg_test = []
+pg_test = ["distann-head-attribution-benchmark"]
 bench = []
 # Benchmark-only Task 180 attribution surface. Enables runtime-selected
 # persisted-head, exact bounded-sample, and owner-wide seed controls on an

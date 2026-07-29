@@ -26,6 +26,7 @@ use std::sync::{
     Arc,
 };
 use std::time::{Duration, Instant};
+use tokio::io::AsyncWriteExt;
 use tokio::sync::Mutex;
 
 use crate::profiles;
@@ -60,6 +61,11 @@ pub struct LatencyArgs {
     /// memory retained by long physical-query diagnostics.
     #[arg(long, default_value_t = 0)]
     pub worker_batch_size: usize,
+    /// Keep the single worker backend in one explicit transaction for the
+    /// timed queries, then commit before collecting the final memory sample.
+    /// This is a diagnostic mode for transaction-lifetime retention.
+    #[arg(long, default_value_t = false)]
+    pub hold_transaction: bool,
     /// Sweep values for the profile's tuning axis. Accepts `--sweep 100,200`
     /// or repeated `--sweep 100 --sweep 200`.
     #[arg(long, value_delimiter = ',')]
@@ -111,6 +117,9 @@ pub struct LatencyArgs {
     /// Milliseconds between backend RSS/HWM samples when --sample-backend-memory is set.
     #[arg(long, default_value_t = 25)]
     pub memory_sample_interval_ms: u64,
+    /// Stream backend RSS/HWM samples to this file while the sweep runs.
+    #[arg(long)]
+    pub memory_series_output: Option<PathBuf>,
     /// Write the final latency table to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
@@ -124,6 +133,9 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     }
     if args.memory_sample_interval_ms == 0 {
         return Err(eyre!("--memory-sample-interval-ms must be >= 1"));
+    }
+    if args.hold_transaction && args.worker_batch_size != 0 {
+        return Err(eyre!("--hold-transaction requires --worker-batch-size 0"));
     }
     let profile = profiles::resolve(&args.profile).ok_or_else(|| {
         eyre!(
@@ -218,6 +230,29 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     let mut ivf_stage_counter_lines = Vec::new();
     let mut distann_stage_counter_lines = Vec::new();
     let mut distann_materialization_work_lines = Vec::new();
+    let mut backend_memory_lines = Vec::new();
+    let memory_series_output = if args.sample_backend_memory {
+        if let Some(path) = args.memory_series_output.as_ref() {
+            if let Some(parent) = path.parent() {
+                tokio::fs::create_dir_all(parent)
+                    .await
+                    .wrap_err_with(|| format!("creating {}", parent.display()))?;
+            }
+            Some(Arc::new(Mutex::new(
+                tokio::fs::OpenOptions::new()
+                    .create(true)
+                    .truncate(true)
+                    .write(true)
+                    .open(path)
+                    .await
+                    .wrap_err_with(|| format!("opening {}", path.display()))?,
+            )))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     for value in &sweep_values {
         let sweep_label = super::sweep_value_label(profile, *value);
         let sweep = run_sweep_point(
@@ -233,6 +268,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             args.iterations,
             args.warmup_iterations,
             args.worker_batch_size,
+            args.hold_transaction,
             profile.encode_scan_query,
             args.force_index,
             args.rerank_width,
@@ -244,6 +280,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             args.k,
             args.sample_backend_memory,
             args.memory_sample_interval_ms,
+            memory_series_output.clone(),
             args.task87_candidate_batch_counters,
             args.ivf_stage_counters,
             args.distann_stage_counters,
@@ -297,6 +334,12 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
                 Cell::new(sweep.memory.hwm_peak_kb),
                 Cell::new(sweep.memory.samples),
             ]);
+            backend_memory_lines.extend(
+                sweep
+                    .memory_series
+                    .iter()
+                    .map(|point| format_backend_memory_point(&sweep_label, point)),
+            );
         }
         table.add_row(row);
     }
@@ -312,6 +355,10 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     if !distann_stage_counter_lines.is_empty() {
         output.push('\n');
         output.push_str(&distann_stage_counter_lines.join("\n"));
+    }
+    if !backend_memory_lines.is_empty() {
+        output.push('\n');
+        output.push_str(&backend_memory_lines.join("\n"));
     }
     if !distann_materialization_work_lines.is_empty() {
         output.push('\n');
@@ -345,6 +392,7 @@ async fn run_sweep_point(
     iterations: usize,
     warmup_iterations: usize,
     worker_batch_size: usize,
+    hold_transaction: bool,
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
@@ -356,6 +404,7 @@ async fn run_sweep_point(
     k: usize,
     sample_backend_memory: bool,
     memory_sample_interval_ms: u64,
+    memory_series_output: Option<Arc<Mutex<tokio::fs::File>>>,
     task87_candidate_batch_counters: bool,
     ivf_stage_counters: bool,
     distann_stage_counters: bool,
@@ -368,7 +417,7 @@ async fn run_sweep_point(
         (Some(rerank_width), Some(rerank_width_guc)) => {
             format!("{sweep_label} {rerank_width_guc}={rerank_width}")
         }
-        _ => sweep_label,
+        _ => sweep_label.clone(),
     };
     let msg = super::append_adaptive_nprobe_label(msg, adaptive_nprobe_options);
     let msg = super::append_ivf_scratch_soa_batch_decode_label(msg, ivf_scratch_soa_batch_decode);
@@ -387,6 +436,8 @@ async fn run_sweep_point(
         let queries = Arc::clone(&queries);
         let counter = Arc::clone(&counter);
         let bar = Arc::clone(&bar);
+        let memory_series_output = memory_series_output.clone();
+        let worker_sweep_label = sweep_label.clone();
         handles.push(tokio::spawn(async move {
             worker(
                 conn,
@@ -399,6 +450,7 @@ async fn run_sweep_point(
                 iterations,
                 warmup_iterations,
                 worker_batch_size,
+                hold_transaction,
                 encode_scan_query,
                 force_index,
                 rerank_width,
@@ -409,8 +461,10 @@ async fn run_sweep_point(
                 bits,
                 seed,
                 k,
+                worker_sweep_label,
                 sample_backend_memory,
                 memory_sample_interval_ms,
+                memory_series_output.clone(),
                 task87_candidate_batch_counters,
                 ivf_stage_counters,
                 distann_stage_counters,
@@ -422,6 +476,7 @@ async fn run_sweep_point(
 
     let mut merged: Vec<Duration> = Vec::with_capacity(iterations);
     let mut memory = MemorySample::default();
+    let mut memory_series = Vec::new();
     let mut task87_counter_sets = Vec::new();
     let mut ivf_stage_counter_sets = Vec::new();
     let mut distann_stage_counter_sets = Vec::new();
@@ -430,6 +485,7 @@ async fn run_sweep_point(
         let result = h.await.map_err(|e| eyre!("worker panicked: {e}"))??;
         merged.extend(result.durations);
         memory.merge(result.memory);
+        memory_series.extend(result.memory_series);
         task87_counter_sets.push(result.task87_candidate_batch_counters);
         ivf_stage_counter_sets.push(result.ivf_stage_counters);
         distann_stage_counter_sets.push(result.distann_stage_counters);
@@ -439,6 +495,7 @@ async fn run_sweep_point(
     Ok(LatencySweepResult {
         durations: merged,
         memory,
+        memory_series,
         task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
         ivf_stage_counters: super::merge_ivf_stage_counters(ivf_stage_counter_sets),
         distann_stage_counters: super::merge_distann_stage_counters(distann_stage_counter_sets),
@@ -460,6 +517,7 @@ async fn worker(
     iterations: usize,
     warmup_iterations: usize,
     worker_batch_size: usize,
+    hold_transaction: bool,
     encode_scan_query: bool,
     force_index: bool,
     rerank_width: Option<i32>,
@@ -470,8 +528,10 @@ async fn worker(
     bits: i32,
     seed: i64,
     k: usize,
+    sweep_label: String,
     sample_backend_memory: bool,
     memory_sample_interval_ms: u64,
+    memory_series_output: Option<Arc<Mutex<tokio::fs::File>>>,
     task87_candidate_batch_counters: bool,
     ivf_stage_counters: bool,
     distann_stage_counters: bool,
@@ -479,6 +539,7 @@ async fn worker(
 ) -> Result<LatencyWorkerResult> {
     let mut durations = Vec::new();
     let mut memory = MemorySample::default();
+    let mut memory_series = Vec::new();
     let mut task87_counter_sets = Vec::new();
     let mut ivf_stage_counter_sets = Vec::new();
     let mut distann_stage_counter_sets = Vec::new();
@@ -528,8 +589,12 @@ async fn worker(
         if distann_stage_counters {
             super::reset_distann_stage_counters(&client).await?;
         }
+        if hold_transaction {
+            client.batch_execute("BEGIN").await?;
+        }
 
         let batch_memory = Arc::new(Mutex::new(MemorySample::default()));
+        let batch_memory_series = Arc::new(Mutex::new(Vec::new()));
         let stop_memory_monitor = Arc::new(AtomicBool::new(false));
         let memory_monitor = if sample_backend_memory {
             let backend_pid: i32 = client
@@ -542,6 +607,9 @@ async fn worker(
                 memory_sample_interval_ms,
                 Arc::clone(&stop_memory_monitor),
                 Arc::clone(&batch_memory),
+                Arc::clone(&batch_memory_series),
+                sweep_label.clone(),
+                memory_series_output.clone(),
             )))
         } else {
             None
@@ -576,6 +644,13 @@ async fn worker(
             bar.inc(1);
         };
 
+        if hold_transaction {
+            if batch_result.is_ok() {
+                client.batch_execute("COMMIT").await?;
+            } else {
+                let _ = client.batch_execute("ROLLBACK").await;
+            }
+        }
         stop_memory_monitor.store(true, Ordering::SeqCst);
         if let Some(memory_monitor) = memory_monitor {
             memory_monitor
@@ -583,6 +658,7 @@ async fn worker(
                 .map_err(|e| eyre!("latency memory monitor task failed: {e}"))??;
         }
         memory.merge(*batch_memory.lock().await);
+        memory_series.extend(batch_memory_series.lock().await.iter().cloned());
         batch_result?;
 
         task87_counter_sets.push(if task87_candidate_batch_counters {
@@ -620,6 +696,7 @@ async fn worker(
     Ok(LatencyWorkerResult {
         durations,
         memory,
+        memory_series,
         task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
         ivf_stage_counters: super::merge_ivf_stage_counters(ivf_stage_counter_sets),
         distann_stage_counters: super::merge_distann_stage_counters(distann_stage_counter_sets),
@@ -754,6 +831,7 @@ pub fn summarize(durations: &[Duration]) -> LatencyStats {
 struct LatencySweepResult {
     durations: Vec<Duration>,
     memory: MemorySample,
+    memory_series: Vec<BackendMemoryPoint>,
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
     ivf_stage_counters: Vec<super::IvfStageCounterSnapshot>,
     distann_stage_counters: Vec<super::DistannStageCounterSnapshot>,
@@ -764,6 +842,7 @@ struct LatencySweepResult {
 struct LatencyWorkerResult {
     durations: Vec<Duration>,
     memory: MemorySample,
+    memory_series: Vec<BackendMemoryPoint>,
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
     ivf_stage_counters: Vec<super::IvfStageCounterSnapshot>,
     distann_stage_counters: Vec<super::DistannStageCounterSnapshot>,
@@ -775,6 +854,38 @@ pub(crate) struct MemorySample {
     pub(crate) rss_peak_kb: i64,
     pub(crate) hwm_peak_kb: i64,
     pub(crate) samples: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct BackendMemoryPoint {
+    pub(crate) pid: i32,
+    pub(crate) elapsed_ms: u128,
+    pub(crate) rss_kb: i64,
+    pub(crate) hwm_kb: i64,
+}
+
+/// Fit RSS against elapsed time. A peak can stay below a fixed threshold while
+/// a transaction-scoped leak continues to grow, so regression gates should use
+/// this slope instead of a peak-only assertion.
+pub(crate) fn rss_slope_kb_per_second(points: &[BackendMemoryPoint]) -> Option<f64> {
+    if points.len() < 2 {
+        return None;
+    }
+    let mean_x = points
+        .iter()
+        .map(|point| point.elapsed_ms as f64 / 1000.0)
+        .sum::<f64>()
+        / points.len() as f64;
+    let mean_y = points.iter().map(|point| point.rss_kb as f64).sum::<f64>() / points.len() as f64;
+    let mut covariance = 0.0;
+    let mut variance = 0.0;
+    for point in points {
+        let x = point.elapsed_ms as f64 / 1000.0 - mean_x;
+        let y = point.rss_kb as f64 - mean_y;
+        covariance += x * y;
+        variance += x * x;
+    }
+    (variance > 0.0).then_some(covariance / variance)
 }
 
 impl MemorySample {
@@ -790,17 +901,50 @@ pub(crate) async fn monitor_backend_memory(
     sample_interval_ms: u64,
     stop: Arc<AtomicBool>,
     peak: Arc<Mutex<MemorySample>>,
+    series: Arc<Mutex<Vec<BackendMemoryPoint>>>,
+    sweep: String,
+    output: Option<Arc<Mutex<tokio::fs::File>>>,
 ) -> Result<()> {
+    let started = Instant::now();
     while !stop.load(Ordering::Relaxed) {
         if let Some(sample) = read_proc_status_memory(pid).await? {
             let mut peak = peak.lock().await;
             peak.samples += 1;
             peak.rss_peak_kb = peak.rss_peak_kb.max(sample.rss_peak_kb);
             peak.hwm_peak_kb = peak.hwm_peak_kb.max(sample.hwm_peak_kb);
+            let point = BackendMemoryPoint {
+                pid,
+                elapsed_ms: started.elapsed().as_millis(),
+                rss_kb: sample.rss_peak_kb,
+                hwm_kb: sample.hwm_peak_kb,
+            };
+            series.lock().await.push(point.clone());
+            if let Some(output) = output.as_ref() {
+                let mut output = output.lock().await;
+                output
+                    .write_all(format_backend_memory_point(&sweep, &point).as_bytes())
+                    .await
+                    .wrap_err("writing backend memory sample")?;
+                output
+                    .write_all(b"\n")
+                    .await
+                    .wrap_err("writing backend memory newline")?;
+                output
+                    .flush()
+                    .await
+                    .wrap_err("flushing backend memory sample")?;
+            }
         }
         tokio::time::sleep(Duration::from_millis(sample_interval_ms)).await;
     }
     Ok(())
+}
+
+fn format_backend_memory_point(sweep: &str, point: &BackendMemoryPoint) -> String {
+    format!(
+        "[backend-memory] sweep={sweep} pid={} elapsed_ms={} rss_kb={} hwm_kb={}",
+        point.pid, point.elapsed_ms, point.rss_kb, point.hwm_kb
+    )
 }
 
 pub(crate) async fn read_proc_status_memory(pid: i32) -> Result<Option<MemorySample>> {
@@ -826,6 +970,37 @@ fn parse_status_kb(value: &str) -> Result<i64> {
         .ok_or_else(|| eyre!("missing /proc status memory value"))?
         .parse::<i64>()
         .wrap_err("parsing /proc status memory value")
+}
+
+#[cfg(test)]
+mod memory_regression_tests {
+    use super::{rss_slope_kb_per_second, BackendMemoryPoint};
+
+    #[test]
+    fn rss_slope_is_not_a_peak_check() {
+        let points = [
+            BackendMemoryPoint {
+                pid: 1,
+                elapsed_ms: 0,
+                rss_kb: 100,
+                hwm_kb: 100,
+            },
+            BackendMemoryPoint {
+                pid: 1,
+                elapsed_ms: 1000,
+                rss_kb: 1100,
+                hwm_kb: 1100,
+            },
+            BackendMemoryPoint {
+                pid: 1,
+                elapsed_ms: 2000,
+                rss_kb: 2100,
+                hwm_kb: 2100,
+            },
+        ];
+        assert_eq!(rss_slope_kb_per_second(&points), Some(1000.0));
+        assert!(rss_slope_kb_per_second(&points[..1]).is_none());
+    }
 }
 
 /// Linear-interpolated percentile from a pre-sorted ascending sample.

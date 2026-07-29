@@ -19,6 +19,9 @@ mod spire_multicluster;
 mod sql;
 mod support;
 mod test;
+mod worktree;
+
+pub(crate) use support::default_cluster_root;
 
 #[derive(Subcommand, Debug)]
 pub enum DevCommand {
@@ -63,6 +66,9 @@ pub enum DevCommand {
     /// (max-locks, max-connections, work-mem-min, temp-file-limit,
     /// shared-buffers-thrash, disk-full).
     ResourceTest(resource_test::ResourceTestArgs),
+    /// Report (and optionally reclaim) stale git worktrees. Report-only unless
+    /// --apply; never removes a worktree with uncommitted changes.
+    WorktreePrune(worktree::WorktreePruneArgs),
 }
 
 impl DevCommand {
@@ -78,6 +84,7 @@ impl DevCommand {
             DevCommand::EvictRelationCache(args) => relation_cache::run(conn, args).await,
             DevCommand::Test { command } => command.run(conn).await,
             DevCommand::ResourceTest(args) => resource_test::run(conn, args).await,
+            DevCommand::WorktreePrune(args) => worktree::run(args).await,
         }
     }
 }

@@ -1,0 +1,7 @@
+command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config CARGO_TARGET_DIR=/home/peter/.cargo-target cargo pgrx test pg18 test_distann_physical_seed_detoast_memory_is_bounded --no-default-features
+features: PGRX_FEATURES="pg18 pg_test" (pg_test includes distann-head-attribution-benchmark)
+code_head: fa84ff3b0^ (detached parent, source fix absent)
+fixture: 512 graph rows with 256-neighbor records, 300 one-transaction seed conversions
+result: test tests::pg_test_distann_physical_seed_detoast_memory_is_bounded ... FAILED
+failure: owner seed conversion retained 1258283008 bytes after 300 calls
+summary: test result: FAILED; the pre-fix control failed the 4 MiB assertion as required (runtime 87.96s)
