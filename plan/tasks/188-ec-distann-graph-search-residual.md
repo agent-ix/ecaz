@@ -1,7 +1,7 @@
 # Task 188: ec_distann Graph and Search Residual Recall
 
-Status: **proposed, conditional on Tasks 185--186** (2026-07-19). Priority: P2
-residual-recall follow-up.
+Status: **complete — accept BW8 search-budget candidate; no production change**
+(2026-07-26). Priority: P2 residual-recall follow-up.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 families `GRAPH-01` through `GRAPH-18` plus gateway-derived `HEAD-27` and
@@ -24,9 +24,11 @@ adaptive-search candidate. Avoid an undifferentiated parameter sweep.
 ## Entry gate
 
 Tasks 185 and 186 must freeze the best bounded head and provide same-generation
-diagnostics. If entry coverage still dominates, keep this task deferred. If the
-head approaches the owner oracle but final recall remains deficient, run the
-residual attribution.
+diagnostics. Task 185's entry STOP and Task 186's packet-005 handoff satisfy the
+gate, but Task 186's hierarchy result is only a query-time/arbitrary-
+representative prototype STOP; it does not reject build-time hierarchy or
+compressed-head alternatives. The retained entry surface is therefore the
+exact-scored 16,384 head, not the hierarchy prototype.
 
 ## Phase 1: residual attribution
 
@@ -42,6 +44,12 @@ On a fresh 100k physical generation:
 
 Do not use evaluation results to choose build parameters without a separate
 validation slice.
+
+The historical Phase 1 run completed only the head-vs-owner oracle, isolated
+BW, and isolated H comparisons. It did not run candidate-frontier/exact-rerank
+containment, graph components/indegree/bridge/hard-query reachability, or
+monolithic-versus-sharded graph-quality audits. Its results therefore select a
+search-budget candidate only; they do not attribute the full graph family.
 
 ## Phase 2: candidate selection
 
@@ -59,11 +67,12 @@ Do not combine graph rebuild and adaptive query policy in one A/B.
 ## Confirmation and decision
 
 Screen at 100k using checked-in `ecaz bench suite`. Only a useful isolated
-candidate proceeds to 10k/50k/100k. Advance at most one deterministic bounded
-candidate that improves recall without an unacceptable latency/storage/build
-tradeoff and preserves topology, lifecycle, and failure semantics. Otherwise
-STOP and record whether the remaining gap is irreducible under the retained
-architecture or belongs to Task 189/190.
+candidate proceeds to 10k/50k/100k. Apply the decision rule at confirmation:
+advance at most one deterministic bounded candidate only if the paired recall
+gain has no unacceptable latency/storage/build tradeoff and topology,
+lifecycle, and failure semantics hold. Otherwise STOP; do not defer the
+decision to another task. Record whether the remaining gap is irreducible
+under the retained architecture or belongs to Task 189/190.
 
 Any persisted graph, build-default, or adaptive runtime-policy winner requires
 a separate production task and appropriate ADR/spec changes.

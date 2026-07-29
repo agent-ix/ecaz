@@ -165,13 +165,13 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
         // the heap avoids re-sorting the entire accumulated frontier on every
         // hop round.
         batch.clear();
-        let mut best_unvisited_dist = None;
+        let mut best_unvisited = None;
         while let Some(candidate) = beam.pop() {
             if expanded.contains(&candidate.vec_id) {
                 continue;
             }
-            if best_unvisited_dist.is_none() {
-                best_unvisited_dist = Some(candidate.dist);
+            if best_unvisited.is_none() {
+                best_unvisited = Some(candidate);
             }
             batch.push(candidate.vec_id);
             if batch.len() >= params.beam_width {
@@ -183,11 +183,20 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
             break;
         }
 
-        // Convergence early-exit: the best unvisited code distance cannot
-        // improve the current kth exact distance (D9).
+        // Convergence early-exit: the best unvisited code candidate cannot
+        // improve the current kth exact result under the same total order used
+        // for final output. Comparing vec_id when distances tie is essential:
+        // otherwise iterative deepening could serve an equal-distance row with
+        // a larger vec_id before discovering the true boundary row.
         if hits.len() >= params.top_k {
-            let kth = kth_exact_dist(&mut hits, params.top_k);
-            if best_unvisited_dist.expect("non-empty batch has a best") >= kth {
+            let kth = kth_exact_hit(&mut hits, params.top_k);
+            let best = best_unvisited.expect("non-empty batch has a best");
+            if best
+                .dist
+                .total_cmp(&kth.exact_dist)
+                .then_with(|| best.vec_id.cmp(&kth.vec_id))
+                != Ordering::Less
+            {
                 counters.early_exit = true;
                 break;
             }
@@ -299,10 +308,11 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
         counters.records_expanded <= params.beam_width * params.hop_rounds,
         "BW x H expansion cap violated"
     );
-    // Bare distance sort: a `(exact_dist, vec_id)` total-order tie-break is
-    // coupled to the FR-081-AC-4 early-exit soundness fix (164-P1) and must land
-    // with it (see the matching note in routine.rs).
-    hits.sort_unstable_by(|left, right| left.exact_dist.total_cmp(&right.exact_dist));
+    hits.sort_unstable_by(|left, right| {
+        left.exact_dist
+            .total_cmp(&right.exact_dist)
+            .then_with(|| left.vec_id.cmp(&right.vec_id))
+    });
     Ok((hits, counters))
 }
 
@@ -327,19 +337,21 @@ pub(crate) fn run_scan_attempt_with_restart<T>(
     }
 }
 
-fn kth_exact_dist(hits: &mut [DistannScanHit], top_k: usize) -> f32 {
+fn kth_exact_hit(hits: &mut [DistannScanHit], top_k: usize) -> DistannScanHit {
     debug_assert!(hits.len() >= top_k && top_k >= 1);
     let (_, kth, _) = hits.select_nth_unstable_by(top_k - 1, |left, right| {
-        left.exact_dist.total_cmp(&right.exact_dist)
+        left.exact_dist
+            .total_cmp(&right.exact_dist)
+            .then_with(|| left.vec_id.cmp(&right.vec_id))
     });
-    kth.exact_dist
+    *kth
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        distann_orchestrated_search, run_scan_attempt_with_restart, DistannExpandedNode,
-        DistannExpandError, DistannNodeExpander, DistannOrchestrationParams, DistannSeedCandidate,
+        distann_orchestrated_search, run_scan_attempt_with_restart, DistannExpandError,
+        DistannExpandedNode, DistannNodeExpander, DistannOrchestrationParams, DistannSeedCandidate,
     };
     use crate::storage::page::ItemPointer;
     use std::cell::Cell;
@@ -379,7 +391,10 @@ mod tests {
         let calls = Cell::new(0);
         let result = run_scan_attempt_with_restart(|| {
             calls.set(calls.get() + 1);
-            Err::<i32, _>(DistannExpandError::EpochMismatch(format!("mismatch {}", calls.get())))
+            Err::<i32, _>(DistannExpandError::EpochMismatch(format!(
+                "mismatch {}",
+                calls.get()
+            )))
         });
         assert!(matches!(result, Err(DistannExpandError::EpochMismatch(_))));
         assert_eq!(calls.get(), 2, "capped at two attempts");
@@ -420,10 +435,10 @@ mod tests {
             vec_ids
                 .iter()
                 .map(|vec_id| {
-                    let (exact, tombstone, neighbors) = self
-                        .nodes
-                        .get(vec_id)
-                        .ok_or_else(|| DistannExpandError::Internal(format!("unknown vec_id {vec_id}")))?;
+                    let (exact, tombstone, neighbors) =
+                        self.nodes.get(vec_id).ok_or_else(|| {
+                            DistannExpandError::Internal(format!("unknown vec_id {vec_id}"))
+                        })?;
                     Ok(DistannExpandedNode {
                         vec_id: *vec_id,
                         exact_dist: (!tombstone).then_some(*exact),
@@ -469,9 +484,8 @@ mod tests {
             vec_id: 1,
             dist: -0.9,
         }];
-        let (hits, counters) =
-            distann_orchestrated_search(&seeds, &mut expander, params(2, 8, 10))
-                .expect("search should succeed");
+        let (hits, counters) = distann_orchestrated_search(&seeds, &mut expander, params(2, 8, 10))
+            .expect("search should succeed");
         assert_eq!(counters.records_expanded, 2);
         assert!(counters.records_expanded <= 2 * 8);
         assert!(counters.beam_exhausted, "cycle exhausts the beam");
@@ -493,12 +507,36 @@ mod tests {
             vec_id: 1,
             dist: -0.5,
         }];
-        let (hits, counters) =
-            distann_orchestrated_search(&seeds, &mut expander, params(4, 8, 10))
-                .expect("search should succeed");
+        let (hits, counters) = distann_orchestrated_search(&seeds, &mut expander, params(4, 8, 10))
+            .expect("search should succeed");
         assert_eq!(hits.len(), 1, "fewer-than-k is a complete result");
         assert!(counters.beam_exhausted);
         assert!(!counters.early_exit);
+    }
+
+    #[test]
+    fn distann_orchestration_orders_equal_exact_scores_by_vec_id() {
+        let mut expander = MockExpander {
+            nodes: HashMap::from([(9, (-0.5, false, vec![])), (3, (-0.5, false, vec![]))]),
+            calls: Vec::new(),
+        };
+        let seeds = [
+            DistannSeedCandidate {
+                vec_id: 9,
+                dist: -0.5,
+            },
+            DistannSeedCandidate {
+                vec_id: 3,
+                dist: -0.5,
+            },
+        ];
+        let (hits, counters) = distann_orchestrated_search(&seeds, &mut expander, params(2, 2, 2))
+            .expect("equal-score search should succeed");
+        assert!(counters.beam_exhausted);
+        assert_eq!(
+            hits.iter().map(|hit| hit.vec_id).collect::<Vec<_>>(),
+            vec![3, 9]
+        );
     }
 
     #[test]
@@ -537,12 +575,35 @@ mod tests {
             vec_id: 1,
             dist: -0.9,
         }];
-        let (hits, counters) =
-            distann_orchestrated_search(&seeds, &mut expander, params(1, 8, 1))
-                .expect("search should succeed");
+        let (hits, counters) = distann_orchestrated_search(&seeds, &mut expander, params(1, 8, 1))
+            .expect("search should succeed");
         assert!(counters.early_exit);
         assert_eq!(counters.records_expanded, 1);
         assert_eq!(hits[0].vec_id, 1);
+    }
+
+    #[test]
+    fn distann_orchestration_does_not_early_exit_before_equal_score_tie_break() {
+        let mut expander = MockExpander {
+            nodes: HashMap::from([
+                (9, (-0.5, false, vec![(3, -0.5)])),
+                (3, (-0.5, false, vec![])),
+            ]),
+            calls: Vec::new(),
+        };
+        let seeds = [DistannSeedCandidate {
+            vec_id: 9,
+            dist: -0.5,
+        }];
+        let (hits, counters) =
+            distann_orchestrated_search(&seeds, &mut expander, params(1, 4, 1))
+                .expect("equal-score boundary search should succeed");
+        assert!(!counters.early_exit);
+        assert_eq!(counters.records_expanded, 2);
+        assert_eq!(
+            hits.iter().map(|hit| hit.vec_id).collect::<Vec<_>>(),
+            vec![3, 9]
+        );
     }
 
     #[test]

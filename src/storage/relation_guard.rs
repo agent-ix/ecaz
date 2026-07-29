@@ -49,6 +49,29 @@ impl IndexRelationGuard {
         Self::try_open(index_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
     }
 
+    /// Acquire AccessShare without waiting behind a concurrent DROP/DDL lock.
+    ///
+    /// `index_open(..., AccessShareLock)` does not have a recoverable "try"
+    /// failure: it blocks for the lock and ERRORs if the relation disappeared.
+    /// Replica selection must instead degrade to the owner path in that race.
+    pub(crate) fn try_conditional_access_share(index_oid: pg_sys::Oid) -> Option<Self> {
+        let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
+        let locked = unsafe { pg_sys::ConditionalLockRelationOid(index_oid, lockmode) };
+        if !locked {
+            return None;
+        }
+        if unsafe { pg_sys::get_rel_relkind(index_oid) } == 0 {
+            unsafe { pg_sys::UnlockRelationOid(index_oid, lockmode) };
+            return None;
+        }
+        let relation = unsafe { pg_sys::index_open(index_oid, pg_sys::NoLock as pg_sys::LOCKMODE) };
+        if relation.is_null() {
+            unsafe { pg_sys::UnlockRelationOid(index_oid, lockmode) };
+            return None;
+        }
+        Some(Self { relation, lockmode })
+    }
+
     pub(crate) fn as_ptr(&self) -> pg_sys::Relation {
         self.relation
     }
@@ -101,6 +124,26 @@ impl HeapRelationGuard {
 
     pub(crate) fn try_access_share(relation_oid: pg_sys::Oid) -> Option<Self> {
         Self::try_open(relation_oid, pg_sys::AccessShareLock as pg_sys::LOCKMODE)
+    }
+
+    /// Non-blocking counterpart to `try_access_share`; see the index guard.
+    pub(crate) fn try_conditional_access_share(relation_oid: pg_sys::Oid) -> Option<Self> {
+        let lockmode = pg_sys::AccessShareLock as pg_sys::LOCKMODE;
+        let locked = unsafe { pg_sys::ConditionalLockRelationOid(relation_oid, lockmode) };
+        if !locked {
+            return None;
+        }
+        if unsafe { pg_sys::get_rel_relkind(relation_oid) } == 0 {
+            unsafe { pg_sys::UnlockRelationOid(relation_oid, lockmode) };
+            return None;
+        }
+        let relation =
+            unsafe { pg_sys::table_open(relation_oid, pg_sys::NoLock as pg_sys::LOCKMODE) };
+        if relation.is_null() {
+            unsafe { pg_sys::UnlockRelationOid(relation_oid, lockmode) };
+            return None;
+        }
+        Some(Self { relation, lockmode })
     }
 
     pub(crate) fn as_ptr(&self) -> pg_sys::Relation {

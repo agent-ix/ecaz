@@ -17,7 +17,7 @@ to its owning source path and loop:
   `RefCell` borrow.
 
 The documentation explicitly does not claim that every long-running loop
-already polls. New Task 200 owns the exhaustive classification of the known
+already polls. New Task 201 owns the exhaustive classification of the known
 unpolled or ambiguous HNSW, IVF, DiskANN, SPIRE, and DistANN surfaces and
 requires each to be documented as bounded/outer-polled, safely remediated, or
 split into a narrower structural follow-up.
@@ -47,7 +47,7 @@ The response closes both findings in
 ## Reviewer Focus
 
 - Does the inventory accurately describe every current explicit poll?
-- Is Task 200 sufficiently concrete to satisfy “missing sites are filed as
+- Is Task 201 sufficiently concrete to satisfy “missing sites are filed as
   follow-ups” without claiming remediation?
 - Are the longjmp-safety constraints explicit enough to prevent unsafe poll
   placement?

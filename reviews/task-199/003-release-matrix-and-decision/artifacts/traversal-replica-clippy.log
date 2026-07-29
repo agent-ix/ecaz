@@ -1,0 +1,3 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task-199)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 44.80s
+COMMAND: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings

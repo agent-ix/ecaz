@@ -1,0 +1,82 @@
+{
+  "suite": "task188-review-fixes-equivalence",
+  "schema_version": 1,
+  "config": "reviews/task-188/007-review-fixes/artifacts/task188-review-fixes-equivalence-suite.json",
+  "config_sha256": "811820e620c57ff9ea698912d4c280d694c75c3d7054691dcfcc2d39a5110d4e",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785184850941,
+  "runner_git_commit": "2d9f6099b34ab079eb0ae536106b97cee30c1a5f-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": "/home/peter/.pgrx",
+    "port": 28818,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "load-10k-hnsw",
+      "kind": "load",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "--host",
+        "/home/peter/.pgrx",
+        "--port",
+        "28818",
+        "--log-file",
+        "reviews/task-188/007-review-fixes/artifacts/run/equivalence/current-load/load-10k-hnsw.log",
+        "corpus",
+        "load",
+        "--prefix",
+        "task188_review_fixes_hnsw",
+        "--profile",
+        "ec_hnsw",
+        "--corpus-file",
+        "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged/ec_real_10k_corpus.tsv",
+        "--queries-file",
+        "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged/ec_real_10k_queries.tsv",
+        "--allow-manifest-mismatch",
+        "--bits",
+        "4",
+        "--seed",
+        "42",
+        "--m",
+        "16",
+        "--ef-construction",
+        "128"
+      ],
+      "selected": true,
+      "tags": [
+        "task188",
+        "review-fixes",
+        "equivalence",
+        "load"
+      ],
+      "expected_artifacts": [
+        "reviews/task-188/007-review-fixes/artifacts/run/equivalence/current-load/load-10k-hnsw.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785184850963,
+      "finished_at_unix_ms": 1785184881350,
+      "duration_ms": 31821,
+      "exit_code": 0
+    },
+    {
+      "name": "latency-10k-hnsw",
+      "kind": "latency",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task188",
+        "review-fixes",
+        "equivalence",
+        "latency"
+      ],
+      "expected_artifacts": [
+        "reviews/task-188/007-review-fixes/artifacts/run/equivalence/current-load/latency-10k-hnsw.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

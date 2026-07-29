@@ -1,0 +1,16 @@
+2026-07-25 22:04:03.442 PDT [232885] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-25 22:04:03.453 PDT [232885] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-25 22:04:03.453 PDT [232885] LOG:  listening on IPv4 address "127.0.0.1", port 42421
+2026-07-25 22:04:03.463 PDT [232891] LOG:  database system was shut down at 2026-07-25 22:04:01 PDT
+2026-07-25 22:04:03.470 PDT [232885] LOG:  database system is ready to accept connections
+2026-07-25 22:05:34.529 PDT [233215] LOG:  skipping analyze of "_ecdz_graph_17691_71717171717141718171717171717171" --- lock not available
+2026-07-25 22:09:03.576 PDT [232889] LOG:  checkpoint starting: time
+2026-07-25 22:09:34.447 PDT [234177] LOG:  skipping analyze of "_ecdz_graph_17691_73737373737343738373737373737373" --- lock not available
+2026-07-25 22:10:02.245 PDT [232885] LOG:  received fast shutdown request
+2026-07-25 22:10:02.306 PDT [232885] LOG:  aborting any active transactions
+2026-07-25 22:10:02.306 PDT [232885] LOG:  background worker "logical replication launcher" (PID 232894) exited with exit code 1
+2026-07-25 22:10:02.434 PDT [232889] LOG:  checkpoint complete: wrote 758 buffers (4.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 6 recycled; write=58.648 s, sync=0.091 s, total=58.858 s; sync files=283, longest=0.005 s, average=0.001 s; distance=95584 kB, estimate=95584 kB; lsn=0/CE571B8, redo lsn=0/74AC8A8
+2026-07-25 22:10:02.434 PDT [232889] LOG:  shutting down
+2026-07-25 22:10:02.439 PDT [232889] LOG:  checkpoint starting: shutdown immediate
+2026-07-25 22:10:02.689 PDT [232889] LOG:  checkpoint complete: wrote 12903 buffers (78.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 5 recycled; write=0.046 s, sync=0.164 s, total=0.255 s; sync files=35, longest=0.027 s, average=0.005 s; distance=91818 kB, estimate=95208 kB; lsn=0/CE57230, redo lsn=0/CE57230
+2026-07-25 22:10:02.711 PDT [232885] LOG:  database system is shut down

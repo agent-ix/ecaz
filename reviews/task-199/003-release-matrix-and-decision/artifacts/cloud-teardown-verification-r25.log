@@ -1,0 +1,30 @@
+Task 199 Graviton teardown verification
+timestamp=2026-07-25T15:10:53-07:00
+region=us-west-2
+
+Benchmark evidence prefix:
+s3://ecaz-cloud-10k-ec01a461/bench-artifacts/task199-graviton-ordered-identity-10k/20260725T193152Z/
+
+aws ec2 describe-instances --region us-west-2 \
+  --instance-ids i-0f6a6d3301700bc94 i-092ab56483c1ea779 \
+  --query 'Reservations[].Instances[].{InstanceId:InstanceId,State:State.Name}' \
+  --output json
+[]
+
+Both benchmark instance IDs are absent after termination.
+
+aws ec2 describe-volumes --region us-west-2 \
+  --volume-ids vol-0b504fe241bd40f5f \
+  --query 'Volumes[].{VolumeId:VolumeId,State:State}' --output json
+InvalidVolume.NotFound: The volume 'vol-0b504fe241bd40f5f' does not exist.
+
+aws s3api list-objects-v2 --region us-west-2 \
+  --bucket ecaz-cloud-10k-ec01a461 \
+  --prefix bench-artifacts/task199-graviton-ordered-identity-10k/20260725T193152Z/ \
+  --query '{ObjectCount:length(Contents),TotalBytes:sum(Contents[].Size)}' \
+  --output json
+{"ObjectCount":14,"TotalBytes":150931}
+
+The final Terraform destroy returned nonzero only because the retained,
+non-empty evidence bucket correctly refused deletion. Benchmark compute and
+the transient data volume are gone; the cited immutable evidence remains.

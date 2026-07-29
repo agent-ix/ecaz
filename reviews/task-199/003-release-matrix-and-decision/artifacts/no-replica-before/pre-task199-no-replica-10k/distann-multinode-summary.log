@@ -1,0 +1,1 @@
+[distann-multicluster] physical_benchmark_no_replica_insert scale=10k pass=true ready_replica_absent=true replica_status_api_absent=true trials=5 rows_per_trial=2000 median_ns=863843711 rows_per_second=2315.234 corpus_prefix=ec_real_10k extension_git_sha=ebf9950c1e8a3a6cbbf66a19e8117f9c64b17436 extension_build_profile=release

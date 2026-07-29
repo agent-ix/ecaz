@@ -1,0 +1,19 @@
+Task 188 full-scale BW8 candidate result lines
+head_sha=c1c43a9bf66c25b390535ba47e52e0e251a5d6e7
+suite_manifest=reviews/task-188/003-isolated-candidate/artifacts/run/suite-manifest.json
+suite_results=reviews/task-188/003-isolated-candidate/artifacts/run/results.jsonl
+lane=PG18 local; three-owner physical DistANN; isolated one-index-per-table; warm serial latency; 200 queries; 2000 recall trials; 50 iterations; 10 warmups
+
+scale=10k control=bw4 recall=1.0000 latency_mean_ms=34.20 latency_p95_ms=39.30 physical_bytes=242794496
+scale=10k candidate=bw8 recall=1.0000 latency_mean_ms=34.20 latency_p95_ms=41.10 physical_bytes=242794496
+scale=10k delta_recall=+0.0000 delta_mean_ms=+0.00 delta_p95_ms=+1.80 storage_delta_bytes=0 topology_gate=true engagement=true
+
+scale=50k control=bw4 recall=0.9840 latency_mean_ms=40.00 latency_p95_ms=49.40 physical_bytes=1242750976
+scale=50k candidate=bw8 recall=0.9865 latency_mean_ms=47.90 latency_p95_ms=71.20 physical_bytes=1242750976
+scale=50k delta_recall=+0.0025 delta_mean_ms=+7.90 delta_p95_ms=+21.80 storage_delta_bytes=0 topology_gate=true engagement=true
+
+scale=100k control=bw4 recall=0.9740 latency_mean_ms=43.40 latency_p95_ms=52.10 physical_bytes=2496651264
+scale=100k candidate=bw8 recall=0.9805 latency_mean_ms=44.10 latency_p95_ms=61.50 physical_bytes=2496651264
+scale=100k delta_recall=+0.0065 delta_mean_ms=+0.70 delta_p95_ms=+9.40 storage_delta_bytes=0 topology_gate=true engagement=true
+
+decision=select BW8 as the sole follow-up research candidate; do not promote a production default or persisted-format change in Task 188

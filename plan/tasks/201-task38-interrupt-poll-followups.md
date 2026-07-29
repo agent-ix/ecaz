@@ -1,7 +1,11 @@
-# Task 200: Task 38 Long-Running Interrupt-Poll Follow-ups
+# Task 201: Task 38 Long-Running Interrupt-Poll Follow-ups
 
 Status: **proposed by the Task 38 Apple-M5 audit** (2026-07-26). Priority: P1
 correctness and operability.
+
+This task was originally numbered 200 on the Task 38 branch and was renumbered
+to 201 when merging with `main`, where Task 200 had independently been assigned
+to the ec_distann backend-memory-retention investigation.
 
 ## Why
 

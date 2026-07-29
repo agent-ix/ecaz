@@ -85,7 +85,7 @@ pub struct ProviderEnvArgs {
     /// Optional marker file written by every process that loads the provider.
     #[arg(long)]
     marker: Option<String>,
-    /// Optional file whose existence arms injection after postmaster startup.
+    /// Optional file whose presence arms injection after the provider loads.
     #[arg(long)]
     arm_file: Option<String>,
 }
@@ -119,7 +119,7 @@ pub struct ProviderRestartArgs {
     /// Marker file written by every process that loads the provider.
     #[arg(long)]
     marker: Option<PathBuf>,
-    /// Optional file whose existence arms injection after postmaster startup.
+    /// Optional file whose presence arms injection after the provider loads.
     #[arg(long)]
     arm_file: Option<PathBuf>,
 }

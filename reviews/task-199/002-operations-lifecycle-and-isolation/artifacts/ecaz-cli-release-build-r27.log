@@ -1,0 +1,24 @@
+Script started on 2026-07-25 15:36:46-07:00 [<not executed on terminal>]
+   Compiling pgrx-bindgen v0.17.0
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.claude/worktrees/task199-final-build)
+   Compiling ecaz-fault-injection v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task199-final-build/crates/ecaz-fault-injection)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task199-final-build/crates/ecaz-cli)
+   Compiling ecaz-cloud v0.1.0 (/home/peter/dev/ecaz/.claude/worktrees/task199-final-build/crates/ecaz-cloud)
+   Compiling ndarray v0.16.1
+   Compiling pgrx-pg-sys v0.17.0
+   Compiling pgrx v0.17.0
+warning: field `path` is never read
+   --> crates/ecaz-cli/src/commands/corpus/load.rs:190:5
+    |
+189 | struct LoadedDistributedPlacementConfig {
+    |        -------------------------------- field in this struct
+190 |     path: PathBuf,
+    |     ^^^^
+    |
+    = note: `LoadedDistributedPlacementConfig` has a derived impl for the trait `Debug`, but this is intentionally ignored during dead code analysis
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `ecaz-cli` (bin "ecaz") generated 1 warning
+    Finished `release` profile [optimized] target(s) in 10m 02s
+
+Script done on 2026-07-25 15:46:36-07:00 [COMMAND_EXIT_CODE="0"]

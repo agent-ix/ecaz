@@ -28,7 +28,7 @@ rewrite packet 005 or claim Task 38 completion. It distinguishes:
 | A deliberately introduced invalid-buffer-style bug is caught by cancellation | Packet 007 live seven-fixture cancellation mutation markers and final approval | Complete on M5. The canonical “invalid buffer” text is an example; the approved control injects an exact wrong AM palloc failure and proves the production `57014` oracle rejects it. |
 | Resource exhaustion catches an accumulator/palloc failure without recovery | Packet 007 live seven-fixture armed/disarmed real-AM recovery evidence and final approval | Complete on M5. Seven rejection markers prove the armed state; the final seven-fixture completion marker and approved control flow prove the same scans succeeded after disarm/reset. |
 | All five AMs and all three DistANN codecs survive applicable smoke lanes | Historical four-AM evidence and packet 001 M5 DistANN evidence | Partially complete overall. The Intel/Linux provider/socket/cgroup cases remain unexecuted. |
-| Document every long-running-loop interrupt site and file follow-ups | Packet 006 exact explicit-boundary artifact, final approval, and Task 200 | Complete for Task 38's inventory/follow-up criterion. Task 200 owns classification/remediation of unpolled loops and remains open independently. |
+| Document every long-running-loop interrupt site and file follow-ups | Packet 006 exact explicit-boundary artifact, final approval, and Task 201 | Complete for Task 38's inventory/follow-up criterion. Task 201 owns classification/remediation of unpolled loops and remains open independently. |
 | `make fault-full` is locally authoritative | Current Make dependency list and implemented component operators | Not complete. The aggregate itself still defaults generic lanes to dry-run, omits mutation/socket/cgroup operators, and does not sequence provider modes, restart/restore, exact markers/arm files, or measured slow baselines. It requires implementation review and designated Intel/Linux execution evidence. |
 | `docs/hardening.md` contains the fault-injection model | Seven-fixture matrix, operator model, provider/socket/cgroup procedures, recovery oracles, mutation controls, and interrupt inventory | Complete. |
 
@@ -38,7 +38,7 @@ rewrite packet 005 or claim Task 38 completion. It distinguishes:
 | --- | --- | --- |
 | Cancellation mutation control | Packet 007 code checkpoint `374166bd3`, live seven-fixture log, reviewer approval `67177c713` | Closed on M5. |
 | Resource/palloc negative control | Same packet 007 checkpoint, armed/disarmed real-AM recovery evidence, and approval | Closed on M5. |
-| Exhaustive interrupt inventory | Packet 006 inventory checkpoint and reviewer approval `6cc24bf3e` | Closed for Task 38; Task 200 owns follow-up work. |
+| Exhaustive interrupt inventory | Packet 006 inventory checkpoint and reviewer approval `6cc24bf3e` | Closed for Task 38; Task 201 owns follow-up work. |
 
 ## Remaining Aggregate And Designated Intel/Linux Matrix
 

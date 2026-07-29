@@ -1,0 +1,40 @@
+{
+  "name": "task188-batch10-stage-counters-efficient",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-188/006-batch10-stage-counters/artifacts/run/efficient-20260727-r2",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "bw8-100k-batch10-stage-counters-efficient",
+      "tags": ["task188", "review-follow-up", "batch10", "stage-counters", "efficient", "bw8", "100k", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/bw8-100k-batch10-stage-counters-efficient",
+      "run_dir": "target/task188-bw8-100k-batch10-stage-counters-efficient-r2",
+      "nodes": 3,
+      "base_port": 41940,
+      "graph_degree": 32,
+      "head_index_cap": 16384,
+      "head_policy": "training_landmarks",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "stage_counter_only": true,
+      "distann_stage_counters": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "benchmark_backend_batch_size": 5,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "bw4-control", "seed_strategy": "head_sample_exact", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "materialization_batch_size": 10, "beam_width": 4, "hop_rounds": 100 },
+        { "name": "bw8-candidate", "seed_strategy": "head_sample_exact", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "materialization_batch_size": 10, "beam_width": 8, "hop_rounds": 100 }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}

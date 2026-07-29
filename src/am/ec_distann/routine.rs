@@ -91,6 +91,12 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
     _index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
     pg_am_callback!({
+        // This is intentionally redundant with the statement-level
+        // ExecutorStart guard. A mutation can see Building there, wait behind
+        // the build's ShareRowExclusiveLock in ExecOpenIndices, and resume
+        // only after the replica commits Ready. The per-tuple check closes
+        // that ordering window.
+        super::traversal_replica::guard_traversal_replica_mutation((*index_relation).rd_id);
         crate::fault::maybe_fail_palloc("ec_distann aminsert entry");
         // The persisted format, not the mutable reloption, is authoritative
         // across ALTER/REINDEX boundaries. This cached block-0 read is the
@@ -120,6 +126,9 @@ unsafe extern "C-unwind" fn ec_distann_ambulkdelete(
     callback_state: *mut c_void,
 ) -> *mut pg_sys::IndexBulkDeleteResult {
     pg_am_callback!({
+        super::traversal_replica::invalidate_traversal_replica_for_maintenance(
+            (*(*info).index).rd_id,
+        );
         crate::fault::maybe_fail_palloc("ec_distann bulkdelete stats");
         // See aminsert: persisted metadata is authoritative. Keep this read
         // until a measured relcache cache can prove correct invalidation.
@@ -542,17 +551,11 @@ pub(crate) unsafe fn collect_distann_hits(
                     exact_dist,
                 });
             }
-            // NB (011-04-P1): a deterministic total-order tie-break
-            // `(exact_dist, vec_id)` here WOULD make the served prefix invariant
-            // across iterative deepening, but it is COUPLED to the FR-081-AC-4
-            // early-exit soundness (164-P1): with a total order,
-            // `test_ec_distann_limit_beyond_top_k_deepens_correctly` reveals that
-            // a shallow-bar early-exit can declare a proven prefix that omits a
-            // true top-k member, so serving it before deepening is unsound. The
-            // tie-break must land WITH the early-exit fix, not before it; until
-            // then this stays a bare distance sort (matching the single-node AM
-            // and multi-node CustomScan, so their results remain identical).
-            hits.sort_unstable_by(|left, right| left.exact_dist.total_cmp(&right.exact_dist));
+            hits.sort_unstable_by(|left, right| {
+                left.exact_dist
+                    .total_cmp(&right.exact_dist)
+                    .then_with(|| left.vec_id.cmp(&right.vec_id))
+            });
         }
     }
 
