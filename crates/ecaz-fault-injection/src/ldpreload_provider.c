@@ -624,7 +624,7 @@ ssize_t pwritev(int fd, const struct iovec *iov, int iovcnt, off_t offset) {
         errno = ENOSPC;
         return -1;
     }
-    maybe_sleep();
+    maybe_sleep_fd("pwritev", fd);
     ssize_t (*real_pwritev)(int, const struct iovec *, int, off_t) =
         real_symbol("pwritev");
     return real_pwritev ? real_pwritev(fd, iov, iovcnt, offset) : -1;
