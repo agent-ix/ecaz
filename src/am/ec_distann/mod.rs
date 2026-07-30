@@ -38,6 +38,7 @@ mod epoch;
 mod epoch_manifest;
 mod expand;
 mod expand_error;
+mod gateway_copy;
 mod generation_catalog;
 mod generation_descriptor;
 mod generation_read;

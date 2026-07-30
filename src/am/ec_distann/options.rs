@@ -48,6 +48,11 @@ static ECDISTANN_SHARDED_HEAD_SEARCH_GUC: GucSetting<bool> = GucSetting::<bool>:
 /// per shard. 0 means each shard is served by its owner.
 static ECDISTANN_HEAD_REPLICA_COUNT_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
 
+/// TRAV-30 bounded gateway copies (Task 210 P3): how many gateway nodes'
+/// routing payloads a coordinator may cache. A stated constant, never a
+/// function of N. 0 disables gateway copies.
+static ECDISTANN_GATEWAY_COPY_CAPACITY_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
+
 /// FR-081 hop-round budget H: BW x H is the hard per-query expansion cap
 /// (NFR-019).
 static ECDISTANN_HOP_ROUNDS_GUC: GucSetting<i32> =
@@ -354,6 +359,16 @@ pub(super) fn register_gucs() {
         c"Task 193 benchmark-only owner payload prepared-plan cache arm.",
         c"When enabled, physical payload requests reuse a generation-owned, projection-fingerprinted SPI plan. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_distann.gateway_copy_capacity",
+        c"TRAV-30 bounded gateway copy capacity (Task 210 P3).",
+        c"How many frequently traversed gateway nodes' routing payloads (neighbour ids and neighbour codes -- never full-precision vectors, never the whole graph) a coordinator may cache. The bound is a constant independent of corpus size, which is what distinguishes this from the withdrawn FR-084 full-graph replica. 0 disables gateway copies.",
+        &ECDISTANN_GATEWAY_COPY_CAPACITY_GUC,
+        0,
+        65536,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -776,6 +791,11 @@ pub(super) fn current_candidate_heap_limit() -> usize {
 /// opened only under an explicit opt-in. Off by default in every build profile.
 /// NFR-021 clause 3 (Task 210 P2a): search the head as roster shards.
 /// DISTRIBUTEDANN 4.1 head replica count (Task 210 P2b).
+/// TRAV-30 bounded gateway copy capacity (Task 210 P3).
+pub(super) fn gateway_copy_capacity() -> usize {
+    usize::try_from(ECDISTANN_GATEWAY_COPY_CAPACITY_GUC.get()).unwrap_or(0)
+}
+
 pub(super) fn head_replica_count() -> usize {
     usize::try_from(ECDISTANN_HEAD_REPLICA_COUNT_GUC.get()).unwrap_or(0)
 }

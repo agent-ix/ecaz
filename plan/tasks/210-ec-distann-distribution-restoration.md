@@ -204,7 +204,19 @@ to the latency question the replica answered by abandoning sharding. Bounded
 gateway / top-layer copies whose capacity is a stated constant independent of N,
 proven so by the P0 emitter at every scale rather than by argument.
 
-Gate: 10k/50k/100k against the owner arm.
+**Implementation finding (established in code, 2026-07-30).** A gateway copy can
+answer the *candidate* half of Algorithm 1 locally — neighbour ids and neighbour
+code scores, which is pure routing — but **not** the *result* half. A node's
+`exact_dist` requires its full-precision vector, and holding those at the
+coordinator is precisely the FR-084 trap this candidate exists to avoid. So a
+gateway copy reduces response payload and owner scoring work; it does **not**
+remove the owner round trip. `DistannGatewayCopySet` therefore stores routing
+payload only, and the P3 A/B must be judged on bytes and owner work, not on
+eliminated hops. A design that eliminated the hop would be holding vectors and
+would fail NFR-021.
+
+Gate: 10k/50k/100k against the owner arm, reported as response bytes and owner
+service time rather than round-trip count.
 
 ### P4 — Ownership, so this cannot be re-deferred
 
