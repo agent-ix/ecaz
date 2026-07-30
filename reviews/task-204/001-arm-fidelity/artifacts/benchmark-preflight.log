@@ -1,0 +1,11 @@
+command: /home/peter/.cargo-target/release/ecaz bench suite audit --config reviews/task-204/001-arm-fidelity/artifacts/task204-two-arm-100k-suite.json
+result: audit passed; 1 step
+
+command: /home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-204/001-arm-fidelity/artifacts/task204-two-arm-100k-suite.json --dry-run
+result: dry-run expanded the two-arm physical PG18 command successfully
+
+command: approved execution of the same suite with the external run directory
+result: stopped before benchmark evidence; the fixture reported fallback rows=2000 dim=16 because the staged corpus was absent
+missing inputs: /home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv, ec_real_100k_queries.tsv, ec_real_100k_manifest.json
+cleanup: removed /home/peter/.ecaz/clusters/task204-arm-fidelity-100k after stopping the invalid fallback run
+fixture policy: the configured run directory is /home/peter/.ecaz/clusters/task204-arm-fidelity-100k, outside the repository and target/

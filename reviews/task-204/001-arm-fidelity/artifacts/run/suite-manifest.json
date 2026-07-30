@@ -1,0 +1,79 @@
+{
+  "suite": "task204-two-arm-100k",
+  "schema_version": 1,
+  "config": "reviews/task-204/001-arm-fidelity/artifacts/task204-two-arm-100k-suite.json",
+  "config_sha256": "91fc3d4849af3735c654ad5de2f8362045b8ed601f2714003fcc60f63b626938",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785370748873,
+  "runner_git_commit": "447458f0bf81bb03cc0aad70e6b6e1e0687ff169",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "storage-two-arm-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-204/001-arm-fidelity/artifacts/run/storage-two-arm-100k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task204-arm-fidelity-100k",
+        "--log-file",
+        "reviews/task-204/001-arm-fidelity/artifacts/run/storage-two-arm-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "5",
+        "--benchmark-warmup-iterations",
+        "2",
+        "--base-port",
+        "41620",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "owner-control:persisted_head:32:32:rabitq:0:off:4:100:off",
+        "--benchmark-seed-variant",
+        "coordinator-replica:persisted_head:32:32:rabitq:0:off:4:100:on",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task204",
+        "storage",
+        "two-arm",
+        "ec_real_100k"
+      ],
+      "expected_artifacts": [
+        "reviews/task-204/001-arm-fidelity/artifacts/run/storage-two-arm-100k/distann-multinode-summary.log"
+      ],
+      "status": "pending",
+      "started_at_unix_ms": 1785370748917
+    }
+  ]
+}
