@@ -39,6 +39,10 @@ static ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC: GucSetting<i32> =
 static ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(false);
 
+/// NFR-021 clause 3: search the FR-080 head as roster shards, so no node holds
+/// the whole head (Task 210 P2a). A/B-able against the coordinator-local head.
+static ECDISTANN_SHARDED_HEAD_SEARCH_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+
 /// FR-081 hop-round budget H: BW x H is the hard per-query expansion cap
 /// (NFR-019).
 static ECDISTANN_HOP_ROUNDS_GUC: GucSetting<i32> =
@@ -345,6 +349,14 @@ pub(super) fn register_gucs() {
         c"Task 193 benchmark-only owner payload prepared-plan cache arm.",
         c"When enabled, physical payload requests reuse a generation-owned, projection-fingerprinted SPI plan. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.sharded_head_search",
+        c"NFR-021 clause 3 sharded FR-080 head search (Task 210 P2a).",
+        c"When enabled, each owner searches the head landmarks it owns under the FR-078 placement hash, reading their co-placed full-precision vectors locally, and the coordinator merges bounded per-owner seeds. No landmark vector crosses the wire.",
+        &ECDISTANN_SHARDED_HEAD_SEARCH_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -747,6 +759,11 @@ pub(super) fn current_candidate_heap_limit() -> usize {
 
 /// NFR-021 clause 4 (Task 210 P1): the non-conforming traversal replica is
 /// opened only under an explicit opt-in. Off by default in every build profile.
+/// NFR-021 clause 3 (Task 210 P2a): search the head as roster shards.
+pub(super) fn sharded_head_search() -> bool {
+    ECDISTANN_SHARDED_HEAD_SEARCH_GUC.get()
+}
+
 pub(super) fn allow_nonconforming_replica() -> bool {
     ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC.get()
 }

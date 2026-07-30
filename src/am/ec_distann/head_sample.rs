@@ -1204,6 +1204,13 @@ impl DistannPhysicalHeadIndex {
         self.policy
     }
 
+    /// The head's landmark ids. Bounded by capacity `C`, so the coordinator may
+    /// hold this list (NFR-021 clause 2) while the landmark *vectors* live on
+    /// their owners (clause 3) — Task 210 P2a.
+    pub(crate) fn members(&self) -> &[u64] {
+        &self.vec_ids
+    }
+
     pub(crate) fn search(
         &self,
         query: &[f32],

@@ -2820,6 +2820,66 @@ impl PhysicalGenerationScan {
         })
     }
 
+    /// Fan the FR-080 head search out across the roster (Task 210 P2a).
+    ///
+    /// Each owner searches the landmarks it owns under the FR-078 placement
+    /// hash, reading their co-placed vectors locally, and returns at most
+    /// `seed_count` seeds. The coordinator merges to `seed_count` — bounded
+    /// state under NFR-021 clause 2 — and holds no landmark vectors.
+    fn sharded_head_seeds(
+        &self,
+        query: &[f32],
+        members: &[u64],
+        search_width: usize,
+        seed_count: usize,
+        head_policy: super::generation_descriptor::DistannHeadPolicy,
+    ) -> Result<Vec<DistannSeedCandidate>, String> {
+        let owner_count = self.routes.len();
+        if owner_count == 0 {
+            return Err("EC_NODE_DESCRIPTOR: physical scan has no owner routes".to_owned());
+        }
+        let per_owner_members = (0..owner_count)
+            .map(|owner_ordinal| {
+                super::head_sample::head_shard_members(
+                    members,
+                    owner_ordinal,
+                    owner_count,
+                    self.descriptor.placement_hash_version,
+                )
+            })
+            .collect::<Vec<_>>();
+        let search_width = i32::try_from(search_width).unwrap_or(i32::MAX);
+        let seed_count_wire = i32::try_from(seed_count).unwrap_or(i32::MAX);
+        let mut requests = Vec::with_capacity(owner_count);
+        for (ordinal, owned) in per_owner_members.iter().enumerate() {
+            if owned.is_empty() {
+                continue;
+            }
+            let route = &self.routes[ordinal];
+            let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                format!("EC_NODE_DESCRIPTOR: physical owner {ordinal} route has no connection")
+            })?;
+            requests.push(super::remote_transport::DistannPhysicalHeadRequest {
+                conninfo,
+                index_regclass: &route.remote_index_regclass,
+                epoch_fingerprint: &self.fingerprint,
+                query,
+                member_vec_ids: owned,
+                search_width,
+                seed_count: seed_count_wire,
+                build_list_size: super::ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
+                alpha: super::ECDISTANN_DEFAULT_ALPHA,
+                head_policy: head_policy as i32,
+            });
+        }
+        let responses = super::remote_transport::remote_physical_head_search_batch(&requests);
+        let mut per_owner = Vec::with_capacity(responses.len());
+        for response in responses {
+            per_owner.push(response.map_err(|error| error.to_string())?);
+        }
+        Ok(super::head_sample::merge_head_seeds(per_owner, seed_count))
+    }
+
     fn select_seed_candidates(&self, query: &[f32]) -> Result<Vec<DistannSeedCandidate>, String> {
         if query.len() != usize::from(self.descriptor.dimensions) {
             return Err(format!(
@@ -2832,6 +2892,22 @@ impl PhysicalGenerationScan {
         let search_width = super::options::current_head_search_width(production_seed_count);
         let seed_count = super::options::current_head_seed_count(production_seed_count);
         let seed_mode = super::options::current_physical_seed_mode()?;
+        // NFR-021 clause 3 (Task 210 P2a): when the head is sharded, the
+        // coordinator keeps only the bounded membership list and every owner
+        // searches the landmarks it already holds.
+        if super::options::sharded_head_search() && self.routes.len() > 1 {
+            if let Some(head) = self.head_index.as_ref() {
+                if seed_mode == super::options::PhysicalSeedMode::PersistedHead {
+                    return self.sharded_head_seeds(
+                        query,
+                        head.members(),
+                        search_width,
+                        seed_count,
+                        head.policy(),
+                    );
+                }
+            }
+        }
         let seeds = match seed_mode {
             super::options::PhysicalSeedMode::PersistedHead => self
                 .head_index

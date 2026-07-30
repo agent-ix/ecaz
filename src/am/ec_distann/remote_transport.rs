@@ -738,6 +738,117 @@ pub(crate) struct DistannPhysicalExpandRequest<'a> {
     pub(crate) candidate_limit: Option<i32>,
 }
 
+/// Owner-side FR-080 head-shard search request (Task 210 P2a).
+pub(crate) struct DistannPhysicalHeadRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) query: &'a [f32],
+    pub(crate) member_vec_ids: &'a [u64],
+    pub(crate) search_width: i32,
+    pub(crate) seed_count: i32,
+    pub(crate) build_list_size: i32,
+    pub(crate) alpha: f32,
+    pub(crate) head_policy: i32,
+}
+
+const PHYSICAL_HEAD_SEARCH_SQL: &str = "SELECT vec_id, dist
+   FROM ec_distann_head_search_physical(
+       $1::text::regclass, $2::bytea, $3::real[], $4::bigint[],
+       $5::integer, $6::integer, $7::integer, $8::real, $9::integer)";
+
+/// Fan the head search out to every owner holding part of the head, one RPC
+/// per owner, driven together so a hop costs max(RTT) rather than their sum.
+/// Each owner returns at most `seed_count` seeds, so the coordinator's inbound
+/// state stays bounded by `owners x k_head` before the merge trims it to
+/// `k_head` (NFR-021 clause 2).
+pub(crate) fn remote_physical_head_search_batch(
+    requests: &[DistannPhysicalHeadRequest<'_>],
+) -> Vec<Result<Vec<super::scan::DistannSeedCandidate>, DistannExpandError>> {
+    if requests.is_empty() {
+        return Vec::new();
+    }
+    let wire_ids = requests
+        .iter()
+        .map(|request| {
+            request
+                .member_vec_ids
+                .iter()
+                .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let conn_keys = requests
+        .iter()
+        .map(|request| lifecycle_connection_key(request.conninfo))
+        .collect::<Vec<_>>();
+    let outcome = with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            let specs = requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
+                .collect::<Vec<_>>();
+            ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            ensure_physical_statements(connections, &conn_keys, PHYSICAL_HEAD_SEARCH_SQL).await?;
+            let futures = requests.iter().enumerate().map(|(index, request)| {
+                let pooled = &connections[&conn_keys[index]];
+                run_one_physical_head_search(
+                    &pooled.client,
+                    &pooled.prepared_statements[PHYSICAL_HEAD_SEARCH_SQL],
+                    request,
+                    &wire_ids[index],
+                )
+            });
+            Ok(join_owner_futures(futures).await)
+        })
+    });
+    match outcome {
+        Ok(results) => results,
+        Err(error) => requests.iter().map(|_| Err(error.clone())).collect(),
+    }
+}
+
+async fn run_one_physical_head_search(
+    client: &tokio_postgres::Client,
+    statement: &tokio_postgres::Statement,
+    request: &DistannPhysicalHeadRequest<'_>,
+    wire_ids: &[i64],
+) -> Result<Vec<super::scan::DistannSeedCandidate>, DistannExpandError> {
+    let rows = client
+        .query(
+            statement,
+            &[
+                &request.index_regclass,
+                &request.epoch_fingerprint,
+                &request.query,
+                &wire_ids,
+                &request.search_width,
+                &request.seed_count,
+                &request.build_list_size,
+                &request.alpha,
+                &request.head_policy,
+            ],
+        )
+        .await
+        .map_err(|error| {
+            DistannExpandError::Internal(format!("ec_distann remote head search failed: {error}"))
+        })?;
+    Ok(rows
+        .into_iter()
+        .map(|row| super::scan::DistannSeedCandidate {
+            vec_id: u64::from_le_bytes(row.get::<_, i64>(0).to_le_bytes()),
+            dist: row.get::<_, f32>(1),
+        })
+        .collect())
+}
+
 pub(crate) fn remote_physical_expand_batch(
     requests: &[DistannPhysicalExpandRequest<'_>],
 ) -> Vec<Result<Vec<DistannExpandedNode>, DistannExpandError>> {
