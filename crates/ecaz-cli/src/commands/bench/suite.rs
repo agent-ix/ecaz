@@ -99,12 +99,6 @@ struct RunArgs {
     /// Permit latency/recall suite steps against a debug-built backend.
     #[arg(long)]
     allow_debug_backend: bool,
-
-    /// Fail when a measured 100k/10k per-node storage growth row exceeds 2x.
-    /// This is opt-in because fixed-roster sharded fixtures intentionally grow
-    /// owner state with the corpus; such fixtures must not use this gate.
-    #[arg(long)]
-    fail_on_growth_breach: bool,
 }
 
 #[derive(Args, Debug)]
@@ -630,6 +624,9 @@ struct DistannLocalMultinodeStep {
     head_index_cap: Option<u32>,
     #[serde(default)]
     beam_width: Option<u32>,
+    /// FR-081 retained candidate heap size L applied to benchmark query arms.
+    #[serde(default)]
+    candidate_heap_limit: Option<u32>,
     #[serde(default)]
     hop_rounds: Option<u32>,
     #[serde(default)]
@@ -1017,10 +1014,7 @@ enum StepStatus {
 
 pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
     match args.command {
-        Some(SuiteCommand::Run(run_args)) => {
-            let fail_on_growth_breach = run_args.fail_on_growth_breach;
-            run_suite(conn, run_args.into(), fail_on_growth_breach).await
-        }
+        Some(SuiteCommand::Run(run_args)) => run_suite(conn, run_args.into()).await,
         Some(SuiteCommand::Audit(audit_args)) => audit_suite(&audit_args.config).await,
         Some(SuiteCommand::Status(status_args)) => status_manifest(&status_args.manifest).await,
         Some(SuiteCommand::Report(report_args)) => {
@@ -1050,7 +1044,6 @@ pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
                     manifest_output: args.manifest_output,
                     allow_debug_backend: false,
                 },
-                false,
             )
             .await
         }
@@ -1074,11 +1067,7 @@ impl From<RunArgs> for SuiteRunOptions {
     }
 }
 
-async fn run_suite(
-    conn: &ConnectionOptions,
-    args: SuiteRunOptions,
-    fail_on_growth_breach: bool,
-) -> Result<()> {
+async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()> {
     let (raw, mut config) = load_config(&args.config).await?;
     if let Some(artifact_dir) = &args.artifact_dir {
         config.artifact_dir = Some(artifact_dir.clone());
@@ -1200,19 +1189,6 @@ async fn run_suite(
     let mut rows = extract_result_rows(&manifest).await?;
     assert_distann_storage_ratio_rows(&manifest, &rows)?;
     let growth_rows = distann_storage_growth_rows(&rows);
-    if fail_on_growth_breach {
-        let breaches = growth_rows
-            .iter()
-            .filter_map(|row| row.values.get("growth_ratio"))
-            .filter_map(|value| value.parse::<f64>().ok())
-            .filter(|ratio| *ratio > 2.0)
-            .count();
-        if breaches > 0 {
-            bail!(
-                "suite storage growth gate failed: {breaches} per-node 100k/10k ratios exceed 2.0"
-            );
-        }
-    }
     rows.extend(growth_rows);
     if let Some(path) = args.results_output.clone().or_else(|| {
         config
@@ -1878,7 +1854,10 @@ fn distann_storage_growth_rows(rows: &[ResultRow]) -> Vec<ResultRow> {
                     ("high_total_resident_bytes".into(), format_bytes(high)),
                     ("growth_ratio".into(), format!("{ratio:.6}")),
                     ("threshold".into(), "2.0".into()),
-                    ("gate_default".into(), "disabled".into()),
+                    (
+                        "judgement".into(),
+                        "unjudged_nfr021_owner_resolution_pending".into(),
+                    ),
                 ]),
             })
         })
@@ -4611,6 +4590,11 @@ fn expand_distann_local_multinode(
         &mut args,
         "--beam-width",
         step.beam_width.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--candidate-heap-limit",
+        step.candidate_heap_limit.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,

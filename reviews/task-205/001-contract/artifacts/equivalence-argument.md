@@ -5,20 +5,20 @@ the owner threshold is the IP floor corresponding to the worst retained beam
 member. An owner drops only neighbors whose code score is worse than that floor;
 threshold ties survive and are ordered by `(code_distance, vec_id)`.
 
-The threshold is sent only when the live beam already contains at least the
-remaining expansion budget (`remaining rounds × BW`). Before that point, the
-threshold is `NULL`, so a candidate that could still be needed to fill the
-bounded beam cannot be removed. The owner limit is that remaining budget, with a
-minimum of one for the final response; it bounds each response to candidates
-that can be consumed by the remaining rounds. The coordinator retains its
-existing visited-set, exact-distance, tombstone, early-exit, and final ordering
-rules.
+The coordinator retains a real candidate heap of size `L`, with
+`L >= max(BW, k)`, and sends `t = peek_worst(H_C)` once the bounded heap is
+full. It sends the same `l = L` on every round. Each owner applies the threshold
+and then truncates once across the merged candidates for the whole request,
+not once per requested vec_id. The current BW=4/H=100 gate uses `L=32`, chosen
+to make the threshold observable against degree 32 while satisfying the paper's
+lower bound for k=10.
 
-The equivalence boundary is explicit: a stale threshold from an earlier round,
-or an `l` smaller than the number of candidates the remaining beam can consume,
-could remove a candidate that the coordinator would otherwise retain. The
-production derivation avoids both conditions; the `None` path remains available
-for the identity test/reference path.
+The equivalence boundary is explicit: a stale threshold, an L smaller than
+`max(BW,k)`, or truncation that is not performed over the merged owner response
+could remove a candidate that the bounded coordinator would otherwise retain.
+The `None` path remains available for the identity test/reference path. The
+cross-scale storage growth row is emitted as measurement only; NFR-021's
+fixed-roster interpretation is pending owner resolution.
 
 Evidence for ties, tombstones with `exact_dist = NULL`, mixed owner-like
 frontiers, and ordered result identity is in packet

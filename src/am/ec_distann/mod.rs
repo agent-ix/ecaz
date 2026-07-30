@@ -260,7 +260,7 @@ pub(super) const ECDISTANN_DEFAULT_BEAM_WIDTH: i32 = 4;
 pub(super) const ECDISTANN_MAX_BEAM_WIDTH: i32 = 64;
 /// FR-081 L: maximum number of retained unexpanded candidates used to derive
 /// the owner-side code-score floor.
-pub(super) const ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT: i32 = 16;
+pub(super) const ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT: i32 = 32;
 pub(super) const ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT: i32 = 4096;
 
 /// FR-081 H default. H is the NFR-019 hard round cap, not the quality

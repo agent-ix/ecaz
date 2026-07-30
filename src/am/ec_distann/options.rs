@@ -276,7 +276,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_int_guc(
         c"ec_distann.candidate_heap_limit",
         c"FR-081 retained candidate heap limit (L) for ec_distann scans.",
-        c"The coordinator retains at most L best unexpanded candidates and derives the owner code-score threshold from the L-th candidate. The per-response candidate window is derived from L and beam_width.",
+        c"The coordinator retains at most L best unexpanded candidates and derives the owner code-score threshold from the L-th candidate. Each owner applies candidate_limit=L once to the merged response batch.",
         &ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC,
         1,
         ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT,

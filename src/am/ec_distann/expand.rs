@@ -126,8 +126,8 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
             let (neighbor_vec_ids, neighbor_code_dists) = prune_and_limit_neighbors(
                 &node.neighbor_vec_ids[..neighbor_count],
                 &batch_dists,
-                code_threshold,
-                candidate_limit,
+                None,
+                None,
             )?;
 
             responses.push(DistannExpandedNode {
@@ -137,6 +137,7 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
                 heap_tid,
                 neighbor_vec_ids,
                 neighbor_code_dists,
+                neighbors_pruned: 0,
                 owner_total_ns: 0,
                 owner_open_validate_ns: 0,
                 owner_graph_read_ns: 0,
@@ -147,6 +148,12 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
                 coordinator_decode_ns: 0,
             });
         }
+
+        super::scan::prune_and_limit_neighbor_batch(
+            &mut responses,
+            code_threshold,
+            candidate_limit,
+        )?;
 
         // Prefetch the co-placed heap blocks for the whole batch before the
         // exact reads (mirrors the ec_diskann rerank prefetch).

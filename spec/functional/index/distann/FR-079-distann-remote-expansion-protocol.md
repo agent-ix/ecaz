@@ -47,8 +47,10 @@ is_tombstone bool, payload_nulls boolean[], payload_values bytea[])`
 - `code_threshold` — optional score floor; neighbors scoring below it MAY be
   omitted
 - `candidate_limit` — optional owner-side limit `l`; after applying the score
-  floor, the owner sorts by `(code_distance, vec_id)` and returns at most `l`
-  neighbors per requested record. `NULL` preserves the unbounded response.
+  floor, the owner merges the candidates for the whole requested batch, sorts
+  by `(code_distance, vec_id)`, and returns at most `l` candidates in total,
+  redistributed across the response rows. `NULL` preserves the unbounded
+  response.
 - `projection_attnums` — non-dropped source attribute numbers required by the
   target list and coordinator-side quals, without duplicates
 - `expected_schema_fingerprint` — the row-tier schema identity bound by the
@@ -121,8 +123,11 @@ entry.
   parameter `L` (`ec_distann.candidate_heap_limit`). At each round it retains
   at most the best `L` live, unexpanded candidates, derives
   `t = peek_worst(H_C)` from the L-th retained candidate when that candidate
-  exists, and derives a per-response `l = ceil(L / BW)` (minimum one). Thus
-  `l` is a response-local bound, not the total remaining `BW × H` budget.
+  exists, and passes the same constant `l = L` to the owner. The owner applies
+  that limit once to the merged candidate set for the whole request, not once
+  per requested vec_id; a multi-owner coordinator applies the same L bound to
+  each owner share. Thus `l` is not a function of the remaining `BW × H`
+  budget.
 - Under this L-bounded derivation, the threshold is not an independent
   recall-risk heuristic: a neighbor below `t` is worse than every candidate
   retained in `H_C`, and per-owner top-`l` selection is the bounded response
@@ -136,8 +141,8 @@ entry.
   A stale threshold, a different L, or an owner limit smaller than the
   declared per-response `l` is outside the guarantee and must be labeled in
   benchmark provenance. The cost bound is explicit: the coordinator stores
-  O(L) live frontier candidates and each expanded response returns at most
-  `ceil(L / BW)` neighbors before coordinator dedupe and re-retention.
+  O(L) live frontier candidates and each owner response returns at most `L`
+  merged candidates before coordinator dedupe and re-retention.
 - Gate benchmark runs use the coordinator-derived controls and must report the
   ordered-result identity against the same generation with the controls
   disabled as the reference path.
