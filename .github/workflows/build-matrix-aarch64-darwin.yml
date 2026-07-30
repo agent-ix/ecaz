@@ -2,9 +2,9 @@ name: Build Matrix — aarch64-apple-darwin
 
 # Task 48 §Exit Criteria #1: manual lane for the developer-default
 # triple. pg18 only (pg17 macOS coverage is uninteresting — production
-# is linux). Honors the known macOS `_BufferBlocks` dyld blocker by
-# limiting runtime tests to the compile + ecaz-cli + Miri-able subset
-# (feedback_dyld_buffer_blocks_known).
+# is linux). PostgreSQL-backed extension tests remain on Linux, but this lane
+# launches the release ecaz CLI so macOS dyld regressions in the statically
+# linked `ecaz::bench_api` graph fail before benchmark use.
 #
 # Status: manual.
 
@@ -50,9 +50,10 @@ jobs:
       - name: cargo clippy
         run: cargo clippy --all-targets --no-default-features --features pg18 -- -D warnings
 
-      # Runtime tests are skipped on macOS pending the _BufferBlocks
-      # dyld blocker resolution. ecaz-cli compile + clippy is the
-      # validated surface; per feedback_dyld_buffer_blocks_known
-      # runtime is validated via Linux runners + Miri.
-      - name: ecaz-cli compile
-        run: cargo build -p ecaz-cli --bin ecaz
+      # The release profile's fat LTO retains more of the extension link graph
+      # than a dev build. Launching the binary catches eager-bound PostgreSQL
+      # globals that a compile-only check cannot detect.
+      - name: ecaz-cli release start smoke
+        run: |
+          cargo build -p ecaz-cli --bin ecaz --release
+          ./target/release/ecaz bench suite --help >/dev/null
