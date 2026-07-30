@@ -28,5 +28,6 @@ Therefore the corrected accounting is not “the arms use equal storage.” It i
 3. the old rows cannot establish the NFR-018 summed ratio or the NFR-021
    per-node maximum.
 
-Task 204 fixes the measurement path. A fresh two-arm 100k run is still required
-to populate this packet with the new per-arm relation, ratio, and per-node rows.
+Task 204 fixes the measurement path. The follow-up measurement packet must
+populate the new per-arm relation, ratio, growth, and per-node rows before the
+storage evidence is considered complete.

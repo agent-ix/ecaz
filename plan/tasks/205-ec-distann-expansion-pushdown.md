@@ -10,10 +10,9 @@ the A/B's storage rows are trustworthy.
 `DISTRIBUTEDANN` §2.3 Algorithm 1 runs on each storage host and receives a
 threshold score `t` and a candidate limit `l`; §2.4 supplies
 `t = peek_worst(H_C)` each round; the host prunes and truncates **before**
-returning. §2.3 equation (2) quantifies the resulting ~6x bandwidth saving, and
-the paper adds that it prunes "any neighbors that are worse than the current
-worst member of the candidate heap before returning to the orchestration
-service."
+returning. Equation (2)'s ~6x score-vs-node bandwidth saving is already banked
+by ec_distann's score-only wire format; the paper says threshold pruning
+increases that saving further without quantifying the incremental factor.
 
 Task 203 found none of this is live:
 
@@ -69,8 +68,12 @@ and the task says so rather than weakening FR-081-AC-4.
    equivalence claim. FR-081 records the per-round `t` derivation.
 2. **Coordinator.** Derive and pass `t` and `l` per round from the live candidate
    heap. Remove the hardcoded `None`.
-3. **Owner.** Implement prune + partial-sort + truncate in the production
-   physical expander, per Algorithm 1. Keep the legacy path consistent.
+3. **Owner.** Implement threshold filtering followed by one merged-batch
+   partial-sort + truncate at `l = L` in the production physical expander.
+   Keep the legacy path consistent. The selected BW=4/H=100 default is
+   `L=32`: it satisfies `L >= max(BW, k)` for the k=10 gate, makes the
+   threshold observable against degree 32, and is intentionally regime-sized
+   rather than copied from the paper's BW=128/L=200 setting.
 4. **A/B at fixed BW=4/H=100** so the pushdown is attributable on its own.
 
 ## Benchmark gate
@@ -99,6 +102,8 @@ decision.
 
 ## References
 
-- `DISTRIBUTEDANN` §2.3 (Algorithm 1), §2.4 (Algorithm 2), equation (2).
+- `DISTRIBUTEDANN` §2.3 (Algorithm 1), §2.4 (Algorithm 2), equation (2). The
+  incremental threshold effect is judged as an unquantified response-byte
+  reduction, not as the paper's already-banked ~6x score-only saving.
 - `reviews/task-203/001-decision-reaudit/` Defect 2.
 - `FR-079`, `FR-081`, `NFR-019`, `NFR-021`, `NFR-022`; `spec/reviews/failure-domain.md:40`.

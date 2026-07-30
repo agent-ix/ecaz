@@ -152,6 +152,9 @@ pub struct LocalMultinodePg18Args {
     /// Session beam width applied to both physical and single benchmark arms.
     #[arg(long)]
     pub beam_width: Option<u32>,
+    /// FR-081 retained candidate heap size L applied to benchmark query arms.
+    #[arg(long)]
+    pub candidate_heap_limit: Option<u32>,
     /// Session hop-round cap applied to both benchmark arms. Together with
     /// beam_width this makes fixed-product BW/H A/B runs suite-addressable.
     #[arg(long)]
@@ -484,6 +487,15 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         .is_some_and(|value| !(1..=64).contains(&value))
     {
         bail!("--beam-width must be in 1..=64");
+    }
+    if args
+        .candidate_heap_limit
+        .is_some_and(|value| !(1..=4096).contains(&value))
+    {
+        bail!("--candidate-heap-limit must be in 1..=4096");
+    }
+    if args.candidate_heap_limit.is_some() && !args.physical_benchmark {
+        bail!("--candidate-heap-limit requires --physical-benchmark");
     }
     if args
         .hop_rounds
@@ -4302,6 +4314,11 @@ async fn run_physical_benchmarks(
     enospc_fixture: Option<&Task199EnospcFixture>,
 ) -> Result<Vec<String>> {
     let beam_width = args.beam_width.unwrap_or(4);
+    let candidate_heap_limit = args
+        .candidate_heap_limit
+        .unwrap_or(32)
+        .max(beam_width)
+        .max(args.top_k);
     let hop_rounds = args.hop_rounds.unwrap_or(100);
     let production_head_width = (beam_width * 2).max(32);
     let seed_variants = if args.benchmark_seed_variants.is_empty() {
@@ -4797,7 +4814,7 @@ async fn run_physical_benchmarks(
                 register_same_seed_digest(&mut same_seed_digests, variant, &seed_id_digest)?
                     .unwrap_or_else(|| "none".to_owned());
             lines.push(format!(
-                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} queries={} seed_id_digest={} compared_with={} same_seed=true",
+                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} queries={} seed_id_digest={} compared_with={} same_seed=true",
                 variant.name,
                 variant.strategy,
                 variant.head_search_width,
@@ -4826,7 +4843,7 @@ async fn run_physical_benchmarks(
             variant_hop_rounds,
         ));
         lines.push(format!(
-            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
@@ -4919,6 +4936,8 @@ async fn run_physical_benchmarks(
                 format!("ec_distann.beam_width={arm_beam_width}"),
                 "--session-guc".into(),
                 format!("ec_distann.hop_rounds={arm_hop_rounds}"),
+                "--session-guc".into(),
+                format!("ec_distann.candidate_heap_limit={candidate_heap_limit}"),
             ]);
             if arm == "physical" {
                 recall_args.extend([
@@ -4966,7 +4985,7 @@ async fn run_physical_benchmarks(
                 prediction_paths.insert(variant.to_owned(), predictions_output);
             }
             lines.push(format!(
-                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
+                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
                 args.head_index_cap, row[1], row[2]
             ));
         }
@@ -4999,6 +5018,8 @@ async fn run_physical_benchmarks(
             format!("ec_distann.beam_width={arm_beam_width}"),
             "--session-guc".into(),
             format!("ec_distann.hop_rounds={arm_hop_rounds}"),
+            "--session-guc".into(),
+            format!("ec_distann.candidate_heap_limit={candidate_heap_limit}"),
         ]);
         if args.benchmark_backend_batch_size > 0 {
             latency_args.extend([
@@ -5048,7 +5069,7 @@ async fn run_physical_benchmarks(
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -5117,25 +5138,25 @@ async fn run_physical_benchmarks(
             }
             for stage in stage_rows {
                 lines.push(format!(
-                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
+                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
                 ));
             }
             let work_rows = latency
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 27 server-side work metrics. The bench
+            // The extension exposes 29 server-side work metrics. The bench
             // child appends one client_result_rows metric so the measured
             // result-consumption boundary is represented in the same stream.
-            if work_rows.len() != 28 {
+            if work_rows.len() != 30 {
                 bail!(
-                    "physical latency attribution expected 28 ec_distann attribution-work rows, got {}",
+                    "physical latency attribution expected 30 ec_distann attribution-work rows, got {}",
                     work_rows.len()
                 );
             }
             for work in work_rows {
                 lines.push(format!(
-                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
         }
@@ -5258,7 +5279,7 @@ async fn run_physical_benchmarks(
         let variant_beam_width = variant.beam_width.unwrap_or(beam_width);
         let variant_hop_rounds = variant.hop_rounds.unwrap_or(hop_rounds);
         let shared = format!(
-            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={}",
+            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={}",
             variant.name,
             variant.strategy,
             args.head_index_cap,

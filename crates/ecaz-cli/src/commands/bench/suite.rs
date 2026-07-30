@@ -624,6 +624,9 @@ struct DistannLocalMultinodeStep {
     head_index_cap: Option<u32>,
     #[serde(default)]
     beam_width: Option<u32>,
+    /// FR-081 retained candidate heap size L applied to benchmark query arms.
+    #[serde(default)]
+    candidate_heap_limit: Option<u32>,
     #[serde(default)]
     hop_rounds: Option<u32>,
     #[serde(default)]
@@ -1183,7 +1186,19 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         }
     }
 
-    let rows = write_results_if_requested(&args, &config, &manifest).await?;
+    let mut rows = extract_result_rows(&manifest).await?;
+    assert_distann_storage_ratio_rows(&manifest, &rows)?;
+    let growth_rows = distann_storage_growth_rows(&rows);
+    rows.extend(growth_rows);
+    if let Some(path) = args.results_output.clone().or_else(|| {
+        config
+            .artifact_dir
+            .as_ref()
+            .map(|dir| dir.join("results.jsonl"))
+    }) {
+        write_results_jsonl(&path, &rows).await?;
+        crate::ecaz_eprintln!("[suite:{}] wrote {}", config.name, path.display());
+    }
     let selected_steps = selected_step_names(&manifest);
     manifest.threshold_results =
         evaluate_thresholds_for_steps(&config.thresholds, &rows, &selected_steps);
@@ -1734,26 +1749,7 @@ async fn write_manifest_if_requested(
     Ok(())
 }
 
-async fn write_results_if_requested(
-    args: &SuiteRunOptions,
-    config: &SuiteConfig,
-    manifest: &SuiteManifest,
-) -> Result<Vec<ResultRow>> {
-    let rows = extract_result_rows(manifest).await?;
-    let path = args.results_output.clone().or_else(|| {
-        config
-            .artifact_dir
-            .as_ref()
-            .map(|dir| dir.join("results.jsonl"))
-    });
-    if let Some(path) = path {
-        write_results_jsonl(&path, &rows).await?;
-        crate::ecaz_eprintln!("[suite:{}] wrote {}", config.name, path.display());
-    }
-    Ok(rows)
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct ResultRow {
     suite: String,
     step: String,
@@ -1761,6 +1757,119 @@ struct ResultRow {
     metric: String,
     artifact: String,
     values: BTreeMap<String, String>,
+}
+
+fn assert_distann_storage_ratio_rows(manifest: &SuiteManifest, rows: &[ResultRow]) -> Result<()> {
+    for step in manifest.steps.iter().filter(|step| {
+        step.selected
+            && step.kind == "distann-local-multinode"
+            && matches!(step.status, Some(StepStatus::Succeeded))
+            && step.command.iter().any(|arg| arg == "--physical-benchmark")
+    }) {
+        let storage_keys = rows
+            .iter()
+            .filter(|row| row.step == step.name && row.metric == "physical_benchmark_storage")
+            .filter_map(storage_identity_key)
+            .collect::<HashSet<_>>();
+        let ratio_keys = rows
+            .iter()
+            .filter(|row| row.step == step.name && row.metric == "physical_benchmark_storage_ratio")
+            .filter_map(storage_identity_key)
+            .collect::<HashSet<_>>();
+        if storage_keys.is_empty() {
+            continue;
+        }
+        let missing = storage_keys
+            .difference(&ratio_keys)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            bail!(
+                "distann physical benchmark step {:?} is missing physical_benchmark_storage_ratio for {:?}",
+                step.name,
+                missing
+            );
+        }
+    }
+    Ok(())
+}
+
+fn storage_identity_key(row: &ResultRow) -> Option<(String, String, String, String)> {
+    Some((
+        row.values.get("scale")?.clone(),
+        row.values.get("variant")?.clone(),
+        row.values.get("arm")?.clone(),
+        row.values.get("node").cloned().unwrap_or_default(),
+    ))
+}
+
+fn distann_storage_growth_rows(rows: &[ResultRow]) -> Vec<ResultRow> {
+    let mut by_node: HashMap<(String, String, String), HashMap<String, (String, f64)>> =
+        HashMap::new();
+    for row in rows
+        .iter()
+        .filter(|row| row.metric == "physical_benchmark_storage_node")
+    {
+        let (Some(variant), Some(arm), Some(node), Some(scale), Some(bytes)) = (
+            row.values.get("variant"),
+            row.values.get("arm"),
+            row.values.get("node"),
+            row.values.get("scale"),
+            row.values
+                .get("total_resident_bytes")
+                .and_then(|value| value.parse::<f64>().ok()),
+        ) else {
+            continue;
+        };
+        by_node
+            .entry((variant.clone(), arm.clone(), node.clone()))
+            .or_default()
+            .insert(scale.clone(), (row.step.clone(), bytes));
+    }
+
+    by_node
+        .into_iter()
+        .filter_map(|((variant, arm, node), scales)| {
+            let (low_step, low) = scales.get("10k")?.clone();
+            let (high_step, high) = scales.get("100k")?.clone();
+            if low <= 0.0 {
+                return None;
+            }
+            let ratio = high / low;
+            Some(ResultRow {
+                suite: rows.first()?.suite.clone(),
+                step: "suite-storage-growth".into(),
+                kind: "storage-growth".into(),
+                metric: "physical_benchmark_storage_growth".into(),
+                artifact: "suite-derived".into(),
+                values: BTreeMap::from([
+                    ("scale_low".into(), "10k".into()),
+                    ("scale_high".into(), "100k".into()),
+                    ("variant".into(), variant),
+                    ("arm".into(), arm),
+                    ("node".into(), node),
+                    ("low_step".into(), low_step),
+                    ("high_step".into(), high_step),
+                    ("low_total_resident_bytes".into(), format_bytes(low)),
+                    ("high_total_resident_bytes".into(), format_bytes(high)),
+                    ("growth_ratio".into(), format!("{ratio:.6}")),
+                    ("threshold".into(), "2.0".into()),
+                    (
+                        "judgement".into(),
+                        "unjudged_nfr021_owner_resolution_pending".into(),
+                    ),
+                ]),
+            })
+        })
+        .collect()
+}
+
+fn format_bytes(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        value.to_string()
+    }
 }
 
 async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>> {
@@ -4481,6 +4590,11 @@ fn expand_distann_local_multinode(
         &mut args,
         "--beam-width",
         step.beam_width.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--candidate-heap-limit",
+        step.candidate_heap_limit.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,

@@ -2478,7 +2478,7 @@ impl DistannNodeExpander for ReadyTraversalReplica<'_> {
         );
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let score_started = Instant::now();
-        let expanded = stored
+        let mut expanded: Vec<DistannExpandedNode> = stored
             .into_iter()
             .map(|stored| {
                 let node = stored.node;
@@ -2495,8 +2495,8 @@ impl DistannNodeExpander for ReadyTraversalReplica<'_> {
                 let (neighbor_vec_ids, neighbor_code_dists) = prune_and_limit_neighbors(
                     &node.neighbor_vec_ids[..count],
                     &neighbor_dists,
-                    code_threshold,
-                    candidate_limit,
+                    None,
+                    None,
                 )?;
                 Ok(DistannExpandedNode {
                     vec_id: node.vec_id,
@@ -2514,6 +2514,7 @@ impl DistannNodeExpander for ReadyTraversalReplica<'_> {
                     },
                     neighbor_vec_ids,
                     neighbor_code_dists,
+                    neighbors_pruned: 0,
                     owner_total_ns: 0,
                     owner_open_validate_ns: 0,
                     owner_graph_read_ns: 0,
@@ -2524,13 +2525,18 @@ impl DistannNodeExpander for ReadyTraversalReplica<'_> {
                     coordinator_decode_ns: 0,
                 })
             })
-            .collect();
+            .collect::<Result<Vec<_>, DistannExpandError>>()?;
+        super::scan::prune_and_limit_neighbor_batch(
+            &mut expanded,
+            code_threshold,
+            candidate_limit,
+        )?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         super::stage_counters::record(
             super::stage_counters::DistannQueryStage::ReplicaScore,
             score_started.elapsed(),
         );
-        expanded
+        Ok(expanded)
     }
 }
 

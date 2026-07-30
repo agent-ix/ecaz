@@ -18,7 +18,8 @@ relationships:
 A top-k scan SHALL execute as a coordinator-driven beam search: a head-index
 descent followed by at most H batched hop rounds, where each round expands
 the best BW unvisited frontier candidates via one parallel
-`ec_distann_expand_nodes` call per owning node, merging code-scored
+`ec_distann_expand_nodes` call per owning node, deriving an L-bounded
+threshold and per-response `l = L` window, and merging code-scored
 neighbors into the beam and exact distances into the result heap.
 
 ## Behavior
@@ -34,11 +35,18 @@ neighbors into the beam and exact distances into the result heap.
   ([FR-078](./FR-078-distann-hash-placement.md)); issue the per-node
   expansion calls in parallel over the pooled transport (operational/security
   posture per [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md),
-  the lifted SPIRE transport contract); derive `t = peek_worst(H_C)` and the
-  remaining candidate limit `l` from the live coordinator candidate heap and
+  the lifted SPIRE transport contract); derive `t = peek_worst(H_C)` from the
+  current L-bounded live heap and `l = L` for each owner response, then
   pass them to each owner for Algorithm 1 prune/sort/truncate; merge returned
   neighbor candidates (code distances) into the beam and returned exact
   distances into the top-k heap; and mark expanded nodes visited.
+- `L` is an explicit retained-candidate heap parameter with
+  `L >= max(BW, k)`. After each merge the
+  coordinator SHALL retain only the best `L` live, unexpanded candidates and
+  SHALL derive `t` from the current L-th candidate rather than from the total
+  future `BW × H` budget. The value of `L` and the per-response `l = L` SHALL
+  be included in benchmark provenance; the cost is O(L) coordinator frontier
+  state and at most L returned neighbors per owner response.
 - The loop SHALL terminate after H rounds, or earlier when the beam's best
   unvisited code distance cannot improve the current kth exact distance
   (convergence early-exit).

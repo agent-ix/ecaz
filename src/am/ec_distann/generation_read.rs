@@ -2506,6 +2506,9 @@ impl PhysicalGenerationScan {
 
         let params = DistannOrchestrationParams {
             beam_width: super::options::current_beam_width(),
+            candidate_heap_limit: super::options::current_candidate_heap_limit()
+                .max(super::options::current_beam_width())
+                .max(effective_top_k),
             hop_rounds: super::options::current_hop_rounds(),
             top_k: effective_top_k,
             debug_fail_hop_round: super::options::debug_fail_hop_round(),
@@ -3204,7 +3207,7 @@ impl DistannNodeExpander for GenerationExpander<'_> {
             i64::try_from(duration_ns(graph_started.elapsed())).unwrap_or(i64::MAX);
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let score_started = Instant::now();
-        let responses = vec_ids
+        let mut responses = vec_ids
             .iter()
             .map(|vec_id| {
                 let node = records.get(vec_id).ok_or_else(|| {
@@ -3227,8 +3230,8 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                     super::scan::prune_and_limit_neighbors(
                         &node.neighbor_vec_ids[..count],
                         &neighbor_dists,
-                        code_threshold,
-                        candidate_limit,
+                        None,
+                        None,
                     )?;
                 Ok(DistannExpandedNode {
                     vec_id: node.vec_id,
@@ -3239,6 +3242,7 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                     heap_tid: node.heap_tid,
                     neighbor_vec_ids,
                     neighbor_code_dists,
+                    neighbors_pruned: 0,
                     owner_total_ns: 0,
                     owner_open_validate_ns: 0,
                     owner_graph_read_ns: 0,
@@ -3250,6 +3254,11 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                 })
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
+        super::scan::prune_and_limit_neighbor_batch(
+            &mut responses,
+            code_threshold,
+            candidate_limit,
+        )?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let responses = {
             let mut responses = responses;

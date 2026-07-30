@@ -982,6 +982,7 @@ async fn run_one_physical_expand(
                     .map(|id| u64::from_le_bytes(id.to_le_bytes()))
                     .collect(),
                 neighbor_code_dists,
+                neighbors_pruned: 0,
                 #[cfg(feature = "distann-head-attribution-benchmark")]
                 owner_total_ns,
                 #[cfg(not(feature = "distann-head-attribution-benchmark"))]
@@ -1800,6 +1801,7 @@ async fn run_one_remote(
                 heap_tid: ItemPointer::INVALID,
                 neighbor_vec_ids: neighbor_vec_ids.into_iter().map(|v| v as u64).collect(),
                 neighbor_code_dists,
+                neighbors_pruned: 0,
                 owner_total_ns: 0,
                 owner_open_validate_ns: 0,
                 owner_graph_read_ns: 0,
@@ -2085,6 +2087,9 @@ fn debug_expand_search_impl(
 
     let params = DistannOrchestrationParams {
         beam_width,
+        candidate_heap_limit: super::options::current_candidate_heap_limit()
+            .max(beam_width)
+            .max(top_k),
         hop_rounds,
         top_k,
         debug_fail_hop_round: None,
@@ -2364,6 +2369,7 @@ mod tests {
             heap_tid: ItemPointer::INVALID,
             neighbor_vec_ids: vec![vec_id.wrapping_add(1)],
             neighbor_code_dists: vec![0.5],
+            neighbors_pruned: 0,
             owner_total_ns: 0,
             owner_open_validate_ns: 0,
             owner_graph_read_ns: 0,
