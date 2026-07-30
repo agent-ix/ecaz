@@ -22,9 +22,28 @@ relationships:
 
 ## Statement
 
-The ec_distann index SHALL shard every structure whose size is O(N) in the
-number of indexed vectors across the serving roster, without retaining a
-complete corpus-proportional copy on a coordinator or non-owner.
+An ec_distann configuration is **distributed** if and only if all five clauses
+below hold, at every measured scale. The ec_distann index SHALL be distributed.
+
+1. **Every O(N) structure is partitioned across the serving roster**, each node
+   holding only its own partition. This covers graph adjacency, embedded
+   neighbor codes, full-precision vectors, the row payload tier, directories,
+   and every derived, optional, or default-off relation. Non-owner records: 0.
+2. **No node outside the serving roster SHALL hold O(N) index state.**
+   Coordinator-resident state is bounded by `k`, `L`, dimension, roster size,
+   and relation or projection count — never by `N`.
+3. **A structure the reference design distributes SHALL be distributed here even
+   when it is small.** The FR-080 head index SHALL be sharded across the roster
+   (§2.2) and replicated for capacity (§4.1) regardless of its capacity `C`.
+   Smallness, constancy in `N`, and a measured absence of storage pressure are
+   **not** exemptions.
+4. **No read path SHALL silently substitute a non-distributed structure for a
+   distributed one.** A non-conforming accelerator is reachable only through an
+   explicit opt-in, labels every result and every emitted row it produces, and
+   is inadmissible as a decision control under NFR-022.
+5. **These properties SHALL hold in the shipped default configuration**, not
+   only in a benchmark arm. A property that requires a non-default flag to be
+   true is not delivered.
 
 This bound applies to **resident state**, not per-query work, and it applies to
 **derived and optional structures** — caches, replicas, samples, summaries, and
@@ -36,14 +55,20 @@ literally a graph-node shard.
 The following are bounded and therefore permitted to be coordinator-resident or
 replicated:
 
-- the FR-080 head index at its fixed capacity `C` (ADR-085 D3), provided `C` is
-  a constant independent of `N`; if `C` is ever made a function of `N`, the
-  ec_distann index SHALL shard the head across the roster;
 - per-scan result and candidate heaps, bounded by `k` and `L`;
 - codec artifacts, codebooks, and rotation matrices, bounded by dimension;
 - row-schema, endpoint, and prepared-plan caches, bounded by relation and
   projection count;
 - a bounded number of immutable epoch entries retained for cache identity.
+
+**The head index is not on that list.** A prior revision of this requirement
+permitted a coordinator-resident head while its capacity `C` was constant in
+`N`. That exemption is removed by clause 3: the reference design's head is a
+"conventional **sharded** in-memory ANN index" (§2.2) whose replica count is the
+stated remedy for head CPU pressure (§4.1), and neither property is conditioned
+on its size. The exemption is removed because it was load-bearing in exactly the
+wrong direction — it made the only unsharded structure in the system the one
+structure the requirement blessed.
 
 ## Scope
 
@@ -101,8 +126,11 @@ term as a first-class requirement.
 | non-owner graph-node records resident on any node (any relation, including derived) | 0 | 0 | topology audit |
 | non-owner full-precision vectors resident on any node outside its own row tier | 0 | 0 | topology audit |
 | unsharded O(N) derived-relation bytes resident on a coordinator or non-owner | 0 | 0 | relation-classified per-node storage audit |
-| head index capacity `C` | constant in N | constant, or sharded across the roster | build manifest inspection |
+| coordinator-resident index and index-derived bytes, itemised by relation | bounded structures only | every relation classified, and each one bounded by `k`, `L`, dimension, roster size, or relation count | per-node storage audit; an unclassified coordinator-resident relation makes the verdict `unavailable`, never a pass |
+| head index bytes resident on a node outside the serving roster | 0 | 0 | per-node storage audit (head sample, head graph, and head cache attributed to their holding node) |
+| head index replica count | ≥ 1 per roster shard | sharded across the roster; capacity `C` is not a factor | build manifest inspection |
 | coordinator-owned graph records when the coordinator is outside the serving roster | 0 | 0 | topology audit |
+| non-conforming accelerator reachable without an explicit opt-in | 0 | 0 | default-configuration run: the accelerator is never opened and no arm carries its label |
 
 ## Verification
 
@@ -120,9 +148,24 @@ zero non-owner vectors, and zero unsharded O(N) derived-relation bytes. Missing
 ownership counts, relation classification, or scale endpoints make the
 conformance verdict unavailable and fail a decision-bearing suite closed.
 
+The per-node storage audit itemises **coordinator-resident** relations on the
+same footing as owner relations. A coordinator row reporting zero without
+enumerating what it holds does not satisfy this requirement; the head sample,
+head graph, head cache, and every index-derived relation are attributed to the
+node that holds them.
+
+The final acceptance evidence for any change to placement or the read path is a
+run in the **shipped default configuration**, with no arm-only flags, showing
+every clause of the Statement holding.
+
 A candidate that cannot satisfy this requirement is inadmissible under
 [NFR-022](./NFR-022-distann-control-validity.md) and SHALL NOT be advanced to a
 latency or recall A/B, regardless of its measured effect.
+
+Conversely, work whose purpose is to *establish* conformance is not screened on
+latency: it is delivered against this invariant, a measured latency cost is
+reported rather than used as grounds to withhold the property, and any remedy is
+a conforming optimization rather than a return to a non-conforming path.
 
 ## Dependencies
 
