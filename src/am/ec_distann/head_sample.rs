@@ -1126,6 +1126,43 @@ pub(crate) fn build_owner_head_shard(
     })
 }
 
+/// Choose which roster node serves a head shard for one query.
+///
+/// `DISTRIBUTEDANN` §4.1 answers a CPU-bound head by adding head replicas. With
+/// `replica_count = 0` a shard is served by its owner, which already spreads
+/// head CPU across the roster. With `replica_count = r`, the shard is served by
+/// one of `r + 1` nodes chosen deterministically from the query digest, so head
+/// load spreads further without any node holding more than a bounded share.
+///
+/// Selection is deterministic in the query, so repeated identical queries hit
+/// the same server and its shard cache.
+pub(crate) fn head_shard_server(
+    shard_ordinal: usize,
+    owner_count: usize,
+    replica_count: usize,
+    query_digest: &[u8; 32],
+) -> usize {
+    if owner_count == 0 {
+        return 0;
+    }
+    let fanout = replica_count.saturating_add(1).min(owner_count);
+    if fanout <= 1 {
+        return shard_ordinal % owner_count;
+    }
+    let selector = u64::from_le_bytes([
+        query_digest[0],
+        query_digest[1],
+        query_digest[2],
+        query_digest[3],
+        query_digest[4],
+        query_digest[5],
+        query_digest[6],
+        query_digest[7],
+    ]);
+    let offset = (selector % fanout as u64) as usize;
+    (shard_ordinal + offset) % owner_count
+}
+
 /// Merge bounded per-owner head results into the coordinator's seed list.
 ///
 /// The coordinator holds only `seed_count` seeds — NFR-021 clause 2 bounded
@@ -1578,6 +1615,52 @@ mod tests {
             .flat_map(|owner| head_shard_members(&members, owner, owner_count, hash_version))
             .collect::<std::collections::HashSet<_>>();
         assert_eq!(claimed.len(), members.len());
+    }
+
+    #[test]
+    fn head_shard_server_spreads_across_replicas_and_stays_deterministic() {
+        let owner_count = 3;
+        let digest_a = [7_u8; 32];
+        // digest_a's low 8 bytes are 0x0707..07, which is 2 mod 3; pick a
+        // digest with a different residue so the spread assertion is real.
+        let digest_b = {
+            let mut digest = [0_u8; 32];
+            digest[0] = 1;
+            digest
+        };
+
+        // No replicas: the owner serves its own shard.
+        for shard in 0..owner_count {
+            assert_eq!(
+                head_shard_server(shard, owner_count, 0, &digest_a),
+                shard,
+                "without replicas a shard is served by its owner"
+            );
+        }
+
+        // With replicas the server is deterministic per query, and different
+        // queries can land on different servers for the same shard.
+        for shard in 0..owner_count {
+            assert_eq!(
+                head_shard_server(shard, owner_count, 2, &digest_a),
+                head_shard_server(shard, owner_count, 2, &digest_a),
+                "selection must be stable for one query"
+            );
+            let server = head_shard_server(shard, owner_count, 2, &digest_a);
+            assert!(server < owner_count);
+        }
+        let spread = (0..owner_count)
+            .map(|shard| {
+                (
+                    head_shard_server(shard, owner_count, 2, &digest_a),
+                    head_shard_server(shard, owner_count, 2, &digest_b),
+                )
+            })
+            .any(|(left, right)| left != right);
+        assert!(spread, "replica selection must vary across queries");
+
+        // The fanout never exceeds the roster.
+        assert!(head_shard_server(0, owner_count, 99, &digest_a) < owner_count);
     }
 
     #[test]

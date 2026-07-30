@@ -1193,6 +1193,54 @@ impl RetainedGenerationScan {
             .unwrap_or_default())
     }
 
+    /// Read this owner's locally held vectors for `members` so another node can
+    /// hold the shard as a bounded replica (Task 210 P2b).
+    fn export_head_shard(
+        &self,
+        members: &[u64],
+    ) -> Result<Vec<(u64, Vec<f32>)>, DistannExpandError> {
+        if members.is_empty() {
+            return Ok(Vec::new());
+        }
+        let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+        if snapshot.is_null() {
+            return Err(DistannExpandError::Internal(
+                "physical head export has no active snapshot".to_owned(),
+            ));
+        }
+        let slot =
+            TupleTableSlotGuard::single_for_heap_guard(&self.row_relation).ok_or_else(|| {
+                DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
+            })?;
+        let empty_query = vec![0.0_f32; usize::from(self.descriptor.dimensions)];
+        let prepared = prepared_physical_query(
+            self.index_oid,
+            self.fingerprint,
+            physical_query_digest(&empty_query).map_err(DistannExpandError::BadInput)?,
+            &self.descriptor,
+            &empty_query,
+        )?;
+        let expander = GenerationExpander {
+            generation: &self.generation,
+            descriptor: &self.descriptor,
+            graph_relation: &self.graph_relation,
+            directory_relation: &self.directory_relation,
+            row_relation: &self.row_relation,
+            slot: &slot,
+            snapshot,
+            source_attnum: self.source_attnum,
+            query: &empty_query,
+            prepared: &prepared,
+            code_len: self.code_len,
+        };
+        let nodes = self.resolve_nodes(members)?;
+        let mut exported = Vec::with_capacity(nodes.len());
+        for node in &nodes {
+            exported.push((node.vec_id, expander.local_source_vector(node)?));
+        }
+        Ok(exported)
+    }
+
     fn resolve_nodes(&self, vec_ids: &[u64]) -> Result<Vec<DistannNodeTuple>, DistannExpandError> {
         self.validate_ownership(vec_ids)?;
         if vec_ids.is_empty() {
@@ -1608,6 +1656,34 @@ fn expand_physical_nodes_impl(
                 })
                 .collect()
         })
+}
+
+/// Export this owner's head-shard landmarks so another node can serve the shard
+/// as a replica (Task 210 P2b, `DISTRIBUTEDANN` §4.1).
+///
+/// The exported set is bounded by head capacity `C` divided across the roster,
+/// so a replica holds a *bounded* structure — which NFR-021 permits to be
+/// replicated. It is never the O(N) graph or row tier.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_head_shard_export(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    member_vec_ids: Vec<i64>,
+) -> TableIterator<'static, (name!(vec_id, i64), name!(vector, Vec<f32>))> {
+    let members = member_vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let exported = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .and_then(|scan| scan.export_head_shard(&members))
+        .unwrap_or_else(|error| error.raise());
+    TableIterator::new(
+        exported
+            .into_iter()
+            .map(|(vec_id, vector)| (i64::from_le_bytes(vec_id.to_le_bytes()), vector))
+            .collect::<Vec<_>>()
+            .into_iter(),
+    )
 }
 
 /// Owner-side FR-080 head-shard search (Task 210 P2a, NFR-021 clause 3).
@@ -2850,12 +2926,23 @@ impl PhysicalGenerationScan {
             .collect::<Vec<_>>();
         let search_width = i32::try_from(search_width).unwrap_or(i32::MAX);
         let seed_count_wire = i32::try_from(seed_count).unwrap_or(i32::MAX);
+        // §4.1 (Task 210 P2b): a shard may be served by its owner or by one of
+        // `head_replica_count` further roster nodes, chosen deterministically
+        // from the query digest so head CPU is not bound to one machine.
+        let query_digest = physical_query_digest(query)?;
+        let replica_count = super::options::head_replica_count();
         let mut requests = Vec::with_capacity(owner_count);
         for (ordinal, owned) in per_owner_members.iter().enumerate() {
             if owned.is_empty() {
                 continue;
             }
-            let route = &self.routes[ordinal];
+            let server = super::head_sample::head_shard_server(
+                ordinal,
+                owner_count,
+                replica_count,
+                &query_digest,
+            );
+            let route = &self.routes[server];
             let conninfo = route.conninfo.as_deref().ok_or_else(|| {
                 format!("EC_NODE_DESCRIPTOR: physical owner {ordinal} route has no connection")
             })?;
