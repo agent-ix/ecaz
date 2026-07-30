@@ -152,9 +152,50 @@ coordinator.
   answered the way §4.1 answers it rather than by the 2-entry thread-local
   backend cache at `generation_read.rs:261-277`.
 
+**Implementation contract (established in code, 2026-07-30).** Two findings from
+the landed slices fix how P2a is built; neither was known when the phase was
+written.
+
+1. **Shard graphs are per-shard, not slices of the stitched head graph.** A
+   subgraph of the global head is not a navigable index over the shard. This is
+   the same property that makes `DISTRIBUTEDANN` §3 build the head from
+   per-partition top layers. `shard_head_sample()` does this.
+   For the promoted exact policy, sharding is **result-identical** to the
+   unsharded head — proven by
+   `sharded_exact_head_search_is_identical_to_the_unsharded_head` — so P2a
+   carries no recall risk for the shipped policy.
+2. **Head vectors never need to move.** A landmark's full-precision vector
+   already lives on the owner its FR-078 placement hash selects, because the
+   co-placed row tier uses the identical hash (ADR-085 D11). An owner therefore
+   materialises its own shard from **local reads** given only the bounded
+   membership list. `head_shard_members()` / `build_owner_head_shard()` do this,
+   and `owner_built_shards_match_coordinator_side_partitioning` proves the two
+   agree.
+
+Consequently the remaining P2a wiring is:
+
+- **Persistence.** `persist_head_sample` / `load_head_sample` keep the head
+  *membership* (vec_ids) and the state row on the coordinator — bounded by `C`,
+  permitted by clause 2 — and stop storing landmark vectors there. This is a
+  format change, which is free (research index, rebuild not migrate).
+- **Owner endpoint.** `ec_distann_head_search_physical(index_regclass,
+  epoch_fingerprint, query, member_vec_ids, search_width, seed_count)` →
+  `(vec_id, dist)`. It resolves its members' vectors through the existing
+  local row-tier read used by `exact_distance`, builds or reuses its shard, and
+  returns at most `seed_count` seeds. Both policies must work sharded.
+- **Owner shard cache.** Keyed like `CachedPhysicalEpoch`
+  (`index_oid, logical_index_uuid, build_id, fingerprint`), same 2-entry bound,
+  invalidated by the existing `invalidate_generation_caches` hook.
+- **Coordinator fan-out.** Replace the local `head_index` in
+  `DistannPhysicalScanState` with a per-owner fan-out that reuses the
+  `PhysicalMultiOwnerExpander` routing shape and merges with
+  `merge_head_seeds()`. Coordinator retains `seed_count` seeds — clause 2
+  bounded state — and zero landmark vectors.
+
 Gate: P2a and P2b each get their own 10k/50k/100k recall + latency + storage A/B
 against the owner arm — separately, never stacked — with the P0 conformance row
-`conforming` in every arm and coordinator head bytes reaching zero.
+`conforming` in every arm, `outstanding_distribution_gap=none`, and coordinator
+head bytes reaching zero.
 
 ### P3 — `TRAV-30`: bounded gateway copies
 
