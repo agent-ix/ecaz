@@ -1111,6 +1111,88 @@ impl RetainedGenerationScan {
         expander.expand_nodes(vec_ids, code_threshold, candidate_limit)
     }
 
+    /// Search this owner's shard of the FR-080 head (Task 210 P2a).
+    ///
+    /// `members` are the head landmarks this owner owns under the FR-078
+    /// placement hash. Their full-precision vectors are already local (ADR-085
+    /// D11), so the shard is materialised from local reads — no landmark vector
+    /// crosses the wire and the coordinator holds none. At most `seed_count`
+    /// seeds are returned, which is what keeps coordinator state bounded by
+    /// `k_head` under NFR-021 clause 2.
+    fn head_search(
+        &self,
+        query: &[f32],
+        query_digest: [u8; 32],
+        members: &[u64],
+        search_width: usize,
+        seed_count: usize,
+        build_list_size: usize,
+        alpha: f32,
+        head_policy: super::generation_descriptor::DistannHeadPolicy,
+    ) -> Result<Vec<super::scan::DistannSeedCandidate>, DistannExpandError> {
+        self.validate_request(query, members)?;
+        if members.is_empty() || seed_count == 0 {
+            return Ok(Vec::new());
+        }
+        let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+        if snapshot.is_null() {
+            return Err(DistannExpandError::Internal(
+                "physical head endpoint has no active snapshot".to_owned(),
+            ));
+        }
+        let prepared = prepared_physical_query(
+            self.index_oid,
+            self.fingerprint,
+            query_digest,
+            &self.descriptor,
+            query,
+        )?;
+        let slot =
+            TupleTableSlotGuard::single_for_heap_guard(&self.row_relation).ok_or_else(|| {
+                DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
+            })?;
+        let expander = GenerationExpander {
+            generation: &self.generation,
+            descriptor: &self.descriptor,
+            graph_relation: &self.graph_relation,
+            directory_relation: &self.directory_relation,
+            row_relation: &self.row_relation,
+            slot: &slot,
+            snapshot,
+            source_attnum: self.source_attnum,
+            query,
+            prepared: &prepared,
+            code_len: self.code_len,
+        };
+        let nodes = self.resolve_nodes(members)?;
+        let mut resolved = Vec::with_capacity(nodes.len());
+        for node in &nodes {
+            resolved.push((node.vec_id, expander.local_source_vector(node)?));
+        }
+        let shard = super::head_sample::build_owner_head_shard(
+            self.generation.owner_ordinal,
+            self.descriptor.dimensions,
+            resolved,
+            usize::from(self.descriptor.graph_degree),
+            build_list_size,
+            alpha,
+            // Generation-scoped seed: the shard graph is reproducible for a
+            // given epoch without carrying a build-time random seed.
+            u64::from_le_bytes(self.fingerprint[2..10].try_into().unwrap_or([0; 8])),
+        )
+        .map_err(DistannExpandError::Internal)?;
+        let index = super::head_sample::DistannPhysicalHeadIndex::load(
+            shard.sample,
+            shard.graph,
+            usize::from(self.descriptor.graph_degree),
+            head_policy,
+        )
+        .map_err(DistannExpandError::Internal)?;
+        Ok(index
+            .map(|index| index.search_configured(query, search_width, seed_count))
+            .unwrap_or_default())
+    }
+
     fn resolve_nodes(&self, vec_ids: &[u64]) -> Result<Vec<DistannNodeTuple>, DistannExpandError> {
         self.validate_ownership(vec_ids)?;
         if vec_ids.is_empty() {
@@ -1526,6 +1608,65 @@ fn expand_physical_nodes_impl(
                 })
                 .collect()
         })
+}
+
+/// Owner-side FR-080 head-shard search (Task 210 P2a, NFR-021 clause 3).
+///
+/// The coordinator sends the bounded landmark ids this owner owns under the
+/// FR-078 placement hash; the owner reads their co-placed full-precision
+/// vectors locally, searches its own shard, and returns at most `seed_count`
+/// seeds. No landmark vector crosses the wire and the coordinator retains none.
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::too_many_arguments)]
+fn ec_distann_head_search_physical(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    query: Vec<f32>,
+    member_vec_ids: Vec<i64>,
+    search_width: i32,
+    seed_count: i32,
+    build_list_size: i32,
+    alpha: f32,
+    head_policy: i32,
+) -> TableIterator<'static, (name!(vec_id, i64), name!(dist, f32))> {
+    let query_digest = physical_query_digest(&query)
+        .map_err(DistannExpandError::BadInput)
+        .unwrap_or_else(|error| error.raise());
+    let members = member_vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let non_negative = |value: i32, what: &str| {
+        usize::try_from(value).map_err(|_| {
+            DistannExpandError::BadInput(format!("ec_distann {what} must be non-negative"))
+        })
+    };
+    let seeds = (|| {
+        let policy = super::generation_descriptor::DistannHeadPolicy::decode_wire(
+            u8::try_from(head_policy).map_err(|_| {
+                DistannExpandError::BadInput("ec_distann head_policy is out of range".to_owned())
+            })?,
+        )
+        .map_err(DistannExpandError::BadInput)?;
+        RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)?.head_search(
+            &query,
+            query_digest,
+            &members,
+            non_negative(search_width, "search_width")?,
+            non_negative(seed_count, "seed_count")?,
+            non_negative(build_list_size, "build_list_size")?,
+            alpha,
+            policy,
+        )
+    })()
+    .unwrap_or_else(|error| error.raise());
+    TableIterator::new(
+        seeds
+            .into_iter()
+            .map(|seed| (i64::from_le_bytes(seed.vec_id.to_le_bytes()), seed.dist))
+            .collect::<Vec<_>>()
+            .into_iter(),
+    )
 }
 
 /// FR-079 physical-generation overload.  The `regclass` argument separates it
@@ -3145,6 +3286,50 @@ struct GenerationExpander<'a> {
 }
 
 impl GenerationExpander<'_> {
+    /// Read this owner's locally held full-precision vector for `node`.
+    ///
+    /// Task 210 P2: an FR-080 head landmark is co-placed with its row-tier
+    /// vector under the same FR-078 hash (ADR-085 D11), so an owner can
+    /// materialise its own head shard without any vector crossing the wire.
+    fn local_source_vector(&self, node: &DistannNodeTuple) -> Result<Vec<f32>, DistannExpandError> {
+        let mut tid = pg_sys::ItemPointerData::default();
+        pgrx::itemptr::item_pointer_set_all(
+            &mut tid,
+            node.heap_tid.block_number,
+            node.heap_tid.offset_number,
+        );
+        unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+        let found = unsafe {
+            pg_sys::table_tuple_fetch_row_version(
+                self.row_relation.as_ptr(),
+                &mut tid,
+                self.snapshot,
+                self.slot.as_ptr(),
+            )
+        };
+        if !found {
+            return Err(DistannExpandError::Internal(format!(
+                "EC_GENERATION_MISSING: row tier missing vec_id {:#018x}",
+                node.vec_id
+            )));
+        }
+        let mut is_null = false;
+        let datum =
+            unsafe { pg_sys::slot_getattr(self.slot.as_ptr(), self.source_attnum, &mut is_null) };
+        if is_null {
+            return Err(DistannExpandError::Internal(
+                "EC_SCHEMA_MISMATCH: frozen source vector is NULL".to_owned(),
+            ));
+        }
+        let vector = unsafe { crate::am::ec_diskann::ecvector_datum_to_vec(datum) };
+        if vector.len() != usize::from(self.descriptor.dimensions) {
+            return Err(DistannExpandError::Internal(
+                "EC_SCHEMA_MISMATCH: frozen source vector dimension mismatch".to_owned(),
+            ));
+        }
+        Ok(vector)
+    }
+
     fn exact_distance(&self, node: &DistannNodeTuple) -> Result<f32, DistannExpandError> {
         let mut tid = pg_sys::ItemPointerData::default();
         pgrx::itemptr::item_pointer_set_all(

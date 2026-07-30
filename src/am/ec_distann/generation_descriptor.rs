@@ -77,6 +77,10 @@ impl DistannHeadPolicy {
         }
     }
 
+    pub(crate) fn decode_wire(value: u8) -> Result<Self, String> {
+        Self::decode(value)
+    }
+
     fn decode(value: u8) -> Result<Self, String> {
         match value {
             0 => Ok(Self::CurrentSampleGraph),
