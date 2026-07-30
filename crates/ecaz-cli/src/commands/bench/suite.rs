@@ -662,7 +662,7 @@ struct DistannLocalMultinodeStep {
 
 impl DistannLocalMultinodeStep {
     fn effective_metrics_mode(&self) -> DistannMetricsMode {
-        self.metrics_mode.unwrap_or_else(|| {
+        self.metrics_mode.unwrap_or({
             if self.distann_stage_counters || self.stage_counter_only || self.sample_backend_memory
             {
                 DistannMetricsMode::FullMetrics
@@ -2452,8 +2452,7 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_traversal_replica".into(), values));
             }
-        } else if let Some(rest) =
-            body.strip_prefix("physical_benchmark_traversal_replica_cache ")
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_traversal_replica_cache ")
         {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_traversal_replica_cache".into(), values));
@@ -5896,19 +5895,22 @@ psql header noise\n\
               "kind": "distann-local-multinode",
               "name": "benchmark",
               "physical_benchmark": true,
-              "metrics_mode": "benchmark"
+              "metrics_mode": "benchmark",
+              "corpus_prefix": "ec_real_10k"
             },
             {
               "kind": "distann-local-multinode",
               "name": "full",
               "physical_benchmark": true,
-              "metrics_mode": "full_metrics"
+              "metrics_mode": "full_metrics",
+              "corpus_prefix": "ec_real_10k"
             },
             {
               "kind": "distann-local-multinode",
               "name": "legacy-full",
               "physical_benchmark": true,
-              "distann_stage_counters": true
+              "distann_stage_counters": true,
+              "corpus_prefix": "ec_real_10k"
             }
           ]
         }"#;
@@ -5984,7 +5986,8 @@ psql header noise\n\
             "name": "benchmark",
             "physical_benchmark": true,
             "metrics_mode": "benchmark",
-            "distann_stage_counters": true
+            "distann_stage_counters": true,
+            "corpus_prefix": "ec_real_10k"
           }]
         }"#;
         let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
