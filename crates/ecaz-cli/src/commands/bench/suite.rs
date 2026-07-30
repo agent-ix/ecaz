@@ -517,6 +517,22 @@ struct DistannBenchmarkSeedVariant {
     traversal_replica: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DistannMetricsMode {
+    Benchmark,
+    FullMetrics,
+}
+
+impl DistannMetricsMode {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Benchmark => "benchmark",
+            Self::FullMetrics => "full_metrics",
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct DistannLocalMultinodeStep {
     name: String,
@@ -575,6 +591,12 @@ struct DistannLocalMultinodeStep {
     /// Milliseconds between backend RSS/HWM samples.
     #[serde(default)]
     memory_sample_interval_ms: Option<u64>,
+    /// Task 172 instrumentation contract. Benchmark mode is the lean gate
+    /// surface; full_metrics enables attribution counters and memory sampling.
+    /// Legacy configs without this field are labeled from their heavy
+    /// instrumentation flags.
+    #[serde(default)]
+    metrics_mode: Option<DistannMetricsMode>,
     #[serde(default)]
     distann_stage_counters: bool,
     #[serde(default)]
@@ -636,6 +658,19 @@ struct DistannLocalMultinodeStep {
     corpus_prefix: Option<String>,
     #[serde(default)]
     staged_dir: Option<PathBuf>,
+}
+
+impl DistannLocalMultinodeStep {
+    fn effective_metrics_mode(&self) -> DistannMetricsMode {
+        self.metrics_mode.unwrap_or_else(|| {
+            if self.distann_stage_counters || self.stage_counter_only || self.sample_backend_memory
+            {
+                DistannMetricsMode::FullMetrics
+            } else {
+                DistannMetricsMode::Benchmark
+            }
+        })
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -1558,6 +1593,14 @@ fn build_manifest(
         let selected = step_selected(step, args);
         let kernel_status = step_kernel_status(step.tags())?;
         let runnable = selected && kernel_cell_is_runnable(kernel_status);
+        let mut tags = step.tags().to_vec();
+        if let SuiteStep::DistannLocalMultinode(distann) = step {
+            tags.retain(|tag| !tag.starts_with("metrics_mode="));
+            tags.push(format!(
+                "metrics_mode={}",
+                distann.effective_metrics_mode().label()
+            ));
+        }
         let command = if runnable {
             child_command_args(conn, step.expand(&config.defaults, conn)?)
         } else {
@@ -1572,7 +1615,7 @@ fn build_manifest(
             isa: step_isa(step.tags()),
             kernel_status,
             pgoptions: step.pgoptions().map(ToOwned::to_owned),
-            tags: step.tags().to_vec(),
+            tags,
             expected_artifacts: step
                 .expected_artifacts()
                 .iter()
@@ -1985,6 +2028,11 @@ fn add_result_context(
     );
     insert_if_absent(&mut values, "quant", step.quant.as_deref());
     insert_if_absent(&mut values, "isa", step.isa.as_deref());
+    insert_if_absent(
+        &mut values,
+        "metrics_mode",
+        tag_value(&step.tags, "metrics_mode=").as_deref(),
+    );
     let kernel_status = step.kernel_status.map(kernel_status_label);
     insert_if_absent(&mut values, "kernel_status", kernel_status);
     insert_if_absent(
@@ -3372,7 +3420,26 @@ impl SuiteStep {
                         step.name
                     )
                 }
-                if step.sample_backend_memory && step.memory_sample_interval_ms == Some(0) {
+                if step.metrics_mode.is_some() && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} metrics_mode requires physical_benchmark",
+                        step.name
+                    )
+                }
+                if step.metrics_mode == Some(DistannMetricsMode::Benchmark)
+                    && (step.distann_stage_counters
+                        || step.stage_counter_only
+                        || step.sample_backend_memory)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} benchmark metrics_mode cannot enable full-metrics instrumentation",
+                        step.name
+                    )
+                }
+                if (step.sample_backend_memory
+                    || step.metrics_mode == Some(DistannMetricsMode::FullMetrics))
+                    && step.memory_sample_interval_ms == Some(0)
+                {
                     bail!(
                         "distann-local-multinode step {:?} must set memory_sample_interval_ms >= 1",
                         step.name
@@ -4257,6 +4324,7 @@ fn expand_distann_local_multinode(
     step: &DistannLocalMultinodeStep,
     defaults: &SuiteDefaults,
 ) -> Vec<String> {
+    let explicit_full_metrics = step.metrics_mode == Some(DistannMetricsMode::FullMetrics);
     let mut args = vec![
         "dev".into(),
         "distann-multicluster".into(),
@@ -4290,7 +4358,7 @@ fn expand_distann_local_multinode(
     if step.physical_benchmark {
         args.push("--physical-benchmark".into());
     }
-    if step.distann_stage_counters {
+    if step.distann_stage_counters || explicit_full_metrics {
         args.push("--distann-stage-counters".into());
     }
     if step.stage_counter_only {
@@ -4348,7 +4416,7 @@ fn expand_distann_local_multinode(
             .map(|v| v.to_string())
             .as_deref(),
     );
-    if step.sample_backend_memory {
+    if step.sample_backend_memory || explicit_full_metrics {
         args.push("--sample-backend-memory".into());
         push_arg(
             &mut args,
@@ -5806,6 +5874,114 @@ psql header noise\n\
                 "artifacts/cap-256/distann-multinode-summary.log"
             )]
         );
+    }
+
+    #[test]
+    fn distann_local_multinode_labels_and_expands_metrics_modes() {
+        let raw = r#"{
+          "name": "distann-metrics-modes",
+          "schema_version": 1,
+          "steps": [
+            {
+              "kind": "distann-local-multinode",
+              "name": "benchmark",
+              "physical_benchmark": true,
+              "metrics_mode": "benchmark"
+            },
+            {
+              "kind": "distann-local-multinode",
+              "name": "full",
+              "physical_benchmark": true,
+              "metrics_mode": "full_metrics"
+            },
+            {
+              "kind": "distann-local-multinode",
+              "name": "legacy-full",
+              "physical_benchmark": true,
+              "distann_stage_counters": true
+            }
+          ]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+            allow_debug_backend: false,
+        };
+        let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest builds");
+
+        let benchmark = &manifest.steps[0];
+        assert!(!benchmark
+            .command
+            .contains(&"--distann-stage-counters".into()));
+        assert!(!benchmark
+            .command
+            .contains(&"--sample-backend-memory".into()));
+        assert!(benchmark
+            .tags
+            .contains(&"metrics_mode=benchmark".to_owned()));
+        assert_eq!(
+            add_result_context(&manifest, benchmark, BTreeMap::new())
+                .get("metrics_mode")
+                .map(String::as_str),
+            Some("benchmark")
+        );
+
+        let full = &manifest.steps[1];
+        assert!(full.command.contains(&"--distann-stage-counters".into()));
+        assert!(full.command.contains(&"--sample-backend-memory".into()));
+        assert!(full.tags.contains(&"metrics_mode=full_metrics".to_owned()));
+        assert_eq!(
+            add_result_context(&manifest, full, BTreeMap::new())
+                .get("metrics_mode")
+                .map(String::as_str),
+            Some("full_metrics")
+        );
+
+        let legacy_full = &manifest.steps[2];
+        assert!(legacy_full
+            .command
+            .contains(&"--distann-stage-counters".into()));
+        assert!(!legacy_full
+            .command
+            .contains(&"--sample-backend-memory".into()));
+        assert!(legacy_full
+            .tags
+            .contains(&"metrics_mode=full_metrics".to_owned()));
+        assert_eq!(
+            add_result_context(&manifest, legacy_full, BTreeMap::new())
+                .get("metrics_mode")
+                .map(String::as_str),
+            Some("full_metrics")
+        );
+    }
+
+    #[test]
+    fn distann_benchmark_metrics_mode_rejects_heavy_instrumentation() {
+        let raw = r#"{
+          "name": "distann-metrics-conflict",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "benchmark",
+            "physical_benchmark": true,
+            "metrics_mode": "benchmark",
+            "distann_stage_counters": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("conflict must fail");
+        assert!(error
+            .to_string()
+            .contains("benchmark metrics_mode cannot enable full-metrics instrumentation"));
     }
 
     #[test]
