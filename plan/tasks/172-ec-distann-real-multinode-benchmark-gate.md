@@ -1,12 +1,15 @@
 # Task 172: ec_distann Real Multi-Instance Benchmark Gate
 
-Status: SHELVED (2026-07-10). Depends on: Task 166 and Task 179's
-implementation-ready physical-fixture checkpoint; Task 165 remains
-replicated-control evidence only. Do NOT run the benchmark matrix until Task
-179's physically sharded lane exists and passes TC-040/TC-042/TC-050 plus the
-fail-closed topology audit.
-Owner: coder (to be assigned). One branch off the current ec_distann line.
-Priority: P0 corrective benchmark gate — but blocked; execution deferred.
+Status: **IN PROGRESS** (2026-07-29). Unshelved after Task 179's physically
+sharded lane and fail-closed TC-040/TC-042/TC-050 topology evidence were
+accepted; see `reviews/task-172/004-unshelve-readiness/`. Task 166 remains the
+single-instance control and Task 165 remains replicated-control evidence only.
+Runner capability work is active in packets 005-007. The final decision-bearing
+matrix remains open pending Task 204's measurement proof, Task 205's pushdown
+A/B, Task 206's traversal-regime disposition, and Task 208's mechanical
+NFR-021/NFR-022 gates.
+Owner: coder. One branch off the current ec_distann line.
+Priority: P0 corrective benchmark gate.
 
 ## SHELVE NOTE (2026-07-10)
 
