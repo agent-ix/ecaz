@@ -586,13 +586,13 @@ mod tests {
     use super::{
         distann_orchestrated_search, distann_orchestrated_search_with_pushdown,
         prune_and_limit_neighbor_batch, prune_and_limit_neighbors, run_scan_attempt_with_restart,
-        DistannExpandError,
-        DistannExpandedNode, DistannNodeExpander, DistannOrchestrationParams, DistannScanHit,
-        DistannSeedCandidate,
+        BeamCandidate, DistannExpandError, DistannExpandedNode, DistannNodeExpander,
+        DistannOrchestrationParams, DistannScanHit, DistannSeedCandidate,
+        retain_best_candidates,
     };
     use crate::storage::page::ItemPointer;
     use std::cell::Cell;
-    use std::collections::HashMap;
+    use std::collections::{BinaryHeap, HashMap};
 
     #[test]
     fn restart_success_on_first_attempt_runs_once() {
@@ -992,5 +992,19 @@ mod tests {
         )
         .expect("aligned neighbor arrays");
         assert_eq!(ids, vec![2], "the active bounded response prunes a neighbor");
+    }
+
+    #[test]
+    fn bounded_candidate_heap_never_exceeds_l() {
+        let mut beam = BinaryHeap::new();
+        for vec_id in 0..16 {
+            beam.push(BeamCandidate {
+                dist: -(vec_id as f32),
+                vec_id,
+            });
+        }
+        retain_best_candidates(&mut beam, 4);
+        assert_eq!(beam.len(), 4);
+        assert!(beam.iter().all(|candidate| candidate.vec_id >= 12));
     }
 }

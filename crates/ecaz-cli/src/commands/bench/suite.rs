@@ -1892,7 +1892,10 @@ fn assert_distann_storage_ratio_rows(manifest: &SuiteManifest, rows: &[ResultRow
             .filter_map(storage_identity_key)
             .collect::<HashSet<_>>();
         if storage_keys.is_empty() {
-            continue;
+            bail!(
+                "distann physical benchmark step {:?} is missing physical_benchmark_storage",
+                step.name
+            );
         }
         let missing = storage_keys
             .difference(&ratio_keys)
@@ -1909,12 +1912,11 @@ fn assert_distann_storage_ratio_rows(manifest: &SuiteManifest, rows: &[ResultRow
     Ok(())
 }
 
-fn storage_identity_key(row: &ResultRow) -> Option<(String, String, String, String)> {
+fn storage_identity_key(row: &ResultRow) -> Option<(String, String, String)> {
     Some((
         row.values.get("scale")?.clone(),
         row.values.get("variant")?.clone(),
         row.values.get("arm")?.clone(),
-        row.values.get("node").cloned().unwrap_or_default(),
     ))
 }
 
@@ -2025,6 +2027,18 @@ fn distann_nfr_021_conformance_rows(
             registrations
                 .entry(registration.id.clone())
                 .or_insert_with(|| registration.clone());
+        }
+    }
+
+    // A registration identifies a variant, not a single corpus scale. Allow
+    // one declaration (normally on the first scale) to collect its matching
+    // rows from every successful physical step in the matrix.
+    for step in manifest.steps.iter().filter(|step| {
+        step.selected
+            && step.kind == "distann-local-multinode"
+            && matches!(step.status, Some(StepStatus::Succeeded))
+    }) {
+        for registration in registrations.values() {
             let arm_evidence = evidence.entry(registration.id.clone()).or_default();
             collect_distann_nfr_021_step_evidence(step, registration, rows, arm_evidence);
         }
@@ -6939,6 +6953,68 @@ psql header noise\n\
                 .map(String::as_str),
             Some("1659518976")
         );
+    }
+
+    #[test]
+    fn distann_storage_ratio_is_mandatory_for_physical_steps() {
+        let manifest = SuiteManifest {
+            suite: "storage-required".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            runner_git_commit: None,
+            connection: ManifestConnection {
+                database: "tqvector_bench".into(),
+                host: None,
+                port: None,
+                user: None,
+                password_configured: false,
+            },
+            backend: None,
+            steps: vec![StepRecord {
+                name: "physical-10k".into(),
+                kind: "distann-local-multinode".into(),
+                command: vec!["--physical-benchmark".into()],
+                selected: true,
+                quant: None,
+                isa: None,
+                kernel_status: None,
+                pgoptions: None,
+                tags: Vec::new(),
+                nfr_021_registrations: Vec::new(),
+                expected_artifacts: Vec::new(),
+                status: Some(StepStatus::Succeeded),
+                started_at_unix_ms: None,
+                finished_at_unix_ms: None,
+                duration_ms: None,
+                exit_code: Some(0),
+                parallel_workers_before: None,
+                parallel_workers_after: None,
+                parallel_workers_delta: None,
+            }],
+            threshold_results: Vec::new(),
+        };
+        let storage = ResultRow {
+            suite: manifest.suite.clone(),
+            step: "physical-10k".into(),
+            kind: "distann-local-multinode".into(),
+            metric: "physical_benchmark_storage".into(),
+            artifact: "summary.log".into(),
+            values: BTreeMap::from([
+                ("scale".into(), "10k".into()),
+                ("variant".into(), "control".into()),
+                ("arm".into(), "physical".into()),
+            ]),
+        };
+        assert!(assert_distann_storage_ratio_rows(&manifest, &[storage.clone()]).is_err());
+
+        let ratio = ResultRow {
+            metric: "physical_benchmark_storage_ratio".into(),
+            ..storage.clone()
+        };
+        assert!(assert_distann_storage_ratio_rows(&manifest, &[storage, ratio]).is_ok());
     }
 
     #[test]
