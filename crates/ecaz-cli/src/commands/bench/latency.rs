@@ -219,6 +219,9 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         "max",
         "cache_state",
         "worker_batch_size",
+        "concurrency",
+        "wall_ms",
+        "qps",
     ];
     if args.sample_backend_memory {
         header.extend(["rss_peak_kb", "hwm_peak_kb", "memory_samples"]);
@@ -327,6 +330,12 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
             Cell::new(format_ms(stats.max)),
             Cell::new(&args.cache_state),
             Cell::new(args.worker_batch_size),
+            Cell::new(args.concurrency),
+            Cell::new(format_ms(sweep.wall_time)),
+            Cell::new(format!(
+                "{:.3}",
+                throughput_qps(stats.count, sweep.wall_time)
+            )),
         ];
         if args.sample_backend_memory {
             row.extend([
@@ -481,6 +490,8 @@ async fn run_sweep_point(
     let mut ivf_stage_counter_sets = Vec::new();
     let mut distann_stage_counter_sets = Vec::new();
     let mut distann_materialization_work_sets = Vec::new();
+    let mut timed_started_at = None;
+    let mut timed_finished_at = None;
     for h in handles {
         let result = h.await.map_err(|e| eyre!("worker panicked: {e}"))??;
         merged.extend(result.durations);
@@ -490,10 +501,26 @@ async fn run_sweep_point(
         ivf_stage_counter_sets.push(result.ivf_stage_counters);
         distann_stage_counter_sets.push(result.distann_stage_counters);
         distann_materialization_work_sets.push(result.distann_materialization_work);
+        if let Some(started_at) = result.timed_started_at {
+            timed_started_at = Some(
+                timed_started_at.map_or(started_at, |earliest: Instant| earliest.min(started_at)),
+            );
+        }
+        if let Some(finished_at) = result.timed_finished_at {
+            timed_finished_at = Some(
+                timed_finished_at.map_or(finished_at, |latest: Instant| latest.max(finished_at)),
+            );
+        }
     }
     bar.finish_and_clear();
+    let wall_time = timed_started_at
+        .zip(timed_finished_at)
+        .map_or(Duration::ZERO, |(started_at, finished_at)| {
+            finished_at.duration_since(started_at)
+        });
     Ok(LatencySweepResult {
         durations: merged,
+        wall_time,
         memory,
         memory_series,
         task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
@@ -544,6 +571,8 @@ async fn worker(
     let mut ivf_stage_counter_sets = Vec::new();
     let mut distann_stage_counter_sets = Vec::new();
     let mut distann_materialization_work_sets = Vec::new();
+    let mut timed_started_at = None;
+    let mut timed_finished_at = None;
     let batch_size = if worker_batch_size == 0 {
         iterations
     } else {
@@ -629,6 +658,7 @@ async fn worker(
             }
             let q = &queries[idx % queries.len()];
             let t0 = Instant::now();
+            timed_started_at.get_or_insert(t0);
             let query_result = if encode_scan_query {
                 client.query(&stmt, &[q, &bits, &seed, &k_i64]).await
             } else {
@@ -641,6 +671,7 @@ async fn worker(
             batch_result_rows =
                 batch_result_rows.saturating_add(i64::try_from(rows.len()).unwrap_or(i64::MAX));
             batch_durations.push(t0.elapsed());
+            timed_finished_at = Some(Instant::now());
             bar.inc(1);
         };
 
@@ -695,6 +726,8 @@ async fn worker(
 
     Ok(LatencyWorkerResult {
         durations,
+        timed_started_at,
+        timed_finished_at,
         memory,
         memory_series,
         task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
@@ -830,6 +863,7 @@ pub fn summarize(durations: &[Duration]) -> LatencyStats {
 #[derive(Debug, Default)]
 struct LatencySweepResult {
     durations: Vec<Duration>,
+    wall_time: Duration,
     memory: MemorySample,
     memory_series: Vec<BackendMemoryPoint>,
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
@@ -841,6 +875,8 @@ struct LatencySweepResult {
 #[derive(Debug, Default)]
 struct LatencyWorkerResult {
     durations: Vec<Duration>,
+    timed_started_at: Option<Instant>,
+    timed_finished_at: Option<Instant>,
     memory: MemorySample,
     memory_series: Vec<BackendMemoryPoint>,
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
@@ -1042,6 +1078,15 @@ fn format_ms(d: Duration) -> String {
     }
 }
 
+fn throughput_qps(completed: usize, wall_time: Duration) -> f64 {
+    let seconds = wall_time.as_secs_f64();
+    if completed == 0 || seconds <= 0.0 {
+        0.0
+    } else {
+        completed as f64 / seconds
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1147,6 +1192,13 @@ mod tests {
     fn format_ms_switches_precision_at_10ms_boundary() {
         assert_eq!(format_ms(Duration::from_micros(4_567)), "4.57 ms");
         assert_eq!(format_ms(Duration::from_millis(150)), "150.0 ms");
+    }
+
+    #[test]
+    fn throughput_uses_concurrent_wall_time_not_summed_query_durations() {
+        assert_eq!(throughput_qps(100, Duration::from_secs(2)), 50.0);
+        assert_eq!(throughput_qps(0, Duration::from_secs(2)), 0.0);
+        assert_eq!(throughput_qps(100, Duration::ZERO), 0.0);
     }
 
     #[test]
