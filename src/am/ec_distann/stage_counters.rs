@@ -208,10 +208,12 @@ pub(crate) enum DistannMaterializationWork {
     TraversalResponseBytes,
     ReplicaScans,
     ReplicaFallbacks,
+    PushdownRoundsWithThreshold,
+    NeighborsPruned,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 27] = [
+    pub(crate) const ALL: [Self; 29] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -239,6 +241,8 @@ impl DistannMaterializationWork {
         Self::TraversalResponseBytes,
         Self::ReplicaScans,
         Self::ReplicaFallbacks,
+        Self::PushdownRoundsWithThreshold,
+        Self::NeighborsPruned,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -270,6 +274,8 @@ impl DistannMaterializationWork {
             Self::TraversalResponseBytes => "traversal_response_bytes",
             Self::ReplicaScans => "replica_scans",
             Self::ReplicaFallbacks => "replica_fallbacks",
+            Self::PushdownRoundsWithThreshold => "pushdown_rounds_with_threshold",
+            Self::NeighborsPruned => "neighbors_pruned",
         }
     }
 
@@ -302,6 +308,8 @@ impl DistannMaterializationWork {
             Self::TraversalResponseBytes => 24,
             Self::ReplicaScans => 25,
             Self::ReplicaFallbacks => 26,
+            Self::PushdownRoundsWithThreshold => 27,
+            Self::NeighborsPruned => 28,
         }
     }
 }

@@ -117,25 +117,27 @@ entry.
 - For a tombstoned record, the expansion endpoint SHALL return
   `is_tombstone = true` so its neighbor edges remain available for traversal.
 - `code_threshold` and `candidate_limit` SHALL default to NULL (unbounded
-  response). The production coordinator derives them from the live candidate
-  heap for each round: `t = peek_worst(H_C)` only when the live heap already
-  contains at least the remaining `BW × H` expansion budget, and `l` is that
-  remaining budget (with a minimum of one for the final response). Otherwise
-  `t` is NULL while `l` still bounds the number of candidates needed by the
-  remaining rounds.
-- Under that derivation, the threshold is not an independent recall-risk
-  heuristic. A neighbor below `t` is worse than every candidate already in the
-  live heap; because the heap has at least as many entries as can still be
-  expanded, it cannot be popped within the remaining budget. Per-owner top-`l`
-  selection is equivalent for the same reason: a candidate outside an owner's
-  top `l` has at least `l` better candidates from that owner ahead of it.
-  Threshold ties are retained and resolved by the coordinator's `(distance,
-  vec_id)` order; tombstones remain traversable and never contribute an
-  `exact_dist` result.
-- The equivalence does not hold for a stale threshold from an earlier round,
-  an `l` smaller than the remaining expansion budget, or a threshold derived
-  from a heap that is not the coordinator's live heap. Those modes remain
-  opt-in and labeled rather than silently weakening FR-081-AC-4.
+  response). The production coordinator has a real retained-candidate heap
+  parameter `L` (`ec_distann.candidate_heap_limit`). At each round it retains
+  at most the best `L` live, unexpanded candidates, derives
+  `t = peek_worst(H_C)` from the L-th retained candidate when that candidate
+  exists, and derives a per-response `l = ceil(L / BW)` (minimum one). Thus
+  `l` is a response-local bound, not the total remaining `BW × H` budget.
+- Under this L-bounded derivation, the threshold is not an independent
+  recall-risk heuristic: a neighbor below `t` is worse than every candidate
+  retained in `H_C`, and per-owner top-`l` selection is the bounded response
+  contract. The equivalence claim is specifically against the same L-bounded
+  coordinator path with owner controls disabled; it does not claim identity
+  with an unbounded frontier. Threshold ties are retained and resolved by the
+  coordinator's `(distance, vec_id)` order; tombstones remain traversable and
+  never contribute an `exact_dist` result.
+- Equivalence requires a live threshold derived from the current retained heap,
+  deterministic `(code_distance, vec_id)` ordering, and the stated `l` bound.
+  A stale threshold, a different L, or an owner limit smaller than the
+  declared per-response `l` is outside the guarantee and must be labeled in
+  benchmark provenance. The cost bound is explicit: the coordinator stores
+  O(L) live frontier candidates and each expanded response returns at most
+  `ceil(L / BW)` neighbors before coordinator dedupe and re-retention.
 - Gate benchmark runs use the coordinator-derived controls and must report the
   ordered-result identity against the same generation with the controls
   disabled as the reference path.

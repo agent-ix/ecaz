@@ -14,7 +14,8 @@ use super::{
     ECDISTANN_DEFAULT_ALPHA, ECDISTANN_DEFAULT_BEAM_WIDTH, ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
     ECDISTANN_DEFAULT_BUILD_SHARDS, ECDISTANN_DEFAULT_CLOSURE_EPSILON,
     ECDISTANN_DEFAULT_GRAPH_DEGREE, ECDISTANN_DEFAULT_HEAD_INDEX_CAP, ECDISTANN_DEFAULT_HOP_ROUNDS,
-    ECDISTANN_DEFAULT_TOP_K, ECDISTANN_MAX_ALPHA, ECDISTANN_MAX_BEAM_WIDTH,
+    ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT, ECDISTANN_DEFAULT_TOP_K, ECDISTANN_MAX_ALPHA,
+    ECDISTANN_MAX_BEAM_WIDTH, ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT,
     ECDISTANN_MAX_BUILD_LIST_SIZE, ECDISTANN_MAX_BUILD_SHARDS, ECDISTANN_MAX_CLOSURE_EPSILON,
     ECDISTANN_MAX_GRAPH_DEGREE, ECDISTANN_MAX_HEAD_INDEX_CAP, ECDISTANN_MAX_HOP_ROUNDS,
     ECDISTANN_MAX_TOP_K, ECDISTANN_MIN_ALPHA, ECDISTANN_MIN_BUILD_LIST_SIZE,
@@ -25,6 +26,11 @@ use super::{
 /// FR-081 beam width BW: frontier candidates expanded per hop round.
 static ECDISTANN_BEAM_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISTANN_DEFAULT_BEAM_WIDTH);
+
+/// FR-081 candidate frontier bound L. This is independent of the expansion
+/// budget so the pushdown threshold is derived from a real retained heap.
+static ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT);
 
 /// FR-081 hop-round budget H: BW x H is the hard per-query expansion cap
 /// (NFR-019).
@@ -264,6 +270,16 @@ pub(super) fn register_gucs() {
         &ECDISTANN_BEAM_WIDTH_GUC,
         1,
         ECDISTANN_MAX_BEAM_WIDTH,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_distann.candidate_heap_limit",
+        c"FR-081 retained candidate heap limit (L) for ec_distann scans.",
+        c"The coordinator retains at most L best unexpanded candidates and derives the owner code-score threshold from the L-th candidate. The per-response candidate window is derived from L and beam_width.",
+        &ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC,
+        1,
+        ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -704,6 +720,12 @@ pub(super) fn replica_control_password_file() -> Option<String> {
 
 pub(super) fn current_beam_width() -> usize {
     usize::try_from(ECDISTANN_BEAM_WIDTH_GUC.get())
+        .unwrap_or(1)
+        .max(1)
+}
+
+pub(super) fn current_candidate_heap_limit() -> usize {
+    usize::try_from(ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC.get())
         .unwrap_or(1)
         .max(1)
 }

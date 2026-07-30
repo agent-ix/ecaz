@@ -400,6 +400,7 @@ pub(crate) unsafe fn collect_distann_hits(
 
     let params = DistannOrchestrationParams {
         beam_width,
+        candidate_heap_limit: options::current_candidate_heap_limit(),
         hop_rounds,
         top_k,
         debug_fail_hop_round: options::debug_fail_hop_round(),

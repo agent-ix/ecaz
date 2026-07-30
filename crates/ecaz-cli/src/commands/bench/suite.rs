@@ -99,6 +99,12 @@ struct RunArgs {
     /// Permit latency/recall suite steps against a debug-built backend.
     #[arg(long)]
     allow_debug_backend: bool,
+
+    /// Fail when a measured 100k/10k per-node storage growth row exceeds 2x.
+    /// This is opt-in because fixed-roster sharded fixtures intentionally grow
+    /// owner state with the corpus; such fixtures must not use this gate.
+    #[arg(long)]
+    fail_on_growth_breach: bool,
 }
 
 #[derive(Args, Debug)]
@@ -1011,7 +1017,10 @@ enum StepStatus {
 
 pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
     match args.command {
-        Some(SuiteCommand::Run(run_args)) => run_suite(conn, run_args.into()).await,
+        Some(SuiteCommand::Run(run_args)) => {
+            let fail_on_growth_breach = run_args.fail_on_growth_breach;
+            run_suite(conn, run_args.into(), fail_on_growth_breach).await
+        }
         Some(SuiteCommand::Audit(audit_args)) => audit_suite(&audit_args.config).await,
         Some(SuiteCommand::Status(status_args)) => status_manifest(&status_args.manifest).await,
         Some(SuiteCommand::Report(report_args)) => {
@@ -1041,6 +1050,7 @@ pub async fn run(conn: &ConnectionOptions, args: SuiteArgs) -> Result<()> {
                     manifest_output: args.manifest_output,
                     allow_debug_backend: false,
                 },
+                false,
             )
             .await
         }
@@ -1064,7 +1074,11 @@ impl From<RunArgs> for SuiteRunOptions {
     }
 }
 
-async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()> {
+async fn run_suite(
+    conn: &ConnectionOptions,
+    args: SuiteRunOptions,
+    fail_on_growth_breach: bool,
+) -> Result<()> {
     let (raw, mut config) = load_config(&args.config).await?;
     if let Some(artifact_dir) = &args.artifact_dir {
         config.artifact_dir = Some(artifact_dir.clone());
@@ -1183,7 +1197,32 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         }
     }
 
-    let rows = write_results_if_requested(&args, &config, &manifest).await?;
+    let mut rows = extract_result_rows(&manifest).await?;
+    assert_distann_storage_ratio_rows(&manifest, &rows)?;
+    let growth_rows = distann_storage_growth_rows(&rows);
+    if fail_on_growth_breach {
+        let breaches = growth_rows
+            .iter()
+            .filter_map(|row| row.values.get("growth_ratio"))
+            .filter_map(|value| value.parse::<f64>().ok())
+            .filter(|ratio| *ratio > 2.0)
+            .count();
+        if breaches > 0 {
+            bail!(
+                "suite storage growth gate failed: {breaches} per-node 100k/10k ratios exceed 2.0"
+            );
+        }
+    }
+    rows.extend(growth_rows);
+    if let Some(path) = args.results_output.clone().or_else(|| {
+        config
+            .artifact_dir
+            .as_ref()
+            .map(|dir| dir.join("results.jsonl"))
+    }) {
+        write_results_jsonl(&path, &rows).await?;
+        crate::ecaz_eprintln!("[suite:{}] wrote {}", config.name, path.display());
+    }
     let selected_steps = selected_step_names(&manifest);
     manifest.threshold_results =
         evaluate_thresholds_for_steps(&config.thresholds, &rows, &selected_steps);
@@ -1734,26 +1773,7 @@ async fn write_manifest_if_requested(
     Ok(())
 }
 
-async fn write_results_if_requested(
-    args: &SuiteRunOptions,
-    config: &SuiteConfig,
-    manifest: &SuiteManifest,
-) -> Result<Vec<ResultRow>> {
-    let rows = extract_result_rows(manifest).await?;
-    let path = args.results_output.clone().or_else(|| {
-        config
-            .artifact_dir
-            .as_ref()
-            .map(|dir| dir.join("results.jsonl"))
-    });
-    if let Some(path) = path {
-        write_results_jsonl(&path, &rows).await?;
-        crate::ecaz_eprintln!("[suite:{}] wrote {}", config.name, path.display());
-    }
-    Ok(rows)
-}
-
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct ResultRow {
     suite: String,
     step: String,
@@ -1761,6 +1781,116 @@ struct ResultRow {
     metric: String,
     artifact: String,
     values: BTreeMap<String, String>,
+}
+
+fn assert_distann_storage_ratio_rows(manifest: &SuiteManifest, rows: &[ResultRow]) -> Result<()> {
+    for step in manifest.steps.iter().filter(|step| {
+        step.selected
+            && step.kind == "distann-local-multinode"
+            && matches!(step.status, Some(StepStatus::Succeeded))
+            && step.command.iter().any(|arg| arg == "--physical-benchmark")
+    }) {
+        let storage_keys = rows
+            .iter()
+            .filter(|row| row.step == step.name && row.metric == "physical_benchmark_storage")
+            .filter_map(storage_identity_key)
+            .collect::<HashSet<_>>();
+        let ratio_keys = rows
+            .iter()
+            .filter(|row| row.step == step.name && row.metric == "physical_benchmark_storage_ratio")
+            .filter_map(storage_identity_key)
+            .collect::<HashSet<_>>();
+        if storage_keys.is_empty() {
+            continue;
+        }
+        let missing = storage_keys
+            .difference(&ratio_keys)
+            .cloned()
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            bail!(
+                "distann physical benchmark step {:?} is missing physical_benchmark_storage_ratio for {:?}",
+                step.name,
+                missing
+            );
+        }
+    }
+    Ok(())
+}
+
+fn storage_identity_key(row: &ResultRow) -> Option<(String, String, String, String)> {
+    Some((
+        row.values.get("scale")?.clone(),
+        row.values.get("variant")?.clone(),
+        row.values.get("arm")?.clone(),
+        row.values.get("node").cloned().unwrap_or_default(),
+    ))
+}
+
+fn distann_storage_growth_rows(rows: &[ResultRow]) -> Vec<ResultRow> {
+    let mut by_node: HashMap<(String, String, String), HashMap<String, (String, f64)>> =
+        HashMap::new();
+    for row in rows
+        .iter()
+        .filter(|row| row.metric == "physical_benchmark_storage_node")
+    {
+        let (Some(variant), Some(arm), Some(node), Some(scale), Some(bytes)) = (
+            row.values.get("variant"),
+            row.values.get("arm"),
+            row.values.get("node"),
+            row.values.get("scale"),
+            row.values
+                .get("total_resident_bytes")
+                .and_then(|value| value.parse::<f64>().ok()),
+        ) else {
+            continue;
+        };
+        by_node
+            .entry((variant.clone(), arm.clone(), node.clone()))
+            .or_default()
+            .insert(scale.clone(), (row.step.clone(), bytes));
+    }
+
+    by_node
+        .into_iter()
+        .filter_map(|((variant, arm, node), scales)| {
+            let (low_step, low) = scales.get("10k")?.clone();
+            let (high_step, high) = scales.get("100k")?.clone();
+            if low <= 0.0 {
+                return None;
+            }
+            let ratio = high / low;
+            Some(ResultRow {
+                suite: rows.first()?.suite.clone(),
+                step: "suite-storage-growth".into(),
+                kind: "storage-growth".into(),
+                metric: "physical_benchmark_storage_growth".into(),
+                artifact: "suite-derived".into(),
+                values: BTreeMap::from([
+                    ("scale_low".into(), "10k".into()),
+                    ("scale_high".into(), "100k".into()),
+                    ("variant".into(), variant),
+                    ("arm".into(), arm),
+                    ("node".into(), node),
+                    ("low_step".into(), low_step),
+                    ("high_step".into(), high_step),
+                    ("low_total_resident_bytes".into(), format_bytes(low)),
+                    ("high_total_resident_bytes".into(), format_bytes(high)),
+                    ("growth_ratio".into(), format!("{ratio:.6}")),
+                    ("threshold".into(), "2.0".into()),
+                    ("gate_default".into(), "disabled".into()),
+                ]),
+            })
+        })
+        .collect()
+}
+
+fn format_bytes(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{value:.0}")
+    } else {
+        value.to_string()
+    }
 }
 
 async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>> {

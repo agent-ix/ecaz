@@ -2506,6 +2506,7 @@ impl PhysicalGenerationScan {
 
         let params = DistannOrchestrationParams {
             beam_width: super::options::current_beam_width(),
+            candidate_heap_limit: super::options::current_candidate_heap_limit(),
             hop_rounds: super::options::current_hop_rounds(),
             top_k: effective_top_k,
             debug_fail_hop_round: super::options::debug_fail_hop_round(),

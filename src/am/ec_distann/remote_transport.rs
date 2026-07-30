@@ -2085,6 +2085,7 @@ fn debug_expand_search_impl(
 
     let params = DistannOrchestrationParams {
         beam_width,
+        candidate_heap_limit: super::options::current_candidate_heap_limit(),
         hop_rounds,
         top_k,
         debug_fail_hop_round: None,
