@@ -5,7 +5,10 @@ command: /home/peter/.cargo-target/release/ecaz bench suite run --config reviews
 result: dry-run expanded the two-arm physical PG18 command successfully
 
 command: approved execution of the same suite with the external run directory
-result: stopped before benchmark evidence; the fixture reported fallback rows=2000 dim=16 because the staged corpus was absent
-missing inputs: /home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv, ec_real_100k_queries.tsv, ec_real_100k_manifest.json
-cleanup: removed /home/peter/.ecaz/clusters/task204-arm-fidelity-100k after stopping the invalid fallback run
+result: succeeded; exit_code=0; duration_ms=3056357; real source_rows=100000
+inputs: /home/peter/dev/ecaz/data/staged-current/ec_real_100k_corpus.tsv, ec_real_100k_queries.tsv, ec_real_100k_manifest.json
+evidence: run-final/results.jsonl and run-final/storage-two-arm-100k/distann-multinode-summary.log
+storage: raw_vector_rows=100000 raw_vector_bytes=614400000 owner_control_cluster_graph_side_bytes=830144512 owner_control_ratio=1.351147 coordinator_replica_cluster_graph_side_bytes=2489663488 coordinator_replica_ratio=4.052187
+replica: state=Ready expected_records=100000 copied_records=100000 relation_bytes=1659518976 copied_bytes=1315200000
+cleanup: removed /home/peter/.ecaz/clusters/task204-arm-fidelity-100k after evidence capture
 fixture policy: the configured run directory is /home/peter/.ecaz/clusters/task204-arm-fidelity-100k, outside the repository and target/
