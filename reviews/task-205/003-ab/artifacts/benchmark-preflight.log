@@ -1,4 +1,0 @@
-command: /home/peter/.cargo-target/release/ecaz bench suite audit --config reviews/task-205/003-ab/artifacts/task205-ab-suite.json
-result: configuration is pre-registered for six PG18 distann steps at 10k/50k/100k; no matrix execution claimed
-required inputs absent: /home/peter/dev/ecaz/data/staged-current/ec_real_{10k,50k,100k}_{corpus,queries}.tsv and manifest JSON files
-blocking condition: the host has no staged corpus; running without it would use fixture fallback data and would not be admissible standard-sweep evidence
