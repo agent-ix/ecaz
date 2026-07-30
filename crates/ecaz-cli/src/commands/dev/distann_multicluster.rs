@@ -5357,6 +5357,20 @@ async fn run_physical_benchmarks(
                 cache.get::<_, i64>(2),
             ));
         }
+        // NFR-021 clause 2/3: the coordinator's own index-derived state is
+        // itemised per relation, not reported as zero. The head sample and its
+        // Vamana graph are coordinator-resident and unsharded; they are
+        // generation-scoped and therefore identical across arms, which is
+        // recorded as `arm_invariant=true` rather than implied by reprinting a
+        // pre-loop scalar (the Task 204 defect).
+        lines.push(format!(
+            "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_generation_head_sample relation_bytes={head_sample_bytes} storage_derived=false arm_invariant=true nfr_021_class=coordinator_resident_unsharded",
+        ));
+        lines.push(format!(
+            "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_generation_head_graph relation_bytes={head_graph_bytes} storage_derived=false arm_invariant=true nfr_021_class=coordinator_resident_unsharded",
+        ));
+        let coordinator_head_bytes = head_sample_bytes + head_graph_bytes;
+        let coordinator_total_resident_bytes = derived_relation_bytes + coordinator_head_bytes;
         let cluster_graph_side_bytes = owner_graph_side_bytes + derived_relation_bytes;
         let max_single_node_graph_side_bytes =
             max_owner_graph_side_bytes.max(derived_relation_bytes);
@@ -5378,7 +5392,7 @@ async fn run_physical_benchmarks(
             ));
         }
         lines.push(format!(
-            "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 total_resident_bytes={derived_relation_bytes} derived_relation_bytes={derived_relation_bytes}",
+            "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} coordinator_resident_unsharded_bytes={coordinator_head_bytes} total_resident_bytes={coordinator_total_resident_bytes} derived_relation_bytes={derived_relation_bytes} relations_itemised=true",
         ));
         lines.push(format!(
             "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",

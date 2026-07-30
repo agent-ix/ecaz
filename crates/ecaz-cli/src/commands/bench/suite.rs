@@ -2009,7 +2009,21 @@ struct DistannNfr021Evidence {
     max_orphan_vectors: u64,
     max_unsharded_derived_bytes: u64,
     missing_owned_record_counts: usize,
+    /// NFR-021 clause 2/3: coordinator-resident structures that are not
+    /// sharded, keyed by relation name. Task 210 P2 closes the only entries
+    /// this set is allowed to hold; anything else is a hard violation.
+    coordinator_resident_unsharded: BTreeMap<String, u64>,
 }
+
+/// Structures known to be coordinator-resident and unsharded, with the phase
+/// that removes them. They are reported on every conformance row until that
+/// phase lands, and any relation NOT on this list is a hard violation rather
+/// than a known gap. Delete an entry when its phase ships — a reappearance
+/// then fails the suite instead of being absorbed.
+const NFR_021_KNOWN_DISTRIBUTION_GAPS: [(&str, &str); 2] = [
+    ("ec_distann_generation_head_sample", "task-210-P2"),
+    ("ec_distann_generation_head_graph", "task-210-P2"),
+];
 
 fn distann_nfr_021_conformance_rows(
     manifest: &SuiteManifest,
@@ -2155,6 +2169,26 @@ fn collect_distann_nfr_021_step_evidence(
             .get("relation_bytes")
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(u64::MAX);
+        // A coordinator-resident unsharded structure is a distribution gap, not
+        // a derived-relation violation: it is reported by name on every
+        // conformance row and checked against the known-gap list below.
+        if row
+            .values
+            .get("nfr_021_class")
+            .is_some_and(|class| class == "coordinator_resident_unsharded")
+        {
+            let relation = row
+                .values
+                .get("relation")
+                .cloned()
+                .unwrap_or_else(|| "unnamed".to_owned());
+            let entry = evidence
+                .coordinator_resident_unsharded
+                .entry(relation)
+                .or_default();
+            *entry = (*entry).max(bytes);
+            continue;
+        }
         evidence.max_unsharded_derived_bytes = evidence.max_unsharded_derived_bytes.max(bytes);
     }
 }
@@ -2231,9 +2265,38 @@ fn distann_nfr_021_result_row(
         && evidence.missing_owned_record_counts == 0
         && head_capacity_constant
         && normalized_growth_max.is_some();
+    // A coordinator-resident unsharded relation on the known list is an owned,
+    // dated gap: reported loudly on every row, not silently absorbed and not
+    // used to fail unrelated lanes. Anything off the list is a hard violation.
+    let known_gap_relations = NFR_021_KNOWN_DISTRIBUTION_GAPS
+        .iter()
+        .map(|(relation, _)| *relation)
+        .collect::<HashSet<_>>();
+    let unexpected_coordinator_resident = evidence
+        .coordinator_resident_unsharded
+        .keys()
+        .any(|relation| !known_gap_relations.contains(relation.as_str()));
+    let outstanding_gap = evidence
+        .coordinator_resident_unsharded
+        .iter()
+        .filter(|(_, bytes)| **bytes > 0)
+        .map(|(relation, bytes)| {
+            let owner = NFR_021_KNOWN_DISTRIBUTION_GAPS
+                .iter()
+                .find(|(known, _)| *known == relation.as_str())
+                .map_or("unowned", |(_, owner)| *owner);
+            format!("{relation}:{bytes}:{owner}")
+        })
+        .collect::<Vec<_>>();
+    let coordinator_resident_unsharded_bytes = evidence
+        .coordinator_resident_unsharded
+        .values()
+        .copied()
+        .sum::<u64>();
     let hard_violation = evidence.max_non_owned_records > 0
         || evidence.max_orphan_vectors > 0
         || evidence.max_unsharded_derived_bytes > 0
+        || unexpected_coordinator_resident
         || evidence.head_capacities.len() > 1
         || normalized_growth_max.is_some_and(|ratio| ratio > NORMALIZED_GROWTH_THRESHOLD);
     let actual = if hard_violation {
@@ -2292,6 +2355,18 @@ fn distann_nfr_021_result_row(
         (
             "missing_owned_record_counts".into(),
             evidence.missing_owned_record_counts.to_string(),
+        ),
+        (
+            "coordinator_resident_unsharded_bytes".into(),
+            coordinator_resident_unsharded_bytes.to_string(),
+        ),
+        (
+            "outstanding_distribution_gap".into(),
+            if outstanding_gap.is_empty() {
+                "none".to_owned()
+            } else {
+                outstanding_gap.join(",")
+            },
         ),
     ]);
     if let Some(ratio) = normalized_growth_max {
@@ -6952,6 +7027,159 @@ psql header noise\n\
                 .get("max_unsharded_derived_bytes")
                 .map(String::as_str),
             Some("1659518976")
+        );
+    }
+
+    fn nfr_021_test_manifest(suite: &str) -> SuiteManifest {
+        SuiteManifest {
+            suite: suite.into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            runner_git_commit: None,
+            connection: ManifestConnection {
+                database: "tqvector_bench".into(),
+                host: None,
+                port: None,
+                user: None,
+                password_configured: false,
+            },
+            backend: None,
+            steps: Vec::new(),
+            threshold_results: Vec::new(),
+        }
+    }
+
+    fn nfr_021_complete_owner_evidence() -> DistannNfr021Evidence {
+        let mut evidence = DistannNfr021Evidence {
+            scales: ["10k", "50k", "100k"]
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect(),
+            topology_scales: ["10k", "50k", "100k"]
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect(),
+            owner_nodes: ["1"].into_iter().map(ToOwned::to_owned).collect(),
+            head_capacities: ["4096"].into_iter().map(ToOwned::to_owned).collect(),
+            ..DistannNfr021Evidence::default()
+        };
+        for (scale, bytes) in [("10k", 7_600.0), ("50k", 8_050.0), ("100k", 8_200.0)] {
+            evidence
+                .bytes_per_owned_record
+                .insert((scale.into(), "1".into()), bytes);
+        }
+        evidence
+    }
+
+    fn nfr_021_owner_registration() -> DistannNfr021ManifestRegistration {
+        DistannNfr021ManifestRegistration {
+            variant: None,
+            id: "owner-control".into(),
+            role: DistannDecisionRole::Control,
+            admissibility: DistannNfr021Admissibility::Conforming,
+            rationale: "physical owner generation".into(),
+        }
+    }
+
+    #[test]
+    fn distann_nfr_021_reports_the_known_head_gap_by_name_without_failing_other_lanes() {
+        let manifest = nfr_021_test_manifest("nfr-021-known-gap");
+        let mut evidence = nfr_021_complete_owner_evidence();
+        evidence
+            .coordinator_resident_unsharded
+            .insert("ec_distann_generation_head_sample".into(), 25_280_512);
+        evidence
+            .coordinator_resident_unsharded
+            .insert("ec_distann_generation_head_graph".into(), 614_095);
+
+        let row = distann_nfr_021_result_row(
+            &manifest,
+            "owner-control".into(),
+            nfr_021_owner_registration(),
+            evidence,
+        );
+
+        // The owner arm's own state is conforming, so unrelated lanes are not
+        // halted by a gap they did not introduce...
+        assert_eq!(
+            row.values.get("actual_admissibility").map(String::as_str),
+            Some("conforming")
+        );
+        // ...but the gap is named, sized, and attributed to its owning phase on
+        // every conformance row until Task 210 P2 removes it.
+        assert_eq!(
+            row.values
+                .get("coordinator_resident_unsharded_bytes")
+                .map(String::as_str),
+            Some("25894607")
+        );
+        assert_eq!(
+            row.values
+                .get("outstanding_distribution_gap")
+                .map(String::as_str),
+            Some(
+                "ec_distann_generation_head_graph:614095:task-210-P2,\
+                 ec_distann_generation_head_sample:25280512:task-210-P2"
+            )
+        );
+    }
+
+    #[test]
+    fn distann_nfr_021_fails_on_a_coordinator_resident_relation_that_is_not_a_known_gap() {
+        let manifest = nfr_021_test_manifest("nfr-021-new-gap");
+        let mut evidence = nfr_021_complete_owner_evidence();
+        evidence
+            .coordinator_resident_unsharded
+            .insert("some_new_coordinator_cache".into(), 4_096);
+
+        let row = distann_nfr_021_result_row(
+            &manifest,
+            "owner-control".into(),
+            nfr_021_owner_registration(),
+            evidence,
+        );
+
+        assert_eq!(
+            row.values.get("actual_admissibility").map(String::as_str),
+            Some("nonconforming")
+        );
+        assert_eq!(
+            row.values.get("decision_eligible").map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(
+            row.values
+                .get("outstanding_distribution_gap")
+                .map(String::as_str),
+            Some("some_new_coordinator_cache:4096:unowned")
+        );
+    }
+
+    #[test]
+    fn distann_nfr_021_head_gap_clears_when_the_head_is_sharded() {
+        let manifest = nfr_021_test_manifest("nfr-021-gap-closed");
+
+        let row = distann_nfr_021_result_row(
+            &manifest,
+            "owner-control".into(),
+            nfr_021_owner_registration(),
+            nfr_021_complete_owner_evidence(),
+        );
+
+        assert_eq!(
+            row.values
+                .get("outstanding_distribution_gap")
+                .map(String::as_str),
+            Some("none")
+        );
+        assert_eq!(
+            row.values
+                .get("coordinator_resident_unsharded_bytes")
+                .map(String::as_str),
+            Some("0")
         );
     }
 
