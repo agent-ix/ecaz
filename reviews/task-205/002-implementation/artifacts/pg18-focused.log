@@ -1,0 +1,7 @@
+command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo test -p ecaz --lib --features pg18 am::ec_distann::scan::tests
+result: test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 2527 filtered out
+identity evidence: algorithm1_pushdown_is_order_identical_to_unbounded_path_with_tombstone ... ok
+owner evidence: owner_pushdown_keeps_threshold_ties_and_deterministic_limit_order ... ok
+
+command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo check -p ecaz --lib --features pg18
+result: Finished dev profile; exit code 0

@@ -1,0 +1,6 @@
+command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo check -p ecaz-cli
+result: blocked by pre-existing ecaz-fault-injection C build error, unrelated to Task 205:
+  src/ldpreload_provider.c:627:5: error: implicit declaration of function 'maybe_sleep'
+  build script failed for ecaz-fault-injection before ecaz-cli validation
+note: the ecaz library PG18 check and focused scan tests passed; no unrelated C
+source was changed in this packet.
