@@ -9,10 +9,10 @@ Entry gate: none. Independent of Tasks 204--206 and may run in parallel, but
 2026-07-29-02). Task 185 is **not** superseded and is not re-scoped away; it owns
 a different lever, and the two are independent given this split:
 
-- **207 (this task) owns the pool, the search path, and sharding** —
-  per-partition union construction (§3), restoring the persisted Vamana graph in
-  place of the 4,096-point exact scan, and distributing the head across the
-  roster (§2.2).
+- **207 (this task) owns the pool and the search path** — per-partition union
+  construction (§3) and restoring the persisted Vamana graph in place of the
+  4,096-point exact scan. **Sharding and replication of the head belong to Task
+  210**, unconditionally.
 - **185 owns the selection objective** — which landmarks are chosen from the
   pool, and which are returned as seeds. For the promoted
   `training_landmarks_exact` policy the pool is already the whole corpus
@@ -93,19 +93,23 @@ coverage, and per-partition union construction is the mechanism that fixes it.**
    4,096-point exact scan, or record why the exact scan is retained. Note §4.1's
    finding that the head becomes CPU-bound: a full sort of 4,096 candidates to
    extract 32 is strictly worse than a bounded heap.
-3. **Shard the head.** Distribute head storage/search across the roster per §2.2.
-   Required for NFR-021 if the cap ever becomes a function of N; optional while
-   the cap is constant, so this phase is measured on its own merits (coordinator
-   CPU, not storage).
+3. **Shard the head — MOVED TO TASK 210 (2026-07-30).** Distributing head
+   storage/search across the roster per §2.2, and replicating it per §4.1, is
+   owned by `plan/tasks/210-ec-distann-distribution-restoration.md` P2. It is
+   unconditional there. The clause previously here made it "optional while the
+   cap is constant"; that clause is deleted, not relocated. Do not re-open the
+   sharding question inside this task.
 4. **Requalify seed width.** Re-test `k_head` toward the paper's 200 at the beam
    width Task 206 selects. `NEG-01` was measured at BW=4 where extra seeds are
    structurally unusable.
 
 ## NFR-021 constraint
 
-Cap `C` must remain **constant in N**, or the head must be sharded. A head that
-grows as a fraction of the corpus on one node is inadmissible regardless of its
-recall effect. State the admissibility verdict at pre-registration.
+The head is sharded across the roster by Task 210 P2 regardless of its cap —
+smallness is not an exemption, and NFR-021's constant-`C` coordinator-resident
+carve-out is removed by that task. A head that grows as a fraction of the corpus
+on one node is inadmissible regardless of its recall effect. State the
+admissibility verdict at pre-registration.
 
 ## Benchmark gate
 

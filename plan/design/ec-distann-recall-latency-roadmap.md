@@ -352,7 +352,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-27 | Straggler-aware owner scheduling and tail accounting | active diagnostic |
 | TRAV-28 | Replicated coordinator top-layer graph | **SCOPE DRIFT — entry not delivered as written.** Selected by Task 190, but Tasks 198/199 shipped a **full-graph** replica (every vec_id's graph record + full-precision vector, 1.660 GB at 100k, linear in N on one node), not the bounded top-layer structure this row describes. The delivered artifact violates NFR-021, NFR-018's per-node bound, NFR-017:38, and FR-078:492. A bounded top-layer candidate remains unbuilt and unmeasured. |
 | TRAV-29 | Replicated frequently traversed bridge nodes | deferred Task 190 architecture |
-| TRAV-30 | Routing-only gateway copies without full graph replication | **ACTIVE** — the NFR-021-conforming direction. Listed in Task 190's family 1 but dropped at the narrowing step, which carried only `ARCH-02`/`TRAV-28` into the final comparison; the one compared candidate that preserved sharding was never evaluated. Reinstated as the successor direction to the withdrawn replica. |
+| TRAV-30 | Routing-only gateway copies without full graph replication | **ACTIVE — assigned to Task 210 P3** (2026-07-30). The NFR-021-conforming direction. Listed in Task 190's family 1 but dropped at the narrowing step, which carried only `ARCH-02`/`TRAV-28` into the final comparison; the one compared candidate that preserved sharding was never evaluated. Reinstated as the successor direction to the withdrawn replica, and now owned rather than merely reinstated. |
 
 ## Candidate ledger: graph construction and adaptive search
 
@@ -441,6 +441,16 @@ premise and does not repeat the same experiment unchanged.
 
 ## Task import and experiment rules
 
+0. **Conformance work is exempt from the candidate rules below** (added
+   2026-07-30). Distribution, placement, and NFR-021 conformance work is
+   delivered against the invariant, not screened against latency. It is never
+   subject to "advance at most one candidate", never requires a measured
+   end-to-end win to land, and a measured latency cost is reported rather than
+   used as grounds to withhold the property. Task 210 owns this work. The rule
+   exists because the ledger admits only winners, and sharding cannot win on
+   latency — the withdrawn replica was *faster* than the sharded owner arm, which
+   is precisely how distribution was traded away without any single gate
+   objecting.
 1. A task names the candidate IDs it imports before measurement.
 2. Each behavior change is isolated in its own A/B; no stacked candidate
    families in one attribution cell.
