@@ -1,9 +1,10 @@
 # Task 208: ec_distann NFR-021/NFR-022 Conformance Gates
 
-Status: **IN PROGRESS** (2026-07-30). The NFR-021 measurement contradiction is
-reconciled and phases 1-3 are implemented for review in
-`reviews/task-208/001-gates/`; the retrospective sweep remains open. Priority:
-P1 program integrity.
+Status: **IN REVIEW** (2026-07-30). The NFR-021 measurement contradiction is
+reconciled, phases 1-3 are implemented in `reviews/task-208/001-gates/`, and
+the phase-4 retrospective sweep is recorded in
+`reviews/task-208/002-retrospective-sweep/`. Both requests remain open for
+outside review. Priority: P1 program integrity.
 
 Entry gate: Task 204's per-node storage emission, which this task consumes.
 
