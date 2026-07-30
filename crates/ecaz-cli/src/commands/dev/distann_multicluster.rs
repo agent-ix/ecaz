@@ -5204,7 +5204,8 @@ async fn run_physical_benchmarks(
                 "SELECT count(*)::bigint,
                         coalesce((SELECT array_length(source, 1)
                                     FROM {physical_corpus}
-                                   LIMIT 1), 0)::bigint"
+                                   LIMIT 1), 0)::bigint
+                   FROM {physical_corpus}"
             ),
             &[],
         )
