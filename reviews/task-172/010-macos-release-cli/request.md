@@ -46,6 +46,8 @@ See `artifacts/validation.md` and `artifacts/manifest.md`.
 - Pre-fix release start: exit 134, `_MyDatabaseId` not found.
 - `cargo build --release -p ecaz-cli`: pass.
 - Release `ecaz bench suite --help`: pass, exit 0.
+- Required absolute operator binary installed from the committed release build;
+  its SHA-256 matches `target/release/ecaz` and its suite help starts.
 - Undefined-data audit: none of the eight PG18 globals remains undefined; all
   eight are defined by the executable.
 - Targeted Rust formatting and `git diff --check`: pass.

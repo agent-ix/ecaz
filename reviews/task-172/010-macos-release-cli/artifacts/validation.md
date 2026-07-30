@@ -43,6 +43,18 @@ one pre-existing dead-code warning for
 `LoadedDistributedPlacementConfig::path` in `commands/corpus/load.rs`; no new
 warning is attributable to this change.
 
+## Installed operator binary
+
+```sh
+cargo install --path crates/ecaz-cli --locked --force --target-dir target
+shasum -a 256 /Users/peter/.cargo/bin/ecaz target/release/ecaz
+/Users/peter/.cargo/bin/ecaz bench suite --help >/dev/null
+```
+
+Result: pass. Both binaries have SHA-256
+`c5585e77fc1bd4e7c582b55a918cfdc8410260a10c21828d134990da145246f2`;
+the required absolute operator binary starts successfully.
+
 ## Mach-O data-symbol audit
 
 ```sh
