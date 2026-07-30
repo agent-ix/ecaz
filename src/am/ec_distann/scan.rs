@@ -157,7 +157,7 @@ pub(crate) fn prune_and_limit_neighbors(
         .iter()
         .copied()
         .zip(neighbor_code_dists.iter().copied())
-        .filter(|(_, code_dist)| code_threshold.is_none_or(|threshold| -*code_dist >= threshold))
+        .filter(|(_, code_dist)| code_threshold.map_or(true, |threshold| -*code_dist >= threshold))
         .collect::<Vec<_>>();
     if candidate_limit.is_some() {
         neighbors.sort_unstable_by(|left, right| {

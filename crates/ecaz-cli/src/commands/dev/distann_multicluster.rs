@@ -5155,26 +5155,6 @@ async fn run_physical_benchmarks(
     }
 
     if let Some(content_digest) = traversal_replica_digest.as_deref() {
-        let cache = coordinator
-            .query_one(
-                "SELECT coalesce(io.heap_blks_read, 0)::bigint,
-                        coalesce(io.heap_blks_hit, 0)::bigint,
-                        pg_relation_size(status.replica_relid)::bigint
-                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass) status
-                   LEFT JOIN pg_statio_all_tables io
-                     ON io.relid = status.replica_relid
-                  WHERE status.state = 'Ready'
-                  ORDER BY status.ready_at DESC LIMIT 1",
-                &[],
-            )
-            .await
-            .wrap_err("collecting Task 198 replica cache residency counters")?;
-        lines.push(format!(
-            "physical_benchmark_traversal_replica_cache scale={scale} heap_blocks_read={} heap_blocks_hit={} heap_bytes={} cache_residency_proxy=pg_statio",
-            cache.get::<_, i64>(0),
-            cache.get::<_, i64>(1),
-            cache.get::<_, i64>(2),
-        ));
         lines.extend(
             run_task199_replica_lifecycle_drills(
                 coordinator,
@@ -5310,7 +5290,7 @@ async fn run_physical_benchmarks(
             .sum::<i64>();
         let control_index_bytes = published.iter().map(|row| row.control_bytes).sum::<i64>();
         let mut derived_relation_bytes = 0_i64;
-        if traversal_replica {
+        if variant.traversal_replica {
             let replica = coordinator
                 .query_one(
                     "SELECT relation_bytes::bigint, coalesce(wal_bytes, 0)::bigint,
@@ -5332,6 +5312,27 @@ async fn run_physical_benchmarks(
                 replica.get::<_, i64>(1),
                 replica.get::<_, i64>(2),
                 replica.get::<_, i64>(3),
+            ));
+            let cache = coordinator
+                .query_one(
+                    "SELECT coalesce(io.heap_blks_read, 0)::bigint,
+                            coalesce(io.heap_blks_hit, 0)::bigint,
+                            pg_relation_size(status.replica_relid)::bigint
+                       FROM ec_distann_traversal_replica_status('dm_idx'::regclass) status
+                       LEFT JOIN pg_statio_all_tables io
+                         ON io.relid = status.replica_relid
+                      WHERE status.state = 'Ready'
+                      ORDER BY status.ready_at DESC
+                      LIMIT 1",
+                    &[],
+                )
+                .await
+                .wrap_err("measuring per-arm traversal replica cache residency")?;
+            lines.push(format!(
+                "physical_benchmark_traversal_replica_cache scale={scale} {shared} arm=physical heap_blocks_read={} heap_blocks_hit={} heap_bytes={} cache_residency_proxy=pg_statio",
+                cache.get::<_, i64>(0),
+                cache.get::<_, i64>(1),
+                cache.get::<_, i64>(2),
             ));
         }
         let cluster_graph_side_bytes = owner_graph_side_bytes + derived_relation_bytes;
