@@ -4200,6 +4200,31 @@ impl SuiteStep {
                                 Some(&variant.name),
                                 registration,
                             )?;
+                            // NFR-021 clause 4 / NFR-022 (Task 210 P1): the
+                            // FR-084 traversal replica serves traversal from a
+                            // coordinator-resident copy of every owner's graph,
+                            // so an arm that enables it can only ever be
+                            // context, and can only ever be registered
+                            // nonconforming. Rejected before measurement.
+                            if variant.traversal_replica {
+                                if registration.admissibility
+                                    != DistannNfr021Admissibility::Nonconforming
+                                {
+                                    bail!(
+                                        "distann-local-multinode step {:?} benchmark seed variant {:?} enables the FR-084 traversal replica and must be NFR-021-registered as nonconforming",
+                                        step.name,
+                                        variant.name
+                                    )
+                                }
+                                if registration.role.is_decision_bearing() {
+                                    bail!(
+                                        "distann-local-multinode step {:?} benchmark seed variant {:?} cannot use the FR-084 traversal replica as a decision-bearing {} arm",
+                                        step.name,
+                                        variant.name,
+                                        registration.role.label()
+                                    )
+                                }
+                            }
                         }
                     }
                     let registered_variants = step
@@ -6890,6 +6915,64 @@ psql header noise\n\
         assert!(error
             .to_string()
             .contains("cannot use an NFR-021-nonconforming candidate arm"));
+    }
+
+    #[test]
+    fn distann_traversal_replica_arm_cannot_be_a_decision_arm_or_claim_conformance() {
+        let decision_arm = r#"{
+          "name": "distann-replica-decision",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "replica-10k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_10k",
+            "benchmark_seed_variants": [{
+              "name": "replica",
+              "seed_strategy": "persisted_head",
+              "head_search_width": 32,
+              "head_seed_count": 32,
+              "neighbor_score_mode": "rabitq",
+              "traversal_replica": true,
+              "nfr_021": {
+                "id": "replica-candidate",
+                "role": "candidate",
+                "admissibility": "nonconforming",
+                "rationale": "FR-084 accelerator"
+              }
+            }]
+          }]
+        }"#;
+        // Honestly registered as nonconforming, it is still rejected as a
+        // decision arm — this one is caught by the general NFR-022 rule.
+        let config: SuiteConfig = serde_json::from_str(decision_arm).expect("suite parses");
+        let error = validate_config(&config).expect_err("replica decision arm must be rejected");
+        assert!(
+            error.to_string().contains("for a decision"),
+            "unexpected error: {error}"
+        );
+
+        // Registered as conforming, it is rejected for the claim itself,
+        // whatever role it takes: a coordinator-resident full-graph copy is
+        // never NFR-021-conforming (Task 210 P1).
+        for role in ["candidate", "context"] {
+            let claims_conformance = decision_arm
+                .replace("\"role\": \"candidate\"", &format!("\"role\": \"{role}\""))
+                .replace(
+                    "\"admissibility\": \"nonconforming\"",
+                    "\"admissibility\": \"conforming\"",
+                );
+            let config: SuiteConfig =
+                serde_json::from_str(&claims_conformance).expect("suite parses");
+            let error =
+                validate_config(&config).expect_err("replica arm cannot be registered conforming");
+            assert!(
+                error
+                    .to_string()
+                    .contains("must be NFR-021-registered as nonconforming"),
+                "unexpected error for role {role}: {error}"
+            );
+        }
     }
 
     #[test]

@@ -2520,18 +2520,26 @@ impl PhysicalGenerationScan {
             .generation
             .as_ref()
             .map(|generation| generation.owner_ordinal as usize);
-        let replica = super::traversal_replica::ReadyTraversalReplica::open(
-            self.index_oid,
-            logical_index_uuid,
-            self.build_id,
-            &self.fingerprint,
-            &self.descriptor,
-            self.descriptor_digest,
-            local_ordinal,
-            snapshot,
-            query,
-            &prepared,
-        );
+        // NFR-021 clause 4/5: the FR-084 traversal replica holds every owner's
+        // graph record and full-precision vector on one node, so a scan served
+        // from it is not distributed. It is reachable only through an explicit
+        // opt-in and is never the default path. Task 210 P1.
+        let replica = if super::options::allow_nonconforming_replica() {
+            super::traversal_replica::ReadyTraversalReplica::open(
+                self.index_oid,
+                logical_index_uuid,
+                self.build_id,
+                &self.fingerprint,
+                &self.descriptor,
+                self.descriptor_digest,
+                local_ordinal,
+                snapshot,
+                query,
+                &prepared,
+            )
+        } else {
+            Ok(None)
+        };
         #[cfg(feature = "distann-head-attribution-benchmark")]
         super::stage_counters::record(
             super::stage_counters::DistannQueryStage::ReplicaOpenValidate,

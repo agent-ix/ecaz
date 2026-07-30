@@ -1334,6 +1334,18 @@ fn append_owner_payload_plan_cache_guc(args: &mut Vec<String>, arm: &str, enable
     }
 }
 
+/// NFR-021 clause 4 (Task 210 P1): the FR-084 traversal replica is off by
+/// default in the extension. A replica arm must opt in explicitly, which is
+/// also what marks it as a non-conforming accelerator in the emitted rows.
+fn append_nonconforming_replica_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
+    if arm == "physical" && enabled {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.allow_nonconforming_replica=on".into(),
+        ]);
+    }
+}
+
 #[derive(Clone, Debug)]
 struct BenchmarkSeedVariant {
     name: String,
@@ -1740,10 +1752,13 @@ async fn task198_replica_semantic_result(
              SET ec_distann.benchmark_exact_neighbor = off;
              SET ec_distann.benchmark_materialization_batch_size = 10;
              SET ec_distann.benchmark_owner_payload_plan_cache = off;
-             SET ec_distann.benchmark_traversal_replica_fail_batch = {fail_batch};"
+             SET ec_distann.benchmark_traversal_replica_fail_batch = {fail_batch};
+             SET ec_distann.allow_nonconforming_replica = on;"
         )
     } else {
-        String::new()
+        // The replica is off by default (NFR-021 clause 4, Task 210 P1); the
+        // semantic drill exists to exercise it, so it opts in explicitly.
+        "SET ec_distann.allow_nonconforming_replica = on;".to_owned()
     };
     coordinator
         .batch_execute(&format!(
@@ -4973,6 +4988,7 @@ async fn run_physical_benchmarks(
                     arm,
                     owner_payload_plan_cache,
                 );
+                append_nonconforming_replica_guc(&mut recall_args, arm, traversal_replica);
             }
             let recall = run_physical_bench_child(recall_args).await?;
             let row = benchmark_table_row(&recall)?;
@@ -5063,6 +5079,7 @@ async fn run_physical_benchmarks(
         }
         append_materialization_benchmark_guc(&mut latency_args, arm, materialization_batch_size);
         append_owner_payload_plan_cache_guc(&mut latency_args, arm, owner_payload_plan_cache);
+        append_nonconforming_replica_guc(&mut latency_args, arm, traversal_replica);
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }

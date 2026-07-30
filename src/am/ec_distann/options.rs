@@ -32,6 +32,13 @@ static ECDISTANN_BEAM_WIDTH_GUC: GucSetting<i32> =
 static ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT);
 
+/// NFR-021 clause 4: opt-in for the FR-084 coordinator traversal replica, a
+/// non-conforming accelerator that serves traversal from a coordinator-resident
+/// copy of every owner's graph record and full-precision vector. Default off —
+/// the sharded owner path is the default (Task 210 P1).
+static ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+
 /// FR-081 hop-round budget H: BW x H is the hard per-query expansion cap
 /// (NFR-019).
 static ECDISTANN_HOP_ROUNDS_GUC: GucSetting<i32> =
@@ -338,6 +345,14 @@ pub(super) fn register_gucs() {
         c"Task 193 benchmark-only owner payload prepared-plan cache arm.",
         c"When enabled, physical payload requests reuse a generation-owned, projection-fingerprinted SPI plan. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.allow_nonconforming_replica",
+        c"Opt-in for the FR-084 coordinator traversal replica (non-conforming).",
+        c"Default off. When enabled, a Ready coordinator traversal replica serves traversal from a coordinator-resident copy of every owner's graph record and full-precision vector, which is O(N) single-node state and does not satisfy NFR-021. The sharded owner path is the default; this accelerator is never a valid decision control under NFR-022.",
+        &ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -728,6 +743,12 @@ pub(super) fn current_candidate_heap_limit() -> usize {
     usize::try_from(ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC.get())
         .unwrap_or(1)
         .max(1)
+}
+
+/// NFR-021 clause 4 (Task 210 P1): the non-conforming traversal replica is
+/// opened only under an explicit opt-in. Off by default in every build profile.
+pub(super) fn allow_nonconforming_replica() -> bool {
+    ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC.get()
 }
 
 pub(super) fn current_hop_rounds() -> usize {
