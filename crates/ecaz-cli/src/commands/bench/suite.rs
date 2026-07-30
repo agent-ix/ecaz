@@ -691,6 +691,10 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     candidate_heap_limit: Option<u32>,
     #[serde(default)]
+    sharded_head: bool,
+    #[serde(default)]
+    head_replica_count: Option<u32>,
+    #[serde(default)]
     hop_rounds: Option<u32>,
     #[serde(default)]
     seed_strategy: Option<String>,
@@ -5309,6 +5313,14 @@ fn expand_distann_local_multinode(
         &mut args,
         "--candidate-heap-limit",
         step.candidate_heap_limit.map(|v| v.to_string()).as_deref(),
+    );
+    if step.sharded_head {
+        args.push("--sharded-head".into());
+    }
+    push_opt_arg(
+        &mut args,
+        "--head-replica-count",
+        step.head_replica_count.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,

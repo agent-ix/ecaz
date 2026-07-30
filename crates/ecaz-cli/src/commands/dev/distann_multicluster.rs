@@ -159,6 +159,16 @@ pub struct LocalMultinodePg18Args {
     /// beam_width this makes fixed-product BW/H A/B runs suite-addressable.
     #[arg(long)]
     pub hop_rounds: Option<u32>,
+    /// Task 210 P2a: build and serve the FR-080 head as roster shards. Sets
+    /// `ec_distann.shard_head_storage` before the build so the coordinator
+    /// persists landmark ids only, and `ec_distann.sharded_head_search` on the
+    /// benchmark arms so every owner searches the landmarks it already holds.
+    #[arg(long, default_value_t = false)]
+    pub sharded_head: bool,
+    /// Task 210 P2b: additional roster nodes that may serve a head shard
+    /// (DISTRIBUTEDANN 4.1). Requires --sharded-head.
+    #[arg(long)]
+    pub head_replica_count: Option<u32>,
     /// Task 180 benchmark-only physical seed mode. Requires an extension build
     /// with `distann-head-attribution-benchmark` when set.
     #[arg(long)]
@@ -1154,11 +1164,19 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     } else {
         ""
     };
+    // Task 210 P2a: the storage half of head sharding is read at build time,
+    // so it is set on the building session rather than on the query arms.
+    let shard_head_storage = if args.sharded_head {
+        "SET ec_distann.shard_head_storage = on;"
+    } else {
+        ""
+    };
     Ok(format!(
         "{prefix}
          {load}
          {correctness_fixture}
          ANALYZE dm;
+         {shard_head_storage}
          CREATE INDEX dm_idx ON dm USING ec_distann
              (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
              WITH (distributed_control = true, source_identity = 'include',
@@ -1337,6 +1355,29 @@ fn append_owner_payload_plan_cache_guc(args: &mut Vec<String>, arm: &str, enable
 /// NFR-021 clause 4 (Task 210 P1): the FR-084 traversal replica is off by
 /// default in the extension. A replica arm must opt in explicitly, which is
 /// also what marks it as a non-conforming accelerator in the emitted rows.
+/// Task 210 P2a/P2b: sharded head search and its replica count are session
+/// GUCs on the physical arm; the storage half is applied before the build.
+fn append_sharded_head_guc(
+    args: &mut Vec<String>,
+    arm: &str,
+    sharded_head: bool,
+    head_replica_count: Option<u32>,
+) {
+    if arm != "physical" || !sharded_head {
+        return;
+    }
+    args.extend([
+        "--session-guc".into(),
+        "ec_distann.sharded_head_search=on".into(),
+    ]);
+    if let Some(replicas) = head_replica_count {
+        args.extend([
+            "--session-guc".into(),
+            format!("ec_distann.head_replica_count={replicas}"),
+        ]);
+    }
+}
+
 fn append_nonconforming_replica_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
     if arm == "physical" && enabled {
         args.extend([
@@ -4989,6 +5030,12 @@ async fn run_physical_benchmarks(
                     owner_payload_plan_cache,
                 );
                 append_nonconforming_replica_guc(&mut recall_args, arm, traversal_replica);
+                append_sharded_head_guc(
+                    &mut recall_args,
+                    arm,
+                    args.sharded_head,
+                    args.head_replica_count,
+                );
             }
             let recall = run_physical_bench_child(recall_args).await?;
             let row = benchmark_table_row(&recall)?;
@@ -5080,6 +5127,12 @@ async fn run_physical_benchmarks(
         append_materialization_benchmark_guc(&mut latency_args, arm, materialization_batch_size);
         append_owner_payload_plan_cache_guc(&mut latency_args, arm, owner_payload_plan_cache);
         append_nonconforming_replica_guc(&mut latency_args, arm, traversal_replica);
+        append_sharded_head_guc(
+            &mut latency_args,
+            arm,
+            args.sharded_head,
+            args.head_replica_count,
+        );
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
