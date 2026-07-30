@@ -371,6 +371,8 @@ struct LatencyStep {
     #[serde(default)]
     concurrency: Option<usize>,
     #[serde(default)]
+    concurrency_sweep: Vec<usize>,
+    #[serde(default)]
     iterations: Option<usize>,
     /// Reconnect each latency worker after this many timed queries. Zero
     /// preserves the historical single-backend run.
@@ -3106,6 +3108,20 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.concurrency == Some(0) || step.concurrency_sweep.contains(&0) {
+                    bail!(
+                        "latency step {:?} concurrency values must all be >= 1",
+                        step.name
+                    )
+                }
+                if step.concurrency_sweep.iter().collect::<HashSet<_>>().len()
+                    != step.concurrency_sweep.len()
+                {
+                    bail!(
+                        "latency step {:?} concurrency_sweep values must be unique",
+                        step.name
+                    )
+                }
                 Ok(())
             }
             SuiteStep::SpireLocalMultinode(step) => {
@@ -4160,6 +4176,13 @@ fn expand_latency(step: &LatencyStep, defaults: &SuiteDefaults) -> Vec<String> {
         "--concurrency",
         &step.concurrency.unwrap_or(1).to_string(),
     );
+    if !step.concurrency_sweep.is_empty() {
+        push_arg(
+            &mut args,
+            "--concurrency-sweep",
+            &join_usize(&step.concurrency_sweep),
+        );
+    }
     push_arg(
         &mut args,
         "--iterations",
@@ -5059,6 +5082,14 @@ fn seed(defaults: &SuiteDefaults, step_seed: Option<i64>) -> i64 {
 }
 
 fn join_i32(values: &[i32]) -> String {
+    values
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn join_usize(values: &[usize]) -> String {
     values
         .iter()
         .map(ToString::to_string)
@@ -7426,6 +7457,7 @@ psql header noise\n\
             sweep: vec![64, 128],
             k: None,
             concurrency: None,
+            concurrency_sweep: vec![1, 2, 4, 8, 16],
             iterations: Some(10),
             worker_batch_size: Some(5),
             rerank_width: None,
@@ -7449,6 +7481,9 @@ psql header noise\n\
         assert!(args
             .windows(2)
             .any(|w| w == ["--cache-state", "post_recall_warm"]));
+        assert!(args
+            .windows(2)
+            .any(|w| w == ["--concurrency-sweep", "1,2,4,8,16"]));
         assert!(args.windows(2).any(|w| w == ["--worker-batch-size", "5"]));
         assert!(args
             .windows(2)
