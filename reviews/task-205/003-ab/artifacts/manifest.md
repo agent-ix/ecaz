@@ -65,6 +65,9 @@ The retained summaries are the source of truth for all cited values:
 - Structured suite evidence: the two `results.jsonl` files and corresponding
   `suite-manifest.json` files.
 
-All six suite steps exited 0 and all topology gates passed. The NFR-021
-growth gate failed for the owner-control surface, so the A/B result is
-inadmissible and no promotion is requested.
+All six suite steps exited 0 and all topology gates passed. The historical raw
+fixed-roster growth comparison is retained, but its NFR-021 inadmissibility
+verdict is withdrawn: it is not a paper-faithful gate for a fixed roster. The
+pushdown counters also show the implementation was inert, so this packet is
+superseded by `reviews/task-205/004-l-bounded-rerun/` and is not a
+decision-bearing promotion request.

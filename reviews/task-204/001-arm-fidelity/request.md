@@ -31,3 +31,14 @@ The follow-up wiring/fix checkpoint is `615fd72b2d6d31d7bec9020eabcfa8fa34d39a68
 Please review arm attribution, the coordinator-side relation accounting,
 mandatory ratio/per-node rows, and the structured parser path. The packet is
 open for outside review with the required two-arm 100k evidence attached.
+
+## Feedback follow-up
+
+Checkpoint `045ce69e7` makes the storage-ratio row mandatory for every
+physical step and adds a focused regression test for that assertion. The
+focused CLI `distann_` run passes 44 tests. The Task 205 bounded-L rerun also
+exercises the corrected parser at 10k/50k/100k and emits all nine storage-ratio
+rows plus per-arm growth rows; see
+`reviews/task-205/004-l-bounded-rerun/artifacts/run-v2/results.jsonl`.
+Raw fixed-roster growth remains measurement-only pending a stable NFR-021
+owner-record metric, rather than being presented as a hard 2.0 gate.

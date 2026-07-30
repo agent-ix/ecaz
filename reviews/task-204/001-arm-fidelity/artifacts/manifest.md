@@ -41,6 +41,22 @@ capture.
 The corrected reread of the committed Task 198/199 artifacts is in
 `corrected-198-199-reread.md`.
 
+## Feedback follow-up
+
+Checkpoint `045ce69e7` fixes the parser keying bug that could silently omit
+storage-ratio rows when the physical row had no node field, and now fails the
+suite if a physical step lacks its ratio row. The focused regression
+`distann_storage_ratio_is_mandatory_for_physical_steps` passes; the focused
+CLI `distann_` run passes 44 tests. The corrected reread is updated to reflect
+that the run-final path emits per-arm relation/ratio/per-node rows and the
+follow-up suite derives growth rows.
+
+The Task 205 bounded-L rerun is the packet-local follow-up evidence for the
+parser/growth path: its final `results.jsonl` contains 9 ratio rows and 9
+measurement-only growth rows at 10k/50k/100k. Raw fixed-roster growth is not
+treated as a decision-bearing 2.0 NFR gate; the follow-up records normalized
+per-owned-record context evidence instead.
+
 ## Artifact inventory
 
 | artifact | SHA-256 | purpose |

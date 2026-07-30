@@ -34,14 +34,22 @@ identical and the candidate transport-wait values are not lower than control
 at any scale. Per-node published rows are balanced and all six topology gates
 passed with zero non-owned/orphan rows.
 
-## NFR decision
+## Historical NFR note (superseded)
 
 The 10k/50k/100k max-node graph-side values are 25,706,496 / 137,379,840 /
 277,372,928 bytes. The 100k/10k growth is `10.789993627` (50k/10k is
-`5.344168260`), exceeding NFR-021's `<= 2.0` requirement. The control is
-therefore inadmissible under NFR-021, and NFR-022 prevents treating this A/B
-as a promotion candidate. Decision: **do not advance Algorithm 1**. The full
-calculation is in `artifacts/nfr-021-growth.md`.
+`5.344168260`), exceeding the then-applied NFR-021 `<= 2.0` comparison. That
+comparison is withdrawn: the fixed three-node roster makes raw per-node bytes
+grow with the corpus even for a correctly sharded owner surface, and the paper
+does not state this raw fixed-roster threshold. The calculation remains as
+historical evidence, but it is not an inadmissibility verdict. The current
+rerun registers NFR-021 context arms and reports normalized bytes-per-owned-
+record evidence; see `reviews/task-205/004-l-bounded-rerun/`.
+
+The old A/B is still not a decision-bearing Algorithm 1 measurement because
+the pre-rerun implementation recorded zero pushdown activity. The corrected
+decision is: **do not advance from this inert measurement; use the bounded-L
+rerun for the implementation decision**.
 
 The review request remains open for external review; this is not a promotion
 or a claim that the implementation is admissible.
