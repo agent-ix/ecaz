@@ -736,6 +736,10 @@ pub(super) fn build_epoch(
                 &head_sample,
                 &head_graph,
                 build_options,
+                // NFR-021 clause 3 (Task 210 P2a): with sharded head storage
+                // the coordinator persists landmark ids only; the vectors stay
+                // on the owners that already hold them.
+                super::super::options::shard_head_storage(),
             )?;
             let transitioned = client
                 .update(

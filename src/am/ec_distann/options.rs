@@ -53,6 +53,11 @@ static ECDISTANN_HEAD_REPLICA_COUNT_GUC: GucSetting<i32> = GucSetting::<i32>::ne
 /// function of N. 0 disables gateway copies.
 static ECDISTANN_GATEWAY_COPY_CAPACITY_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
 
+/// NFR-021 clause 3 (Task 210 P2a): persist the FR-080 head as membership only,
+/// so the coordinator holds landmark ids -- bounded by capacity C -- and never a
+/// second copy of the landmark vectors, which already live on their owners.
+static ECDISTANN_SHARD_HEAD_STORAGE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+
 /// FR-081 hop-round budget H: BW x H is the hard per-query expansion cap
 /// (NFR-019).
 static ECDISTANN_HOP_ROUNDS_GUC: GucSetting<i32> =
@@ -379,6 +384,14 @@ pub(super) fn register_gucs() {
         &ECDISTANN_HEAD_REPLICA_COUNT_GUC,
         0,
         64,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.shard_head_storage",
+        c"NFR-021 clause 3 membership-only head persistence (Task 210 P2a).",
+        c"Read at build time. When enabled, the coordinator persists head landmark ids and the head graph but not the landmark vectors, because each landmark's full-precision vector already lives on the owner its FR-078 placement hash selects. Requires ec_distann.sharded_head_search at query time.",
+        &ECDISTANN_SHARD_HEAD_STORAGE_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -798,6 +811,11 @@ pub(super) fn gateway_copy_capacity() -> usize {
 
 pub(super) fn head_replica_count() -> usize {
     usize::try_from(ECDISTANN_HEAD_REPLICA_COUNT_GUC.get()).unwrap_or(0)
+}
+
+/// NFR-021 clause 3 (Task 210 P2a): persist the head as membership only.
+pub(super) fn shard_head_storage() -> bool {
+    ECDISTANN_SHARD_HEAD_STORAGE_GUC.get()
 }
 
 pub(super) fn sharded_head_search() -> bool {

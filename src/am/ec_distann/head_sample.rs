@@ -179,9 +179,14 @@ impl DistannHeadSample {
         }
         let mut ids = std::collections::HashSet::with_capacity(self.entries.len());
         for entry in &self.entries {
+            // A membership-only entry carries no vector: the landmark lives on
+            // its owner (Task 210 P2a). Ids must still be unique, and any
+            // vector that IS present must be well formed.
+            let membership_only = entry.vector.is_empty();
             if !ids.insert(entry.vec_id)
-                || entry.vector.len() != dimensions
-                || entry.vector.iter().any(|value| !value.is_finite())
+                || (!membership_only
+                    && (entry.vector.len() != dimensions
+                        || entry.vector.iter().any(|value| !value.is_finite())))
             {
                 return Err("EC_HEAD_SAMPLE: invalid or duplicate sample entry".to_owned());
             }
@@ -734,6 +739,7 @@ pub(crate) fn persist_head_sample(
     sample: &DistannHeadSample,
     graph: &DistannPersistedHeadGraph,
     build_options: super::generation_descriptor::DistannBuildOptions,
+    membership_only: bool,
 ) -> Result<(), String> {
     graph.validate(sample.entries.len(), usize::MAX)?;
     let digest = sample.digest()?;
@@ -793,7 +799,16 @@ pub(crate) fn persist_head_sample(
                         .map_err(|_| "EC_HEAD_SAMPLE: ordinal exceeds integer".to_owned())?
                         .into(),
                     i64::from_le_bytes(entry.vec_id.to_le_bytes()).into(),
-                    entry.vector.as_slice().into(),
+                    // NFR-021 clause 3 (Task 210 P2a): with sharded head
+                    // storage the coordinator persists membership only. The
+                    // landmark's full-precision vector already lives on the
+                    // owner its placement hash selects, so storing it here
+                    // would be a second, coordinator-resident copy.
+                    if membership_only {
+                        None::<Vec<f32>>.into()
+                    } else {
+                        entry.vector.as_slice().into()
+                    },
                     graph.neighbors[ordinal]
                         .iter()
                         .map(|neighbor| i32::try_from(*neighbor))
@@ -951,7 +966,9 @@ pub(crate) fn load_head_sample(
                     return Err("head sample ordinals are not contiguous".into());
                 }
                 let vec_id = row["vec_id"].value::<i64>()?.ok_or("vec_id NULL")?;
-                let vector = row["vector"].value::<Vec<f32>>()?.ok_or("vector NULL")?;
+                // A NULL vector is a membership-only row: the landmark lives
+                // on its owner, and the coordinator keeps only the id.
+                let vector = row["vector"].value::<Vec<f32>>()?.unwrap_or_default();
                 let neighbors = row["neighbors"]
                     .value::<Vec<i32>>()?
                     .ok_or("neighbors NULL")?
