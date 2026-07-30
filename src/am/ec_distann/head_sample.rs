@@ -1060,6 +1060,72 @@ pub(crate) fn shard_head_sample(
     Ok(shards)
 }
 
+/// The head landmarks this owner is responsible for.
+///
+/// A landmark's full-precision vector already lives on the owner its FR-078
+/// placement hash selects, because the co-placed row tier uses the identical
+/// hash (ADR-085 D11). So an owner can materialise its own head shard from
+/// **locally held** vectors given only the bounded membership list — the head
+/// vectors never cross the wire, and the coordinator never holds them.
+pub(crate) fn head_shard_members(
+    members: &[u64],
+    owner_ordinal: usize,
+    owner_count: usize,
+    placement_hash_version: u16,
+) -> Vec<u64> {
+    members
+        .iter()
+        .copied()
+        .filter(|vec_id| {
+            super::placement::owning_node(*vec_id, owner_count, placement_hash_version)
+                == owner_ordinal
+        })
+        .collect()
+}
+
+/// Build this owner's head shard from its locally resolved landmark vectors.
+/// `resolved` is `(vec_id, vector)` in membership order; every id must belong
+/// to this owner, which the caller establishes with [`head_shard_members`].
+pub(crate) fn build_owner_head_shard(
+    owner_ordinal: u32,
+    dimensions: u16,
+    resolved: Vec<(u64, Vec<f32>)>,
+    graph_degree: usize,
+    build_list_size: usize,
+    alpha: f32,
+    seed: u64,
+) -> Result<DistannHeadShard, String> {
+    let mut entries = Vec::with_capacity(resolved.len());
+    for (vec_id, vector) in resolved {
+        if vector.len() != usize::from(dimensions) {
+            return Err(format!(
+                "EC_HEAD_SHARD: landmark {vec_id:#018x} has {} dimensions, generation requires {dimensions}",
+                vector.len()
+            ));
+        }
+        entries.push(DistannHeadSampleEntry { vec_id, vector });
+    }
+    // Deterministic shard order regardless of local scan order, so the shard
+    // graph and its digest are reproducible on rebuild.
+    entries.sort_unstable_by_key(|entry| entry.vec_id);
+    let sample = DistannHeadSample {
+        dimensions,
+        entries,
+    };
+    let graph = DistannPersistedHeadGraph::build(
+        &sample,
+        graph_degree,
+        build_list_size,
+        alpha,
+        seed ^ u64::from(owner_ordinal).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+    )?;
+    Ok(DistannHeadShard {
+        owner_ordinal,
+        sample,
+        graph,
+    })
+}
+
 /// Merge bounded per-owner head results into the coordinator's seed list.
 ///
 /// The coordinator holds only `seed_count` seeds — NFR-021 clause 2 bounded
@@ -1443,6 +1509,75 @@ mod tests {
             assert_eq!(sharded.vec_id, reference.vec_id);
             assert_eq!(sharded.dist, reference.dist);
         }
+    }
+
+    #[test]
+    fn owner_built_shards_match_coordinator_side_partitioning() {
+        let sample = wide_sample(64);
+        let owner_count = 3;
+        let hash_version = crate::am::ec_distann::placement::DISTANN_PLACEMENT_HASH_V1;
+        let members = sample
+            .entries
+            .iter()
+            .map(|entry| entry.vec_id)
+            .collect::<Vec<_>>();
+        let reference =
+            shard_head_sample(&sample, owner_count, hash_version, 8, 16, 1.2, 17).unwrap();
+
+        for owner_ordinal in 0..owner_count {
+            let mine = head_shard_members(&members, owner_ordinal, owner_count, hash_version);
+            // Every landmark this owner is responsible for is one whose
+            // full-precision vector it already holds.
+            let resolved = mine
+                .iter()
+                .map(|vec_id| {
+                    let entry = sample
+                        .entries
+                        .iter()
+                        .find(|entry| entry.vec_id == *vec_id)
+                        .expect("membership id is in the sample");
+                    (*vec_id, entry.vector.clone())
+                })
+                .collect::<Vec<_>>();
+            let shard = build_owner_head_shard(
+                owner_ordinal as u32,
+                sample.dimensions,
+                resolved,
+                8,
+                16,
+                1.2,
+                17,
+            )
+            .unwrap();
+
+            let mut expected = reference[owner_ordinal]
+                .sample
+                .entries
+                .iter()
+                .map(|entry| entry.vec_id)
+                .collect::<Vec<_>>();
+            expected.sort_unstable();
+            let built = shard
+                .sample
+                .entries
+                .iter()
+                .map(|entry| entry.vec_id)
+                .collect::<Vec<_>>();
+            assert_eq!(built, expected, "owner {owner_ordinal} shard membership");
+        }
+
+        // Membership is a partition: no landmark is claimed twice, none dropped.
+        let claimed = (0..owner_count)
+            .flat_map(|owner| head_shard_members(&members, owner, owner_count, hash_version))
+            .collect::<std::collections::HashSet<_>>();
+        assert_eq!(claimed.len(), members.len());
+    }
+
+    #[test]
+    fn owner_head_shard_rejects_a_dimension_mismatch() {
+        let error = build_owner_head_shard(0, 2, vec![(7, vec![1.0, 0.0, 0.0])], 4, 8, 1.2, 1)
+            .expect_err("dimension mismatch must be rejected");
+        assert!(error.contains("EC_HEAD_SHARD"), "unexpected error: {error}");
     }
 
     #[test]
