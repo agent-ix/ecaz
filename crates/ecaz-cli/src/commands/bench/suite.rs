@@ -2448,6 +2448,16 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_storage_ratio".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_traversal_replica ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_traversal_replica".into(), values));
+            }
+        } else if let Some(rest) =
+            body.strip_prefix("physical_benchmark_traversal_replica_cache ")
+        {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_traversal_replica_cache".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_head ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_head".into(), values));

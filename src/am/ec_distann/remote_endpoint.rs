@@ -190,6 +190,7 @@ fn ec_distann_expand_nodes(
         &query,
         &vec_ids,
         code_threshold,
+        candidate_limit,
     )
     // Raise with the distinct SQLSTATE per FR-079 outcome so the coordinator
     // classifies retriable epoch mismatch vs non-retriable faults by code.
@@ -693,6 +694,7 @@ fn expand_nodes_impl(
     query: &[f32],
     vec_ids: &[i64],
     code_threshold: Option<f32>,
+    candidate_limit: Option<i32>,
 ) -> Result<Vec<ExpandRow>, DistannExpandError> {
     let received_fingerprint =
         fingerprint_from_bytes(epoch_fingerprint).map_err(DistannExpandError::BadInput)?;
