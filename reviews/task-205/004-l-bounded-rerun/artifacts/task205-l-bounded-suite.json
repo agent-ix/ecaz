@@ -20,7 +20,7 @@
       "corpus_prefix": "ec_real_10k",
       "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
       "benchmark_seed_variants": [
-        { "name": "control-l4096", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false }
+        { "name": "control-l4096", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l4096-control", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only current-code non-binding L reference; fixed-roster storage is evaluated per owned record." } }
       ]
     },
     {
@@ -38,7 +38,7 @@
       "corpus_prefix": "ec_real_10k",
       "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
       "benchmark_seed_variants": [
-        { "name": "candidate-l32", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false }
+        { "name": "candidate-l32", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l32-candidate", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only L=32 pushdown arm; fixed-roster storage is evaluated per owned record." } }
       ]
     },
     {
@@ -56,7 +56,7 @@
       "corpus_prefix": "ec_real_10k",
       "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
       "benchmark_seed_variants": [
-        { "name": "sweep-l64", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false }
+        { "name": "sweep-l64", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l64-sweep", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only L=64 sweep arm; fixed-roster storage is evaluated per owned record." } }
       ]
     },
     {
