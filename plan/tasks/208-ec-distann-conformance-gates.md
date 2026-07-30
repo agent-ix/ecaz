@@ -1,6 +1,10 @@
 # Task 208: ec_distann NFR-021/NFR-022 Conformance Gates
 
-Status: **ready** (2026-07-29). Priority: P1 program integrity.
+Status: **IN REVIEW** (2026-07-30). The NFR-021 measurement contradiction is
+reconciled, phases 1-3 are implemented in `reviews/task-208/001-gates/`, and
+the phase-4 retrospective sweep is recorded in
+`reviews/task-208/002-retrospective-sweep/`. Both requests remain open for
+outside review. Priority: P1 program integrity.
 
 Entry gate: Task 204's per-node storage emission, which this task consumes.
 
@@ -21,13 +25,16 @@ attention.
 
 ## Phases
 
-1. **NFR-021 resident-state gate.** Emit max-single-node resident index bytes per
-   scale and the cross-scale growth ratio; fail the run when a single node's
-   growth is superlinear or when any node holds non-owner graph records or
-   non-owner full-precision vectors. Cover derived, optional, and
-   disabled-by-default relations — the FR-084 replica is the worked example of a
-   relation that evaded every existing audit by not being literally a graph-node
-   shard.
+1. **NFR-021 resident-state gate.** Emit per-owner resident index bytes and
+   owned-record counts per scale, compute the bytes-per-owned-record cross-scale
+   growth ratio, and fail the run when normalized growth is superlinear or when
+   any node holds non-owner graph records, non-owner full-precision vectors, or
+   an unsharded O(N) derived relation. Raw fixed-roster bytes remain reported
+   but are not a conformance threshold: a genuine O(N) shard necessarily grows
+   with corpus cardinality when roster size is fixed. Cover derived, optional,
+   and disabled-by-default relations — the FR-084 replica is the worked example
+   of a relation that evaded every existing audit by not being literally a
+   graph-node shard.
 2. **NFR-022 arm labeling.** Label every arm's NFR-021 conformance in
    `results.jsonl` so an audit is mechanical. A run containing a non-conforming
    arm is permitted; a *decision* recorded against one is the failure, so the
