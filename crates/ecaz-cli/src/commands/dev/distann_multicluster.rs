@@ -5201,7 +5201,7 @@ async fn run_physical_benchmarks(
     let raw_vector = coordinator
         .query_one(
             &format!(
-                "SELECT count(*)::bigint,
+                "SELECT count(source)::bigint,
                         coalesce((SELECT array_length(source, 1)
                                     FROM {physical_corpus}
                                    LIMIT 1), 0)::bigint
