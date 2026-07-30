@@ -1072,6 +1072,7 @@ impl RetainedGenerationScan {
         query_digest: [u8; 32],
         vec_ids: &[u64],
         code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         self.validate_request(query, vec_ids)?;
         if vec_ids.is_empty() {
@@ -1107,7 +1108,7 @@ impl RetainedGenerationScan {
             prepared: &prepared,
             code_len: self.code_len,
         };
-        expander.expand_nodes(vec_ids, code_threshold)
+        expander.expand_nodes(vec_ids, code_threshold, candidate_limit)
     }
 
     fn resolve_nodes(&self, vec_ids: &[u64]) -> Result<Vec<DistannNodeTuple>, DistannExpandError> {
@@ -1491,13 +1492,23 @@ fn expand_physical_nodes_impl(
     query_digest: [u8; 32],
     vec_ids: &[i64],
     code_threshold: Option<f32>,
+    candidate_limit: Option<i32>,
 ) -> Result<Vec<PhysicalExpandRow>, DistannExpandError> {
+    let candidate_limit = candidate_limit
+        .map(|limit| {
+            usize::try_from(limit).map_err(|_| {
+                DistannExpandError::BadInput(
+                    "ec_distann candidate_limit must be non-negative".to_owned(),
+                )
+            })
+        })
+        .transpose()?;
     let ids = vec_ids
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
         .collect::<Vec<_>>();
     RetainedGenerationScan::open(index_oid, epoch_fingerprint)?
-        .expand(query, query_digest, &ids, code_threshold)
+        .expand(query, query_digest, &ids, code_threshold, candidate_limit)
         .map(|expanded| {
             expanded
                 .into_iter()
@@ -1527,6 +1538,7 @@ fn ec_distann_expand_physical_nodes(
     query: Vec<f32>,
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
+    candidate_limit: default!(Option<i32>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -1547,6 +1559,7 @@ fn ec_distann_expand_physical_nodes(
         query_digest,
         &vec_ids,
         code_threshold,
+        candidate_limit,
     )
     .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
@@ -1568,6 +1581,7 @@ fn ec_distann_expand_physical_nodes_cached(
     query_digest: Vec<u8>,
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
+    candidate_limit: default!(Option<i32>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -1587,6 +1601,7 @@ fn ec_distann_expand_physical_nodes_cached(
         query_digest,
         &vec_ids,
         code_threshold,
+        candidate_limit,
     )
     .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
@@ -1607,6 +1622,7 @@ fn ec_distann_expand_physical_nodes_profile(
     query_digest: Vec<u8>,
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
+    candidate_limit: default!(Option<i32>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -1635,7 +1651,20 @@ fn ec_distann_expand_physical_nodes_profile(
         .unwrap_or_else(|error| error.raise());
     let owner_open_validate_ns = duration_ns(open_started.elapsed());
     let expanded = store
-        .expand(&query, query_digest, &ids, code_threshold)
+        .expand(
+            &query,
+            query_digest,
+            &ids,
+            code_threshold,
+            candidate_limit.map(|limit| {
+                usize::try_from(limit).unwrap_or_else(|_| {
+                    DistannExpandError::BadInput(
+                        "ec_distann candidate_limit must be non-negative".to_owned(),
+                    )
+                    .raise()
+                })
+            }),
+        )
         .unwrap_or_else(|error| error.raise());
     let owner_open_validate_ns = i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
     let owner_graph_read_ns = expanded.first().map_or(0, |node| node.owner_graph_read_ns);
@@ -2913,6 +2942,7 @@ impl PhysicalMultiOwnerExpander<'_> {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let partition_started = Instant::now();
@@ -2944,7 +2974,7 @@ impl PhysicalMultiOwnerExpander<'_> {
                             "local owner route has no generation reader".to_owned(),
                         )
                     })?
-                    .expand_nodes(&owned, code_threshold)?;
+                    .expand_nodes(&owned, code_threshold, candidate_limit)?;
                 #[cfg(feature = "distann-head-attribution-benchmark")]
                 super::stage_counters::record(
                     super::stage_counters::DistannQueryStage::LocalExpand,
@@ -2972,6 +3002,9 @@ impl PhysicalMultiOwnerExpander<'_> {
                     query_digest: self.query_digest,
                     vec_ids: owned,
                     code_threshold,
+                    candidate_limit: candidate_limit.map(|limit| {
+                        i32::try_from(limit).unwrap_or(i32::MAX)
+                    }),
                 })
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
@@ -3013,8 +3046,9 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
-        let mut expanded = self.expand_nodes_raw(vec_ids, code_threshold)?;
+        let mut expanded = self.expand_nodes_raw(vec_ids, code_threshold, candidate_limit)?;
         if !super::options::benchmark_exact_neighbor() {
             return Ok(expanded);
         }
@@ -3030,7 +3064,7 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        let exact_neighbors = self.expand_nodes_raw(&neighbor_ids, None)?;
+        let exact_neighbors = self.expand_nodes_raw(&neighbor_ids, None, None)?;
         let exact_distances = exact_neighbors
             .into_iter()
             .map(|node| {
@@ -3146,7 +3180,8 @@ impl DistannNodeExpander for GenerationExpander<'_> {
     fn expand_nodes(
         &mut self,
         vec_ids: &[u64],
-        _code_threshold: Option<f32>,
+        code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let graph_started = Instant::now();
@@ -3188,6 +3223,13 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                         &mut neighbor_dists,
                     )
                     .map_err(DistannExpandError::Internal)?;
+                let (neighbor_vec_ids, neighbor_code_dists) =
+                    super::scan::prune_and_limit_neighbors(
+                        &node.neighbor_vec_ids[..count],
+                        &neighbor_dists,
+                        code_threshold,
+                        candidate_limit,
+                    )?;
                 Ok(DistannExpandedNode {
                     vec_id: node.vec_id,
                     exact_dist: (!node.tombstoned)
@@ -3195,8 +3237,8 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                         .transpose()?,
                     is_tombstone: node.tombstoned,
                     heap_tid: node.heap_tid,
-                    neighbor_vec_ids: node.neighbor_vec_ids[..count].to_vec(),
-                    neighbor_code_dists: neighbor_dists,
+                    neighbor_vec_ids,
+                    neighbor_code_dists,
                     owner_total_ns: 0,
                     owner_open_validate_ns: 0,
                     owner_graph_read_ns: 0,

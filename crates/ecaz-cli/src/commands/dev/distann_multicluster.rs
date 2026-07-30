@@ -4227,8 +4227,7 @@ async fn run_coverage_memory_regression(
             "Task 200 coverage memory regression executed {rows} rows, expected at least {iterations}"
         );
     }
-    let trim_samples = usize::try_from((1_000 / sample_interval_ms.max(1)).max(1))
-        .unwrap_or(1);
+    let trim_samples = usize::try_from((1_000 / sample_interval_ms.max(1)).max(1)).unwrap_or(1);
     if points.len() <= trim_samples.saturating_mul(2).saturating_add(1) {
         bail!(
             "Task 200 coverage memory regression collected too few samples ({}) after edge trimming",
@@ -5216,14 +5215,31 @@ async fn run_physical_benchmarks(
             )
             .await?
     };
-    let physical_generation_bytes = published
-        .iter()
-        .map(|row| row.graph_bytes + row.row_bytes + row.directory_bytes + row.control_bytes)
-        .sum::<i64>();
-    let control_index_bytes = published.iter().map(|row| row.control_bytes).sum::<i64>();
     let single_index_bytes = sizes.get::<_, i64>(0);
     let single_source_bytes = sizes.get::<_, i64>(1);
     let coordinator_source_bytes = sizes.get::<_, i64>(2);
+    let raw_vector = coordinator
+        .query_one(
+            &format!(
+                "SELECT count(*)::bigint,
+                        coalesce((SELECT array_length(source, 1)
+                                    FROM {physical_corpus}
+                                   LIMIT 1), 0)::bigint"
+            ),
+            &[],
+        )
+        .await
+        .wrap_err("measuring physical raw vector bytes")?;
+    let raw_vector_rows = raw_vector.get::<_, i64>(0);
+    let raw_vector_dim = raw_vector.get::<_, i64>(1);
+    let raw_vector_bytes = raw_vector_rows
+        .saturating_mul(raw_vector_dim)
+        .saturating_mul(4);
+    if raw_vector_bytes <= 0 {
+        bail!(
+            "physical storage audit has no positive raw vector denominator: rows={raw_vector_rows} dim={raw_vector_dim}"
+        );
+    }
     let head = coordinator
         .query_one(
             "SELECT state.sample_count::bigint,
@@ -5272,15 +5288,84 @@ async fn run_physical_benchmarks(
             variant.owner_payload_plan_cache,
             variant.traversal_replica,
         );
+        // NFR-018/NFR-021 storage is deliberately measured inside the arm
+        // loop.  The owner generation rows are immutable across variants, but
+        // derived relations (notably the optional traversal replica) are not;
+        // replaying one pre-loop scalar would make the arm comparison
+        // unmeasurable.
+        let owner_graph_side_bytes = published
+            .iter()
+            .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
+            .sum::<i64>();
+        let owner_row_tier_bytes = published.iter().map(|row| row.row_bytes).sum::<i64>();
+        let owner_total_bytes = owner_graph_side_bytes + owner_row_tier_bytes;
+        let max_owner_graph_side_bytes = published
+            .iter()
+            .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
+            .max()
+            .unwrap_or(0);
+        let physical_generation_bytes = published
+            .iter()
+            .map(|row| row.graph_bytes + row.row_bytes + row.directory_bytes + row.control_bytes)
+            .sum::<i64>();
+        let control_index_bytes = published.iter().map(|row| row.control_bytes).sum::<i64>();
+        let mut derived_relation_bytes = 0_i64;
+        if traversal_replica {
+            let replica = coordinator
+                .query_one(
+                    "SELECT relation_bytes::bigint, coalesce(wal_bytes, 0)::bigint,
+                            copied_bytes::bigint, coalesce(build_duration_ms, 0)::bigint,
+                            replica_relid::oid::bigint
+                       FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+                      WHERE state = 'Ready'
+                      ORDER BY ready_at DESC
+                      LIMIT 1",
+                    &[],
+                )
+                .await
+                .wrap_err("measuring per-arm traversal replica storage")?;
+            let relation_bytes = replica.get::<_, i64>(0);
+            let replica_relid = replica.get::<_, i64>(4);
+            derived_relation_bytes = relation_bytes;
+            lines.push(format!(
+                "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=physical_benchmark_traversal_replica relation_oid={replica_relid} relation_bytes={relation_bytes} wal_bytes={} copied_bytes={} build_ms={} storage_derived=true",
+                replica.get::<_, i64>(1),
+                replica.get::<_, i64>(2),
+                replica.get::<_, i64>(3),
+            ));
+        }
+        let cluster_graph_side_bytes = owner_graph_side_bytes + derived_relation_bytes;
+        let max_single_node_graph_side_bytes =
+            max_owner_graph_side_bytes.max(derived_relation_bytes);
+        let cluster_index_space_amplification =
+            cluster_graph_side_bytes as f64 / raw_vector_bytes as f64;
         lines.push(format!(
-            "physical_benchmark_storage scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true owners={} physical_generation_bytes={physical_generation_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
-            published.len()
+            "physical_benchmark_storage_ratio scale={scale} {shared} arm=physical raw_vector_rows={raw_vector_rows} raw_vector_dim={raw_vector_dim} raw_vector_bytes={raw_vector_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} max_single_node_growth_reference=100k_div_10k",
+        ));
+        for row in published {
+            let graph_side_bytes = row.graph_bytes + row.directory_bytes + row.control_bytes;
+            lines.push(format!(
+                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} row_tier_bytes={} total_resident_bytes={} derived_relation_bytes=0",
+                row.node_id,
+                row.graph_bytes,
+                row.directory_bytes,
+                row.control_bytes,
+                row.row_bytes,
+                graph_side_bytes + row.row_bytes,
+            ));
+        }
+        lines.push(format!(
+            "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 total_resident_bytes={derived_relation_bytes} derived_relation_bytes={derived_relation_bytes}",
         ));
         lines.push(format!(
-            "physical_benchmark_head scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true sample_count={head_sample_count} head_sample_digest={head_sample_digest} head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} head_cache_estimated_bytes={head_cache_estimated_bytes}"
+            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
+            published.len(),
         ));
         lines.push(format!(
-            "physical_benchmark_engagement scale={scale} {shared} remote_owners={remote_owners} materialize_probes={remote_owners} pass={}",
+            "physical_benchmark_head scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=true sample_count={head_sample_count} head_sample_digest={head_sample_digest} head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} head_cache_estimated_bytes={head_cache_estimated_bytes}"
+        ));
+        lines.push(format!(
+            "physical_benchmark_engagement scale={scale} {shared} arm=physical remote_owners={remote_owners} materialize_probes={remote_owners} pass={}",
             remote_owners > 0
         ));
     }

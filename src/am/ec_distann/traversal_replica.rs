@@ -31,8 +31,9 @@ use super::expand_error::DistannExpandError;
 use super::generation_descriptor::DistannGenerationDescriptor;
 use super::quantizer::{DistannCodecBinding, DistannPreparedQuery};
 use super::scan::{
-    distann_orchestrated_search, DistannExpandedNode, DistannNodeExpander,
-    DistannOrchestrationParams, DistannScanCounters, DistannScanHit, DistannSeedCandidate,
+    distann_orchestrated_search, prune_and_limit_neighbors, DistannExpandedNode,
+    DistannNodeExpander, DistannOrchestrationParams, DistannScanCounters, DistannScanHit,
+    DistannSeedCandidate,
 };
 use super::tuple::DistannNodeTuple;
 
@@ -2104,9 +2105,7 @@ impl<'a> ReadyTraversalReplica<'a> {
         // A stronger-isolation snapshot cannot establish fresh Ready/Stale
         // visibility. The replica is only an optional acceleration object, so
         // decline it and preserve the pre-existing owner read path.
-        if super::lifecycle_guard::require_read_committed(
-            "ec_distann traversal replica selection",
-        )
+        if super::lifecycle_guard::require_read_committed("ec_distann traversal replica selection")
             .is_err()
         {
             return Ok(None);
@@ -2125,7 +2124,8 @@ impl<'a> ReadyTraversalReplica<'a> {
         let (catalog_owner, _) = extension_owner()?;
         let row = super::handoff::with_restricted_type_io_owner(catalog_owner, || {
             Spi::connect(|client| {
-                client.select(
+                client
+                    .select(
                         &format!(
                             "SELECT r.state, r.epoch_fingerprint,
                                 r.generation_descriptor_digest,
@@ -2189,14 +2189,20 @@ impl<'a> ReadyTraversalReplica<'a> {
                             })?,
                             row["replica_relid"]
                                 .value::<pg_sys::Oid>()
-                            .map_err(|_| "EC_REPLICA_STATE: replica OID decode failed".to_owned())?
-                            .ok_or_else(|| "EC_REPLICA_STATE: replica OID is NULL".to_owned())?,
+                                .map_err(|_| {
+                                    "EC_REPLICA_STATE: replica OID decode failed".to_owned()
+                                })?
+                                .ok_or_else(|| {
+                                    "EC_REPLICA_STATE: replica OID is NULL".to_owned()
+                                })?,
                             row["directory_relid"]
                                 .value::<pg_sys::Oid>()
                                 .map_err(|_| {
                                     "EC_REPLICA_STATE: directory OID decode failed".to_owned()
                                 })?
-                            .ok_or_else(|| "EC_REPLICA_STATE: directory OID is NULL".to_owned())?,
+                                .ok_or_else(|| {
+                                    "EC_REPLICA_STATE: directory OID is NULL".to_owned()
+                                })?,
                             required_i32("format_version")?,
                             required_i32("dimensions")?,
                             required_i32("graph_degree")?,
@@ -2450,7 +2456,8 @@ impl DistannNodeExpander for ReadyTraversalReplica<'_> {
     fn expand_nodes(
         &mut self,
         vec_ids: &[u64],
-        _code_threshold: Option<f32>,
+        code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         if super::options::benchmark_traversal_replica_fail_batch() == Some(self.expansion_batches)
@@ -2485,6 +2492,12 @@ impl DistannNodeExpander for ReadyTraversalReplica<'_> {
                         &mut neighbor_dists,
                     )
                     .map_err(DistannExpandError::Internal)?;
+                let (neighbor_vec_ids, neighbor_code_dists) = prune_and_limit_neighbors(
+                    &node.neighbor_vec_ids[..count],
+                    &neighbor_dists,
+                    code_threshold,
+                    candidate_limit,
+                )?;
                 Ok(DistannExpandedNode {
                     vec_id: node.vec_id,
                     exact_dist: (!node.tombstoned).then(|| {
@@ -2499,8 +2512,8 @@ impl DistannNodeExpander for ReadyTraversalReplica<'_> {
                     } else {
                         ItemPointer::INVALID
                     },
-                    neighbor_vec_ids: node.neighbor_vec_ids[..count].to_vec(),
-                    neighbor_code_dists: neighbor_dists,
+                    neighbor_vec_ids,
+                    neighbor_code_dists,
                     owner_total_ns: 0,
                     owner_open_validate_ns: 0,
                     owner_graph_read_ns: 0,

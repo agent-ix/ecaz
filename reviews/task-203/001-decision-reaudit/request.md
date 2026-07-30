@@ -153,6 +153,30 @@ Task 185's Why (`plan/tasks/185-...md:20-23`):
 > "Task 183 then built two distinct alternative 4,096-row heads, but **exact
 > scoring returned the same ordered top-32 seeds and the same 0.9625 recall.**"
 
+> **CORRECTION (2026-07-29-02).** The paragraphs below originally treated head
+> construction as one thing. There are **two policies**, and §3's critique lands
+> differently on each. `head_policy` is selected at build time
+> (`build_coordinator/t2.rs:362-366`): `TrainingLandmarksExact` when a training
+> relation is supplied, else `CurrentSampleGraph`, which is the **default**.
+>
+> - **`CurrentSampleGraph` (default)** — a BFS prefix from the single global
+>   medoid. §3's per-partition-union critique applies to this policy directly.
+> - **`training_landmarks_exact` (the promoted/retained policy)** — its candidate
+>   pool is the **entire corpus**, not a BFS prefix:
+>   `rank_training_candidates` scores every node's code
+>   (`head_sample.rs:462-467`, `codes.iter().enumerate()`). §3's *reachability*
+>   critique therefore does **not** apply to it in the same way. Its distinct
+>   problems are that its objective is query-frequency over 200 training queries
+>   (a policy Task 181 defined as diagnostic), and that it exact-scans rather
+>   than ANN-searches.
+>
+> Consequence for sequencing: Task 207's per-partition-union construction is the
+> lever for the **default** policy's pool. For the promoted policy the pool is
+> already global, so the lever is the **selection objective** — which is Task
+> 185's scope. This corrects the Task 185 row in the matrix below from SCOPE GAP
+> to valid-but-mis-sequenced. The membership finding itself is unaffected: Task
+> 181's result is about the persisted 4,096-row sample, whatever selected it.
+
 Paper §3 states the cause directly:
 
 > "In order to ensure that the entire graph is reachable, we build the head index
@@ -326,7 +350,7 @@ outstanding check is named.
 | 182 | completed — PROMOTE trained policy | ok | ok | fail | ok | **SUSPECT** | Promoted a policy Task 181 Phase 2 defined as **diagnostic**, selected on training-query frequency. Recall gain is real; the selection rationale needs re-derivation |
 | 183 | complete — STOP | ok | ok | fail | ? | **PENDING** | Verify the two alternative heads were built from the stitched graph (if so, `NEG-06` is qualified the same way as `NEG-01`) |
 | 184 | complete — PROMOTE lazy10 | ok | ok | n/a | ? | **SOUND (provisional)** | Owner-arm control, bounded window of 10, owner-side. Confirm no storage claim rests on the arm-blind step |
-| 185 | proposed | ok | ok | fail | n/a | **SCOPE GAP** | Holds cap/exact-scan/32-seeds fixed and excludes `HEAD-11`/`HEAD-12` — the paper's actual remedies. Re-scope before executing |
+| 185 | proposed | ok | ok | **fail** | n/a | **VALID — MIS-SEQUENCED** (corrected 2026-07-29-02) | Not a scope gap. For the promoted trained policy the candidate pool is already global, so selection objective — 185's scope — is the correct lever, and `HEAD-11`/`HEAD-12` belong to Task 207. The real blocker is T3: its diversity-aware seed arm is structurally suppressed at BW=4, where the beam pops 4 candidates per round. **Sequence after Task 206.** Boundary: 185 owns the objective; 207 owns pool, search path, and sharding |
 | 186 | proposed, conditional on 185 | ok | ? | fail | n/a | **SCOPE GAP + NFR-021 SCREEN** | "Larger head" must state a bound; cap 8,192/16,384 is fine, `C = f(N)` requires sharding |
 | 187 | complete — STOP, no candidate | ok | ok | fail | ok | **SOUND (attribution) / SUSPECT (STOP)** | Attribution is valid; the STOP inherits Defect 2 |
 | 188 | complete — accept BW8, no production change | ok | ok | **fail** | ? | **SUSPECT** | BW=8 without pushdown, paired with an experimental 16,384-landmark head. A 2x step against a 32x design |
@@ -385,3 +409,25 @@ are recommendations to the operator, not closures.
 
 See `artifacts/manifest.md` for the citation index and the commands used to
 establish provenance.
+
+---
+
+## Corrections
+
+**2026-07-29-01** — citation line numbers drifted by this packet's own spec
+slice. `NFR-018:35` -> `:36` and both it and `:62`/`:66` now pinned explicitly to
+`78b46889c` (pre-amendment), since `b15f3ffb1` renumbered that file and the rule
+Tasks 198/199 violated is the pre-amendment text. `FR-078:491` -> `:492`.
+`ADR-067:196` -> `:198`. Quoted text and conclusions unchanged. Commit
+`b0ff2c528`.
+
+**2026-07-29-02** — Defect 3 conflated the two head policies. `CurrentSampleGraph`
+(default) is a BFS prefix from one global medoid and is what §3's
+per-partition-union critique addresses; `training_landmarks_exact` (promoted)
+ranks over the entire corpus (`head_sample.rs:462-467`) and so has a different
+defect — a diagnostic objective and an exact scan, not a truncated pool.
+Task 185's verdict is corrected from **SCOPE GAP** to **VALID — MIS-SEQUENCED**:
+its lever is right for the promoted policy, and its true blocker is BW=4, so it
+sequences after Task 206 rather than being re-scoped away. Defect 3's other
+findings (not sharded, ANN index bypassed, promoted-diagnostic policy, the two
+FR-080 spec/code divergences) are unaffected, as is Task 181's membership result.

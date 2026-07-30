@@ -568,7 +568,7 @@ const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
         neighbor_vec_ids, neighbor_code_dists
    FROM ec_distann_expand_nodes(
        $1::text::regclass, $2::bytea, $3::real[],
-       $4::bytea, $5::bigint[], $6::real)";
+       $4::bytea, $5::bigint[], $6::real, $7::integer)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
@@ -576,7 +576,7 @@ const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
         owner_graph_read_ns, owner_score_ns, owner_response_encode_ns, owner_response_bytes
    FROM ec_distann_expand_physical_nodes_profile(
        $1::text::regclass, $2::bytea, $3::real[],
-       $4::bytea, $5::bigint[], $6::real)";
+       $4::bytea, $5::bigint[], $6::real, $7::integer)";
 
 #[cfg(not(feature = "distann-head-attribution-benchmark"))]
 const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
@@ -735,6 +735,7 @@ pub(crate) struct DistannPhysicalExpandRequest<'a> {
     pub(crate) query_digest: &'a [u8; 32],
     pub(crate) vec_ids: &'a [u64],
     pub(crate) code_threshold: Option<f32>,
+    pub(crate) candidate_limit: Option<i32>,
 }
 
 pub(crate) fn remote_physical_expand_batch(
@@ -945,6 +946,7 @@ async fn run_one_physical_expand(
             &request.query_digest.as_slice(),
             &wire_ids,
             &request.code_threshold,
+            &request.candidate_limit,
         ],
     )
     .await?;
@@ -1544,6 +1546,7 @@ pub(super) struct DistannRemoteExpandRequest<'a> {
     /// Owned vec_ids for this node (bit-cast to i64 on the wire).
     pub(super) vec_ids: &'a [u64],
     pub(super) code_threshold: Option<f32>,
+    pub(super) candidate_limit: Option<i32>,
 }
 
 struct PooledConnection {
@@ -1671,7 +1674,7 @@ pub(crate) fn remote_timeout_probe_for_test(
 // regclass-typed param that tokio-postgres cannot serialize from a &str.
 const EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone, neighbor_vec_ids, \
     neighbor_code_dists FROM ec_distann_expand_nodes($1::text::regclass::oid, $2, $3::real[], \
-    $4::bigint[], $5)";
+    $4::bigint[], $5, $6)";
 
 /// Parameterized session setup — sets the target node identity without any
 /// string interpolation of the (possibly quote/space-bearing) roster spec.
@@ -1778,6 +1781,7 @@ async fn run_one_remote(
             &request.query,
             &vec_ids_i64,
             &request.code_threshold,
+            &request.candidate_limit,
         ],
     )
     .await?;
@@ -2157,6 +2161,7 @@ impl DistannNodeExpander for RemoteNodeExpander<'_> {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         let node_count = self.placement.node_count();
         // Position-carrying buckets: reassembly is driven by the original
@@ -2170,7 +2175,9 @@ impl DistannNodeExpander for RemoteNodeExpander<'_> {
         if let Some(local_bucket) = buckets.get(self.local_index) {
             if !local_bucket.is_empty() {
                 let ids: Vec<u64> = local_bucket.iter().map(|(_, vec_id)| *vec_id).collect();
-                let responses = self.local.expand_nodes(&ids, code_threshold)?;
+                let responses = self
+                    .local
+                    .expand_nodes(&ids, code_threshold, candidate_limit)?;
                 place_bucket_responses(self.local_index, local_bucket, responses, &mut ordered)?;
             }
         }
@@ -2203,6 +2210,8 @@ impl DistannNodeExpander for RemoteNodeExpander<'_> {
                         query,
                         vec_ids: ids,
                         code_threshold,
+                        candidate_limit: candidate_limit
+                            .map(|limit| i32::try_from(limit).unwrap_or(i32::MAX)),
                     }
                 })
                 .collect();

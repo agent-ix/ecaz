@@ -6,10 +6,11 @@
 //!
 //! [`DistannNodeExpander::expand_nodes`] mirrors the FR-079 wire contract of
 //! `ec_distann_expand_nodes(index, epoch_fingerprint, query, vec_ids,
-//! code_threshold)` exactly: request = a batch of vec_ids (≤ BW) plus an
-//! optional code-score floor; response = one entry per requested vec_id, in
-//! request order, carrying `(vec_id, exact_dist, is_tombstone,
-//! neighbor_vec_ids, neighbor_code_dists)`. The M2 remote form groups the
+//! code_threshold, candidate_limit)` exactly: request = a batch of vec_ids (≤
+//! BW), an optional code-score floor, and an optional owner-side candidate
+//! limit; response = one entry per requested vec_id, in request order, carrying
+//! `(vec_id, exact_dist, is_tombstone, neighbor_vec_ids,
+//! neighbor_code_dists)`. The M2 remote form groups the
 //! batch by owning node (FR-078) and issues one pooled SQL call per node;
 //! this loop does not change. `heap_tid` on the response entry is a
 //! LOCAL-ONLY materialization convenience — it is deliberately NOT part of
@@ -66,6 +67,7 @@ pub(crate) trait DistannNodeExpander {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError>;
 }
 
@@ -109,6 +111,66 @@ struct BeamCandidate {
     vec_id: u64,
 }
 
+/// The coordinator-derived Algorithm 1 controls for one hop round. `threshold`
+/// is expressed as an IP-score floor, while the beam stores `-ip` distances.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PushdownLimits {
+    threshold: Option<f32>,
+    candidate_limit: usize,
+}
+
+fn derive_pushdown_limits(
+    beam: &BinaryHeap<BeamCandidate>,
+    remaining_expansion_budget: usize,
+) -> PushdownLimits {
+    // A threshold is sound only when the live beam already contains at least
+    // as many candidates as can still be expanded. Otherwise a new candidate
+    // below the current worst beam member could still be needed within H.
+    let threshold = if remaining_expansion_budget > 0 && beam.len() >= remaining_expansion_budget {
+        beam.iter()
+            .map(|candidate| -candidate.dist)
+            .min_by(|left, right| left.total_cmp(right))
+    } else {
+        None
+    };
+    PushdownLimits {
+        threshold,
+        candidate_limit: remaining_expansion_budget.max(1),
+    }
+}
+
+/// Apply the owner-side Algorithm 1 filter and deterministic top-`l` window.
+/// Ties at the threshold are retained before the limit is applied, and the
+/// vec_id tie-break makes the wire response deterministic.
+pub(crate) fn prune_and_limit_neighbors(
+    neighbor_vec_ids: &[u64],
+    neighbor_code_dists: &[f32],
+    code_threshold: Option<f32>,
+    candidate_limit: Option<usize>,
+) -> Result<(Vec<u64>, Vec<f32>), DistannExpandError> {
+    if neighbor_vec_ids.len() != neighbor_code_dists.len() {
+        return Err(DistannExpandError::Internal(
+            "ec_distann expansion neighbor arrays are not index-aligned".to_owned(),
+        ));
+    }
+    let mut neighbors = neighbor_vec_ids
+        .iter()
+        .copied()
+        .zip(neighbor_code_dists.iter().copied())
+        .filter(|(_, code_dist)| code_threshold.is_none_or(|threshold| -*code_dist >= threshold))
+        .collect::<Vec<_>>();
+    if candidate_limit.is_some() {
+        neighbors.sort_unstable_by(|left, right| {
+            left.1
+                .total_cmp(&right.1)
+                .then_with(|| left.0.cmp(&right.0))
+        });
+        neighbors.truncate(candidate_limit.unwrap_or(0));
+    }
+    let (ids, dists): (Vec<_>, Vec<_>) = neighbors.into_iter().unzip();
+    Ok((ids, dists))
+}
+
 impl Eq for BeamCandidate {}
 
 impl Ord for BeamCandidate {
@@ -136,6 +198,15 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
     expander: &mut E,
     params: DistannOrchestrationParams,
 ) -> Result<(Vec<DistannScanHit>, DistannScanCounters), DistannExpandError> {
+    distann_orchestrated_search_with_pushdown(seeds, expander, params, true)
+}
+
+fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
+    seeds: &[DistannSeedCandidate],
+    expander: &mut E,
+    params: DistannOrchestrationParams,
+    pushdown: bool,
+) -> Result<(Vec<DistannScanHit>, DistannScanCounters), DistannExpandError> {
     let mut counters = DistannScanCounters::default();
     if params.beam_width == 0 || params.hop_rounds == 0 {
         return Err(DistannExpandError::BadInput(
@@ -160,7 +231,7 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
     let mut hits: Vec<DistannScanHit> = Vec::new();
 
     let mut batch: Vec<u64> = Vec::with_capacity(params.beam_width);
-    for _ in 0..params.hop_rounds {
+    for round in 0..params.hop_rounds {
         // Pop the best BW unvisited candidates by code distance. Maintaining
         // the heap avoids re-sorting the entire accumulated frontier on every
         // hop round.
@@ -212,7 +283,23 @@ pub(crate) fn distann_orchestrated_search<E: DistannNodeExpander>(
             )));
         }
 
-        let responses = expander.expand_nodes(&batch, None)?;
+        let remaining_expansion_budget = params
+            .hop_rounds
+            .saturating_sub(round.saturating_add(1))
+            .saturating_mul(params.beam_width);
+        let limits = if pushdown {
+            derive_pushdown_limits(&beam, remaining_expansion_budget)
+        } else {
+            PushdownLimits {
+                threshold: None,
+                candidate_limit: 0,
+            }
+        };
+        let responses = expander.expand_nodes(
+            &batch,
+            limits.threshold,
+            pushdown.then_some(limits.candidate_limit),
+        )?;
         if responses.len() != batch.len() {
             return Err(DistannExpandError::Internal(format!(
                 "ec_distann expansion returned {} entries for {} requested vec_ids",
@@ -350,7 +437,8 @@ fn kth_exact_hit(hits: &mut [DistannScanHit], top_k: usize) -> DistannScanHit {
 #[cfg(test)]
 mod tests {
     use super::{
-        distann_orchestrated_search, run_scan_attempt_with_restart, DistannExpandError,
+        distann_orchestrated_search, distann_orchestrated_search_with_pushdown,
+        prune_and_limit_neighbors, run_scan_attempt_with_restart, DistannExpandError,
         DistannExpandedNode, DistannNodeExpander, DistannOrchestrationParams, DistannSeedCandidate,
     };
     use crate::storage::page::ItemPointer;
@@ -429,7 +517,8 @@ mod tests {
         fn expand_nodes(
             &mut self,
             vec_ids: &[u64],
-            _code_threshold: Option<f32>,
+            code_threshold: Option<f32>,
+            candidate_limit: Option<usize>,
         ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
             self.calls.push(vec_ids.to_vec());
             vec_ids
@@ -439,13 +528,21 @@ mod tests {
                         self.nodes.get(vec_id).ok_or_else(|| {
                             DistannExpandError::Internal(format!("unknown vec_id {vec_id}"))
                         })?;
+                    let neighbor_vec_ids = neighbors.iter().map(|(id, _)| *id).collect::<Vec<_>>();
+                    let neighbor_code_dists = neighbors.iter().map(|(_, d)| *d).collect::<Vec<_>>();
+                    let (neighbor_vec_ids, neighbor_code_dists) = prune_and_limit_neighbors(
+                        &neighbor_vec_ids,
+                        &neighbor_code_dists,
+                        code_threshold,
+                        candidate_limit,
+                    )?;
                     Ok(DistannExpandedNode {
                         vec_id: *vec_id,
                         exact_dist: (!tombstone).then_some(*exact),
                         is_tombstone: *tombstone,
                         heap_tid: tid(*vec_id as u16),
-                        neighbor_vec_ids: neighbors.iter().map(|(id, _)| *id).collect(),
-                        neighbor_code_dists: neighbors.iter().map(|(_, d)| *d).collect(),
+                        neighbor_vec_ids,
+                        neighbor_code_dists,
                         owner_total_ns: 0,
                         owner_open_validate_ns: 0,
                         owner_graph_read_ns: 0,
@@ -595,9 +692,8 @@ mod tests {
             vec_id: 9,
             dist: -0.5,
         }];
-        let (hits, counters) =
-            distann_orchestrated_search(&seeds, &mut expander, params(1, 4, 1))
-                .expect("equal-score boundary search should succeed");
+        let (hits, counters) = distann_orchestrated_search(&seeds, &mut expander, params(1, 4, 1))
+            .expect("equal-score boundary search should succeed");
         assert!(!counters.early_exit);
         assert_eq!(counters.records_expanded, 2);
         assert_eq!(
@@ -633,5 +729,60 @@ mod tests {
             .expect("search should succeed");
         assert_eq!(counters.rounds_executed, 2);
         assert_eq!(counters.records_expanded, 2, "BW x H = 2 hard cap");
+    }
+
+    #[test]
+    fn owner_pushdown_keeps_threshold_ties_and_deterministic_limit_order() {
+        let (ids, dists) = prune_and_limit_neighbors(
+            &[40, 10, 30, 20],
+            &[-0.5, -0.7, -0.7, -0.2],
+            Some(0.7),
+            Some(2),
+        )
+        .expect("aligned neighbor arrays");
+        assert_eq!(ids, vec![10, 30]);
+        assert_eq!(dists, vec![-0.7, -0.7]);
+    }
+
+    #[test]
+    fn algorithm1_pushdown_is_order_identical_to_unbounded_path_with_tombstone() {
+        // Two owner-like frontier regions, equal-score ties, and a tombstone
+        // whose exact distance is absent. The bounded owner responses must
+        // produce the same ordered live result IDs as the None/None path.
+        let nodes = HashMap::from([
+            (1, (-0.90, false, vec![(2, -0.80), (3, -0.80), (4, -0.10)])),
+            (2, (0.0, true, vec![(5, -0.75), (6, -0.75)])),
+            (3, (-0.70, false, vec![(7, -0.74), (8, -0.20)])),
+            (4, (-0.20, false, vec![(9, -0.73)])),
+            (5, (-0.60, false, vec![])),
+            (6, (-0.59, false, vec![])),
+            (7, (-0.58, false, vec![])),
+            (8, (-0.10, false, vec![])),
+            (9, (-0.05, false, vec![])),
+        ]);
+        let seeds = [DistannSeedCandidate {
+            vec_id: 1,
+            dist: -0.90,
+        }];
+        let mut unbounded = MockExpander {
+            nodes: nodes.clone(),
+            calls: Vec::new(),
+        };
+        let mut pushed = MockExpander {
+            nodes,
+            calls: Vec::new(),
+        };
+        let params = params(2, 4, 5);
+        let (reference, _) =
+            distann_orchestrated_search_with_pushdown(&seeds, &mut unbounded, params, false)
+                .expect("unbounded reference path");
+        let (candidate, _) =
+            distann_orchestrated_search(&seeds, &mut pushed, params).expect("Algorithm 1 path");
+        assert_eq!(
+            reference.iter().map(|hit| hit.vec_id).collect::<Vec<_>>(),
+            candidate.iter().map(|hit| hit.vec_id).collect::<Vec<_>>()
+        );
+        assert_eq!(reference, candidate);
+        assert!(pushed.calls.len() <= 4);
     }
 }

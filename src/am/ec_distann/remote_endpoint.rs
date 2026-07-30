@@ -171,6 +171,7 @@ fn ec_distann_expand_nodes(
     query: Vec<f32>,
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
+    candidate_limit: default!(Option<i32>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -805,7 +806,19 @@ fn expand_nodes_impl(
     };
 
     let owner_started = Instant::now();
-    let responses = expander.expand_nodes(&vec_ids_u64, code_threshold)?;
+    let responses = expander.expand_nodes(
+        &vec_ids_u64,
+        code_threshold,
+        candidate_limit
+            .map(|limit| {
+                usize::try_from(limit).map_err(|_| {
+                    DistannExpandError::BadInput(
+                        "ec_distann candidate_limit must be non-negative".to_owned(),
+                    )
+                })
+            })
+            .transpose()?,
+    )?;
     let owner_total_ns = i64::try_from(owner_started.elapsed().as_nanos())
         .unwrap_or(i64::MAX)
         .saturating_add(owner_open_validate_ns);

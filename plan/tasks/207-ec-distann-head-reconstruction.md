@@ -5,9 +5,28 @@ Status: **ready** (2026-07-29). Priority: P0 recall.
 Entry gate: none. Independent of Tasks 204--206 and may run in parallel, but
 `k_head` widening is only meaningful once Task 206 establishes a wide beam.
 
-Coordinate with Tasks 185 and 186: this task very likely **supersedes Task 186**
-and re-scopes Task 185. Do not run 185/186 head experiments concurrently with
-this one — two lanes mutating head construction destroys attribution.
+**Boundary against Task 185** (set by the Task 203 audit correction
+2026-07-29-02). Task 185 is **not** superseded and is not re-scoped away; it owns
+a different lever, and the two are independent given this split:
+
+- **207 (this task) owns the pool, the search path, and sharding** —
+  per-partition union construction (§3), restoring the persisted Vamana graph in
+  place of the 4,096-point exact scan, and distributing the head across the
+  roster (§2.2).
+- **185 owns the selection objective** — which landmarks are chosen from the
+  pool, and which are returned as seeds. For the promoted
+  `training_landmarks_exact` policy the pool is already the whole corpus
+  (`head_sample.rs:462-467`), so the objective is the operative lever there, and
+  185 is gated on Task 206 because its diversity arm cannot pay off at BW=4.
+
+They must not run **concurrently** — two lanes mutating the head destroys
+attribution — but they may run in either order without re-baselining each other.
+
+**Task 186 is likely superseded by this task.** 186's arms are head-capacity
+growth (cap 8,192/16,384) and a two-level hierarchy; Task 203 found capacity is
+not the measured bottleneck and construction is. Confirm 186's disposition with
+the operator before starting, so it is not left as a stale `proposed` task
+inviting conflicting head work.
 
 ## Why
 

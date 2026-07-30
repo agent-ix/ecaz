@@ -25,7 +25,8 @@ SQL function on every data node, invoked by the coordinator once per owning
 node per hop round over the pooled libpq transport:
 
 `ec_distann_expand_nodes(index_regclass regclass, epoch_fingerprint bytea,
-query real[], vec_ids bigint[], code_threshold real DEFAULT NULL) RETURNS
+query real[], vec_ids bigint[], code_threshold real DEFAULT NULL,
+candidate_limit integer DEFAULT NULL) RETURNS
 TABLE (vec_id bigint, exact_dist real, is_tombstone bool, neighbor_vec_ids
 bigint[], neighbor_code_dists real[])`
 
@@ -45,6 +46,9 @@ is_tombstone bool, payload_nulls boolean[], payload_values bytea[])`
 - `vec_ids bigint[]` — locally-owned records to expand (≤ beam width)
 - `code_threshold` — optional score floor; neighbors scoring below it MAY be
   omitted
+- `candidate_limit` — optional owner-side limit `l`; after applying the score
+  floor, the owner sorts by `(code_distance, vec_id)` and returns at most `l`
+  neighbors per requested record. `NULL` preserves the unbounded response.
 - `projection_attnums` — non-dropped source attribute numbers required by the
   target list and coordinator-side quals, without duplicates
 - `expected_schema_fingerprint` — the row-tier schema identity bound by the
@@ -112,16 +116,29 @@ entry.
   and leave `exact_dist` unset (NULL).
 - For a tombstoned record, the expansion endpoint SHALL return
   `is_tombstone = true` so its neighbor edges remain available for traversal.
-- `code_threshold` SHALL default to NULL (no pruning).
-- When the coordinator sets a non-NULL threshold, it is a documented recall-risk
-  optimization **outside the scan's correctness guarantees**: it is not a
-  fault path, and the [FR-081](./FR-081-distann-query-orchestration.md)-AC-4
-  early-exit result-equivalence guarantee holds only at `code_threshold` NULL.
-  Because a non-NULL threshold may prune true results, it is never used where
-  correctness or the gate is asserted.
-- Gate benchmark runs SHALL use `code_threshold = NULL` unless the packet
-  pre-registers the value and reports its recall effect under
-  [NFR-017](../../../non-functional/NFR-017-distann-latency-recall-gate.md).
+- `code_threshold` and `candidate_limit` SHALL default to NULL (unbounded
+  response). The production coordinator derives them from the live candidate
+  heap for each round: `t = peek_worst(H_C)` only when the live heap already
+  contains at least the remaining `BW × H` expansion budget, and `l` is that
+  remaining budget (with a minimum of one for the final response). Otherwise
+  `t` is NULL while `l` still bounds the number of candidates needed by the
+  remaining rounds.
+- Under that derivation, the threshold is not an independent recall-risk
+  heuristic. A neighbor below `t` is worse than every candidate already in the
+  live heap; because the heap has at least as many entries as can still be
+  expanded, it cannot be popped within the remaining budget. Per-owner top-`l`
+  selection is equivalent for the same reason: a candidate outside an owner's
+  top `l` has at least `l` better candidates from that owner ahead of it.
+  Threshold ties are retained and resolved by the coordinator's `(distance,
+  vec_id)` order; tombstones remain traversable and never contribute an
+  `exact_dist` result.
+- The equivalence does not hold for a stale threshold from an earlier round,
+  an `l` smaller than the remaining expansion budget, or a threshold derived
+  from a heap that is not the coordinator's live heap. Those modes remain
+  opt-in and labeled rather than silently weakening FR-081-AC-4.
+- Gate benchmark runs use the coordinator-derived controls and must report the
+  ordered-result identity against the same generation with the controls
+  disabled as the reference path.
 - The response schema of this function is a fixed wire contract independent
   of the record layout (ADR-085 D1): if neighbor codes move from embedded to
   piggybacked, the returned columns do not change.

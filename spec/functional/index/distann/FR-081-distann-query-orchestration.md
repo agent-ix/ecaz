@@ -34,7 +34,9 @@ neighbors into the beam and exact distances into the result heap.
   ([FR-078](./FR-078-distann-hash-placement.md)); issue the per-node
   expansion calls in parallel over the pooled transport (operational/security
   posture per [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md),
-  the lifted SPIRE transport contract); merge returned
+  the lifted SPIRE transport contract); derive `t = peek_worst(H_C)` and the
+  remaining candidate limit `l` from the live coordinator candidate heap and
+  pass them to each owner for Algorithm 1 prune/sort/truncate; merge returned
   neighbor candidates (code distances) into the beam and returned exact
   distances into the top-k heap; and mark expanded nodes visited.
 - The loop SHALL terminate after H rounds, or earlier when the beam's best
