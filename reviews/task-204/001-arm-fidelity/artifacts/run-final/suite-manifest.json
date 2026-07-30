@@ -2,10 +2,10 @@
   "suite": "task204-two-arm-100k",
   "schema_version": 1,
   "config": "reviews/task-204/001-arm-fidelity/artifacts/task204-two-arm-100k-suite.json",
-  "config_sha256": "91fc3d4849af3735c654ad5de2f8362045b8ed601f2714003fcc60f63b626938",
+  "config_sha256": "86923c471c223554a069487868d8e78be16936839874d1cb29a2a5182597e560",
   "dry_run": false,
-  "generated_at_unix_ms": 1785370748873,
-  "runner_git_commit": "447458f0bf81bb03cc0aad70e6b6e1e0687ff169",
+  "generated_at_unix_ms": 1785382282658,
+  "runner_git_commit": "239bf0daab5c58d38283a0fa0d91b4e74d4c9b9c-dirty",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -26,14 +26,16 @@
         "--pg",
         "18",
         "--artifact-dir",
-        "reviews/task-204/001-arm-fidelity/artifacts/run/storage-two-arm-100k",
+        "reviews/task-204/001-arm-fidelity/artifacts/run-final/storage-two-arm-100k",
         "--run-dir",
         "/home/peter/.ecaz/clusters/task204-arm-fidelity-100k",
         "--log-file",
-        "reviews/task-204/001-arm-fidelity/artifacts/run/storage-two-arm-100k/distann-local-multinode.log",
+        "reviews/task-204/001-arm-fidelity/artifacts/run-final/storage-two-arm-100k/distann-local-multinode.log",
         "--nodes",
         "3",
         "--physical-benchmark",
+        "--skip-recall",
+        "--skip-single-control",
         "--benchmark-iterations",
         "5",
         "--benchmark-warmup-iterations",
@@ -67,13 +69,17 @@
         "task204",
         "storage",
         "two-arm",
-        "ec_real_100k"
+        "ec_real_100k",
+        "metrics_mode=benchmark"
       ],
       "expected_artifacts": [
-        "reviews/task-204/001-arm-fidelity/artifacts/run/storage-two-arm-100k/distann-multinode-summary.log"
+        "reviews/task-204/001-arm-fidelity/artifacts/run-final/storage-two-arm-100k/distann-multinode-summary.log"
       ],
-      "status": "pending",
-      "started_at_unix_ms": 1785370748917
+      "status": "succeeded",
+      "started_at_unix_ms": 1785382282702,
+      "finished_at_unix_ms": 1785385361355,
+      "duration_ms": 3078652,
+      "exit_code": 0
     }
   ]
 }

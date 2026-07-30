@@ -22,6 +22,8 @@
       "physical_benchmark": true,
       "benchmark_iterations": 5,
       "benchmark_warmup_iterations": 2,
+      "skip_recall": true,
+      "skip_single_control": true,
       "skip_fault_drills": true,
       "compact_artifacts": true,
       "corpus_prefix": "ec_real_100k",

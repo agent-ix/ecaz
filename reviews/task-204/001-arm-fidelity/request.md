@@ -18,13 +18,16 @@ The follow-up wiring/fix checkpoint is `615fd72b2d6d31d7bec9020eabcfa8fa34d39a68
   `artifacts/pg18-focused.log`.
 - Corrected reread of Task 198/199: see
   `artifacts/corrected-198-199-reread.md`.
-- Required 100k two-arm demonstration: suite config is checked in, but the
-  local audit is blocked by missing staged corpus files; see
-  `artifacts/benchmark-preflight.log`. This packet does not claim the task's
-  benchmark gate is satisfied until that run is executed.
+- Required 100k two-arm demonstration: passed with the staged `ec_real_100k`
+  corpus. The suite completed successfully; see the packet-local
+  `artifacts/run-final/results.jsonl`, `artifacts/run-final/suite-manifest.json`,
+  and `artifacts/run-final/storage-two-arm-100k/distann-multinode-summary.log`.
+  `skip_recall` and `skip_single_control` are deliberate because this packet
+  is the Task 204 storage-fidelity demonstration; both physical storage arms
+  and their latency measurements still ran.
 
 ## Review focus
 
 Please review arm attribution, the coordinator-side relation accounting,
 mandatory ratio/per-node rows, and the structured parser path. The packet is
-open pending the required two-arm 100k evidence.
+open for outside review with the required two-arm 100k evidence attached.
