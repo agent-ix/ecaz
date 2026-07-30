@@ -997,6 +997,89 @@ pub(crate) fn load_head_sample(
     Ok((sample, graph, manifest.build_options))
 }
 
+/// One roster shard of the FR-080 head: the landmarks whose FR-078 placement
+/// hash maps to `owner_ordinal`, plus a head graph built over *that shard's*
+/// vectors only.
+///
+/// NFR-021 clause 3 (Task 210 P2): the head is sharded across the roster
+/// regardless of its capacity, so no node holds the whole head. Note the graph
+/// is per shard, not a slice of the global head graph — a subgraph of the
+/// stitched head is not a navigable index over the shard, which is the same
+/// reason `DISTRIBUTEDANN` §3 builds the head from per-partition top layers
+/// rather than from the stitched graph.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct DistannHeadShard {
+    pub(crate) owner_ordinal: u32,
+    pub(crate) sample: DistannHeadSample,
+    pub(crate) graph: DistannPersistedHeadGraph,
+}
+
+/// Partition a head sample across the roster by FR-078 placement hash and
+/// build a per-shard head graph. Every landmark lands on exactly one owner;
+/// the union of the shards is the input sample.
+pub(crate) fn shard_head_sample(
+    sample: &DistannHeadSample,
+    owner_count: usize,
+    placement_hash_version: u16,
+    graph_degree: usize,
+    build_list_size: usize,
+    alpha: f32,
+    seed: u64,
+) -> Result<Vec<DistannHeadShard>, String> {
+    if owner_count == 0 {
+        return Err("EC_HEAD_SHARD: roster has no owners".to_owned());
+    }
+    let mut shards = (0..owner_count)
+        .map(|owner_ordinal| DistannHeadShard {
+            owner_ordinal: owner_ordinal as u32,
+            sample: DistannHeadSample {
+                dimensions: sample.dimensions,
+                entries: Vec::new(),
+            },
+            graph: DistannPersistedHeadGraph {
+                entry: 0,
+                neighbors: Vec::new(),
+            },
+        })
+        .collect::<Vec<_>>();
+    for entry in &sample.entries {
+        let owner =
+            super::placement::owning_node(entry.vec_id, owner_count, placement_hash_version);
+        shards[owner].sample.entries.push(entry.clone());
+    }
+    for shard in &mut shards {
+        shard.graph = DistannPersistedHeadGraph::build(
+            &shard.sample,
+            graph_degree,
+            build_list_size,
+            alpha,
+            // Per-shard seed keeps shard graphs independent yet deterministic.
+            seed ^ u64::from(shard.owner_ordinal).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+        )?;
+    }
+    Ok(shards)
+}
+
+/// Merge bounded per-owner head results into the coordinator's seed list.
+///
+/// The coordinator holds only `seed_count` seeds — NFR-021 clause 2 bounded
+/// state — and the merge is deterministic on `(dist, vec_id)`, so a sharded
+/// head returns a stable ordered seed list.
+pub(crate) fn merge_head_seeds(
+    per_owner: Vec<Vec<super::scan::DistannSeedCandidate>>,
+    seed_count: usize,
+) -> Vec<super::scan::DistannSeedCandidate> {
+    let mut merged = per_owner.into_iter().flatten().collect::<Vec<_>>();
+    merged.sort_unstable_by(|left, right| {
+        left.dist
+            .total_cmp(&right.dist)
+            .then_with(|| left.vec_id.cmp(&right.vec_id))
+    });
+    merged.dedup_by(|left, right| left.vec_id == right.vec_id);
+    merged.truncate(seed_count.min(merged.len()));
+    merged
+}
+
 pub(crate) struct DistannPhysicalHeadIndex {
     graph: crate::am::VamanaGraph,
     entry: u32,
@@ -1258,6 +1341,138 @@ mod tests {
                 },
             ],
         }
+    }
+
+    fn wide_sample(count: u64) -> DistannHeadSample {
+        DistannHeadSample {
+            dimensions: 2,
+            entries: (0..count)
+                .map(|index| {
+                    let angle = index as f32 * 0.37;
+                    DistannHeadSampleEntry {
+                        vec_id: (index + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15),
+                        vector: vec![angle.cos(), angle.sin()],
+                    }
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn head_shards_partition_every_landmark_exactly_once() {
+        let sample = wide_sample(64);
+        let shards = shard_head_sample(
+            &sample,
+            3,
+            crate::am::ec_distann::placement::DISTANN_PLACEMENT_HASH_V1,
+            8,
+            16,
+            1.2,
+            17,
+        )
+        .unwrap();
+
+        assert_eq!(shards.len(), 3);
+        let mut union = shards
+            .iter()
+            .flat_map(|shard| shard.sample.entries.iter().map(|entry| entry.vec_id))
+            .collect::<Vec<_>>();
+        union.sort_unstable();
+        let mut expected = sample
+            .entries
+            .iter()
+            .map(|entry| entry.vec_id)
+            .collect::<Vec<_>>();
+        expected.sort_unstable();
+        assert_eq!(union, expected, "shards must partition the head sample");
+        // Every shard holds strictly less than the whole head: that is the
+        // property NFR-021 clause 3 asks for.
+        for shard in &shards {
+            assert!(shard.sample.entries.len() < sample.entries.len());
+            assert_eq!(shard.graph.neighbors.len(), shard.sample.entries.len());
+        }
+    }
+
+    #[test]
+    fn sharded_exact_head_search_is_identical_to_the_unsharded_head() {
+        let sample = wide_sample(64);
+        let query = vec![0.4_f32, -0.9];
+        let seed_count = 8;
+
+        let global_graph = DistannPersistedHeadGraph::build(&sample, 8, 16, 1.2, 17).unwrap();
+        let global = DistannPhysicalHeadIndex::load(
+            sample.clone(),
+            global_graph,
+            8,
+            DistannHeadPolicy::TrainingLandmarksExact,
+        )
+        .unwrap()
+        .unwrap();
+        let unsharded = global.search_exact(&query, seed_count);
+
+        let shards = shard_head_sample(
+            &sample,
+            3,
+            crate::am::ec_distann::placement::DISTANN_PLACEMENT_HASH_V1,
+            8,
+            16,
+            1.2,
+            17,
+        )
+        .unwrap();
+        let per_owner = shards
+            .into_iter()
+            .map(|shard| {
+                DistannPhysicalHeadIndex::load(
+                    shard.sample,
+                    shard.graph,
+                    8,
+                    DistannHeadPolicy::TrainingLandmarksExact,
+                )
+                .unwrap()
+                .map(|index| index.search_exact(&query, seed_count))
+                .unwrap_or_default()
+            })
+            .collect::<Vec<_>>();
+        let merged = merge_head_seeds(per_owner, seed_count);
+
+        // Exact scoring over a partition is exact scoring over the union, so
+        // sharding the head is result-identical for the promoted policy.
+        assert_eq!(merged.len(), unsharded.len());
+        for (sharded, reference) in merged.iter().zip(unsharded.iter()) {
+            assert_eq!(sharded.vec_id, reference.vec_id);
+            assert_eq!(sharded.dist, reference.dist);
+        }
+    }
+
+    #[test]
+    fn merged_head_seeds_are_bounded_deduplicated_and_deterministic() {
+        let left = vec![
+            super::super::scan::DistannSeedCandidate {
+                vec_id: 7,
+                dist: -0.9,
+            },
+            super::super::scan::DistannSeedCandidate {
+                vec_id: 3,
+                dist: -0.5,
+            },
+        ];
+        let right = vec![
+            super::super::scan::DistannSeedCandidate {
+                vec_id: 7,
+                dist: -0.9,
+            },
+            super::super::scan::DistannSeedCandidate {
+                vec_id: 9,
+                dist: -0.7,
+            },
+        ];
+
+        let merged = merge_head_seeds(vec![left, right], 2);
+
+        assert_eq!(merged.len(), 2, "coordinator state stays bounded by k_head");
+        assert_eq!(merged[0].vec_id, 7);
+        assert_eq!(merged[1].vec_id, 9);
     }
 
     #[test]
