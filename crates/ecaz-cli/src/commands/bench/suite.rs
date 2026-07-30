@@ -517,6 +517,10 @@ struct DistannBenchmarkSeedVariant {
     /// Task 198 benchmark-only coordinator traversal replica arm.
     #[serde(default)]
     traversal_replica: bool,
+    /// NFR-022 pre-registration for a decision-bearing arm. Repeated
+    /// registrations use the same id across the 10k/50k/100k steps.
+    #[serde(default)]
+    nfr_021: Option<DistannNfr021Registration>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
@@ -533,6 +537,65 @@ impl DistannMetricsMode {
             Self::FullMetrics => "full_metrics",
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DistannDecisionRole {
+    Control,
+    Candidate,
+    Context,
+}
+
+impl DistannDecisionRole {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Control => "control",
+            Self::Candidate => "candidate",
+            Self::Context => "context",
+        }
+    }
+
+    fn is_decision_bearing(self) -> bool {
+        matches!(self, Self::Control | Self::Candidate)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum DistannNfr021Admissibility {
+    Conforming,
+    Nonconforming,
+}
+
+impl DistannNfr021Admissibility {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Conforming => "conforming",
+            Self::Nonconforming => "nonconforming",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct DistannNfr021Registration {
+    /// Stable arm identity shared by the scale-specific suite steps.
+    id: String,
+    role: DistannDecisionRole,
+    admissibility: DistannNfr021Admissibility,
+    /// Concise pre-measurement basis for the verdict.
+    rationale: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct DistannNfr021ManifestRegistration {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    variant: Option<String>,
+    id: String,
+    role: DistannDecisionRole,
+    admissibility: DistannNfr021Admissibility,
+    rationale: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -648,6 +711,10 @@ struct DistannLocalMultinodeStep {
     /// setting while preserving one result row per named arm.
     #[serde(default)]
     benchmark_seed_variants: Vec<DistannBenchmarkSeedVariant>,
+    /// NFR-022 pre-registration for the singular benchmark arm. Variant
+    /// matrices register each arm on DistannBenchmarkSeedVariant instead.
+    #[serde(default)]
+    nfr_021: Option<DistannNfr021Registration>,
     #[serde(default)]
     queries: Option<u32>,
     #[serde(default)]
@@ -675,6 +742,37 @@ impl DistannLocalMultinodeStep {
                 DistannMetricsMode::Benchmark
             }
         })
+    }
+
+    fn nfr_021_manifest_registrations(&self) -> Vec<DistannNfr021ManifestRegistration> {
+        if self.benchmark_seed_variants.is_empty() {
+            return self
+                .nfr_021
+                .iter()
+                .map(|registration| DistannNfr021ManifestRegistration {
+                    variant: None,
+                    id: registration.id.clone(),
+                    role: registration.role,
+                    admissibility: registration.admissibility,
+                    rationale: registration.rationale.clone(),
+                })
+                .collect();
+        }
+        self.benchmark_seed_variants
+            .iter()
+            .filter_map(|variant| {
+                variant
+                    .nfr_021
+                    .as_ref()
+                    .map(|registration| DistannNfr021ManifestRegistration {
+                        variant: Some(variant.name.clone()),
+                        id: registration.id.clone(),
+                        role: registration.role,
+                        admissibility: registration.admissibility,
+                        rationale: registration.rationale.clone(),
+                    })
+            })
+            .collect()
     }
 }
 
@@ -955,6 +1053,8 @@ struct StepRecord {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     tags: Vec<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    nfr_021_registrations: Vec<DistannNfr021ManifestRegistration>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     expected_artifacts: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     status: Option<StepStatus>,
@@ -1187,9 +1287,7 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
     }
 
     let mut rows = extract_result_rows(&manifest).await?;
-    assert_distann_storage_ratio_rows(&manifest, &rows)?;
-    let growth_rows = distann_storage_growth_rows(&rows);
-    rows.extend(growth_rows);
+    enrich_distann_result_rows(&manifest, &mut rows)?;
     if let Some(path) = args.results_output.clone().or_else(|| {
         config
             .artifact_dir
@@ -1199,6 +1297,7 @@ async fn run_suite(conn: &ConnectionOptions, args: SuiteRunOptions) -> Result<()
         write_results_jsonl(&path, &rows).await?;
         crate::ecaz_eprintln!("[suite:{}] wrote {}", config.name, path.display());
     }
+    assert_distann_nfr_021_registrations(&rows)?;
     let selected_steps = selected_step_names(&manifest);
     manifest.threshold_results =
         evaluate_thresholds_for_steps(&config.thresholds, &rows, &selected_steps);
@@ -1291,7 +1390,8 @@ async fn status_manifest(path: &Path) -> Result<()> {
 async fn report_manifest(path: &Path, results_output: Option<&Path>) -> Result<()> {
     let manifest = load_manifest(path).await?;
     let summary = summarize_manifest(&manifest).await;
-    let rows = extract_result_rows(&manifest).await?;
+    let mut rows = extract_result_rows(&manifest).await?;
+    enrich_distann_result_rows(&manifest, &mut rows)?;
     crate::ecaz_println!("# Suite Report: {}", manifest.suite);
     crate::ecaz_println!("");
     crate::ecaz_println!("- config: `{}`", manifest.config);
@@ -1633,6 +1733,12 @@ fn build_manifest(
             kernel_status,
             pgoptions: step.pgoptions().map(ToOwned::to_owned),
             tags,
+            nfr_021_registrations: match step {
+                SuiteStep::DistannLocalMultinode(distann) => {
+                    distann.nfr_021_manifest_registrations()
+                }
+                _ => Vec::new(),
+            },
             expected_artifacts: step
                 .expected_artifacts()
                 .iter()
@@ -1759,6 +1865,15 @@ struct ResultRow {
     values: BTreeMap<String, String>,
 }
 
+fn enrich_distann_result_rows(manifest: &SuiteManifest, rows: &mut Vec<ResultRow>) -> Result<()> {
+    assert_distann_storage_ratio_rows(manifest, rows)?;
+    let growth_rows = distann_storage_growth_rows(rows);
+    rows.extend(growth_rows);
+    let nfr_021_rows = distann_nfr_021_conformance_rows(manifest, rows);
+    rows.extend(nfr_021_rows);
+    Ok(())
+}
+
 fn assert_distann_storage_ratio_rows(manifest: &SuiteManifest, rows: &[ResultRow]) -> Result<()> {
     for step in manifest.steps.iter().filter(|step| {
         step.selected
@@ -1853,15 +1968,378 @@ fn distann_storage_growth_rows(rows: &[ResultRow]) -> Vec<ResultRow> {
                     ("low_total_resident_bytes".into(), format_bytes(low)),
                     ("high_total_resident_bytes".into(), format_bytes(high)),
                     ("growth_ratio".into(), format!("{ratio:.6}")),
-                    ("threshold".into(), "2.0".into()),
                     (
                         "judgement".into(),
-                        "unjudged_nfr021_owner_resolution_pending".into(),
+                        "reported_not_threshold_fixed_roster".into(),
                     ),
                 ]),
             })
         })
         .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DistannNfr021Actual {
+    Conforming,
+    Nonconforming,
+    Unavailable,
+}
+
+impl DistannNfr021Actual {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Conforming => "conforming",
+            Self::Nonconforming => "nonconforming",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+struct DistannNfr021Evidence {
+    scales: HashSet<String>,
+    topology_scales: HashSet<String>,
+    bytes_per_owned_record: HashMap<(String, String), f64>,
+    raw_graph_side_bytes: HashMap<(String, String), f64>,
+    owner_nodes: HashSet<String>,
+    head_capacities: HashSet<String>,
+    max_non_owned_records: u64,
+    max_orphan_vectors: u64,
+    max_unsharded_derived_bytes: u64,
+    missing_owned_record_counts: usize,
+}
+
+fn distann_nfr_021_conformance_rows(
+    manifest: &SuiteManifest,
+    rows: &[ResultRow],
+) -> Vec<ResultRow> {
+    let mut registrations: BTreeMap<String, DistannNfr021ManifestRegistration> = BTreeMap::new();
+    let mut evidence: HashMap<String, DistannNfr021Evidence> = HashMap::new();
+
+    for step in manifest.steps.iter().filter(|step| {
+        step.selected
+            && step.kind == "distann-local-multinode"
+            && matches!(step.status, Some(StepStatus::Succeeded))
+    }) {
+        for registration in &step.nfr_021_registrations {
+            registrations
+                .entry(registration.id.clone())
+                .or_insert_with(|| registration.clone());
+            let arm_evidence = evidence.entry(registration.id.clone()).or_default();
+            collect_distann_nfr_021_step_evidence(step, registration, rows, arm_evidence);
+        }
+    }
+
+    registrations
+        .into_iter()
+        .map(|(id, registration)| {
+            let arm_evidence = evidence.remove(&id).unwrap_or_default();
+            distann_nfr_021_result_row(manifest, id, registration, arm_evidence)
+        })
+        .collect()
+}
+
+fn collect_distann_nfr_021_step_evidence(
+    step: &StepRecord,
+    registration: &DistannNfr021ManifestRegistration,
+    rows: &[ResultRow],
+    evidence: &mut DistannNfr021Evidence,
+) {
+    let step_rows = rows.iter().filter(|row| row.step == step.name);
+    let storage_rows = step_rows
+        .clone()
+        .filter(|row| row.metric == "physical_benchmark_storage_node")
+        .filter(|row| nfr_021_row_matches_variant(row, registration))
+        .collect::<Vec<_>>();
+    let Some(scale) = storage_rows
+        .iter()
+        .find_map(|row| row.values.get("scale").cloned())
+    else {
+        return;
+    };
+    evidence.scales.insert(scale.clone());
+
+    let topology_by_node = step_rows
+        .clone()
+        .filter(|row| row.metric == "physical_topology")
+        .filter(|row| {
+            row.values
+                .get("phase")
+                .is_some_and(|phase| phase == "published")
+        })
+        .filter_map(|row| {
+            let node = row.values.get("node")?.clone();
+            let records = row.values.get("records")?.parse::<u64>().ok()?;
+            Some((node, (records, row)))
+        })
+        .collect::<HashMap<_, _>>();
+    if !topology_by_node.is_empty() {
+        evidence.topology_scales.insert(scale.clone());
+    }
+    for (_, row) in topology_by_node.values() {
+        evidence.max_non_owned_records = evidence.max_non_owned_records.max(
+            row.values
+                .get("non_owned")
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(u64::MAX),
+        );
+        evidence.max_orphan_vectors = evidence.max_orphan_vectors.max(
+            row.values
+                .get("orphans")
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(u64::MAX),
+        );
+    }
+
+    for row in storage_rows {
+        if let Some(capacity) = row.values.get("head_index_cap") {
+            evidence.head_capacities.insert(capacity.clone());
+        }
+        if !matches!(row.values.get("node_role"), Some(role) if role == "owner") {
+            continue;
+        }
+        let (Some(node), Some(graph_side_bytes)) = (
+            row.values.get("node"),
+            row.values
+                .get("graph_side_bytes")
+                .and_then(|value| value.parse::<f64>().ok()),
+        ) else {
+            evidence.missing_owned_record_counts += 1;
+            continue;
+        };
+        evidence.owner_nodes.insert(node.clone());
+        evidence
+            .raw_graph_side_bytes
+            .insert((scale.clone(), node.clone()), graph_side_bytes);
+        let Some((owned_records, _)) = topology_by_node.get(node) else {
+            evidence.missing_owned_record_counts += 1;
+            continue;
+        };
+        if *owned_records == 0 {
+            evidence.missing_owned_record_counts += 1;
+            continue;
+        }
+        evidence.bytes_per_owned_record.insert(
+            (scale.clone(), node.clone()),
+            graph_side_bytes / *owned_records as f64,
+        );
+    }
+
+    for row in step_rows
+        .filter(|row| row.metric == "physical_benchmark_storage_relation")
+        .filter(|row| nfr_021_row_matches_variant(row, registration))
+    {
+        if row
+            .values
+            .get("nfr_021_class")
+            .is_some_and(|class| class == "bounded")
+        {
+            continue;
+        }
+        let bytes = row
+            .values
+            .get("relation_bytes")
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(u64::MAX);
+        evidence.max_unsharded_derived_bytes = evidence.max_unsharded_derived_bytes.max(bytes);
+    }
+}
+
+fn nfr_021_row_matches_variant(
+    row: &ResultRow,
+    registration: &DistannNfr021ManifestRegistration,
+) -> bool {
+    if row.values.get("arm").is_some_and(|arm| arm != "physical") {
+        return false;
+    }
+    match &registration.variant {
+        None => true,
+        Some(variant) => row
+            .values
+            .get("variant")
+            .is_some_and(|row_variant| row_variant == variant),
+    }
+}
+
+fn distann_nfr_021_result_row(
+    manifest: &SuiteManifest,
+    id: String,
+    registration: DistannNfr021ManifestRegistration,
+    evidence: DistannNfr021Evidence,
+) -> ResultRow {
+    const REQUIRED_SCALES: [&str; 3] = ["10k", "50k", "100k"];
+    const NORMALIZED_GROWTH_THRESHOLD: f64 = 2.0;
+
+    let mut normalized_ratios = Vec::new();
+    let mut raw_ratios = Vec::new();
+    let owner_matrix_complete = !evidence.owner_nodes.is_empty()
+        && evidence.owner_nodes.iter().all(|node| {
+            if !REQUIRED_SCALES.iter().all(|scale| {
+                evidence
+                    .bytes_per_owned_record
+                    .contains_key(&(scale.to_string(), node.clone()))
+            }) {
+                return false;
+            }
+            let low_key = ("10k".to_owned(), node.clone());
+            let high_key = ("100k".to_owned(), node.clone());
+            match (
+                evidence.bytes_per_owned_record.get(&low_key),
+                evidence.bytes_per_owned_record.get(&high_key),
+            ) {
+                (Some(low), Some(high)) if *low > 0.0 => {
+                    normalized_ratios.push(high / low);
+                    if let (Some(raw_low), Some(raw_high)) = (
+                        evidence.raw_graph_side_bytes.get(&low_key),
+                        evidence.raw_graph_side_bytes.get(&high_key),
+                    ) {
+                        if *raw_low > 0.0 {
+                            raw_ratios.push(raw_high / raw_low);
+                        }
+                    }
+                    true
+                }
+                _ => false,
+            }
+        });
+    let scales_complete = REQUIRED_SCALES
+        .iter()
+        .all(|scale| evidence.scales.contains(*scale));
+    let topology_complete = REQUIRED_SCALES
+        .iter()
+        .all(|scale| evidence.topology_scales.contains(*scale));
+    let normalized_growth_max = normalized_ratios.into_iter().reduce(f64::max);
+    let raw_growth_max = raw_ratios.into_iter().reduce(f64::max);
+    let head_capacity_constant = evidence.head_capacities.len() == 1;
+    let evidence_complete = scales_complete
+        && topology_complete
+        && owner_matrix_complete
+        && evidence.missing_owned_record_counts == 0
+        && head_capacity_constant
+        && normalized_growth_max.is_some();
+    let hard_violation = evidence.max_non_owned_records > 0
+        || evidence.max_orphan_vectors > 0
+        || evidence.max_unsharded_derived_bytes > 0
+        || evidence.head_capacities.len() > 1
+        || normalized_growth_max.is_some_and(|ratio| ratio > NORMALIZED_GROWTH_THRESHOLD);
+    let actual = if hard_violation {
+        DistannNfr021Actual::Nonconforming
+    } else if evidence_complete {
+        DistannNfr021Actual::Conforming
+    } else {
+        DistannNfr021Actual::Unavailable
+    };
+    let preregistration_matches = match actual {
+        DistannNfr021Actual::Conforming => {
+            registration.admissibility == DistannNfr021Admissibility::Conforming
+        }
+        DistannNfr021Actual::Nonconforming => {
+            registration.admissibility == DistannNfr021Admissibility::Nonconforming
+        }
+        DistannNfr021Actual::Unavailable => false,
+    };
+    let mut values = BTreeMap::from([
+        ("nfr_021_id".into(), id),
+        ("nfr_021_role".into(), registration.role.label().into()),
+        (
+            "nfr_021_preregistered_admissibility".into(),
+            registration.admissibility.label().into(),
+        ),
+        ("actual_admissibility".into(), actual.label().into()),
+        ("evidence_complete".into(), evidence_complete.to_string()),
+        (
+            "preregistration_matches".into(),
+            preregistration_matches.to_string(),
+        ),
+        (
+            "decision_eligible".into(),
+            (actual == DistannNfr021Actual::Conforming).to_string(),
+        ),
+        (
+            "normalized_growth_threshold".into(),
+            format!("{NORMALIZED_GROWTH_THRESHOLD:.1}"),
+        ),
+        (
+            "max_non_owned_records".into(),
+            evidence.max_non_owned_records.to_string(),
+        ),
+        (
+            "max_orphan_vectors".into(),
+            evidence.max_orphan_vectors.to_string(),
+        ),
+        (
+            "max_unsharded_derived_bytes".into(),
+            evidence.max_unsharded_derived_bytes.to_string(),
+        ),
+        (
+            "head_capacity_constant".into(),
+            head_capacity_constant.to_string(),
+        ),
+        (
+            "missing_owned_record_counts".into(),
+            evidence.missing_owned_record_counts.to_string(),
+        ),
+    ]);
+    if let Some(ratio) = normalized_growth_max {
+        values.insert(
+            "normalized_bytes_per_owned_record_growth_max".into(),
+            format!("{ratio:.6}"),
+        );
+    }
+    if let Some(ratio) = raw_growth_max {
+        values.insert(
+            "raw_fixed_roster_graph_side_growth_max".into(),
+            format!("{ratio:.6}"),
+        );
+    }
+    let mut scales = evidence.scales.into_iter().collect::<Vec<_>>();
+    scales.sort();
+    values.insert("scales".into(), scales.join(","));
+
+    ResultRow {
+        suite: manifest.suite.clone(),
+        step: "suite-nfr-021".into(),
+        kind: "distann-conformance".into(),
+        metric: "physical_benchmark_nfr_021_conformance".into(),
+        artifact: "suite-derived".into(),
+        values,
+    }
+}
+
+fn assert_distann_nfr_021_registrations(rows: &[ResultRow]) -> Result<()> {
+    let failures = rows
+        .iter()
+        .filter(|row| row.metric == "physical_benchmark_nfr_021_conformance")
+        .filter(|row| {
+            !row.values
+                .get("preregistration_matches")
+                .is_some_and(|value| value == "true")
+        })
+        .map(|row| {
+            format!(
+                "{}: preregistered={} actual={}",
+                row.values
+                    .get("nfr_021_id")
+                    .map(String::as_str)
+                    .unwrap_or("unknown"),
+                row.values
+                    .get("nfr_021_preregistered_admissibility")
+                    .map(String::as_str)
+                    .unwrap_or("missing"),
+                row.values
+                    .get("actual_admissibility")
+                    .map(String::as_str)
+                    .unwrap_or("missing")
+            )
+        })
+        .collect::<Vec<_>>();
+    if !failures.is_empty() {
+        bail!(
+            "NFR-021 conformance evidence did not match pre-registration: {}",
+            failures.join("; ")
+        )
+    }
+    Ok(())
 }
 
 fn format_bytes(value: f64) -> String {
@@ -2144,6 +2622,15 @@ fn add_result_context(
         "metrics_mode",
         tag_value(&step.tags, "metrics_mode=").as_deref(),
     );
+    if let Some(registration) = matching_nfr_021_registration(step, &values) {
+        insert_if_absent(&mut values, "nfr_021_id", Some(&registration.id));
+        insert_if_absent(&mut values, "nfr_021_role", Some(registration.role.label()));
+        insert_if_absent(
+            &mut values,
+            "nfr_021_preregistered_admissibility",
+            Some(registration.admissibility.label()),
+        );
+    }
     let kernel_status = step.kernel_status.map(kernel_status_label);
     insert_if_absent(&mut values, "kernel_status", kernel_status);
     insert_if_absent(
@@ -2161,6 +2648,25 @@ fn add_result_context(
             .as_deref(),
     );
     values
+}
+
+fn matching_nfr_021_registration<'a>(
+    step: &'a StepRecord,
+    values: &BTreeMap<String, String>,
+) -> Option<&'a DistannNfr021ManifestRegistration> {
+    if values.get("arm").is_some_and(|arm| arm != "physical") {
+        return None;
+    }
+    if let Some(variant) = values.get("variant") {
+        return step.nfr_021_registrations.iter().find(|registration| {
+            registration
+                .variant
+                .as_deref()
+                .is_some_and(|name| name == variant)
+                || (registration.variant.is_none() && step.nfr_021_registrations.len() == 1)
+        });
+    }
+    (step.nfr_021_registrations.len() == 1).then(|| &step.nfr_021_registrations[0])
 }
 
 fn insert_if_absent(values: &mut BTreeMap<String, String>, key: &str, value: Option<&str>) {
@@ -3028,11 +3534,64 @@ fn validate_config(config: &SuiteConfig) -> Result<()> {
     }
     validate_profile_name("suite defaults profile", config.defaults.profile.as_deref())?;
     let mut names = HashSet::new();
+    let mut nfr_021_ids: HashMap<String, (DistannDecisionRole, DistannNfr021Admissibility)> =
+        HashMap::new();
     for step in &config.steps {
         if !names.insert(step.name()) {
             bail!("duplicate suite step name {:?}", step.name());
         }
         step.validate()?;
+        if let SuiteStep::DistannLocalMultinode(step) = step {
+            for registration in step.nfr_021_manifest_registrations() {
+                if let Some((role, admissibility)) = nfr_021_ids.get(&registration.id) {
+                    if *role != registration.role || *admissibility != registration.admissibility {
+                        bail!(
+                            "NFR-021 registration id {:?} changes role or admissibility across suite steps",
+                            registration.id
+                        );
+                    }
+                } else {
+                    nfr_021_ids.insert(
+                        registration.id,
+                        (registration.role, registration.admissibility),
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn validate_nfr_021_registration(
+    step_name: &str,
+    variant: Option<&str>,
+    registration: &DistannNfr021Registration,
+) -> Result<()> {
+    let subject = variant
+        .map(|variant| format!(" variant {variant:?}"))
+        .unwrap_or_default();
+    if registration.id.is_empty()
+        || !registration
+            .id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-'))
+    {
+        bail!(
+            "distann-local-multinode step {step_name:?}{subject} NFR-021 id must be a non-empty ASCII identifier"
+        )
+    }
+    if registration.rationale.trim().is_empty() {
+        bail!(
+            "distann-local-multinode step {step_name:?}{subject} NFR-021 registration requires a rationale"
+        )
+    }
+    if registration.role.is_decision_bearing()
+        && registration.admissibility == DistannNfr021Admissibility::Nonconforming
+    {
+        bail!(
+            "distann-local-multinode step {step_name:?}{subject} cannot use an NFR-021-nonconforming {} arm for a decision",
+            registration.role.label()
+        )
     }
     Ok(())
 }
@@ -3546,7 +4105,48 @@ impl SuiteStep {
                                 variant.name
                             )
                         }
+                        if let Some(registration) = &variant.nfr_021 {
+                            validate_nfr_021_registration(
+                                &step.name,
+                                Some(&variant.name),
+                                registration,
+                            )?;
+                        }
                     }
+                    let registered_variants = step
+                        .benchmark_seed_variants
+                        .iter()
+                        .filter(|variant| variant.nfr_021.is_some())
+                        .count();
+                    if registered_variants != 0
+                        && registered_variants != step.benchmark_seed_variants.len()
+                    {
+                        bail!(
+                            "distann-local-multinode step {:?} must NFR-021-register every benchmark_seed_variant when any variant is registered",
+                            step.name
+                        )
+                    }
+                }
+                if step.nfr_021.is_some() && !step.benchmark_seed_variants.is_empty() {
+                    bail!(
+                        "distann-local-multinode step {:?} singular nfr_021 cannot be combined with benchmark_seed_variants",
+                        step.name
+                    )
+                }
+                if let Some(registration) = &step.nfr_021 {
+                    validate_nfr_021_registration(&step.name, None, registration)?;
+                }
+                if (step.nfr_021.is_some()
+                    || step
+                        .benchmark_seed_variants
+                        .iter()
+                        .any(|variant| variant.nfr_021.is_some()))
+                    && !step.physical_benchmark
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} NFR-021 registration requires physical_benchmark",
+                        step.name
+                    )
                 }
                 if step.benchmark_iterations == Some(0) {
                     bail!(
@@ -6122,6 +6722,226 @@ psql header noise\n\
     }
 
     #[test]
+    fn distann_nfr_021_preregistration_is_manifested_and_labels_arm_rows() {
+        let raw = r#"{
+          "name": "distann-nfr-021",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "candidate-10k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_10k",
+            "nfr_021": {
+              "id": "owner-candidate",
+              "role": "candidate",
+              "admissibility": "conforming",
+              "rationale": "physical owner generation; no derived O(N) relation"
+            }
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let args = SuiteRunOptions {
+            config: "suite.json".into(),
+            dry_run: true,
+            continue_on_error: false,
+            only: Vec::new(),
+            only_tag: Vec::new(),
+            resume_from: None,
+            results_output: None,
+            artifact_dir: None,
+            manifest_output: None,
+            allow_debug_backend: false,
+        };
+        let manifest = build_manifest(&conn(), &args, raw, &config).expect("manifest builds");
+        let step = &manifest.steps[0];
+
+        assert_eq!(step.nfr_021_registrations.len(), 1);
+        assert_eq!(step.nfr_021_registrations[0].id, "owner-candidate");
+        let values = add_result_context(
+            &manifest,
+            step,
+            BTreeMap::from([
+                ("arm".into(), "physical".into()),
+                ("variant".into(), "physical".into()),
+            ]),
+        );
+        assert_eq!(
+            values.get("nfr_021_role").map(String::as_str),
+            Some("candidate")
+        );
+        assert_eq!(
+            values
+                .get("nfr_021_preregistered_admissibility")
+                .map(String::as_str),
+            Some("conforming")
+        );
+    }
+
+    #[test]
+    fn distann_nfr_021_rejects_nonconforming_decision_arm_before_measurement() {
+        let raw = r#"{
+          "name": "distann-nfr-021-invalid",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "candidate-10k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_10k",
+            "nfr_021": {
+              "id": "replica-candidate",
+              "role": "candidate",
+              "admissibility": "nonconforming",
+              "rationale": "coordinator traversal replica"
+            }
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("invalid candidate must be rejected");
+        assert!(error
+            .to_string()
+            .contains("cannot use an NFR-021-nonconforming candidate arm"));
+    }
+
+    #[test]
+    fn distann_nfr_021_normalizes_fixed_roster_owner_growth() {
+        let manifest = SuiteManifest {
+            suite: "nfr-021".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            runner_git_commit: None,
+            connection: ManifestConnection {
+                database: "tqvector_bench".into(),
+                host: None,
+                port: None,
+                user: None,
+                password_configured: false,
+            },
+            backend: None,
+            steps: Vec::new(),
+            threshold_results: Vec::new(),
+        };
+        let registration = DistannNfr021ManifestRegistration {
+            variant: None,
+            id: "owner-control".into(),
+            role: DistannDecisionRole::Control,
+            admissibility: DistannNfr021Admissibility::Conforming,
+            rationale: "physical owner generation".into(),
+        };
+        let mut evidence = DistannNfr021Evidence {
+            scales: ["10k", "50k", "100k"]
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect(),
+            topology_scales: ["10k", "50k", "100k"]
+                .into_iter()
+                .map(ToOwned::to_owned)
+                .collect(),
+            owner_nodes: ["1"].into_iter().map(ToOwned::to_owned).collect(),
+            head_capacities: ["4096"].into_iter().map(ToOwned::to_owned).collect(),
+            ..DistannNfr021Evidence::default()
+        };
+        evidence
+            .bytes_per_owned_record
+            .insert(("10k".into(), "1".into()), 7_600.0);
+        evidence
+            .bytes_per_owned_record
+            .insert(("50k".into(), "1".into()), 8_050.0);
+        evidence
+            .bytes_per_owned_record
+            .insert(("100k".into(), "1".into()), 8_200.0);
+        evidence
+            .raw_graph_side_bytes
+            .insert(("10k".into(), "1".into()), 25_706_496.0);
+        evidence
+            .raw_graph_side_bytes
+            .insert(("100k".into(), "1".into()), 277_372_928.0);
+
+        let row =
+            distann_nfr_021_result_row(&manifest, "owner-control".into(), registration, evidence);
+
+        assert_eq!(
+            row.values.get("actual_admissibility").map(String::as_str),
+            Some("conforming")
+        );
+        assert_eq!(
+            row.values
+                .get("preregistration_matches")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            row.values
+                .get("normalized_bytes_per_owned_record_growth_max")
+                .map(String::as_str),
+            Some("1.078947")
+        );
+        assert_eq!(
+            row.values
+                .get("raw_fixed_roster_graph_side_growth_max")
+                .map(String::as_str),
+            Some("10.789994")
+        );
+    }
+
+    #[test]
+    fn distann_nfr_021_classifies_unsharded_derived_relation_as_nonconforming() {
+        let manifest = SuiteManifest {
+            suite: "nfr-021".into(),
+            schema_version: 1,
+            config: "suite.json".into(),
+            config_sha256: "hash".into(),
+            dry_run: false,
+            generated_at_unix_ms: 0,
+            runner_git_commit: None,
+            connection: ManifestConnection {
+                database: "tqvector_bench".into(),
+                host: None,
+                port: None,
+                user: None,
+                password_configured: false,
+            },
+            backend: None,
+            steps: Vec::new(),
+            threshold_results: Vec::new(),
+        };
+        let registration = DistannNfr021ManifestRegistration {
+            variant: Some("replica".into()),
+            id: "replica-context".into(),
+            role: DistannDecisionRole::Context,
+            admissibility: DistannNfr021Admissibility::Nonconforming,
+            rationale: "known FR-084 negative fixture".into(),
+        };
+        let evidence = DistannNfr021Evidence {
+            max_unsharded_derived_bytes: 1_659_518_976,
+            ..DistannNfr021Evidence::default()
+        };
+
+        let row =
+            distann_nfr_021_result_row(&manifest, "replica-context".into(), registration, evidence);
+
+        assert_eq!(
+            row.values.get("actual_admissibility").map(String::as_str),
+            Some("nonconforming")
+        );
+        assert_eq!(
+            row.values
+                .get("preregistration_matches")
+                .map(String::as_str),
+            Some("true")
+        );
+        assert_eq!(
+            row.values
+                .get("max_unsharded_derived_bytes")
+                .map(String::as_str),
+            Some("1659518976")
+        );
+    }
+
+    #[test]
     fn distann_benchmark_metrics_mode_rejects_heavy_instrumentation() {
         let raw = r#"{
           "name": "distann-metrics-conflict",
@@ -6219,14 +7039,14 @@ psql header noise\n\
             window
                 == [
                     "--benchmark-seed-variant",
-                    "persisted-w32-s32:persisted_head:32:32:rabitq:0",
+                    "persisted-w32-s32:persisted_head:32:32:rabitq:0:off:4:100:off",
                 ]
         }));
         assert!(command.windows(2).any(|window| {
             window
                 == [
                     "--benchmark-seed-variant",
-                    "owner-oracle:owner_scan:32:32:rabitq:10",
+                    "owner-oracle:owner_scan:32:32:rabitq:10:off:4:100:off",
                 ]
         }));
     }
@@ -6338,14 +7158,14 @@ psql header noise\n\
             window
                 == [
                     "--benchmark-seed-variant",
-                    "plan-off:persisted_head:32:32:rabitq:10:off:4:100",
+                    "plan-off:persisted_head:32:32:rabitq:10:off:4:100:off",
                 ]
         }));
         assert!(command.windows(2).any(|window| {
             window
                 == [
                     "--benchmark-seed-variant",
-                    "plan-on:persisted_head:32:32:rabitq:10:on:4:100",
+                    "plan-on:persisted_head:32:32:rabitq:10:on:4:100:off",
                 ]
         }));
     }
@@ -7503,6 +8323,7 @@ psql header noise\n\
                     "-c max_parallel_maintenance_workers=4 -c max_parallel_workers=4".into(),
                 ),
                 tags: vec!["real10k".into(), "workers4".into()],
+                nfr_021_registrations: Vec::new(),
                 expected_artifacts: Vec::new(),
                 status: Some(StepStatus::Succeeded),
                 started_at_unix_ms: Some(1),
@@ -8037,6 +8858,7 @@ psql header noise\n\
             kernel_status: None,
             pgoptions: None,
             tags: vec!["recall".into(), "rabitq".into(), "task60".into()],
+            nfr_021_registrations: Vec::new(),
             expected_artifacts: vec!["recall.log".into()],
             status: Some(StepStatus::Succeeded),
             started_at_unix_ms: None,
@@ -8131,6 +8953,7 @@ psql header noise\n\
                 "quant=grouped_pq".into(),
                 "isa=sve2".into(),
             ],
+            nfr_021_registrations: Vec::new(),
             expected_artifacts: vec!["latency.log".into()],
             status: Some(StepStatus::Succeeded),
             started_at_unix_ms: None,

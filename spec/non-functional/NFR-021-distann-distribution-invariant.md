@@ -22,9 +22,9 @@ relationships:
 
 ## Statement
 
-No single node SHALL hold ec_distann index state whose size grows with corpus
-cardinality. Any structure whose size is O(N) in the number of indexed vectors
-SHALL be sharded across the serving roster.
+The ec_distann index SHALL shard every structure whose size is O(N) in the
+number of indexed vectors across the serving roster, without retaining a
+complete corpus-proportional copy on a coordinator or non-owner.
 
 This bound applies to **resident state**, not per-query work, and it applies to
 **derived and optional structures** — caches, replicas, samples, summaries, and
@@ -37,8 +37,8 @@ The following are bounded and therefore permitted to be coordinator-resident or
 replicated:
 
 - the FR-080 head index at its fixed capacity `C` (ADR-085 D3), provided `C` is
-  a constant independent of `N`; if `C` is ever made a function of `N`, the head
-  SHALL be sharded across the roster;
+  a constant independent of `N`; if `C` is ever made a function of `N`, the
+  ec_distann index SHALL shard the head across the roster;
 - per-scan result and candidate heaps, bounded by `k` and `L`;
 - codec artifacts, codebooks, and rotation matrices, bounded by dimension;
 - row-schema, endpoint, and prepared-plan caches, bounded by relation and
@@ -56,8 +56,10 @@ replicated:
   and is the once-stored copy of corpus vectors; it satisfies this requirement
   by construction and is not a violation.
 - A structure that is O(N) but genuinely sharded — each node holding only its
-  own partition — satisfies this requirement. Replication of a *bounded*
-  structure across nodes also satisfies it.
+  own partition — satisfies this requirement. With a fixed roster, each
+  owner's resident bytes are expected to grow approximately linearly with `N`;
+  that growth is not replication. Replication of a *bounded* structure across
+  nodes also satisfies this requirement.
 
 ## Rationale
 
@@ -95,20 +97,28 @@ term as a first-class requirement.
 
 | Metric | Target | Threshold | Method |
 |--------|--------|-----------|--------|
-| max single-node resident ec_distann index bytes, as a function of N across 10k/50k/100k | flat or sublinear | growth ratio 100k ÷ 10k ≤ 2.0 for any single node | per-node storage audit, every gate run |
+| max owner graph-side bytes per owned graph record, as a function of N across 10k/50k/100k | stable or sublinear | normalized growth ratio `(100k bytes / 100k owned records) ÷ (10k bytes / 10k owned records) ≤ 2.0` for every owner role | per-node storage and ownership audit, every gate run |
 | non-owner graph-node records resident on any node (any relation, including derived) | 0 | 0 | topology audit |
 | non-owner full-precision vectors resident on any node outside its own row tier | 0 | 0 | topology audit |
+| unsharded O(N) derived-relation bytes resident on a coordinator or non-owner | 0 | 0 | relation-classified per-node storage audit |
 | head index capacity `C` | constant in N | constant, or sharded across the roster | build manifest inspection |
-| coordinator resident bytes ÷ total cluster index bytes at 100k | ≈ 1/roster_size + bounded structures | ≤ 1/roster_size + head + caches | per-node storage audit |
+| coordinator-owned graph records when the coordinator is outside the serving roster | 0 | 0 | topology audit |
 
 ## Verification
 
 Every ec_distann gate benchmark emits per-node resident bytes for all index and
 index-derived relations, at every scale in the run, into `results.jsonl` — not
-into a log-only sidecar. The suite computes the cross-scale growth ratio per
-node and fails the run on breach. The topology audit enumerates every relation
-on every node and asserts zero non-owner graph records and zero non-owner
-vectors, including in derived and optional relations.
+into a log-only sidecar. The suite joins resident bytes to owned-record counts,
+computes the cross-scale bytes-per-owned-record ratio for each owner role, and
+fails the run on breach. Raw fixed-roster byte growth is reported but is not a
+conformance threshold because a valid O(N) shard necessarily grows with `N`
+when roster size is held constant.
+
+The topology audit enumerates every relation on every node, classifies each
+derived relation as bounded or O(N), and asserts zero non-owner graph records,
+zero non-owner vectors, and zero unsharded O(N) derived-relation bytes. Missing
+ownership counts, relation classification, or scale endpoints make the
+conformance verdict unavailable and fail a decision-bearing suite closed.
 
 A candidate that cannot satisfy this requirement is inadmissible under
 [NFR-022](./NFR-022-distann-control-validity.md) and SHALL NOT be advanced to a
