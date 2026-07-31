@@ -210,6 +210,7 @@ mod cache_tests {
                 descriptor: Arc::clone(&descriptor),
                 descriptor_digest,
                 head_index: None,
+                gateway_copies: None,
             });
         };
         let first = identity(0x11);
@@ -269,6 +270,9 @@ struct CachedPhysicalEpoch {
     descriptor: Arc<DistannGenerationDescriptor>,
     descriptor_digest: [u8; 32],
     head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
+    /// TRAV-30 (Task 210 P3): the bounded gateway routing copies for this
+    /// epoch. `None` until populated; populated at most once per cached epoch.
+    gateway_copies: Option<Arc<super::gateway_copy::DistannGatewayCopySet>>,
 }
 
 thread_local! {
@@ -1073,6 +1077,7 @@ impl RetainedGenerationScan {
         vec_ids: &[u64],
         code_threshold: Option<f32>,
         candidate_limit: Option<usize>,
+        skip_neighbor_vec_ids: &[u64],
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         self.validate_request(query, vec_ids)?;
         if vec_ids.is_empty() {
@@ -1108,7 +1113,11 @@ impl RetainedGenerationScan {
             prepared: &prepared,
             code_len: self.code_len,
         };
-        expander.expand_nodes(vec_ids, code_threshold, candidate_limit)
+        let skip = skip_neighbor_vec_ids
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        expander.expand_nodes_masked(vec_ids, code_threshold, candidate_limit, &skip)
     }
 
     /// Search this owner's shard of the FR-080 head (Task 210 P2a).
@@ -1623,6 +1632,7 @@ fn expand_physical_nodes_impl(
     vec_ids: &[i64],
     code_threshold: Option<f32>,
     candidate_limit: Option<i32>,
+    skip_neighbor_vec_ids: &[i64],
 ) -> Result<Vec<PhysicalExpandRow>, DistannExpandError> {
     let candidate_limit = candidate_limit
         .map(|limit| {
@@ -1637,8 +1647,12 @@ fn expand_physical_nodes_impl(
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
         .collect::<Vec<_>>();
+    let skip = skip_neighbor_vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
     RetainedGenerationScan::open(index_oid, epoch_fingerprint)?
-        .expand(query, query_digest, &ids, code_threshold, candidate_limit)
+        .expand(query, query_digest, &ids, code_threshold, candidate_limit, &skip)
         .map(|expanded| {
             expanded
                 .into_iter()
@@ -1684,6 +1698,56 @@ fn ec_distann_head_shard_export(
             .collect::<Vec<_>>()
             .into_iter(),
     )
+}
+
+/// Export the routing payload (neighbour ids and neighbour codes — the
+/// `graph_record` half of the traversal-replica stream, never the co-placed
+/// vector) for a bounded id list, so a coordinator can populate its TRAV-30
+/// gateway copies (Task 210 P3). Same source as the withdrawn FR-084 replica,
+/// bounded destination: that difference is what makes it conforming under
+/// NFR-021.
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_gateway_routing_export(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    member_vec_ids: Vec<i64>,
+) -> TableIterator<
+    'static,
+    (
+        name!(vec_id, i64),
+        name!(is_tombstone, bool),
+        name!(neighbor_vec_ids, Vec<i64>),
+        name!(neighbor_codes, Vec<u8>),
+    ),
+> {
+    let members = member_vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let rows = (|| {
+        let scan = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)?;
+        let code_len = scan.code_len;
+        Ok::<_, DistannExpandError>(
+            scan.resolve_nodes(&members)?
+                .into_iter()
+                .map(|node| {
+                    let count = usize::from(node.neighbor_count);
+                    (
+                        i64::from_le_bytes(node.vec_id.to_le_bytes()),
+                        node.tombstoned,
+                        node.neighbor_vec_ids[..count]
+                            .iter()
+                            .map(|id| i64::from_le_bytes(id.to_le_bytes()))
+                            .collect::<Vec<_>>(),
+                        node.neighbor_codes[..count * code_len].to_vec(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        )
+    })()
+    .unwrap_or_else(|error| error.raise());
+    TableIterator::new(rows.into_iter())
 }
 
 /// Owner-side FR-080 head-shard search (Task 210 P2a, NFR-021 clause 3).
@@ -1777,6 +1841,7 @@ fn ec_distann_expand_physical_nodes(
         &vec_ids,
         code_threshold,
         candidate_limit,
+        &[],
     )
     .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
@@ -1799,6 +1864,7 @@ fn ec_distann_expand_physical_nodes_cached(
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
     candidate_limit: default!(Option<i32>, "NULL"),
+    skip_neighbor_vec_ids: default!(Option<Vec<i64>>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -1819,6 +1885,7 @@ fn ec_distann_expand_physical_nodes_cached(
         &vec_ids,
         code_threshold,
         candidate_limit,
+        skip_neighbor_vec_ids.as_deref().unwrap_or(&[]),
     )
     .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
@@ -1840,6 +1907,7 @@ fn ec_distann_expand_physical_nodes_profile(
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
     candidate_limit: default!(Option<i32>, "NULL"),
+    skip_neighbor_vec_ids: default!(Option<Vec<i64>>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -1863,6 +1931,11 @@ fn ec_distann_expand_physical_nodes_profile(
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
         .collect::<Vec<_>>();
+    let skip = skip_neighbor_vec_ids
+        .unwrap_or_default()
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
     let open_started = Instant::now();
     let store = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
         .unwrap_or_else(|error| error.raise());
@@ -1881,6 +1954,7 @@ fn ec_distann_expand_physical_nodes_profile(
                     .raise()
                 })
             }),
+            &skip,
         )
         .unwrap_or_else(|error| error.raise());
     let owner_open_validate_ns = i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
@@ -2404,6 +2478,9 @@ pub(crate) struct PhysicalGenerationScan {
     descriptor_digest: [u8; 32],
     routes: Vec<PhysicalOwnerRoute>,
     head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
+    /// TRAV-30 bounded gateway routing copies (Task 210 P3); `None` when the
+    /// capacity GUC is 0, the roster is single-node, or population failed.
+    gateway_copies: Option<Arc<super::gateway_copy::DistannGatewayCopySet>>,
     _scan_token: ScanTokenGuard,
 }
 
@@ -2526,13 +2603,14 @@ impl PhysicalGenerationScan {
             );
         }
 
-        let (descriptor, descriptor_digest, head_index) = if let Some(cached) =
+        let (descriptor, descriptor_digest, head_index, mut gateway_copies) = if let Some(cached) =
             cached_physical_epoch(index_oid, logical_index_uuid, &active)
         {
             (
                 cached.descriptor,
                 cached.descriptor_digest,
                 cached.head_index,
+                cached.gateway_copies,
             )
         } else {
             let candidate = super::build_coordinator::load_build_candidate(
@@ -2577,8 +2655,9 @@ impl PhysicalGenerationScan {
                 descriptor: Arc::clone(&descriptor),
                 descriptor_digest,
                 head_index: head_index.clone(),
+                gateway_copies: None,
             });
-            (descriptor, descriptor_digest, head_index)
+            (descriptor, descriptor_digest, head_index, None)
         };
         let routes = physical_owner_routes(
             index_oid,
@@ -2586,6 +2665,33 @@ impl PhysicalGenerationScan {
             active.build_id,
             descriptor.roster.len(),
         )?;
+        // TRAV-30 (Task 210 P3): populate the bounded gateway copies once per
+        // cached epoch. The gateway set is the FR-080 head membership — already
+        // bounded and coordinator-resident — and only routing payload moves.
+        if gateway_copies.is_none() && super::options::gateway_copy_capacity() > 0 {
+            if let Some(head) = head_index.as_ref() {
+                if let Some(populated) = populate_gateway_copies(
+                    index_oid,
+                    &active.fingerprint,
+                    &descriptor,
+                    &routes,
+                    head.members(),
+                ) {
+                    let populated = Arc::new(populated);
+                    gateway_copies = Some(Arc::clone(&populated));
+                    cache_physical_epoch(CachedPhysicalEpoch {
+                        index_oid,
+                        logical_index_uuid,
+                        build_id: active.build_id,
+                        fingerprint: active.fingerprint,
+                        descriptor: Arc::clone(&descriptor),
+                        descriptor_digest,
+                        head_index: head_index.clone(),
+                        gateway_copies: Some(populated),
+                    });
+                }
+            }
+        }
         let generation =
             generation_catalog::lookup_generation(index_oid, logical_index_uuid, active.build_id)?;
         let (row_relation, graph_relation, directory_relation) = match generation.as_ref() {
@@ -2648,6 +2754,7 @@ impl PhysicalGenerationScan {
             descriptor_digest,
             routes,
             head_index,
+            gateway_copies,
             _scan_token: scan_token,
         })
     }
@@ -2879,6 +2986,9 @@ impl PhysicalGenerationScan {
             fingerprint: &self.fingerprint,
             query,
             query_digest: &query_digest,
+            prepared: &prepared,
+            code_len,
+            gateway: self.gateway_copies.as_deref(),
         };
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let traversal_started = Instant::now();
@@ -3273,6 +3383,111 @@ impl PhysicalGenerationScan {
     }
 }
 
+/// Populate the TRAV-30 gateway copy set from the FR-080 head membership
+/// (Task 210 P3). The gateway nodes are the head landmarks: bounded by head
+/// capacity, and exactly the nodes every scan expands first. Each owner's
+/// landmarks are fetched as routing payload only (neighbour ids + codes) via
+/// `ec_distann_gateway_routing_export`; local landmarks are read in process.
+/// Any failure degrades to `None` — the copy is an accelerator, never a
+/// correctness dependency — but degrades loudly (warning), because a silently
+/// absent cache is the inert-mechanism failure mode this program keeps hitting.
+fn populate_gateway_copies(
+    index_oid: pg_sys::Oid,
+    fingerprint: &[u8; 34],
+    descriptor: &DistannGenerationDescriptor,
+    routes: &[PhysicalOwnerRoute],
+    head_members: &[u64],
+) -> Option<super::gateway_copy::DistannGatewayCopySet> {
+    let capacity = super::options::gateway_copy_capacity();
+    if capacity == 0 || routes.len() < 2 || head_members.is_empty() {
+        return None;
+    }
+    // The bound is the GUC capacity, never the head size: a larger head cannot
+    // grow the copy set (refusal, not eviction — same invariant as insert()).
+    let members = head_members
+        .iter()
+        .copied()
+        .take(capacity)
+        .collect::<Vec<_>>();
+    let buckets = super::placement::group_by_owning_node(
+        &members,
+        routes.len(),
+        descriptor.placement_hash_version,
+    );
+    let mut set = super::gateway_copy::DistannGatewayCopySet::with_capacity(capacity);
+    let mut remote_work: Vec<(usize, Vec<u64>)> = Vec::new();
+    for (ordinal, bucket) in buckets.iter().enumerate() {
+        if bucket.is_empty() {
+            continue;
+        }
+        let owned = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
+        let route = &routes[ordinal];
+        if route.conninfo.is_some() {
+            remote_work.push((ordinal, owned));
+            continue;
+        }
+        if !route.is_local {
+            pgrx::warning!(
+                "ec_distann gateway copies disabled: owner {ordinal} has no connection descriptor"
+            );
+            return None;
+        }
+        let local = match RetainedGenerationScan::open(index_oid, fingerprint) {
+            Ok(local) => local,
+            Err(error) => {
+                pgrx::warning!("ec_distann gateway copies disabled: local open failed: {error}");
+                return None;
+            }
+        };
+        let code_len = local.code_len;
+        let nodes = match local.resolve_nodes(&owned) {
+            Ok(nodes) => nodes,
+            Err(error) => {
+                pgrx::warning!("ec_distann gateway copies disabled: local resolve failed: {error}");
+                return None;
+            }
+        };
+        for node in nodes {
+            let count = usize::from(node.neighbor_count);
+            set.insert(super::gateway_copy::DistannGatewayCopy {
+                vec_id: node.vec_id,
+                is_tombstone: node.tombstoned,
+                neighbor_vec_ids: node.neighbor_vec_ids[..count].to_vec(),
+                neighbor_codes: node.neighbor_codes[..count * code_len].to_vec(),
+            });
+        }
+    }
+    let requests = remote_work
+        .iter()
+        .map(
+            |(ordinal, owned)| super::remote_transport::DistannGatewayRoutingRequest {
+                conninfo: routes[*ordinal]
+                    .conninfo
+                    .as_deref()
+                    .expect("remote gateway work requires a connection descriptor"),
+                index_regclass: &routes[*ordinal].remote_index_regclass,
+                epoch_fingerprint: fingerprint,
+                member_vec_ids: owned,
+            },
+        )
+        .collect::<Vec<_>>();
+    for response in super::remote_transport::remote_gateway_routing_batch(&requests) {
+        match response {
+            Ok(copies) => {
+                for copy in copies {
+                    set.insert(copy);
+                }
+            }
+            Err(error) => {
+                pgrx::warning!("ec_distann gateway copies disabled: remote export failed: {error}");
+                return None;
+            }
+        }
+    }
+    super::gateway_copy::record_population(&set);
+    Some(set)
+}
+
 struct PhysicalMultiOwnerExpander<'a> {
     local: Option<GenerationExpander<'a>>,
     local_ordinal: Option<usize>,
@@ -3281,6 +3496,9 @@ struct PhysicalMultiOwnerExpander<'a> {
     fingerprint: &'a [u8; 34],
     query: &'a [f32],
     query_digest: &'a [u8; 32],
+    prepared: &'a DistannPreparedQuery,
+    code_len: usize,
+    gateway: Option<&'a super::gateway_copy::DistannGatewayCopySet>,
 }
 
 impl PhysicalMultiOwnerExpander<'_> {
@@ -3328,12 +3546,30 @@ impl PhysicalMultiOwnerExpander<'_> {
                 );
                 place_physical_owner_responses(ordinal, bucket, response, &mut ordered)?;
             } else {
-                remote_work.push((ordinal, owned));
+                // TRAV-30 (Task 210 P3): ids the coordinator holds a gateway
+                // copy for still go to their owner — `exact_dist` needs the
+                // owner's co-placed vector (the result half of Algorithm 1's
+                // split; holding those here is the FR-084 trap) — but the
+                // owner is told to omit their neighbour payload, which the
+                // coordinator reconstructs locally below.
+                let cached_mask = owned
+                    .iter()
+                    .map(|vec_id| {
+                        self.gateway
+                            .is_some_and(|gateway| gateway.get(*vec_id).is_some())
+                    })
+                    .collect::<Vec<_>>();
+                let skip_ids = owned
+                    .iter()
+                    .zip(&cached_mask)
+                    .filter_map(|(vec_id, cached)| cached.then_some(*vec_id))
+                    .collect::<Vec<_>>();
+                remote_work.push((ordinal, owned, cached_mask, skip_ids));
             }
         }
         let requests = remote_work
             .iter()
-            .map(|(ordinal, owned)| {
+            .map(|(ordinal, owned, _, skip_ids)| {
                 let route = &self.routes[*ordinal];
                 let conninfo = route.conninfo.as_deref().ok_or_else(|| {
                     DistannExpandError::Internal(format!(
@@ -3351,6 +3587,7 @@ impl PhysicalMultiOwnerExpander<'_> {
                     candidate_limit: candidate_limit.map(|limit| {
                         i32::try_from(limit).unwrap_or(i32::MAX)
                     }),
+                    skip_neighbor_vec_ids: skip_ids,
                 })
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
@@ -3366,8 +3603,51 @@ impl PhysicalMultiOwnerExpander<'_> {
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let decode_started = Instant::now();
-        for ((ordinal, _), response) in remote_work.into_iter().zip(responses) {
-            place_physical_owner_responses(ordinal, &buckets[ordinal], response?, &mut ordered)?;
+        for ((ordinal, _, cached_mask, _), response) in remote_work.into_iter().zip(responses) {
+            let mut response = response?;
+            if cached_mask.iter().any(|cached| *cached) {
+                let gateway = self.gateway.ok_or_else(|| {
+                    DistannExpandError::Internal(
+                        "gateway-cached expansion rows without a gateway copy set".to_owned(),
+                    )
+                })?;
+                let filled = super::gateway_copy::fill_gateway_rows(
+                    &mut response,
+                    &cached_mask,
+                    gateway,
+                    code_threshold,
+                    |copy| {
+                        let count = copy.neighbor_vec_ids.len();
+                        if copy.neighbor_codes.len() != count * self.code_len {
+                            return Err(format!(
+                                "gateway copy for vec_id {:#018x} has a malformed code payload",
+                                copy.vec_id
+                            ));
+                        }
+                        let mut dists = vec![0.0; count];
+                        self.prepared.score_dists_batch(
+                            &copy.neighbor_codes,
+                            self.code_len,
+                            count,
+                            &mut dists,
+                        )?;
+                        Ok(dists)
+                    },
+                )?;
+                // Re-apply the batch L limit over the whole owner batch now
+                // that cached rows carry their candidates again; the owner
+                // applied it to the uncached subset only, and top-L of
+                // (top-L(subset) ∪ cached) equals top-L of the full batch, so
+                // the Task 205 semantics are preserved exactly.
+                super::scan::prune_and_limit_neighbor_batch(&mut response, None, candidate_limit)?;
+                super::gateway_copy::record_served(filled);
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::GatewayCopiesServed,
+                    filled,
+                );
+            }
+            place_physical_owner_responses(ordinal, &buckets[ordinal], response, &mut ordered)?;
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         super::stage_counters::record(
@@ -3566,12 +3846,22 @@ impl GenerationExpander<'_> {
     }
 }
 
-impl DistannNodeExpander for GenerationExpander<'_> {
-    fn expand_nodes(
+impl GenerationExpander<'_> {
+    /// Expand with a gateway-copy skip mask (TRAV-30, Task 210 P3). Ids in
+    /// `skip_neighbors` still get their record read and exact distance — the
+    /// result half stays owner-authoritative — but their neighbour payload is
+    /// omitted (empty arrays) because the coordinator reconstructs it from its
+    /// bounded gateway copy, so those bytes never cross the wire and this
+    /// owner skips their scoring work. The batch L limit then covers only the
+    /// rows that carry neighbours; the coordinator re-applies it over the full
+    /// batch after filling the cached rows, which preserves the Task 205
+    /// batch-threshold semantics exactly.
+    fn expand_nodes_masked(
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
         candidate_limit: Option<usize>,
+        skip_neighbors: &std::collections::HashSet<u64>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let graph_started = Instant::now();
@@ -3603,23 +3893,26 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                         self.generation.epoch
                     ))
                 })?;
-                let count = usize::from(node.neighbor_count);
-                let mut neighbor_dists = vec![0.0; count];
-                self.prepared
-                    .score_dists_batch(
-                        &node.neighbor_codes[..count * self.code_len],
-                        self.code_len,
-                        count,
-                        &mut neighbor_dists,
-                    )
-                    .map_err(DistannExpandError::Internal)?;
-                let (neighbor_vec_ids, neighbor_code_dists) =
+                let (neighbor_vec_ids, neighbor_code_dists) = if skip_neighbors.contains(vec_id) {
+                    (Vec::new(), Vec::new())
+                } else {
+                    let count = usize::from(node.neighbor_count);
+                    let mut neighbor_dists = vec![0.0; count];
+                    self.prepared
+                        .score_dists_batch(
+                            &node.neighbor_codes[..count * self.code_len],
+                            self.code_len,
+                            count,
+                            &mut neighbor_dists,
+                        )
+                        .map_err(DistannExpandError::Internal)?;
                     super::scan::prune_and_limit_neighbors(
                         &node.neighbor_vec_ids[..count],
                         &neighbor_dists,
                         None,
                         None,
-                    )?;
+                    )?
+                };
                 Ok(DistannExpandedNode {
                     vec_id: node.vec_id,
                     exact_dist: (!node.tombstoned)
@@ -3658,5 +3951,21 @@ impl DistannNodeExpander for GenerationExpander<'_> {
             responses
         };
         Ok(responses)
+    }
+}
+
+impl DistannNodeExpander for GenerationExpander<'_> {
+    fn expand_nodes(
+        &mut self,
+        vec_ids: &[u64],
+        code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
+    ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+        self.expand_nodes_masked(
+            vec_ids,
+            code_threshold,
+            candidate_limit,
+            &std::collections::HashSet::new(),
+        )
     }
 }

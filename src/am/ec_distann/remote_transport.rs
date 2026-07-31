@@ -568,7 +568,7 @@ const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
         neighbor_vec_ids, neighbor_code_dists
    FROM ec_distann_expand_nodes(
        $1::text::regclass, $2::bytea, $3::real[],
-       $4::bytea, $5::bigint[], $6::real, $7::integer)";
+       $4::bytea, $5::bigint[], $6::real, $7::integer, $8::bigint[])";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
@@ -576,7 +576,7 @@ const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
         owner_graph_read_ns, owner_score_ns, owner_response_encode_ns, owner_response_bytes
    FROM ec_distann_expand_physical_nodes_profile(
        $1::text::regclass, $2::bytea, $3::real[],
-       $4::bytea, $5::bigint[], $6::real, $7::integer)";
+       $4::bytea, $5::bigint[], $6::real, $7::integer, $8::bigint[])";
 
 #[cfg(not(feature = "distann-head-attribution-benchmark"))]
 const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
@@ -736,6 +736,9 @@ pub(crate) struct DistannPhysicalExpandRequest<'a> {
     pub(crate) vec_ids: &'a [u64],
     pub(crate) code_threshold: Option<f32>,
     pub(crate) candidate_limit: Option<i32>,
+    /// TRAV-30 (Task 210 P3): requested ids whose neighbour payload the owner
+    /// should omit because the coordinator holds their gateway routing copy.
+    pub(crate) skip_neighbor_vec_ids: &'a [u64],
 }
 
 /// Owner-side FR-080 head-shard search request (Task 210 P2a).
@@ -849,6 +852,111 @@ async fn run_one_physical_head_search(
         .collect())
 }
 
+/// Bounded gateway routing-payload export request (TRAV-30, Task 210 P3).
+pub(crate) struct DistannGatewayRoutingRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) member_vec_ids: &'a [u64],
+}
+
+const GATEWAY_ROUTING_SQL: &str = "SELECT vec_id, is_tombstone, neighbor_vec_ids, neighbor_codes
+   FROM ec_distann_gateway_routing_export(
+       $1::text::regclass, $2::bytea, $3::bigint[])";
+
+/// Fetch each owner's routing payload for the coordinator's bounded gateway
+/// set, all owners driven together. Only neighbour ids and codes cross the
+/// wire — never a full-precision vector — and the request lists are already
+/// capacity-bounded, so this is a constant-size population step per epoch.
+pub(crate) fn remote_gateway_routing_batch(
+    requests: &[DistannGatewayRoutingRequest<'_>],
+) -> Vec<Result<Vec<super::gateway_copy::DistannGatewayCopy>, DistannExpandError>> {
+    if requests.is_empty() {
+        return Vec::new();
+    }
+    let wire_ids = requests
+        .iter()
+        .map(|request| {
+            request
+                .member_vec_ids
+                .iter()
+                .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let conn_keys = requests
+        .iter()
+        .map(|request| lifecycle_connection_key(request.conninfo))
+        .collect::<Vec<_>>();
+    let outcome = with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            let specs = requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
+                .collect::<Vec<_>>();
+            ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            ensure_physical_statements(connections, &conn_keys, GATEWAY_ROUTING_SQL).await?;
+            let futures = requests.iter().enumerate().map(|(index, request)| {
+                let pooled = &connections[&conn_keys[index]];
+                run_one_gateway_routing(
+                    &pooled.client,
+                    &pooled.prepared_statements[GATEWAY_ROUTING_SQL],
+                    request,
+                    &wire_ids[index],
+                )
+            });
+            Ok(join_owner_futures(futures).await)
+        })
+    });
+    match outcome {
+        Ok(results) => results,
+        Err(error) => requests.iter().map(|_| Err(error.clone())).collect(),
+    }
+}
+
+async fn run_one_gateway_routing(
+    client: &tokio_postgres::Client,
+    statement: &tokio_postgres::Statement,
+    request: &DistannGatewayRoutingRequest<'_>,
+    wire_ids: &[i64],
+) -> Result<Vec<super::gateway_copy::DistannGatewayCopy>, DistannExpandError> {
+    let rows = client
+        .query(
+            statement,
+            &[&request.index_regclass, &request.epoch_fingerprint, &wire_ids],
+        )
+        .await
+        .map_err(|error| {
+            DistannExpandError::Internal(format!(
+                "ec_distann remote gateway routing export failed: {error}"
+            ))
+        })?;
+    rows.into_iter()
+        .map(|row| {
+            let vec_id: i64 = row.try_get(0).map_err(row_err)?;
+            let is_tombstone: bool = row.try_get(1).map_err(row_err)?;
+            let neighbor_vec_ids: Vec<i64> = row.try_get(2).map_err(row_err)?;
+            let neighbor_codes: Vec<u8> = row.try_get(3).map_err(row_err)?;
+            Ok(super::gateway_copy::DistannGatewayCopy {
+                vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
+                is_tombstone,
+                neighbor_vec_ids: neighbor_vec_ids
+                    .into_iter()
+                    .map(|id| u64::from_le_bytes(id.to_le_bytes()))
+                    .collect(),
+                neighbor_codes,
+            })
+        })
+        .collect()
+}
+
 pub(crate) fn remote_physical_expand_batch(
     requests: &[DistannPhysicalExpandRequest<'_>],
 ) -> Vec<Result<Vec<DistannExpandedNode>, DistannExpandError>> {
@@ -862,6 +970,16 @@ pub(crate) fn remote_physical_expand_batch(
         .map(|request| {
             request
                 .vec_ids
+                .iter()
+                .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let wire_skip_ids = requests
+        .iter()
+        .map(|request| {
+            request
+                .skip_neighbor_vec_ids
                 .iter()
                 .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
                 .collect::<Vec<_>>()
@@ -979,6 +1097,7 @@ pub(crate) fn remote_physical_expand_batch(
                     request,
                     wire_queries[index],
                     &wire_ids[index],
+                    &wire_skip_ids[index],
                 )
             });
             let results = join_owner_futures(futures).await;
@@ -1044,6 +1163,7 @@ async fn run_one_physical_expand(
     request: &DistannPhysicalExpandRequest<'_>,
     wire_query: &[f32],
     wire_ids: &[i64],
+    wire_skip_ids: &[i64],
 ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let rpc_started = std::time::Instant::now();
@@ -1058,6 +1178,7 @@ async fn run_one_physical_expand(
             &wire_ids,
             &request.code_threshold,
             &request.candidate_limit,
+            &wire_skip_ids,
         ],
     )
     .await?;
