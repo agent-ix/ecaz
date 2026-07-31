@@ -3050,12 +3050,31 @@ impl PhysicalGenerationScan {
             if owned.is_empty() {
                 continue;
             }
-            let server = super::head_sample::head_shard_server(
+            // §4.1 replica routing is only admissible to a node that actually
+            // holds the shard. Head shards are materialised from vectors the
+            // owner already has, so until a publish-time step distributes a
+            // bounded copy to replicas, the only node that can serve shard `i`
+            // is its owner. Routing elsewhere makes the serving node reject
+            // ids it does not own (EC_PLACEMENT), so the selection is clamped
+            // rather than allowed to mis-route.
+            let requested_server = super::head_sample::head_shard_server(
                 ordinal,
                 owner_count,
                 replica_count,
                 &query_digest,
             );
+            let server = if requested_server == ordinal {
+                ordinal
+            } else if super::head_sample::head_shard_replica_holds_copy(requested_server, ordinal) {
+                requested_server
+            } else {
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::HeadReplicaFallbacks,
+                    1,
+                );
+                ordinal
+            };
             let route = &self.routes[server];
             // The coordinator is normally itself an owner, and its own route
             // carries no conninfo. Serve that shard in-process rather than

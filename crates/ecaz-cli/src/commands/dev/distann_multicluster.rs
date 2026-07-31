@@ -5913,6 +5913,17 @@ async fn drive_physical_fixture(
             .await
             .wrap_err("configuring Task 181 benchmark head builder")?;
     }
+    if args.sharded_head {
+        // Task 210 P2a: the head is persisted by T2 inside ec_distann_build_epoch,
+        // not by CREATE INDEX, so the membership-only GUC has to be set on the
+        // session that runs the build. Setting it at index creation is a silent
+        // no-op -- the first A/B measured identical coordinator bytes because of
+        // exactly that.
+        coordinator
+            .batch_execute("SET ec_distann.shard_head_storage = on;")
+            .await
+            .wrap_err("enabling Task 210 membership-only head storage")?;
+    }
     coordinator
         .batch_execute(&format!(
             "SELECT ec_distann_begin_epoch_build('public.dm_idx'::regclass, 1, '{build_id}'::uuid)"

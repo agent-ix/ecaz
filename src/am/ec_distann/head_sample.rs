@@ -1180,6 +1180,19 @@ pub(crate) fn head_shard_server(
     (shard_ordinal + offset) % owner_count
 }
 
+/// Whether roster node `server` holds a materialised copy of shard `shard`.
+///
+/// §4.1 replication requires the replica to *hold* the bounded shard. Head
+/// shards are materialised from vectors their owner already holds
+/// (ADR-085 D11), so a non-owner can only serve one after a publish-time step
+/// distributes a bounded copy — `ec_distann_head_shard_export` is the transport
+/// for that, and nothing populates a replica yet. Until it does, this returns
+/// false and the coordinator clamps routing back to the owner rather than
+/// asking a node for ids it does not own.
+pub(crate) const fn head_shard_replica_holds_copy(_server: usize, _shard: usize) -> bool {
+    false
+}
+
 /// Merge bounded per-owner head results into the coordinator's seed list.
 ///
 /// The coordinator holds only `seed_count` seeds — NFR-021 clause 2 bounded

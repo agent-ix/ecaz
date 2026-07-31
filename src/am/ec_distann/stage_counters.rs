@@ -211,6 +211,7 @@ pub(crate) enum DistannMaterializationWork {
     PushdownRoundsWithThreshold,
     NeighborsPruned,
     GatewayCopiesServed,
+    HeadReplicaFallbacks,
 }
 
 impl DistannMaterializationWork {
@@ -245,6 +246,7 @@ impl DistannMaterializationWork {
         Self::PushdownRoundsWithThreshold,
         Self::NeighborsPruned,
         Self::GatewayCopiesServed,
+        Self::HeadReplicaFallbacks,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -279,6 +281,7 @@ impl DistannMaterializationWork {
             Self::PushdownRoundsWithThreshold => "pushdown_rounds_with_threshold",
             Self::NeighborsPruned => "neighbors_pruned",
             Self::GatewayCopiesServed => "gateway_copies_served",
+            Self::HeadReplicaFallbacks => "head_replica_fallbacks",
         }
     }
 
@@ -314,6 +317,7 @@ impl DistannMaterializationWork {
             Self::PushdownRoundsWithThreshold => 27,
             Self::NeighborsPruned => 28,
             Self::GatewayCopiesServed => 29,
+            Self::HeadReplicaFallbacks => 30,
         }
     }
 }
