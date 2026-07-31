@@ -588,6 +588,24 @@ CREATE TABLE ec_distann_generation_head_sample (
         ON DELETE CASCADE
 );
 
+-- DISTRIBUTEDANN 4.1 head replicas (Task 210 P2b).
+--
+-- A replica serves a head shard it does not own, so it must hold that shard's
+-- landmark vectors. This is a copy of a *bounded* structure -- head capacity C
+-- divided across the roster -- which NFR-021 explicitly permits; it is never
+-- the O(N) graph or row tier. Epoch-scoped and rebuildable.
+CREATE TABLE ec_distann_head_shard_replica (
+    index_oid oid NOT NULL,
+    epoch_fingerprint bytea NOT NULL,
+    shard_ordinal integer NOT NULL CHECK (shard_ordinal >= 0),
+    vec_id bigint NOT NULL,
+    vector real[] NOT NULL,
+    PRIMARY KEY (index_oid, epoch_fingerprint, vec_id)
+);
+
+CREATE INDEX ec_distann_head_shard_replica_shard
+    ON ec_distann_head_shard_replica (index_oid, epoch_fingerprint, shard_ordinal);
+
 CREATE TABLE ec_distann_publish_decision (
     index_oid oid NOT NULL,
     logical_index_uuid uuid NOT NULL,

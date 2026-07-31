@@ -1288,11 +1288,21 @@ impl RetainedGenerationScan {
             prepared: &prepared,
             code_len: self.code_len,
         };
-        let nodes = self.resolve_nodes(members)?;
-        let mut resolved = Vec::with_capacity(nodes.len());
-        for node in &nodes {
-            resolved.push((node.vec_id, expander.local_source_vector(node)?));
-        }
+        // §4.1 (Task 210 P2b): serve from a replica copy when this node was
+        // given one, otherwise from the vectors it owns. A node that has
+        // neither is asked for ids it does not own, which resolve_nodes
+        // correctly rejects.
+        let resolved = match self.replica_head_vectors(members)? {
+            Some(replica) => replica,
+            None => {
+                let nodes = self.resolve_nodes(members)?;
+                let mut owned = Vec::with_capacity(nodes.len());
+                for node in &nodes {
+                    owned.push((node.vec_id, expander.local_source_vector(node)?));
+                }
+                owned
+            }
+        };
         let shard = super::head_sample::build_owner_head_shard(
             self.generation.owner_ordinal,
             self.descriptor.dimensions,
@@ -1323,6 +1333,102 @@ impl RetainedGenerationScan {
             Arc::clone(&index),
         );
         Ok(index.search_configured(query, search_width, seed_count))
+    }
+
+    /// Persist a bounded head-shard copy received from the shard's owner.
+    fn import_head_shard(
+        &self,
+        shard_ordinal: i32,
+        vec_ids: &[i64],
+        vectors: &[Vec<f32>],
+    ) -> Result<i64, DistannExpandError> {
+        let table =
+            super::generation_catalog::extension_relation_name("ec_distann_head_shard_replica")
+                .map_err(DistannExpandError::Internal)?;
+        let fingerprint = self.fingerprint.to_vec();
+        let mut imported = 0_i64;
+        Spi::connect_mut(|client| {
+            for (vec_id, vector) in vec_ids.iter().zip(vectors) {
+                client
+                    .update(
+                        &format!(
+                            "INSERT INTO {table} (index_oid, epoch_fingerprint,
+                                                  shard_ordinal, vec_id, vector)
+                             VALUES ($1::oid, $2::bytea, $3::integer, $4::bigint, $5::real[])
+                             ON CONFLICT (index_oid, epoch_fingerprint, vec_id)
+                             DO UPDATE SET vector = EXCLUDED.vector,
+                                           shard_ordinal = EXCLUDED.shard_ordinal"
+                        ),
+                        None,
+                        &[
+                            self.index_oid.into(),
+                            fingerprint.clone().into(),
+                            shard_ordinal.into(),
+                            (*vec_id).into(),
+                            vector.as_slice().into(),
+                        ],
+                    )
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "ec_distann head shard import failed: {error}"
+                        ))
+                    })?;
+                imported += 1;
+            }
+            Ok::<(), DistannExpandError>(())
+        })?;
+        Ok(imported)
+    }
+
+    /// Vectors for members this node does not own, from a replica copy it was
+    /// given (Task 210 P2b). Returns None when no copy is held.
+    fn replica_head_vectors(
+        &self,
+        members: &[u64],
+    ) -> Result<Option<Vec<(u64, Vec<f32>)>>, DistannExpandError> {
+        let table =
+            super::generation_catalog::extension_relation_name("ec_distann_head_shard_replica")
+                .map_err(DistannExpandError::Internal)?;
+        let fingerprint = self.fingerprint.to_vec();
+        let wire = members
+            .iter()
+            .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+            .collect::<Vec<_>>();
+        let rows = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT vec_id, vector FROM {table}
+                          WHERE index_oid = $1::oid AND epoch_fingerprint = $2::bytea
+                            AND vec_id = ANY($3::bigint[])"
+                    ),
+                    None,
+                    &[
+                        self.index_oid.into(),
+                        fingerprint.into(),
+                        wire.as_slice().into(),
+                    ],
+                )
+                .map_err(|error| format!("replica head lookup failed: {error}"))?
+                .map(|row| {
+                    let vec_id = row["vec_id"]
+                        .value::<i64>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or("vec_id NULL")?;
+                    let vector = row["vector"]
+                        .value::<Vec<f32>>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or("vector NULL")?;
+                    Ok((u64::from_le_bytes(vec_id.to_le_bytes()), vector))
+                })
+                .collect::<Result<Vec<_>, String>>()
+        })
+        .map_err(DistannExpandError::Internal)?;
+        if rows.len() == members.len() {
+            Ok(Some(rows))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Read this owner's locally held vectors for `members` so another node can
@@ -1871,6 +1977,40 @@ fn ec_distann_gateway_routing_export(
     })()
     .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
+}
+
+/// Receive a bounded head-shard copy so this node can serve the shard as a
+/// §4.1 replica (Task 210 P2b).
+///
+/// The payload is head capacity `C` divided across the roster -- a bounded
+/// structure, which NFR-021 permits to be replicated -- never the O(N) graph or
+/// row tier. Epoch-scoped and rebuildable.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_head_shard_import(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    shard_ordinal: i32,
+    vec_ids: Vec<i64>,
+    // Flattened row-major landmark vectors: pgrx cannot unbox a nested array
+    // argument, so the wire carries one contiguous real[] plus the dimension.
+    flat_vectors: Vec<f32>,
+    dimensions: i32,
+) -> i64 {
+    let dims = usize::try_from(dimensions).unwrap_or(0);
+    if dims == 0 || flat_vectors.len() != vec_ids.len().saturating_mul(dims) {
+        DistannExpandError::BadInput(
+            "ec_distann head shard import id/vector cardinality mismatch".to_owned(),
+        )
+        .raise();
+    }
+    let vectors = flat_vectors
+        .chunks_exact(dims)
+        .map(<[f32]>::to_vec)
+        .collect::<Vec<_>>();
+    let scan = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .unwrap_or_else(|error| error.raise());
+    scan.import_head_shard(shard_ordinal, &vec_ids, &vectors)
+        .unwrap_or_else(|error| error.raise())
 }
 
 /// Owner-side FR-080 head-shard search (Task 210 P2a, NFR-021 clause 3).
