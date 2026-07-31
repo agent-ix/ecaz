@@ -384,13 +384,25 @@ pub(super) fn build_epoch(
         } else {
             head_sample.digest()?
         };
-        let head_graph = super::super::head_sample::DistannPersistedHeadGraph::build(
-            &head_sample,
-            usize::from(metadata.graph_degree_r),
-            usize::from(build_options.build_list_size),
-            build_options.alpha,
-            build_options.seed,
-        )?;
+        // Task 210 P2a: with a sharded head every owner builds a navigable
+        // graph over *its own* shard from vectors it already holds, so a
+        // coordinator-resident head graph is vestigial -- and it is the last
+        // corpus-derived structure keeping the coordinator off `gap=none`.
+        // Persist an empty graph so the coordinator retains membership only.
+        let head_graph = if super::super::options::shard_head_storage() {
+            super::super::head_sample::DistannPersistedHeadGraph {
+                entry: 0,
+                neighbors: vec![Vec::new(); head_sample.entries.len()],
+            }
+        } else {
+            super::super::head_sample::DistannPersistedHeadGraph::build(
+                &head_sample,
+                usize::from(metadata.graph_degree_r),
+                usize::from(build_options.build_list_size),
+                build_options.alpha,
+                build_options.seed,
+            )?
+        };
 
         let codec_artifact = workspace.codec_artifact().clone();
         let dimensions = to_u16(i32::from(codec_artifact.dimensions()), "dimensions")?;
