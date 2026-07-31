@@ -4396,6 +4396,23 @@ async fn run_physical_benchmarks(
         .max(beam_width)
         .max(args.top_k);
     let hop_rounds = args.hop_rounds.unwrap_or(100);
+    // Task 210 P2b: replica routing is gated on an attested population, so a
+    // replica arm must distribute the shard copies before benchmarking —
+    // otherwise every request clamps to its owner and the arm measures
+    // nothing (the head_replica_fallbacks=96 outcome of the first P2 run).
+    if let Some(replicas) = args.head_replica_count.filter(|count| *count > 0) {
+        let placed = coordinator
+            .query_one(
+                "SELECT ec_distann_populate_head_replicas('dm_idx'::regclass, $1::integer)",
+                &[&i32::try_from(replicas).unwrap_or(i32::MAX)],
+            )
+            .await
+            .wrap_err("populating head shard replicas")?
+            .get::<_, i64>(0);
+        crate::ecaz_eprintln!(
+            "[distann-multicluster] physical_head_replicas populated replica_count={replicas} placed={placed}"
+        );
+    }
     let production_head_width = (beam_width * 2).max(32);
     let seed_variants = if args.benchmark_seed_variants.is_empty() {
         vec![BenchmarkSeedVariant {
