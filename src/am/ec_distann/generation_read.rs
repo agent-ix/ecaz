@@ -317,6 +317,18 @@ unsafe extern "C-unwind" fn invalidate_generation_caches(
                 })
         });
     });
+    OWNER_HEAD_SHARD_CACHE.with(|cache| {
+        let Ok(mut cache) = cache.try_borrow_mut() else {
+            return;
+        };
+        cache.retain(|entry| {
+            relation_oid != pg_sys::InvalidOid
+                && entry.index_oid != relation_oid
+                && !removed.iter().any(|(index_oid, fingerprint)| {
+                    entry.index_oid == *index_oid && entry.fingerprint == *fingerprint
+                })
+        });
+    });
 }
 
 pub(crate) unsafe fn register_generation_cache_invalidation() {
@@ -459,6 +471,94 @@ fn prepared_physical_query(
         });
     });
     Ok(prepared)
+}
+
+/// Task 210 P2a follow-up: the owner head shard is epoch-immutable and its
+/// build is deterministically seeded from the epoch fingerprint, so building
+/// it per `head_search` RPC (the first P2 A/B measured ~7 s/query at 100k
+/// against a 36 ms owner-path control) is pure waste. Cache the loaded shard
+/// per backend, keyed by everything the build reads; an epoch transition
+/// changes the fingerprint and therefore the key.
+const OWNER_HEAD_SHARD_CACHE_CAPACITY: usize = 4;
+
+const OWNER_HEAD_SHARD_DOMAIN: &[u8] = b"ecaz/ec_distann/owner_head_shard/v1\0";
+
+struct CachedOwnerHeadShard {
+    index_oid: pg_sys::Oid,
+    fingerprint: [u8; 34],
+    shard_key: [u8; 32],
+    index: Arc<super::head_sample::DistannPhysicalHeadIndex>,
+}
+
+thread_local! {
+    static OWNER_HEAD_SHARD_CACHE: RefCell<VecDeque<CachedOwnerHeadShard>> =
+        const { RefCell::new(VecDeque::new()) };
+}
+
+#[allow(clippy::too_many_arguments)]
+fn owner_head_shard_key(
+    owner_ordinal: u32,
+    members: &[u64],
+    graph_degree: u16,
+    build_list_size: usize,
+    alpha: f32,
+    head_policy: super::generation_descriptor::DistannHeadPolicy,
+) -> Result<[u8; 32], String> {
+    let mut encoder = super::canonical_wire::CanonicalEncoder::with_capacity(
+        24_usize.saturating_add(members.len().saturating_mul(8)),
+    );
+    encoder.put_u32(owner_ordinal);
+    encoder.put_u32(u32::from(graph_degree));
+    encoder.put_u32(u32::try_from(build_list_size).unwrap_or(u32::MAX));
+    encoder.put_f32(alpha);
+    encoder.put_u32(u32::from(head_policy as u8));
+    encoder.put_u32(u32::try_from(members.len()).map_err(|_| "head shard exceeds u32".to_owned())?);
+    for member in members {
+        encoder.put_u64(*member);
+    }
+    Ok(super::canonical_wire::domain_digest(
+        OWNER_HEAD_SHARD_DOMAIN,
+        &encoder.finish()?,
+    ))
+}
+
+fn cached_owner_head_shard(
+    index_oid: pg_sys::Oid,
+    fingerprint: &[u8; 34],
+    shard_key: &[u8; 32],
+) -> Option<Arc<super::head_sample::DistannPhysicalHeadIndex>> {
+    OWNER_HEAD_SHARD_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let position = cache.iter().position(|entry| {
+            entry.index_oid == index_oid
+                && entry.fingerprint == *fingerprint
+                && entry.shard_key == *shard_key
+        })?;
+        let entry = cache.remove(position)?;
+        let index = Arc::clone(&entry.index);
+        cache.push_back(entry);
+        Some(index)
+    })
+}
+
+fn cache_owner_head_shard(
+    index_oid: pg_sys::Oid,
+    fingerprint: [u8; 34],
+    shard_key: [u8; 32],
+    index: Arc<super::head_sample::DistannPhysicalHeadIndex>,
+) {
+    OWNER_HEAD_SHARD_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        while cache.len() >= OWNER_HEAD_SHARD_CACHE_CAPACITY {
+            cache.pop_front();
+        }
+        cache.push_back(CachedOwnerHeadShard {
+            index_oid,
+            fingerprint,
+            shard_key,
+            index,
+        });
+    });
 }
 
 fn cached_retained_epoch(
@@ -1143,6 +1243,21 @@ impl RetainedGenerationScan {
         if members.is_empty() || seed_count == 0 {
             return Ok(Vec::new());
         }
+        // The shard is epoch-immutable and its build is deterministic in every
+        // keyed input, so it is built once per backend per epoch, not per RPC.
+        let shard_key = owner_head_shard_key(
+            self.generation.owner_ordinal,
+            members,
+            self.descriptor.graph_degree,
+            build_list_size,
+            alpha,
+            head_policy,
+        )
+        .map_err(DistannExpandError::Internal)?;
+        if let Some(index) = cached_owner_head_shard(self.index_oid, &self.fingerprint, &shard_key)
+        {
+            return Ok(index.search_configured(query, search_width, seed_count));
+        }
         let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
         if snapshot.is_null() {
             return Err(DistannExpandError::Internal(
@@ -1197,9 +1312,17 @@ impl RetainedGenerationScan {
             head_policy,
         )
         .map_err(DistannExpandError::Internal)?;
-        Ok(index
-            .map(|index| index.search_configured(query, search_width, seed_count))
-            .unwrap_or_default())
+        let Some(index) = index else {
+            return Ok(Vec::new());
+        };
+        let index = Arc::new(index);
+        cache_owner_head_shard(
+            self.index_oid,
+            self.fingerprint,
+            shard_key,
+            Arc::clone(&index),
+        );
+        Ok(index.search_configured(query, search_width, seed_count))
     }
 
     /// Read this owner's locally held vectors for `members` so another node can
