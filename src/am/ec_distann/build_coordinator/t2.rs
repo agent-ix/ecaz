@@ -375,7 +375,15 @@ pub(super) fn build_epoch(
             build_options.head_index_cap as usize,
             training.as_ref(),
         )?;
-        let head_sample_digest = head_sample.digest()?;
+        // Task 210 P2a: under membership-only storage the coordinator holds no
+        // landmark vectors, so the manifest must attest the same shape the
+        // state row and the load path use -- otherwise the manifest
+        // cross-check rejects a correctly persisted sharded head.
+        let head_sample_digest = if super::super::options::shard_head_storage() {
+            head_sample.membership_digest()?
+        } else {
+            head_sample.digest()?
+        };
         let head_graph = super::super::head_sample::DistannPersistedHeadGraph::build(
             &head_sample,
             usize::from(metadata.graph_degree_r),
