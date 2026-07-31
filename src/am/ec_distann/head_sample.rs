@@ -194,6 +194,27 @@ impl DistannHeadSample {
         Ok(())
     }
 
+    /// Digest of the *membership-only* shape: ids and cardinality, no vectors.
+    ///
+    /// Under `ec_distann.shard_head_storage` the coordinator stores no landmark
+    /// vectors, so the attestation must cover what is actually stored. Loading
+    /// recomputes this same digest from the persisted rows (Task 210 P2a).
+    pub(crate) fn membership_digest(&self) -> Result<[u8; 32], String> {
+        let mut hasher = Sha256::new();
+        hasher.update(HEAD_SAMPLE_DOMAIN);
+        hasher.update(HEAD_SAMPLE_VERSION.to_le_bytes());
+        hasher.update(self.dimensions.to_le_bytes());
+        hasher.update(
+            u32::try_from(self.entries.len())
+                .map_err(|_| "EC_HEAD_SAMPLE: sample count exceeds u32".to_owned())?
+                .to_le_bytes(),
+        );
+        for entry in &self.entries {
+            hasher.update(entry.vec_id.to_le_bytes());
+        }
+        Ok(hasher.finalize().into())
+    }
+
     pub(crate) fn digest(&self) -> Result<[u8; 32], String> {
         self.validate(usize::MAX)?;
         let mut hasher = Sha256::new();
@@ -742,7 +763,11 @@ pub(crate) fn persist_head_sample(
     membership_only: bool,
 ) -> Result<(), String> {
     graph.validate(sample.entries.len(), usize::MAX)?;
-    let digest = sample.digest()?;
+    let digest = if membership_only {
+        sample.membership_digest()?
+    } else {
+        sample.digest()?
+    };
     let graph_digest = graph.digest()?;
     let state = extension_relation_name("ec_distann_generation_head_state")?;
     let rows = extension_relation_name("ec_distann_generation_head_sample")?;
@@ -997,7 +1022,15 @@ pub(crate) fn load_head_sample(
         entries,
     };
     sample.validate(cap)?;
-    if sample.digest()? != stored_digest {
+    // A membership-only sample carries no vectors, so its attestation is the
+    // membership digest. The shape is self-describing from the loaded rows.
+    let membership_only = sample.entries.iter().any(|entry| entry.vector.is_empty());
+    let recomputed = if membership_only {
+        sample.membership_digest()?
+    } else {
+        sample.digest()?
+    };
+    if recomputed != stored_digest {
         return Err("EC_HEAD_SAMPLE: canonical digest mismatch".to_owned());
     }
     let graph = DistannPersistedHeadGraph {
