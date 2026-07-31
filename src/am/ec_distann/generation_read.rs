@@ -3028,7 +3028,32 @@ impl PhysicalGenerationScan {
         // TRAV-30 (Task 210 P3): populate the bounded gateway copies once per
         // cached epoch. The gateway set is the FR-080 head membership — already
         // bounded and coordinator-resident — and only routing payload moves.
-        if gateway_copies.is_none() && super::options::gateway_copy_capacity() > 0 {
+        //
+        // The GUC is part of the cache validity, not just a populate-time
+        // input (004 review, 2026-07-31): a set built under one capacity is
+        // discarded the moment the same backend runs with a different one, so
+        // `SET ec_distann.gateway_copy_capacity = 0` genuinely disables an
+        // already-populated set and capacity changes cannot leak a stale size
+        // into an A/B arm. The observability counters reset with the discard.
+        let gateway_capacity = super::options::gateway_copy_capacity();
+        if gateway_copies
+            .as_ref()
+            .is_some_and(|set| set.capacity() != gateway_capacity)
+        {
+            gateway_copies = None;
+            super::gateway_copy::record_cleared();
+            cache_physical_epoch(CachedPhysicalEpoch {
+                index_oid,
+                logical_index_uuid,
+                build_id: active.build_id,
+                fingerprint: active.fingerprint,
+                descriptor: Arc::clone(&descriptor),
+                descriptor_digest,
+                head_index: head_index.clone(),
+                gateway_copies: None,
+            });
+        }
+        if gateway_copies.is_none() && gateway_capacity > 0 {
             if let Some(head) = head_index.as_ref() {
                 if let Some(populated) = populate_gateway_copies(
                     index_oid,

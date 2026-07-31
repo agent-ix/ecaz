@@ -141,6 +141,14 @@ pub(crate) fn record_served(count: usize) {
     GATEWAY_COPIES_SERVED.fetch_add(count as u64, Ordering::Relaxed);
 }
 
+/// A capacity change discards the resident set (004 review, 2026-07-31); the
+/// size gauges reset with it so stats never describe a set that no longer
+/// exists. The `served` total is a monotone activation counter and is kept.
+pub(crate) fn record_cleared() {
+    GATEWAY_COPY_ENTRIES.store(0, Ordering::Relaxed);
+    GATEWAY_COPY_RESIDENT_BYTES.store(0, Ordering::Relaxed);
+}
+
 /// Observability for the TRAV-30 gateway copy: how big the bounded copy set is
 /// on this backend and how many expansions it has actually served. Read-only.
 #[pg_extern(volatile, parallel_restricted)]
