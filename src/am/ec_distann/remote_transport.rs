@@ -1165,6 +1165,7 @@ pub(crate) fn remote_physical_expand_batch(
                             .saturating_add(wire_queries[index].len().saturating_mul(4))
                             .saturating_add(request.query_digest.len())
                             .saturating_add(wire_ids[index].len().saturating_mul(8))
+                            .saturating_add(wire_skip_ids[index].len().saturating_mul(8))
                             .saturating_add(5)
                     })
                     .sum();
