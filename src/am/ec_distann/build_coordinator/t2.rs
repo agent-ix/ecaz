@@ -758,8 +758,11 @@ pub(super) fn build_epoch(
                 build_options,
                 // NFR-021 clause 3 (Task 210 P2a): with sharded head storage
                 // the coordinator persists landmark ids only; the vectors stay
-                // on the owners that already hold them.
-                super::super::options::shard_head_storage(),
+                // on the owners that already hold them. A single-owner roster
+                // keeps full vectors — there is no second node to shard to,
+                // and the membership-only read path requires a multi-owner
+                // roster — so the shipped-default flip cannot break it.
+                super::super::options::shard_head_storage() && roster.len() > 1,
             )?;
             let transitioned = client
                 .update(

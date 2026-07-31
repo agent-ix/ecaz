@@ -41,7 +41,7 @@ static ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC: GucSetting<bool> =
 
 /// NFR-021 clause 3: search the FR-080 head as roster shards, so no node holds
 /// the whole head (Task 210 P2a). A/B-able against the coordinator-local head.
-static ECDISTANN_SHARDED_HEAD_SEARCH_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static ECDISTANN_SHARDED_HEAD_SEARCH_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 /// DISTRIBUTEDANN 4.1 head replica count (Task 210 P2b): additional roster
 /// nodes that may serve a head shard, so head CPU is not bound to one machine
@@ -56,7 +56,7 @@ static ECDISTANN_GATEWAY_COPY_CAPACITY_GUC: GucSetting<i32> = GucSetting::<i32>:
 /// NFR-021 clause 3 (Task 210 P2a): persist the FR-080 head as membership only,
 /// so the coordinator holds landmark ids -- bounded by capacity C -- and never a
 /// second copy of the landmark vectors, which already live on their owners.
-static ECDISTANN_SHARD_HEAD_STORAGE_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static ECDISTANN_SHARD_HEAD_STORAGE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 /// FR-081 hop-round budget H: BW x H is the hard per-query expansion cap
 /// (NFR-019).
@@ -390,7 +390,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_bool_guc(
         c"ec_distann.shard_head_storage",
         c"NFR-021 clause 3 membership-only head persistence (Task 210 P2a).",
-        c"Read at build time. When enabled, the coordinator persists head landmark ids and the head graph but not the landmark vectors, because each landmark's full-precision vector already lives on the owner its FR-078 placement hash selects. Requires ec_distann.sharded_head_search at query time.",
+        c"Read at build time; default on (Task 210 review, 2026-07-31: the sharded shape is the shipped default, not a benchmark arm). On a multi-owner roster the coordinator persists head landmark ids and the head graph but not the landmark vectors, because each landmark's full-precision vector already lives on the owner its FR-078 placement hash selects. Single-owner rosters keep full vectors, where central and distributed coincide. The read path derives from the persisted shape.",
         &ECDISTANN_SHARD_HEAD_STORAGE_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -398,7 +398,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_bool_guc(
         c"ec_distann.sharded_head_search",
         c"NFR-021 clause 3 sharded FR-080 head search (Task 210 P2a).",
-        c"When enabled, each owner searches the head landmarks it owns under the FR-078 placement hash, reading their co-placed full-precision vectors locally, and the coordinator merges bounded per-owner seeds. No landmark vector crosses the wire.",
+        c"Default on (Task 210 review, 2026-07-31). Each owner searches the head landmarks it owns under the FR-078 placement hash, reading their co-placed full-precision vectors locally, and the coordinator merges bounded per-owner seeds. No landmark vector crosses the wire. A membership-only persisted head always uses this path regardless of the GUC.",
         &ECDISTANN_SHARDED_HEAD_SEARCH_GUC,
         GucContext::Userset,
         GucFlags::default(),
