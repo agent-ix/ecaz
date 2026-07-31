@@ -3265,7 +3265,20 @@ impl PhysicalGenerationScan {
         // NFR-021 clause 3 (Task 210 P2a): when the head is sharded, the
         // coordinator keeps only the bounded membership list and every owner
         // searches the landmarks it already holds.
-        if super::options::sharded_head_search() && self.routes.len() > 1 {
+        // A membership-only head has no coordinator-resident vectors, so the
+        // sharded path is the only correct one — the persisted shape decides,
+        // not the session GUC.
+        let membership_only_head = self
+            .head_index
+            .as_ref()
+            .is_some_and(|head| head.is_membership_only());
+        if membership_only_head && self.routes.len() <= 1 {
+            return Err(
+                "EC_HEAD_SAMPLE: membership-only head requires a multi-owner roster".to_owned(),
+            );
+        }
+        if (super::options::sharded_head_search() || membership_only_head) && self.routes.len() > 1
+        {
             if let Some(head) = self.head_index.as_ref() {
                 if seed_mode == super::options::PhysicalSeedMode::PersistedHead {
                     return self.sharded_head_seeds(

@@ -1304,6 +1304,15 @@ impl DistannPhysicalHeadIndex {
         self.policy
     }
 
+    /// Whether this head carries membership only — ids without landmark
+    /// vectors (Task 210 P2a). A membership-only head *cannot* be searched
+    /// locally: the vectors live on their owners. The read path must therefore
+    /// derive sharding from the persisted shape, not from a session GUC, or a
+    /// session without the GUC silently degrades to a one-seed scan.
+    pub(crate) fn is_membership_only(&self) -> bool {
+        self.vectors.iter().any(|vector| vector.is_empty())
+    }
+
     /// The head's landmark ids. Bounded by capacity `C`, so the coordinator may
     /// hold this list (NFR-021 clause 2) while the landmark *vectors* live on
     /// their owners (clause 3) — Task 210 P2a.
