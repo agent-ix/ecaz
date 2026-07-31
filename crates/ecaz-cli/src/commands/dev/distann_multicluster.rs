@@ -169,6 +169,11 @@ pub struct LocalMultinodePg18Args {
     /// (DISTRIBUTEDANN 4.1). Requires --sharded-head.
     #[arg(long)]
     pub head_replica_count: Option<u32>,
+    /// Task 210 P3: TRAV-30 bounded gateway copy capacity. Sets
+    /// `ec_distann.gateway_copy_capacity` on the physical benchmark arms so
+    /// the coordinator caches that many head landmarks' routing payloads.
+    #[arg(long)]
+    pub gateway_copy_capacity: Option<u32>,
     /// Task 180 benchmark-only physical seed mode. Requires an extension build
     /// with `distann-head-attribution-benchmark` when set.
     #[arg(long)]
@@ -1374,6 +1379,21 @@ fn append_sharded_head_guc(
         args.extend([
             "--session-guc".into(),
             format!("ec_distann.head_replica_count={replicas}"),
+        ]);
+    }
+}
+
+/// Task 210 P3: the TRAV-30 gateway copy capacity is a coordinator session
+/// GUC on the physical arm; population happens once per cached epoch at scan
+/// open, bounded by this capacity.
+fn append_gateway_copy_guc(args: &mut Vec<String>, arm: &str, capacity: Option<u32>) {
+    if arm != "physical" {
+        return;
+    }
+    if let Some(capacity) = capacity {
+        args.extend([
+            "--session-guc".into(),
+            format!("ec_distann.gateway_copy_capacity={capacity}"),
         ]);
     }
 }
@@ -5036,6 +5056,7 @@ async fn run_physical_benchmarks(
                     args.sharded_head,
                     args.head_replica_count,
                 );
+                append_gateway_copy_guc(&mut recall_args, arm, args.gateway_copy_capacity);
             }
             let recall = run_physical_bench_child(recall_args).await?;
             let row = benchmark_table_row(&recall)?;
@@ -5133,6 +5154,7 @@ async fn run_physical_benchmarks(
             args.sharded_head,
             args.head_replica_count,
         );
+        append_gateway_copy_guc(&mut latency_args, arm, args.gateway_copy_capacity);
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }

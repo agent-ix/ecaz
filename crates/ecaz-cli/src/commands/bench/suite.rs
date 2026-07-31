@@ -695,6 +695,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     head_replica_count: Option<u32>,
     #[serde(default)]
+    gateway_copy_capacity: Option<u32>,
+    #[serde(default)]
     hop_rounds: Option<u32>,
     #[serde(default)]
     seed_strategy: Option<String>,
@@ -5321,6 +5323,11 @@ fn expand_distann_local_multinode(
         &mut args,
         "--head-replica-count",
         step.head_replica_count.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--gateway-copy-capacity",
+        step.gateway_copy_capacity.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,
