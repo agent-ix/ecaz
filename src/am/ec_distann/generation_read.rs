@@ -901,6 +901,17 @@ impl RetainedGenerationScan {
     }
 
     fn validate_request(&self, query: &[f32], vec_ids: &[u64]) -> Result<(), DistannExpandError> {
+        self.validate_query(query)?;
+        self.validate_ownership(vec_ids)
+    }
+
+    /// Dimension validation alone. §4.1 replica serving (Task 210 P2b) needs
+    /// this split: a node serving a foreign head shard from its imported copy
+    /// is *supposed* to be asked for ids it does not own, so ownership is
+    /// enforced only where the answer comes from owner-held vectors
+    /// (`resolve_nodes`), not at the endpoint boundary (003a review,
+    /// 2026-07-31 finding 2).
+    fn validate_query(&self, query: &[f32]) -> Result<(), DistannExpandError> {
         if query.len() != usize::from(self.descriptor.dimensions) {
             return Err(DistannExpandError::BadInput(format!(
                 "query has {} dimensions, retained generation requires {}",
@@ -908,7 +919,7 @@ impl RetainedGenerationScan {
                 self.descriptor.dimensions
             )));
         }
-        self.validate_ownership(vec_ids)
+        Ok(())
     }
 
     fn validate_ownership(&self, vec_ids: &[u64]) -> Result<(), DistannExpandError> {
@@ -1239,7 +1250,10 @@ impl RetainedGenerationScan {
         alpha: f32,
         head_policy: super::generation_descriptor::DistannHeadPolicy,
     ) -> Result<Vec<super::scan::DistannSeedCandidate>, DistannExpandError> {
-        self.validate_request(query, members)?;
+        // Ownership is deliberately NOT validated here: a §4.1 replica serves
+        // a shard it does not own from its imported copy. The owner-vector
+        // fallback below still enforces ownership through `resolve_nodes`.
+        self.validate_query(query)?;
         if members.is_empty() || seed_count == 0 {
             return Ok(Vec::new());
         }
@@ -1293,7 +1307,16 @@ impl RetainedGenerationScan {
         // neither is asked for ids it does not own, which resolve_nodes
         // correctly rejects.
         let resolved = match self.replica_head_vectors(members)? {
-            Some(replica) => replica,
+            Some(replica) => {
+                // Activation counter (003a review finding 2): replica serving
+                // must be provable in a run, not inferred from routing.
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::HeadReplicaShardsServed,
+                    1,
+                );
+                replica
+            }
             None => {
                 let nodes = self.resolve_nodes(members)?;
                 let mut owned = Vec::with_capacity(nodes.len());
@@ -2006,6 +2029,7 @@ fn populate_head_replicas_impl(
     let owner_count = state.routes.len();
     let dimensions = i32::from(state.descriptor.dimensions);
     let mut placed = 0_i64;
+    let mut expected = 0_i64;
     if replicas > 0 && owner_count > 1 {
         for shard in 0..owner_count {
             let owned = super::head_sample::head_shard_members(
@@ -2018,36 +2042,81 @@ fn populate_head_replicas_impl(
                 continue;
             }
             let owner = &state.routes[shard];
-            let Some(owner_conninfo) = owner.conninfo.as_deref() else {
-                // The coordinator's own shard: read it locally.
-                continue;
+            // The coordinator's own shard is exported through the local path —
+            // skipping it while still attesting population is exactly how a
+            // valid owner route turned into a deterministic missing-copy
+            // failure (003a review, 2026-07-31 finding 3).
+            let copy = match owner.conninfo.as_deref() {
+                Some(owner_conninfo) => super::remote_transport::remote_head_shard_export(
+                    owner_conninfo,
+                    &owner.remote_index_regclass,
+                    &state.fingerprint,
+                    &owned,
+                )?,
+                None => {
+                    if !owner.is_local {
+                        return Err(DistannExpandError::Internal(format!(
+                            "EC_NODE_DESCRIPTOR: head shard owner {shard} has no connection descriptor"
+                        )));
+                    }
+                    RetainedGenerationScan::open(index_oid, &state.fingerprint)?
+                        .export_head_shard(&owned)?
+                }
             };
-            let copy = super::remote_transport::remote_head_shard_export(
-                owner_conninfo,
-                &owner.remote_index_regclass,
-                &state.fingerprint,
-                &owned,
-            )?;
             for offset in 1..=replicas {
                 let server = (shard + offset) % owner_count;
                 if server == shard {
                     continue;
                 }
+                expected += 1;
                 let route = &state.routes[server];
-                let Some(conninfo) = route.conninfo.as_deref() else {
-                    continue;
-                };
-                super::remote_transport::remote_head_shard_import(
-                    conninfo,
-                    &route.remote_index_regclass,
-                    &state.fingerprint,
-                    i32::try_from(shard).unwrap_or(0),
-                    &copy,
-                    dimensions,
-                )?;
+                match route.conninfo.as_deref() {
+                    Some(conninfo) => {
+                        super::remote_transport::remote_head_shard_import(
+                            conninfo,
+                            &route.remote_index_regclass,
+                            &state.fingerprint,
+                            i32::try_from(shard).unwrap_or(0),
+                            &copy,
+                            dimensions,
+                        )?;
+                    }
+                    None => {
+                        // The coordinator can serve as a replica too: import
+                        // into the local replica table rather than silently
+                        // leaving this (shard, replica) pair uncovered.
+                        if !route.is_local {
+                            return Err(DistannExpandError::Internal(format!(
+                                "EC_NODE_DESCRIPTOR: head replica server {server} has no connection descriptor"
+                            )));
+                        }
+                        RetainedGenerationScan::open(index_oid, &state.fingerprint)?
+                            .import_head_shard(
+                                i32::try_from(shard).unwrap_or(0),
+                                &copy
+                                    .iter()
+                                    .map(|(vec_id, _)| i64::from_le_bytes(vec_id.to_le_bytes()))
+                                    .collect::<Vec<_>>(),
+                                &copy
+                                    .iter()
+                                    .map(|(_, vector)| vector.clone())
+                                    .collect::<Vec<_>>(),
+                            )?;
+                    }
+                }
                 placed += 1;
             }
         }
+    }
+    // The marker is an attestation, not a log line: it records the replica
+    // count only when every (shard, replica) pair for that count was actually
+    // imported. Routing consults it against the session's current
+    // head_replica_count, so an incomplete population can never enable
+    // routing to an unbacked replica.
+    if placed != expected {
+        return Err(DistannExpandError::Internal(format!(
+            "head replica population is incomplete: placed {placed} of {expected} shard copies"
+        )));
     }
     let table = super::generation_catalog::extension_relation_name("ec_distann_head_replica_state")
         .map_err(DistannExpandError::Internal)?;
@@ -3392,19 +3461,27 @@ impl PhysicalGenerationScan {
     }
 
     /// Whether head-shard replicas were populated for this epoch (Task 210 P2b).
-    fn head_replicas_populated(&self) -> Result<bool, String> {
+    /// Whether this epoch's replica population attests at least
+    /// `requested_count` replicas per shard. Population records the count only
+    /// after every (shard, replica) pair imported, so `attested >= requested`
+    /// means each server the routing hash can pick under the current GUC
+    /// actually holds its copy (003a review, 2026-07-31 finding 3).
+    fn head_replicas_populated(&self, requested_count: usize) -> Result<bool, String> {
         let table =
             super::generation_catalog::extension_relation_name("ec_distann_head_replica_state")?;
         let fingerprint = self.fingerprint.to_vec();
+        let requested =
+            i32::try_from(requested_count).map_err(|_| "replica count out of range".to_owned())?;
         Spi::connect(|client| {
             let found = client
                 .select(
                     &format!(
-                        "SELECT replica_count > 0 FROM {table}
+                        "SELECT replica_count >= $3::integer AND replica_count > 0
+                           FROM {table}
                           WHERE index_oid = $1::oid AND epoch_fingerprint = $2::bytea"
                     ),
                     None,
-                    &[self.index_oid.into(), fingerprint.into()],
+                    &[self.index_oid.into(), fingerprint.into(), requested.into()],
                 )
                 .map_err(|error| format!("head replica state lookup failed: {error}"))?
                 .first()
@@ -3457,7 +3534,7 @@ impl PhysicalGenerationScan {
         // Routing may use a replica only for an epoch whose shard copies were
         // actually distributed by ec_distann_populate_head_replicas (P2b).
         let replicas_populated =
-            replica_count > 0 && self.head_replicas_populated().unwrap_or(false);
+            replica_count > 0 && self.head_replicas_populated(replica_count).unwrap_or(false);
         let mut requests = Vec::with_capacity(owner_count);
         for (ordinal, owned) in per_owner_members.iter().enumerate() {
             if owned.is_empty() {

@@ -212,10 +212,11 @@ pub(crate) enum DistannMaterializationWork {
     NeighborsPruned,
     GatewayCopiesServed,
     HeadReplicaFallbacks,
+    HeadReplicaShardsServed,
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 31] = [
+    pub(crate) const ALL: [Self; 32] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -247,6 +248,7 @@ impl DistannMaterializationWork {
         Self::NeighborsPruned,
         Self::GatewayCopiesServed,
         Self::HeadReplicaFallbacks,
+        Self::HeadReplicaShardsServed,
     ];
 
     pub(crate) const fn label(self) -> &'static str {
@@ -282,6 +284,7 @@ impl DistannMaterializationWork {
             Self::NeighborsPruned => "neighbors_pruned",
             Self::GatewayCopiesServed => "gateway_copies_served",
             Self::HeadReplicaFallbacks => "head_replica_fallbacks",
+            Self::HeadReplicaShardsServed => "head_replica_shards_served",
         }
     }
 
@@ -318,6 +321,7 @@ impl DistannMaterializationWork {
             Self::NeighborsPruned => 28,
             Self::GatewayCopiesServed => 29,
             Self::HeadReplicaFallbacks => 30,
+            Self::HeadReplicaShardsServed => 31,
         }
     }
 }
