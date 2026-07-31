@@ -1,0 +1,13 @@
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task-203)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 47.61s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-79ca428f1e69300b)
+
+running 5 tests
+test am::ec_distann::gateway_copy::tests::gateway_copies_never_exceed_their_stated_capacity ... ok
+test am::ec_distann::gateway_copy::tests::reinserting_a_gateway_replaces_rather_than_growing ... ok
+test am::ec_distann::gateway_copy::tests::resident_bytes_is_bounded_by_capacity_not_by_corpus ... ok
+test am::ec_distann::gateway_copy::tests::split_request_separates_locally_answerable_ids_in_request_order ... ok
+test am::ec_distann::gateway_copy::tests::gateway_fill_and_rebatch_matches_the_owner_only_batch_semantics ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 2548 filtered out; finished in 0.00s
+
