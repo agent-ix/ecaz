@@ -1368,13 +1368,20 @@ fn append_sharded_head_guc(
     sharded_head: bool,
     head_replica_count: Option<u32>,
 ) {
-    if arm != "physical" || !sharded_head {
+    if arm != "physical" {
         return;
     }
-    args.extend([
-        "--session-guc".into(),
-        "ec_distann.sharded_head_search=on".into(),
-    ]);
+    if sharded_head {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.sharded_head_search=on".into(),
+        ]);
+    }
+    // The replica count is independent of the legacy --sharded-head flag:
+    // sharded search is the shipped default now, and gating the GUC on the
+    // flag left the default-config replica arm silently inert
+    // (head_replica_shards_served=0 AND head_replica_fallbacks=0 in the first
+    // gate attempt — routing never consulted replicas at all).
     if let Some(replicas) = head_replica_count {
         args.extend([
             "--session-guc".into(),
