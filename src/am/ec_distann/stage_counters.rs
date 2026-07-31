@@ -215,7 +215,7 @@ pub(crate) enum DistannMaterializationWork {
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 30] = [
+    pub(crate) const ALL: [Self; 31] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
