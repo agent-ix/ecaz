@@ -488,6 +488,12 @@ struct CachedOwnerHeadShard {
     fingerprint: [u8; 34],
     shard_key: [u8; 32],
     index: Arc<super::head_sample::DistannPhysicalHeadIndex>,
+    /// Whether the shard was materialised from a §4.1 replica copy rather
+    /// than owner-held vectors. Carried so the activation counter attributes
+    /// every request served from a replica shard, not only the first build —
+    /// warmup builds the cache, counters reset, and the measured window would
+    /// otherwise read 0 (the 2026-07-31 gate diagnosis).
+    from_replica: bool,
 }
 
 thread_local! {
@@ -526,7 +532,7 @@ fn cached_owner_head_shard(
     index_oid: pg_sys::Oid,
     fingerprint: &[u8; 34],
     shard_key: &[u8; 32],
-) -> Option<Arc<super::head_sample::DistannPhysicalHeadIndex>> {
+) -> Option<(Arc<super::head_sample::DistannPhysicalHeadIndex>, bool)> {
     OWNER_HEAD_SHARD_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         let position = cache.iter().position(|entry| {
@@ -535,9 +541,9 @@ fn cached_owner_head_shard(
                 && entry.shard_key == *shard_key
         })?;
         let entry = cache.remove(position)?;
-        let index = Arc::clone(&entry.index);
+        let hit = (Arc::clone(&entry.index), entry.from_replica);
         cache.push_back(entry);
-        Some(index)
+        Some(hit)
     })
 }
 
@@ -546,6 +552,7 @@ fn cache_owner_head_shard(
     fingerprint: [u8; 34],
     shard_key: [u8; 32],
     index: Arc<super::head_sample::DistannPhysicalHeadIndex>,
+    from_replica: bool,
 ) {
     OWNER_HEAD_SHARD_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
@@ -557,6 +564,7 @@ fn cache_owner_head_shard(
             fingerprint,
             shard_key,
             index,
+            from_replica,
         });
     });
 }
@@ -1268,8 +1276,16 @@ impl RetainedGenerationScan {
             head_policy,
         )
         .map_err(DistannExpandError::Internal)?;
-        if let Some(index) = cached_owner_head_shard(self.index_oid, &self.fingerprint, &shard_key)
+        if let Some((index, from_replica)) =
+            cached_owner_head_shard(self.index_oid, &self.fingerprint, &shard_key)
         {
+            if from_replica {
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::HeadReplicaShardsServed,
+                    1,
+                );
+            }
             return Ok(index.search_configured(query, search_width, seed_count));
         }
         let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
@@ -1306,10 +1322,14 @@ impl RetainedGenerationScan {
         // given one, otherwise from the vectors it owns. A node that has
         // neither is asked for ids it does not own, which resolve_nodes
         // correctly rejects.
+        let mut from_replica = false;
         let resolved = match self.replica_head_vectors(members)? {
             Some(replica) => {
                 // Activation counter (003a review finding 2): replica serving
-                // must be provable in a run, not inferred from routing.
+                // must be provable in a run, not inferred from routing. Cache
+                // hits carry the same provenance and count too — see
+                // CachedOwnerHeadShard::from_replica.
+                from_replica = true;
                 #[cfg(feature = "distann-head-attribution-benchmark")]
                 super::stage_counters::record_work(
                     super::stage_counters::DistannMaterializationWork::HeadReplicaShardsServed,
@@ -1354,6 +1374,7 @@ impl RetainedGenerationScan {
             self.fingerprint,
             shard_key,
             Arc::clone(&index),
+            from_replica,
         );
         Ok(index.search_configured(query, search_width, seed_count))
     }

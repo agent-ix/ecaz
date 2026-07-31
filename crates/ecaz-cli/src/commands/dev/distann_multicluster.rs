@@ -1317,6 +1317,13 @@ fn attribution_stage_mean(stage_rows: &[&str], stage: &str) -> Result<f64> {
 
 async fn run_physical_bench_child(args: Vec<String>) -> Result<String> {
     let executable = std::env::current_exe().wrap_err("resolving benchmark executable")?;
+    // Session GUCs decide which mechanism an arm measures; a silently absent
+    // GUC is how two replica arms ran inert (2026-07-31). Log the exact child
+    // argv so packet artifacts can prove what each benchmark was told.
+    crate::ecaz_eprintln!(
+        "[distann-multicluster] physical_bench_child args={}",
+        args.join(" ")
+    );
     let output = Command::new(&executable)
         .args(&args)
         .output()
