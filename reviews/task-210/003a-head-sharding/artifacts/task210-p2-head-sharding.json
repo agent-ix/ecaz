@@ -1,0 +1,426 @@
+{
+  "name": "task210-p2-head-sharding",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-210/003a-head-sharding/artifacts/run",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "control-local-head-10k",
+      "tags": [
+        "task210",
+        "p2a",
+        "control",
+        "ec_real_10k"
+      ],
+      "artifact_dir": "${artifact_dir}/control-local-head-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p2-control-10k",
+      "nodes": 3,
+      "base_port": 42310,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "control-local-head",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p2-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Owner-traversal control with the coordinator-local head; the outstanding head gap is reported, not hidden."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-sharded-head-10k",
+      "tags": [
+        "task210",
+        "p2a",
+        "candidate",
+        "ec_real_10k"
+      ],
+      "artifact_dir": "${artifact_dir}/candidate-sharded-head-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p2-candidate-10k",
+      "nodes": 3,
+      "base_port": 42320,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "sharded_head": true,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "candidate-sharded-head",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p2-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Head sharded across the roster: coordinator persists landmark ids only and every owner searches the landmarks it already holds."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "control-local-head-50k",
+      "tags": [
+        "task210",
+        "p2a",
+        "control",
+        "ec_real_50k"
+      ],
+      "artifact_dir": "${artifact_dir}/control-local-head-50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p2-control-50k",
+      "nodes": 3,
+      "base_port": 42330,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "control-local-head",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p2-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Owner-traversal control with the coordinator-local head; the outstanding head gap is reported, not hidden."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-sharded-head-50k",
+      "tags": [
+        "task210",
+        "p2a",
+        "candidate",
+        "ec_real_50k"
+      ],
+      "artifact_dir": "${artifact_dir}/candidate-sharded-head-50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p2-candidate-50k",
+      "nodes": 3,
+      "base_port": 42340,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "sharded_head": true,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "candidate-sharded-head",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p2-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Head sharded across the roster: coordinator persists landmark ids only and every owner searches the landmarks it already holds."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "control-local-head-100k",
+      "tags": [
+        "task210",
+        "p2a",
+        "control",
+        "ec_real_100k"
+      ],
+      "artifact_dir": "${artifact_dir}/control-local-head-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p2-control-100k",
+      "nodes": 3,
+      "base_port": 42350,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "control-local-head",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p2-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Owner-traversal control with the coordinator-local head; the outstanding head gap is reported, not hidden."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-sharded-head-100k",
+      "tags": [
+        "task210",
+        "p2a",
+        "candidate",
+        "ec_real_100k"
+      ],
+      "artifact_dir": "${artifact_dir}/candidate-sharded-head-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p2-candidate-100k",
+      "nodes": 3,
+      "base_port": 42360,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "sharded_head": true,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "candidate-sharded-head",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p2-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Head sharded across the roster: coordinator persists landmark ids only and every owner searches the landmarks it already holds."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "sweep-head-replica2-100k",
+      "tags": [
+        "task210",
+        "p2b",
+        "sweep",
+        "ec_real_100k"
+      ],
+      "artifact_dir": "${artifact_dir}/sweep-head-replica2-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p2b-replica2-100k",
+      "nodes": 3,
+      "base_port": 42370,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "sharded_head": true,
+      "head_replica_count": 2,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "sweep-head-replica2",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p2b-replica2",
+            "role": "context",
+            "admissibility": "conforming",
+            "rationale": "DISTRIBUTEDANN 4.1 replica routing. No publish-time step populates a replica with a bounded shard copy yet, so routing clamps back to the owner and this arm measures the clamp (head_replica_fallbacks), not replication. Registered as context for that reason."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "sweep-head-replica2-10k",
+      "tags": [
+        "task210",
+        "p2b",
+        "sweep",
+        "ec_real_10k"
+      ],
+      "artifact_dir": "${artifact_dir}/sweep-head-replica2-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p2b-replica2-10k",
+      "nodes": 3,
+      "base_port": 42380,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "sharded_head": true,
+      "head_replica_count": 2,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "sweep-head-replica2",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p2b-replica2",
+            "role": "context",
+            "admissibility": "conforming",
+            "rationale": "DISTRIBUTEDANN 4.1 replica routing. No publish-time step populates a replica with a bounded shard copy yet, so routing clamps back to the owner and this arm measures the clamp (head_replica_fallbacks), not replication. Registered as context for that reason."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "sweep-head-replica2-50k",
+      "tags": [
+        "task210",
+        "p2b",
+        "sweep",
+        "ec_real_50k"
+      ],
+      "artifact_dir": "${artifact_dir}/sweep-head-replica2-50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p2b-replica2-50k",
+      "nodes": 3,
+      "base_port": 42390,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "sharded_head": true,
+      "head_replica_count": 2,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "sweep-head-replica2",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p2b-replica2",
+            "role": "context",
+            "admissibility": "conforming",
+            "rationale": "DISTRIBUTEDANN 4.1 replica routing. No publish-time step populates a replica with a bounded shard copy yet, so routing clamps back to the owner and this arm measures the clamp (head_replica_fallbacks), not replication. Registered as context for that reason."
+          }
+        }
+      ]
+    }
+  ]
+}
