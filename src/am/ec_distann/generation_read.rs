@@ -2924,8 +2924,12 @@ impl PhysicalGenerationScan {
                 )
             })
             .collect::<Vec<_>>();
+        let search_width_usize = search_width;
         let search_width = i32::try_from(search_width).unwrap_or(i32::MAX);
         let seed_count_wire = i32::try_from(seed_count).unwrap_or(i32::MAX);
+        // A shard whose server is the coordinator itself is answered in
+        // process; only genuinely remote shards become RPCs.
+        let mut local_seeds: Vec<Vec<DistannSeedCandidate>> = Vec::new();
         // §4.1 (Task 210 P2b): a shard may be served by its owner or by one of
         // `head_replica_count` further roster nodes, chosen deterministically
         // from the query digest so head CPU is not bound to one machine.
@@ -2943,9 +2947,36 @@ impl PhysicalGenerationScan {
                 &query_digest,
             );
             let route = &self.routes[server];
-            let conninfo = route.conninfo.as_deref().ok_or_else(|| {
-                format!("EC_NODE_DESCRIPTOR: physical owner {ordinal} route has no connection")
-            })?;
+            // The coordinator is normally itself an owner, and its own route
+            // carries no conninfo. Serve that shard in-process rather than
+            // dialling ourselves — same shape as the traversal expander's
+            // local-ordinal branch.
+            let Some(conninfo) = route.conninfo.as_deref() else {
+                if !route.is_local {
+                    return Err(format!(
+                        "EC_NODE_DESCRIPTOR: physical owner {server} route has no connection"
+                    ));
+                }
+                let local = RetainedGenerationScan::open(self.index_oid, &self.fingerprint)
+                    .map_err(|error| error.to_string())?;
+                let query_digest_local =
+                    physical_query_digest(query).map_err(|error| error.to_string())?;
+                local_seeds.push(
+                    local
+                        .head_search(
+                            query,
+                            query_digest_local,
+                            owned,
+                            search_width_usize,
+                            seed_count,
+                            super::ECDISTANN_DEFAULT_BUILD_LIST_SIZE as usize,
+                            super::ECDISTANN_DEFAULT_ALPHA,
+                            head_policy,
+                        )
+                        .map_err(|error| error.to_string())?,
+                );
+                continue;
+            };
             requests.push(super::remote_transport::DistannPhysicalHeadRequest {
                 conninfo,
                 index_regclass: &route.remote_index_regclass,
@@ -2960,7 +2991,7 @@ impl PhysicalGenerationScan {
             });
         }
         let responses = super::remote_transport::remote_physical_head_search_batch(&requests);
-        let mut per_owner = Vec::with_capacity(responses.len());
+        let mut per_owner = local_seeds;
         for response in responses {
             per_owner.push(response.map_err(|error| error.to_string())?);
         }
