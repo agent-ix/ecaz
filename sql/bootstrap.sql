@@ -575,7 +575,11 @@ CREATE TABLE ec_distann_generation_head_sample (
     build_id uuid NOT NULL,
     sample_ordinal integer NOT NULL CHECK (sample_ordinal >= 0),
     vec_id bigint NOT NULL,
-    vector real[] NOT NULL,
+    -- NULL under ec_distann.shard_head_storage (NFR-021 clause 3, Task 210
+    -- P2a): the coordinator persists head membership only, because each
+    -- landmark's full-precision vector already lives on the owner its FR-078
+    -- placement hash selects. A non-NULL vector is the unsharded legacy shape.
+    vector real[],
     neighbors integer[] NOT NULL,
     PRIMARY KEY (index_oid, logical_index_uuid, build_id, sample_ordinal),
     UNIQUE (index_oid, logical_index_uuid, build_id, vec_id),
