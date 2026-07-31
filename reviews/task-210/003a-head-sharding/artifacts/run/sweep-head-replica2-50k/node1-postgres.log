@@ -1,0 +1,22 @@
+2026-07-31 04:02:06.788 PDT [99077] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-31 04:02:06.801 PDT [99077] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-31 04:02:06.801 PDT [99077] LOG:  listening on IPv4 address "127.0.0.1", port 42390
+2026-07-31 04:02:06.813 PDT [99083] LOG:  database system was shut down at 2026-07-31 04:02:03 PDT
+2026-07-31 04:02:06.819 PDT [99077] LOG:  database system is ready to accept connections
+2026-07-31 04:04:16.898 PDT [99081] LOG:  checkpoint starting: wal
+2026-07-31 04:08:46.376 PDT [99081] LOG:  checkpoint complete: wrote 92 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.174 s, sync=0.135 s, total=269.479 s; sync files=275, longest=0.012 s, average=0.001 s; distance=534903 kB, estimate=534903 kB; lsn=0/333D7F00, redo lsn=0/221B24E8
+2026-07-31 04:09:16.677 PDT [99081] LOG:  checkpoint starting: time
+2026-07-31 04:13:18.530 PDT [99081] LOG:  checkpoint complete: wrote 83 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 23 recycled; write=241.512 s, sync=0.103 s, total=241.853 s; sync files=91, longest=0.064 s, average=0.002 s; distance=383794 kB, estimate=519792 kB; lsn=0/57930BA8, redo lsn=0/3987F080
+2026-07-31 04:13:19.055 PDT [99081] LOG:  checkpoint starting: wal
+2026-07-31 04:14:19.997 PDT [99081] LOG:  checkpoint complete: wrote 21 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=60.792 s, sync=0.010 s, total=60.942 s; sync files=25, longest=0.002 s, average=0.001 s; distance=536063 kB, estimate=536063 kB; lsn=0/76A192A8, redo lsn=0/5A3FEF48
+2026-07-31 04:15:54.515 PDT [99081] LOG:  checkpoint starting: wal
+2026-07-31 04:17:00.780 PDT [99081] LOG:  checkpoint complete: wrote 694 buffers (4.2%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=65.678 s, sync=0.208 s, total=66.265 s; sync files=13, longest=0.185 s, average=0.016 s; distance=540678 kB, estimate=540678 kB; lsn=0/99035AB8, redo lsn=0/7B400920
+2026-07-31 04:17:01.964 PDT [99077] LOG:  received fast shutdown request
+2026-07-31 04:17:01.968 PDT [99077] LOG:  aborting any active transactions
+2026-07-31 04:17:01.968 PDT [99862] FATAL:  terminating autovacuum process due to administrator command
+2026-07-31 04:17:01.968 PDT [99862] CONTEXT:  while scanning block 34315 of relation "pg_toast.pg_toast_218857"
+2026-07-31 04:17:01.969 PDT [99077] LOG:  background worker "logical replication launcher" (PID 99086) exited with exit code 1
+2026-07-31 04:17:02.019 PDT [99081] LOG:  shutting down
+2026-07-31 04:17:02.026 PDT [99081] LOG:  checkpoint starting: shutdown immediate
+2026-07-31 04:17:02.260 PDT [99081] LOG:  checkpoint complete: wrote 514 buffers (3.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 32 recycled; write=0.011 s, sync=0.050 s, total=0.241 s; sync files=13, longest=0.035 s, average=0.004 s; distance=521014 kB, estimate=538712 kB; lsn=0/9B0CE178, redo lsn=0/9B0CE178
+2026-07-31 04:17:02.288 PDT [99077] LOG:  database system is shut down
