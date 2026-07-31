@@ -74,12 +74,27 @@ hops — every expansion still pays its owner round trip.
   `head_sample.rs` **test** from the P2a slice — not this commit's code;
   flagged for the P2 owner.)
 
-## Owed / not in this packet
+## A/B evidence (landed 2026-07-31)
 
-- **A/B bench evidence** (bytes + owner work + recall/latency at
-  10/50/100k, gateway on vs off). The bench host is occupied by the P2
-  head-sharding A/B; the fixture also needs a `--gateway-copy-capacity`
-  flag to make the arm suite-addressable (parallel to `--sharded-head`,
-  `862c03547`). The task stays open until that evidence lands — this packet
-  requests review of the wiring, not closeout.
-- Multinode PG18 behaviour validation rides the same future run.
+The owed A/B ran overnight into the sibling evidence packet
+`reviews/task-210/004-gateway-copies/` (config `task210-p3-gateway-copies.json`,
+6 steps, `results.jsonl`, `artifacts/manifest.md` with provenance). Summary at
+10k / 50k / 100k, control (capacity 0) vs candidate (capacity 4096):
+
+- **Activation**: `gateway_copies_served` = 553 / 161 / 159 per 50 scans on the
+  candidate arms, 0 on every control arm — the mechanism provably fires.
+- **Bytes** (the judged quantity): `traversal_response_bytes` −36.3% / −9.1% /
+  −7.2%.
+- **Owner scoring work**: +4.7% / −0.4% / −4.0% (the 10k cost is the
+  coordinator taking over more of the batch-L merge where the head covers a
+  large corpus fraction).
+- **Recall identical** at every scale (0.9990 / 0.9545 / 0.9275), matching the
+  semantics-preservation unit proof. **Latency neutral** (+8.5% / +2.5% /
+  −0.8%) — expected, since the owner round trip is retained by design
+  (handoff §4c).
+- Known accounting gap: `traversal_request_bytes` does not yet count the
+  `skip_neighbor_vec_ids` payload, so candidate request sizes are slightly
+  under-reported. Cosmetic follow-up.
+
+The multinode PG18 behaviour validation rode this run (6 fixture clusters,
+all serving/reconciliation checks pass).
