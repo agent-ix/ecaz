@@ -1,0 +1,196 @@
+2026-07-31 07:52:18.615 PDT [118928] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-31 07:52:18.627 PDT [118928] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-31 07:52:18.627 PDT [118928] LOG:  listening on IPv4 address "127.0.0.1", port 42420
+2026-07-31 07:52:18.638 PDT [118934] LOG:  database system was shut down at 2026-07-31 07:52:15 PDT
+2026-07-31 07:52:18.645 PDT [118928] LOG:  database system is ready to accept connections
+2026-07-31 07:54:50.132 PDT [118932] LOG:  checkpoint starting: wal
+2026-07-31 07:54:50.800 PDT [118998] ERROR:  [EC_INTERNAL] EC_BUILD_INCOMPLETE: could not connect to participant: error connecting to server
+2026-07-31 07:54:50.800 PDT [118998] STATEMENT:  SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)
+2026-07-31 07:55:42.490 PDT [118932] LOG:  checkpoint complete: wrote 390 buffers (2.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=51.931 s, sync=0.142 s, total=52.384 s; sync files=333, longest=0.018 s, average=0.001 s; distance=533264 kB, estimate=533264 kB; lsn=0/4016FBC8, redo lsn=0/220186C0
+2026-07-31 07:55:43.972 PDT [118932] LOG:  checkpoint starting: wal
+2026-07-31 07:56:01.377 PDT [118998] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 07:56:01.377 PDT [118998] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_10k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_10k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_10k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 07:56:06.768 PDT [118998] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 07:56:06.768 PDT [118998] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_10k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_10k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_10k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 07:56:09.140 PDT [118932] LOG:  checkpoint complete: wrote 495 buffers (3.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=24.863 s, sync=0.108 s, total=25.168 s; sync files=65, longest=0.037 s, average=0.002 s; distance=541785 kB, estimate=541785 kB; lsn=0/60FBC0D8, redo lsn=0/4312EC00
+2026-07-31 07:56:10.646 PDT [119347] FATAL:  EC_REPLICA_CONTROL_COMMIT_CRASH: injected backend termination after durable traversal-replica invalidation
+2026-07-31 07:56:10.646 PDT [119347] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_10k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_10k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_10k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 07:56:11.433 PDT [118932] LOG:  checkpoints are occurring too frequently (28 seconds apart)
+2026-07-31 07:56:11.433 PDT [118932] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 07:56:11.433 PDT [118932] LOG:  checkpoint starting: wal
+2026-07-31 07:56:15.973 PDT [118998] WARNING:  replica traversal failed: [EC_INTERNAL] injected traversal replica failure before batch 1; restarting through owners
+2026-07-31 07:56:20.924 PDT [118998] WARNING:  replica traversal failed: [EC_GENERATION_MISSING] EC_RECORD_MISSING: traversal replica lacks vec_id 0xa1953764bc6a629b; restarting through owners
+2026-07-31 07:56:25.778 PDT [118998] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 07:56:25.778 PDT [118998] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_10k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_10k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_10k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 07:56:25.789 PDT [118998] ERROR:  EC_GENERATION_MISSING: ec_distann distributed-control inserts require a Published physical generation
+2026-07-31 07:56:25.789 PDT [118998] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_10k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_10k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_10k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 07:56:25.797 PDT [118998] ERROR:  EC_REPLICA_STATE: existing replica is not a complete Ready replay (Stale); run ec_distann_retire_traversal_replica(index) and ec_distann_reclaim_traversal_replica(index) before rebuilding
+2026-07-31 07:56:25.797 PDT [118998] STATEMENT:  SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)
+2026-07-31 07:56:29.463 PDT [118932] LOG:  checkpoint complete: wrote 369 buffers (2.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.662 s, sync=0.134 s, total=18.031 s; sync files=60, longest=0.040 s, average=0.003 s; distance=543225 kB, estimate=543225 kB; lsn=0/823EB2C8, redo lsn=0/643AD348
+2026-07-31 07:56:30.582 PDT [118998] WARNING:  EC_REPLICA_INVALIDATED: VACUUM durably marked the Ready coordinator traversal replica Stale and is continuing owner index maintenance
+2026-07-31 07:56:30.582 PDT [118998] CONTEXT:  while vacuuming index "dm_idx" of relation "public.task179_physical_10k_corpus"
+2026-07-31 07:56:30.621 PDT [118932] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 07:56:30.621 PDT [118932] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 07:56:30.621 PDT [118932] LOG:  checkpoint starting: wal
+2026-07-31 07:56:36.036 PDT [118998] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 07:56:36.036 PDT [118998] STATEMENT:  DELETE FROM task179_physical_10k_corpus WHERE id = $1
+2026-07-31 07:56:44.368 PDT [118998] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 07:56:44.368 PDT [118998] STATEMENT:  SELECT ec_distann_apply_record_writes(
+	                 'dm_idx'::regclass,
+	                 (
+	                     SELECT epoch_fingerprint
+	                       FROM ec_distann_active_epoch
+	                      WHERE index_oid = 'dm_idx'::regclass::oid
+	                 ),
+	                 ARRAY[$1]::bigint[]
+	             )
+2026-07-31 07:56:53.353 PDT [118932] LOG:  checkpoint complete: wrote 3573 buffers (21.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=22.098 s, sync=0.344 s, total=22.732 s; sync files=63, longest=0.197 s, average=0.006 s; distance=537864 kB, estimate=542689 kB; lsn=0/A35CCBA0, redo lsn=0/850EF560
+2026-07-31 07:56:54.178 PDT [119392] LOG:  could not receive data from client: Connection reset by peer
+2026-07-31 07:56:54.210 PDT [119394] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 07:56:54.210 PDT [119394] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_10k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_10k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_10k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 07:56:54.211 PDT [119394] LOG:  could not send data to client: Connection reset by peer
+2026-07-31 07:56:54.211 PDT [119394] FATAL:  connection to client lost
+2026-07-31 07:56:54.986 PDT [118932] LOG:  checkpoints are occurring too frequently (24 seconds apart)
+2026-07-31 07:56:54.986 PDT [118932] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 07:56:54.986 PDT [118932] LOG:  checkpoint starting: wal
+2026-07-31 07:57:00.125 PDT [119413] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 07:57:00.125 PDT [119413] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_10k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_10k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_10k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 07:57:05.005 PDT [118928] LOG:  received SIGHUP, reloading configuration files
+2026-07-31 07:57:05.006 PDT [118928] LOG:  parameter "ec_distann.replica_control_password_file" changed to "/task199-intentionally-missing-replica-control-password"
+2026-07-31 07:57:05.013 PDT [118998] ERROR:  EC_REPLICA_CONTROL: password-file metadata failed: No such file or directory (os error 2)
+2026-07-31 07:57:05.013 PDT [118998] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_10k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_10k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_10k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 07:57:05.029 PDT [118998] WARNING:  EC_REPLICA_CONTROL: side demotion failed (EC_REPLICA_CONTROL: password-file metadata failed: No such file or directory (os error 2)); continuing owner fallback without durable demotion
+2026-07-31 07:57:05.029 PDT [118998] WARNING:  replica validation failed: EC_REPLICA_RELATION_RACE: Ready replica heap is missing or DDL-locked; restarting through owners
+2026-07-31 07:57:05.071 PDT [118928] LOG:  received SIGHUP, reloading configuration files
+2026-07-31 07:57:05.071 PDT [118928] LOG:  parameter "ec_distann.replica_control_password_file" removed from configuration file, reset to default
+2026-07-31 07:57:09.027 PDT [118998] WARNING:  replica validation failed: EC_REPLICA_RELATION_RACE: Ready replica heap is missing or DDL-locked; restarting through owners
+2026-07-31 07:57:12.959 PDT [118932] LOG:  checkpoint complete: wrote 696 buffers (4.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.595 s, sync=0.112 s, total=17.974 s; sync files=72, longest=0.044 s, average=0.002 s; distance=540674 kB, estimate=542488 kB; lsn=0/C3F1D320, redo lsn=0/A60F0040
+2026-07-31 07:57:14.215 PDT [119436] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 07:57:14.215 PDT [119436] STATEMENT:  SELECT ec_distann_guard_traversal_replica_mutation(
+	                 'dm_idx'::regclass
+	             )
+2026-07-31 07:57:14.221 PDT [119438] ERROR:  canceling statement due to user request
+2026-07-31 07:57:14.221 PDT [119438] STATEMENT:  DROP INDEX dm_idx
+2026-07-31 07:57:15.025 PDT [118932] LOG:  checkpoints are occurring too frequently (21 seconds apart)
+2026-07-31 07:57:15.025 PDT [118932] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 07:57:15.025 PDT [118932] LOG:  checkpoint starting: wal
+2026-07-31 07:58:42.262 PDT [118928] LOG:  received fast shutdown request
+2026-07-31 07:58:42.269 PDT [118928] LOG:  aborting any active transactions
+2026-07-31 07:58:42.270 PDT [118928] LOG:  background worker "logical replication launcher" (PID 118937) exited with exit code 1
+2026-07-31 07:58:42.810 PDT [118932] LOG:  checkpoint complete: wrote 802 buffers (4.9%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=87.263 s, sync=0.357 s, total=87.785 s; sync files=121, longest=0.054 s, average=0.003 s; distance=543810 kB, estimate=543810 kB; lsn=0/DD899990, redo lsn=0/C7400B98
+2026-07-31 07:58:42.810 PDT [118932] LOG:  shutting down
+2026-07-31 07:58:42.812 PDT [118932] LOG:  checkpoint starting: shutdown immediate
+2026-07-31 07:58:43.049 PDT [118932] LOG:  checkpoint complete: wrote 11529 buffers (70.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 22 recycled; write=0.056 s, sync=0.094 s, total=0.240 s; sync files=28, longest=0.031 s, average=0.004 s; distance=365155 kB, estimate=525945 kB; lsn=0/DD899A08, redo lsn=0/DD899A08
+2026-07-31 07:58:43.075 PDT [118928] LOG:  database system is shut down
