@@ -957,6 +957,102 @@ async fn run_one_gateway_routing(
         .collect()
 }
 
+/// Task 210 P2b: pull a bounded head-shard copy from the shard's owner.
+pub(crate) fn remote_head_shard_export(
+    conninfo: &str,
+    index_regclass: &str,
+    epoch_fingerprint: &[u8],
+    members: &[u64],
+) -> Result<Vec<(u64, Vec<f32>)>, DistannExpandError> {
+    let wire = members
+        .iter()
+        .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let key = lifecycle_connection_key(conninfo);
+    with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            ensure_pooled_connections(connections, &[(key.clone(), conninfo)], "EC_BUILD_INCOMPLETE")
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            let rows = connections[&key]
+                .client
+                .query(
+                    "SELECT vec_id, vector FROM ec_distann_head_shard_export(
+                         $1::text::regclass, $2::bytea, $3::bigint[])",
+                    &[&index_regclass, &epoch_fingerprint, &wire],
+                )
+                .await
+                .map_err(|error| {
+                    DistannExpandError::Internal(format!("head shard export failed: {error}"))
+                })?;
+            Ok(rows
+                .into_iter()
+                .map(|row| {
+                    (
+                        u64::from_le_bytes(row.get::<_, i64>(0).to_le_bytes()),
+                        row.get::<_, Vec<f32>>(1),
+                    )
+                })
+                .collect())
+        })
+    })
+}
+
+/// Task 210 P2b: push a bounded head-shard copy to a replica node.
+pub(crate) fn remote_head_shard_import(
+    conninfo: &str,
+    index_regclass: &str,
+    epoch_fingerprint: &[u8],
+    shard_ordinal: i32,
+    shard: &[(u64, Vec<f32>)],
+    dimensions: i32,
+) -> Result<i64, DistannExpandError> {
+    let ids = shard
+        .iter()
+        .map(|(vec_id, _)| i64::from_le_bytes(vec_id.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let flat = shard
+        .iter()
+        .flat_map(|(_, vector)| vector.iter().copied())
+        .collect::<Vec<f32>>();
+    let key = lifecycle_connection_key(conninfo);
+    with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
+        runtime.block_on(async {
+            ensure_pooled_connections(connections, &[(key.clone(), conninfo)], "EC_BUILD_INCOMPLETE")
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            let row = connections[&key]
+                .client
+                .query_one(
+                    "SELECT ec_distann_head_shard_import(
+                         $1::text::regclass, $2::bytea, $3::integer,
+                         $4::bigint[], $5::real[], $6::integer)",
+                    &[
+                        &index_regclass,
+                        &epoch_fingerprint,
+                        &shard_ordinal,
+                        &ids,
+                        &flat,
+                        &dimensions,
+                    ],
+                )
+                .await
+                .map_err(|error| {
+                    DistannExpandError::Internal(format!("head shard import failed: {error}"))
+                })?;
+            Ok(row.get::<_, i64>(0))
+        })
+    })
+}
+
 pub(crate) fn remote_physical_expand_batch(
     requests: &[DistannPhysicalExpandRequest<'_>],
 ) -> Vec<Result<Vec<DistannExpandedNode>, DistannExpandError>> {

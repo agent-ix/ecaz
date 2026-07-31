@@ -1979,6 +1979,103 @@ fn ec_distann_gateway_routing_export(
     TableIterator::new(rows.into_iter())
 }
 
+/// Distribute bounded head-shard copies to §4.1 replicas (Task 210 P2b).
+///
+/// For each shard, pull its landmarks from the owner and push them to the
+/// `replica_count` following roster nodes, then record that replicas are
+/// populated for this epoch so routing may use them. Returns the number of
+/// (shard, replica) copies placed.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_populate_head_replicas(index_regclass: PgRelation, replica_count: i32) -> i64 {
+    let placed = populate_head_replicas_impl(index_regclass.oid(), replica_count)
+        .unwrap_or_else(|error| error.raise());
+    placed
+}
+
+fn populate_head_replicas_impl(
+    index_oid: pg_sys::Oid,
+    replica_count: i32,
+) -> Result<i64, DistannExpandError> {
+    let replicas = usize::try_from(replica_count).unwrap_or(0);
+    let state = PhysicalGenerationScan::open(index_oid).map_err(DistannExpandError::Internal)?;
+    let head = state
+        .head_index
+        .as_ref()
+        .ok_or_else(|| DistannExpandError::Internal("index has no persisted head".to_owned()))?;
+    let members = head.members().to_vec();
+    let owner_count = state.routes.len();
+    let dimensions = i32::from(state.descriptor.dimensions);
+    let mut placed = 0_i64;
+    if replicas > 0 && owner_count > 1 {
+        for shard in 0..owner_count {
+            let owned = super::head_sample::head_shard_members(
+                &members,
+                shard,
+                owner_count,
+                state.descriptor.placement_hash_version,
+            );
+            if owned.is_empty() {
+                continue;
+            }
+            let owner = &state.routes[shard];
+            let Some(owner_conninfo) = owner.conninfo.as_deref() else {
+                // The coordinator's own shard: read it locally.
+                continue;
+            };
+            let copy = super::remote_transport::remote_head_shard_export(
+                owner_conninfo,
+                &owner.remote_index_regclass,
+                &state.fingerprint,
+                &owned,
+            )?;
+            for offset in 1..=replicas {
+                let server = (shard + offset) % owner_count;
+                if server == shard {
+                    continue;
+                }
+                let route = &state.routes[server];
+                let Some(conninfo) = route.conninfo.as_deref() else {
+                    continue;
+                };
+                super::remote_transport::remote_head_shard_import(
+                    conninfo,
+                    &route.remote_index_regclass,
+                    &state.fingerprint,
+                    i32::try_from(shard).unwrap_or(0),
+                    &copy,
+                    dimensions,
+                )?;
+                placed += 1;
+            }
+        }
+    }
+    let table = super::generation_catalog::extension_relation_name("ec_distann_head_replica_state")
+        .map_err(DistannExpandError::Internal)?;
+    let fingerprint = state.fingerprint.to_vec();
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "INSERT INTO {table} (index_oid, epoch_fingerprint, replica_count)
+                     VALUES ($1::oid, $2::bytea, $3::integer)
+                     ON CONFLICT (index_oid, epoch_fingerprint)
+                     DO UPDATE SET replica_count = EXCLUDED.replica_count"
+                ),
+                None,
+                &[
+                    index_oid.into(),
+                    fingerprint.into(),
+                    replica_count.into(),
+                ],
+            )
+            .map_err(|error| {
+                DistannExpandError::Internal(format!("recording head replica state: {error}"))
+            })?;
+        Ok::<(), DistannExpandError>(())
+    })?;
+    Ok(placed)
+}
+
 /// Receive a bounded head-shard copy so this node can serve the shard as a
 /// §4.1 replica (Task 210 P2b).
 ///
@@ -3269,6 +3366,30 @@ impl PhysicalGenerationScan {
         })
     }
 
+    /// Whether head-shard replicas were populated for this epoch (Task 210 P2b).
+    fn head_replicas_populated(&self) -> Result<bool, String> {
+        let table =
+            super::generation_catalog::extension_relation_name("ec_distann_head_replica_state")?;
+        let fingerprint = self.fingerprint.to_vec();
+        Spi::connect(|client| {
+            let found = client
+                .select(
+                    &format!(
+                        "SELECT replica_count > 0 FROM {table}
+                          WHERE index_oid = $1::oid AND epoch_fingerprint = $2::bytea"
+                    ),
+                    None,
+                    &[self.index_oid.into(), fingerprint.into()],
+                )
+                .map_err(|error| format!("head replica state lookup failed: {error}"))?
+                .first()
+                .get::<bool>(1)
+                .unwrap_or(None)
+                .unwrap_or(false);
+            Ok::<bool, String>(found)
+        })
+    }
+
     /// Fan the FR-080 head search out across the roster (Task 210 P2a).
     ///
     /// Each owner searches the landmarks it owns under the FR-078 placement
@@ -3308,6 +3429,10 @@ impl PhysicalGenerationScan {
         // from the query digest so head CPU is not bound to one machine.
         let query_digest = physical_query_digest(query)?;
         let replica_count = super::options::head_replica_count();
+        // Routing may use a replica only for an epoch whose shard copies were
+        // actually distributed by ec_distann_populate_head_replicas (P2b).
+        let replicas_populated =
+            replica_count > 0 && self.head_replicas_populated().unwrap_or(false);
         let mut requests = Vec::with_capacity(owner_count);
         for (ordinal, owned) in per_owner_members.iter().enumerate() {
             if owned.is_empty() {
@@ -3328,7 +3453,7 @@ impl PhysicalGenerationScan {
             );
             let server = if requested_server == ordinal {
                 ordinal
-            } else if super::head_sample::head_shard_replica_holds_copy(requested_server, ordinal) {
+            } else if replicas_populated {
                 requested_server
             } else {
                 #[cfg(feature = "distann-head-attribution-benchmark")]

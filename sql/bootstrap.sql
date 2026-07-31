@@ -606,6 +606,15 @@ CREATE TABLE ec_distann_head_shard_replica (
 CREATE INDEX ec_distann_head_shard_replica_shard
     ON ec_distann_head_shard_replica (index_oid, epoch_fingerprint, shard_ordinal);
 
+-- Records that head-shard replicas were populated for an epoch, so the
+-- coordinator can route to a replica knowing it holds the shard (Task 210 P2b).
+CREATE TABLE ec_distann_head_replica_state (
+    index_oid oid NOT NULL,
+    epoch_fingerprint bytea NOT NULL,
+    replica_count integer NOT NULL CHECK (replica_count >= 0),
+    PRIMARY KEY (index_oid, epoch_fingerprint)
+);
+
 CREATE TABLE ec_distann_publish_decision (
     index_oid oid NOT NULL,
     logical_index_uuid uuid NOT NULL,
