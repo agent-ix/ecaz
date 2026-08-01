@@ -752,6 +752,38 @@ pub(crate) fn build_benchmark_head_sample(
     Ok(sample)
 }
 
+/// Canonical membership blob for the head-state row (Task 210, 005 review):
+/// u32 count then u64 vec_ids in sample order, all little-endian. This is the
+/// coordinator's entire head persistence under sharded storage — the sample
+/// table holds zero rows.
+pub(crate) fn encode_head_membership(entries: &[DistannHeadSampleEntry]) -> Result<Vec<u8>, String> {
+    let count = u32::try_from(entries.len())
+        .map_err(|_| "EC_HEAD_SAMPLE: membership count exceeds u32".to_owned())?;
+    let mut blob = Vec::with_capacity(4 + entries.len() * 8);
+    blob.extend_from_slice(&count.to_le_bytes());
+    for entry in entries {
+        blob.extend_from_slice(&entry.vec_id.to_le_bytes());
+    }
+    Ok(blob)
+}
+
+pub(crate) fn decode_head_membership(blob: &[u8], expected: usize) -> Result<Vec<u64>, String> {
+    if blob.len() < 4 {
+        return Err("EC_HEAD_SAMPLE: membership blob is truncated".to_owned());
+    }
+    let count = u32::from_le_bytes(blob[..4].try_into().expect("4 bytes")) as usize;
+    if count != expected || blob.len() != 4 + count * 8 {
+        return Err(format!(
+            "EC_HEAD_SAMPLE: membership blob carries {count} ids over {} bytes, state expects {expected}",
+            blob.len()
+        ));
+    }
+    Ok(blob[4..]
+        .chunks_exact(8)
+        .map(|chunk| u64::from_le_bytes(chunk.try_into().expect("8 bytes")))
+        .collect())
+}
+
 pub(crate) fn persist_head_sample(
     client: &mut pgrx::spi::SpiClient<'_>,
     index_oid: pg_sys::Oid,
@@ -778,10 +810,10 @@ pub(crate) fn persist_head_sample(
                      index_oid, logical_index_uuid, build_id, dimensions,
                      sample_count, head_sample_digest,
                      head_policy, training_query_count, training_query_digest,
-                     head_graph_entry, head_graph_digest
+                     head_graph_entry, head_graph_digest, membership
                  ) VALUES ($1::oid, $2::uuid, $3::uuid, $4::integer,
                            $5::integer, $6::bytea, $7::smallint, $8::integer,
-                           $9::bytea, $10::integer, $11::bytea)"
+                           $9::bytea, $10::integer, $11::bytea, $12::bytea)"
             ),
             None,
             &[
@@ -802,9 +834,21 @@ pub(crate) fn persist_head_sample(
                     .map_err(|_| "EC_HEAD_SAMPLE: graph entry exceeds integer".to_owned())?
                     .into(),
                 graph_digest.to_vec().into(),
+                if membership_only {
+                    Some(encode_head_membership(&sample.entries)?)
+                } else {
+                    None::<Vec<u8>>
+                }
+                .into(),
             ],
         )
         .map_err(|error| format!("EC_HEAD_SAMPLE: state insert failed: {error}"))?;
+    // Membership-only persistence writes zero sample rows (005 review,
+    // 2026-07-31: empty graph rows were still corpus-sized coordinator
+    // state). The blob on the state row is the whole coordinator head.
+    if membership_only {
+        return Ok(());
+    }
     for (ordinal, entry) in sample.entries.iter().enumerate() {
         client
             .update(
@@ -873,6 +917,7 @@ pub(crate) fn load_head_sample(
         stored_training_digest,
         graph_entry,
         stored_graph_digest,
+        stored_membership,
     ) = Spi::connect(|client| {
         client
             .select(
@@ -881,7 +926,8 @@ pub(crate) fn load_head_sample(
                             state.sample_count, state.head_sample_digest,
                             state.head_policy, state.training_query_count,
                             state.training_query_digest,
-                            state.head_graph_entry, state.head_graph_digest
+                            state.head_graph_entry, state.head_graph_digest,
+                            state.membership
                        FROM {candidate} candidate
                        JOIN {state} state USING (index_oid, logical_index_uuid, build_id)
                       WHERE candidate.index_oid = $1::oid
@@ -925,6 +971,7 @@ pub(crate) fn load_head_sample(
                     row["head_graph_digest"]
                         .value::<Vec<u8>>()?
                         .ok_or("graph digest NULL")?,
+                    row["membership"].value::<Vec<u8>>()?,
                 ))
             })
             .next()
@@ -970,7 +1017,25 @@ pub(crate) fn load_head_sample(
     if (manifest.global_record_count == 0) != (sample_count == 0) {
         return Err("EC_HEAD_SAMPLE: empty/nonempty state disagrees with manifest".to_owned());
     }
-    let entries = Spi::connect(|client| {
+    // Membership-only shape (005 review): the state row's blob is the whole
+    // coordinator head — zero sample rows, no persisted topology. Entries are
+    // reconstructed with empty vectors and empty neighbour lists, which is
+    // exactly what the sharded read path consumes (members only).
+    let entries = if let Some(blob) = stored_membership.as_deref() {
+        decode_head_membership(blob, sample_count)?
+            .into_iter()
+            .map(|vec_id| {
+                (
+                    DistannHeadSampleEntry {
+                        vec_id,
+                        vector: Vec::new(),
+                    },
+                    Vec::new(),
+                )
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Spi::connect(|client| {
         client
             .select(
                 &format!(
@@ -1012,7 +1077,8 @@ pub(crate) fn load_head_sample(
             })
             .collect::<Result<Vec<_>, Box<dyn std::error::Error + Send + Sync>>>()
             .map_err(|error| format!("EC_HEAD_SAMPLE: row decode failed: {error}"))
-    })?;
+        })?
+    };
     if entries.len() != sample_count {
         return Err("EC_HEAD_SAMPLE: row count differs from persisted state".to_owned());
     }

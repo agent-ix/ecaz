@@ -555,6 +555,11 @@ CREATE TABLE ec_distann_generation_head_state (
     training_query_digest bytea NOT NULL CHECK (octet_length(training_query_digest) = 32),
     head_graph_entry integer NOT NULL CHECK (head_graph_entry >= 0),
     head_graph_digest bytea NOT NULL CHECK (octet_length(head_graph_digest) = 32),
+    -- Membership-only head (NFR-021 clause 3, Task 210): the coordinator's
+    -- entire head persistence is this bounded id list (u32 count + u64 ids,
+    -- canonical LE); the sample table then holds zero rows for the build.
+    -- NULL is the legacy full-vector shape.
+    membership bytea CHECK (membership IS NULL OR octet_length(membership) = 4 + 8 * sample_count),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (index_oid, logical_index_uuid, build_id),
     CHECK (
