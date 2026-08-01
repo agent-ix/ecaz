@@ -9,8 +9,24 @@ should land against the remediated structure where sequencing allows.
 ## Why
 
 The ec_distann spec set has drifted below the standard the SPIRE docs hold,
-and reviews increasingly route around it to the code. Known gaps, from
-comparison against the SPIRE documentation set:
+and reviews increasingly route around it to the code. Two structural
+problems and a list of content gaps:
+
+- **The spec is not verified against the implementation.** ec_distann has
+  moved fast (Tasks 179–213: epochs, physical shards, sharded/membership-only
+  head, replicas, gateway copies, the NFR-021 ratchet), and the FRs were
+  amended reactively. Nothing has walked the code and confirmed every FR/NFR
+  still describes what ships — Task 203 already found four axes of
+  paper-vs-code drift, and spec-vs-code drift is the same failure one layer
+  down.
+- **The spec is buried.** SPIRE owns a top-level functional directory
+  (`spec/functional/spire/` with its own `index.md`, domain model, and
+  `local/`/`distributed/`/`storage/`/`operations/` structure) while
+  ec_distann — the fifth access method and the current program focus — sits
+  at `spec/functional/index/distann/` as a subdirectory of the generic index
+  specs.
+
+Known content gaps, from comparison against the SPIRE documentation set:
 
 - **Missing internal table descriptions.** The extension owns a substantial
   catalog surface (`ec_distann_generation`, `_generation_head_state` — now
@@ -31,31 +47,50 @@ comparison against the SPIRE documentation set:
 
 ## Goal
 
-The ec_distann spec set is structurally at parity with the SPIRE docs:
-internal tables described, core flows diagrammed, requirement text normative
-and concise, and the whole set passing `/spec-review` cleanly.
+The ec_distann spec set is **verified current against the implementation**,
+lives at a **top-level directory peer to SPIRE**
+(`spec/functional/distann/`), and is structurally at parity with the SPIRE
+docs: internal tables described, core flows diagrammed, requirement text
+normative and concise, the whole set passing `/spec-review` cleanly.
 
 ## Phases
 
-- **P0 — inventory.** Enumerate the ec_distann spec/doc surface against the
-  SPIRE set; produce the gap list (tables, diagrams, verbosity items) as the
-  packet's working inventory. `/spec-review` (and, where useful,
-  `/spec-integrity-analysis`, `/spec-object-review`) to seed findings rather
-  than hand-auditing.
-- **P1 — internal tables.** Author the table descriptions via `/specify`
+- **P0 — full spec-vs-code examination.** Walk the ec_distann implementation
+  (`src/am/ec_distann/`, the SQL surface, the catalog DDL, the suite/fixture
+  conformance machinery) against every distann FR/NFR/ADR and itemise drift:
+  behavior shipped but unspecified, specified but changed, specified but
+  removed. Recent known deltas to fold in rather than rediscover: sharded +
+  membership-only head as the default with the state-row membership blob
+  (Task 210 round 2), replica serving with the members-derived shard
+  ordinal, attested replica population, gateway copies and their capacity
+  semantics, the NFR-021 storage classes and the closed-allowlist ratchet,
+  and the fused-hop/crown surface arriving from Tasks 212/213. Use
+  `/implementation-gap-analysis` and `/spec-review` to seed the audit rather
+  than hand-walking alone. Output: the packet's drift+gap inventory — the
+  work list for every later phase.
+- **P1 — elevation.** Move `spec/functional/index/distann/` to
+  `spec/functional/distann/` as a peer of `spec/functional/spire/`, with its
+  own `index.md`, a domain-model anchor (SPIRE's `FR-048` pattern), and
+  SPIRE-style substructure where the content warrants it; fix every
+  cross-reference (specs, ADRs, tasks, review packets, code comments that
+  cite spec paths).
+- **P2 — spec updates from the P0 inventory.** Amend or author the drifted
+  FRs/NFRs via `/specify`, validated with `/spec-review`.
+- **P3 — internal tables.** Author the table descriptions via `/specify`
   (catalog/object docs): schema, invariants, writers/readers, lifecycle,
   epoch-scoping, conformance class of each relation (the NFR-021 storage
   classes now in the emitter: `coordinator_resident_unsharded`, `bounded`,
   `control`).
-- **P2 — diagrams.** Sequence/process diagrams for the flows above, stored
+- **P4 — diagrams.** Sequence/process diagrams for the flows above, stored
   with the spec set in the repo's diagram convention.
-- **P3 — verbosity pass.** Tighten overly narrative requirement texts;
+- **P5 — verbosity pass.** Tighten overly narrative requirement texts;
   history moves to links. Each touched artifact re-validated with
   `/spec-review`.
 
 ## Output
 
 Spec commits per phase plus a review packet under `reviews/task-214/`
-tracking the inventory and its burn-down. No benchmark gate — this task
-changes no quantizer/index/scan/storage behavior; closeout is the clean
+tracking the P0 drift+gap inventory and its burn-down. No benchmark gate —
+this task changes no quantizer/index/scan/storage behavior; closeout is the
+P0 inventory fully burned down, the set relocated, and a clean
 `/spec-review` pass over the touched set.
