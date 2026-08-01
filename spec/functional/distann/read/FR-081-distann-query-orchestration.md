@@ -32,7 +32,7 @@ neighbors into the beam and exact distances into the result heap.
   bar only when the current proven prefix cannot satisfy the executor.
 - Per hop round the coordinator SHALL: select the best BW unvisited beam
   candidates; group them by owning node
-  ([FR-078](./FR-078-distann-hash-placement.md)); issue the per-node
+  ([FR-078](../build/FR-078-distann-hash-placement.md)); issue the per-node
   expansion calls in parallel over the pooled transport (operational/security
   posture per [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md),
   the lifted SPIRE transport contract); derive `t = peek_worst(H_C)` from the
@@ -99,5 +99,5 @@ neighbors into the beam and exact distances into the result heap.
 - **Upstream**: [FR-079](./FR-079-distann-remote-expansion-protocol.md),
   [FR-080](./FR-080-distann-coordinator-head-index.md); ADR-085 decision D9
   (termination rule)
-- **Downstream**: [FR-083](./FR-083-distann-dml-path.md); the bench gate
+- **Downstream**: [FR-083](../lifecycle/FR-083-distann-dml-path.md); the bench gate
   ([NFR-017](../../../non-functional/NFR-017-distann-latency-recall-gate.md))

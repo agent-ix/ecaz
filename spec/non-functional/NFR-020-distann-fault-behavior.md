@@ -149,8 +149,8 @@ forced retirement remains an explicit audited non-active-epoch override.
 
 ## Dependencies
 
-- **Upstream**: [FR-078](../functional/index/distann/FR-078-distann-hash-placement.md),
-  [FR-079](../functional/index/distann/FR-079-distann-remote-expansion-protocol.md),
-  [FR-081](../functional/index/distann/FR-081-distann-query-orchestration.md),
-  [FR-082](../functional/index/distann/FR-082-distann-epoch-lifecycle.md), and
-  [FR-083](../functional/index/distann/FR-083-distann-dml-path.md)
+- **Upstream**: [FR-078](../functional/distann/build/FR-078-distann-hash-placement.md),
+  [FR-079](../functional/distann/read/FR-079-distann-remote-expansion-protocol.md),
+  [FR-081](../functional/distann/read/FR-081-distann-query-orchestration.md),
+  [FR-082](../functional/distann/lifecycle/FR-082-distann-epoch-lifecycle.md), and
+  [FR-083](../functional/distann/lifecycle/FR-083-distann-dml-path.md)

@@ -15,8 +15,8 @@ git diff --check 5fbb37f46..d6a1ca450
 test -f reviews/task-180/002-100k-attribution-screen/request.md
 test -f reviews/task-180/003-full-scale-decision/request.md
 test -f reviews/task-179/048-persisted-head-ab/request.md
-test -f spec/functional/index/distann/FR-080-distann-coordinator-head-index.md
-test -f spec/functional/index/distann/FR-081-distann-query-orchestration.md
+test -f spec/functional/distann/read/FR-080-distann-coordinator-head-index.md
+test -f spec/functional/distann/read/FR-081-distann-query-orchestration.md
 test -f spec/non-functional/NFR-007-benchmark-provenance.md
 test -f spec/non-functional/NFR-017-distann-latency-recall-gate.md
 test -f spec/non-functional/NFR-018-distann-space-amplification.md

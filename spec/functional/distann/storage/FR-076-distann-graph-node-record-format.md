@@ -18,8 +18,8 @@ by a global `vec_id`, containing everything a single read needs to score and
 expand the node during beam search: a coarse search code, the adjacency list,
 and a compressed code for each neighbor. The record SHALL NOT store the
 full-precision vector; the exact distance of an expanded node is computed
-from its co-placed epoch row ([FR-078](./FR-078-distann-hash-placement.md),
-[FR-079](./FR-079-distann-remote-expansion-protocol.md)), so the corpus
+from its co-placed epoch row ([FR-078](../build/FR-078-distann-hash-placement.md),
+[FR-079](../read/FR-079-distann-remote-expansion-protocol.md)), so the corpus
 vectors live once in the row tier and are never duplicated into the index
 (ADR-085 decision D11). Records SHALL be self-describing and epoch-versioned.
 
@@ -50,7 +50,7 @@ fields:
 | record_version | u16 | Exactly 1, little-endian at byte offset 0; unknown and byte-swapped versions reject before any other field is interpreted |
 | flags | u16 | Bit 0 = tombstone (deleted, retained until vacuum) |
 | vec_id | u64 | Global identity derived from the ADR-068 source-identity contract; unique per logical row across all nodes and epochs |
-| heap_tid | ItemPointer | Owner-local epoch-row-tier tuple; the co-placed row it resolves ([FR-078](./FR-078-distann-hash-placement.md)) is the source of the node's full-precision vector for exact rerank and the frozen source payload for final materialization ([FR-079](./FR-079-distann-remote-expansion-protocol.md)) |
+| heap_tid | ItemPointer | Owner-local epoch-row-tier tuple; the co-placed row it resolves ([FR-078](../build/FR-078-distann-hash-placement.md)) is the source of the node's full-precision vector for exact rerank and the frozen source payload for final materialization ([FR-079](../read/FR-079-distann-remote-expansion-protocol.md)) |
 | neighbor_count | u16 | ≤ `graph_degree` (R) |
 | search_code | byte[code_stride] | One `neighbor_code_format` code for this node's own vector; scores the node when it enters the beam without a heap read |
 | neighbor_vec_ids | u64[R] | First `neighbor_count` slots are the adjacency list; unused slots are zero |
@@ -71,7 +71,7 @@ prefix `(0x09, 0x00)` byte-collides with that legacy local tuple prefix.
 ## Handoff Entry Layout
 
 The coordinator-to-owner handoff in
-[FR-078](./FR-078-distann-hash-placement.md) SHALL use a versioned canonical
+[FR-078](../build/FR-078-distann-hash-placement.md) SHALL use a versioned canonical
 entry that contains no node-local physical locator. The owning node allocates
 the epoch-row-tier tuple first and writes the resulting local `ItemPointer`
 into the persisted graph-node record.
@@ -141,13 +141,13 @@ batch envelope.
   cross-node references never alias distinct rows. The derivation (hash64
   with collision handling vs dense per-epoch assignment) is fixed by
   ADR-085 decision D6. Placement
-  ([FR-078](./FR-078-distann-hash-placement.md)) consumes this identity.
+  ([FR-078](../build/FR-078-distann-hash-placement.md)) consumes this identity.
 - Expanding a record SHALL require exactly one index-record read to score all
   its neighbors: neighbor scoring uses the embedded codes, never a secondary
   lookup. The expanded node's exact distance SHALL come from a single read of
   its co-placed epoch row (via `heap_tid`), not from any vector stored in the
-  record ([FR-079](./FR-079-distann-remote-expansion-protocol.md)); both reads
-  are node-local (the epoch row is co-placed by [FR-078](./FR-078-distann-hash-placement.md)),
+  record ([FR-079](../read/FR-079-distann-remote-expansion-protocol.md)); both reads
+  are node-local (the epoch row is co-placed by [FR-078](../build/FR-078-distann-hash-placement.md)),
   so expansion adds no network round-trip.
 - The record SHALL NOT carry the full-precision vector. The single
   authoritative copy of each vector lives in the co-placed epoch row tier; the
@@ -191,9 +191,9 @@ batch envelope.
 
 ## Dependencies
 
-- **Upstream**: [FR-075](./FR-075-ec-distann-access-method-surface.md); the
+- **Upstream**: [FR-075](../FR-075-ec-distann-access-method-surface.md); the
   ADR-068 source-identity contract; ADR-085 decisions D1 (code duplication),
   D6 (vec_id derivation), D7 (codec choice), D11 (co-placed heap rerank)
-- **Downstream**: [FR-077](./FR-077-distann-sharded-build-and-stitch.md),
-  [FR-078](./FR-078-distann-hash-placement.md) (co-places the heap row),
-  [FR-079](./FR-079-distann-remote-expansion-protocol.md)
+- **Downstream**: [FR-077](../build/FR-077-distann-sharded-build-and-stitch.md),
+  [FR-078](../build/FR-078-distann-hash-placement.md) (co-places the heap row),
+  [FR-079](../read/FR-079-distann-remote-expansion-protocol.md)

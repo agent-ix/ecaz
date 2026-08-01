@@ -112,7 +112,7 @@ select a smaller codec, or use the D1 fallback layout.
 
 ## Dependencies
 
-- **Upstream**: [FR-076](../functional/index/distann/FR-076-distann-graph-node-record-format.md),
-  [FR-078](../functional/index/distann/FR-078-distann-hash-placement.md) (co-placed
+- **Upstream**: [FR-076](../functional/distann/storage/FR-076-distann-graph-node-record-format.md),
+  [FR-078](../functional/distann/build/FR-078-distann-hash-placement.md) (co-placed
   heap tier — the 1.0× ratio denominator); ADR-085 decisions D1 (duplication),
   D7 (codec), and D11 (co-placed heap rerank / lean record)

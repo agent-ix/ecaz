@@ -29,7 +29,7 @@ that Tasks 162–167 can implement without re-deriving decisions.
 
 ## Scope
 
-- `/specify`: StR-008; FR-075..FR-083 (`spec/functional/index/distann/`);
+- `/specify`: StR-008; FR-075..FR-083 (`spec/functional/distann/`);
   NFR-017..NFR-020; ADR-085; index updates. DONE (commit 3c4a22b26).
 - `/spec-matrix`: TC-037..TC-044 + permutation/boundary/edge rows in
   `spec/tests.md`. DONE (3d9efbada).

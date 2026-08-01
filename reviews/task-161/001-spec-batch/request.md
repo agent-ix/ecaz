@@ -18,7 +18,7 @@ partitioned-routing rejection; operator-approved plan and decisions
 
 ## Contents
 
-- `spec/stakeholder/StR-008-*`, `spec/functional/index/distann/FR-075..083`,
+- `spec/stakeholder/StR-008-*`, `spec/functional/distann/FR-075..083`,
   `spec/non-functional/NFR-017..020`, `spec/adr/ADR-085-*` (+ index files)
 - `spec/tests.md`: TC-037..TC-044, distann permutation/boundary rows,
   EC-019..EC-023

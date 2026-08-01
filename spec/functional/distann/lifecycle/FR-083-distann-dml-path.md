@@ -73,7 +73,7 @@ only incremental distributed insert is the final milestone.
   amendment with per-record `robust_prune` re-pruning executed on the owning
   node), epoch-fingerprint-validated like FR-079, with per-record atomicity.
   A new-record append SHALL co-place the record and its frozen source row on the same
-  hash-owned node atomically ([FR-078](./FR-078-distann-hash-placement.md)),
+  hash-owned node atomically ([FR-078](../build/FR-078-distann-hash-placement.md)),
   so FR-079 exact rerank of a freshly inserted vec_id always has a
   node-local vector and final tuple payload. `aminsert`/`ambulkdelete` run on the
   coordinator and drive this endpoint; degree re-pruning executes on the
@@ -82,7 +82,7 @@ only incremental distributed insert is the final milestone.
   or mutation, SHALL revoke `PUBLIC` execute, and SHALL use the same fixed
   SECURITY DEFINER search path as the FR-079 remote endpoint class.
 - **Incremental distributed insert (committed scope, final milestone)**:
-  `aminsert` SHALL run the [FR-081](./FR-081-distann-query-orchestration.md)
+  `aminsert` SHALL run the [FR-081](../read/FR-081-distann-query-orchestration.md)
   beam search for the new vector, select its edges with `robust_prune`,
   write the new record **and its co-placed frozen source-row payload**
   to its hash-owned node, and apply back-edges to
@@ -117,6 +117,6 @@ only incremental distributed insert is the final milestone.
 
 ## Dependencies
 
-- **Upstream**: [FR-077](./FR-077-distann-sharded-build-and-stitch.md),
+- **Upstream**: [FR-077](../build/FR-077-distann-sharded-build-and-stitch.md),
   [FR-082](./FR-082-distann-epoch-lifecycle.md); ADR-085 decision D5
 - **Downstream**: program milestone M5 (incremental insert task)

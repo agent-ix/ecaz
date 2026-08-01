@@ -59,7 +59,7 @@ flowchart LR
 - The source-row payload SHALL include the full-precision indexed vector and
   every non-dropped source attribute from the same MVCC build snapshot.
 - The build SHALL encode the source-row payload as the versioned handoff entry
-  from [FR-076](./FR-076-distann-graph-node-record-format.md).
+  from [FR-076](../storage/FR-076-distann-graph-node-record-format.md).
 - The build SHALL carry one source-row payload per vec_id rather than one per
   neighbor or closure-overlap copy.
 - The full build (shard assignment, per-shard builds, stitch) SHALL be
@@ -94,7 +94,7 @@ flowchart LR
 
 ## Dependencies
 
-- **Upstream**: [FR-076](./FR-076-distann-graph-node-record-format.md);
+- **Upstream**: [FR-076](../storage/FR-076-distann-graph-node-record-format.md);
   ADR-085 decision D8 (stitch memory bound)
 - **Downstream**: [FR-078](./FR-078-distann-hash-placement.md),
-  [FR-080](./FR-080-distann-coordinator-head-index.md)
+  [FR-080](../read/FR-080-distann-coordinator-head-index.md)

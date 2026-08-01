@@ -1,7 +1,7 @@
 # Design proposal — FR-082 ec_distann epoch lifecycle (Task 165 AC-2)
 
 **Status:** proposed design for the remaining M3 acceptance criteria. Read
-alongside `spec/functional/index/distann/FR-082-distann-epoch-lifecycle.md`
+alongside `spec/functional/distann/lifecycle/FR-082-distann-epoch-lifecycle.md`
 (6 sub-ACs) and `/tmp/distann-build-4.md`. This is the design pass that must
 precede coding the FR-082 subsystem; it is not yet implemented.
 

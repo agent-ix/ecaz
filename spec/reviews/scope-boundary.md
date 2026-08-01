@@ -2,7 +2,7 @@
 id: SR-007
 type: SpecReview
 analysis: scope-boundary
-scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085 (re-run at d25ea9e0c: co-placed heap rerank tier, ADR-085 D11; dispositions reconciled at b19551e21)"
+scope: "StR-008; FR-075..FR-083 (spec/functional/distann); NFR-017..NFR-020; ADR-085 (re-run at d25ea9e0c: co-placed heap rerank tier, ADR-085 D11; dispositions reconciled at b19551e21)"
 review_set: all
 title: "Scope and Boundary Analysis: ec_distann Spec Batch"
 ---

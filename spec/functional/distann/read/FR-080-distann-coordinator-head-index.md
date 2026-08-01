@@ -27,7 +27,7 @@ in the correct region of the global graph.
   BFS-near the medoid, not a layered structure. The sample SHALL be
   persisted with the epoch as an epoch-versioned object in the index
   relation, listed in the epoch manifest alongside placement metadata
-  ([FR-082](./FR-082-distann-epoch-lifecycle.md)). A single-shard
+  ([FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md)). A single-shard
   (monolithic) build is the degenerate case: one medoid, one BFS sample.
 - An explicit `training_landmarks_exact` generation MAY instead select the same
   bounded cap from exactly 200 ordered, finite, dimension-matched training
@@ -82,7 +82,7 @@ in the correct region of the global graph.
 
 ## Dependencies
 
-- **Upstream**: [FR-077](./FR-077-distann-sharded-build-and-stitch.md);
+- **Upstream**: [FR-077](../build/FR-077-distann-sharded-build-and-stitch.md);
   ADR-085 decision D3 (C policy)
 - **Downstream**: [FR-081](./FR-081-distann-query-orchestration.md)
 

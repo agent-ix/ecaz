@@ -34,7 +34,7 @@ roster participant plus its canonical manifest.
 - The globally sorted stitched stream from
   [FR-077](./FR-077-distann-sharded-build-and-stitch.md), encoded as
   `distann_epoch_handoff_entry` values from
-  [FR-076](./FR-076-distann-graph-node-record-format.md).
+  [FR-076](../storage/FR-076-distann-graph-node-record-format.md).
 - One build identifier, epoch identifier, ordered roster, placement-hash
   version, row-schema fingerprint, format/codec identity, expected global
   record count, expected canonical content digest, and immutable pre-handoff
@@ -558,7 +558,7 @@ NOT reinterpret artifact-v1 bytes.
   `EC_UNSUPPORTED_PROJECTION` unless a later FR defines their distributed
   identity.
 - A Published row-tier tuple SHALL remain immutable until its epoch is retired
-  under [FR-082](./FR-082-distann-epoch-lifecycle.md).
+  under [FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md).
 - `distributed_control=true` SHALL always create an AM-owned frozen row tier,
   including a one-owner degenerate roster. Only the legacy
   `distributed_control=false` single-node lane MAY reference an indexed
@@ -760,7 +760,7 @@ conninfo, secret reference, PostgreSQL OID, or local physical locator.
   immutable begin/replay identities complete; overlapping handoff with stitch
   output is deferred to a later version.
 - The final epoch-manifest digest SHALL be computed only after all Ready
-  receipts exist under [FR-082](./FR-082-distann-epoch-lifecycle.md).
+  receipts exist under [FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md).
 - PostgreSQL WAL SHALL preserve every acknowledged batch across backend or
   instance restart.
 - An unacknowledged transaction SHALL disappear during PostgreSQL crash
@@ -864,9 +864,9 @@ directory_bytes bigint, control_index_bytes bigint)`
 
 ## Dependencies
 
-- **Upstream**: [FR-076](./FR-076-distann-graph-node-record-format.md),
+- **Upstream**: [FR-076](../storage/FR-076-distann-graph-node-record-format.md),
   [FR-077](./FR-077-distann-sharded-build-and-stitch.md), and
   [NFR-014](../../../non-functional/NFR-014-spire-transport-security-and-operations.md)
-- **Downstream**: [FR-079](./FR-079-distann-remote-expansion-protocol.md),
-  [FR-082](./FR-082-distann-epoch-lifecycle.md), and
+- **Downstream**: [FR-079](../read/FR-079-distann-remote-expansion-protocol.md),
+  [FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md), and
   [NFR-020](../../../non-functional/NFR-020-distann-fault-behavior.md)

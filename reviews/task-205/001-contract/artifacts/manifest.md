@@ -5,8 +5,8 @@
   `reviews/task-203/001-decision-reaudit/artifacts/commit-bundling-note.md`).
 - Follow-up ABI wiring checkpoint: `615fd72b2d6d31d7bec9020eabcfa8fa34d39a68`.
 - Task bucket/packet: `reviews/task-205/001-contract/`.
-- Contract files: `spec/functional/index/distann/FR-079-distann-remote-expansion-protocol.md`
-  and `spec/functional/index/distann/FR-081-distann-query-orchestration.md`.
+- Contract files: `spec/functional/distann/read/FR-079-distann-remote-expansion-protocol.md`
+  and `spec/functional/distann/read/FR-081-distann-query-orchestration.md`.
 - Timestamp: 2026-07-29 America/Los_Angeles.
 
 The contract adds `candidate_limit` to the expansion wire/API shape and defines

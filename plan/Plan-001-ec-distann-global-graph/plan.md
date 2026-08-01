@@ -42,7 +42,7 @@ rerank (ADR-085 D11), coordinator head index, and H batched hop-rounds of
 remote expansion.
 
 Normative sources: `spec/stakeholder/StR-008-*`, FR-075..FR-083
-(`spec/functional/index/distann/`), NFR-017..NFR-020, ADR-085 (D1–D11),
+(`spec/functional/distann/`), NFR-017..NFR-020, ADR-085 (D1–D11),
 TC-037..TC-044 / EC-019..EC-027 (`spec/tests.md`), and the **M0–M5 milestone
 table** in `plan/design/distann-global-graph-architecture.md`. Operational
 task files: `plan/tasks/162..167-*.md` (M0=162 … M5=167). Task 168's

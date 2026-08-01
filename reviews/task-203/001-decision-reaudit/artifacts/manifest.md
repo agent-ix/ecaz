@@ -61,7 +61,7 @@ head index 2.5 billion vectors over a 50 billion vector slice. Figure 4 grid:
 | replica expander discards `_code_threshold` | `src/am/ec_distann/traversal_replica.rs:2455-2458` |
 | only the legacy expander honors it | `src/am/ec_distann/expand.rs:127-137` |
 | wire SQL and bound params (physical) | `src/am/ec_distann/remote_transport.rs:567`, `:938-946` |
-| `code_threshold` defaults NULL, outside correctness guarantees | `spec/functional/index/distann/FR-079-distann-remote-expansion-protocol.md:45-47`, `:115-123` |
+| `code_threshold` defaults NULL, outside correctness guarantees | `spec/functional/distann/read/FR-079-distann-remote-expansion-protocol.md:45-47`, `:115-123` |
 | FND-006 resolution | `spec/reviews/failure-domain.md:40` |
 | exact distance owner-side | `FR-079:97-106`; `generation_read.rs:3103`, `:3139`, `:3192-3194` |
 | owner-side scoring present (conformant) | `generation_read.rs:3182-3190` |
@@ -84,7 +84,7 @@ head index 2.5 billion vectors over a 50 billion vector slice. Figure 4 grid:
 | head coordinator-local only | `src/am/ec_distann/generation_read.rs:2318` |
 | thread-local 2-entry epoch cache | `src/am/ec_distann/generation_read.rs:261-277` |
 | `TRAINED_HEAD_SEED_COUNT = 32` | `src/am/ec_distann/head_sample.rs:20` |
-| FR-080 claims per-shard union (unimplemented) | `spec/functional/index/distann/FR-080-distann-coordinator-head-index.md:22-27` |
+| FR-080 claims per-shard union (unimplemented) | `spec/functional/distann/read/FR-080-distann-coordinator-head-index.md:22-27` |
 | FR-080 claims 2-entry LRU with 4-tuple key | `FR-080:44-52` vs `src/am/ec_distann/head_cache.rs:75-106` |
 | `HEAD-11` unmeasured, `HEAD-12` deferred | `plan/design/ec-distann-recall-latency-roadmap.md:226-227` |
 
@@ -92,11 +92,11 @@ head index 2.5 billion vectors over a 50 billion vector slice. Figure 4 grid:
 
 | Claim | Source |
 | --- | --- |
-| replica holds full-precision vector per vec_id | `src/am/ec_distann/traversal_replica.rs:275-283`; `spec/functional/index/distann/FR-084-...md:26-28` |
+| replica holds full-precision vector per vec_id | `src/am/ec_distann/traversal_replica.rs:275-283`; `spec/functional/distann/FR-084-...md:26-28` |
 | replica columns | `src/am/ec_distann/traversal_replica.rs:448-464` |
 | NFR-017 excludes replicated full index from satisfying the gate | `spec/non-functional/NFR-017-distann-latency-recall-gate.md:38-39` |
 | NFR-018 excludes the lane; `non-owner graph records = 0` | `spec/non-functional/NFR-018-...md:36`, `:62`, verification duty `:66` — **all at `78b46889c`, before this packet's amendment renumbered the file** |
-| FR-078 coordinator stores only its own shard | `spec/functional/index/distann/FR-078-distann-hash-placement.md:492-501` |
+| FR-078 coordinator stores only its own shard | `spec/functional/distann/build/FR-078-distann-hash-placement.md:492-501` |
 | ADR-086 cites no NFR; acknowledges linear per-coordinator amplification | `spec/adr/ADR-086-ec-distann-coordinator-traversal-replica.md:163-166` |
 | ADR-086 per-coordinator storage ceiling | `ADR-086:79-86`; measured result `:144-147` |
 | ADR-067 storage-scale-out rejection rationale | `spec/adr/ADR-067-spire-customscan-distributed-scan.md:47-51`, `:198` |

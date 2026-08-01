@@ -23,7 +23,7 @@ problems and a list of content gaps:
   (`spec/functional/spire/` with its own `index.md`, domain model, and
   `local/`/`distributed/`/`storage/`/`operations/` structure) while
   ec_distann — the fifth access method and the current program focus — sits
-  at `spec/functional/index/distann/` as a subdirectory of the generic index
+  at `spec/functional/distann/` as a subdirectory of the generic index
   specs.
 
 Known content gaps, from comparison against the SPIRE documentation set:
@@ -68,7 +68,7 @@ normative and concise, the whole set passing `/spec-review` cleanly.
   `/implementation-gap-analysis` and `/spec-review` to seed the audit rather
   than hand-walking alone. Output: the packet's drift+gap inventory — the
   work list for every later phase.
-- **P1 — elevation.** Move `spec/functional/index/distann/` to
+- **P1 — elevation.** Move `spec/functional/distann/` to
   `spec/functional/distann/` as a peer of `spec/functional/spire/`, with its
   own `index.md`, a domain-model anchor (SPIRE's `FR-048` pattern), and
   SPIRE-style substructure where the content warrants it; fix every

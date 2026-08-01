@@ -48,8 +48,8 @@ durable record instead.
 | `src/am/ec_distann/expand.rs` | legacy expander kept consistent |
 | `src/am/ec_distann/remote_transport.rs`, `remote_endpoint.rs` | wire contract for `candidate_limit` |
 | `src/am/ec_distann/traversal_replica.rs` | replica expander signature |
-| `spec/functional/index/distann/FR-079-distann-remote-expansion-protocol.md` | candidate-limit and owner-side prune/sort/truncate contract |
-| `spec/functional/index/distann/FR-081-distann-query-orchestration.md` | per-round threshold derivation |
+| `spec/functional/distann/read/FR-079-distann-remote-expansion-protocol.md` | candidate-limit and owner-side prune/sort/truncate contract |
+| `spec/functional/distann/read/FR-081-distann-query-orchestration.md` | per-round threshold derivation |
 
 ## For the Task 204 and 205 coders
 

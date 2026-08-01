@@ -3,7 +3,7 @@ id: SR-002
 title: Failure-Domain Analysis of the ec_distann Spec Batch
 type: SpecReview
 analysis: failure-domain
-scope: "spec/functional/index/distann/, spec/non-functional/NFR-017..020, spec/adr/ADR-085, StR-008; re-run against revision d25ea9e0c (co-placed heap rerank, lean record — FR-076/078/079, ADR-085 D11, NFR-018); reconciled at b19551e21 (every finding dispositioned, both former highs downgraded and addressed)"
+scope: "spec/functional/distann/, spec/non-functional/NFR-017..020, spec/adr/ADR-085, StR-008; re-run against revision d25ea9e0c (co-placed heap rerank, lean record — FR-076/078/079, ADR-085 D11, NFR-018); reconciled at b19551e21 (every finding dispositioned, both former highs downgraded and addressed)"
 review_set: all
 ---
 # SR-002: Failure-Domain Analysis — ec_distann Spec Batch

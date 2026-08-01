@@ -170,9 +170,9 @@ a conforming optimization rather than a return to a non-conforming path.
 ## Dependencies
 
 - **Upstream**: [StR-008](../stakeholder/StR-008-distributed-search-single-instance-economics.md)
-- **Constrains**: [FR-078](../functional/index/distann/FR-078-distann-hash-placement.md),
-  [FR-080](../functional/index/distann/FR-080-distann-coordinator-head-index.md),
-  [FR-084](../functional/index/distann/FR-084-distann-coordinator-traversal-replica.md)
+- **Constrains**: [FR-078](../functional/distann/build/FR-078-distann-hash-placement.md),
+  [FR-080](../functional/distann/read/FR-080-distann-coordinator-head-index.md),
+  [FR-084](../functional/distann/read/FR-084-distann-coordinator-traversal-replica.md)
 - **Related**: [NFR-018](./NFR-018-distann-space-amplification.md) (summed
   storage budget; NFR-021 supplies the per-node term),
   [NFR-019](./NFR-019-distann-per-query-touch-bound.md) (per-query work bound),

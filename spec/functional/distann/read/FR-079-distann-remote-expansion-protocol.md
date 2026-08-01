@@ -78,9 +78,9 @@ entry.
   vec_id. It SHALL perform exactly one co-located exact-vector row-tier read for
   each live requested record and MAY omit that read for a tombstoned record.
 - Neighbor scoring SHALL use only the embedded neighbor codes from
-  [FR-076](./FR-076-distann-graph-node-record-format.md).
+  [FR-076](../storage/FR-076-distann-graph-node-record-format.md).
   Both reads are node-local — the epoch row is co-placed by
-  [FR-078](./FR-078-distann-hash-placement.md) — so the call remains one
+  [FR-078](../build/FR-078-distann-hash-placement.md) — so the call remains one
   network round-trip per node per hop round with no separate rerank
   round-trip.
 - Requested vec_ids SHALL resolve to exactly one of four defined outcomes:
@@ -91,14 +91,14 @@ entry.
   co-placed vector missing or unreadable (`heap_tid` resolves nothing under
   the epoch) → structural fault error, distinct code from (c). Within a
   published epoch neither records nor the vector tier are physically
-  reclaimed ([FR-082](./FR-082-distann-epoch-lifecycle.md)), so cases (c) and
+  reclaimed ([FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md)), so cases (c) and
   (d) always indicate corruption or co-placement drift, never a vacuum race
   ([NFR-020](../../../non-functional/NFR-020-distann-fault-behavior.md)); a
   mid-hop failure of either the record read or the vector read maps to the
   corresponding structural fault, non-retriable (distinct from the retriable
   epoch-mismatch of the first bullet).
 - `heap_tid` SHALL be interpreted as the epoch-scoped handle to the vec_id's
-  frozen co-placed source row ([FR-082](./FR-082-distann-epoch-lifecycle.md)).
+  frozen co-placed source row ([FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md)).
 - In a multi-owner epoch, `heap_tid` SHALL NOT be interpreted as a live
   source-table `ItemPointer`.
 - In a one-owner `distributed_control=true` roster, `heap_tid` SHALL still
@@ -107,7 +107,7 @@ entry.
   tuple under the AM's tombstone/vacuum-consistency handling.
 - Exact distances SHALL be computed against the node's co-placed
   full-precision vector (resolved via `heap_tid`,
-  [FR-078](./FR-078-distann-hash-placement.md)) — not against any vector
+  [FR-078](../build/FR-078-distann-hash-placement.md)) — not against any vector
   stored in the index record, which carries none — so the coordinator needs
   no separate rerank round-trip. This is exactly the `ec_diskann`
   coarse-search-then-heap-rerank split, executed node-locally; the
@@ -240,7 +240,7 @@ zero returned rows when one request member fails.
 
 ## Dependencies
 
-- **Upstream**: [FR-076](./FR-076-distann-graph-node-record-format.md),
-  [FR-078](./FR-078-distann-hash-placement.md)
+- **Upstream**: [FR-076](../storage/FR-076-distann-graph-node-record-format.md),
+  [FR-078](../build/FR-078-distann-hash-placement.md)
 - **Downstream**: [FR-081](./FR-081-distann-query-orchestration.md),
-  [FR-082](./FR-082-distann-epoch-lifecycle.md)
+  [FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md)

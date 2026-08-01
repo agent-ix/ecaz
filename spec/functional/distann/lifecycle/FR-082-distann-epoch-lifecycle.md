@@ -38,12 +38,12 @@ materialization, publication, or reclaim endpoints for that logical index.
 ## Inputs
 
 - The stitched global-graph identity and head sample from
-  [FR-077](./FR-077-distann-sharded-build-and-stitch.md) and
-  [FR-080](./FR-080-distann-coordinator-head-index.md).
+  [FR-077](../build/FR-077-distann-sharded-build-and-stitch.md) and
+  [FR-080](../read/FR-080-distann-coordinator-head-index.md).
 - The ordered roster, placement version, participant Ready receipts, row-schema
   fingerprint, format/codec identity, source-snapshot identity, and canonical
   content/build-specification digests from
-  [FR-078](./FR-078-distann-hash-placement.md).
+  [FR-078](../build/FR-078-distann-hash-placement.md).
 - The currently active epoch manifest, if any.
 
 ## Outputs
@@ -782,7 +782,7 @@ parent.
 
 ## Dependencies
 
-- **Upstream**: [FR-078](./FR-078-distann-hash-placement.md),
-  [FR-079](./FR-079-distann-remote-expansion-protocol.md), and
-  [FR-080](./FR-080-distann-coordinator-head-index.md)
+- **Upstream**: [FR-078](../build/FR-078-distann-hash-placement.md),
+  [FR-079](../read/FR-079-distann-remote-expansion-protocol.md), and
+  [FR-080](../read/FR-080-distann-coordinator-head-index.md)
 - **Downstream**: [FR-083](./FR-083-distann-dml-path.md)

@@ -101,7 +101,7 @@ packet manifest.
 ## Dependencies
 
 - **Upstream**: [StR-008](../stakeholder/StR-008-distributed-search-single-instance-economics.md),
-  [FR-078](../functional/index/distann/FR-078-distann-hash-placement.md), and
-  [FR-081](../functional/index/distann/FR-081-distann-query-orchestration.md)
+  [FR-078](../functional/distann/build/FR-078-distann-hash-placement.md), and
+  [FR-081](../functional/distann/read/FR-081-distann-query-orchestration.md)
 - **Downstream**: program comparison verdict recorded in ADR-085 if this NFR
   is accepted as a release gate

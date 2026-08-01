@@ -36,9 +36,9 @@ the counts below.
 - Severity high: 22 · medium: 33 · low: 23 (per-slice labels).
 - Catalog: 20 tables; 17 with zero spec mention; 2 with no deletion path;
   4 missing from the REVOKE block.
-- Files referencing the pre-elevation spec path `functional/index/distann`
-  (P1 cross-reference fix list): 31 (grep at head SHA; list reproducible via
-  `grep -rl 'functional/index/distann' --include='*.md' --include='*.rs'`).
+- Files referencing the pre-elevation spec path (`functional/index/distann`,
+  the location before Task 214 P1 moved the set to `functional/distann/`):
+  31 at audit head SHA `baf81d498`; all rewritten by the P1 elevation commit.
 
 ## Provenance notes
 

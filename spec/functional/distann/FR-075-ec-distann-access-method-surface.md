@@ -36,7 +36,7 @@ unchanged.
 
 - A valid index relation whose scans return top-k tuples in score order.
 - EXPLAIN output reporting the per-query traversal counters required by
-  [NFR-019](../../../non-functional/NFR-019-distann-per-query-touch-bound.md).
+  [NFR-019](../../non-functional/NFR-019-distann-per-query-touch-bound.md).
 
 ## Behavior
 
@@ -51,9 +51,9 @@ unchanged.
   control index and SHALL NOT copy source graph records into that control
   relation. The control index SHALL remain query-invisible until every required
   participant generation is Published under
-  [FR-078](./FR-078-distann-hash-placement.md) and the coordinator activates the
+  [FR-078](./build/FR-078-distann-hash-placement.md) and the coordinator activates the
   cluster-wide epoch under
-  [FR-082](./FR-082-distann-epoch-lifecycle.md).
+  [FR-082](./lifecycle/FR-082-distann-epoch-lifecycle.md).
 - A distributed-control source table and index SHALL be permanent WAL-logged
   relations.
 - `ambuild` SHALL reject temporary or unlogged persistence before
@@ -99,13 +99,13 @@ unchanged.
   legacy-local result.
 - While the index participates in a multinode deployment, scans SHALL execute
   through the coordinator orchestration path of
-  [FR-081](./FR-081-distann-query-orchestration.md). The deployment mode is
+  [FR-081](./read/FR-081-distann-query-orchestration.md). The deployment mode is
   determined by the published epoch manifest's node roster: roster size > 1
   is multinode; no session state or GUC overrides it.
 - While the deployment is single-node, the AM SHALL serve the same plan shape
   with local expansion.
 - The Vamana core (build, prune, traversal) is shared with `ec_diskann`
-  ([FR-034](../diskann/FR-034-diskann-build-and-storage.md) lineage), not
+  ([FR-034](../index/diskann/FR-034-diskann-build-and-storage.md) lineage), not
   forked.
 
 ## Acceptance Criteria
@@ -121,6 +121,6 @@ unchanged.
 
 ## Dependencies
 
-- **Upstream**: [StR-008](../../../stakeholder/StR-008-distributed-search-single-instance-economics.md)
-- **Downstream**: [FR-076](./FR-076-distann-graph-node-record-format.md),
-  [FR-081](./FR-081-distann-query-orchestration.md)
+- **Upstream**: [StR-008](../../stakeholder/StR-008-distributed-search-single-instance-economics.md)
+- **Downstream**: [FR-076](./storage/FR-076-distann-graph-node-record-format.md),
+  [FR-081](./read/FR-081-distann-query-orchestration.md)

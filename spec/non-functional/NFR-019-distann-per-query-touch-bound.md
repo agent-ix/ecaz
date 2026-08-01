@@ -21,7 +21,7 @@ coordinator-local head-index hits), independent of corpus size.
 
 Each live expanded record incurs exactly one co-placed exact-rerank row-tier
 read; a tombstone may skip it
-([FR-079](../functional/index/distann/FR-079-distann-remote-expansion-protocol.md),
+([FR-079](../functional/distann/read/FR-079-distann-remote-expansion-protocol.md),
 ADR-085 D11). Exact-rerank row reads are therefore no greater than expanded
 records and remain bounded by BW × H. Final payload materialization is driven
 in fixed global-ranked windows of `W = 10`. Let `D = max(initial_search_bar ×
@@ -88,5 +88,5 @@ packet manifest. Any breach fails the run.
 
 ## Dependencies
 
-- **Upstream**: [FR-081](../functional/index/distann/FR-081-distann-query-orchestration.md),
+- **Upstream**: [FR-081](../functional/distann/read/FR-081-distann-query-orchestration.md),
   [StR-008](../stakeholder/StR-008-distributed-search-single-instance-economics.md)

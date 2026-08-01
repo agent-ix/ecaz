@@ -2,7 +2,7 @@
 id: SR-003
 type: SpecReview
 analysis: integrity
-scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085; spec/tests.md TC-037..TC-044, EC-019..EC-023; re-reviewed against revision d25ea9e0c (ADR-085 D11 — lean node records + co-placed heap rerank: FR-076/FR-078/FR-079, NFR-018); dispositions reconciled at b19551e21"
+scope: "StR-008; FR-075..FR-083 (spec/functional/distann); NFR-017..NFR-020; ADR-085; spec/tests.md TC-037..TC-044, EC-019..EC-023; re-reviewed against revision d25ea9e0c (ADR-085 D11 — lean node records + co-placed heap rerank: FR-076/FR-078/FR-079, NFR-018); dispositions reconciled at b19551e21"
 review_set: all
 title: "Integrity Analysis: ec_distann Spec Batch (StR-008 / FR-075..083 / NFR-017..020 / ADR-085)"
 ---

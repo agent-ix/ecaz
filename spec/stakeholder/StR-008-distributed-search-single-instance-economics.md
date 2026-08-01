@@ -79,7 +79,7 @@ source-identity contract of ADR-068).
 `task-141-spire-bench-integrity` through
 `task-146-spire-honest-pareto-confirmation`). **Downstream**: the ec_distann
 functional requirement family
-([FR-075](../functional/index/distann/FR-075-ec-distann-access-method-surface.md)
+([FR-075](../functional/distann/FR-075-ec-distann-access-method-surface.md)
 et seq.) and gate NFRs
 ([NFR-017](../non-functional/NFR-017-distann-latency-recall-gate.md),
 [NFR-019](../non-functional/NFR-019-distann-per-query-touch-bound.md),
