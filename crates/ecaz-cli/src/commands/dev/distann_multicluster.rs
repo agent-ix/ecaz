@@ -174,6 +174,12 @@ pub struct LocalMultinodePg18Args {
     /// the coordinator caches that many head landmarks' routing payloads.
     #[arg(long)]
     pub gateway_copy_capacity: Option<u32>,
+    /// Control arm for head-sharding A/Bs now that the sharded head is the
+    /// shipped default (fe5822f46): forces the legacy coordinator-local head
+    /// by setting `ec_distann.shard_head_storage=off` on the building session
+    /// and `ec_distann.sharded_head_search=off` on the physical arms.
+    #[arg(long, default_value_t = false, conflicts_with = "sharded_head")]
+    pub local_head: bool,
     /// Task 180 benchmark-only physical seed mode. Requires an extension build
     /// with `distann-head-attribution-benchmark` when set.
     #[arg(long)]
@@ -1173,6 +1179,8 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     // so it is set on the building session rather than on the query arms.
     let shard_head_storage = if args.sharded_head {
         "SET ec_distann.shard_head_storage = on;"
+    } else if args.local_head {
+        "SET ec_distann.shard_head_storage = off;"
     } else {
         ""
     };
@@ -1373,6 +1381,7 @@ fn append_sharded_head_guc(
     args: &mut Vec<String>,
     arm: &str,
     sharded_head: bool,
+    local_head: bool,
     head_replica_count: Option<u32>,
 ) {
     if arm != "physical" {
@@ -1382,6 +1391,12 @@ fn append_sharded_head_guc(
         args.extend([
             "--session-guc".into(),
             "ec_distann.sharded_head_search=on".into(),
+        ]);
+    }
+    if local_head {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.sharded_head_search=off".into(),
         ]);
     }
     // The replica count is independent of the legacy --sharded-head flag:
@@ -5085,6 +5100,7 @@ async fn run_physical_benchmarks(
                     &mut recall_args,
                     arm,
                     args.sharded_head,
+                    args.local_head,
                     args.head_replica_count,
                 );
                 append_gateway_copy_guc(&mut recall_args, arm, args.gateway_copy_capacity);
@@ -5183,6 +5199,7 @@ async fn run_physical_benchmarks(
             &mut latency_args,
             arm,
             args.sharded_head,
+            args.local_head,
             args.head_replica_count,
         );
         append_gateway_copy_guc(&mut latency_args, arm, args.gateway_copy_capacity);
@@ -5394,7 +5411,12 @@ async fn run_physical_benchmarks(
     let head_sample_count = head.get::<_, i64>(0);
     let head_sample_digest = head.get::<_, String>(1);
     let head_sample_bytes = head.get::<_, i64>(2);
-    let head_graph_bytes = head.get::<_, i64>(3) + head.get::<_, i64>(4);
+    // The state row is bounded control metadata (digests, counts, and under
+    // membership-only storage the bounded id list) — itemised separately as
+    // control state, not folded into the corpus-shaped head relations
+    // (005 review round 2: the zero-byte gate is about topology/vector rows).
+    let head_graph_bytes = head.get::<_, i64>(3);
+    let head_state_bytes = head.get::<_, i64>(4);
     let head_cache_estimated_bytes = head_sample_bytes + head_graph_bytes;
     let remote_owners = if args.coordinator_outside_roster {
         nodes.len()
@@ -5494,6 +5516,9 @@ async fn run_physical_benchmarks(
         ));
         lines.push(format!(
             "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_generation_head_graph relation_bytes={head_graph_bytes} storage_derived=false arm_invariant=true nfr_021_class=coordinator_resident_unsharded",
+        ));
+        lines.push(format!(
+            "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_generation_head_state relation_bytes={head_state_bytes} storage_derived=false arm_invariant=true nfr_021_class=control",
         ));
         let coordinator_head_bytes = head_sample_bytes + head_graph_bytes;
         let coordinator_total_resident_bytes = derived_relation_bytes + coordinator_head_bytes;
@@ -5957,6 +5982,12 @@ async fn drive_physical_fixture(
             .batch_execute("SET ec_distann.shard_head_storage = on;")
             .await
             .wrap_err("enabling Task 210 membership-only head storage")?;
+    }
+    if args.local_head {
+        coordinator
+            .batch_execute("SET ec_distann.shard_head_storage = off;")
+            .await
+            .wrap_err("forcing the legacy coordinator-local head control")?;
     }
     coordinator
         .batch_execute(&format!(

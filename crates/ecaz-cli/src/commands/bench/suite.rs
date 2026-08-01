@@ -697,6 +697,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     gateway_copy_capacity: Option<u32>,
     #[serde(default)]
+    local_head: bool,
+    #[serde(default)]
     hop_rounds: Option<u32>,
     #[serde(default)]
     seed_strategy: Option<String>,
@@ -2026,10 +2028,12 @@ struct DistannNfr021Evidence {
 /// phase lands, and any relation NOT on this list is a hard violation rather
 /// than a known gap. Delete an entry when its phase ships — a reappearance
 /// then fails the suite instead of being absorbed.
-const NFR_021_KNOWN_DISTRIBUTION_GAPS: [(&str, &str); 2] = [
-    ("ec_distann_generation_head_sample", "task-210-P2"),
-    ("ec_distann_generation_head_graph", "task-210-P2"),
-];
+/// Task 210 closed the last owned distribution gap (005 review round 2): the
+/// membership-only head persists zero sample/graph rows, so any
+/// coordinator-resident unsharded relation reporting non-zero bytes is now a
+/// hard violation — a reappearance fails the suite rather than re-entering an
+/// allowlist.
+const NFR_021_KNOWN_DISTRIBUTION_GAPS: [(&str, &str); 0] = [];
 
 fn distann_nfr_021_conformance_rows(
     manifest: &SuiteManifest,
@@ -2280,8 +2284,8 @@ fn distann_nfr_021_result_row(
         .collect::<HashSet<_>>();
     let unexpected_coordinator_resident = evidence
         .coordinator_resident_unsharded
-        .keys()
-        .any(|relation| !known_gap_relations.contains(relation.as_str()));
+        .iter()
+        .any(|(relation, bytes)| *bytes > 0 && !known_gap_relations.contains(relation.as_str()));
     let outstanding_gap = evidence
         .coordinator_resident_unsharded
         .iter()
@@ -5329,6 +5333,9 @@ fn expand_distann_local_multinode(
         "--gateway-copy-capacity",
         step.gateway_copy_capacity.map(|v| v.to_string()).as_deref(),
     );
+    if step.local_head {
+        args.push("--local-head".into());
+    }
     push_opt_arg(
         &mut args,
         "--hop-rounds",
@@ -7186,46 +7193,65 @@ psql header noise\n\
         }
     }
 
+    /// 005 review round 2 closed the last owned gap: the membership-only head
+    /// persists zero sample/graph rows, the allowlist is empty, and a
+    /// reappearing coordinator-resident head relation is a hard violation —
+    /// while relations reported at zero bytes (the emitter still itemises
+    /// them) do not fail anything.
     #[test]
-    fn distann_nfr_021_reports_the_known_head_gap_by_name_without_failing_other_lanes() {
-        let manifest = nfr_021_test_manifest("nfr-021-known-gap");
+    fn distann_nfr_021_hard_fails_a_reappearing_head_gap_and_accepts_zero_byte_relations() {
+        let manifest = nfr_021_test_manifest("nfr-021-closed-gap");
         let mut evidence = nfr_021_complete_owner_evidence();
         evidence
             .coordinator_resident_unsharded
-            .insert("ec_distann_generation_head_sample".into(), 25_280_512);
+            .insert("ec_distann_generation_head_sample".into(), 0);
         evidence
             .coordinator_resident_unsharded
-            .insert("ec_distann_generation_head_graph".into(), 614_095);
-
+            .insert("ec_distann_generation_head_graph".into(), 0);
         let row = distann_nfr_021_result_row(
             &manifest,
             "owner-control".into(),
             nfr_021_owner_registration(),
             evidence,
         );
-
-        // The owner arm's own state is conforming, so unrelated lanes are not
-        // halted by a gap they did not introduce...
         assert_eq!(
             row.values.get("actual_admissibility").map(String::as_str),
             Some("conforming")
         );
-        // ...but the gap is named, sized, and attributed to its owning phase on
-        // every conformance row until Task 210 P2 removes it.
         assert_eq!(
             row.values
                 .get("coordinator_resident_unsharded_bytes")
                 .map(String::as_str),
-            Some("25894607")
+            Some("0")
         );
         assert_eq!(
             row.values
                 .get("outstanding_distribution_gap")
                 .map(String::as_str),
-            Some(
-                "ec_distann_generation_head_graph:614095:task-210-P2,\
-                 ec_distann_generation_head_sample:25280512:task-210-P2"
-            )
+            Some("none")
+        );
+
+        let manifest = nfr_021_test_manifest("nfr-021-reappeared-gap");
+        let mut evidence = nfr_021_complete_owner_evidence();
+        evidence
+            .coordinator_resident_unsharded
+            .insert("ec_distann_generation_head_sample".into(), 25_280_512);
+        let row = distann_nfr_021_result_row(
+            &manifest,
+            "owner-control".into(),
+            nfr_021_owner_registration(),
+            evidence,
+        );
+        assert_eq!(
+            row.values.get("actual_admissibility").map(String::as_str),
+            Some("nonconforming"),
+            "a reappearing head gap is a hard violation, not an allowlist entry"
+        );
+        assert_eq!(
+            row.values
+                .get("outstanding_distribution_gap")
+                .map(String::as_str),
+            Some("ec_distann_generation_head_sample:25280512:unowned")
         );
     }
 
