@@ -1116,6 +1116,7 @@ fn recall_sql(roster: &str, queries: u32, top_k: u32, real: bool) -> String {
 }
 
 fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Result<String> {
+    let head_sizing = head_sizing_reloptions(args);
     let physical_dim = if let Some(corpus_prefix) = &args.corpus_prefix {
         let staged_dir = args
             .staged_dir
@@ -1258,10 +1259,10 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
          {shard_head_storage}
          CREATE INDEX dm_idx ON dm USING ec_distann
              (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
-             WITH (distributed_control = true, source_identity = 'include',
+            WITH (distributed_control = true, source_identity = 'include',
                    graph_degree = {}, head_index_cap = {},
-                   neighbor_code_format = 'rabitq');",
-        args.graph_degree, args.head_index_cap
+                   neighbor_code_format = 'rabitq'{});",
+        args.graph_degree, args.head_index_cap, head_sizing
     ))
 }
 
