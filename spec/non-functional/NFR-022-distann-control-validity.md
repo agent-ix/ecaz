@@ -92,6 +92,33 @@ arm's conformance in `results.jsonl` so an audit can be run mechanically rather
 than by reading prose. A decision recorded against a non-conforming control is a
 finding, and the disposition it produced is reopened.
 
+**Implementation gap — pre-registration screening (audited 2026-08-01,
+candidate code fix).** The screening requirement stands, but config-time
+screening exists today only for the FR-084 traversal replica: the suite
+rejects, before any measurement, a replica-enabled variant registered as
+anything but nonconforming or used as a decision-bearing arm, and a general
+guard rejects any decision-bearing arm registered nonconforming. NFR-021
+registration itself is optional per step, and other inadmissible shapes —
+notably `local_head: true` steps — are caught only by post-run checks after
+measurement has been taken. Extending screening to config time for every
+known-inadmissible shape is an open obligation on the suite.
+
+**Implementation gap — 100% labeling (audited 2026-08-01, candidate code
+fix).** The 100%-labeled metric has no mechanical basis today: conformance
+rows are emitted only for arms carrying an explicit (optional) `nfr_021`
+registration, and fixture result rows carry no `local_head` or head-sharding
+field, so an arm's conformance is not derivable from `results.jsonl` alone.
+Until the labeling machinery lands, the metric is audited from packet prose
+and manifests, and packets SHALL state that limitation.
+
+**Flag-doc contradiction (pending code-comment reword).** The fixture's
+`--local-head` flag self-documents as the "Control arm for head-sharding
+A/Bs". A coordinator-local head is NFR-021-nonconforming and therefore cannot
+be a decision-bearing control under this NFR; the suite's decision-role guard
+prevents actual misuse, so this is a documentation contradiction that invites
+the prohibited registration, not a live bypass. The flag doc should be
+reworded to "context arm".
+
 ## Dependencies
 
 - **Upstream**: [StR-006](../stakeholder/StR-006-benchmark-evidence-discipline.md),

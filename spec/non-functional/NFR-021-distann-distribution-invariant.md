@@ -128,9 +128,38 @@ term as a first-class requirement.
 | unsharded O(N) derived-relation bytes resident on a coordinator or non-owner | 0 | 0 | relation-classified per-node storage audit |
 | coordinator-resident index and index-derived bytes, itemised by relation | bounded structures only | every relation classified, and each one bounded by `k`, `L`, dimension, roster size, or relation count | per-node storage audit; an unclassified coordinator-resident relation makes the verdict `unavailable`, never a pass |
 | head index bytes resident on a node outside the serving roster | 0 | 0 | per-node storage audit (head sample, head graph, and head cache attributed to their holding node) |
-| head index replica count | ≥ 1 per roster shard | sharded across the roster; capacity `C` is not a factor | build manifest inspection |
+| head index replica count | ≥ 1 per roster shard | sharded across the roster; capacity `C` is not a factor | build manifest inspection (not yet mechanized — see Verification) |
 | coordinator-owned graph records when the coordinator is outside the serving roster | 0 | 0 | topology audit |
 | non-conforming accelerator reachable without an explicit opt-in | 0 | 0 | default-configuration run: the accelerator is never opened and no arm carries its label |
+
+### Storage-class vocabulary
+
+Every `physical_benchmark_storage_relation` row carries an `nfr_021_class`
+tag. The class vocabulary is normative:
+
+- `coordinator_resident_unsharded` — a corpus-derived, unsharded structure
+  resident on the coordinator. Always a distribution gap: any non-zero bytes
+  in this class are a hard violation (the known-gap allowlist is empty by
+  design).
+- `bounded` — a structure bounded by `k`, `L`, dimension, roster size, or
+  relation/projection count (the permitted list in the Statement). The
+  conformance reader skips `bounded` rows in the derived-bytes check, so the
+  tag is load-bearing: **no emitter currently produces it**, and a producer
+  claiming `bounded` SHALL guarantee the bound by construction and name the
+  bounding parameter in the emitting code and the packet manifest. An
+  unbounded structure tagged `bounded` is a conformance-machinery defect, not
+  a pass.
+- `control` — control-plane metadata: digests, counts, and the
+  membership-only head's bounded id blob (roster-like state, not
+  corpus-derived).
+
+Any other or absent class on a coordinator-resident relation is
+**unclassified** and falls under the unclassified-relation verdict rule in
+the table above.
+
+The suite's `outstanding_distribution_gap`/`unowned` reporting scaffolding is
+dead machinery left over from the deleted known-gap allowlist; it has no spec
+counterpart and sanctions nothing.
 
 ## Verification
 
@@ -147,6 +176,25 @@ derived relation as bounded or O(N), and asserts zero non-owner graph records,
 zero non-owner vectors, and zero unsharded O(N) derived-relation bytes. Missing
 ownership counts, relation classification, or scale endpoints make the
 conformance verdict unavailable and fail a decision-bearing suite closed.
+
+**Implementation gap — unclassified-relation verdict shape (audited
+2026-08-01, candidate code fix).** The requirement is that an unclassified
+coordinator-resident relation makes the verdict `unavailable`, never a pass.
+The shipped reader instead folds unclassified rows into the derived-bytes
+hard violation, producing a `nonconforming` verdict. This matters because
+pre-registration matching treats `nonconforming` as a legitimate expected
+outcome for a context lane: an arm pre-registered `nonconforming` matches the
+verdict and passes, silently absorbing unclassified relations, whereas
+`unavailable` matches no pre-registration and always fails a decision-bearing
+suite closed. The spec text stands; the reader should be changed.
+
+**Implementation gap — head-row verification (audited 2026-08-01).** What is
+mechanically checked for the head today is `head_capacity_constant` across
+scales plus zero-byte coordinator-resident head relations — indirect evidence
+of shardedness. Build-manifest inspection of head shardedness and per-shard
+replica count is not yet mechanized and remains an open obligation; until it
+lands, packets satisfy the head replica-count row by manual manifest
+inspection stated in the packet.
 
 The per-node storage audit itemises **coordinator-resident** relations on the
 same footing as owner relations. A coordinator row reporting zero without

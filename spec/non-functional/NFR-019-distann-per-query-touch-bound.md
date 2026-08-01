@@ -80,11 +80,43 @@ comparison meaningful.
 
 ## Verification
 
-The pipeline bench step emits per-query expansion, exact-vector-read,
-tombstone-skip, payload-materialization, and per-window request counters. The
-suite asserts every cap per cell, proves stable-prefix vec_ids are not
-re-requested after deepening, and emits the cross-scale ratio row in the gate
-packet manifest. Any breach fails the run.
+The caps in the Statement and the table above are normative regardless of
+enforcement status: the bound holds because the scan algorithm enforces it,
+not because a counter observed it.
+
+**Normative assertion regime (open engineering scope).** The pipeline bench
+step SHALL emit per-query expansion, exact-vector-read, tombstone-skip,
+payload-materialization, and per-window request counters; the suite SHALL
+assert every cap per cell, prove stable-prefix vec_ids are not re-requested
+after deepening, and emit the cross-scale ratio row in the gate packet
+manifest, with any breach failing the run. None of this machinery exists yet;
+it remains an open obligation on the suite and the scan.
+
+**Enforcement status (audited 2026-08-01).** What is mechanically asserted
+today is essentially nothing:
+
+- The EXPLAIN surface required by the Statement does not exist
+  (`ExplainCustomScan: None` in `src/am/ec_distann/custom_scan.rs`); the
+  per-query expanded-record counter exists internally with no external
+  surface.
+- The only runtime cap check is a `debug_assert!` on BW × H in
+  `src/am/ec_distann/scan.rs`, compiled out of release builds — the only
+  builds the gate accepts.
+- Stage counters are per-backend aggregates gated behind the
+  `distann-head-attribution-benchmark` feature, emitted only under
+  `--distann-stage-counters` full-metrics mode, and never compared by the
+  suite against BW × H, `D`, or the cross-scale ratio.
+- The stable-prefix duplicate-payload check is a hard runtime error but is
+  also feature-gated out of production builds.
+
+Until the assertion machinery lands, a packet citing this NFR SHALL state
+that conformance rests on manual inspection of emitted counters plus the
+algorithmic argument, not on a mechanical assertion trail.
+
+**Verified policy conformance.** The 2026-08-01 audit confirmed the internal
+window and deepening policies match the Statement: `W = 10`
+(`src/am/ec_distann/options.rs`) and `D` fixed once at scan start from the
+effective search bar (`src/am/ec_distann/custom_scan.rs`).
 
 ## Dependencies
 

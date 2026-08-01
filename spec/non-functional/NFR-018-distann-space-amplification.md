@@ -76,7 +76,8 @@ measurement rather than assumed.
 |--------|--------|-----------|--------|
 | index bytes ÷ raw vector bytes, 100k (summed across nodes) | ≤ 3.0 | ≤ 4.0 | `ecaz bench suite` storage step |
 | **max single-node graph-side bytes ÷ raw vector bytes, 100k** | ≈ summed ratio ÷ roster size | ≤ (summed threshold ÷ roster size) + bounded structures | per-node storage audit, measured per arm |
-| **max single-node graph-side bytes, growth 100k ÷ 10k** | flat or sublinear | ≤ 2.0 | per-node storage audit across scales |
+| **max owner graph-side bytes per owned record, normalized growth 100k ÷ 10k** | stable or sublinear | ≤ 2.0 per owner role — the [NFR-021](./NFR-021-distann-distribution-invariant.md) gate; not restated here | suite-computed bytes-per-owned-record ratio (see NFR-021) |
+| **max single-node graph-side raw byte growth 100k ÷ 10k** | reported | reported, **not a threshold**: on a fixed roster a valid O(N) shard necessarily grows with `N` | suite `physical_benchmark_storage_growth` row, judgement `reported_not_threshold_fixed_roster` |
 | derived/optional relation bytes attributed to their node | reported per relation | no unreported index-derived relation | per-node storage audit |
 | published-epoch bytes vs transient build peak | recorded | recorded | build instrumentation in epoch manifest |
 | active epoch row-tier vector bytes across all owners | ≈ 1.0× raw vectors | exactly one row-tier vector per vec_id | topology/storage audit |
@@ -89,6 +90,23 @@ measurement rather than assumed.
 Every gate benchmark run includes the storage step; the summed ratio row and the
 per-node maximum row appear in the packet manifest per scale. A threshold breach
 fails the milestone closeout.
+
+A prior revision carried a raw single-node byte-growth threshold
+(100k ÷ 10k ≤ 2.0). That row was unmeetable on a fixed roster (Task 205) and
+contradicted both NFR-021's rebased text and the suite machinery; the
+normalized bytes-per-owned-record ratio in NFR-021 is the governing growth
+gate, and the raw ratio is reported for context only.
+
+**Enforcement mode (audited 2026-08-01).** The 4.0× summed budget and the
+per-node bound are normative thresholds, but they are not evaluated by a
+built-in suite gate today. The suite mechanically asserts only that every
+storage row has a matching ratio row (`assert_distann_storage_ratio_rows`);
+the fixture emits the ratio without comparing it to 4.0, and the optional
+suite `ThresholdConfig` that could carry the comparison is not required by any
+run. Conformance is therefore established by manual review of the emitted
+ratio rows in `results.jsonl`, and a closeout citing this NFR SHALL state the
+reviewed ratio values. A mechanized budget gate remains open engineering
+scope.
 
 The storage step SHALL be measured **per arm**, inside the arm loop, and its
 values SHALL be emitted into `results.jsonl`. A storage row computed once and

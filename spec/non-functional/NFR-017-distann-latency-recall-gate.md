@@ -58,14 +58,15 @@ remediation applied.
 
 ## Measurement and Evaluation
 
-| Metric | Aspirational target | Comparison reference | Method |
-|--------|---------------------|----------------------|--------|
+| Metric | Target | Threshold | Method |
+|--------|--------|-----------|--------|
 | distinct_recall@10, 10k/50k/100k, 3-worker | 1.000 | 0.999 | `ecaz bench suite` recall steps |
 | p50 latency at matched recall, 100k, 3-worker | ≤ 30 ms | 37.6 ms IVF anchor | `ecaz bench suite` latency/pipeline steps |
 | p95 latency at matched recall, 100k, 3-worker | ≤ 2× p50 | 3× p50 context line | same run |
 
-The table contains comparison references, not pass/fail thresholds while this
-NFR is `PROPOSED`. Separately, the FR-078 physical-topology audit is a mandatory
+The table's Target column carries the aspirational value and its Threshold
+column the comparison reference; per the 2026-07-17 ruling, both are
+comparison references, not pass/fail thresholds while this NFR is `PROPOSED`. Separately, the FR-078 physical-topology audit is a mandatory
 measurement-validity prerequisite: exact coverage, empty owner intersections,
 one record and row per `vec_id`, zero non-owner residue, and 100% pass before
 recall or latency results may be interpreted.
@@ -78,7 +79,12 @@ Task 146 host/corpus/query protocol, producing a four-way comparison table
 cited number traces to `results.jsonl`.
 
 The suite SHALL invalidate all recall and latency rows when the topology audit
-is absent or fails.
+is absent or fails. Consistent with the 2026-07-17 best-effort ruling above,
+this invalidation is not mechanized as a general suite gate today: the fixture
+aborts before emitting rows when its own audit fails, and NFR-021-registered
+arms require topology evidence, but an unregistered step with missing topology
+rows keeps its recall/latency rows. Packets citing such rows SHALL confirm the
+topology audit in prose until the suite gate lands.
 
 **Matched-recall comparison rule (pre-registered)**: when both AMs have a
 measured point at or above `0.999`, compare their cheapest such operating
@@ -89,7 +95,9 @@ not by itself reject a beneficial relative A/B change.
 
 The comparison packet SHALL also include one informational injected-latency run
 (ADR-085 D2: netem or equivalent per-hop delay) reporting H×RTT sensitivity;
-it does not gate.
+it does not gate. No netem or injected-latency machinery exists in the fixture
+or suite today; this run is a best-effort obligation on the comparison packet,
+not a mechanized step.
 
 **Prerequisites**: the `distinct_recall` metric emitter (branch
 `task-138-spire-distinct-recall-metric`) and the anchor evidence
