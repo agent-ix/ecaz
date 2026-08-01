@@ -3729,7 +3729,11 @@ impl PhysicalGenerationScan {
     fn select_seed_candidates(&self, query: &[f32]) -> Result<Vec<DistannSeedCandidate>, String> {
         let fused = super::options::fused_head_hop();
         let width_pruning = super::options::crown_width_pruning();
-        if fused || width_pruning {
+        // A populated crown is itself an admissible seed source.  The fused
+        // and width-pruning switches select how those seeds are consumed, but
+        // a plain crown arm must still exercise the cache for Task 212/213
+        // A/B attribution.
+        if super::options::crown_capacity() > 0 || fused || width_pruning {
             let production_seed_count = (super::options::current_beam_width() * 2).max(32);
             let search_width = super::options::current_head_search_width(production_seed_count);
             let seed_count = super::options::current_head_seed_count(production_seed_count);
@@ -3793,10 +3797,10 @@ impl PhysicalGenerationScan {
                     }
                 }
             }
-            // A population-complete crown that cannot safely narrow any shard
-            // falls back to the ordinary full fan-out; it must never silently
-            // substitute approximate candidates for exact head search.
-            return self.select_seed_candidates_without_crown(query);
+            // Plain crown arms consume the attested, ranked subset directly;
+            // fused arms returned above and width-pruned arms may instead
+            // perform the ordinary shard expansion after filtering.
+            return Ok(seeds);
         }
         self.select_seed_candidates_without_crown(query)
     }
