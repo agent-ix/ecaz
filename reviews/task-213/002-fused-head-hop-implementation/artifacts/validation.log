@@ -2,4 +2,5 @@ head=4fe5d5c53
 cargo_check_pg18=passed
 cargo_check_pg18_distann_head_attribution_benchmark=passed
 cargo_test_crown_cache=2 passed
+suite_dry_run_task213=6 steps expanded; fused flag present only on fused arms
 bench_suite_audit=blocked_missing_ec_real_10k_50k_100k_staged_inputs

@@ -11,6 +11,9 @@
 - Timestamp: 2026-08-01 (America/Los_Angeles)
 - Storage surface: code validation only; no benchmark fixture was left resident.
 - Result: both compiles passed; the focused attestation test passed (`1 passed`).
+- Suite config: `artifacts/task211-head-law-suite.json`; CLI dry-run expanded
+  six control/law steps across 10k, 50k, and 100k and showed the three law
+  flags on the law arms.
 - Benchmark status: blocked before execution because the host lacks the required
   staged `ec_real_10k`, `ec_real_50k`, and `ec_real_100k` corpus/query/manifest
   files. `ecaz bench suite audit` reported the missing inputs.

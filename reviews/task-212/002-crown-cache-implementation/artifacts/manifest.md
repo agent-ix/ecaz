@@ -11,6 +11,9 @@
 - Timestamp: 2026-08-01 (America/Los_Angeles)
 - Storage surface: code validation only; no benchmark fixture was left resident.
 - Result: both compiles passed; crown-cache tests passed (`2 passed`).
+- Suite config: `artifacts/task212-crown-suite.json`; CLI dry-run expanded nine
+  control/crown/crown-width steps across 10k, 50k, and 100k and showed the
+  capacity and width-pruning flags on the candidate arms.
 - Benchmark status: blocked before execution because the host lacks the required
   staged `ec_real_10k`, `ec_real_50k`, and `ec_real_100k` corpus/query/manifest
   files. `ecaz bench suite audit` reported the missing inputs.

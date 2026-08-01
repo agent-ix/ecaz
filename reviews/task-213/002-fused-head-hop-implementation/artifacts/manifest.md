@@ -11,6 +11,9 @@
 - Timestamp: 2026-08-01 (America/Los_Angeles)
 - Storage surface: code validation only; no benchmark fixture was left resident.
 - Result: both compiles passed; crown-cache tests passed (`2 passed`).
+- Suite config: `artifacts/task213-fused-suite.json`; CLI dry-run expanded six
+  crown-on unfused/fused steps across 10k, 50k, and 100k and showed the fused
+  flag only on fused arms.
 - Benchmark status: blocked before execution because the host lacks the required
   staged `ec_real_10k`, `ec_real_50k`, and `ec_real_100k` corpus/query/manifest
   files. `ecaz bench suite audit` reported the missing inputs.
