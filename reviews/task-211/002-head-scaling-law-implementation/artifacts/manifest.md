@@ -1,6 +1,6 @@
 # Task 211 implementation artifacts
 
-- Head SHA: `4fe5d5c53`
+- Implementation commits: `4fe5d5c53`, `9c8f2aafb`
 - Task bucket: `reviews/task-211/`
 - Packet: `002-head-scaling-law-implementation`
 - Validation lane: PG18 library and ecaz-cli compile
@@ -11,6 +11,8 @@
 - Timestamp: 2026-08-01 (America/Los_Angeles)
 - Storage surface: code validation only; no benchmark fixture was left resident.
 - Result: both compiles passed; the focused attestation test passed (`1 passed`).
+- Follow-up: `9c8f2aafb` adds counter capture/reset to recall/latency output and
+  labels crown-induced seed-set changes in provenance.
 - Suite config: `artifacts/task211-head-law-suite.json`; CLI dry-run expanded
   six control/law steps across 10k, 50k, and 100k and showed the three law
   flags on the law arms.

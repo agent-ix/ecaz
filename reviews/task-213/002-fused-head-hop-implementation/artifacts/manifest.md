@@ -1,6 +1,6 @@
 # Task 213 implementation artifacts
 
-- Head SHA: `4fe5d5c53`
+- Implementation commits: `4fe5d5c53`, `9c8f2aafb`
 - Task bucket: `reviews/task-213/`
 - Packet: `002-fused-head-hop-implementation`
 - Validation lane: PG18 library and ecaz-cli compile
@@ -11,6 +11,8 @@
 - Timestamp: 2026-08-01 (America/Los_Angeles)
 - Storage surface: code validation only; no benchmark fixture was left resident.
 - Result: both compiles passed; crown-cache tests passed (`2 passed`).
+- Follow-up: `9c8f2aafb` reports `fused_head_hops` and fails a fused arm when
+  the activation counter is zero; seed-set changes are labeled explicitly.
 - Suite config: `artifacts/task213-fused-suite.json`; CLI dry-run expanded six
   crown-on unfused/fused steps across 10k, 50k, and 100k and showed the fused
   flag only on fused arms.

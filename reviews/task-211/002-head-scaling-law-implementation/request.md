@@ -3,6 +3,7 @@
 - Task: `plan/tasks/211-ec-distann-head-scaling-law.md`
 - Packet: `reviews/task-211/002-head-scaling-law-implementation/`
 - Code commit: `4fe5d5c53` (`feat(distann): implement head sizing crown cache and fused hops`)
+- Follow-up commit: `9c8f2aafb` (counter capture and seed-set provenance)
 - Date: 2026-08-01. Coder: Codex
 
 ## What to review

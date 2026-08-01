@@ -3,6 +3,7 @@
 - Task: `plan/tasks/212-ec-distann-crown-cache.md`
 - Packet: `reviews/task-212/002-crown-cache-implementation/`
 - Code commit: `4fe5d5c53` (`feat(distann): implement head sizing crown cache and fused hops`)
+- Follow-up commit: `9c8f2aafb` (counter capture and activation enforcement)
 - Date: 2026-08-01. Coder: Codex
 
 ## What to review

@@ -1,4 +1,4 @@
-head=4fe5d5c53
+head=9c8f2aafb
 cargo_check_pg18=passed
 cargo_check_pg18_distann_head_attribution_benchmark=passed
 cargo_test_crown_cache=2 passed

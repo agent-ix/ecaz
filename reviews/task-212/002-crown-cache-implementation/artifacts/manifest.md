@@ -1,6 +1,6 @@
 # Task 212 implementation artifacts
 
-- Head SHA: `4fe5d5c53`
+- Implementation commits: `4fe5d5c53`, `9c8f2aafb`
 - Task bucket: `reviews/task-212/`
 - Packet: `002-crown-cache-implementation`
 - Validation lane: PG18 library and ecaz-cli compile
@@ -11,6 +11,8 @@
 - Timestamp: 2026-08-01 (America/Los_Angeles)
 - Storage surface: code validation only; no benchmark fixture was left resident.
 - Result: both compiles passed; crown-cache tests passed (`2 passed`).
+- Follow-up: `9c8f2aafb` adds per-backend counter reset/snapshot capture and
+  fail-closed activation checks for crown-enabled physical arms.
 - Suite config: `artifacts/task212-crown-suite.json`; CLI dry-run expanded nine
   control/crown/crown-width steps across 10k, 50k, and 100k and showed the
   capacity and width-pruning flags on the candidate arms.
