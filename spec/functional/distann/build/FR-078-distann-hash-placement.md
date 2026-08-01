@@ -56,6 +56,39 @@ roster participant plus its canonical manifest.
 - One topology-only placement manifest containing the ordered roster, placement
   hash version, per-node counts/digests, schema fingerprint, and receipt set.
 
+## Build Flow
+
+The coordinated build's T-stages:
+
+```mermaid
+sequenceDiagram
+    participant Op as operator
+    participant C as coordinator (control index)
+    participant P as each participant (owner)
+
+    Note over C: T1 — register
+    Op->>C: ec_distann_begin_epoch_build(source, index)
+    C->>C: gate row (one active per logical index),<br/>roster snapshot → participant bindings
+    Note over C: T2 — build / stage / seal
+    Op->>C: ec_distann_build_epoch[_with_training](...)
+    C->>C: capture frozen source, sharded build + stitch (FR-077),<br/>head selection (FR-080), hash-split owner streams
+    loop per owner, per batch
+        C->>P: ec_distann_begin_epoch_handoff / stage_epoch_batch
+        P-->>C: batch ack (digest chain)
+    end
+    C->>P: ec_distann_seal_epoch_handoff
+    P-->>C: 303-byte Ready receipt
+    C->>C: build candidate sealed (manifest + fingerprint),<br/>registration → Ready; returns candidate digest
+    Note over C: T3 — decide
+    Op->>C: ec_distann_decide_epoch_publish
+    C->>C: durable Pending publish decision (commit-only)
+    Note over C: T4a — recover / activate
+    Op->>C: ec_distann_recover_epoch_publish(index, build_id)
+    C->>P: ec_distann_publish_epoch(...)
+    P-->>C: Published
+    C->>C: active-epoch pointer CAS, predecessor dispositions fan out
+```
+
 ## Coordinator Build and Node Registry
 
 The coordinator SHALL expose these operator operations:

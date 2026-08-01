@@ -102,6 +102,51 @@ the substrate is a code decision outside this requirement.
 Any transition absent from this table SHALL fail with `EC_EPOCH_STATE` and
 leave the generation unchanged.
 
+## Flows
+
+Publish, retire, and reclaim (coordinator ledgers driving participant
+state):
+
+```mermaid
+sequenceDiagram
+    participant Op as operator
+    participant C as coordinator ledgers
+    participant P as each participant
+    participant S as in-flight scans
+
+    Op->>C: decide_epoch_publish → Pending decision (durable)
+    Op->>C: recover_epoch_publish(index, build_id)
+    C->>P: publish_epoch(manifest, digest)
+    P-->>C: generation → Published
+    C->>C: active_epoch pointer CAS (predecessor recorded)
+    C->>C: predecessor_disposition rows fan out (Pending)
+    Op->>C: retire_epoch / force_retire_epoch
+    C->>P: mark_epoch_retired(successor activation)
+    P-->>C: generation → Retired
+    Note over C,S: retire fence: acquire fence, observe zero<br/>scan pins for the fingerprint (else EC_RETENTION_ACTIVE)
+    Op->>C: recover_epoch_retire
+    C->>P: apply_epoch_retire
+    P->>P: insert reclaim tombstone, then delete<br/>generation row + drop relations
+```
+
+Scan open, epoch pin, and retirement fencing:
+
+```mermaid
+sequenceDiagram
+    participant B as scan backend
+    participant A as active_epoch pointer
+    participant R as shared-memory scan registry
+    participant F as retire path
+
+    B->>A: read committed active (build, epoch, fingerprint)
+    B->>R: register pin (token, fingerprint)
+    Note over B: whole scan executes against the pinned<br/>immutable epoch; epoch mismatch ⇒ one refresh-retry
+    F->>R: acquire retire fence for fingerprint
+    R-->>F: in-flight pin count
+    Note over F: nonzero pins ⇒ EC_RETENTION_ACTIVE;<br/>reclaim proceeds only at zero
+    B->>R: release pin (also via backend-exit callback)
+```
+
 ## Behavior
 
 ### Build Snapshot and Manifest
