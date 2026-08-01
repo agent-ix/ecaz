@@ -1,0 +1,327 @@
+{
+  "suite": "task210-default-gate",
+  "schema_version": 1,
+  "config": "reviews/task-210/005-default-gate/artifacts/task210-default-gate.json",
+  "config_sha256": "c6622460de739bb0c7b43eef7e8ac1226f1e9ddd70c1f38d44050d4650374a31",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785539771269,
+  "runner_git_commit": "81e816f3229a20e147c5c8582b1366530246662c",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "default-gate-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task210",
+        "default-gate",
+        "default",
+        "ec_real_10k",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "default-gate",
+          "id": "task210-default-gate",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "The shipped default configuration, no session GUCs, no arm flags: NFR-021 clause 5 verified as shipped. The sharded head is now the default (fe5822f46); the A/B that justified it is reviews/task-210/003a-head-sharding."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-210/005-default-gate/artifacts/run-replica/default-gate-10k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "default-gate-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task210",
+        "default-gate",
+        "default",
+        "ec_real_50k",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "default-gate",
+          "id": "task210-default-gate",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "The shipped default configuration, no session GUCs, no arm flags: NFR-021 clause 5 verified as shipped. The sharded head is now the default (fe5822f46); the A/B that justified it is reviews/task-210/003a-head-sharding."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-210/005-default-gate/artifacts/run-replica/default-gate-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "default-gate-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task210",
+        "default-gate",
+        "default",
+        "ec_real_100k",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "default-gate",
+          "id": "task210-default-gate",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "The shipped default configuration, no session GUCs, no arm flags: NFR-021 clause 5 verified as shipped. The sharded head is now the default (fe5822f46); the A/B that justified it is reviews/task-210/003a-head-sharding."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-210/005-default-gate/artifacts/run-replica/default-gate-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "replica-serving-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-210/005-default-gate/artifacts/run-replica/replica-serving-100k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task210-gate-replica-100k",
+        "--log-file",
+        "reviews/task-210/005-default-gate/artifacts/run-replica/replica-serving-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "42640",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--head-replica-count",
+        "2",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "replica-serving:persisted_head:32:32:rabitq:0:off:4:100:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task210",
+        "default-gate",
+        "replica",
+        "ec_real_100k",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "replica-serving",
+          "id": "task210-gate-replica2",
+          "role": "context",
+          "admissibility": "conforming",
+          "rationale": "Shipped default plus head_replica_count=2 with attested population: each replica holds only a bounded head-shard copy, which NFR-021 permits to be replicated. The arm must show head_replica_shards_served > 0."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-210/005-default-gate/artifacts/run-replica/replica-serving-100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785539771293,
+      "finished_at_unix_ms": 1785541702456,
+      "duration_ms": 1999304,
+      "exit_code": 0
+    },
+    {
+      "name": "replica-serving-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-210/005-default-gate/artifacts/run-replica/replica-serving-10k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task210-gate-replica-10k",
+        "--log-file",
+        "reviews/task-210/005-default-gate/artifacts/run-replica/replica-serving-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "42650",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--head-replica-count",
+        "2",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "replica-serving:persisted_head:32:32:rabitq:0:off:4:100:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task210",
+        "default-gate",
+        "replica",
+        "ec_real_10k",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "replica-serving",
+          "id": "task210-gate-replica2",
+          "role": "context",
+          "admissibility": "conforming",
+          "rationale": "Shipped default plus head_replica_count=2 with attested population: each replica holds only a bounded head-shard copy, which NFR-021 permits to be replicated. The arm must show head_replica_shards_served > 0."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-210/005-default-gate/artifacts/run-replica/replica-serving-10k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785541702456,
+      "finished_at_unix_ms": 1785541925941,
+      "duration_ms": 231622,
+      "exit_code": 0
+    },
+    {
+      "name": "replica-serving-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-210/005-default-gate/artifacts/run-replica/replica-serving-50k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task210-gate-replica-50k",
+        "--log-file",
+        "reviews/task-210/005-default-gate/artifacts/run-replica/replica-serving-50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "42660",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--head-replica-count",
+        "2",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "replica-serving:persisted_head:32:32:rabitq:0:off:4:100:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task210",
+        "default-gate",
+        "replica",
+        "ec_real_50k",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "replica-serving",
+          "id": "task210-gate-replica2",
+          "role": "context",
+          "admissibility": "conforming",
+          "rationale": "Shipped default plus head_replica_count=2 with attested population: each replica holds only a bounded head-shard copy, which NFR-021 permits to be replicated. The arm must show head_replica_shards_served > 0."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-210/005-default-gate/artifacts/run-replica/replica-serving-50k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785541925942,
+      "finished_at_unix_ms": 1785542857774,
+      "duration_ms": 964820,
+      "exit_code": 0
+    }
+  ]
+}
