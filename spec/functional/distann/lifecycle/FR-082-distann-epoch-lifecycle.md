@@ -16,9 +16,12 @@ relationships:
 ## Description
 
 The ec_distann cluster SHALL transition every participant generation only
-through the Building → Ready → Published → Retired lifecycle table below, with
-Aborted as the terminal state for an unpublished generation. "Generation" and
-"epoch" have the participant-shard and cluster-wide meanings defined by FR-078.
+through the Building → Ready → Published → Retired lifecycle table below.
+Abort of an unpublished generation is terminal: it deletes the generation row
+and records `Aborted` on the build registration, so the aborted generation has
+no retained generation state and its observable status is
+`EC_GENERATION_MISSING`. "Generation" and "epoch" have the participant-shard
+and cluster-wide meanings defined by FR-078.
 
 The coordinator SHALL make a new generation query-visible only after every
 roster participant has durably published the matching physical shard and epoch
@@ -34,6 +37,32 @@ Every scan capable of addressing a generation for that logical index SHALL
 originate on that instance and register there before invoking a participant
 endpoint. A second coordinator instance SHALL NOT invoke expansion,
 materialization, publication, or reclaim endpoints for that logical index.
+
+### Legacy Substrate (Non-Normative Boundary)
+
+This requirement specifies the physical/distributed-control lane only. The
+codebase also ships a legacy v4 metadata-page lifecycle lane that predates the
+generation catalog; per the
+[FR-085](../FR-085-distann-domain-model.md) bounded context it is a
+fixture/bootstrap substrate, outside the distributed domain model, and is
+**not** specified normatively here. Its surface, named so it is not mistaken
+for this requirement's contract:
+
+- SQL-name-colliding v4 overloads on the metadata page:
+  `ec_distann_publish_epoch(oid, bigint)`, `ec_distann_retire_epoch(oid)`,
+  `ec_distann_force_retire_epoch(oid)`, `ec_distann_epoch_status(oid)`
+  (metadata-page `epoch_state` / `active_epoch` / `in_flight_count`).
+- A 16-byte FNV-1a version-1 epoch fingerprint
+  (`ec_distann_epoch_fingerprint(oid)`) used by the legacy multi-node
+  read/write path, incompatible with this requirement's 34-byte
+  `u16_le(2) || manifest_digest` fingerprint (CON-5).
+- The session-GUC roster/epoch lane that drives that fingerprint.
+
+These v4 endpoints reject distributed-control indexes; conversely every
+normative clause below binds only the v5 generation-catalog lane. No
+conformance claim, benchmark gate, or acceptance criterion in this requirement
+may be satisfied through the legacy substrate. Retirement or replacement of
+the substrate is a code decision outside this requirement.
 
 ## Inputs
 
@@ -61,13 +90,14 @@ materialization, publication, or reclaim endpoints for that logical index.
 |---------------|-------|------------|------------------|
 | absent | accepted `begin_epoch_handoff` | Building | hidden |
 | Building | all owner streams seal with matching receipts | Ready | hidden |
-| Building | abort before publish decision | Aborted | hidden |
-| Ready | abort before publish decision | Aborted | hidden |
+| Building | abort before publish decision | absent (generation row deleted; build registration records `Aborted`) | hidden; status is `EC_GENERATION_MISSING` |
+| Ready | abort before publish decision | absent (generation row deleted; build registration records `Aborted`) | hidden; status is `EC_GENERATION_MISSING` |
 | Ready | participant applies the durable cluster publish decision | Published | addressable by explicit fingerprint |
 | Published and active | coordinator activates a successor | Published, non-active, retirement mark pending | retained scans may continue by fingerprint |
 | Published and non-active | authenticated successor-activation marker exactly matches the local predecessor | Retired | retained scans may continue by fingerprint |
 | Published and non-active | coordinator binding is explicitly Abandoned after successor activation while the participant is unreachable | Published orphan locally; coordinator binding Abandoned | unavailable through authoritative coordinator routing; out-of-band operator cleanup only |
 | Retired | coordinator fence observes zero in-flight scans and durable retire decision is applied | Reclaimed tombstone | unavailable |
+| Ready, or Published-but-never-active under a `Cancelled` decision | audited cancellation recovery applies the canonical cancel audit | CancelledReclaimed tombstone | unavailable |
 
 Any transition absent from this table SHALL fail with `EC_EPOCH_STATE` and
 leave the generation unchanged.
@@ -116,6 +146,15 @@ The version-2 canonical epoch manifest SHALL contain these fields in this order:
 | global_graph_digest | byte[32] | canonical stitched graph content |
 | global_row_tier_digest | byte[32] | canonical frozen row payload content |
 | participant_receipts | length-prefixed array | exactly one receipt per roster entry, in roster order |
+
+> **Implementation gap (2026-08-01, Task 214):** the parent-epoch ordering
+> rule on the `epoch` field (successor epoch strictly greater than the
+> resolved parent's) is currently validated only at retirement marking
+> (`mark_epoch_retired`), after the successor is already Published and
+> active; manifest validation and publish check only fingerprint
+> well-formedness and active-pointer equality at T3. The requirement stands
+> as written — validation belongs before the pointer swap. Candidate code
+> fix.
 
 The `codec_parameters` subrecord SHALL contain, in order:
 `parameters_version u16 = 1`, `codec_kind u8`, `dimensions u16`,
@@ -206,7 +245,13 @@ epoch_manifest bytea, manifest_digest bytea) RETURNS bytea`
 RETURNS TABLE (epoch bigint, state text, build_spec_digest bytea,
 generation_descriptor_digest bytea, epoch_fingerprint bytea,
 manifest_digest bytea, record_count bigint, row_count bigint,
-successor_activation_digest bytea, retire_decision_digest bytea)`
+successor_activation_digest bytea, retire_decision_digest bytea,
+cancellation_audit_digest bytea)`
+
+The status table SHALL derive its `Reclaimed` and `CancelledReclaimed` rows
+from the corresponding immutable participant tombstones; a `Reclaimed` row
+carries the retained `retire_decision_digest` and a `CancelledReclaimed` row
+carries the retained `cancellation_audit_digest`.
 
 `ec_distann_mark_epoch_retired(index_regclass regclass,
 successor_activation bytea, successor_activation_digest bytea) RETURNS void`
@@ -215,12 +260,20 @@ successor_activation bytea, successor_activation_digest bytea) RETURNS void`
 retire_decision bytea, retire_decision_digest bytea)
 RETURNS void`
 
+`ec_distann_reclaim_cancelled_generation(index_regclass regclass,
+cancellation_audit bytea, cancellation_audit_digest bytea) RETURNS void`
+
 The coordinator SHALL expose these decision/recovery operations:
 
 `ec_distann_decide_epoch_publish(index_regclass regclass, build_id uuid)
 RETURNS bytea`
 
-`ec_distann_recover_epoch_publish(index_regclass regclass) RETURNS bytea`
+`ec_distann_recover_epoch_publish(index_regclass regclass, build_id uuid)
+RETURNS bytea`
+
+The recovery caller SHALL name the build under recovery explicitly by its
+RFC 4122 version-4 build id; recovery SHALL NOT infer a target build from
+registration state alone.
 
 `ec_distann_retire_epoch(index_regclass regclass, epoch_fingerprint bytea)
 RETURNS void`
@@ -430,6 +483,12 @@ parent.
   zero mutation. Concurrent exact retirement acknowledgement and abandonment
   serialize on the same disposition row: exactly one terminal state commits,
   and the loser replays only if it exactly matches that committed state.
+
+  > **Implementation gap (2026-08-01, Task 214):** the shipped replay match
+  > compares build, ordinal, and reason but never compares the stored caller
+  > name to `session_user`, so a different caller currently replays
+  > successfully instead of raising `EC_PREDECESSOR_ABANDON`. The requirement
+  > stands as written. Candidate code fix.
 - An abandoned binding remains durably forfeited for the lifetime of the
   coordinator control identity. If the participant later returns, authoritative
   coordinator routing SHALL never select the forfeited predecessor binding or
@@ -658,25 +717,25 @@ parent.
   activation digests,
   then records `Applied` once every binding is terminal `Retired` or
   `Abandoned`. With no predecessor, T4a may record `Applied`.
-- Publish recovery SHALL be single-flight under a transaction-scoped advisory
-  lock keyed by logical-index UUID. The pointer swap SHALL use the same lock and
-  a conditional catalog update so concurrent explicit or scan-triggered
-  recovery cannot apply it twice.
+- Publish recovery SHALL be single-flight per logical index. The recovery
+  transaction SHALL acquire the source-relation session lock, the control
+  relation `ShareRowExclusiveLock`, and the registry revision lock — and
+  revalidate the exact control identity across those acquisitions — before
+  consuming decision state. The pointer swap SHALL additionally use a
+  conditional catalog update against the recorded predecessor so a concurrent
+  explicit recovery cannot apply it twice.
 - Only the extension owner or an explicitly granted internal cluster role may
   execute `ec_distann_recover_epoch_publish` and its remote publish calls;
   `PUBLIC` and an ungranted reader SHALL never gain those side effects through
   a user query.
-- An authorized backend that reads the coordinator active pointer while a
-  `Pending` durable decision exists MAY attempt T4a only
-  after acquiring the advisory lock non-blockingly. An unauthorized reader, or
-  an authorized reader that cannot acquire the lock immediately, SHALL
-  register and use the unchanged prior active fingerprint without waiting.
-- If scan-triggered T4a cannot complete because a successor participant is
-  unavailable, the scan SHALL register and use the unchanged predecessor active
-  fingerprint. It SHALL NOT read a generation named only by a `Pending`
-  decision. When state is `Activated`, scans SHALL register/use the committed
-  successor pointer even while T4b predecessor marks are incomplete; they SHALL
-  never fall back to the predecessor.
+- A scan SHALL NOT trigger publish recovery. Recovery runs only through an
+  explicit authorized `ec_distann_recover_epoch_publish` invocation; the read
+  path only reads and registers the committed active pointer. While a durable
+  decision is `Pending`, scans SHALL register and use the unchanged
+  predecessor active fingerprint and SHALL NOT read a generation named only by
+  a `Pending` decision. When state is `Activated`, scans SHALL register/use
+  the committed successor pointer even while T4b predecessor marks are
+  incomplete; they SHALL never fall back to the predecessor.
 - If no durable decision exists, the recovery operation SHALL leave the prior
   active epoch unchanged and raise `EC_EPOCH_STATE`; the unpublished generation
   remains available through `ec_distann_epoch_build_status` for explicit resume
@@ -745,7 +804,15 @@ parent.
 | `EC_PREDECESSOR_RETIRE_PENDING` | A predecessor owner is unavailable after successor activation | Keep the successor pointer active and decision `Activated`; retry only missing predecessor marks |
 | `EC_PREDECESSOR_ABANDON` | Abandonment is unauthorized, malformed, targets a non-Activated decision or non-Pending binding, or conflicts with an existing audit | Change no binding/decision state; issue no participant call |
 | `EC_RETENTION_ACTIVE` | Normal retirement sees one or more coordinator-local in-flight references under the fence | Keep generation retained; require drain or explicit audited force-retire |
-| `EC_GENERATION_MISSING` | Fingerprint/build id names an unknown, aborted, or reclaimed generation | Data/topology/scan endpoints return no generation and do not fall back; generation-status alone may return the Reclaimed tombstone |
+| `EC_GENERATION_MISSING` | Fingerprint/build id names an unknown, aborted, or reclaimed generation | Data/topology/scan endpoints return no generation and do not fall back; generation-status alone may return the Reclaimed or CancelledReclaimed tombstone |
+
+> **Implementation gap (2026-08-01, Task 214):** `EC_PUBLISH_PENDING` is a
+> required stable retriable error code but has never been implemented; an
+> unavailable successor participant while the decision is `Pending` currently
+> surfaces as a transport error or `EC_EPOCH_STATE`. The behavioral outcome
+> (predecessor stays active, decision retained for retry) does hold. The
+> requirement — a distinguishable retriable condition — stands as written.
+> Candidate code fix.
 
 ## Acceptance Criteria
 

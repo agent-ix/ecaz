@@ -74,6 +74,9 @@ build_id uuid) RETURNS bytea`
 `ec_distann_build_epoch(index_regclass regclass, epoch bigint, build_id uuid)
 RETURNS bytea`
 
+`ec_distann_build_epoch_with_training(index_regclass regclass, epoch bigint,
+build_id uuid, training_relation regclass) RETURNS bytea`
+
 `ec_distann_abort_epoch_build(index_regclass regclass, build_id uuid)
 RETURNS void`
 
@@ -195,6 +198,16 @@ created_at timestamptz)`
   `source_identity = 'include'` provider with exactly one non-NULL UUID or
   16-byte bytea identity attribute. Heap-TID-derived local identity SHALL be
   rejected as `EC_SOURCE_IDENTITY` before snapshot capture.
+- `ec_distann_begin_epoch_build` SHALL require the extension to be loaded via
+  `shared_preload_libraries` (rejecting a non-preloaded backend before any
+  side effect, because durable-gate enforcement lives in preload-installed
+  hooks) and SHALL serialize on the global build-gate lock before touching the
+  registry or registration state.
+- `ec_distann_begin_epoch_build` SHALL reject a source relation that is
+  partitioned or participates in table inheritance (any `pg_inherits` edge as
+  parent or child) as `EC_BUILD_STATE`; format v1 builds only plain heap
+  sources. The check runs after the source session lock is held and before
+  registration or snapshot capture.
 - `ec_distann_begin_epoch_build` SHALL acquire a session-level source-relation
   lock that permits reads but blocks DML and schema changes, copy the ordered
   registry/reloptions/schema identity into a coordinator build registration,
@@ -263,8 +276,12 @@ created_at timestamptz)`
   identity SHALL additionally be unique per logical index for the retained
   lifetime through final reclaim.
 - Version 1 also rejects begin-build while any publish decision for the logical
-  index is `Pending` or `Activated`. Recovery is therefore unambiguous for the
-  build-id-free `ec_distann_recover_epoch_publish(index)` operation; a later
+  index is `Pending` or `Activated`. At most one recoverable decision therefore
+  exists per logical index; the
+  `ec_distann_recover_epoch_publish(index_regclass regclass, build_id uuid)`
+  operation nevertheless requires the caller to supply the build id, which
+  SHALL be a valid RFC 4122 v4 UUID and SHALL be validated against that single
+  durable decision — a mismatch is rejected without side effects. A later
   build may begin only after the prior decision is `Applied`. An audited
   predecessor-binding abandonment described by FR-082 is one terminal binding
   outcome that permits the covering decision to become `Applied`; it does not
@@ -276,6 +293,17 @@ created_at timestamptz)`
   held or safely reacquired build-specific session lock, capture one source
   MVCC snapshot in its new transaction,
   and consume the immutable registered roster, reloptions, and schema.
+- `ec_distann_build_epoch_with_training` SHALL run the same build with the
+  version-2 trained-head option set (`training_landmarks_exact`), sourcing its
+  training queries from `training_relation`. The training relation SHALL
+  contain exactly two non-dropped attributes — `training_ordinal bigint` and
+  `vector real[]` — and SHALL be read in ascending `training_ordinal` order;
+  any other shape, a NULL ordinal, a NULL vector, or a vector whose length
+  differs from the indexed dimension SHALL raise `EC_HEAD_TRAINING` before
+  graph construction or remote mutation. The loaded query set's count and
+  canonical digest become the immutable `training_query_count` and
+  `training_query_digest` build-option fields; the relation itself is a
+  load-time input, not an epoch artifact.
 - In the physical-generation lane, the coordinator SHALL supply its one
   registered MVCC snapshot to `table_index_build_scan` using concurrent-build
   visibility semantics. PostgreSQL therefore filters recently-dead/invisible
@@ -309,9 +337,9 @@ created_at timestamptz)`
   rejecting; OID coincidence alone is never sufficient.
 - The build-to-Ready operation SHALL use one coordinator transaction and MAY
   use bounded PostgreSQL temporary files for FR-077 stitch streams.
-- A successful `ec_distann_build_epoch` call SHALL return the 32-byte candidate
-  manifest digest after all owners are Ready. It SHALL NOT return a Published
-  fingerprint or make the generation query-visible.
+- A successful build-epoch call SHALL return the 32-byte build-candidate
+  digest (candidate-digest v1 below) after all owners are Ready. It SHALL NOT
+  return a Published fingerprint or make the generation query-visible.
 - Before changing the coordinator registration to `Ready`, build-epoch SHALL
   atomically persist one immutable build-candidate row containing the canonical
   build specification and digest, generation descriptor and digest, source
@@ -367,13 +395,44 @@ created_at timestamptz)`
   disappeared before a remote receipt returned. An operator can therefore
   reconcile it to the durable coordinator registration or abort it explicitly;
   relation-name discovery and logs are not recovery state.
-- Reinvoking the build operation with an already Published build id and exact
-  immutable inputs SHALL return the existing 32-byte manifest digest. Reusing the build id
-  with different inputs SHALL raise `EC_BUILD_ID_CONFLICT`.
+- Reinvoking the build operation with an already Ready or Published build id
+  and exact immutable inputs SHALL return the existing 32-byte build-candidate
+  digest (the same digest a fresh successful call returns — not the
+  epoch-manifest digest, which is one input to it). Reusing the build id
+  with different inputs SHALL raise `EC_BUILD_ID_CONFLICT`. A replay SHALL
+  additionally match the candidate's head policy: replaying a trained-head
+  candidate through the untrained endpoint, or vice versa, or with a
+  different training query count or digest, SHALL raise
+  `EC_BUILD_ID_CONFLICT`.
 - The build-status operation SHALL aggregate local coordinator state and
   participant status by build id, sanitize the last error to one stable
   category, and expose no row payload, source identity, raw conninfo, or secret
   reference.
+  > **Implementation gaps (Task 214 audit F6, F7):** the shipped status
+  > operation (a) always returns NULL in `last_error_category` — no
+  > error-category storage or sanitization exists, so the "one stable
+  > category" clause is an open obligation; and (b) fails closed with
+  > `EC_BUILD_STATE` ("remote participant status is not yet implemented")
+  > whenever the build's private bindings contain any remote participant —
+  > aggregation is currently implemented only for local-only rosters. Both
+  > clauses stand as requirements; neither describes shipped behavior.
+
+### Boundary: legacy session-GUC roster lane
+
+The extension also ships a legacy session-GUC roster lane —
+`ec_distann.roster` (semicolon-separated `node_id@conninfo` entries carrying
+raw libpq conninfo in a userset GUC), `ec_distann.local_node_id`, and
+`ec_distann.epoch` — consumed by the scan path's placement-directory fallback
+for the non-`distributed_control` fixture lane. That lane is fixture/bootstrap
+substrate **outside** this FR's registration model: FR-078's identity rules
+(secret references only, authenticated registration, no session state or GUC
+supplying identity) stand unchanged for the v5 `distributed_control` design
+and are not weakened by the GUC lane's existence. The lane taxonomy is
+governed by the deployment-mode text of
+[FR-075](../FR-075-ec-distann-access-method-surface.md) and the Bounded
+Context of [FR-085](../FR-085-distann-domain-model.md); a
+`distributed_control=true` build or scan SHALL NOT source roster, node
+identity, or epoch selection from these GUCs.
 
 ## Generation Descriptor
 
@@ -721,7 +780,7 @@ order:
 | expected_global_count | u64 | exact source vec_id count |
 | expected_global_graph_digest | byte[32] | canonical stitched graph content |
 | expected_global_row_tier_digest | byte[32] | canonical source row payload content |
-| head_sample_digest | byte[32] | canonical coordinator head sample |
+| head_sample_digest | byte[32] | head persistence identity: under the sharded default (multi-owner roster with `ec_distann.shard_head_storage` on) this is the head **membership** digest; otherwise the canonical head-sample digest — the shape follows the persistence clause of [FR-080](../read/FR-080-distann-coordinator-head-index.md), which owns the sharded-vs-full head contract |
 | owner_expectations | length-prefixed array | one roster-ordered `(node_id u32, expected_count u64, expected_owner_digest byte[32])` entry per owner |
 
 The frozen version-1 validity domain is: graph degree `4..=256`, build-list size
@@ -732,7 +791,10 @@ SHALL NOT make existing version-1 bytes invalid or broaden what an older
 version-1 decoder accepts.
 
 Version-2 trained-head options require policy `training_landmarks_exact`, query
-count 200, and a nonzero canonical digest. Legacy 26-byte options decode as
+count 200, a nonzero canonical digest, and `head_index_cap` exactly `4096` — a
+fourth validity requirement layered on the version-1 domain: option bytes whose
+cap is otherwise v1-valid are rejected under the trained-head policy. Legacy
+26-byte options decode as
 `current_sample_graph`, count zero, and a zero no-training digest; they re-encode
 byte-identically. Policy/input mismatches and unknown versions fail closed.
 
@@ -829,7 +891,8 @@ directory_bytes bigint, control_index_bytes bigint)`
 | `EC_HANDOFF_FORMAT` | Unknown wire/record/codec version or malformed entry | Roll back the entire batch |
 | `EC_HANDOFF_TOO_LARGE` | Preflight shows one entry can exceed 8 MiB, or an encoded batch exceeds 8 MiB | Reject before graph construction/remote begin for an entry, or before declared-size allocation for a batch |
 | `EC_BUILD_INCOMPLETE` | Seal observes missing sequence, count, row, directory, or final owner digest | Keep generation Building and query-invisible |
-| `EC_BUILD_STATE` | Operation is invalid for the generation state | Reject without changing the state |
+| `EC_BUILD_STATE` | Operation is invalid for the generation state, the source relation is partitioned/inherited, or status is requested for an unimplemented remote-participant roster | Reject without changing the state |
+| `EC_HEAD_TRAINING` | Training relation has the wrong shape, NULL ordinal/vector, or a dimension-mismatched vector | Reject before graph construction or remote mutation |
 
 ## Constraints
 
@@ -861,6 +924,7 @@ directory_bytes bigint, control_index_bytes bigint)`
 | FR-078-AC-14 | Participant identity is durably configured; node registration resolves a secret reference, obtains UUID/endpoint/canonical locator only from the secured identity endpoint, rejects duplicate/raw/incompatible inputs before insertion, and desired-roster replacement cannot alter active/retained build bindings | Test (TC-040) |
 | FR-078-AC-15 | The 107-byte owner-stream hash state is golden-frozen, resumes to the one-shot digest across every entry/batch split, rejects malformed or mismatched state before mutation, and preserves empty sequence-zero semantics | Test (TC-040, TC-050) |
 | FR-078-AC-16 | Begin-build commits a source/control-identity gate plus complete golden-frozen private-binding digest under source→control→registry→registration locking; exact replay validates every bound byte, subcommit promotes ownership, top/subtransaction rollback releases new locks, and same-session/competing-backend builds cannot borrow ownership | Test (TC-042, TC-050) |
+| FR-078-AC-17 | `ec_distann_build_epoch_with_training` rejects a malformed training relation as `EC_HEAD_TRAINING` before mutation, binds the query count and digest into the immutable v2 build options, and a head-policy or training-input mismatch on replay of an existing candidate raises `EC_BUILD_ID_CONFLICT` | Test (TC-040) |
 
 ## Dependencies
 

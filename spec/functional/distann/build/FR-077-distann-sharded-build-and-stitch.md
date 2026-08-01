@@ -36,15 +36,17 @@ flowchart LR
 
 ## Behavior
 
-- The build SHALL assign vectors to k-means build shards; a vector whose
-  distance to a non-primary shard centroid is within `(1 + closure_epsilon)`
-  of its best centroid distance SHALL be inserted into that shard as well
-  (closure overlap), reusing the distance-ratio assignment machinery
-  established on branch `task-144-spire-closure-ratio-pruning`
-  (`src/am/ec_spire/build/routing_plan.rs`). Reuse mode is **extract-to-shared**
-  (lift the pure distance-ratio helper into a shared module consumed by both
-  AMs), not a fork and not an in-place edit under SPIRE's spec ownership — so
-  SPIRE's behavior (whose specs remain APPROVED) is unchanged.
+- The build SHALL assign vectors to spherical k-means build shards; a vector
+  whose distance to a non-primary shard centroid is within
+  `(1 + closure_epsilon)` of its best centroid distance SHALL be inserted into
+  that shard as well (closure overlap). The ε band is a fresh implementation
+  against the already-plumbed `closure_epsilon` reloption: the distance-ratio
+  machinery ADR-085 cited lives on the unmerged
+  `task-144-spire-closure-ratio-pruning` branch, so no shared helper is
+  extracted and SPIRE's build path (whose specs remain APPROVED) is untouched.
+  Negative `closure_epsilon` values SHALL be clamped to `+0.0` at assignment
+  time; a node excluded from every band by non-finite distances SHALL still be
+  assigned to its primary shard.
 - Each shard SHALL be built with the shared Vamana core
   (`build_vamana_graph_with_stats`, `robust_prune`) independently; shard
   builds MAY run in parallel.
@@ -69,9 +71,39 @@ flowchart LR
 - A single-shard (monolithic) build SHALL remain available as the fallback
   path: a stitch-quality failure degrades build parallelism, not the
   program (ADR-085 Consequences).
+- **Shard-count selection.** When the `build_shards` reloption is at least 1,
+  the build SHALL use exactly that shard count, clamped to the node count.
+  When it is `0` (auto), the build SHALL use one shard (the monolithic path)
+  for corpora of at most 20,000 nodes and otherwise
+  `(node_count / 25_000).clamp(2, 16)` shards (integer division: roughly one
+  shard per 25k rows, floored at 2 and capped at 16 so per-shard Vamana builds
+  stay large enough to be coherent).
+- **Reachability repair.** After the stitch, the build SHALL run a
+  reachability-repair pass: BFS from the entry medoid over the stitched graph;
+  for each unreached node in ascending node order, append one in-edge from the
+  nearest reached source node that can accept it — a source with a free
+  adjacency slot, or otherwise a source whose farthest non-repair edge is
+  evicted to make room. The pass SHALL protect repair-added edges from
+  eviction by later repairs. The pass SHALL propagate reachability forward
+  from each repaired node before the next repair. The pass SHALL apply to
+  single-membership passthrough records as well as unioned records.
+  The pass SHALL never exceed `graph_degree` (CON-1). If a repair cannot be
+  placed without exceeding the degree bound, then the build SHALL fail rather
+  than emit an unreachable or over-degree graph. The pass is deterministic, and its repair
+  count is reported in the build statistics (`reachability_repairs`, expected
+  0 at corpus scale). This pass is what guarantees CON-3 mechanically.
 - The build SHALL record in the epoch manifest: shard count,
   closure duplication factor, stitch edge-union statistics, and build wall
   time.
+  > **Implementation gap (Task 214 audit F2):** the shipped build computes
+  > shard count, duplication factor, stitch edge-union stats, peak-memory
+  > figures, and repair counts in `ShardBuildStats`, but emits them only as
+  > build-time log lines; the epoch manifest (`DistannEpochManifestV2`)
+  > carries no such fields and build wall time is not measured anywhere.
+  > AC-3 and the CON-4 manifest row are therefore unsatisfiable as written
+  > until the manifest (or an equivalent durable artifact) gains these fields.
+  > The requirement stands as an open obligation; it does not describe
+  > shipped behavior.
 
 ## Constraints
 
@@ -91,6 +123,11 @@ flowchart LR
 | FR-077-AC-3 | Closure duplication factor and stitch statistics are present in the epoch manifest | Inspection |
 | FR-077-AC-4 | All FR-077-CON property tests pass across randomized corpora | Test (proptest) |
 | FR-077-AC-5 | Stitched output contains exactly one canonical handoff entry per vec_id, with the vector and source-row payload captured from the same build snapshot | Test (TC-038, TC-040) |
+| FR-077-AC-6 | The reachability-repair pass makes every node reachable from the entry medoid without exceeding `graph_degree`, never evicts a repair edge, and reports its repair count in the build statistics | Test (property) |
+
+> AC-3 and the CON-4 peak-memory manifest row are currently unsatisfiable:
+> the statistics exist but reach only the build log, not the epoch manifest
+> (see the implementation-gap note under Behavior).
 
 ## Dependencies
 
