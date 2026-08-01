@@ -8,6 +8,13 @@ date: 2026-07-06
 ---
 # ADR-085: ec_distann — Single Global Vamana Graph with Hash-Placed Records and Coordinator Hop-Round Search
 
+> **Amended by
+> [ADR-087](./ADR-087-ec-distann-sharded-head-and-replica-demotion.md)**
+> (Tasks 203/210): decision item 5 and the architecture half of D3 — the
+> coordinator-resident head — no longer describe the shipped multi-owner
+> default, which is the sharded membership-only head (FR-080). D3's
+> cap-retention measurement (C = 4096) and decisions 1–4/D8 stand.
+
 ## Context
 
 The SPIRE remediation program measured, on a release-verified substrate, that

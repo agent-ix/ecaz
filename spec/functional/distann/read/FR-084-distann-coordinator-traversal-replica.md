@@ -30,6 +30,19 @@ still be materialized from the hash owner under FR-078 and FR-081.
 
 The existing owner traversal SHALL remain the default and correctness fallback.
 
+**Conformance posture (Tasks 203/210, ADR-087).** The replica is a
+coordinator-resident unsharded copy of the whole graph and is therefore
+non-conforming under
+[NFR-021](../../../non-functional/NFR-021-distann-distribution-invariant.md)
+clause 4. It SHALL be reachable only through the off-by-default session GUC
+`ec_distann.allow_nonconforming_replica`, SHALL never be selected by
+default, and SHALL never be a decision-bearing benchmark arm
+([NFR-022](../../../non-functional/NFR-022-distann-control-validity.md) —
+context lanes only). The ADR-086 promotion track ("Ready-replica preference
+as the normal path") is withdrawn; the selected bounded successor direction
+is the TRAV-30 gateway-copy mechanism
+([FR-086](./FR-086-distann-gateway-copies.md)).
+
 ## Properties
 
 | Property | Type | Rule |
@@ -159,7 +172,7 @@ incomplete.
 
 ## Operator Surface
 
-Task 198 SHALL provide:
+The extension SHALL provide:
 
 ```text
 ec_distann_build_traversal_replica(index_regclass regclass) returns bytea
@@ -169,24 +182,44 @@ ec_distann_retire_traversal_replica(index_regclass regclass) returns void
 ec_distann_reclaim_traversal_replica(index_regclass regclass) returns boolean
 ```
 
-Build, retire, and reclaim require the index owner or superuser, use a fixed
-SECURITY DEFINER search path, revoke PUBLIC execute, and reject non-authoritative
-or multi-coordinator topology.
+Build, retire, and reclaim SHALL execute with invoker rights and enforce an
+in-function index-owner-or-superuser check, and SHALL reject
+non-authoritative or multi-coordinator topology. (The functions are
+invoker-rights by design — unlike the FR-079 remote-endpoint class — because
+they act on the caller's own index under the caller's privileges.)
+
+Supporting control/recovery surface (same authorization posture):
+`ec_distann_mark_traversal_replica_stale` (conditional Ready→Stale for the
+exact identity), `ec_distann_guard_traversal_replica_mutation` (the
+post-lock per-tuple guard), `ec_distann_traversal_replica_control_preflight`
+(loopback control-connection preflight),
+`ec_distann_recover_traversal_replica_invalidation` (crash recovery for a
+committed-but-unreported invalidation), and the
+`ec_distann.replica_control_password_file` GUC naming the credential file
+for the dedicated loopback control connection. A VACUUM on the indexed
+relation SHALL also invalidate a Ready replica.
 
 ## Acceptance Criteria
 
-- **FR-084-AC-1:** Ready requires exact global cardinality, complete roster
-  coverage, unique/hash-correct vec_ids, descriptor equality, and reproducible
-  content digest.
-- **FR-084-AC-2:** Same-query replica and owner traversals return identical
-  ordered hits and counters before owner payload materialization.
-- **FR-084-AC-3:** Wrong fingerprint/digest/state never selects the replica.
-- **FR-084-AC-4:** A mid-replica fault restarts wholly on the owner path.
-- **FR-084-AC-5:** Exactly one first mutation attempt returns
-  `EC_REPLICA_INVALIDATED` after durable Stale and dispatches no owner write;
-  its retry reaches and reports the index's ordinary mutation posture.
-- **FR-084-AC-6:** Build/retire/reclaim and crash replay are idempotent and do
-  not reclaim while a fingerprint scan pin exists.
-- **FR-084-AC-7:** Replica storage, build/WAL/copy cost, cache residency,
-  recall, latency, and traversal attribution are measured by the Task 198
-  checked-in suite before any promotion.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| FR-084-AC-1 | Ready requires exact global cardinality, complete roster coverage, unique/hash-correct vec_ids, descriptor equality, and reproducible content digest | Test |
+| FR-084-AC-2 | Same-query replica and owner traversals return identical ordered hits and counters before owner payload materialization | Test |
+| FR-084-AC-3 | Wrong fingerprint/digest/state never selects the replica | Test |
+| FR-084-AC-4 | A mid-replica fault restarts wholly on the owner path | Test |
+| FR-084-AC-5 | Exactly one first mutation attempt returns `EC_REPLICA_INVALIDATED` after durable Stale and dispatches no owner write; its retry reaches and reports the index's ordinary mutation posture | Test |
+| FR-084-AC-6 | Build/retire/reclaim and crash replay are idempotent and do not reclaim while a fingerprint scan pin exists | Test |
+| FR-084-AC-7 | With `ec_distann.allow_nonconforming_replica` off (the default), no scan selects the replica; the suite rejects any decision-bearing arm that enables it | Test + suite audit |
+
+## Dependencies
+
+- **Upstream**: [FR-078](../build/FR-078-distann-hash-placement.md)
+  (placement, roster), [FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md)
+  (epoch pin/fence), [FR-083](../lifecycle/FR-083-distann-dml-path.md)
+  (mutation posture).
+- **Downstream**:
+  [NFR-021](../../../non-functional/NFR-021-distann-distribution-invariant.md)
+  clause 4,
+  [NFR-022](../../../non-functional/NFR-022-distann-control-validity.md)
+  (admissibility screen); ADR-086 as superseded by ADR-087;
+  [FR-086](./FR-086-distann-gateway-copies.md) (selected bounded successor).

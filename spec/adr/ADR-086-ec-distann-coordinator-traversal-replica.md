@@ -2,11 +2,22 @@
 type: ADR
 id: ADR-086
 title: "ec_distann: Fingerprint-Bound Coordinator Traversal Replica"
-status: ACCEPTED
+status: SUPERSEDED
 impact: Adds an optional derived traversal copy at the coordinator to remove serial owner expansion round trips while retaining hash-owned rows, owner-authoritative generations, lazy payload materialization, and the existing remote traversal fallback.
 date: 2026-07-23
 ---
 # ADR-086: ec_distann — Fingerprint-Bound Coordinator Traversal Replica
+
+> **Superseded by
+> [ADR-087](./ADR-087-ec-distann-sharded-head-and-replica-demotion.md)**
+> (Tasks 203/210): the Decision below — including the Task-198 PROMOTE and
+> "Ready-replica preference as the normal path" — did not ship and was
+> reversed. The replica is a non-conforming opt-in
+> (`ec_distann.allow_nonconforming_replica`), never decision-bearing
+> (NFR-021 clause 4 / NFR-022), and the TRAV-30 direction listed under
+> rejected alternatives below is what shipped (FR-086). The object model,
+> digest chain, and invalidation protocol remain accurate as FR-084
+> implementation history.
 
 ## Context
 
