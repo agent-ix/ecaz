@@ -2167,10 +2167,15 @@ fn collect_distann_nfr_021_step_evidence(
         .filter(|row| row.metric == "physical_benchmark_storage_relation")
         .filter(|row| nfr_021_row_matches_variant(row, registration))
     {
+        // `bounded` structures are NFR-021-permitted by size argument;
+        // `control` rows are control-plane metadata (digests, counts, the
+        // membership-only head's bounded id blob — roster-like state). Neither
+        // is corpus-derived coordinator state, so neither feeds the
+        // derived-bytes hard violation.
         if row
             .values
             .get("nfr_021_class")
-            .is_some_and(|class| class == "bounded")
+            .is_some_and(|class| class == "bounded" || class == "control")
         {
             continue;
         }
