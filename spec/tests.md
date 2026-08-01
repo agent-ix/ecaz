@@ -9,6 +9,13 @@ title: "Test Matrix"
 
 This matrix follows the `/spec-matrix` skill shape. It replaces the stale HNSW-era inventory with current traceability for the multi-AM Ecaz implementation.
 
+**DistANN rows in this file are superseded** (Task 214, 2026-08-01): the
+distann FR/NFR set was rewritten and renumbered, and its authoritative
+matrix is [`spec/matrix/distann.md`](./matrix/distann.md) (TM-002) —
+FR-075..FR-090 + NFR-017..022, 192 AC/CON rows. This file's distann rows
+predate the rewrite (old AC cardinalities; TC-040 cites a moved test file)
+and are retained as history only.
+
 ## Test Matrix Rules
 
 1. Coverage: every acceptance criterion should trace to at least one test case or documented gap.
