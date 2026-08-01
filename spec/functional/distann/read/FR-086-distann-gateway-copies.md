@@ -61,6 +61,29 @@ already bounded by C and expanded first by every scan.
   gateway-copy serving (`ec_distann_gateway_copy_stats`); an A/B arm
   claiming gateway-copy effect SHALL show non-zero activation.
 
+## Flows
+
+Population and skip-mask serving:
+
+```mermaid
+sequenceDiagram
+    participant S as scan backend (coordinator)
+    participant G as gateway-copy set (bounded)
+    participant O as owner
+
+    Note over S,G: per epoch, capacity > 0
+    S->>O: ec_distann_gateway_routing_export(head member ids)
+    O-->>S: routing payloads (neighbor ids + codes, no vectors)
+    S->>G: insert up to capacity (refusal past bound)
+
+    Note over S,O: each hop round
+    S->>O: expand(vec_ids, skip_neighbor_vec_ids = cached ids)
+    O-->>S: exact dists + tombstones; neighbor payload omitted for skipped ids
+    S->>G: reconstruct candidate half for skipped ids
+    S->>S: re-apply batch candidate limit across merged batch
+    Note over S: miss / refused id ⇒ full owner response (identical results)
+```
+
 ## Constraints
 
 | ID | Constraint | Type | Validation |

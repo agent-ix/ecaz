@@ -99,6 +99,51 @@ clause 3).
   benchmark arm
   ([NFR-022](../../../non-functional/NFR-022-distann-control-validity.md)).
 
+## Flows
+
+Sharded head search (default multi-owner path):
+
+```mermaid
+sequenceDiagram
+    participant S as scan backend
+    participant C as coordinator state
+    participant HA as shard holder A (owner or attested replica)
+    participant HB as shard holder B
+
+    S->>C: resolve active epoch, decode membership blob
+    S->>C: replica attestation vs session head_replica_count
+    Note over S: per shard: pick holder by query digest,<br/>clamp to owner if attestation short
+    par fan-out per head shard
+        S->>HA: head_search(member vec_ids, policy, seed_count)
+        HA->>HA: build/cache per-shard graph<br/>(members-derived ordinal = key + seed)
+        HA-->>S: at most seed_count seeds (no vectors)
+    and
+        S->>HB: head_search(...)
+        HB-->>S: at most seed_count seeds
+    end
+    S->>S: merge (distance, vec_id) order, dedup,<br/>truncate to seed_count → FR-081 frontier
+```
+
+Head-shard replica population and attestation:
+
+```mermaid
+sequenceDiagram
+    participant Op as operator
+    participant C as coordinator
+    participant O as shard owner
+    participant R as replica node
+
+    Op->>C: ec_distann_populate_head_replicas(index)
+    loop every (shard, replica) pair — coordinator-owned shards included
+        C->>O: ec_distann_head_shard_export(shard)
+        O-->>C: shard landmark rows
+        C->>R: ec_distann_head_shard_import(shard, rows)
+        R-->>C: imported
+    end
+    C->>C: write attestation row (epoch_fingerprint, replica_count)<br/>only after ALL pairs imported
+    Note over C: routing serves a replica only when<br/>attested count covers the session GUC
+```
+
 ## Constraints
 
 | ID | Constraint | Type | Validation |
