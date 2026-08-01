@@ -4,6 +4,7 @@
 - Packet: `reviews/task-211/002-head-scaling-law-implementation/`
 - Code commit: `4fe5d5c53` (`feat(distann): implement head sizing crown cache and fused hops`)
 - Follow-up commit: `9c8f2aafb` (counter capture and seed-set provenance)
+- Final code fix: `0a526ac1e` (exercise crown seeds in plain arms)
 - Date: 2026-08-01. Coder: Codex
 
 ## What to review
@@ -23,15 +24,22 @@ for the P2 matrix:
 
 ## Validation
 
-The PG18 library and benchmark-feature compiles pass. The focused deterministic
-attestation/digest-binding test passes. The required real-corpus A/B sweep at
-10k/50k/100k (recall, latency, storage) is not yet executed: the checkout and
-host do not contain the staged corpus/query/manifest inputs, and suite audit
-fails on those missing files. No synthetic or historical numbers are being
-used as substitute evidence.
+PG18 library and benchmark-feature compiles pass, and the focused deterministic
+attestation/digest-binding test passes. The required `ecaz bench suite` A/B
+matrix completed at 10k/50k/100k with recall, latency, and storage evidence.
+
+| scale | control recall / ms | law recall / ms | storage ratio |
+| --- | --- | --- | --- |
+| 10k | 0.9940 / 39.00 | 0.9940 / 37.90 | 1.235867 |
+| 50k | 0.9595 / 51.80 | 0.9595 / 51.00 | 1.332667 |
+| 100k | 0.9145 / 53.00 | 0.9145 / 52.00 | 1.351147 |
+
+The 10k/50k arms used extension SHA `d4c39c8218055195eed559249116251bf0315f73`;
+the 100k arms used the final installed SHA `0a526ac1eb840a975ac00130201058b187f4057d`.
+The packet-local `results.jsonl` is the structured source of truth.
 
 See `artifacts/manifest.md` and `artifacts/validation.log`.
 
 ## Status
 
-Open — awaiting reviewer feedback and the required benchmark evidence.
+Open — implementation and benchmark evidence complete; awaiting outside reviewer feedback.

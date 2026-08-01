@@ -4,4 +4,10 @@ cargo_check_pg18_distann_head_attribution_benchmark=passed
 cargo_check_ecaz_cli=passed
 cargo_test_crown_cache=2 passed
 suite_dry_run_task213=6 steps expanded; fused flag present only on fused arms
-bench_suite_audit=blocked_missing_ec_real_10k_50k_100k_staged_inputs
+bench_suite_task213=completed_6_steps
+bench_results=bench-run-v3/results.jsonl
+bench_10k_unfused_fused=0.9990/33.90_vs_0.9990/34.80_storage=1.235467
+bench_50k_unfused_fused=0.9555/44.60_vs_0.9555/44.60_storage=1.332667
+bench_100k_unfused_fused=0.9135/40.80_vs_0.9135/41.30_storage=1.351173
+crown_stats=recall_6400_latency_1600_fallbacks_0_fused_hops_recall_200_latency_50
+external_run_dirs=removed_after_capture

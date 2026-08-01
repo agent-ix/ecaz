@@ -4,6 +4,7 @@
 - Packet: `reviews/task-213/002-fused-head-hop-implementation/`
 - Code commit: `4fe5d5c53` (`feat(distann): implement head sizing crown cache and fused hops`)
 - Follow-up commit: `9c8f2aafb` (fused-hop counters and seed-set provenance)
+- Final code fix: `0a526ac1e` (exercise crown seeds in plain arms)
 - Date: 2026-08-01. Coder: Codex
 
 ## What to review
@@ -21,14 +22,22 @@ This checkpoint adds the crown-gated fused path:
 
 ## Validation
 
-The PG18 library and benchmark-feature compiles pass, and the crown support
-tests pass (`2 passed`). The required crown-on fused/unfused A/B at 10k/50k/
-100k (recall, latency, storage plus activation counters) is not yet executed:
-the real staged corpus/query/manifest files are absent and suite audit fails on
-the missing inputs. No predicted win is presented as a result.
+PG18 library and benchmark-feature compiles pass, and the crown support tests
+pass (`2 passed`). The required crown-on fused/unfused `ecaz bench suite` A/B
+completed at 10k/50k/100k.
+
+| scale | unfused recall / ms | fused recall / ms | storage ratio |
+| --- | --- | --- | --- |
+| 10k | 0.9990 / 33.90 | 0.9990 / 34.80 | 1.235467 |
+| 50k | 0.9555 / 44.60 | 0.9555 / 44.60 | 1.332667 |
+| 100k | 0.9135 / 40.80 | 0.9135 / 41.30 | 1.351173 |
+
+The packet-local counter lines show crown seeds served (6,400 recall; 1,600
+latency), zero fallbacks, and fused head hops (200 recall; 50 latency) on each
+fused physical arm.
 
 See `artifacts/manifest.md` and `artifacts/validation.log`.
 
 ## Status
 
-Open — awaiting reviewer feedback and the required benchmark evidence.
+Open — implementation and benchmark evidence complete; awaiting outside reviewer feedback.

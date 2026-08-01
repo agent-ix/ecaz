@@ -4,4 +4,9 @@ cargo_check_pg18_distann_head_attribution_benchmark=passed
 cargo_check_ecaz_cli=passed
 cargo_test_head_scaling_attestation=1 passed
 suite_dry_run_task211=6 steps expanded; law flags present on law arms
-bench_suite_audit=blocked_missing_ec_real_10k_50k_100k_staged_inputs
+bench_suite_task211=completed_6_steps
+bench_results=bench-run-v2/results.jsonl
+bench_10k_control_law=0.9940/39.00_vs_0.9940/37.90_storage=1.235867
+bench_50k_control_law=0.9595/51.80_vs_0.9595/51.00_storage=1.332667
+bench_100k_control_law=0.9145/53.00_vs_0.9145/52.00_storage=1.351147
+external_run_dirs=removed_after_capture
