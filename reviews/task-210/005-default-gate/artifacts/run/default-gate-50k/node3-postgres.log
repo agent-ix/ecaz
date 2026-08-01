@@ -1,0 +1,23 @@
+2026-07-31 12:59:31.983 PDT [147266] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-31 12:59:31.997 PDT [147266] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-31 12:59:31.997 PDT [147266] LOG:  listening on IPv4 address "127.0.0.1", port 42622
+2026-07-31 12:59:32.009 PDT [147272] LOG:  database system was shut down at 2026-07-31 12:59:31 PDT
+2026-07-31 12:59:32.017 PDT [147266] LOG:  database system is ready to accept connections
+2026-07-31 13:04:32.285 PDT [147270] LOG:  checkpoint starting: time
+2026-07-31 13:05:19.775 PDT [147270] LOG:  checkpoint complete: wrote 481 buffers (2.9%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=47.406 s, sync=0.067 s, total=47.491 s; sync files=261, longest=0.003 s, average=0.001 s; distance=3992 kB, estimate=3992 kB; lsn=0/1B3A8C0, redo lsn=0/1B3A830
+2026-07-31 13:06:02.132 PDT [147557] LOG:  skipping vacuum of "_ecdz_row_17746_71717171717141718171717171717171" --- lock not available
+2026-07-31 13:06:02.132 PDT [147557] LOG:  skipping vacuum of "_ecdz_graph_17746_71717171717141718171717171717171" --- lock not available
+2026-07-31 13:07:03.786 PDT [147600] ERROR:  canceling autovacuum task
+2026-07-31 13:07:03.786 PDT [147600] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17746_71717171717141718171717171717171"
+2026-07-31 13:07:03.788 PDT [147600] LOG:  skipping vacuum of "_ecdz_graph_17746_71717171717141718171717171717171" --- lock not available
+2026-07-31 13:08:02.155 PDT [147635] LOG:  skipping analyze of "_ecdz_row_17746_71717171717141718171717171717171" --- lock not available
+2026-07-31 13:08:02.155 PDT [147635] LOG:  skipping vacuum of "_ecdz_graph_17746_71717171717141718171717171717171" --- lock not available
+2026-07-31 13:09:32.765 PDT [147270] LOG:  checkpoint starting: time
+2026-07-31 13:09:34.817 PDT [147270] LOG:  checkpoint complete: wrote 19 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 21 recycled; write=1.916 s, sync=0.041 s, total=2.052 s; sync files=63, longest=0.005 s, average=0.001 s; distance=345900 kB, estimate=345900 kB; lsn=0/16D05C30, redo lsn=0/16D05BD8
+2026-07-31 13:14:26.315 PDT [147266] LOG:  received fast shutdown request
+2026-07-31 13:14:26.329 PDT [147266] LOG:  aborting any active transactions
+2026-07-31 13:14:26.330 PDT [147266] LOG:  background worker "logical replication launcher" (PID 147275) exited with exit code 1
+2026-07-31 13:14:26.335 PDT [147270] LOG:  shutting down
+2026-07-31 13:14:26.340 PDT [147270] LOG:  checkpoint starting: shutdown immediate
+2026-07-31 13:14:26.367 PDT [147270] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.007 s, total=0.033 s; sync files=5, longest=0.005 s, average=0.002 s; distance=47 kB, estimate=311315 kB; lsn=0/16D119A0, redo lsn=0/16D119A0
+2026-07-31 13:14:26.391 PDT [147266] LOG:  database system is shut down

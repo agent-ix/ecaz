@@ -555,6 +555,11 @@ CREATE TABLE ec_distann_generation_head_state (
     training_query_digest bytea NOT NULL CHECK (octet_length(training_query_digest) = 32),
     head_graph_entry integer NOT NULL CHECK (head_graph_entry >= 0),
     head_graph_digest bytea NOT NULL CHECK (octet_length(head_graph_digest) = 32),
+    -- Membership-only head (NFR-021 clause 3, Task 210): the coordinator's
+    -- entire head persistence is this bounded id list (u32 count + u64 ids,
+    -- canonical LE); the sample table then holds zero rows for the build.
+    -- NULL is the legacy full-vector shape.
+    membership bytea CHECK (membership IS NULL OR octet_length(membership) = 4 + 8 * sample_count),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (index_oid, logical_index_uuid, build_id),
     CHECK (
@@ -575,13 +580,44 @@ CREATE TABLE ec_distann_generation_head_sample (
     build_id uuid NOT NULL,
     sample_ordinal integer NOT NULL CHECK (sample_ordinal >= 0),
     vec_id bigint NOT NULL,
-    vector real[] NOT NULL,
+    -- NULL under ec_distann.shard_head_storage (NFR-021 clause 3, Task 210
+    -- P2a): the coordinator persists head membership only, because each
+    -- landmark's full-precision vector already lives on the owner its FR-078
+    -- placement hash selects. A non-NULL vector is the unsharded legacy shape.
+    vector real[],
     neighbors integer[] NOT NULL,
     PRIMARY KEY (index_oid, logical_index_uuid, build_id, sample_ordinal),
     UNIQUE (index_oid, logical_index_uuid, build_id, vec_id),
     FOREIGN KEY (index_oid, logical_index_uuid, build_id)
         REFERENCES ec_distann_generation_head_state (index_oid, logical_index_uuid, build_id)
         ON DELETE CASCADE
+);
+
+-- DISTRIBUTEDANN 4.1 head replicas (Task 210 P2b).
+--
+-- A replica serves a head shard it does not own, so it must hold that shard's
+-- landmark vectors. This is a copy of a *bounded* structure -- head capacity C
+-- divided across the roster -- which NFR-021 explicitly permits; it is never
+-- the O(N) graph or row tier. Epoch-scoped and rebuildable.
+CREATE TABLE ec_distann_head_shard_replica (
+    index_oid oid NOT NULL,
+    epoch_fingerprint bytea NOT NULL,
+    shard_ordinal integer NOT NULL CHECK (shard_ordinal >= 0),
+    vec_id bigint NOT NULL,
+    vector real[] NOT NULL,
+    PRIMARY KEY (index_oid, epoch_fingerprint, vec_id)
+);
+
+CREATE INDEX ec_distann_head_shard_replica_shard
+    ON ec_distann_head_shard_replica (index_oid, epoch_fingerprint, shard_ordinal);
+
+-- Records that head-shard replicas were populated for an epoch, so the
+-- coordinator can route to a replica knowing it holds the shard (Task 210 P2b).
+CREATE TABLE ec_distann_head_replica_state (
+    index_oid oid NOT NULL,
+    epoch_fingerprint bytea NOT NULL,
+    replica_count integer NOT NULL CHECK (replica_count >= 0),
+    PRIMARY KEY (index_oid, epoch_fingerprint)
 );
 
 CREATE TABLE ec_distann_publish_decision (

@@ -2,7 +2,7 @@
 id: SR-004
 type: SpecReview
 analysis: dependency
-scope: "StR-008; FR-075..FR-083 (spec/functional/index/distann); NFR-017..NFR-020; ADR-085; re-run against revision d25ea9e0c (inline vector → co-placed heap rerank, ADR-085 D11); reconciled at b19551e21"
+scope: "StR-008; FR-075..FR-083 (spec/functional/distann); NFR-017..NFR-020; ADR-085; re-run against revision d25ea9e0c (inline vector → co-placed heap rerank, ADR-085 D11); reconciled at b19551e21"
 review_set: all
 title: "Dependency and Ordering Analysis: ec_distann Spec Batch"
 ---

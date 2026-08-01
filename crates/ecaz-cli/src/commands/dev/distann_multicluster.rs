@@ -152,10 +152,34 @@ pub struct LocalMultinodePg18Args {
     /// Session beam width applied to both physical and single benchmark arms.
     #[arg(long)]
     pub beam_width: Option<u32>,
+    /// FR-081 retained candidate heap size L applied to benchmark query arms.
+    #[arg(long)]
+    pub candidate_heap_limit: Option<u32>,
     /// Session hop-round cap applied to both benchmark arms. Together with
     /// beam_width this makes fixed-product BW/H A/B runs suite-addressable.
     #[arg(long)]
     pub hop_rounds: Option<u32>,
+    /// Task 210 P2a: build and serve the FR-080 head as roster shards. Sets
+    /// `ec_distann.shard_head_storage` before the build so the coordinator
+    /// persists landmark ids only, and `ec_distann.sharded_head_search` on the
+    /// benchmark arms so every owner searches the landmarks it already holds.
+    #[arg(long, default_value_t = false)]
+    pub sharded_head: bool,
+    /// Task 210 P2b: additional roster nodes that may serve a head shard
+    /// (DISTRIBUTEDANN 4.1). Requires --sharded-head.
+    #[arg(long)]
+    pub head_replica_count: Option<u32>,
+    /// Task 210 P3: TRAV-30 bounded gateway copy capacity. Sets
+    /// `ec_distann.gateway_copy_capacity` on the physical benchmark arms so
+    /// the coordinator caches that many head landmarks' routing payloads.
+    #[arg(long)]
+    pub gateway_copy_capacity: Option<u32>,
+    /// Control arm for head-sharding A/Bs now that the sharded head is the
+    /// shipped default (fe5822f46): forces the legacy coordinator-local head
+    /// by setting `ec_distann.shard_head_storage=off` on the building session
+    /// and `ec_distann.sharded_head_search=off` on the physical arms.
+    #[arg(long, default_value_t = false, conflicts_with = "sharded_head")]
+    pub local_head: bool,
     /// Task 180 benchmark-only physical seed mode. Requires an extension build
     /// with `distann-head-attribution-benchmark` when set.
     #[arg(long)]
@@ -484,6 +508,15 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         .is_some_and(|value| !(1..=64).contains(&value))
     {
         bail!("--beam-width must be in 1..=64");
+    }
+    if args
+        .candidate_heap_limit
+        .is_some_and(|value| !(1..=4096).contains(&value))
+    {
+        bail!("--candidate-heap-limit must be in 1..=4096");
+    }
+    if args.candidate_heap_limit.is_some() && !args.physical_benchmark {
+        bail!("--candidate-heap-limit requires --physical-benchmark");
     }
     if args
         .hop_rounds
@@ -1142,11 +1175,21 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
     } else {
         ""
     };
+    // Task 210 P2a: the storage half of head sharding is read at build time,
+    // so it is set on the building session rather than on the query arms.
+    let shard_head_storage = if args.sharded_head {
+        "SET ec_distann.shard_head_storage = on;"
+    } else if args.local_head {
+        "SET ec_distann.shard_head_storage = off;"
+    } else {
+        ""
+    };
     Ok(format!(
         "{prefix}
          {load}
          {correctness_fixture}
          ANALYZE dm;
+         {shard_head_storage}
          CREATE INDEX dm_idx ON dm USING ec_distann
              (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
              WITH (distributed_control = true, source_identity = 'include',
@@ -1282,6 +1325,13 @@ fn attribution_stage_mean(stage_rows: &[&str], stage: &str) -> Result<f64> {
 
 async fn run_physical_bench_child(args: Vec<String>) -> Result<String> {
     let executable = std::env::current_exe().wrap_err("resolving benchmark executable")?;
+    // Session GUCs decide which mechanism an arm measures; a silently absent
+    // GUC is how two replica arms ran inert (2026-07-31). Log the exact child
+    // argv so packet artifacts can prove what each benchmark was told.
+    crate::ecaz_eprintln!(
+        "[distann-multicluster] physical_bench_child args={}",
+        args.join(" ")
+    );
     let output = Command::new(&executable)
         .args(&args)
         .output()
@@ -1318,6 +1368,70 @@ fn append_owner_payload_plan_cache_guc(args: &mut Vec<String>, arm: &str, enable
                 "ec_distann.benchmark_owner_payload_plan_cache={}",
                 if enabled { "on" } else { "off" }
             ),
+        ]);
+    }
+}
+
+/// NFR-021 clause 4 (Task 210 P1): the FR-084 traversal replica is off by
+/// default in the extension. A replica arm must opt in explicitly, which is
+/// also what marks it as a non-conforming accelerator in the emitted rows.
+/// Task 210 P2a/P2b: sharded head search and its replica count are session
+/// GUCs on the physical arm; the storage half is applied before the build.
+fn append_sharded_head_guc(
+    args: &mut Vec<String>,
+    arm: &str,
+    sharded_head: bool,
+    local_head: bool,
+    head_replica_count: Option<u32>,
+) {
+    if arm != "physical" {
+        return;
+    }
+    if sharded_head {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.sharded_head_search=on".into(),
+        ]);
+    }
+    if local_head {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.sharded_head_search=off".into(),
+        ]);
+    }
+    // The replica count is independent of the legacy --sharded-head flag:
+    // sharded search is the shipped default now, and gating the GUC on the
+    // flag left the default-config replica arm silently inert
+    // (head_replica_shards_served=0 AND head_replica_fallbacks=0 in the first
+    // gate attempt — routing never consulted replicas at all).
+    if let Some(replicas) = head_replica_count {
+        args.extend([
+            "--session-guc".into(),
+            format!("ec_distann.head_replica_count={replicas}"),
+        ]);
+    }
+}
+
+/// Task 210 P3: the TRAV-30 gateway copy capacity is a coordinator session
+/// GUC on the physical arm; population happens once per cached epoch at scan
+/// open, bounded by this capacity.
+fn append_gateway_copy_guc(args: &mut Vec<String>, arm: &str, capacity: Option<u32>) {
+    if arm != "physical" {
+        return;
+    }
+    if let Some(capacity) = capacity {
+        args.extend([
+            "--session-guc".into(),
+            format!("ec_distann.gateway_copy_capacity={capacity}"),
+        ]);
+    }
+}
+
+fn append_nonconforming_replica_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
+    if arm == "physical" && enabled {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.allow_nonconforming_replica=on".into(),
         ]);
     }
 }
@@ -1728,10 +1842,13 @@ async fn task198_replica_semantic_result(
              SET ec_distann.benchmark_exact_neighbor = off;
              SET ec_distann.benchmark_materialization_batch_size = 10;
              SET ec_distann.benchmark_owner_payload_plan_cache = off;
-             SET ec_distann.benchmark_traversal_replica_fail_batch = {fail_batch};"
+             SET ec_distann.benchmark_traversal_replica_fail_batch = {fail_batch};
+             SET ec_distann.allow_nonconforming_replica = on;"
         )
     } else {
-        String::new()
+        // The replica is off by default (NFR-021 clause 4, Task 210 P1); the
+        // semantic drill exists to exercise it, so it opts in explicitly.
+        "SET ec_distann.allow_nonconforming_replica = on;".to_owned()
     };
     coordinator
         .batch_execute(&format!(
@@ -4227,8 +4344,7 @@ async fn run_coverage_memory_regression(
             "Task 200 coverage memory regression executed {rows} rows, expected at least {iterations}"
         );
     }
-    let trim_samples = usize::try_from((1_000 / sample_interval_ms.max(1)).max(1))
-        .unwrap_or(1);
+    let trim_samples = usize::try_from((1_000 / sample_interval_ms.max(1)).max(1)).unwrap_or(1);
     if points.len() <= trim_samples.saturating_mul(2).saturating_add(1) {
         bail!(
             "Task 200 coverage memory regression collected too few samples ({}) after edge trimming",
@@ -4303,7 +4419,29 @@ async fn run_physical_benchmarks(
     enospc_fixture: Option<&Task199EnospcFixture>,
 ) -> Result<Vec<String>> {
     let beam_width = args.beam_width.unwrap_or(4);
+    let candidate_heap_limit = args
+        .candidate_heap_limit
+        .unwrap_or(32)
+        .max(beam_width)
+        .max(args.top_k);
     let hop_rounds = args.hop_rounds.unwrap_or(100);
+    // Task 210 P2b: replica routing is gated on an attested population, so a
+    // replica arm must distribute the shard copies before benchmarking —
+    // otherwise every request clamps to its owner and the arm measures
+    // nothing (the head_replica_fallbacks=96 outcome of the first P2 run).
+    if let Some(replicas) = args.head_replica_count.filter(|count| *count > 0) {
+        let placed = coordinator
+            .query_one(
+                "SELECT ec_distann_populate_head_replicas('dm_idx'::regclass, $1::integer)",
+                &[&i32::try_from(replicas).unwrap_or(i32::MAX)],
+            )
+            .await
+            .wrap_err("populating head shard replicas")?
+            .get::<_, i64>(0);
+        crate::ecaz_eprintln!(
+            "[distann-multicluster] physical_head_replicas populated replica_count={replicas} placed={placed}"
+        );
+    }
     let production_head_width = (beam_width * 2).max(32);
     let seed_variants = if args.benchmark_seed_variants.is_empty() {
         vec![BenchmarkSeedVariant {
@@ -4798,7 +4936,7 @@ async fn run_physical_benchmarks(
                 register_same_seed_digest(&mut same_seed_digests, variant, &seed_id_digest)?
                     .unwrap_or_else(|| "none".to_owned());
             lines.push(format!(
-                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} queries={} seed_id_digest={} compared_with={} same_seed=true",
+                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} queries={} seed_id_digest={} compared_with={} same_seed=true",
                 variant.name,
                 variant.strategy,
                 variant.head_search_width,
@@ -4827,7 +4965,7 @@ async fn run_physical_benchmarks(
             variant_hop_rounds,
         ));
         lines.push(format!(
-            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
@@ -4920,6 +5058,8 @@ async fn run_physical_benchmarks(
                 format!("ec_distann.beam_width={arm_beam_width}"),
                 "--session-guc".into(),
                 format!("ec_distann.hop_rounds={arm_hop_rounds}"),
+                "--session-guc".into(),
+                format!("ec_distann.candidate_heap_limit={candidate_heap_limit}"),
             ]);
             if arm == "physical" {
                 recall_args.extend([
@@ -4955,6 +5095,15 @@ async fn run_physical_benchmarks(
                     arm,
                     owner_payload_plan_cache,
                 );
+                append_nonconforming_replica_guc(&mut recall_args, arm, traversal_replica);
+                append_sharded_head_guc(
+                    &mut recall_args,
+                    arm,
+                    args.sharded_head,
+                    args.local_head,
+                    args.head_replica_count,
+                );
+                append_gateway_copy_guc(&mut recall_args, arm, args.gateway_copy_capacity);
             }
             let recall = run_physical_bench_child(recall_args).await?;
             let row = benchmark_table_row(&recall)?;
@@ -4967,7 +5116,7 @@ async fn run_physical_benchmarks(
                 prediction_paths.insert(variant.to_owned(), predictions_output);
             }
             lines.push(format!(
-                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
+                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
                 args.head_index_cap, row[1], row[2]
             ));
         }
@@ -5000,6 +5149,8 @@ async fn run_physical_benchmarks(
             format!("ec_distann.beam_width={arm_beam_width}"),
             "--session-guc".into(),
             format!("ec_distann.hop_rounds={arm_hop_rounds}"),
+            "--session-guc".into(),
+            format!("ec_distann.candidate_heap_limit={candidate_heap_limit}"),
         ]);
         if args.benchmark_backend_batch_size > 0 {
             latency_args.extend([
@@ -5043,13 +5194,22 @@ async fn run_physical_benchmarks(
         }
         append_materialization_benchmark_guc(&mut latency_args, arm, materialization_batch_size);
         append_owner_payload_plan_cache_guc(&mut latency_args, arm, owner_payload_plan_cache);
+        append_nonconforming_replica_guc(&mut latency_args, arm, traversal_replica);
+        append_sharded_head_guc(
+            &mut latency_args,
+            arm,
+            args.sharded_head,
+            args.local_head,
+            args.head_replica_count,
+        );
+        append_gateway_copy_guc(&mut latency_args, arm, args.gateway_copy_capacity);
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
             args.head_index_cap,
             row[1],
             benchmark_ms(&row[2])?,
@@ -5118,25 +5278,28 @@ async fn run_physical_benchmarks(
             }
             for stage in stage_rows {
                 lines.push(format!(
-                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
+                    "physical_benchmark_stage scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {stage}"
                 ));
             }
             let work_rows = latency
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 27 server-side work metrics. The bench
-            // child appends one client_result_rows metric so the measured
-            // result-consumption boundary is represented in the same stream.
-            if work_rows.len() != 28 {
+            // The extension exposes 32 server-side work metrics
+            // (DistannMaterializationWork::ALL). The bench child appends one
+            // client_result_rows metric so the measured result-consumption
+            // boundary is represented in the same stream. Keep this in step
+            // with the enum: adding a counter without updating it fails every
+            // physical latency step.
+            if work_rows.len() != 33 {
                 bail!(
-                    "physical latency attribution expected 28 ec_distann attribution-work rows, got {}",
+                    "physical latency attribution expected 33 ec_distann attribution-work rows, got {}",
                     work_rows.len()
                 );
             }
             for work in work_rows {
                 lines.push(format!(
-                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
+                    "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
         }
@@ -5156,26 +5319,6 @@ async fn run_physical_benchmarks(
     }
 
     if let Some(content_digest) = traversal_replica_digest.as_deref() {
-        let cache = coordinator
-            .query_one(
-                "SELECT coalesce(io.heap_blks_read, 0)::bigint,
-                        coalesce(io.heap_blks_hit, 0)::bigint,
-                        pg_relation_size(status.replica_relid)::bigint
-                   FROM ec_distann_traversal_replica_status('dm_idx'::regclass) status
-                   LEFT JOIN pg_statio_all_tables io
-                     ON io.relid = status.replica_relid
-                  WHERE status.state = 'Ready'
-                  ORDER BY status.ready_at DESC LIMIT 1",
-                &[],
-            )
-            .await
-            .wrap_err("collecting Task 198 replica cache residency counters")?;
-        lines.push(format!(
-            "physical_benchmark_traversal_replica_cache scale={scale} heap_blocks_read={} heap_blocks_hit={} heap_bytes={} cache_residency_proxy=pg_statio",
-            cache.get::<_, i64>(0),
-            cache.get::<_, i64>(1),
-            cache.get::<_, i64>(2),
-        ));
         lines.extend(
             run_task199_replica_lifecycle_drills(
                 coordinator,
@@ -5216,14 +5359,32 @@ async fn run_physical_benchmarks(
             )
             .await?
     };
-    let physical_generation_bytes = published
-        .iter()
-        .map(|row| row.graph_bytes + row.row_bytes + row.directory_bytes + row.control_bytes)
-        .sum::<i64>();
-    let control_index_bytes = published.iter().map(|row| row.control_bytes).sum::<i64>();
     let single_index_bytes = sizes.get::<_, i64>(0);
     let single_source_bytes = sizes.get::<_, i64>(1);
     let coordinator_source_bytes = sizes.get::<_, i64>(2);
+    let raw_vector = coordinator
+        .query_one(
+            &format!(
+                "SELECT count(source)::bigint,
+                        coalesce((SELECT array_length(source, 1)
+                                    FROM {physical_corpus}
+                                   LIMIT 1), 0)::bigint
+                   FROM {physical_corpus}"
+            ),
+            &[],
+        )
+        .await
+        .wrap_err("measuring physical raw vector bytes")?;
+    let raw_vector_rows = raw_vector.get::<_, i64>(0);
+    let raw_vector_dim = raw_vector.get::<_, i64>(1);
+    let raw_vector_bytes = raw_vector_rows
+        .saturating_mul(raw_vector_dim)
+        .saturating_mul(4);
+    if raw_vector_bytes <= 0 {
+        bail!(
+            "physical storage audit has no positive raw vector denominator: rows={raw_vector_rows} dim={raw_vector_dim}"
+        );
+    }
     let head = coordinator
         .query_one(
             "SELECT state.sample_count::bigint,
@@ -5250,7 +5411,12 @@ async fn run_physical_benchmarks(
     let head_sample_count = head.get::<_, i64>(0);
     let head_sample_digest = head.get::<_, String>(1);
     let head_sample_bytes = head.get::<_, i64>(2);
-    let head_graph_bytes = head.get::<_, i64>(3) + head.get::<_, i64>(4);
+    // The state row is bounded control metadata (digests, counts, and under
+    // membership-only storage the bounded id list) — itemised separately as
+    // control state, not folded into the corpus-shaped head relations
+    // (005 review round 2: the zero-byte gate is about topology/vector rows).
+    let head_graph_bytes = head.get::<_, i64>(3);
+    let head_state_bytes = head.get::<_, i64>(4);
     let head_cache_estimated_bytes = head_sample_bytes + head_graph_bytes;
     let remote_owners = if args.coordinator_outside_roster {
         nodes.len()
@@ -5261,7 +5427,7 @@ async fn run_physical_benchmarks(
         let variant_beam_width = variant.beam_width.unwrap_or(beam_width);
         let variant_hop_rounds = variant.hop_rounds.unwrap_or(hop_rounds);
         let shared = format!(
-            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={}",
+            "variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
@@ -5272,15 +5438,122 @@ async fn run_physical_benchmarks(
             variant.owner_payload_plan_cache,
             variant.traversal_replica,
         );
+        // NFR-018/NFR-021 storage is deliberately measured inside the arm
+        // loop.  The owner generation rows are immutable across variants, but
+        // derived relations (notably the optional traversal replica) are not;
+        // replaying one pre-loop scalar would make the arm comparison
+        // unmeasurable.
+        let owner_graph_side_bytes = published
+            .iter()
+            .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
+            .sum::<i64>();
+        let owner_row_tier_bytes = published.iter().map(|row| row.row_bytes).sum::<i64>();
+        let owner_total_bytes = owner_graph_side_bytes + owner_row_tier_bytes;
+        let max_owner_graph_side_bytes = published
+            .iter()
+            .map(|row| row.graph_bytes + row.directory_bytes + row.control_bytes)
+            .max()
+            .unwrap_or(0);
+        let physical_generation_bytes = published
+            .iter()
+            .map(|row| row.graph_bytes + row.row_bytes + row.directory_bytes + row.control_bytes)
+            .sum::<i64>();
+        let control_index_bytes = published.iter().map(|row| row.control_bytes).sum::<i64>();
+        let mut derived_relation_bytes = 0_i64;
+        if variant.traversal_replica {
+            let replica = coordinator
+                .query_one(
+                    "SELECT relation_bytes::bigint, coalesce(wal_bytes, 0)::bigint,
+                            copied_bytes::bigint, coalesce(build_duration_ms, 0)::bigint,
+                            replica_relid::oid::bigint
+                       FROM ec_distann_traversal_replica_status('dm_idx'::regclass)
+                      WHERE state = 'Ready'
+                      ORDER BY ready_at DESC
+                      LIMIT 1",
+                    &[],
+                )
+                .await
+                .wrap_err("measuring per-arm traversal replica storage")?;
+            let relation_bytes = replica.get::<_, i64>(0);
+            let replica_relid = replica.get::<_, i64>(4);
+            derived_relation_bytes = relation_bytes;
+            lines.push(format!(
+                "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=physical_benchmark_traversal_replica relation_oid={replica_relid} relation_bytes={relation_bytes} wal_bytes={} copied_bytes={} build_ms={} storage_derived=true",
+                replica.get::<_, i64>(1),
+                replica.get::<_, i64>(2),
+                replica.get::<_, i64>(3),
+            ));
+            let cache = coordinator
+                .query_one(
+                    "SELECT coalesce(io.heap_blks_read, 0)::bigint,
+                            coalesce(io.heap_blks_hit, 0)::bigint,
+                            pg_relation_size(status.replica_relid)::bigint
+                       FROM ec_distann_traversal_replica_status('dm_idx'::regclass) status
+                       LEFT JOIN pg_statio_all_tables io
+                         ON io.relid = status.replica_relid
+                      WHERE status.state = 'Ready'
+                      ORDER BY status.ready_at DESC
+                      LIMIT 1",
+                    &[],
+                )
+                .await
+                .wrap_err("measuring per-arm traversal replica cache residency")?;
+            lines.push(format!(
+                "physical_benchmark_traversal_replica_cache scale={scale} {shared} arm=physical heap_blocks_read={} heap_blocks_hit={} heap_bytes={} cache_residency_proxy=pg_statio",
+                cache.get::<_, i64>(0),
+                cache.get::<_, i64>(1),
+                cache.get::<_, i64>(2),
+            ));
+        }
+        // NFR-021 clause 2/3: the coordinator's own index-derived state is
+        // itemised per relation, not reported as zero. The head sample and its
+        // Vamana graph are coordinator-resident and unsharded; they are
+        // generation-scoped and therefore identical across arms, which is
+        // recorded as `arm_invariant=true` rather than implied by reprinting a
+        // pre-loop scalar (the Task 204 defect).
         lines.push(format!(
-            "physical_benchmark_storage scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true owners={} physical_generation_bytes={physical_generation_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes}",
-            published.len()
+            "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_generation_head_sample relation_bytes={head_sample_bytes} storage_derived=false arm_invariant=true nfr_021_class=coordinator_resident_unsharded",
         ));
         lines.push(format!(
-            "physical_benchmark_head scale={scale} {shared} stored_neighbor_code_format=rabitq storage_shared=true sample_count={head_sample_count} head_sample_digest={head_sample_digest} head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} head_cache_estimated_bytes={head_cache_estimated_bytes}"
+            "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_generation_head_graph relation_bytes={head_graph_bytes} storage_derived=false arm_invariant=true nfr_021_class=coordinator_resident_unsharded",
         ));
         lines.push(format!(
-            "physical_benchmark_engagement scale={scale} {shared} remote_owners={remote_owners} materialize_probes={remote_owners} pass={}",
+            "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_generation_head_state relation_bytes={head_state_bytes} storage_derived=false arm_invariant=true nfr_021_class=control",
+        ));
+        let coordinator_head_bytes = head_sample_bytes + head_graph_bytes;
+        let coordinator_total_resident_bytes = derived_relation_bytes + coordinator_head_bytes;
+        let cluster_graph_side_bytes = owner_graph_side_bytes + derived_relation_bytes;
+        let max_single_node_graph_side_bytes =
+            max_owner_graph_side_bytes.max(derived_relation_bytes);
+        let cluster_index_space_amplification =
+            cluster_graph_side_bytes as f64 / raw_vector_bytes as f64;
+        lines.push(format!(
+            "physical_benchmark_storage_ratio scale={scale} {shared} arm=physical raw_vector_rows={raw_vector_rows} raw_vector_dim={raw_vector_dim} raw_vector_bytes={raw_vector_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} max_single_node_growth_reference=100k_div_10k",
+        ));
+        for row in published {
+            let graph_side_bytes = row.graph_bytes + row.directory_bytes + row.control_bytes;
+            lines.push(format!(
+                "physical_benchmark_storage_node scale={scale} {shared} arm=physical node={} node_role=owner graph_bytes={} directory_bytes={} control_bytes={} graph_side_bytes={graph_side_bytes} row_tier_bytes={} total_resident_bytes={} derived_relation_bytes=0",
+                row.node_id,
+                row.graph_bytes,
+                row.directory_bytes,
+                row.control_bytes,
+                row.row_bytes,
+                graph_side_bytes + row.row_bytes,
+            ));
+        }
+        lines.push(format!(
+            "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} coordinator_resident_unsharded_bytes={coordinator_head_bytes} total_resident_bytes={coordinator_total_resident_bytes} derived_relation_bytes={derived_relation_bytes} relations_itemised=true",
+        ));
+        lines.push(format!(
+            "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",
+            published.len(),
+        ));
+        lines.push(format!(
+            "physical_benchmark_head scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=true sample_count={head_sample_count} head_sample_digest={head_sample_digest} head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} head_cache_estimated_bytes={head_cache_estimated_bytes}"
+        ));
+        lines.push(format!(
+            "physical_benchmark_engagement scale={scale} {shared} arm=physical remote_owners={remote_owners} materialize_probes={remote_owners} pass={}",
             remote_owners > 0
         ));
     }
@@ -5698,6 +5971,23 @@ async fn drive_physical_fixture(
             ))
             .await
             .wrap_err("configuring Task 181 benchmark head builder")?;
+    }
+    if args.sharded_head {
+        // Task 210 P2a: the head is persisted by T2 inside ec_distann_build_epoch,
+        // not by CREATE INDEX, so the membership-only GUC has to be set on the
+        // session that runs the build. Setting it at index creation is a silent
+        // no-op -- the first A/B measured identical coordinator bytes because of
+        // exactly that.
+        coordinator
+            .batch_execute("SET ec_distann.shard_head_storage = on;")
+            .await
+            .wrap_err("enabling Task 210 membership-only head storage")?;
+    }
+    if args.local_head {
+        coordinator
+            .batch_execute("SET ec_distann.shard_head_storage = off;")
+            .await
+            .wrap_err("forcing the legacy coordinator-local head control")?;
     }
     coordinator
         .batch_execute(&format!(

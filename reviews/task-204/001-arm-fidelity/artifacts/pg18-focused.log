@@ -1,0 +1,3 @@
+command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo test -p ecaz --lib --features pg18 am::ec_distann::scan::tests
+result: 13 passed; 0 failed; 2527 filtered out
+coverage: pushdown owner ordering, tie retention, tombstone exact_dist=NULL, and ordered identity against the unbounded path

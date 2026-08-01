@@ -171,6 +171,7 @@ fn ec_distann_expand_nodes(
     query: Vec<f32>,
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
+    candidate_limit: default!(Option<i32>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -189,6 +190,7 @@ fn ec_distann_expand_nodes(
         &query,
         &vec_ids,
         code_threshold,
+        candidate_limit,
     )
     // Raise with the distinct SQLSTATE per FR-079 outcome so the coordinator
     // classifies retriable epoch mismatch vs non-retriable faults by code.
@@ -692,6 +694,7 @@ fn expand_nodes_impl(
     query: &[f32],
     vec_ids: &[i64],
     code_threshold: Option<f32>,
+    candidate_limit: Option<i32>,
 ) -> Result<Vec<ExpandRow>, DistannExpandError> {
     let received_fingerprint =
         fingerprint_from_bytes(epoch_fingerprint).map_err(DistannExpandError::BadInput)?;
@@ -805,7 +808,19 @@ fn expand_nodes_impl(
     };
 
     let owner_started = Instant::now();
-    let responses = expander.expand_nodes(&vec_ids_u64, code_threshold)?;
+    let responses = expander.expand_nodes(
+        &vec_ids_u64,
+        code_threshold,
+        candidate_limit
+            .map(|limit| {
+                usize::try_from(limit).map_err(|_| {
+                    DistannExpandError::BadInput(
+                        "ec_distann candidate_limit must be non-negative".to_owned(),
+                    )
+                })
+            })
+            .transpose()?,
+    )?;
     let owner_total_ns = i64::try_from(owner_started.elapsed().as_nanos())
         .unwrap_or(i64::MAX)
         .saturating_add(owner_open_validate_ns);

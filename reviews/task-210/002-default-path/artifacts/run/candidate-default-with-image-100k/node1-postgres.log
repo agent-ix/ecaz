@@ -1,0 +1,415 @@
+2026-07-31 09:15:29.207 PDT [123593] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-31 09:15:29.221 PDT [123593] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-31 09:15:29.221 PDT [123593] LOG:  listening on IPv4 address "127.0.0.1", port 42460
+2026-07-31 09:15:29.233 PDT [123599] LOG:  database system was shut down at 2026-07-31 09:15:26 PDT
+2026-07-31 09:15:29.239 PDT [123593] LOG:  database system is ready to accept connections
+2026-07-31 09:19:49.862 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:20:04.329 PDT [123597] LOG:  checkpoint complete: wrote 93 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 1 removed, 32 recycled; write=12.801 s, sync=1.327 s, total=14.468 s; sync files=267, longest=0.867 s, average=0.005 s; distance=537255 kB, estimate=537255 kB; lsn=0/419489B8, redo lsn=0/223FE570
+2026-07-31 09:20:04.625 PDT [123597] LOG:  checkpoints are occurring too frequently (15 seconds apart)
+2026-07-31 09:20:04.625 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:20:04.625 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:24:34.228 PDT [123597] LOG:  checkpoint complete: wrote 93 buffers (0.6%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.405 s, sync=0.021 s, total=269.604 s; sync files=68, longest=0.002 s, average=0.001 s; distance=540677 kB, estimate=540677 kB; lsn=0/5308F488, redo lsn=0/433FFA00
+2026-07-31 09:30:04.798 PDT [123597] LOG:  checkpoint starting: time
+2026-07-31 09:32:36.912 PDT [123597] LOG:  checkpoint complete: wrote 86 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 26 recycled; write=151.886 s, sync=0.090 s, total=152.115 s; sync files=48, longest=0.014 s, average=0.002 s; distance=423083 kB, estimate=528917 kB; lsn=0/7AC5A760, redo lsn=0/5D12A668
+2026-07-31 09:35:04.123 PDT [123597] LOG:  checkpoint starting: time
+2026-07-31 09:35:04.572 PDT [123597] LOG:  checkpoint complete: wrote 3 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 32 recycled; write=0.303 s, sync=0.014 s, total=0.450 s; sync files=21, longest=0.005 s, average=0.001 s; distance=523574 kB, estimate=528383 kB; lsn=0/7D078100, redo lsn=0/7D078030
+2026-07-31 09:36:33.653 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:39:52.808 PDT [123597] LOG:  checkpoint complete: wrote 5126 buffers (31.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=198.498 s, sync=0.332 s, total=199.156 s; sync files=90, longest=0.263 s, average=0.004 s; distance=540345 kB, estimate=540345 kB; lsn=0/BC3F05B0, redo lsn=0/9E0264F8
+2026-07-31 09:39:53.355 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:40:02.648 PDT [123597] LOG:  checkpoint complete: wrote 47 buffers (0.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=8.319 s, sync=0.625 s, total=9.294 s; sync files=6, longest=0.585 s, average=0.104 s; distance=544086 kB, estimate=544086 kB; lsn=0/DDAC8A30, redo lsn=0/BF37BEA8
+2026-07-31 09:40:03.082 PDT [123597] LOG:  checkpoints are occurring too frequently (10 seconds apart)
+2026-07-31 09:40:03.082 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:40:03.082 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:43:52.883 PDT [123597] LOG:  checkpoint complete: wrote 33 buffers (0.2%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=229.577 s, sync=0.018 s, total=229.801 s; sync files=25, longest=0.008 s, average=0.001 s; distance=541200 kB, estimate=543797 kB; lsn=0/F8666808, redo lsn=0/E04000E0
+2026-07-31 09:46:18.747 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:46:25.205 PDT [123597] LOG:  checkpoint complete: wrote 40 buffers (0.2%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=5.729 s, sync=0.538 s, total=6.459 s; sync files=2, longest=0.533 s, average=0.269 s; distance=538107 kB, estimate=543228 kB; lsn=1/1F442310, redo lsn=1/117F000
+2026-07-31 09:46:25.586 PDT [123597] LOG:  checkpoints are occurring too frequently (7 seconds apart)
+2026-07-31 09:46:25.586 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:46:25.586 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:46:41.865 PDT [123597] LOG:  checkpoint complete: wrote 30 buffers (0.2%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=15.478 s, sync=0.596 s, total=16.280 s; sync files=34, longest=0.322 s, average=0.018 s; distance=543235 kB, estimate=543235 kB; lsn=1/408C78F8, redo lsn=1/223FFFE8
+2026-07-31 09:46:43.437 PDT [123597] LOG:  checkpoints are occurring too frequently (18 seconds apart)
+2026-07-31 09:46:43.437 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:46:43.437 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:47:02.324 PDT [123845] ERROR:  [EC_INTERNAL] EC_BUILD_INCOMPLETE: could not connect to participant: error connecting to server
+2026-07-31 09:47:02.324 PDT [123845] STATEMENT:  SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)
+2026-07-31 09:47:04.594 PDT [123597] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=20.734 s, sync=0.093 s, total=21.157 s; sync files=29, longest=0.028 s, average=0.004 s; distance=537217 kB, estimate=542634 kB; lsn=1/60E84E30, redo lsn=1/430A04F0
+2026-07-31 09:47:05.538 PDT [123597] LOG:  checkpoints are occurring too frequently (22 seconds apart)
+2026-07-31 09:47:05.538 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:47:05.538 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:47:33.199 PDT [123597] LOG:  checkpoint complete: wrote 176 buffers (1.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=26.951 s, sync=0.429 s, total=27.661 s; sync files=48, longest=0.383 s, average=0.009 s; distance=544121 kB, estimate=544121 kB; lsn=1/8234A660, redo lsn=1/643FEBC0
+2026-07-31 09:47:35.326 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:47:56.710 PDT [123597] LOG:  checkpoint complete: wrote 37 buffers (0.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=20.837 s, sync=0.217 s, total=21.385 s; sync files=23, longest=0.200 s, average=0.010 s; distance=537448 kB, estimate=543454 kB; lsn=1/9E09C200, redo lsn=1/850D8E18
+2026-07-31 09:48:03.752 PDT [123597] LOG:  checkpoints are occurring too frequently (28 seconds apart)
+2026-07-31 09:48:03.752 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:48:03.752 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:48:32.705 PDT [123597] LOG:  checkpoint complete: wrote 733 buffers (4.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=28.503 s, sync=0.173 s, total=28.954 s; sync files=39, longest=0.109 s, average=0.005 s; distance=540724 kB, estimate=543181 kB; lsn=1/C3FC1980, redo lsn=1/A60E5FE0
+2026-07-31 09:48:34.165 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:48:51.025 PDT [123597] LOG:  checkpoint complete: wrote 60 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.070 s, sync=0.573 s, total=16.860 s; sync files=15, longest=0.525 s, average=0.039 s; distance=543849 kB, estimate=543849 kB; lsn=1/E5A18B20, redo lsn=1/C74003F8
+2026-07-31 09:48:52.373 PDT [123597] LOG:  checkpoints are occurring too frequently (18 seconds apart)
+2026-07-31 09:48:52.373 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:48:52.373 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:49:12.860 PDT [123597] LOG:  checkpoint complete: wrote 78 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=20.317 s, sync=0.322 s, total=20.487 s; sync files=9, longest=0.205 s, average=0.036 s; distance=540280 kB, estimate=543492 kB; lsn=2/6380C18, redo lsn=1/E839E460
+2026-07-31 09:49:14.112 PDT [123597] LOG:  checkpoints are occurring too frequently (22 seconds apart)
+2026-07-31 09:49:14.112 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:49:14.113 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:49:48.450 PDT [123597] LOG:  checkpoint complete: wrote 76 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=33.751 s, sync=0.344 s, total=34.338 s; sync files=42, longest=0.264 s, average=0.009 s; distance=537770 kB, estimate=542919 kB; lsn=2/271DAE30, redo lsn=2/90C8F88
+2026-07-31 09:49:49.926 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:50:09.887 PDT [123597] LOG:  checkpoint complete: wrote 61 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=19.331 s, sync=0.398 s, total=19.961 s; sync files=17, longest=0.361 s, average=0.024 s; distance=543962 kB, estimate=543962 kB; lsn=2/485EF880, redo lsn=2/2A3FFAE0
+2026-07-31 09:50:11.403 PDT [123597] LOG:  checkpoints are occurring too frequently (22 seconds apart)
+2026-07-31 09:50:11.403 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:50:11.403 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:50:27.141 PDT [123845] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 09:50:27.141 PDT [123845] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_100k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_100k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_100k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 09:50:29.961 PDT [123597] LOG:  checkpoint complete: wrote 78 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.627 s, sync=0.085 s, total=18.559 s; sync files=16, longest=0.029 s, average=0.006 s; distance=537882 kB, estimate=543354 kB; lsn=2/6918F260, redo lsn=2/4B146478
+2026-07-31 09:50:31.697 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 09:50:31.697 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:50:31.697 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:50:48.561 PDT [123597] LOG:  checkpoint complete: wrote 60 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.071 s, sync=0.543 s, total=16.865 s; sync files=39, longest=0.474 s, average=0.014 s; distance=542223 kB, estimate=543241 kB; lsn=2/8A6438C0, redo lsn=2/6C2CA210
+2026-07-31 09:50:50.030 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 09:50:50.030 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:50:50.030 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:51:09.658 PDT [123597] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.660 s, sync=0.721 s, total=19.628 s; sync files=18, longest=0.463 s, average=0.036 s; distance=538536 kB, estimate=542771 kB; lsn=2/AB83F6E8, redo lsn=2/8D0B4420
+2026-07-31 09:51:11.102 PDT [123597] LOG:  checkpoints are occurring too frequently (21 seconds apart)
+2026-07-31 09:51:11.102 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:51:11.102 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:51:19.272 PDT [125163] LOG:  could not send data to client: Broken pipe
+2026-07-31 09:51:19.272 PDT [125163] FATAL:  connection to client lost
+2026-07-31 09:51:19.302 PDT [123845] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 09:51:19.302 PDT [123845] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_100k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_100k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_100k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 09:51:27.677 PDT [123597] LOG:  checkpoint complete: wrote 76 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.005 s, sync=0.261 s, total=16.575 s; sync files=37, longest=0.176 s, average=0.008 s; distance=544006 kB, estimate=544006 kB; lsn=2/CC911EE0, redo lsn=2/AE3F5D90
+2026-07-31 09:51:28.805 PDT [123597] LOG:  checkpoints are occurring too frequently (17 seconds apart)
+2026-07-31 09:51:28.805 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:51:28.805 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:51:46.206 PDT [123597] LOG:  checkpoint complete: wrote 63 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.454 s, sync=0.654 s, total=17.401 s; sync files=15, longest=0.609 s, average=0.044 s; distance=540718 kB, estimate=543677 kB; lsn=2/EDA840C0, redo lsn=2/CF4016E8
+2026-07-31 09:51:47.510 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 09:51:47.510 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:51:47.510 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:52:07.285 PDT [123597] LOG:  checkpoint complete: wrote 78 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.921 s, sync=0.564 s, total=19.775 s; sync files=14, longest=0.513 s, average=0.041 s; distance=540210 kB, estimate=543330 kB; lsn=3/E5E01E0, redo lsn=2/F038E268
+2026-07-31 09:52:07.883 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 09:52:07.883 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:52:07.883 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:52:07.986 PDT [125233] FATAL:  EC_REPLICA_CONTROL_COMMIT_CRASH: injected backend termination after durable traversal-replica invalidation
+2026-07-31 09:52:07.986 PDT [125233] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_100k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_100k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_100k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 09:52:24.876 PDT [123597] LOG:  checkpoint complete: wrote 76 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.192 s, sync=0.556 s, total=16.994 s; sync files=41, longest=0.396 s, average=0.014 s; distance=538319 kB, estimate=542829 kB; lsn=3/2F4B81C8, redo lsn=3/11141F40
+2026-07-31 09:52:26.396 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 09:52:26.396 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:52:26.396 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:52:43.750 PDT [123597] LOG:  checkpoint complete: wrote 84 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.007 s, sync=0.176 s, total=17.354 s; sync files=16, longest=0.108 s, average=0.011 s; distance=541826 kB, estimate=542729 kB; lsn=3/502E2FD8, redo lsn=3/32262A90
+2026-07-31 09:52:45.353 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 09:52:45.353 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:52:45.353 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:52:57.842 PDT [123845] WARNING:  replica traversal failed: [EC_INTERNAL] injected traversal replica failure before batch 1; restarting through owners
+2026-07-31 09:53:03.825 PDT [123597] LOG:  checkpoint complete: wrote 76 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.086 s, sync=0.182 s, total=18.473 s; sync files=37, longest=0.096 s, average=0.005 s; distance=541213 kB, estimate=542577 kB; lsn=3/7147B440, redo lsn=3/532EA258
+2026-07-31 09:53:05.127 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 09:53:05.127 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:53:05.127 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:53:21.492 PDT [123597] LOG:  checkpoint complete: wrote 61 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=15.627 s, sync=0.488 s, total=16.366 s; sync files=15, longest=0.454 s, average=0.033 s; distance=539869 kB, estimate=542307 kB; lsn=3/925CAE08, redo lsn=3/74221750
+2026-07-31 09:53:22.970 PDT [123597] LOG:  checkpoints are occurring too frequently (17 seconds apart)
+2026-07-31 09:53:22.970 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:53:22.970 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:53:40.099 PDT [123597] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.688 s, sync=0.216 s, total=17.129 s; sync files=9, longest=0.190 s, average=0.024 s; distance=542334 kB, estimate=542334 kB; lsn=3/B344BCA0, redo lsn=3/953C1020
+2026-07-31 09:53:41.624 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 09:53:41.624 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:53:41.624 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:53:45.751 PDT [123845] WARNING:  replica traversal failed: [EC_GENERATION_MISSING] EC_RECORD_MISSING: traversal replica lacks vec_id 0x8d5568aa2487d619; restarting through owners
+2026-07-31 09:53:58.570 PDT [123597] LOG:  checkpoint complete: wrote 76 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.295 s, sync=0.386 s, total=16.947 s; sync files=41, longest=0.301 s, average=0.010 s; distance=538856 kB, estimate=541986 kB; lsn=3/D44BDDE8, redo lsn=3/B61FB0D0
+2026-07-31 09:53:59.816 PDT [123597] LOG:  checkpoints are occurring too frequently (18 seconds apart)
+2026-07-31 09:53:59.816 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:53:59.816 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:54:17.744 PDT [123597] LOG:  checkpoint complete: wrote 63 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.631 s, sync=1.056 s, total=17.928 s; sync files=15, longest=0.995 s, average=0.071 s; distance=540029 kB, estimate=541790 kB; lsn=3/F55B9668, redo lsn=3/D715A5B8
+2026-07-31 09:54:19.366 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 09:54:19.366 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:54:19.366 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:54:34.437 PDT [123845] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 09:54:34.437 PDT [123845] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_100k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_100k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_100k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 09:54:34.489 PDT [123845] ERROR:  EC_GENERATION_MISSING: ec_distann distributed-control inserts require a Published physical generation
+2026-07-31 09:54:34.489 PDT [123845] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_100k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_100k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_100k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 09:54:34.504 PDT [123845] ERROR:  EC_REPLICA_STATE: existing replica is not a complete Ready replay (Stale); run ec_distann_retire_traversal_replica(index) and ec_distann_reclaim_traversal_replica(index) before rebuilding
+2026-07-31 09:54:34.504 PDT [123845] STATEMENT:  SELECT ec_distann_build_traversal_replica('dm_idx'::regclass)
+2026-07-31 09:54:36.610 PDT [123597] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.950 s, sync=0.069 s, total=17.245 s; sync files=13, longest=0.024 s, average=0.006 s; distance=542013 kB, estimate=542013 kB; lsn=4/162A2E28, redo lsn=3/F82A99E8
+2026-07-31 09:54:38.026 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 09:54:38.026 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:54:38.026 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:54:54.488 PDT [123597] LOG:  checkpoint complete: wrote 152 buffers (0.9%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=15.689 s, sync=0.550 s, total=16.462 s; sync files=43, longest=0.491 s, average=0.013 s; distance=542039 kB, estimate=542039 kB; lsn=4/37B1E208, redo lsn=4/193FF8A8
+2026-07-31 09:54:55.989 PDT [123597] LOG:  checkpoints are occurring too frequently (17 seconds apart)
+2026-07-31 09:54:55.989 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:54:55.989 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:55:13.850 PDT [123597] LOG:  checkpoint complete: wrote 78 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.387 s, sync=0.247 s, total=17.862 s; sync files=9, longest=0.120 s, average=0.028 s; distance=538413 kB, estimate=541677 kB; lsn=4/583A7C38, redo lsn=4/3A1CB020
+2026-07-31 09:55:15.379 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 09:55:15.379 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:55:15.379 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:55:23.624 PDT [123845] WARNING:  EC_REPLICA_INVALIDATED: VACUUM durably marked the Ready coordinator traversal replica Stale and is continuing owner index maintenance
+2026-07-31 09:55:23.624 PDT [123845] CONTEXT:  while vacuuming index "dm_idx" of relation "public.task179_physical_100k_corpus"
+2026-07-31 09:55:25.965 PDT [123597] LOG:  checkpoint complete: wrote 80 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 1 removed, 32 recycled; write=9.466 s, sync=0.648 s, total=10.587 s; sync files=11, longest=0.328 s, average=0.059 s; distance=538948 kB, estimate=541404 kB; lsn=4/7A88E490, redo lsn=4/5B01C118
+2026-07-31 09:55:25.966 PDT [123597] LOG:  checkpoints are occurring too frequently (10 seconds apart)
+2026-07-31 09:55:25.966 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:55:25.966 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:55:29.945 PDT [123597] LOG:  checkpoint complete: wrote 14917 buffers (91.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 3 removed, 33 recycled; write=2.897 s, sync=0.602 s, total=3.979 s; sync files=23, longest=0.544 s, average=0.027 s; distance=589831 kB, estimate=589831 kB; lsn=4/9D2F8048, redo lsn=4/7F01E058
+2026-07-31 09:55:29.945 PDT [123597] LOG:  checkpoints are occurring too frequently (4 seconds apart)
+2026-07-31 09:55:29.945 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:55:29.945 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:55:36.475 PDT [123597] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 2 removed, 33 recycled; write=5.650 s, sync=0.609 s, total=6.530 s; sync files=37, longest=0.437 s, average=0.017 s; distance=573355 kB, estimate=588184 kB; lsn=4/C07B5DC0, redo lsn=4/A2008F50
+2026-07-31 09:55:37.760 PDT [123597] LOG:  checkpoints are occurring too frequently (8 seconds apart)
+2026-07-31 09:55:37.760 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:55:37.772 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:55:55.070 PDT [123597] LOG:  checkpoint complete: wrote 60 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.345 s, sync=0.676 s, total=17.310 s; sync files=15, longest=0.634 s, average=0.046 s; distance=544733 kB, estimate=583839 kB; lsn=4/E196ABF8, redo lsn=4/C3400690
+2026-07-31 09:55:56.569 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 09:55:56.569 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:55:56.569 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:56:14.323 PDT [123597] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.300 s, sync=0.241 s, total=17.755 s; sync files=9, longest=0.146 s, average=0.027 s; distance=540173 kB, estimate=579472 kB; lsn=5/2451D50, redo lsn=4/E4383C98
+2026-07-31 09:56:15.898 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 09:56:15.898 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:56:15.904 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:56:20.757 PDT [123845] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 09:56:20.757 PDT [123845] STATEMENT:  DELETE FROM task179_physical_100k_corpus WHERE id = $1
+2026-07-31 09:56:32.084 PDT [123597] LOG:  checkpoint complete: wrote 77 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=15.563 s, sync=0.354 s, total=16.186 s; sync files=37, longest=0.263 s, average=0.010 s; distance=541169 kB, estimate=575642 kB; lsn=5/239A9DF8, redo lsn=5/5400270
+2026-07-31 09:56:33.191 PDT [123597] LOG:  checkpoints are occurring too frequently (18 seconds apart)
+2026-07-31 09:56:33.191 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:56:33.191 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:56:52.412 PDT [123597] LOG:  checkpoint complete: wrote 61 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.494 s, sync=0.510 s, total=19.222 s; sync files=15, longest=0.475 s, average=0.034 s; distance=538233 kB, estimate=571901 kB; lsn=5/44A509C0, redo lsn=5/2619E718
+2026-07-31 09:56:53.766 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 09:56:53.766 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:56:53.766 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:57:53.938 PDT [123845] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 09:57:53.938 PDT [123845] STATEMENT:  SELECT ec_distann_apply_record_writes(
+	                 'dm_idx'::regclass,
+	                 (
+	                     SELECT epoch_fingerprint
+	                       FROM ec_distann_active_epoch
+	                      WHERE index_oid = 'dm_idx'::regclass::oid
+	                 ),
+	                 ARRAY[$1]::bigint[]
+	             )
+2026-07-31 09:58:01.986 PDT [123597] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=67.884 s, sync=0.058 s, total=68.220 s; sync files=24, longest=0.028 s, average=0.003 s; distance=541777 kB, estimate=568889 kB; lsn=5/64FB8B40, redo lsn=5/472B2E00
+2026-07-31 09:58:04.018 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:58:23.755 PDT [123597] LOG:  checkpoint complete: wrote 13 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.979 s, sync=0.454 s, total=19.737 s; sync files=14, longest=0.440 s, average=0.033 s; distance=538772 kB, estimate=565877 kB; lsn=5/8200EFE8, redo lsn=5/680D8100
+2026-07-31 09:58:27.606 PDT [123597] LOG:  checkpoints are occurring too frequently (23 seconds apart)
+2026-07-31 09:58:27.606 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:58:27.607 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:58:37.458 PDT [125475] ERROR:  canceling autovacuum task
+2026-07-31 09:58:37.458 PDT [125475] CONTEXT:  while scanning block 121427 of relation "pg_toast.pg_toast_2577497"
+	automatic vacuum of table "postgres.pg_toast.pg_toast_2577497"
+2026-07-31 09:58:44.739 PDT [123597] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.651 s, sync=0.172 s, total=17.133 s; sync files=34, longest=0.114 s, average=0.006 s; distance=540659 kB, estimate=563355 kB; lsn=5/A1F8C948, redo lsn=5/890D4E78
+2026-07-31 09:58:48.782 PDT [123597] LOG:  checkpoints are occurring too frequently (21 seconds apart)
+2026-07-31 09:58:48.782 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:58:48.782 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:59:07.551 PDT [123597] LOG:  checkpoint complete: wrote 62 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.687 s, sync=0.843 s, total=18.770 s; sync files=15, longest=0.785 s, average=0.057 s; distance=540666 kB, estimate=561086 kB; lsn=5/C84936F8, redo lsn=5/AA0D3770
+2026-07-31 09:59:09.357 PDT [123597] LOG:  checkpoints are occurring too frequently (21 seconds apart)
+2026-07-31 09:59:09.357 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:59:09.357 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:59:27.112 PDT [123597] LOG:  checkpoint complete: wrote 78 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.139 s, sync=0.380 s, total=17.755 s; sync files=9, longest=0.325 s, average=0.043 s; distance=543923 kB, estimate=559370 kB; lsn=5/E94D8390, redo lsn=5/CB400540
+2026-07-31 09:59:28.626 PDT [125492] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 09:59:28.626 PDT [125492] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_100k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_100k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_100k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 09:59:28.626 PDT [125492] LOG:  could not receive data from client: Connection reset by peer
+2026-07-31 09:59:29.112 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 09:59:29.112 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:59:29.113 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 09:59:45.786 PDT [123597] LOG:  checkpoint complete: wrote 282 buffers (1.7%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.073 s, sync=0.402 s, total=16.674 s; sync files=48, longest=0.354 s, average=0.009 s; distance=540665 kB, estimate=557499 kB; lsn=6/A865188, redo lsn=5/EC3FEB90
+2026-07-31 09:59:47.401 PDT [123597] LOG:  checkpoints are occurring too frequently (18 seconds apart)
+2026-07-31 09:59:47.401 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 09:59:47.401 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:00:07.363 PDT [123597] LOG:  checkpoint complete: wrote 124 buffers (0.8%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=19.532 s, sync=0.225 s, total=19.962 s; sync files=11, longest=0.163 s, average=0.021 s; distance=540169 kB, estimate=555766 kB; lsn=6/2B407370, redo lsn=6/D381048
+2026-07-31 10:00:08.971 PDT [123597] LOG:  checkpoints are occurring too frequently (21 seconds apart)
+2026-07-31 10:00:08.971 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:00:08.971 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:00:21.117 PDT [125557] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 10:00:21.117 PDT [125557] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_100k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_100k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_100k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 10:00:26.567 PDT [123597] LOG:  checkpoint complete: wrote 77 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.165 s, sync=0.150 s, total=17.597 s; sync files=39, longest=0.084 s, average=0.004 s; distance=538626 kB, estimate=554052 kB; lsn=6/4C1B9500, redo lsn=6/2E181AB8
+2026-07-31 10:00:27.796 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 10:00:27.796 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:00:27.796 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:00:43.864 PDT [123597] LOG:  checkpoint complete: wrote 60 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=15.514 s, sync=0.419 s, total=16.069 s; sync files=15, longest=0.392 s, average=0.028 s; distance=542072 kB, estimate=552854 kB; lsn=6/6D4603B8, redo lsn=6/4F2DFCB0
+2026-07-31 10:00:45.552 PDT [123597] LOG:  checkpoints are occurring too frequently (18 seconds apart)
+2026-07-31 10:00:45.552 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:00:45.552 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:01:04.427 PDT [123597] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.169 s, sync=0.525 s, total=18.875 s; sync files=12, longest=0.484 s, average=0.044 s; distance=541826 kB, estimate=551751 kB; lsn=6/8EA31D90, redo lsn=6/704006F8
+2026-07-31 10:01:05.884 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 10:01:05.884 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:01:05.884 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:01:09.814 PDT [123593] LOG:  received SIGHUP, reloading configuration files
+2026-07-31 10:01:09.815 PDT [123593] LOG:  parameter "ec_distann.replica_control_password_file" changed to "/task199-intentionally-missing-replica-control-password"
+2026-07-31 10:01:09.833 PDT [123845] ERROR:  EC_REPLICA_CONTROL: password-file metadata failed: No such file or directory (os error 2)
+2026-07-31 10:01:09.833 PDT [123845] STATEMENT:  WITH next_row AS (
+	             SELECT coalesce(max(id), 0) + 1 AS id FROM task179_physical_100k_corpus
+	         ), seed AS (
+	             SELECT source, embedding FROM task179_physical_100k_corpus ORDER BY id LIMIT 1
+	         )
+	         INSERT INTO task179_physical_100k_corpus (id, source_id, source, embedding)
+	         SELECT next_row.id,
+	                (substr(md5(next_row.id::text),1,8)||'-'||
+	                 substr(md5(next_row.id::text),9,4)||'-4'||
+	                 substr(md5(next_row.id::text),14,3)||'-8'||
+	                 substr(md5(next_row.id::text),18,3)||'-'||
+	                 substr(md5(next_row.id::text),21,12))::uuid,
+	                seed.source, seed.embedding
+	           FROM next_row CROSS JOIN seed
+	         RETURNING id
+2026-07-31 10:01:09.850 PDT [123845] WARNING:  EC_REPLICA_CONTROL: side demotion failed (EC_REPLICA_CONTROL: password-file metadata failed: No such file or directory (os error 2)); continuing owner fallback without durable demotion
+2026-07-31 10:01:09.850 PDT [123845] WARNING:  replica validation failed: EC_REPLICA_RELATION_RACE: Ready replica heap is missing or DDL-locked; restarting through owners
+2026-07-31 10:01:09.909 PDT [123593] LOG:  received SIGHUP, reloading configuration files
+2026-07-31 10:01:09.909 PDT [123593] LOG:  parameter "ec_distann.replica_control_password_file" removed from configuration file, reset to default
+2026-07-31 10:01:21.948 PDT [123597] LOG:  checkpoint complete: wrote 77 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=15.360 s, sync=0.427 s, total=16.065 s; sync files=47, longest=0.312 s, average=0.010 s; distance=539527 kB, estimate=550529 kB; lsn=6/AF924628, redo lsn=6/912E2610
+2026-07-31 10:01:23.007 PDT [123597] LOG:  checkpoints are occurring too frequently (18 seconds apart)
+2026-07-31 10:01:23.007 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:01:23.007 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:01:41.727 PDT [123597] LOG:  checkpoint complete: wrote 62 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.538 s, sync=0.942 s, total=18.721 s; sync files=16, longest=0.805 s, average=0.059 s; distance=541062 kB, estimate=549582 kB; lsn=6/D096BCE0, redo lsn=6/B23441D8
+2026-07-31 10:01:43.069 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 10:01:43.069 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:01:43.069 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:01:58.752 PDT [123845] WARNING:  replica validation failed: EC_REPLICA_RELATION_RACE: Ready replica heap is missing or DDL-locked; restarting through owners
+2026-07-31 10:02:01.077 PDT [123597] LOG:  checkpoint complete: wrote 78 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.682 s, sync=0.089 s, total=18.008 s; sync files=15, longest=0.029 s, average=0.006 s; distance=540208 kB, estimate=548645 kB; lsn=6/F10AB210, redo lsn=6/D32D0278
+2026-07-31 10:02:02.379 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 10:02:02.379 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:02:02.379 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:02:18.432 PDT [123597] LOG:  checkpoint complete: wrote 300 buffers (1.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=15.954 s, sync=0.690 s, total=16.054 s; sync files=47, longest=0.609 s, average=0.015 s; distance=539423 kB, estimate=547723 kB; lsn=7/128CB118, redo lsn=6/F41981C8
+2026-07-31 10:02:19.839 PDT [123597] LOG:  checkpoints are occurring too frequently (17 seconds apart)
+2026-07-31 10:02:19.839 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:02:19.839 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:02:40.128 PDT [123597] LOG:  checkpoint complete: wrote 78 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.411 s, sync=1.587 s, total=20.289 s; sync files=10, longest=1.278 s, average=0.159 s; distance=542038 kB, estimate=547154 kB; lsn=7/33981520, redo lsn=7/152EDA80
+2026-07-31 10:02:41.387 PDT [123597] LOG:  checkpoints are occurring too frequently (22 seconds apart)
+2026-07-31 10:02:41.387 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:02:41.387 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:02:49.182 PDT [125691] ERROR:  [EC_EPOCH_MISMATCH] EC_REPLICA_INVALIDATED: Ready coordinator traversal replica was durably marked Stale; no owner mutation was dispatched; the published distributed-control index remains fail-closed until its ordinary mutation path is available
+2026-07-31 10:02:49.182 PDT [125691] STATEMENT:  SELECT ec_distann_guard_traversal_replica_mutation(
+	                 'dm_idx'::regclass
+	             )
+2026-07-31 10:02:49.187 PDT [125700] ERROR:  canceling statement due to user request
+2026-07-31 10:02:49.187 PDT [125700] STATEMENT:  DROP INDEX dm_idx
+2026-07-31 10:03:00.540 PDT [123597] LOG:  checkpoint complete: wrote 76 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.427 s, sync=0.427 s, total=19.154 s; sync files=38, longest=0.318 s, average=0.012 s; distance=538025 kB, estimate=546241 kB; lsn=7/540EB018, redo lsn=7/360580A8
+2026-07-31 10:03:02.027 PDT [123597] LOG:  checkpoints are occurring too frequently (21 seconds apart)
+2026-07-31 10:03:02.027 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:03:02.027 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:03:20.755 PDT [123597] LOG:  checkpoint complete: wrote 62 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.665 s, sync=0.824 s, total=18.729 s; sync files=19, longest=0.758 s, average=0.044 s; distance=544417 kB, estimate=546059 kB; lsn=7/756216C8, redo lsn=7/57400658
+2026-07-31 10:03:22.296 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 10:03:22.296 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:03:22.296 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:03:41.548 PDT [123597] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.115 s, sync=0.908 s, total=19.253 s; sync files=10, longest=0.758 s, average=0.091 s; distance=540667 kB, estimate=545520 kB; lsn=7/96936D88, redo lsn=7/783FF420
+2026-07-31 10:03:42.791 PDT [123597] LOG:  checkpoints are occurring too frequently (20 seconds apart)
+2026-07-31 10:03:42.791 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:03:42.791 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:04:31.315 PDT [123597] LOG:  checkpoint complete: wrote 90 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=47.666 s, sync=0.534 s, total=48.524 s; sync files=42, longest=0.484 s, average=0.013 s; distance=536849 kB, estimate=544653 kB; lsn=7/B7034BA8, redo lsn=7/99043B30
+2026-07-31 10:04:33.328 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:04:51.031 PDT [123597] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.960 s, sync=0.411 s, total=17.704 s; sync files=4, longest=0.360 s, average=0.103 s; distance=540752 kB, estimate=544263 kB; lsn=7/D267CFB8, redo lsn=7/BA057D48
+2026-07-31 10:04:57.486 PDT [123597] LOG:  checkpoints are occurring too frequently (24 seconds apart)
+2026-07-31 10:04:57.486 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:04:57.486 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:05:14.645 PDT [123597] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=16.357 s, sync=0.498 s, total=17.159 s; sync files=2, longest=0.492 s, average=0.249 s; distance=540878 kB, estimate=543924 kB; lsn=7/EC544DE8, redo lsn=7/DB08B5A8
+2026-07-31 10:14:02.993 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:18:32.230 PDT [123597] LOG:  checkpoint complete: wrote 90 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.077 s, sync=0.029 s, total=269.237 s; sync files=47, longest=0.005 s, average=0.001 s; distance=542926 kB, estimate=543824 kB; lsn=8/1654F8F8, redo lsn=7/FC2BEF18
+2026-07-31 10:18:46.786 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:19:02.824 PDT [123597] LOG:  checkpoint complete: wrote 137 buffers (0.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=15.296 s, sync=0.551 s, total=16.038 s; sync files=90, longest=0.383 s, average=0.007 s; distance=539324 kB, estimate=543374 kB; lsn=8/3B408768, redo lsn=8/1D16E1B0
+2026-07-31 10:19:04.347 PDT [123597] LOG:  checkpoints are occurring too frequently (18 seconds apart)
+2026-07-31 10:19:04.347 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:19:04.347 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:19:22.110 PDT [123597] LOG:  checkpoint complete: wrote 79 buffers (0.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=17.248 s, sync=0.173 s, total=17.763 s; sync files=31, longest=0.098 s, average=0.006 s; distance=542600 kB, estimate=543297 kB; lsn=8/5C36D860, redo lsn=8/3E350440
+2026-07-31 10:19:23.562 PDT [123597] LOG:  checkpoints are occurring too frequently (19 seconds apart)
+2026-07-31 10:19:23.562 PDT [123597] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-07-31 10:19:23.562 PDT [123597] LOG:  checkpoint starting: wal
+2026-07-31 10:19:33.821 PDT [123593] LOG:  received fast shutdown request
+2026-07-31 10:19:33.838 PDT [123593] LOG:  aborting any active transactions
+2026-07-31 10:19:33.839 PDT [126342] FATAL:  terminating autovacuum process due to administrator command
+2026-07-31 10:19:33.839 PDT [126342] CONTEXT:  while scanning block 17399 of relation "pg_toast.pg_toast_3977532"
+2026-07-31 10:19:33.840 PDT [123593] LOG:  background worker "logical replication launcher" (PID 123602) exited with exit code 1
+2026-07-31 10:19:34.743 PDT [123597] LOG:  checkpoint complete: wrote 193 buffers (1.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=10.353 s, sync=0.483 s, total=11.181 s; sync files=24, longest=0.270 s, average=0.021 s; distance=539112 kB, estimate=542878 kB; lsn=8/77096EF0, redo lsn=8/5F1CA808
+2026-07-31 10:19:34.743 PDT [123597] LOG:  shutting down
+2026-07-31 10:19:34.747 PDT [123597] LOG:  checkpoint starting: shutdown immediate
+2026-07-31 10:19:35.068 PDT [123597] LOG:  checkpoint complete: wrote 10297 buffers (62.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 24 recycled; write=0.044 s, sync=0.146 s, total=0.326 s; sync files=22, longest=0.049 s, average=0.007 s; distance=391985 kB, estimate=527789 kB; lsn=8/77096F68, redo lsn=8/77096F68
+2026-07-31 10:19:35.106 PDT [123593] LOG:  database system is shut down

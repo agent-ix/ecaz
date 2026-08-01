@@ -1,55 +1,62 @@
 ---
 id: SR-001
-title: "base checklist review of the ec_distann physical hash-shard specification"
+title: "base checklist review of the DistANN spec set (Tasks 211-214 speccing round)"
 type: SpecReview
 analysis: base
-scope: "spec/spec.md; FR-075..FR-083; NFR-014, NFR-016..NFR-020; spec/tests.md TC-037..TC-044, TC-049..TC-050"
+scope: "spec/functional/distann/** (FR-075..FR-090 incl. index.md files); spec/non-functional/NFR-017..NFR-022; spec/adr/ADR-087"
 review_set: base
 ---
 
 ## Summary
 
-Base re-review of the physical FR-078 handoff and FR-082 publication contract,
-including automated ID/link/EARS checks and the six test-coverage rules. Quire
-reports 244/244 grammar-clean documents, zero EARS findings, and no structural or
-link errors; FR/NFR artifact IDs are unique and contiguous through FR-083 and
-NFR-020. The normative contract defects found during review were repaired in
-place. The requested `/spec-matrix` pass then added criterion-level traces,
-boundary/error/state/fault coverage, a true physical-topology integration row,
-and unique test identifiers. Implementation and decision-grade evidence remain
-open. A subsequent outside review found additional implementation-blocking
-ambiguities; FND-020..FND-028 and the corrected FND-014 record their in-place
-resolution.
+Base checklist review of the Tasks 211-214 touched set at HEAD 633bfa319,
+superseding the prior FR-075..FR-083 round of this document (retained in git
+history). Automated checks are clean: zero broken relative links across the 28
+scoped files, all frontmatter ids match filenames with `type` present, AC/CON
+ids are duplicate-free and gap-free per file (including the FR-083 AC
+renumbering note), FR-087's twenty-relation roster matches `sql/bootstrap.sql`
+exactly in both directions, and no artifact cites the pre-elevation
+`functional/index/distann` path. Cross-artifact checks pass for: FR-080's
+sharded-head contract vs FR-086/FR-088/FR-089/FR-090 (bounds, staleness rule,
+capacity independence, fallback-identity chain are mutually consistent);
+FR-084's demotion posture vs ADR-087 and NFR-021/NFR-022 (GUC name, default,
+never-decision-bearing all agree); FR-083's two-tier scoping (each clause's
+tier is unambiguous); and the NFR-018/NFR-021 growth-row rebase (raw growth
+reported-not-threshold, normalized bytes-per-owned-record ratio governs).
+Findings below: three medium consistency gaps and eight low items, of which
+FND-004 and FND-005 were fixed in place.
 
 ## Findings
 
-| ID      | Severity | Summary                          | Refs   |
+| ID | Severity | Summary | Refs |
 | ------- | -------- | -------------------------------- | ------ |
-| FND-001 | medium | ACCEPTED GAP: the research lane still traces StR-008 directly to FR-075..FR-083 without a US layer; this pass was explicitly scoped to the physical FR/NFR contract, so no retroactive user-story family was invented | StR-008, FR-075 |
-| FND-002 | low | RESOLVED: FR-078 and FR-079 now enumerate stable handoff, placement, schema, generation, materialization, and internal error categories with mutation/partial-row outcomes | FR-078, FR-079 |
-| FND-003 | medium | RESOLVED BEFORE THIS PASS: FR-080 documents the single-shard degenerate head-sample case; no new action | FR-080, FR-077 |
-| FND-004 | low | PARTIALLY RESOLVED: FR-078 is now an explicit prerequisite of NFR-017/NFR-018/NFR-020, while the family-root StR-008 edge remains intentionally compact | StR-008, FR-078, NFR-017..NFR-020 |
-| FND-005 | low | OPEN, PRE-EXISTING: TC-043 still spans M3 and M5 DML behavior; it does not block the physical handoff task but weakens milestone-specific DML closeout | spec/tests.md, FR-083 |
-| FND-006 | high | RESOLVED: the former one-line handoff now defines locator-free canonical entry/batch formats, exact endpoint signatures, SHA-256 identities, owner-only streaming, an 8 MiB/one-in-flight bound, idempotent receipts, WAL resume, full frozen source-row storage, and replica/tombstone rejection | FR-076, FR-078 |
-| FND-007 | high | RESOLVED: query-visible cluster publication now has Building/Ready/Published/Retired/Aborted states, a receipt-bearing canonical manifest, commit-only decision, participant-first/coordinator-pointer-last linearization, and deterministic recovery at every crash boundary | FR-082, NFR-020 |
-| FND-008 | high | RESOLVED BY `/spec-matrix`: TC-040/TC-042/TC-044/TC-050 now enumerate every amended AC and constraint plus stable errors, 8 MiB boundaries, sequence/replay permutations, topology shapes, lifecycle transitions, crash boundaries, format fixtures, and the true three-instance integration surface; all remain Planned until packeted evidence lands | FR-076..FR-079, FR-082, NFR-014, NFR-016, NFR-020, spec/tests.md |
-| FND-009 | medium | RESOLVED BY `/spec-matrix`: the benchmark-suite case is now uniquely TC-049, SPIRE retains TC-020, TC-050 owns DistANN format discipline, and TC-045..TC-048 remain reserved for Task 173 | spec/tests.md |
-| FND-010 | medium | RESOLVED: row materialization no longer trusts caller-selected send functions or live remote base-table TIDs; schema fingerprints, local catalog resolution, full source-row payloads, unsupported type/system-column outcomes, and endpoint privileges are normative | FR-076, FR-078, FR-079, NFR-014 |
-| FND-011 | medium | RESOLVED: stable-vec_id UPDATE now appends a complete replacement row/record and atomically redirects the owner directory, reconciling DML with frozen build-time row-tier immutability | FR-082, FR-083 |
-| FND-012 | low | RESOLVED: NFR-014 was returned from APPROVED to PROPOSED because this pass materially broadened its security and operations contract to EC_DISTANN | NFR-014 |
-| FND-013 | high | RESOLVED DURING IMPLEMENTATION DECOMPOSITION: the original handoff carried only a codec kind, leaving trained GroupedPQ owners unable to prepare/score identically; FR-078 now defines and digests a versioned generation descriptor carrying the complete trained codec artifact and row-schema descriptor, with owner-side no-retraining parity in TC-040/TC-050 | FR-078, TC-040, TC-050 |
-| FND-014 | high | RESOLVED, THEN CORRECTED BY OUTSIDE REVIEW: retention still needs a cluster protocol, but durable per-scan participant pins imposed 2×roster RPC/commit tax on every query. FR-082 now uses coordinator-local attempt registration plus a zero-in-flight retire fence and durable retire decision; participants never reclaim autonomously, so restart safety moves to the rare retirement path with zero participant pin/WAL work per scan | FR-082, NFR-017, NFR-020, TC-042 |
-| FND-015 | high | RESOLVED DURING IMPLEMENTATION DECOMPOSITION: the specs lacked a metadata-only control-index mode, coordinator build entry, durable secret-referenced roster registry, and physical topology inspection endpoint; FR-075/FR-078 now pin those surfaces and forbid legacy/replicated fallback | FR-075, FR-078, NFR-014, TC-040, TC-044 |
-| FND-016 | high | RESOLVED DURING IMPLEMENTATION DECOMPOSITION: a fingerprint-only topology endpoint could not inspect Ready because the final receipt-bearing manifest/fingerprint does not exist until all owners seal; FR-078 now separates build-id-selected generation topology for the pre-decision gate from fingerprint-selected epoch topology for Published/Retired diagnostics and benchmarks | FR-078, FR-082, TC-040, TC-044 |
-| FND-017 | medium | RESOLVED DURING IMPLEMENTATION DECOMPOSITION: FR-076-AC-6 incorrectly claimed dimension independence while every current codec stride grows with dimension; the AC now pins the actual `20 + S + R×8 + R×S` formula and the intended invariant (no additional full-precision `4×dimension` field) | FR-076-AC-6, TC-037 |
-| FND-018 | high | RESOLVED DURING IMPLEMENTATION DECOMPOSITION: ADR-085/NFR-018 used a 4-bit/768-byte code to describe the landed 1-bit RaBitQ default, overstating the default graph record from the actual 7,008 bytes (~1.14× raw at dim=1536/R=32) to ~4×; the arithmetic now matches `DISTANN_RABITQ_BITS=1` while leaving the measured physical storage gate authoritative | ADR-085 D1/D7, NFR-018, FR-076-AC-6 |
-| FND-019 | high | RESOLVED DURING IMPLEMENTATION DECOMPOSITION: NFR-019 and ADR-085 claimed records, exact reranks, and final materializations were equal, contradicting FR-079's tombstone skip and its separate final payload endpoint; the bound is now graph expansions ≤BW×H, exact-vector reads ≤live expansions, payload reads ≤k, and total row-tier reads ≤BW×H+k with separate counters | FR-079, NFR-019, ADR-085 D11, TC-041/TC-044 |
-| FND-020 | high | RESOLVED AFTER OUTSIDE REVIEW: placement hash v1 now pins the exact fmix64 domain constant, wrapping steps, and golden vec_id/hash vectors instead of naming only a version and modulus | FR-078, TC-050 |
-| FND-021 | high | RESOLVED AFTER OUTSIDE REVIEW: manifest codec/build subrecords now have exact byte layouts and sizes, and manifest build options explicitly reuse the FR-078 26-byte build-options body | FR-078, FR-082, TC-050 |
-| FND-022 | medium | RESOLVED AFTER OUTSIDE REVIEW: a separately committed coordinator build registration/gate precedes every remote begin, and participant-local unpublished-generation listing makes vanished-build orphans discoverable | FR-078, NFR-020, TC-042 |
-| FND-023 | medium | RESOLVED AFTER OUTSIDE REVIEW: publish recovery is advisory-lock single-flight; only the extension owner/internal role may perform side effects, while ordinary or lock-losing scans use the prior active fingerprint | FR-082, NFR-014, TC-042 |
-| FND-024 | medium | RESOLVED AFTER OUTSIDE REVIEW: complete >8 MiB entries are rejected during initial source capture before graph construction or remote begin; v1 explicitly does not chunk entries | FR-078, TC-040 |
-| FND-025 | medium | RESOLVED AFTER OUTSIDE REVIEW: topology reports `control_index_bytes` separately and NFR-018 sums it into the graph-side numerator | FR-078, NFR-018, TC-040/TC-044 |
-| FND-026 | medium | RESOLVED AFTER OUTSIDE REVIEW: secured participant identity inspection is the sole logical-index UUID provenance during node registration; caller/OID-derived identities reject | FR-078, NFR-014, TC-040 |
-| FND-027 | medium | RESOLVED AFTER OUTSIDE REVIEW: every `distributed_control=true` roster, including one owner, uses the frozen row tier; base-table TIDs remain legacy-only | FR-078, FR-079, TC-040 |
-| FND-028 | low | RESOLVED AFTER OUTSIDE REVIEW: generation now means one participant shard and epoch means the cluster-wide roster set, removing lifecycle scope ambiguity | FR-078, FR-082 |
+| FND-001 | medium | FR-075's session-GUC surface (Inputs and AC-7's default enumeration) omits `ec_distann.crown_capacity`, which FR-089 defines as a production session GUC (default 0); the AM-surface registry and its registration AC will not cover the crown when it lands | FR-075, FR-089 |
+| FND-002 | medium | "head sample" term drift: FR-082's manifest table still describes `head_sample_digest` as "canonical coordinator head-sample identity" without the sharded-membership qualification FR-078's build-spec row carries (deferring to FR-080's persistence clause), and FR-082's Inputs / Building-generation / Retired-retention clauses still say "head sample" where FR-080/FR-085 make membership-only the multi-owner shape | FR-082, FR-078, FR-080, FR-085 |
+| FND-003 | medium | `seed_count` is used normatively (FR-080 serving/merge/CON-1, FR-081 head seeding, FR-085 Domain Rule 9) but is defined nowhere: no reloption, GUC, default value, or owning requirement states its provenance or bound | FR-080, FR-081, FR-085, FR-075 |
+| FND-004 | low | FIXED IN PLACE: `read/index.md` still labeled FR-080 "Coordinator Head Index", contradicting its post-ADR-087 title "DistANN Sharded Head Index"; label updated | FR-080, ADR-087 |
+| FND-005 | low | FIXED IN PLACE: FR-086 and FR-088 Downstream cited "Task 212 crown cache" / "Task 213 fused head hop" by task number although FR-089/FR-090 now exist; converted to FR-id links | FR-086, FR-088, FR-089, FR-090 |
+| FND-006 | low | FR-088 names no stable error code for the trained-policy/law-resolved-C conflict (AC-4 says only "a stable error"; FR-078 defines `EC_HEAD_TRAINING` and `EC_BUILD_ID_CONFLICT` — which applies is unstated), and the `head_sampling_rate` reloption default value is unstated (implied 0 via "shipped default SHALL remain the explicit cap") | FR-088, FR-078 |
+| FND-007 | low | FR-087's `ec_distann_head_shard_replica` section cites "[FR-080] §4.1 semantics"; §4.1 is a DISTRIBUTEDANN-paper section (as NFR-021's rationale establishes), not a section of FR-080, so the reference reads as a dangling internal pointer without that context | FR-087, FR-080, NFR-021 |
+| FND-008 | low | Head-search endpoint naming is unowned: FR-080's flows use generic `head_search(...)` while FR-087 names `ec_distann_head_search_physical` as the replica-routing reader — a function FR-080 never defines; the export/import/populate names are consistent, the search entry point is not | FR-080, FR-087 |
+| FND-009 | low | Title casing drifts between "Distann" (FR-076..FR-079, FR-081..FR-084, NFR-017..NFR-021 titles) and "DistANN" (FR-080, FR-085..FR-090, index labels); cosmetic but inconsistent with FR-085's domain-model branding | FR-076..FR-090 |
+| FND-010 | low | FR-080, FR-086, FR-089, and FR-090 omit the base checklist's Inputs/Outputs sections (behavior-only style); FR-080 in particular defines its GUCs, caps, and wire behaviors inline without an input inventory | FR-080, FR-086, FR-089, FR-090 |
+| FND-011 | low | FR-084 and FR-075 cite the replica as non-conforming "under NFR-021 clause 4", but the substantive violation is clauses 1-2 (coordinator-resident unsharded O(N) state); clause 4 only governs opt-in reachability/labeling — the citation is uniform across artifacts, so this is an observation, not a contradiction | FR-084, FR-075, NFR-021 |
+
+## Resolutions (same session, post-review)
+
+- FND-001 resolved: FR-075's head-topology GUC bullet now registers
+  `ec_distann.crown_capacity` as specced-not-yet-implemented (FR-089).
+- FND-002 resolved: FR-082's `head_sample_digest` manifest row now carries
+  the sharded-membership qualification, deferring the shape contract to
+  FR-080's persistence clause.
+- FND-003 resolved: FR-080's serving clause now defines `seed_count` as
+  fixed internal policy `max(2 × BW, 32)` (benchmark override
+  compile-gated).
+- FND-006 resolved: FR-088 names `EC_HEAD_TRAINING` for the trained-policy
+  conflict and states `head_sampling_rate` default 0.
+- FND-007 resolved: FR-087 now cites the DISTRIBUTEDANN-paper §4.1
+  explicitly instead of a dangling FR-080 section pointer.
+- FND-008 resolved: FR-080's serving clause names
+  `ec_distann_head_search_physical`.
+- FND-009/010/011 remain open as low-severity style items for a later
+  verbosity/consistency pass (recorded, not churned this round).

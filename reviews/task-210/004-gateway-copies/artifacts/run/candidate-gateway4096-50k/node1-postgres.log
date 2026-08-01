@@ -1,0 +1,21 @@
+2026-07-31 04:58:45.721 PDT [104779] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-31 04:58:45.732 PDT [104779] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-31 04:58:45.732 PDT [104779] LOG:  listening on IPv4 address "127.0.0.1", port 42440
+2026-07-31 04:58:45.740 PDT [104785] LOG:  database system was shut down at 2026-07-31 04:58:43 PDT
+2026-07-31 04:58:45.745 PDT [104779] LOG:  database system is ready to accept connections
+2026-07-31 05:00:53.848 PDT [104783] LOG:  checkpoint starting: wal
+2026-07-31 05:05:23.387 PDT [104783] LOG:  checkpoint complete: wrote 93 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.179 s, sync=0.179 s, total=269.539 s; sync files=275, longest=0.018 s, average=0.001 s; distance=537258 kB, estimate=537258 kB; lsn=0/312582D8, redo lsn=0/223FEF40
+2026-07-31 05:05:53.834 PDT [104783] LOG:  checkpoint starting: time
+2026-07-31 05:10:03.508 PDT [104783] LOG:  checkpoint complete: wrote 181 buffers (1.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 21 recycled; write=249.263 s, sync=0.153 s, total=249.674 s; sync files=98, longest=0.084 s, average=0.002 s; distance=353949 kB, estimate=518927 kB; lsn=0/561B1888, redo lsn=0/37DA66B0
+2026-07-31 05:10:03.894 PDT [104783] LOG:  checkpoint starting: wal
+2026-07-31 05:10:13.626 PDT [104783] LOG:  checkpoint complete: wrote 70 buffers (0.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=8.758 s, sync=0.630 s, total=9.733 s; sync files=4, longest=0.603 s, average=0.158 s; distance=530785 kB, estimate=530785 kB; lsn=0/76B5A330, redo lsn=0/583FEAD8
+2026-07-31 05:12:37.421 PDT [104783] LOG:  checkpoint starting: wal
+2026-07-31 05:13:30.375 PDT [104779] LOG:  received fast shutdown request
+2026-07-31 05:13:30.381 PDT [104779] LOG:  aborting any active transactions
+2026-07-31 05:13:30.381 PDT [105571] FATAL:  terminating autovacuum process due to administrator command
+2026-07-31 05:13:30.382 PDT [104779] LOG:  background worker "logical replication launcher" (PID 104788) exited with exit code 1
+2026-07-31 05:13:30.595 PDT [104783] LOG:  checkpoint complete: wrote 766 buffers (4.7%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=52.987 s, sync=0.018 s, total=53.180 s; sync files=29, longest=0.005 s, average=0.001 s; distance=540680 kB, estimate=540680 kB; lsn=0/8DB4AA48, redo lsn=0/79400B40
+2026-07-31 05:13:30.595 PDT [104783] LOG:  shutting down
+2026-07-31 05:13:30.599 PDT [104783] LOG:  checkpoint starting: shutdown immediate
+2026-07-31 05:13:30.724 PDT [104783] LOG:  checkpoint complete: wrote 282 buffers (1.7%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 20 recycled; write=0.007 s, sync=0.012 s, total=0.129 s; sync files=9, longest=0.005 s, average=0.002 s; distance=335143 kB, estimate=520126 kB; lsn=0/8DB4AAC0, redo lsn=0/8DB4AAC0
+2026-07-31 05:13:30.753 PDT [104779] LOG:  database system is shut down

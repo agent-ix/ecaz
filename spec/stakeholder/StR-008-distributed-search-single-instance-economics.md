@@ -46,6 +46,18 @@ below the release single-instance IVF anchor at matched recall; and a
 per-query record-touch count bounded by the configured traversal budget
 (beam width × hop rounds), independent of corpus size.
 
+**Conformance precondition.** Every criterion above is evaluated only on a
+configuration satisfying
+[NFR-021](../non-functional/NFR-021-distann-distribution-invariant.md): no
+single node holding index state proportional to corpus size. A configuration
+that meets the p50 criterion by ceasing to distribute the index does not satisfy
+this need — it abandons it. The single-instance comparison exists to show that
+distribution need not cost latency, not to license removing the distribution.
+
+The corpus must remain distributed across the roster for a result to count. This
+precondition is stated explicitly because the other criteria are all *per-query
+work* bounds, which a single-node configuration satisfies trivially.
+
 ## Stakeholders
 
 Primary: operators running multi-node ecaz deployments who are accountable
@@ -67,10 +79,12 @@ source-identity contract of ADR-068).
 `task-141-spire-bench-integrity` through
 `task-146-spire-honest-pareto-confirmation`). **Downstream**: the ec_distann
 functional requirement family
-([FR-075](../functional/index/distann/FR-075-ec-distann-access-method-surface.md)
+([FR-075](../functional/distann/FR-075-ec-distann-access-method-surface.md)
 et seq.) and gate NFRs
 ([NFR-017](../non-functional/NFR-017-distann-latency-recall-gate.md),
-[NFR-019](../non-functional/NFR-019-distann-per-query-touch-bound.md)).
+[NFR-019](../non-functional/NFR-019-distann-per-query-touch-bound.md),
+[NFR-021](../non-functional/NFR-021-distann-distribution-invariant.md),
+[NFR-022](../non-functional/NFR-022-distann-control-validity.md)).
 
 ## Priority and Risk (Informative)
 

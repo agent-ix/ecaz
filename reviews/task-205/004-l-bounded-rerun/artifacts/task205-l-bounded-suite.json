@@ -1,0 +1,171 @@
+{
+  "name": "task205-l-bounded-rerun",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-205/004-l-bounded-rerun/artifacts/run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "control-l4096-10k",
+      "tags": ["task205", "rerun", "control", "l4096", "ec_real_10k"],
+      "artifact_dir": "${artifact_dir}/control-l4096-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-l4096-10k",
+      "nodes": 3, "base_port": 42120, "graph_degree": 32,
+      "head_index_cap": 4096, "beam_width": 4, "candidate_heap_limit": 4096,
+      "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "distann_stage_counters": true,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "control-l4096", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l4096-control", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only current-code non-binding L reference; fixed-roster storage is evaluated per owned record." } }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-l32-10k",
+      "tags": ["task205", "rerun", "candidate", "l32", "ec_real_10k"],
+      "artifact_dir": "${artifact_dir}/candidate-l32-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-l32-10k",
+      "nodes": 3, "base_port": 42130, "graph_degree": 32,
+      "head_index_cap": 4096, "beam_width": 4, "candidate_heap_limit": 32,
+      "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "distann_stage_counters": true,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "candidate-l32", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l32-candidate", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only L=32 pushdown arm; fixed-roster storage is evaluated per owned record." } }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "sweep-l64-10k",
+      "tags": ["task205", "rerun", "sweep", "l64", "ec_real_10k"],
+      "artifact_dir": "${artifact_dir}/sweep-l64-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-l64-10k",
+      "nodes": 3, "base_port": 42140, "graph_degree": 32,
+      "head_index_cap": 4096, "beam_width": 4, "candidate_heap_limit": 64,
+      "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "distann_stage_counters": true,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "sweep-l64", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l64-sweep", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only L=64 sweep arm; fixed-roster storage is evaluated per owned record." } }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "control-l4096-50k",
+      "tags": ["task205", "rerun", "control", "l4096", "ec_real_50k"],
+      "artifact_dir": "${artifact_dir}/control-l4096-50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-l4096-50k",
+      "nodes": 3, "base_port": 42150, "graph_degree": 32,
+      "head_index_cap": 4096, "beam_width": 4, "candidate_heap_limit": 4096,
+      "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "distann_stage_counters": true,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "control-l4096", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l4096-control", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only current-code non-binding L reference; fixed-roster storage is evaluated per owned record." } }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-l32-50k",
+      "tags": ["task205", "rerun", "candidate", "l32", "ec_real_50k"],
+      "artifact_dir": "${artifact_dir}/candidate-l32-50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-l32-50k",
+      "nodes": 3, "base_port": 42160, "graph_degree": 32,
+      "head_index_cap": 4096, "beam_width": 4, "candidate_heap_limit": 32,
+      "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "distann_stage_counters": true,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "candidate-l32", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l32-candidate", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only L=32 pushdown arm; fixed-roster storage is evaluated per owned record." } }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "sweep-l64-50k",
+      "tags": ["task205", "rerun", "sweep", "l64", "ec_real_50k"],
+      "artifact_dir": "${artifact_dir}/sweep-l64-50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-l64-50k",
+      "nodes": 3, "base_port": 42170, "graph_degree": 32,
+      "head_index_cap": 4096, "beam_width": 4, "candidate_heap_limit": 64,
+      "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "distann_stage_counters": true,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "sweep-l64", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l64-sweep", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only L=64 sweep arm; fixed-roster storage is evaluated per owned record." } }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "control-l4096-100k",
+      "tags": ["task205", "rerun", "control", "l4096", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/control-l4096-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-l4096-100k",
+      "nodes": 3, "base_port": 42180, "graph_degree": 32,
+      "head_index_cap": 4096, "beam_width": 4, "candidate_heap_limit": 4096,
+      "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "distann_stage_counters": true,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "control-l4096", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l4096-control", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only current-code non-binding L reference; fixed-roster storage is evaluated per owned record." } }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-l32-100k",
+      "tags": ["task205", "rerun", "candidate", "l32", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/candidate-l32-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-l32-100k",
+      "nodes": 3, "base_port": 42190, "graph_degree": 32,
+      "head_index_cap": 4096, "beam_width": 4, "candidate_heap_limit": 32,
+      "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "distann_stage_counters": true,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "candidate-l32", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l32-candidate", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only L=32 pushdown arm; fixed-roster storage is evaluated per owned record." } }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "sweep-l64-100k",
+      "tags": ["task205", "rerun", "sweep", "l64", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/sweep-l64-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-l64-100k",
+      "nodes": 3, "base_port": 42200, "graph_degree": 32,
+      "head_index_cap": 4096, "beam_width": 4, "candidate_heap_limit": 64,
+      "hop_rounds": 100, "queries": 200, "top_k": 10,
+      "physical_benchmark": true, "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10, "distann_stage_counters": true,
+      "skip_fault_drills": true, "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "sweep-l64", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false, "nfr_021": { "id": "task205-l64-sweep", "role": "context", "admissibility": "conforming", "rationale": "Measurement-only L=64 sweep arm; fixed-roster storage is evaluated per owned record." } }
+      ]
+    }
+  ]
+}

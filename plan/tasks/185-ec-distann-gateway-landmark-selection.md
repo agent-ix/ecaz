@@ -1,7 +1,34 @@
 # Task 185: ec_distann Gateway Landmark Selection
 
-Status: **proposed** (2026-07-19). Priority: P1 bounded-recall follow-up,
-independent of Task 184.
+Status: **proposed — entry gated on Task 206** (2026-07-19; gate added
+2026-07-29). Priority: P1 bounded-recall follow-up, independent of Task 184.
+
+> **Entry gate and boundary (Task 203 audit, correction 2026-07-29-02).**
+>
+> This task remains **valid and is not superseded**. Its lever is correct: for the
+> promoted `training_landmarks_exact` policy the candidate pool is already the
+> entire corpus (`head_sample.rs:462-467` scores every node's code), so the
+> selection *objective* — not the pool — is what controls which seeds are
+> returned. The unexplained fact this task exists to attack still stands: three
+> distinct 4,096-row objectives produced identical top-32 seeds.
+>
+> **Gate: do not start until Task 206 reports.** This task's diversity-aware
+> returned-seed arm penalizes landmarks that share a traversal basin, and that
+> cannot pay off at the current BW=4, where the beam pops four candidates per
+> round. Running it now would reproduce `NEG-01`'s structure — a seed policy
+> measured at a width that cannot exploit it — and would burn the candidate.
+>
+> **Boundary against Task 207**, so the two head lanes do not collide:
+> - **185 owns the selection objective** — which landmarks are chosen, and which
+>   of them are returned as seeds.
+> - **207 owns the pool, the search path, and sharding** — per-partition union
+>   construction (§3), restoring the persisted Vamana graph instead of the
+>   4,096-point exact scan, and distributing the head across the roster (§2.2).
+>
+> With that split they are independent and may run in sequence without
+> re-baselining each other. They must not run concurrently.
+>
+> Evidence: `reviews/task-203/001-decision-reaudit/` Defect 3 and its correction.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`. This task
 owns `HEAD-13` through `HEAD-20`, `HEAD-32`, and `HEAD-33`. It does not own

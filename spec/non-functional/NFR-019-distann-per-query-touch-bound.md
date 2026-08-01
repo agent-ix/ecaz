@@ -21,11 +21,16 @@ coordinator-local head-index hits), independent of corpus size.
 
 Each live expanded record incurs exactly one co-placed exact-rerank row-tier
 read; a tombstone may skip it
-([FR-079](../functional/index/distann/FR-079-distann-remote-expansion-protocol.md),
+([FR-079](../functional/distann/read/FR-079-distann-remote-expansion-protocol.md),
 ADR-085 D11). Exact-rerank row reads are therefore no greater than expanded
 records and remain bounded by BW × H. Final payload materialization is driven
 in fixed global-ranked windows of `W = 10`. Let `D = max(initial_search_bar ×
-64, 1024)`, fixed once when the scan begins. For an unqualified top-k scan in
+64, 1024)`, fixed once when the scan begins, where `initial_search_bar` is
+the scan's effective initial result bound — `ec_distann.top_k`, or the
+pushed-down `ORDER BY ... LIMIT` bound when the planner provides a smaller
+one (owned by
+[FR-081](../functional/distann/read/FR-081-distann-query-orchestration.md)'s
+iterative-deepening clause). For an unqualified top-k scan in
 the absence of tombstone or snapshot-visibility skips, payload row-tier reads
 are bounded by `min(D, W × ceil(k / W))`; the final window may therefore
 over-read at most `W - 1` ranked slots. If `t` tombstone or snapshot-invisible
@@ -80,13 +85,45 @@ comparison meaningful.
 
 ## Verification
 
-The pipeline bench step emits per-query expansion, exact-vector-read,
-tombstone-skip, payload-materialization, and per-window request counters. The
-suite asserts every cap per cell, proves stable-prefix vec_ids are not
-re-requested after deepening, and emits the cross-scale ratio row in the gate
-packet manifest. Any breach fails the run.
+The caps in the Statement and the table above are normative regardless of
+enforcement status: the bound holds because the scan algorithm enforces it,
+not because a counter observed it.
+
+**Normative assertion regime (open engineering scope).** The pipeline bench
+step SHALL emit per-query expansion, exact-vector-read, tombstone-skip,
+payload-materialization, and per-window request counters; the suite SHALL
+assert every cap per cell, prove stable-prefix vec_ids are not re-requested
+after deepening, and emit the cross-scale ratio row in the gate packet
+manifest, with any breach failing the run. None of this machinery exists yet;
+it remains an open obligation on the suite and the scan.
+
+**Enforcement status (audited 2026-08-01).** What is mechanically asserted
+today is essentially nothing:
+
+- The EXPLAIN surface required by the Statement does not exist
+  (`ExplainCustomScan: None` in `src/am/ec_distann/custom_scan.rs`); the
+  per-query expanded-record counter exists internally with no external
+  surface.
+- The only runtime cap check is a `debug_assert!` on BW × H in
+  `src/am/ec_distann/scan.rs`, compiled out of release builds — the only
+  builds the gate accepts.
+- Stage counters are per-backend aggregates gated behind the
+  `distann-head-attribution-benchmark` feature, emitted only under
+  `--distann-stage-counters` full-metrics mode, and never compared by the
+  suite against BW × H, `D`, or the cross-scale ratio.
+- The stable-prefix duplicate-payload check is a hard runtime error but is
+  also feature-gated out of production builds.
+
+Until the assertion machinery lands, a packet citing this NFR SHALL state
+that conformance rests on manual inspection of emitted counters plus the
+algorithmic argument, not on a mechanical assertion trail.
+
+**Verified policy conformance.** The 2026-08-01 audit confirmed the internal
+window and deepening policies match the Statement: `W = 10`
+(`src/am/ec_distann/options.rs`) and `D` fixed once at scan start from the
+effective search bar (`src/am/ec_distann/custom_scan.rs`).
 
 ## Dependencies
 
-- **Upstream**: [FR-081](../functional/index/distann/FR-081-distann-query-orchestration.md),
+- **Upstream**: [FR-081](../functional/distann/read/FR-081-distann-query-orchestration.md),
   [StR-008](../stakeholder/StR-008-distributed-search-single-instance-economics.md)

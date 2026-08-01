@@ -17,6 +17,37 @@ use std::ffi::{c_char, c_void};
 
 type MemoryContext = *mut c_void;
 
+// PG18 Oid (`postgres_ext.h`) and process globals (`miscadmin.h`).
+#[no_mangle]
+pub static mut MyDatabaseId: u32 = 0;
+
+#[no_mangle]
+pub static mut MyProcPid: i32 = 0;
+
+// PG18 ProcNumber is an `int` (`storage/procnumber.h`).
+#[no_mangle]
+pub static mut MyProcNumber: i32 = -1;
+
+// PG18 `PROC_HDR *` (`storage/proc.h`).
+#[no_mangle]
+pub static mut ProcGlobal: *mut c_void = std::ptr::null_mut();
+
+// PG18 volatile sig_atomic_t interrupt flags (`miscadmin.h`). The CLI never
+// reads them; definitions are present only so dyld can bind the unreachable
+// extension graph retained by release LTO.
+#[no_mangle]
+pub static mut InterruptPending: i32 = 0;
+
+#[no_mangle]
+pub static mut QueryCancelPending: i32 = 0;
+
+#[no_mangle]
+pub static mut ProcDiePending: i32 = 0;
+
+// PG18 transaction isolation enum storage is an `int` (`access/xact.h`).
+#[no_mangle]
+pub static mut XactIsoLevel: i32 = 0;
+
 #[no_mangle]
 pub static mut BufferBlocks: *mut c_char = std::ptr::null_mut();
 

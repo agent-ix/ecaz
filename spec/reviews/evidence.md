@@ -3,7 +3,7 @@ id: SR-005
 title: "evidence analysis of the ec_distann spec batch"
 type: SpecReview
 analysis: evidence
-scope: "spec/functional/index/distann/FR-075..FR-083, spec/non-functional/NFR-017..NFR-020, spec/adr/ADR-085, spec/tests.md TC-037..TC-044"
+scope: "spec/functional/distann/FR-075..FR-083, spec/non-functional/NFR-017..NFR-020, spec/adr/ADR-085, spec/tests.md TC-037..TC-044"
 review_set: all
 ---
 

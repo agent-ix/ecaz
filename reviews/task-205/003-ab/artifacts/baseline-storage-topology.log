@@ -1,0 +1,20 @@
+# Baseline owner-control storage/topology excerpts retained from the packet-local runs.
+# The published graph-side value is graph_bytes + directory_bytes + control_bytes.
+
+## 10k
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=3323 rows=3323 non_owned=0 orphans=0 graph_bytes=25133056 row_bytes=55427072 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=3391 rows=3391 non_owned=0 orphans=0 graph_bytes=25567232 row_bytes=56573952 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=3286 rows=3286 non_owned=0 orphans=0 graph_bytes=24797184 row_bytes=54837248 directory_bytes=122880 control_bytes=8192
+[distann-multicluster] physical_benchmark_storage scale=10k variant=baseline-owner-control seed_strategy=persisted_head head_index_cap=4096 head_search_width=32 head_seed_count=32 beam_width=4 hop_rounds=100 neighbor_score_mode=rabitq materialization_batch_size=0 owner_payload_plan_cache=false traversal_replica=false stored_neighbor_code_format=rabitq storage_shared=true owners=3 physical_generation_bytes=242745344 control_index_bytes=24576 coordinator_source_bytes=166682624 single_index_bytes=115687424 single_source_bytes=282214400
+
+## 50k
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=16637 rows=16637 non_owned=0 orphans=0 graph_bytes=135610368 row_bytes=277291008 directory_bytes=540672 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=16756 rows=16756 non_owned=0 orphans=0 graph_bytes=136822784 row_bytes=279273472 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=16607 rows=16607 non_owned=0 orphans=0 graph_bytes=135307264 row_bytes=276783104 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_benchmark_storage scale=50k variant=baseline-owner-control seed_strategy=persisted_head head_index_cap=4096 head_search_width=32 head_seed_count=32 beam_width=4 hop_rounds=100 neighbor_score_mode=rabitq materialization_batch_size=0 owner_payload_plan_cache=false traversal_replica=false stored_neighbor_code_format=rabitq storage_shared=true owners=3 physical_generation_bytes=1242750976 control_index_bytes=24576 coordinator_source_bytes=833167360 single_index_bytes=444186624 single_source_bytes=1276583936
+
+## 100k
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=33195 rows=33195 non_owned=0 orphans=0 graph_bytes=274563072 row_bytes=553197568 directory_bytes=1056768 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=33432 rows=33432 non_owned=0 orphans=0 graph_bytes=276299776 row_bytes=557129728 directory_bytes=1064960 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=33373 rows=33373 non_owned=0 orphans=0 graph_bytes=276062208 row_bytes=556154880 directory_bytes=1073152 control_bytes=8192
+[distann-multicluster] physical_benchmark_storage scale=100k variant=baseline-owner-control seed_strategy=persisted_head head_index_cap=4096 head_search_width=32 head_seed_count=32 beam_width=4 hop_rounds=100 neighbor_score_mode=rabitq materialization_batch_size=0 traversal_replica=false stored_neighbor_code_format=rabitq storage_shared=true owners=3 physical_generation_bytes=2496626688 control_index_bytes=24576 coordinator_source_bytes=1666260992 single_index_bytes=854810624 single_source_bytes=2519056384

@@ -18,7 +18,7 @@ use super::{
     expand_error::DistannExpandError,
     quantizer::DistannPreparedQuery,
     reader::directory_lookup,
-    scan::{DistannExpandedNode, DistannNodeExpander},
+    scan::{prune_and_limit_neighbors, DistannExpandedNode, DistannNodeExpander},
     tuple::{DistannNodeTuple, DISTANN_NODE_TAG},
 };
 
@@ -58,7 +58,12 @@ impl LocalNodeExpander<'_> {
                     tid.block_number, tid.offset_number
                 ));
             }
-            DistannNodeTuple::decode_into(raw, self.graph_degree_r, self.code_len, &mut self.pooled_node)
+            DistannNodeTuple::decode_into(
+                raw,
+                self.graph_degree_r,
+                self.code_len,
+                &mut self.pooled_node,
+            )
         })?;
         match visit {
             LockedPageTupleVisit::Present(()) => Ok(()),
@@ -75,6 +80,7 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         // Pass 1: one record read per vec_id; neighbor codes scored with
         // one block-kernel batch call per record (32-wide cascade).
@@ -117,19 +123,12 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
                     &mut batch_dists,
                 )
                 .map_err(DistannExpandError::Internal)?;
-            let mut neighbor_vec_ids = Vec::with_capacity(neighbor_count);
-            let mut neighbor_code_dists = Vec::with_capacity(neighbor_count);
-            for (slot, code_dist) in batch_dists.iter().copied().enumerate() {
-                // FR-079 code_threshold: an ip-score floor; neighbors whose
-                // estimated ip (-code_dist) falls below it MAY be omitted.
-                if let Some(threshold) = code_threshold {
-                    if -code_dist < threshold {
-                        continue;
-                    }
-                }
-                neighbor_vec_ids.push(node.neighbor_vec_ids[slot]);
-                neighbor_code_dists.push(code_dist);
-            }
+            let (neighbor_vec_ids, neighbor_code_dists) = prune_and_limit_neighbors(
+                &node.neighbor_vec_ids[..neighbor_count],
+                &batch_dists,
+                None,
+                None,
+            )?;
 
             responses.push(DistannExpandedNode {
                 vec_id: *vec_id,
@@ -138,6 +137,7 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
                 heap_tid,
                 neighbor_vec_ids,
                 neighbor_code_dists,
+                neighbors_pruned: 0,
                 owner_total_ns: 0,
                 owner_open_validate_ns: 0,
                 owner_graph_read_ns: 0,
@@ -148,6 +148,12 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
                 coordinator_decode_ns: 0,
             });
         }
+
+        super::scan::prune_and_limit_neighbor_batch(
+            &mut responses,
+            code_threshold,
+            candidate_limit,
+        )?;
 
         // Prefetch the co-placed heap blocks for the whole batch before the
         // exact reads (mirrors the ec_diskann rerank prefetch).

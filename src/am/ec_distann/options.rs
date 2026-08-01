@@ -14,7 +14,8 @@ use super::{
     ECDISTANN_DEFAULT_ALPHA, ECDISTANN_DEFAULT_BEAM_WIDTH, ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
     ECDISTANN_DEFAULT_BUILD_SHARDS, ECDISTANN_DEFAULT_CLOSURE_EPSILON,
     ECDISTANN_DEFAULT_GRAPH_DEGREE, ECDISTANN_DEFAULT_HEAD_INDEX_CAP, ECDISTANN_DEFAULT_HOP_ROUNDS,
-    ECDISTANN_DEFAULT_TOP_K, ECDISTANN_MAX_ALPHA, ECDISTANN_MAX_BEAM_WIDTH,
+    ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT, ECDISTANN_DEFAULT_TOP_K, ECDISTANN_MAX_ALPHA,
+    ECDISTANN_MAX_BEAM_WIDTH, ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT,
     ECDISTANN_MAX_BUILD_LIST_SIZE, ECDISTANN_MAX_BUILD_SHARDS, ECDISTANN_MAX_CLOSURE_EPSILON,
     ECDISTANN_MAX_GRAPH_DEGREE, ECDISTANN_MAX_HEAD_INDEX_CAP, ECDISTANN_MAX_HOP_ROUNDS,
     ECDISTANN_MAX_TOP_K, ECDISTANN_MIN_ALPHA, ECDISTANN_MIN_BUILD_LIST_SIZE,
@@ -25,6 +26,37 @@ use super::{
 /// FR-081 beam width BW: frontier candidates expanded per hop round.
 static ECDISTANN_BEAM_WIDTH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISTANN_DEFAULT_BEAM_WIDTH);
+
+/// FR-081 candidate frontier bound L. This is independent of the expansion
+/// budget so the pushdown threshold is derived from a real retained heap.
+static ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC: GucSetting<i32> =
+    GucSetting::<i32>::new(ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT);
+
+/// NFR-021 clause 4: opt-in for the FR-084 coordinator traversal replica, a
+/// non-conforming accelerator that serves traversal from a coordinator-resident
+/// copy of every owner's graph record and full-precision vector. Default off —
+/// the sharded owner path is the default (Task 210 P1).
+static ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+
+/// NFR-021 clause 3: search the FR-080 head as roster shards, so no node holds
+/// the whole head (Task 210 P2a). A/B-able against the coordinator-local head.
+static ECDISTANN_SHARDED_HEAD_SEARCH_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
+
+/// DISTRIBUTEDANN 4.1 head replica count (Task 210 P2b): additional roster
+/// nodes that may serve a head shard, so head CPU is not bound to one machine
+/// per shard. 0 means each shard is served by its owner.
+static ECDISTANN_HEAD_REPLICA_COUNT_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
+
+/// TRAV-30 bounded gateway copies (Task 210 P3): how many gateway nodes'
+/// routing payloads a coordinator may cache. A stated constant, never a
+/// function of N. 0 disables gateway copies.
+static ECDISTANN_GATEWAY_COPY_CAPACITY_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
+
+/// NFR-021 clause 3 (Task 210 P2a): persist the FR-080 head as membership only,
+/// so the coordinator holds landmark ids -- bounded by capacity C -- and never a
+/// second copy of the landmark vectors, which already live on their owners.
+static ECDISTANN_SHARD_HEAD_STORAGE_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 
 /// FR-081 hop-round budget H: BW x H is the hard per-query expansion cap
 /// (NFR-019).
@@ -267,6 +299,16 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_int_guc(
+        c"ec_distann.candidate_heap_limit",
+        c"FR-081 retained candidate heap limit (L) for ec_distann scans.",
+        c"The coordinator retains at most L best unexpanded candidates and derives the owner code-score threshold from the L-th candidate. Each owner applies candidate_limit=L once to the merged response batch.",
+        &ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC,
+        1,
+        ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     #[cfg(feature = "distann-head-attribution-benchmark")]
     GucRegistry::define_string_guc(
         c"ec_distann.benchmark_head_policy",
@@ -322,6 +364,50 @@ pub(super) fn register_gucs() {
         c"Task 193 benchmark-only owner payload prepared-plan cache arm.",
         c"When enabled, physical payload requests reuse a generation-owned, projection-fingerprinted SPI plan. This GUC is absent from normal production builds.",
         &ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_distann.gateway_copy_capacity",
+        c"TRAV-30 bounded gateway copy capacity (Task 210 P3).",
+        c"How many frequently traversed gateway nodes' routing payloads (neighbour ids and neighbour codes -- never full-precision vectors, never the whole graph) a coordinator may cache. The bound is a constant independent of corpus size, which is what distinguishes this from the withdrawn FR-084 full-graph replica. 0 disables gateway copies.",
+        &ECDISTANN_GATEWAY_COPY_CAPACITY_GUC,
+        0,
+        65536,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_distann.head_replica_count",
+        c"DISTRIBUTEDANN 4.1 head replica count (Task 210 P2b).",
+        c"Additional roster nodes that may serve a head shard. 0 means each shard is served by its owner. A replica holds only the bounded head shard, never the O(N) graph or row tier, so it satisfies NFR-021's allowance for replicating a bounded structure.",
+        &ECDISTANN_HEAD_REPLICA_COUNT_GUC,
+        0,
+        64,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.shard_head_storage",
+        c"NFR-021 clause 3 membership-only head persistence (Task 210 P2a).",
+        c"Read at build time; default on (Task 210 review, 2026-07-31: the sharded shape is the shipped default, not a benchmark arm). On a multi-owner roster the coordinator persists head landmark ids and the head graph but not the landmark vectors, because each landmark's full-precision vector already lives on the owner its FR-078 placement hash selects. Single-owner rosters keep full vectors, where central and distributed coincide. The read path derives from the persisted shape.",
+        &ECDISTANN_SHARD_HEAD_STORAGE_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.sharded_head_search",
+        c"NFR-021 clause 3 sharded FR-080 head search (Task 210 P2a).",
+        c"Default on (Task 210 review, 2026-07-31). Each owner searches the head landmarks it owns under the FR-078 placement hash, reading their co-placed full-precision vectors locally, and the coordinator merges bounded per-owner seeds. No landmark vector crosses the wire. A membership-only persisted head always uses this path regardless of the GUC.",
+        &ECDISTANN_SHARDED_HEAD_SEARCH_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.allow_nonconforming_replica",
+        c"Opt-in for the FR-084 coordinator traversal replica (non-conforming).",
+        c"Default off. When enabled, a Ready coordinator traversal replica serves traversal from a coordinator-resident copy of every owner's graph record and full-precision vector, which is O(N) single-node state and does not satisfy NFR-021. The sharded owner path is the default; this accelerator is never a valid decision control under NFR-022.",
+        &ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -706,6 +792,38 @@ pub(super) fn current_beam_width() -> usize {
     usize::try_from(ECDISTANN_BEAM_WIDTH_GUC.get())
         .unwrap_or(1)
         .max(1)
+}
+
+pub(super) fn current_candidate_heap_limit() -> usize {
+    usize::try_from(ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC.get())
+        .unwrap_or(1)
+        .max(1)
+}
+
+/// NFR-021 clause 4 (Task 210 P1): the non-conforming traversal replica is
+/// opened only under an explicit opt-in. Off by default in every build profile.
+/// NFR-021 clause 3 (Task 210 P2a): search the head as roster shards.
+/// DISTRIBUTEDANN 4.1 head replica count (Task 210 P2b).
+/// TRAV-30 bounded gateway copy capacity (Task 210 P3).
+pub(super) fn gateway_copy_capacity() -> usize {
+    usize::try_from(ECDISTANN_GATEWAY_COPY_CAPACITY_GUC.get()).unwrap_or(0)
+}
+
+pub(super) fn head_replica_count() -> usize {
+    usize::try_from(ECDISTANN_HEAD_REPLICA_COUNT_GUC.get()).unwrap_or(0)
+}
+
+/// NFR-021 clause 3 (Task 210 P2a): persist the head as membership only.
+pub(super) fn shard_head_storage() -> bool {
+    ECDISTANN_SHARD_HEAD_STORAGE_GUC.get()
+}
+
+pub(super) fn sharded_head_search() -> bool {
+    ECDISTANN_SHARDED_HEAD_SEARCH_GUC.get()
+}
+
+pub(super) fn allow_nonconforming_replica() -> bool {
+    ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC.get()
 }
 
 pub(super) fn current_hop_rounds() -> usize {

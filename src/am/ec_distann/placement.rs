@@ -75,6 +75,33 @@ pub(crate) fn owning_node(vec_id: u64, node_count: usize, hash_version: u16) -> 
     (placement_hash(vec_id, hash_version) % node_count as u64) as usize
 }
 
+/// The owner ordinal of a head shard, derived from its member ids (Task 210,
+/// 005 review finding 2). A shard's members all hash to one owner by
+/// construction, so the members themselves are the authoritative shard
+/// identity — a §4.1 replica serving a foreign shard must build and key the
+/// shard with THIS ordinal, never its own generation ordinal, or the same
+/// vectors produce a different graph seed and topology per serving node.
+/// Mixed ownership in the member list is a routing fault and is rejected.
+pub(crate) fn shard_owner_ordinal(
+    members: &[u64],
+    node_count: usize,
+    hash_version: u16,
+) -> Result<usize, String> {
+    let first = members
+        .first()
+        .ok_or_else(|| "EC_HEAD_SHARD: shard member list is empty".to_owned())?;
+    let ordinal = owning_node(*first, node_count, hash_version);
+    for member in &members[1..] {
+        let owner = owning_node(*member, node_count, hash_version);
+        if owner != ordinal {
+            return Err(format!(
+                "EC_HEAD_SHARD: member {member:#018x} belongs to shard {owner}, not {ordinal}"
+            ));
+        }
+    }
+    Ok(ordinal)
+}
+
 /// Group `vec_ids` by owning node in O(set size) using only the roster size
 /// (FR-078: "group any set of vec_ids by owning node in O(set size) using only
 /// the manifest"). Returns one bucket per node index `0..node_count`; empty
@@ -273,5 +300,37 @@ mod tests {
         for vec_id in [0_u64, 7, u64::MAX] {
             assert_eq!(owning_node(vec_id, 1, DISTANN_PLACEMENT_HASH_V1), 0);
         }
+    }
+
+    /// 005 review finding 2: the shard ordinal derives from the members, so
+    /// an owner and a replica building the same shard use the same ordinal —
+    /// the graph seed input is identical wherever the shard is served.
+    #[test]
+    fn shard_owner_ordinal_is_derived_from_members_and_rejects_mixed_shards() {
+        let node_count = 3;
+        let buckets = group_by_owning_node(
+            &(0..64_u64).map(super::fmix64).collect::<Vec<_>>(),
+            node_count,
+            DISTANN_PLACEMENT_HASH_V1,
+        );
+        let mut mixed = Vec::new();
+        for (expected, bucket) in buckets.iter().enumerate() {
+            let members = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
+            if members.is_empty() {
+                continue;
+            }
+            assert_eq!(
+                shard_owner_ordinal(&members, node_count, DISTANN_PLACEMENT_HASH_V1),
+                Ok(expected),
+                "a shard's ordinal is a pure function of its members"
+            );
+            mixed.push(members[0]);
+        }
+        assert!(mixed.len() > 1, "test needs at least two non-empty shards");
+        assert!(
+            shard_owner_ordinal(&mixed, node_count, DISTANN_PLACEMENT_HASH_V1).is_err(),
+            "mixed-owner member lists are a routing fault, not a shard"
+        );
+        assert!(shard_owner_ordinal(&[], node_count, DISTANN_PLACEMENT_HASH_V1).is_err());
     }
 }

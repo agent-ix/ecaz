@@ -716,12 +716,12 @@ REVOKE ALL ON FUNCTION ec_distann_epoch_topology(regclass, bytea) FROM PUBLIC;
 -- unique generated names so pgrx's entity graph remains unambiguous; these SQL
 -- wrappers provide the normative endpoint names alongside the legacy oid
 -- signatures during the format transition.
-ALTER FUNCTION ec_distann_expand_nodes(oid, bytea, real[], bigint[], real)
+ALTER FUNCTION ec_distann_expand_nodes(oid, bytea, real[], bigint[], real, integer)
     SECURITY DEFINER;
-ALTER FUNCTION ec_distann_expand_nodes(oid, bytea, real[], bigint[], real)
+ALTER FUNCTION ec_distann_expand_nodes(oid, bytea, real[], bigint[], real, integer)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
-    oid, bytea, real[], bigint[], real
+    oid, bytea, real[], bigint[], real, integer
 ) FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_materialize_rows(oid, bytea, bigint[])
@@ -740,22 +740,22 @@ REVOKE ALL ON FUNCTION ec_distann_apply_record_writes(
     oid, bytea, bigint[]
 ) FROM PUBLIC;
 
-ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real)
+ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real, integer)
     SECURITY DEFINER;
-ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real)
+ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real, integer)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_expand_physical_nodes(
-    regclass, bytea, real[], bigint[], real
+    regclass, bytea, real[], bigint[], real, integer
 ) FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_expand_physical_nodes(
-    regclass, bytea, real[], bytea, bigint[], real
+    regclass, bytea, real[], bytea, bigint[], real, integer, bigint[]
 ) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_expand_physical_nodes(
-    regclass, bytea, real[], bytea, bigint[], real
+    regclass, bytea, real[], bytea, bigint[], real, integer, bigint[]
 ) SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_expand_physical_nodes(
-    regclass, bytea, real[], bytea, bigint[], real
+    regclass, bytea, real[], bytea, bigint[], real, integer, bigint[]
 ) FROM PUBLIC;
 
 ALTER FUNCTION ec_distann_materialize_physical_row_payloads(
@@ -785,7 +785,16 @@ CREATE FUNCTION ec_distann_expand_nodes(
     neighbor_vec_ids bigint[], neighbor_code_dists real[]
 )
 LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
-AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5)';
+AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5, NULL)';
+
+CREATE FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bigint[], real, integer DEFAULT NULL
+) RETURNS TABLE (
+    vec_id bigint, exact_dist real, is_tombstone boolean,
+    neighbor_vec_ids bigint[], neighbor_code_dists real[]
+)
+LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
+AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5, $6)';
 
 CREATE FUNCTION ec_distann_expand_nodes(
     regclass, bytea, real[], bytea, bigint[], real DEFAULT NULL
@@ -794,7 +803,17 @@ CREATE FUNCTION ec_distann_expand_nodes(
     neighbor_vec_ids bigint[], neighbor_code_dists real[]
 )
 LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
-AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5, $6)';
+AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5, $6, NULL)';
+
+CREATE FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bytea, bigint[], real, integer DEFAULT NULL,
+    bigint[] DEFAULT NULL
+) RETURNS TABLE (
+    vec_id bigint, exact_dist real, is_tombstone boolean,
+    neighbor_vec_ids bigint[], neighbor_code_dists real[]
+)
+LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
+AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5, $6, $7, $8)';
 
 CREATE FUNCTION ec_distann_materialize_row_payloads(
     regclass, bytea, bigint[], smallint[], bytea
@@ -809,11 +828,21 @@ ALTER FUNCTION ec_distann_expand_nodes(regclass, bytea, real[], bigint[], real)
     SECURITY DEFINER;
 ALTER FUNCTION ec_distann_expand_nodes(regclass, bytea, real[], bigint[], real)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
+ALTER FUNCTION ec_distann_expand_nodes(regclass, bytea, real[], bigint[], real, integer)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_expand_nodes(regclass, bytea, real[], bigint[], real, integer)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
 ALTER FUNCTION ec_distann_expand_nodes(
     regclass, bytea, real[], bytea, bigint[], real
 ) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_expand_nodes(
     regclass, bytea, real[], bytea, bigint[], real
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+ALTER FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bytea, bigint[], real, integer, bigint[]
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bytea, bigint[], real, integer, bigint[]
 ) SET search_path TO pg_catalog, @extschema@, pg_temp;
 ALTER FUNCTION ec_distann_materialize_row_payloads(
     regclass, bytea, bigint[], smallint[], bytea
@@ -827,6 +856,12 @@ REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
     regclass, bytea, real[], bytea, bigint[], real
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bigint[], real, integer
+) FROM PUBLIC;
+REVOKE ALL ON FUNCTION ec_distann_expand_nodes(
+    regclass, bytea, real[], bytea, bigint[], real, integer, bigint[]
 ) FROM PUBLIC;
 REVOKE ALL ON FUNCTION ec_distann_materialize_row_payloads(
     regclass, bytea, bigint[], smallint[], bytea

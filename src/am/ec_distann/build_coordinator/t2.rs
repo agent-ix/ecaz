@@ -375,14 +375,34 @@ pub(super) fn build_epoch(
             build_options.head_index_cap as usize,
             training.as_ref(),
         )?;
-        let head_sample_digest = head_sample.digest()?;
-        let head_graph = super::super::head_sample::DistannPersistedHeadGraph::build(
-            &head_sample,
-            usize::from(metadata.graph_degree_r),
-            usize::from(build_options.build_list_size),
-            build_options.alpha,
-            build_options.seed,
-        )?;
+        // Task 210 P2a: under membership-only storage the coordinator holds no
+        // landmark vectors, so the manifest must attest the same shape the
+        // state row and the load path use -- otherwise the manifest
+        // cross-check rejects a correctly persisted sharded head.
+        let head_sample_digest = if super::super::options::shard_head_storage() {
+            head_sample.membership_digest()?
+        } else {
+            head_sample.digest()?
+        };
+        // Task 210 P2a: with a sharded head every owner builds a navigable
+        // graph over *its own* shard from vectors it already holds, so a
+        // coordinator-resident head graph is vestigial -- and it is the last
+        // corpus-derived structure keeping the coordinator off `gap=none`.
+        // Persist an empty graph so the coordinator retains membership only.
+        let head_graph = if super::super::options::shard_head_storage() {
+            super::super::head_sample::DistannPersistedHeadGraph {
+                entry: 0,
+                neighbors: vec![Vec::new(); head_sample.entries.len()],
+            }
+        } else {
+            super::super::head_sample::DistannPersistedHeadGraph::build(
+                &head_sample,
+                usize::from(metadata.graph_degree_r),
+                usize::from(build_options.build_list_size),
+                build_options.alpha,
+                build_options.seed,
+            )?
+        };
 
         let codec_artifact = workspace.codec_artifact().clone();
         let dimensions = to_u16(i32::from(codec_artifact.dimensions()), "dimensions")?;
@@ -736,6 +756,13 @@ pub(super) fn build_epoch(
                 &head_sample,
                 &head_graph,
                 build_options,
+                // NFR-021 clause 3 (Task 210 P2a): with sharded head storage
+                // the coordinator persists landmark ids only; the vectors stay
+                // on the owners that already hold them. A single-owner roster
+                // keeps full vectors — there is no second node to shard to,
+                // and the membership-only read path requires a multi-owner
+                // roster — so the shipped-default flip cannot break it.
+                super::super::options::shard_head_storage() && roster.len() > 1,
             )?;
             let transitioned = client
                 .update(

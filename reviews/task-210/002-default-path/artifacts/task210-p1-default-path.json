@@ -1,0 +1,324 @@
+{
+  "name": "task210-p1-default-path",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-210/002-default-path/artifacts/run",
+  "defaults": {
+    "pg": 18,
+    "socket_dir": "/home/peter/.pgrx"
+  },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "control-default-10k",
+      "tags": [
+        "task210",
+        "p1",
+        "control",
+        "ec_real_10k"
+      ],
+      "artifact_dir": "${artifact_dir}/control-default-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p1-control-10k",
+      "nodes": 3,
+      "base_port": 42410,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "control-default",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p1-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Shipped-default owner path on a cluster that has never built a traversal replica image: the NFR-021 clause 5 baseline."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-default-with-image-10k",
+      "tags": [
+        "task210",
+        "p1",
+        "candidate",
+        "ec_real_10k"
+      ],
+      "artifact_dir": "${artifact_dir}/candidate-default-with-image-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p1-candidate-10k",
+      "nodes": 3,
+      "base_port": 42420,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "replica-optin-context",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": true,
+          "nfr_021": {
+            "id": "task210-p1-replica-context",
+            "role": "context",
+            "admissibility": "nonconforming",
+            "rationale": "Explicit opt-in replica accelerator, measured for honest comparison only: non-conforming under NFR-021 and never decision-bearing."
+          }
+        },
+        {
+          "name": "candidate-default-with-image",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p1-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Shipped-default owner path on a cluster holding a Ready traversal replica image with ec_distann.allow_nonconforming_replica off: the default must not silently substitute the non-distributed structure (NFR-021 clause 4)."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "control-default-50k",
+      "tags": [
+        "task210",
+        "p1",
+        "control",
+        "ec_real_50k"
+      ],
+      "artifact_dir": "${artifact_dir}/control-default-50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p1-control-50k",
+      "nodes": 3,
+      "base_port": 42430,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "control-default",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p1-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Shipped-default owner path on a cluster that has never built a traversal replica image: the NFR-021 clause 5 baseline."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-default-with-image-50k",
+      "tags": [
+        "task210",
+        "p1",
+        "candidate",
+        "ec_real_50k"
+      ],
+      "artifact_dir": "${artifact_dir}/candidate-default-with-image-50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p1-candidate-50k",
+      "nodes": 3,
+      "base_port": 42440,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "replica-optin-context",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": true,
+          "nfr_021": {
+            "id": "task210-p1-replica-context",
+            "role": "context",
+            "admissibility": "nonconforming",
+            "rationale": "Explicit opt-in replica accelerator, measured for honest comparison only: non-conforming under NFR-021 and never decision-bearing."
+          }
+        },
+        {
+          "name": "candidate-default-with-image",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p1-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Shipped-default owner path on a cluster holding a Ready traversal replica image with ec_distann.allow_nonconforming_replica off: the default must not silently substitute the non-distributed structure (NFR-021 clause 4)."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "control-default-100k",
+      "tags": [
+        "task210",
+        "p1",
+        "control",
+        "ec_real_100k"
+      ],
+      "artifact_dir": "${artifact_dir}/control-default-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p1-control-100k",
+      "nodes": 3,
+      "base_port": 42450,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "control-default",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p1-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Shipped-default owner path on a cluster that has never built a traversal replica image: the NFR-021 clause 5 baseline."
+          }
+        }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "candidate-default-with-image-100k",
+      "tags": [
+        "task210",
+        "p1",
+        "candidate",
+        "ec_real_100k"
+      ],
+      "artifact_dir": "${artifact_dir}/candidate-default-with-image-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task210-p1-candidate-100k",
+      "nodes": 3,
+      "base_port": 42460,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "distann_stage_counters": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "replica-optin-context",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": true,
+          "nfr_021": {
+            "id": "task210-p1-replica-context",
+            "role": "context",
+            "admissibility": "nonconforming",
+            "rationale": "Explicit opt-in replica accelerator, measured for honest comparison only: non-conforming under NFR-021 and never decision-bearing."
+          }
+        },
+        {
+          "name": "candidate-default-with-image",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "traversal_replica": false,
+          "nfr_021": {
+            "id": "task210-p1-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Shipped-default owner path on a cluster holding a Ready traversal replica image with ec_distann.allow_nonconforming_replica off: the default must not silently substitute the non-distributed structure (NFR-021 clause 4)."
+          }
+        }
+      ]
+    }
+  ]
+}

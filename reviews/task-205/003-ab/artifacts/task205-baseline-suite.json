@@ -1,0 +1,87 @@
+{
+  "name": "task205-baseline-owner-control",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-205/003-ab/artifacts/run-baseline",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "baseline-owner-control-10k",
+      "tags": ["task205", "baseline", "owner-traversal", "ec_real_10k"],
+      "artifact_dir": "${artifact_dir}/baseline-owner-control-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-baseline-10k",
+      "nodes": 3,
+      "base_port": 41820,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "distann_stage_counters": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "baseline-owner-control", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "baseline-owner-control-50k",
+      "tags": ["task205", "baseline", "owner-traversal", "ec_real_50k"],
+      "artifact_dir": "${artifact_dir}/baseline-owner-control-50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-baseline-50k",
+      "nodes": 3,
+      "base_port": 41840,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "distann_stage_counters": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "baseline-owner-control", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false }
+      ]
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "baseline-owner-control-100k",
+      "tags": ["task205", "baseline", "owner-traversal", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/baseline-owner-control-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task205-baseline-100k",
+      "nodes": 3,
+      "base_port": 41860,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "distann_stage_counters": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        { "name": "baseline-owner-control", "seed_strategy": "persisted_head", "head_search_width": 32, "head_seed_count": 32, "neighbor_score_mode": "rabitq", "traversal_replica": false }
+      ]
+    }
+  ]
+}

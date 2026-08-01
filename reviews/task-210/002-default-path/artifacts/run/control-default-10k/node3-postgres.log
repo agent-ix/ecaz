@@ -1,0 +1,15 @@
+2026-07-31 07:48:53.202 PDT [118519] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-07-31 07:48:53.216 PDT [118519] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-07-31 07:48:53.216 PDT [118519] LOG:  listening on IPv4 address "127.0.0.1", port 42412
+2026-07-31 07:48:53.224 PDT [118525] LOG:  database system was shut down at 2026-07-31 07:48:52 PDT
+2026-07-31 07:48:53.231 PDT [118519] LOG:  database system is ready to accept connections
+2026-07-31 07:50:24.286 PDT [118611] ERROR:  canceling autovacuum task
+2026-07-31 07:50:24.286 PDT [118611] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17734_71717171717141718171717171717171"
+2026-07-31 07:50:24.287 PDT [118611] LOG:  skipping vacuum of "_ecdz_graph_17734_71717171717141718171717171717171" --- lock not available
+2026-07-31 07:52:15.381 PDT [118519] LOG:  received fast shutdown request
+2026-07-31 07:52:15.393 PDT [118519] LOG:  aborting any active transactions
+2026-07-31 07:52:15.394 PDT [118519] LOG:  background worker "logical replication launcher" (PID 118528) exited with exit code 1
+2026-07-31 07:52:15.394 PDT [118523] LOG:  shutting down
+2026-07-31 07:52:15.399 PDT [118523] LOG:  checkpoint starting: shutdown immediate
+2026-07-31 07:52:15.689 PDT [118523] LOG:  checkpoint complete: wrote 10240 buffers (62.5%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 4 recycled; write=0.057 s, sync=0.194 s, total=0.295 s; sync files=277, longest=0.027 s, average=0.001 s; distance=70677 kB, estimate=70677 kB; lsn=0/5C59C60, redo lsn=0/5C59C60
+2026-07-31 07:52:15.712 PDT [118519] LOG:  database system is shut down

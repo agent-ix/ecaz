@@ -5,10 +5,11 @@
 //! 1. Connect, validate profile + prefix + tuning GUC.
 //! 2. Load `--iterations` query vectors from `<prefix>_queries.source`
 //!    (round-robined if iterations > queries).
-//! 3. Spawn `--concurrency` workers, each pulling from a shared counter
-//!    and running the same prepared KNN statement.
+//! 3. For every requested concurrency level, spawn that many workers; each
+//!    pulls from a shared counter and runs the same prepared KNN statement.
 //! 4. Merge per-worker duration buffers, emit one comfy-table row per
-//!    sweep value: count, mean, stddev, min, p50, p95, p99, max.
+//!    tuning/concurrency point: count, mean, stddev, min, p50, p95, p99, max,
+//!    concurrent wall time, and QPS.
 //!
 //! # Purity boundary
 //!
@@ -48,7 +49,12 @@ pub struct LatencyArgs {
     /// Number of concurrent worker connections.
     #[arg(long, default_value_t = 1)]
     pub concurrency: usize,
-    /// Total number of queries to run per sweep value.
+    /// Concurrency levels to measure at every tuning sweep point. Accepts
+    /// `--concurrency-sweep 1,2,4` or repeated flags. When present, this
+    /// overrides the single `--concurrency` value.
+    #[arg(long, value_delimiter = ',')]
+    pub concurrency_sweep: Vec<usize>,
+    /// Total number of queries to run per tuning/concurrency point.
     #[arg(long, default_value_t = 1000)]
     pub iterations: usize,
     /// Untimed queries to run on each worker connection before measurement.
@@ -128,9 +134,11 @@ pub struct LatencyArgs {
 pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     profiles::validate_ident(&args.prefix)
         .wrap_err_with(|| format!("invalid prefix {:?}", args.prefix))?;
-    if args.k == 0 || args.iterations == 0 || args.concurrency == 0 {
-        return Err(eyre!("--k, --iterations, --concurrency must all be >= 1"));
+    if args.k == 0 || args.iterations == 0 {
+        return Err(eyre!("--k and --iterations must both be >= 1"));
     }
+    let concurrency_values =
+        normalized_concurrency_values(args.concurrency, &args.concurrency_sweep)?;
     if args.memory_sample_interval_ms == 0 {
         return Err(eyre!("--memory-sample-interval-ms must be >= 1"));
     }
@@ -219,6 +227,9 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         "max",
         "cache_state",
         "worker_batch_size",
+        "concurrency",
+        "wall_ms",
+        "qps",
     ];
     if args.sample_backend_memory {
         header.extend(["rss_peak_kb", "hwm_peak_kb", "memory_samples"]);
@@ -254,94 +265,107 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         None
     };
     for value in &sweep_values {
-        let sweep_label = super::sweep_value_label(profile, *value);
-        let sweep = run_sweep_point(
-            conn,
-            profile,
-            guc,
-            rerank_width_guc,
-            sweep_label.clone(),
-            *value,
-            &sql,
-            Arc::clone(&queries),
-            args.concurrency,
-            args.iterations,
-            args.warmup_iterations,
-            args.worker_batch_size,
-            args.hold_transaction,
-            profile.encode_scan_query,
-            args.force_index,
-            args.rerank_width,
-            session_gucs.clone(),
-            adaptive_nprobe_options,
-            args.ivf_scratch_soa_batch_decode,
-            args.bits,
-            args.seed,
-            args.k,
-            args.sample_backend_memory,
-            args.memory_sample_interval_ms,
-            memory_series_output.clone(),
-            args.task87_candidate_batch_counters,
-            args.ivf_stage_counters,
-            args.distann_stage_counters,
-        )
-        .await?;
-        if args.task87_candidate_batch_counters {
-            task87_counter_lines.push(super::format_block_kernel_counter_lines(
-                "latency",
-                &sweep_label,
-                &sweep.task87_candidate_batch_counters,
-            ));
-        }
-        if args.ivf_stage_counters {
-            ivf_stage_counter_lines.push(super::format_ivf_stage_counter_lines(
-                "latency",
-                &sweep_label,
-                &sweep.ivf_stage_counters,
-            ));
-        }
-        if args.distann_stage_counters {
-            distann_stage_counter_lines.push(super::format_distann_stage_counter_lines(
-                "latency",
-                &sweep_label,
-                &sweep.distann_stage_counters,
-            ));
-            distann_materialization_work_lines.push(
-                super::format_distann_materialization_work_lines(
+        let tuning_label = super::sweep_value_label(profile, *value);
+        for concurrency in &concurrency_values {
+            let sweep_label = if args.concurrency_sweep.is_empty() {
+                tuning_label.clone()
+            } else {
+                format!("{tuning_label} concurrency={concurrency}")
+            };
+            let sweep = run_sweep_point(
+                conn,
+                profile,
+                guc,
+                rerank_width_guc,
+                sweep_label.clone(),
+                *value,
+                &sql,
+                Arc::clone(&queries),
+                *concurrency,
+                args.iterations,
+                args.warmup_iterations,
+                args.worker_batch_size,
+                args.hold_transaction,
+                profile.encode_scan_query,
+                args.force_index,
+                args.rerank_width,
+                session_gucs.clone(),
+                adaptive_nprobe_options,
+                args.ivf_scratch_soa_batch_decode,
+                args.bits,
+                args.seed,
+                args.k,
+                args.sample_backend_memory,
+                args.memory_sample_interval_ms,
+                memory_series_output.clone(),
+                args.task87_candidate_batch_counters,
+                args.ivf_stage_counters,
+                args.distann_stage_counters,
+            )
+            .await?;
+            if args.task87_candidate_batch_counters {
+                task87_counter_lines.push(super::format_block_kernel_counter_lines(
                     "latency",
                     &sweep_label,
-                    &sweep.distann_materialization_work,
-                ),
-            );
+                    &sweep.task87_candidate_batch_counters,
+                ));
+            }
+            if args.ivf_stage_counters {
+                ivf_stage_counter_lines.push(super::format_ivf_stage_counter_lines(
+                    "latency",
+                    &sweep_label,
+                    &sweep.ivf_stage_counters,
+                ));
+            }
+            if args.distann_stage_counters {
+                distann_stage_counter_lines.push(super::format_distann_stage_counter_lines(
+                    "latency",
+                    &sweep_label,
+                    &sweep.distann_stage_counters,
+                ));
+                distann_materialization_work_lines.push(
+                    super::format_distann_materialization_work_lines(
+                        "latency",
+                        &sweep_label,
+                        &sweep.distann_materialization_work,
+                    ),
+                );
+            }
+            let stats = summarize(&sweep.durations);
+            let mut row = vec![
+                Cell::new(value),
+                Cell::new(stats.count),
+                Cell::new(format_ms(stats.mean)),
+                Cell::new(format_ms(stats.stddev)),
+                Cell::new(format_ms(stats.min)),
+                Cell::new(format_ms(stats.p50)),
+                Cell::new(format_ms(stats.p95)),
+                Cell::new(format_ms(stats.p99)),
+                Cell::new(format_ms(stats.max)),
+                Cell::new(&args.cache_state),
+                Cell::new(args.worker_batch_size),
+                Cell::new(concurrency),
+                Cell::new(format_ms(sweep.wall_time)),
+                Cell::new(format!(
+                    "{:.3}",
+                    throughput_qps(stats.count, sweep.wall_time)
+                )),
+            ];
+            if args.sample_backend_memory {
+                row.extend([
+                    Cell::new(sweep.memory.rss_peak_kb),
+                    Cell::new(sweep.memory.hwm_peak_kb),
+                    Cell::new(sweep.memory.samples),
+                ]);
+                backend_memory_lines.extend(
+                    sweep
+                        .memory_series
+                        .iter()
+                        .map(|point| format_backend_memory_point(&sweep_label, point)),
+                );
+            }
+            table.add_row(row);
         }
-        let stats = summarize(&sweep.durations);
-        let mut row = vec![
-            Cell::new(value),
-            Cell::new(stats.count),
-            Cell::new(format_ms(stats.mean)),
-            Cell::new(format_ms(stats.stddev)),
-            Cell::new(format_ms(stats.min)),
-            Cell::new(format_ms(stats.p50)),
-            Cell::new(format_ms(stats.p95)),
-            Cell::new(format_ms(stats.p99)),
-            Cell::new(format_ms(stats.max)),
-            Cell::new(&args.cache_state),
-            Cell::new(args.worker_batch_size),
-        ];
-        if args.sample_backend_memory {
-            row.extend([
-                Cell::new(sweep.memory.rss_peak_kb),
-                Cell::new(sweep.memory.hwm_peak_kb),
-                Cell::new(sweep.memory.samples),
-            ]);
-            backend_memory_lines.extend(
-                sweep
-                    .memory_series
-                    .iter()
-                    .map(|point| format_backend_memory_point(&sweep_label, point)),
-            );
-        }
-        table.add_row(row);
     }
     let mut output = table.to_string();
     if !task87_counter_lines.is_empty() {
@@ -481,6 +505,8 @@ async fn run_sweep_point(
     let mut ivf_stage_counter_sets = Vec::new();
     let mut distann_stage_counter_sets = Vec::new();
     let mut distann_materialization_work_sets = Vec::new();
+    let mut timed_started_at = None;
+    let mut timed_finished_at = None;
     for h in handles {
         let result = h.await.map_err(|e| eyre!("worker panicked: {e}"))??;
         merged.extend(result.durations);
@@ -490,10 +516,26 @@ async fn run_sweep_point(
         ivf_stage_counter_sets.push(result.ivf_stage_counters);
         distann_stage_counter_sets.push(result.distann_stage_counters);
         distann_materialization_work_sets.push(result.distann_materialization_work);
+        if let Some(started_at) = result.timed_started_at {
+            timed_started_at = Some(
+                timed_started_at.map_or(started_at, |earliest: Instant| earliest.min(started_at)),
+            );
+        }
+        if let Some(finished_at) = result.timed_finished_at {
+            timed_finished_at = Some(
+                timed_finished_at.map_or(finished_at, |latest: Instant| latest.max(finished_at)),
+            );
+        }
     }
     bar.finish_and_clear();
+    let wall_time = timed_started_at
+        .zip(timed_finished_at)
+        .map_or(Duration::ZERO, |(started_at, finished_at)| {
+            finished_at.duration_since(started_at)
+        });
     Ok(LatencySweepResult {
         durations: merged,
+        wall_time,
         memory,
         memory_series,
         task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
@@ -544,6 +586,8 @@ async fn worker(
     let mut ivf_stage_counter_sets = Vec::new();
     let mut distann_stage_counter_sets = Vec::new();
     let mut distann_materialization_work_sets = Vec::new();
+    let mut timed_started_at = None;
+    let mut timed_finished_at = None;
     let batch_size = if worker_batch_size == 0 {
         iterations
     } else {
@@ -629,6 +673,7 @@ async fn worker(
             }
             let q = &queries[idx % queries.len()];
             let t0 = Instant::now();
+            timed_started_at.get_or_insert(t0);
             let query_result = if encode_scan_query {
                 client.query(&stmt, &[q, &bits, &seed, &k_i64]).await
             } else {
@@ -641,6 +686,7 @@ async fn worker(
             batch_result_rows =
                 batch_result_rows.saturating_add(i64::try_from(rows.len()).unwrap_or(i64::MAX));
             batch_durations.push(t0.elapsed());
+            timed_finished_at = Some(Instant::now());
             bar.inc(1);
         };
 
@@ -695,6 +741,8 @@ async fn worker(
 
     Ok(LatencyWorkerResult {
         durations,
+        timed_started_at,
+        timed_finished_at,
         memory,
         memory_series,
         task87_candidate_batch_counters: super::merge_block_kernel_counters(task87_counter_sets),
@@ -830,6 +878,7 @@ pub fn summarize(durations: &[Duration]) -> LatencyStats {
 #[derive(Debug, Default)]
 struct LatencySweepResult {
     durations: Vec<Duration>,
+    wall_time: Duration,
     memory: MemorySample,
     memory_series: Vec<BackendMemoryPoint>,
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
@@ -841,6 +890,8 @@ struct LatencySweepResult {
 #[derive(Debug, Default)]
 struct LatencyWorkerResult {
     durations: Vec<Duration>,
+    timed_started_at: Option<Instant>,
+    timed_finished_at: Option<Instant>,
     memory: MemorySample,
     memory_series: Vec<BackendMemoryPoint>,
     task87_candidate_batch_counters: super::BlockKernelCounterSnapshots,
@@ -1042,6 +1093,35 @@ fn format_ms(d: Duration) -> String {
     }
 }
 
+fn throughput_qps(completed: usize, wall_time: Duration) -> f64 {
+    let seconds = wall_time.as_secs_f64();
+    if completed == 0 || seconds <= 0.0 {
+        0.0
+    } else {
+        completed as f64 / seconds
+    }
+}
+
+fn normalized_concurrency_values(single: usize, sweep: &[usize]) -> Result<Vec<usize>> {
+    if single == 0 {
+        return Err(eyre!("--concurrency must be >= 1"));
+    }
+    if sweep.is_empty() {
+        return Ok(vec![single]);
+    }
+    if sweep.contains(&0) {
+        return Err(eyre!("--concurrency-sweep values must all be >= 1"));
+    }
+    if sweep
+        .iter()
+        .enumerate()
+        .any(|(index, value)| sweep[..index].contains(value))
+    {
+        return Err(eyre!("--concurrency-sweep values must be unique"));
+    }
+    Ok(sweep.to_vec())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1147,6 +1227,24 @@ mod tests {
     fn format_ms_switches_precision_at_10ms_boundary() {
         assert_eq!(format_ms(Duration::from_micros(4_567)), "4.57 ms");
         assert_eq!(format_ms(Duration::from_millis(150)), "150.0 ms");
+    }
+
+    #[test]
+    fn throughput_uses_concurrent_wall_time_not_summed_query_durations() {
+        assert_eq!(throughput_qps(100, Duration::from_secs(2)), 50.0);
+        assert_eq!(throughput_qps(0, Duration::from_secs(2)), 0.0);
+        assert_eq!(throughput_qps(100, Duration::ZERO), 0.0);
+    }
+
+    #[test]
+    fn concurrency_sweep_overrides_single_value_and_preserves_order() {
+        assert_eq!(
+            normalized_concurrency_values(1, &[1, 2, 4, 8, 16]).unwrap(),
+            vec![1, 2, 4, 8, 16]
+        );
+        assert_eq!(normalized_concurrency_values(4, &[]).unwrap(), vec![4]);
+        assert!(normalized_concurrency_values(1, &[1, 0]).is_err());
+        assert!(normalized_concurrency_values(1, &[1, 2, 1]).is_err());
     }
 
     #[test]

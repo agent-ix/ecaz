@@ -210,6 +210,7 @@ mod cache_tests {
                 descriptor: Arc::clone(&descriptor),
                 descriptor_digest,
                 head_index: None,
+                gateway_copies: None,
             });
         };
         let first = identity(0x11);
@@ -269,6 +270,9 @@ struct CachedPhysicalEpoch {
     descriptor: Arc<DistannGenerationDescriptor>,
     descriptor_digest: [u8; 32],
     head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
+    /// TRAV-30 (Task 210 P3): the bounded gateway routing copies for this
+    /// epoch. `None` until populated; populated at most once per cached epoch.
+    gateway_copies: Option<Arc<super::gateway_copy::DistannGatewayCopySet>>,
 }
 
 thread_local! {
@@ -302,6 +306,18 @@ unsafe extern "C-unwind" fn invalidate_generation_caches(
         });
     });
     PHYSICAL_PREPARED_QUERY_CACHE.with(|cache| {
+        let Ok(mut cache) = cache.try_borrow_mut() else {
+            return;
+        };
+        cache.retain(|entry| {
+            relation_oid != pg_sys::InvalidOid
+                && entry.index_oid != relation_oid
+                && !removed.iter().any(|(index_oid, fingerprint)| {
+                    entry.index_oid == *index_oid && entry.fingerprint == *fingerprint
+                })
+        });
+    });
+    OWNER_HEAD_SHARD_CACHE.with(|cache| {
         let Ok(mut cache) = cache.try_borrow_mut() else {
             return;
         };
@@ -455,6 +471,102 @@ fn prepared_physical_query(
         });
     });
     Ok(prepared)
+}
+
+/// Task 210 P2a follow-up: the owner head shard is epoch-immutable and its
+/// build is deterministically seeded from the epoch fingerprint, so building
+/// it per `head_search` RPC (the first P2 A/B measured ~7 s/query at 100k
+/// against a 36 ms owner-path control) is pure waste. Cache the loaded shard
+/// per backend, keyed by everything the build reads; an epoch transition
+/// changes the fingerprint and therefore the key.
+const OWNER_HEAD_SHARD_CACHE_CAPACITY: usize = 4;
+
+const OWNER_HEAD_SHARD_DOMAIN: &[u8] = b"ecaz/ec_distann/owner_head_shard/v1\0";
+
+struct CachedOwnerHeadShard {
+    index_oid: pg_sys::Oid,
+    fingerprint: [u8; 34],
+    shard_key: [u8; 32],
+    index: Arc<super::head_sample::DistannPhysicalHeadIndex>,
+    /// Whether the shard was materialised from a §4.1 replica copy rather
+    /// than owner-held vectors. Carried so the activation counter attributes
+    /// every request served from a replica shard, not only the first build —
+    /// warmup builds the cache, counters reset, and the measured window would
+    /// otherwise read 0 (the 2026-07-31 gate diagnosis).
+    from_replica: bool,
+}
+
+thread_local! {
+    static OWNER_HEAD_SHARD_CACHE: RefCell<VecDeque<CachedOwnerHeadShard>> =
+        const { RefCell::new(VecDeque::new()) };
+}
+
+#[allow(clippy::too_many_arguments)]
+fn owner_head_shard_key(
+    owner_ordinal: u32,
+    members: &[u64],
+    graph_degree: u16,
+    build_list_size: usize,
+    alpha: f32,
+    head_policy: super::generation_descriptor::DistannHeadPolicy,
+) -> Result<[u8; 32], String> {
+    let mut encoder = super::canonical_wire::CanonicalEncoder::with_capacity(
+        24_usize.saturating_add(members.len().saturating_mul(8)),
+    );
+    encoder.put_u32(owner_ordinal);
+    encoder.put_u32(u32::from(graph_degree));
+    encoder.put_u32(u32::try_from(build_list_size).unwrap_or(u32::MAX));
+    encoder.put_f32(alpha);
+    encoder.put_u32(u32::from(head_policy as u8));
+    encoder.put_u32(u32::try_from(members.len()).map_err(|_| "head shard exceeds u32".to_owned())?);
+    for member in members {
+        encoder.put_u64(*member);
+    }
+    Ok(super::canonical_wire::domain_digest(
+        OWNER_HEAD_SHARD_DOMAIN,
+        &encoder.finish()?,
+    ))
+}
+
+fn cached_owner_head_shard(
+    index_oid: pg_sys::Oid,
+    fingerprint: &[u8; 34],
+    shard_key: &[u8; 32],
+) -> Option<(Arc<super::head_sample::DistannPhysicalHeadIndex>, bool)> {
+    OWNER_HEAD_SHARD_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        let position = cache.iter().position(|entry| {
+            entry.index_oid == index_oid
+                && entry.fingerprint == *fingerprint
+                && entry.shard_key == *shard_key
+        })?;
+        let entry = cache.remove(position)?;
+        let hit = (Arc::clone(&entry.index), entry.from_replica);
+        cache.push_back(entry);
+        Some(hit)
+    })
+}
+
+fn cache_owner_head_shard(
+    index_oid: pg_sys::Oid,
+    fingerprint: [u8; 34],
+    shard_key: [u8; 32],
+    index: Arc<super::head_sample::DistannPhysicalHeadIndex>,
+    from_replica: bool,
+) {
+    OWNER_HEAD_SHARD_CACHE.with(|cache| {
+        let mut cache = cache.borrow_mut();
+        while cache.len() >= OWNER_HEAD_SHARD_CACHE_CAPACITY {
+            cache.pop_front();
+        }
+        cache.push_back(CachedOwnerHeadShard {
+            index_oid,
+            fingerprint,
+            shard_key,
+            index,
+            from_replica,
+        });
+    });
 }
 
 fn cached_retained_epoch(
@@ -797,6 +909,17 @@ impl RetainedGenerationScan {
     }
 
     fn validate_request(&self, query: &[f32], vec_ids: &[u64]) -> Result<(), DistannExpandError> {
+        self.validate_query(query)?;
+        self.validate_ownership(vec_ids)
+    }
+
+    /// Dimension validation alone. §4.1 replica serving (Task 210 P2b) needs
+    /// this split: a node serving a foreign head shard from its imported copy
+    /// is *supposed* to be asked for ids it does not own, so ownership is
+    /// enforced only where the answer comes from owner-held vectors
+    /// (`resolve_nodes`), not at the endpoint boundary (003a review,
+    /// 2026-07-31 finding 2).
+    fn validate_query(&self, query: &[f32]) -> Result<(), DistannExpandError> {
         if query.len() != usize::from(self.descriptor.dimensions) {
             return Err(DistannExpandError::BadInput(format!(
                 "query has {} dimensions, retained generation requires {}",
@@ -804,7 +927,7 @@ impl RetainedGenerationScan {
                 self.descriptor.dimensions
             )));
         }
-        self.validate_ownership(vec_ids)
+        Ok(())
     }
 
     fn validate_ownership(&self, vec_ids: &[u64]) -> Result<(), DistannExpandError> {
@@ -1072,6 +1195,8 @@ impl RetainedGenerationScan {
         query_digest: [u8; 32],
         vec_ids: &[u64],
         code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
+        skip_neighbor_vec_ids: &[u64],
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         self.validate_request(query, vec_ids)?;
         if vec_ids.is_empty() {
@@ -1107,7 +1232,313 @@ impl RetainedGenerationScan {
             prepared: &prepared,
             code_len: self.code_len,
         };
-        expander.expand_nodes(vec_ids, code_threshold)
+        let skip = skip_neighbor_vec_ids
+            .iter()
+            .copied()
+            .collect::<std::collections::HashSet<_>>();
+        expander.expand_nodes_masked(vec_ids, code_threshold, candidate_limit, &skip)
+    }
+
+    /// Search this owner's shard of the FR-080 head (Task 210 P2a).
+    ///
+    /// `members` are the head landmarks this owner owns under the FR-078
+    /// placement hash. Their full-precision vectors are already local (ADR-085
+    /// D11), so the shard is materialised from local reads — no landmark vector
+    /// crosses the wire and the coordinator holds none. At most `seed_count`
+    /// seeds are returned, which is what keeps coordinator state bounded by
+    /// `k_head` under NFR-021 clause 2.
+    fn head_search(
+        &self,
+        query: &[f32],
+        query_digest: [u8; 32],
+        members: &[u64],
+        search_width: usize,
+        seed_count: usize,
+        build_list_size: usize,
+        alpha: f32,
+        head_policy: super::generation_descriptor::DistannHeadPolicy,
+    ) -> Result<Vec<super::scan::DistannSeedCandidate>, DistannExpandError> {
+        // Ownership is deliberately NOT validated here: a §4.1 replica serves
+        // a shard it does not own from its imported copy. The owner-vector
+        // fallback below still enforces ownership through `resolve_nodes`.
+        self.validate_query(query)?;
+        if members.is_empty() || seed_count == 0 {
+            return Ok(Vec::new());
+        }
+        // The shard ordinal derives from the members (005 review finding 2):
+        // on a replica path `self.generation.owner_ordinal` is the SERVING
+        // node's ordinal, and folding that into the key and graph seed would
+        // give the same shard a different topology per serving node. The
+        // members are the authoritative identity — uniform ownership is
+        // validated in the derivation.
+        let shard_ordinal = super::placement::shard_owner_ordinal(
+            members,
+            self.descriptor.roster.len(),
+            self.descriptor.placement_hash_version,
+        )
+        .map_err(DistannExpandError::BadInput)?;
+        let shard_ordinal = u32::try_from(shard_ordinal).map_err(|_| {
+            DistannExpandError::Internal("shard ordinal exceeds u32".to_owned())
+        })?;
+        // The shard is epoch-immutable and its build is deterministic in every
+        // keyed input, so it is built once per backend per epoch, not per RPC.
+        let shard_key = owner_head_shard_key(
+            shard_ordinal,
+            members,
+            self.descriptor.graph_degree,
+            build_list_size,
+            alpha,
+            head_policy,
+        )
+        .map_err(DistannExpandError::Internal)?;
+        if let Some((index, from_replica)) =
+            cached_owner_head_shard(self.index_oid, &self.fingerprint, &shard_key)
+        {
+            if from_replica {
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::HeadReplicaShardsServed,
+                    1,
+                );
+            }
+            return Ok(index.search_configured(query, search_width, seed_count));
+        }
+        let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+        if snapshot.is_null() {
+            return Err(DistannExpandError::Internal(
+                "physical head endpoint has no active snapshot".to_owned(),
+            ));
+        }
+        let prepared = prepared_physical_query(
+            self.index_oid,
+            self.fingerprint,
+            query_digest,
+            &self.descriptor,
+            query,
+        )?;
+        let slot =
+            TupleTableSlotGuard::single_for_heap_guard(&self.row_relation).ok_or_else(|| {
+                DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
+            })?;
+        let expander = GenerationExpander {
+            generation: &self.generation,
+            descriptor: &self.descriptor,
+            graph_relation: &self.graph_relation,
+            directory_relation: &self.directory_relation,
+            row_relation: &self.row_relation,
+            slot: &slot,
+            snapshot,
+            source_attnum: self.source_attnum,
+            query,
+            prepared: &prepared,
+            code_len: self.code_len,
+        };
+        // §4.1 (Task 210 P2b): serve from a replica copy when this node was
+        // given one, otherwise from the vectors it owns. A node that has
+        // neither is asked for ids it does not own, which resolve_nodes
+        // correctly rejects.
+        let mut from_replica = false;
+        let resolved = match self.replica_head_vectors(members, shard_ordinal)? {
+            Some(replica) => {
+                // Activation counter (003a review finding 2): replica serving
+                // must be provable in a run, not inferred from routing. Cache
+                // hits carry the same provenance and count too — see
+                // CachedOwnerHeadShard::from_replica.
+                from_replica = true;
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::HeadReplicaShardsServed,
+                    1,
+                );
+                replica
+            }
+            None => {
+                let nodes = self.resolve_nodes(members)?;
+                let mut owned = Vec::with_capacity(nodes.len());
+                for node in &nodes {
+                    owned.push((node.vec_id, expander.local_source_vector(node)?));
+                }
+                owned
+            }
+        };
+        let shard = super::head_sample::build_owner_head_shard(
+            shard_ordinal,
+            self.descriptor.dimensions,
+            resolved,
+            usize::from(self.descriptor.graph_degree),
+            build_list_size,
+            alpha,
+            // Generation-scoped seed: the shard graph is reproducible for a
+            // given epoch without carrying a build-time random seed.
+            u64::from_le_bytes(self.fingerprint[2..10].try_into().unwrap_or([0; 8])),
+        )
+        .map_err(DistannExpandError::Internal)?;
+        let index = super::head_sample::DistannPhysicalHeadIndex::load(
+            shard.sample,
+            shard.graph,
+            usize::from(self.descriptor.graph_degree),
+            head_policy,
+        )
+        .map_err(DistannExpandError::Internal)?;
+        let Some(index) = index else {
+            return Ok(Vec::new());
+        };
+        let index = Arc::new(index);
+        cache_owner_head_shard(
+            self.index_oid,
+            self.fingerprint,
+            shard_key,
+            Arc::clone(&index),
+            from_replica,
+        );
+        Ok(index.search_configured(query, search_width, seed_count))
+    }
+
+    /// Persist a bounded head-shard copy received from the shard's owner.
+    fn import_head_shard(
+        &self,
+        shard_ordinal: i32,
+        vec_ids: &[i64],
+        vectors: &[Vec<f32>],
+    ) -> Result<i64, DistannExpandError> {
+        let table =
+            super::generation_catalog::extension_relation_name("ec_distann_head_shard_replica")
+                .map_err(DistannExpandError::Internal)?;
+        let fingerprint = self.fingerprint.to_vec();
+        let mut imported = 0_i64;
+        Spi::connect_mut(|client| {
+            for (vec_id, vector) in vec_ids.iter().zip(vectors) {
+                client
+                    .update(
+                        &format!(
+                            "INSERT INTO {table} (index_oid, epoch_fingerprint,
+                                                  shard_ordinal, vec_id, vector)
+                             VALUES ($1::oid, $2::bytea, $3::integer, $4::bigint, $5::real[])
+                             ON CONFLICT (index_oid, epoch_fingerprint, vec_id)
+                             DO UPDATE SET vector = EXCLUDED.vector,
+                                           shard_ordinal = EXCLUDED.shard_ordinal"
+                        ),
+                        None,
+                        &[
+                            self.index_oid.into(),
+                            fingerprint.clone().into(),
+                            shard_ordinal.into(),
+                            (*vec_id).into(),
+                            vector.as_slice().into(),
+                        ],
+                    )
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "ec_distann head shard import failed: {error}"
+                        ))
+                    })?;
+                imported += 1;
+            }
+            Ok::<(), DistannExpandError>(())
+        })?;
+        Ok(imported)
+    }
+
+    /// Vectors for members this node does not own, from a replica copy it was
+    /// given (Task 210 P2b). Returns None when no copy is held.
+    fn replica_head_vectors(
+        &self,
+        members: &[u64],
+        shard_ordinal: u32,
+    ) -> Result<Option<Vec<(u64, Vec<f32>)>>, DistannExpandError> {
+        let table =
+            super::generation_catalog::extension_relation_name("ec_distann_head_shard_replica")
+                .map_err(DistannExpandError::Internal)?;
+        let fingerprint = self.fingerprint.to_vec();
+        let wire = members
+            .iter()
+            .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+            .collect::<Vec<_>>();
+        let rows = Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT vec_id, vector FROM {table}
+                          WHERE index_oid = $1::oid AND epoch_fingerprint = $2::bytea
+                            AND vec_id = ANY($3::bigint[])
+                            AND shard_ordinal = $4::integer"
+                    ),
+                    None,
+                    &[
+                        self.index_oid.into(),
+                        fingerprint.into(),
+                        wire.as_slice().into(),
+                        i32::try_from(shard_ordinal).unwrap_or(-1).into(),
+                    ],
+                )
+                .map_err(|error| format!("replica head lookup failed: {error}"))?
+                .map(|row| {
+                    let vec_id = row["vec_id"]
+                        .value::<i64>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or("vec_id NULL")?;
+                    let vector = row["vector"]
+                        .value::<Vec<f32>>()
+                        .map_err(|error| error.to_string())?
+                        .ok_or("vector NULL")?;
+                    Ok((u64::from_le_bytes(vec_id.to_le_bytes()), vector))
+                })
+                .collect::<Result<Vec<_>, String>>()
+        })
+        .map_err(DistannExpandError::Internal)?;
+        if rows.len() == members.len() {
+            Ok(Some(rows))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Read this owner's locally held vectors for `members` so another node can
+    /// hold the shard as a bounded replica (Task 210 P2b).
+    fn export_head_shard(
+        &self,
+        members: &[u64],
+    ) -> Result<Vec<(u64, Vec<f32>)>, DistannExpandError> {
+        if members.is_empty() {
+            return Ok(Vec::new());
+        }
+        let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+        if snapshot.is_null() {
+            return Err(DistannExpandError::Internal(
+                "physical head export has no active snapshot".to_owned(),
+            ));
+        }
+        let slot =
+            TupleTableSlotGuard::single_for_heap_guard(&self.row_relation).ok_or_else(|| {
+                DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
+            })?;
+        let empty_query = vec![0.0_f32; usize::from(self.descriptor.dimensions)];
+        let prepared = prepared_physical_query(
+            self.index_oid,
+            self.fingerprint,
+            physical_query_digest(&empty_query).map_err(DistannExpandError::BadInput)?,
+            &self.descriptor,
+            &empty_query,
+        )?;
+        let expander = GenerationExpander {
+            generation: &self.generation,
+            descriptor: &self.descriptor,
+            graph_relation: &self.graph_relation,
+            directory_relation: &self.directory_relation,
+            row_relation: &self.row_relation,
+            slot: &slot,
+            snapshot,
+            source_attnum: self.source_attnum,
+            query: &empty_query,
+            prepared: &prepared,
+            code_len: self.code_len,
+        };
+        let nodes = self.resolve_nodes(members)?;
+        let mut exported = Vec::with_capacity(nodes.len());
+        for node in &nodes {
+            exported.push((node.vec_id, expander.local_source_vector(node)?));
+        }
+        Ok(exported)
     }
 
     fn resolve_nodes(&self, vec_ids: &[u64]) -> Result<Vec<DistannNodeTuple>, DistannExpandError> {
@@ -1491,13 +1922,28 @@ fn expand_physical_nodes_impl(
     query_digest: [u8; 32],
     vec_ids: &[i64],
     code_threshold: Option<f32>,
+    candidate_limit: Option<i32>,
+    skip_neighbor_vec_ids: &[i64],
 ) -> Result<Vec<PhysicalExpandRow>, DistannExpandError> {
+    let candidate_limit = candidate_limit
+        .map(|limit| {
+            usize::try_from(limit).map_err(|_| {
+                DistannExpandError::BadInput(
+                    "ec_distann candidate_limit must be non-negative".to_owned(),
+                )
+            })
+        })
+        .transpose()?;
     let ids = vec_ids
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
         .collect::<Vec<_>>();
+    let skip = skip_neighbor_vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
     RetainedGenerationScan::open(index_oid, epoch_fingerprint)?
-        .expand(query, query_digest, &ids, code_threshold)
+        .expand(query, query_digest, &ids, code_threshold, candidate_limit, &skip)
         .map(|expanded| {
             expanded
                 .into_iter()
@@ -1517,6 +1963,320 @@ fn expand_physical_nodes_impl(
         })
 }
 
+/// Export this owner's head-shard landmarks so another node can serve the shard
+/// as a replica (Task 210 P2b, `DISTRIBUTEDANN` §4.1).
+///
+/// The exported set is bounded by head capacity `C` divided across the roster,
+/// so a replica holds a *bounded* structure — which NFR-021 permits to be
+/// replicated. It is never the O(N) graph or row tier.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_head_shard_export(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    member_vec_ids: Vec<i64>,
+) -> TableIterator<'static, (name!(vec_id, i64), name!(vector, Vec<f32>))> {
+    let members = member_vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let exported = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .and_then(|scan| scan.export_head_shard(&members))
+        .unwrap_or_else(|error| error.raise());
+    TableIterator::new(
+        exported
+            .into_iter()
+            .map(|(vec_id, vector)| (i64::from_le_bytes(vec_id.to_le_bytes()), vector))
+            .collect::<Vec<_>>()
+            .into_iter(),
+    )
+}
+
+/// Export the routing payload (neighbour ids and neighbour codes — the
+/// `graph_record` half of the traversal-replica stream, never the co-placed
+/// vector) for a bounded id list, so a coordinator can populate its TRAV-30
+/// gateway copies (Task 210 P3). Same source as the withdrawn FR-084 replica,
+/// bounded destination: that difference is what makes it conforming under
+/// NFR-021.
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_gateway_routing_export(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    member_vec_ids: Vec<i64>,
+) -> TableIterator<
+    'static,
+    (
+        name!(vec_id, i64),
+        name!(is_tombstone, bool),
+        name!(neighbor_vec_ids, Vec<i64>),
+        name!(neighbor_codes, Vec<u8>),
+    ),
+> {
+    let members = member_vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let rows = (|| {
+        let scan = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)?;
+        let code_len = scan.code_len;
+        Ok::<_, DistannExpandError>(
+            scan.resolve_nodes(&members)?
+                .into_iter()
+                .map(|node| {
+                    let count = usize::from(node.neighbor_count);
+                    (
+                        i64::from_le_bytes(node.vec_id.to_le_bytes()),
+                        node.tombstoned,
+                        node.neighbor_vec_ids[..count]
+                            .iter()
+                            .map(|id| i64::from_le_bytes(id.to_le_bytes()))
+                            .collect::<Vec<_>>(),
+                        node.neighbor_codes[..count * code_len].to_vec(),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        )
+    })()
+    .unwrap_or_else(|error| error.raise());
+    TableIterator::new(rows.into_iter())
+}
+
+/// Distribute bounded head-shard copies to §4.1 replicas (Task 210 P2b).
+///
+/// For each shard, pull its landmarks from the owner and push them to the
+/// `replica_count` following roster nodes, then record that replicas are
+/// populated for this epoch so routing may use them. Returns the number of
+/// (shard, replica) copies placed.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_populate_head_replicas(index_regclass: PgRelation, replica_count: i32) -> i64 {
+    let placed = populate_head_replicas_impl(index_regclass.oid(), replica_count)
+        .unwrap_or_else(|error| error.raise());
+    placed
+}
+
+fn populate_head_replicas_impl(
+    index_oid: pg_sys::Oid,
+    replica_count: i32,
+) -> Result<i64, DistannExpandError> {
+    let replicas = usize::try_from(replica_count).unwrap_or(0);
+    let state = PhysicalGenerationScan::open(index_oid).map_err(DistannExpandError::Internal)?;
+    let head = state
+        .head_index
+        .as_ref()
+        .ok_or_else(|| DistannExpandError::Internal("index has no persisted head".to_owned()))?;
+    let members = head.members().to_vec();
+    let owner_count = state.routes.len();
+    let dimensions = i32::from(state.descriptor.dimensions);
+    let mut placed = 0_i64;
+    let mut expected = 0_i64;
+    if replicas > 0 && owner_count > 1 {
+        for shard in 0..owner_count {
+            let owned = super::head_sample::head_shard_members(
+                &members,
+                shard,
+                owner_count,
+                state.descriptor.placement_hash_version,
+            );
+            if owned.is_empty() {
+                continue;
+            }
+            let owner = &state.routes[shard];
+            // The coordinator's own shard is exported through the local path —
+            // skipping it while still attesting population is exactly how a
+            // valid owner route turned into a deterministic missing-copy
+            // failure (003a review, 2026-07-31 finding 3).
+            let copy = match owner.conninfo.as_deref() {
+                Some(owner_conninfo) => super::remote_transport::remote_head_shard_export(
+                    owner_conninfo,
+                    &owner.remote_index_regclass,
+                    &state.fingerprint,
+                    &owned,
+                )?,
+                None => {
+                    if !owner.is_local {
+                        return Err(DistannExpandError::Internal(format!(
+                            "EC_NODE_DESCRIPTOR: head shard owner {shard} has no connection descriptor"
+                        )));
+                    }
+                    RetainedGenerationScan::open(index_oid, &state.fingerprint)?
+                        .export_head_shard(&owned)?
+                }
+            };
+            for offset in 1..=replicas {
+                let server = (shard + offset) % owner_count;
+                if server == shard {
+                    continue;
+                }
+                expected += 1;
+                let route = &state.routes[server];
+                match route.conninfo.as_deref() {
+                    Some(conninfo) => {
+                        super::remote_transport::remote_head_shard_import(
+                            conninfo,
+                            &route.remote_index_regclass,
+                            &state.fingerprint,
+                            i32::try_from(shard).unwrap_or(0),
+                            &copy,
+                            dimensions,
+                        )?;
+                    }
+                    None => {
+                        // The coordinator can serve as a replica too: import
+                        // into the local replica table rather than silently
+                        // leaving this (shard, replica) pair uncovered.
+                        if !route.is_local {
+                            return Err(DistannExpandError::Internal(format!(
+                                "EC_NODE_DESCRIPTOR: head replica server {server} has no connection descriptor"
+                            )));
+                        }
+                        RetainedGenerationScan::open(index_oid, &state.fingerprint)?
+                            .import_head_shard(
+                                i32::try_from(shard).unwrap_or(0),
+                                &copy
+                                    .iter()
+                                    .map(|(vec_id, _)| i64::from_le_bytes(vec_id.to_le_bytes()))
+                                    .collect::<Vec<_>>(),
+                                &copy
+                                    .iter()
+                                    .map(|(_, vector)| vector.clone())
+                                    .collect::<Vec<_>>(),
+                            )?;
+                    }
+                }
+                placed += 1;
+            }
+        }
+    }
+    // The marker is an attestation, not a log line: it records the replica
+    // count only when every (shard, replica) pair for that count was actually
+    // imported. Routing consults it against the session's current
+    // head_replica_count, so an incomplete population can never enable
+    // routing to an unbacked replica.
+    if placed != expected {
+        return Err(DistannExpandError::Internal(format!(
+            "head replica population is incomplete: placed {placed} of {expected} shard copies"
+        )));
+    }
+    let table = super::generation_catalog::extension_relation_name("ec_distann_head_replica_state")
+        .map_err(DistannExpandError::Internal)?;
+    let fingerprint = state.fingerprint.to_vec();
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "INSERT INTO {table} (index_oid, epoch_fingerprint, replica_count)
+                     VALUES ($1::oid, $2::bytea, $3::integer)
+                     ON CONFLICT (index_oid, epoch_fingerprint)
+                     DO UPDATE SET replica_count = EXCLUDED.replica_count"
+                ),
+                None,
+                &[
+                    index_oid.into(),
+                    fingerprint.into(),
+                    replica_count.into(),
+                ],
+            )
+            .map_err(|error| {
+                DistannExpandError::Internal(format!("recording head replica state: {error}"))
+            })?;
+        Ok::<(), DistannExpandError>(())
+    })?;
+    Ok(placed)
+}
+
+/// Receive a bounded head-shard copy so this node can serve the shard as a
+/// §4.1 replica (Task 210 P2b).
+///
+/// The payload is head capacity `C` divided across the roster -- a bounded
+/// structure, which NFR-021 permits to be replicated -- never the O(N) graph or
+/// row tier. Epoch-scoped and rebuildable.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_head_shard_import(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    shard_ordinal: i32,
+    vec_ids: Vec<i64>,
+    // Flattened row-major landmark vectors: pgrx cannot unbox a nested array
+    // argument, so the wire carries one contiguous real[] plus the dimension.
+    flat_vectors: Vec<f32>,
+    dimensions: i32,
+) -> i64 {
+    let dims = usize::try_from(dimensions).unwrap_or(0);
+    if dims == 0 || flat_vectors.len() != vec_ids.len().saturating_mul(dims) {
+        DistannExpandError::BadInput(
+            "ec_distann head shard import id/vector cardinality mismatch".to_owned(),
+        )
+        .raise();
+    }
+    let vectors = flat_vectors
+        .chunks_exact(dims)
+        .map(<[f32]>::to_vec)
+        .collect::<Vec<_>>();
+    let scan = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .unwrap_or_else(|error| error.raise());
+    scan.import_head_shard(shard_ordinal, &vec_ids, &vectors)
+        .unwrap_or_else(|error| error.raise())
+}
+
+/// Owner-side FR-080 head-shard search (Task 210 P2a, NFR-021 clause 3).
+///
+/// The coordinator sends the bounded landmark ids this owner owns under the
+/// FR-078 placement hash; the owner reads their co-placed full-precision
+/// vectors locally, searches its own shard, and returns at most `seed_count`
+/// seeds. No landmark vector crosses the wire and the coordinator retains none.
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::too_many_arguments)]
+fn ec_distann_head_search_physical(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    query: Vec<f32>,
+    member_vec_ids: Vec<i64>,
+    search_width: i32,
+    seed_count: i32,
+    build_list_size: i32,
+    alpha: f32,
+    head_policy: i32,
+) -> TableIterator<'static, (name!(vec_id, i64), name!(dist, f32))> {
+    let query_digest = physical_query_digest(&query)
+        .map_err(DistannExpandError::BadInput)
+        .unwrap_or_else(|error| error.raise());
+    let members = member_vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let non_negative = |value: i32, what: &str| {
+        usize::try_from(value).map_err(|_| {
+            DistannExpandError::BadInput(format!("ec_distann {what} must be non-negative"))
+        })
+    };
+    let seeds = (|| {
+        let policy = super::generation_descriptor::DistannHeadPolicy::decode_wire(
+            u8::try_from(head_policy).map_err(|_| {
+                DistannExpandError::BadInput("ec_distann head_policy is out of range".to_owned())
+            })?,
+        )
+        .map_err(DistannExpandError::BadInput)?;
+        RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)?.head_search(
+            &query,
+            query_digest,
+            &members,
+            non_negative(search_width, "search_width")?,
+            non_negative(seed_count, "seed_count")?,
+            non_negative(build_list_size, "build_list_size")?,
+            alpha,
+            policy,
+        )
+    })()
+    .unwrap_or_else(|error| error.raise());
+    TableIterator::new(
+        seeds
+            .into_iter()
+            .map(|seed| (i64::from_le_bytes(seed.vec_id.to_le_bytes()), seed.dist))
+            .collect::<Vec<_>>()
+            .into_iter(),
+    )
+}
+
 /// FR-079 physical-generation overload.  The `regclass` argument separates it
 /// from the legacy metadata-page endpoint whose first SQL argument is `oid`.
 #[pg_extern(volatile, parallel_restricted)]
@@ -1527,6 +2287,7 @@ fn ec_distann_expand_physical_nodes(
     query: Vec<f32>,
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
+    candidate_limit: default!(Option<i32>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -1547,6 +2308,8 @@ fn ec_distann_expand_physical_nodes(
         query_digest,
         &vec_ids,
         code_threshold,
+        candidate_limit,
+        &[],
     )
     .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
@@ -1568,6 +2331,8 @@ fn ec_distann_expand_physical_nodes_cached(
     query_digest: Vec<u8>,
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
+    candidate_limit: default!(Option<i32>, "NULL"),
+    skip_neighbor_vec_ids: default!(Option<Vec<i64>>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -1587,6 +2352,8 @@ fn ec_distann_expand_physical_nodes_cached(
         query_digest,
         &vec_ids,
         code_threshold,
+        candidate_limit,
+        skip_neighbor_vec_ids.as_deref().unwrap_or(&[]),
     )
     .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
@@ -1607,6 +2374,8 @@ fn ec_distann_expand_physical_nodes_profile(
     query_digest: Vec<u8>,
     vec_ids: Vec<i64>,
     code_threshold: default!(Option<f32>, "NULL"),
+    candidate_limit: default!(Option<i32>, "NULL"),
+    skip_neighbor_vec_ids: default!(Option<Vec<i64>>, "NULL"),
 ) -> TableIterator<
     'static,
     (
@@ -1630,12 +2399,31 @@ fn ec_distann_expand_physical_nodes_profile(
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
         .collect::<Vec<_>>();
+    let skip = skip_neighbor_vec_ids
+        .unwrap_or_default()
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
     let open_started = Instant::now();
     let store = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
         .unwrap_or_else(|error| error.raise());
     let owner_open_validate_ns = duration_ns(open_started.elapsed());
     let expanded = store
-        .expand(&query, query_digest, &ids, code_threshold)
+        .expand(
+            &query,
+            query_digest,
+            &ids,
+            code_threshold,
+            candidate_limit.map(|limit| {
+                usize::try_from(limit).unwrap_or_else(|_| {
+                    DistannExpandError::BadInput(
+                        "ec_distann candidate_limit must be non-negative".to_owned(),
+                    )
+                    .raise()
+                })
+            }),
+            &skip,
+        )
         .unwrap_or_else(|error| error.raise());
     let owner_open_validate_ns = i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
     let owner_graph_read_ns = expanded.first().map_or(0, |node| node.owner_graph_read_ns);
@@ -2158,6 +2946,9 @@ pub(crate) struct PhysicalGenerationScan {
     descriptor_digest: [u8; 32],
     routes: Vec<PhysicalOwnerRoute>,
     head_index: Option<Arc<super::head_sample::DistannPhysicalHeadIndex>>,
+    /// TRAV-30 bounded gateway routing copies (Task 210 P3); `None` when the
+    /// capacity GUC is 0, the roster is single-node, or population failed.
+    gateway_copies: Option<Arc<super::gateway_copy::DistannGatewayCopySet>>,
     _scan_token: ScanTokenGuard,
 }
 
@@ -2280,13 +3071,14 @@ impl PhysicalGenerationScan {
             );
         }
 
-        let (descriptor, descriptor_digest, head_index) = if let Some(cached) =
+        let (descriptor, descriptor_digest, head_index, mut gateway_copies) = if let Some(cached) =
             cached_physical_epoch(index_oid, logical_index_uuid, &active)
         {
             (
                 cached.descriptor,
                 cached.descriptor_digest,
                 cached.head_index,
+                cached.gateway_copies,
             )
         } else {
             let candidate = super::build_coordinator::load_build_candidate(
@@ -2331,8 +3123,9 @@ impl PhysicalGenerationScan {
                 descriptor: Arc::clone(&descriptor),
                 descriptor_digest,
                 head_index: head_index.clone(),
+                gateway_copies: None,
             });
-            (descriptor, descriptor_digest, head_index)
+            (descriptor, descriptor_digest, head_index, None)
         };
         let routes = physical_owner_routes(
             index_oid,
@@ -2340,6 +3133,58 @@ impl PhysicalGenerationScan {
             active.build_id,
             descriptor.roster.len(),
         )?;
+        // TRAV-30 (Task 210 P3): populate the bounded gateway copies once per
+        // cached epoch. The gateway set is the FR-080 head membership — already
+        // bounded and coordinator-resident — and only routing payload moves.
+        //
+        // The GUC is part of the cache validity, not just a populate-time
+        // input (004 review, 2026-07-31): a set built under one capacity is
+        // discarded the moment the same backend runs with a different one, so
+        // `SET ec_distann.gateway_copy_capacity = 0` genuinely disables an
+        // already-populated set and capacity changes cannot leak a stale size
+        // into an A/B arm. The observability counters reset with the discard.
+        let gateway_capacity = super::options::gateway_copy_capacity();
+        if gateway_copies
+            .as_ref()
+            .is_some_and(|set| set.capacity() != gateway_capacity)
+        {
+            gateway_copies = None;
+            super::gateway_copy::record_cleared();
+            cache_physical_epoch(CachedPhysicalEpoch {
+                index_oid,
+                logical_index_uuid,
+                build_id: active.build_id,
+                fingerprint: active.fingerprint,
+                descriptor: Arc::clone(&descriptor),
+                descriptor_digest,
+                head_index: head_index.clone(),
+                gateway_copies: None,
+            });
+        }
+        if gateway_copies.is_none() && gateway_capacity > 0 {
+            if let Some(head) = head_index.as_ref() {
+                if let Some(populated) = populate_gateway_copies(
+                    index_oid,
+                    &active.fingerprint,
+                    &descriptor,
+                    &routes,
+                    head.members(),
+                ) {
+                    let populated = Arc::new(populated);
+                    gateway_copies = Some(Arc::clone(&populated));
+                    cache_physical_epoch(CachedPhysicalEpoch {
+                        index_oid,
+                        logical_index_uuid,
+                        build_id: active.build_id,
+                        fingerprint: active.fingerprint,
+                        descriptor: Arc::clone(&descriptor),
+                        descriptor_digest,
+                        head_index: head_index.clone(),
+                        gateway_copies: Some(populated),
+                    });
+                }
+            }
+        }
         let generation =
             generation_catalog::lookup_generation(index_oid, logical_index_uuid, active.build_id)?;
         let (row_relation, graph_relation, directory_relation) = match generation.as_ref() {
@@ -2402,6 +3247,7 @@ impl PhysicalGenerationScan {
             descriptor_digest,
             routes,
             head_index,
+            gateway_copies,
             _scan_token: scan_token,
         })
     }
@@ -2477,6 +3323,9 @@ impl PhysicalGenerationScan {
 
         let params = DistannOrchestrationParams {
             beam_width: super::options::current_beam_width(),
+            candidate_heap_limit: super::options::current_candidate_heap_limit()
+                .max(super::options::current_beam_width())
+                .max(effective_top_k),
             hop_rounds: super::options::current_hop_rounds(),
             top_k: effective_top_k,
             debug_fail_hop_round: super::options::debug_fail_hop_round(),
@@ -2488,18 +3337,26 @@ impl PhysicalGenerationScan {
             .generation
             .as_ref()
             .map(|generation| generation.owner_ordinal as usize);
-        let replica = super::traversal_replica::ReadyTraversalReplica::open(
-            self.index_oid,
-            logical_index_uuid,
-            self.build_id,
-            &self.fingerprint,
-            &self.descriptor,
-            self.descriptor_digest,
-            local_ordinal,
-            snapshot,
-            query,
-            &prepared,
-        );
+        // NFR-021 clause 4/5: the FR-084 traversal replica holds every owner's
+        // graph record and full-precision vector on one node, so a scan served
+        // from it is not distributed. It is reachable only through an explicit
+        // opt-in and is never the default path. Task 210 P1.
+        let replica = if super::options::allow_nonconforming_replica() {
+            super::traversal_replica::ReadyTraversalReplica::open(
+                self.index_oid,
+                logical_index_uuid,
+                self.build_id,
+                &self.fingerprint,
+                &self.descriptor,
+                self.descriptor_digest,
+                local_ordinal,
+                snapshot,
+                query,
+                &prepared,
+            )
+        } else {
+            Ok(None)
+        };
         #[cfg(feature = "distann-head-attribution-benchmark")]
         super::stage_counters::record(
             super::stage_counters::DistannQueryStage::ReplicaOpenValidate,
@@ -2622,6 +3479,9 @@ impl PhysicalGenerationScan {
             fingerprint: &self.fingerprint,
             query,
             query_digest: &query_digest,
+            prepared: &prepared,
+            code_len,
+            gateway: self.gateway_copies.as_deref(),
         };
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let traversal_started = Instant::now();
@@ -2639,6 +3499,163 @@ impl PhysicalGenerationScan {
         })
     }
 
+    /// Whether head-shard replicas were populated for this epoch (Task 210 P2b).
+    /// Whether this epoch's replica population attests at least
+    /// `requested_count` replicas per shard. Population records the count only
+    /// after every (shard, replica) pair imported, so `attested >= requested`
+    /// means each server the routing hash can pick under the current GUC
+    /// actually holds its copy (003a review, 2026-07-31 finding 3).
+    fn head_replicas_populated(&self, requested_count: usize) -> Result<bool, String> {
+        let table =
+            super::generation_catalog::extension_relation_name("ec_distann_head_replica_state")?;
+        let fingerprint = self.fingerprint.to_vec();
+        let requested =
+            i32::try_from(requested_count).map_err(|_| "replica count out of range".to_owned())?;
+        Spi::connect(|client| {
+            let found = client
+                .select(
+                    &format!(
+                        "SELECT replica_count >= $3::integer AND replica_count > 0
+                           FROM {table}
+                          WHERE index_oid = $1::oid AND epoch_fingerprint = $2::bytea"
+                    ),
+                    None,
+                    &[self.index_oid.into(), fingerprint.into(), requested.into()],
+                )
+                .map_err(|error| format!("head replica state lookup failed: {error}"))?
+                .first()
+                .get::<bool>(1)
+                .unwrap_or(None)
+                .unwrap_or(false);
+            Ok::<bool, String>(found)
+        })
+    }
+
+    /// Fan the FR-080 head search out across the roster (Task 210 P2a).
+    ///
+    /// Each owner searches the landmarks it owns under the FR-078 placement
+    /// hash, reading their co-placed vectors locally, and returns at most
+    /// `seed_count` seeds. The coordinator merges to `seed_count` — bounded
+    /// state under NFR-021 clause 2 — and holds no landmark vectors.
+    fn sharded_head_seeds(
+        &self,
+        query: &[f32],
+        members: &[u64],
+        search_width: usize,
+        seed_count: usize,
+        head_policy: super::generation_descriptor::DistannHeadPolicy,
+    ) -> Result<Vec<DistannSeedCandidate>, String> {
+        let owner_count = self.routes.len();
+        if owner_count == 0 {
+            return Err("EC_NODE_DESCRIPTOR: physical scan has no owner routes".to_owned());
+        }
+        let per_owner_members = (0..owner_count)
+            .map(|owner_ordinal| {
+                super::head_sample::head_shard_members(
+                    members,
+                    owner_ordinal,
+                    owner_count,
+                    self.descriptor.placement_hash_version,
+                )
+            })
+            .collect::<Vec<_>>();
+        let search_width_usize = search_width;
+        let search_width = i32::try_from(search_width).unwrap_or(i32::MAX);
+        let seed_count_wire = i32::try_from(seed_count).unwrap_or(i32::MAX);
+        // A shard whose server is the coordinator itself is answered in
+        // process; only genuinely remote shards become RPCs.
+        let mut local_seeds: Vec<Vec<DistannSeedCandidate>> = Vec::new();
+        // §4.1 (Task 210 P2b): a shard may be served by its owner or by one of
+        // `head_replica_count` further roster nodes, chosen deterministically
+        // from the query digest so head CPU is not bound to one machine.
+        let query_digest = physical_query_digest(query)?;
+        let replica_count = super::options::head_replica_count();
+        // Routing may use a replica only for an epoch whose shard copies were
+        // actually distributed by ec_distann_populate_head_replicas (P2b).
+        let replicas_populated =
+            replica_count > 0 && self.head_replicas_populated(replica_count).unwrap_or(false);
+        let mut requests = Vec::with_capacity(owner_count);
+        for (ordinal, owned) in per_owner_members.iter().enumerate() {
+            if owned.is_empty() {
+                continue;
+            }
+            // §4.1 replica routing is only admissible to a node that actually
+            // holds the shard. Head shards are materialised from vectors the
+            // owner already has, so until a publish-time step distributes a
+            // bounded copy to replicas, the only node that can serve shard `i`
+            // is its owner. Routing elsewhere makes the serving node reject
+            // ids it does not own (EC_PLACEMENT), so the selection is clamped
+            // rather than allowed to mis-route.
+            let requested_server = super::head_sample::head_shard_server(
+                ordinal,
+                owner_count,
+                replica_count,
+                &query_digest,
+            );
+            let server = if requested_server == ordinal {
+                ordinal
+            } else if replicas_populated {
+                requested_server
+            } else {
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::HeadReplicaFallbacks,
+                    1,
+                );
+                ordinal
+            };
+            let route = &self.routes[server];
+            // The coordinator is normally itself an owner, and its own route
+            // carries no conninfo. Serve that shard in-process rather than
+            // dialling ourselves — same shape as the traversal expander's
+            // local-ordinal branch.
+            let Some(conninfo) = route.conninfo.as_deref() else {
+                if !route.is_local {
+                    return Err(format!(
+                        "EC_NODE_DESCRIPTOR: physical owner {server} route has no connection"
+                    ));
+                }
+                let local = RetainedGenerationScan::open(self.index_oid, &self.fingerprint)
+                    .map_err(|error| error.to_string())?;
+                let query_digest_local =
+                    physical_query_digest(query).map_err(|error| error.to_string())?;
+                local_seeds.push(
+                    local
+                        .head_search(
+                            query,
+                            query_digest_local,
+                            owned,
+                            search_width_usize,
+                            seed_count,
+                            super::ECDISTANN_DEFAULT_BUILD_LIST_SIZE as usize,
+                            super::ECDISTANN_DEFAULT_ALPHA,
+                            head_policy,
+                        )
+                        .map_err(|error| error.to_string())?,
+                );
+                continue;
+            };
+            requests.push(super::remote_transport::DistannPhysicalHeadRequest {
+                conninfo,
+                index_regclass: &route.remote_index_regclass,
+                epoch_fingerprint: &self.fingerprint,
+                query,
+                member_vec_ids: owned,
+                search_width,
+                seed_count: seed_count_wire,
+                build_list_size: super::ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
+                alpha: super::ECDISTANN_DEFAULT_ALPHA,
+                head_policy: head_policy as i32,
+            });
+        }
+        let responses = super::remote_transport::remote_physical_head_search_batch(&requests);
+        let mut per_owner = local_seeds;
+        for response in responses {
+            per_owner.push(response.map_err(|error| error.to_string())?);
+        }
+        Ok(super::head_sample::merge_head_seeds(per_owner, seed_count))
+    }
+
     fn select_seed_candidates(&self, query: &[f32]) -> Result<Vec<DistannSeedCandidate>, String> {
         if query.len() != usize::from(self.descriptor.dimensions) {
             return Err(format!(
@@ -2651,6 +3668,35 @@ impl PhysicalGenerationScan {
         let search_width = super::options::current_head_search_width(production_seed_count);
         let seed_count = super::options::current_head_seed_count(production_seed_count);
         let seed_mode = super::options::current_physical_seed_mode()?;
+        // NFR-021 clause 3 (Task 210 P2a): when the head is sharded, the
+        // coordinator keeps only the bounded membership list and every owner
+        // searches the landmarks it already holds.
+        // A membership-only head has no coordinator-resident vectors, so the
+        // sharded path is the only correct one — the persisted shape decides,
+        // not the session GUC.
+        let membership_only_head = self
+            .head_index
+            .as_ref()
+            .is_some_and(|head| head.is_membership_only());
+        if membership_only_head && self.routes.len() <= 1 {
+            return Err(
+                "EC_HEAD_SAMPLE: membership-only head requires a multi-owner roster".to_owned(),
+            );
+        }
+        if (super::options::sharded_head_search() || membership_only_head) && self.routes.len() > 1
+        {
+            if let Some(head) = self.head_index.as_ref() {
+                if seed_mode == super::options::PhysicalSeedMode::PersistedHead {
+                    return self.sharded_head_seeds(
+                        query,
+                        head.members(),
+                        search_width,
+                        seed_count,
+                        head.policy(),
+                    );
+                }
+            }
+        }
         let seeds = match seed_mode {
             super::options::PhysicalSeedMode::PersistedHead => self
                 .head_index
@@ -2898,6 +3944,111 @@ impl PhysicalGenerationScan {
     }
 }
 
+/// Populate the TRAV-30 gateway copy set from the FR-080 head membership
+/// (Task 210 P3). The gateway nodes are the head landmarks: bounded by head
+/// capacity, and exactly the nodes every scan expands first. Each owner's
+/// landmarks are fetched as routing payload only (neighbour ids + codes) via
+/// `ec_distann_gateway_routing_export`; local landmarks are read in process.
+/// Any failure degrades to `None` — the copy is an accelerator, never a
+/// correctness dependency — but degrades loudly (warning), because a silently
+/// absent cache is the inert-mechanism failure mode this program keeps hitting.
+fn populate_gateway_copies(
+    index_oid: pg_sys::Oid,
+    fingerprint: &[u8; 34],
+    descriptor: &DistannGenerationDescriptor,
+    routes: &[PhysicalOwnerRoute],
+    head_members: &[u64],
+) -> Option<super::gateway_copy::DistannGatewayCopySet> {
+    let capacity = super::options::gateway_copy_capacity();
+    if capacity == 0 || routes.len() < 2 || head_members.is_empty() {
+        return None;
+    }
+    // The bound is the GUC capacity, never the head size: a larger head cannot
+    // grow the copy set (refusal, not eviction — same invariant as insert()).
+    let members = head_members
+        .iter()
+        .copied()
+        .take(capacity)
+        .collect::<Vec<_>>();
+    let buckets = super::placement::group_by_owning_node(
+        &members,
+        routes.len(),
+        descriptor.placement_hash_version,
+    );
+    let mut set = super::gateway_copy::DistannGatewayCopySet::with_capacity(capacity);
+    let mut remote_work: Vec<(usize, Vec<u64>)> = Vec::new();
+    for (ordinal, bucket) in buckets.iter().enumerate() {
+        if bucket.is_empty() {
+            continue;
+        }
+        let owned = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
+        let route = &routes[ordinal];
+        if route.conninfo.is_some() {
+            remote_work.push((ordinal, owned));
+            continue;
+        }
+        if !route.is_local {
+            pgrx::warning!(
+                "ec_distann gateway copies disabled: owner {ordinal} has no connection descriptor"
+            );
+            return None;
+        }
+        let local = match RetainedGenerationScan::open(index_oid, fingerprint) {
+            Ok(local) => local,
+            Err(error) => {
+                pgrx::warning!("ec_distann gateway copies disabled: local open failed: {error}");
+                return None;
+            }
+        };
+        let code_len = local.code_len;
+        let nodes = match local.resolve_nodes(&owned) {
+            Ok(nodes) => nodes,
+            Err(error) => {
+                pgrx::warning!("ec_distann gateway copies disabled: local resolve failed: {error}");
+                return None;
+            }
+        };
+        for node in nodes {
+            let count = usize::from(node.neighbor_count);
+            set.insert(super::gateway_copy::DistannGatewayCopy {
+                vec_id: node.vec_id,
+                is_tombstone: node.tombstoned,
+                neighbor_vec_ids: node.neighbor_vec_ids[..count].to_vec(),
+                neighbor_codes: node.neighbor_codes[..count * code_len].to_vec(),
+            });
+        }
+    }
+    let requests = remote_work
+        .iter()
+        .map(
+            |(ordinal, owned)| super::remote_transport::DistannGatewayRoutingRequest {
+                conninfo: routes[*ordinal]
+                    .conninfo
+                    .as_deref()
+                    .expect("remote gateway work requires a connection descriptor"),
+                index_regclass: &routes[*ordinal].remote_index_regclass,
+                epoch_fingerprint: fingerprint,
+                member_vec_ids: owned,
+            },
+        )
+        .collect::<Vec<_>>();
+    for response in super::remote_transport::remote_gateway_routing_batch(&requests) {
+        match response {
+            Ok(copies) => {
+                for copy in copies {
+                    set.insert(copy);
+                }
+            }
+            Err(error) => {
+                pgrx::warning!("ec_distann gateway copies disabled: remote export failed: {error}");
+                return None;
+            }
+        }
+    }
+    super::gateway_copy::record_population(&set);
+    Some(set)
+}
+
 struct PhysicalMultiOwnerExpander<'a> {
     local: Option<GenerationExpander<'a>>,
     local_ordinal: Option<usize>,
@@ -2906,6 +4057,9 @@ struct PhysicalMultiOwnerExpander<'a> {
     fingerprint: &'a [u8; 34],
     query: &'a [f32],
     query_digest: &'a [u8; 32],
+    prepared: &'a DistannPreparedQuery,
+    code_len: usize,
+    gateway: Option<&'a super::gateway_copy::DistannGatewayCopySet>,
 }
 
 impl PhysicalMultiOwnerExpander<'_> {
@@ -2913,6 +4067,7 @@ impl PhysicalMultiOwnerExpander<'_> {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let partition_started = Instant::now();
@@ -2944,7 +4099,7 @@ impl PhysicalMultiOwnerExpander<'_> {
                             "local owner route has no generation reader".to_owned(),
                         )
                     })?
-                    .expand_nodes(&owned, code_threshold)?;
+                    .expand_nodes(&owned, code_threshold, candidate_limit)?;
                 #[cfg(feature = "distann-head-attribution-benchmark")]
                 super::stage_counters::record(
                     super::stage_counters::DistannQueryStage::LocalExpand,
@@ -2952,12 +4107,30 @@ impl PhysicalMultiOwnerExpander<'_> {
                 );
                 place_physical_owner_responses(ordinal, bucket, response, &mut ordered)?;
             } else {
-                remote_work.push((ordinal, owned));
+                // TRAV-30 (Task 210 P3): ids the coordinator holds a gateway
+                // copy for still go to their owner — `exact_dist` needs the
+                // owner's co-placed vector (the result half of Algorithm 1's
+                // split; holding those here is the FR-084 trap) — but the
+                // owner is told to omit their neighbour payload, which the
+                // coordinator reconstructs locally below.
+                let cached_mask = owned
+                    .iter()
+                    .map(|vec_id| {
+                        self.gateway
+                            .is_some_and(|gateway| gateway.get(*vec_id).is_some())
+                    })
+                    .collect::<Vec<_>>();
+                let skip_ids = owned
+                    .iter()
+                    .zip(&cached_mask)
+                    .filter_map(|(vec_id, cached)| cached.then_some(*vec_id))
+                    .collect::<Vec<_>>();
+                remote_work.push((ordinal, owned, cached_mask, skip_ids));
             }
         }
         let requests = remote_work
             .iter()
-            .map(|(ordinal, owned)| {
+            .map(|(ordinal, owned, _, skip_ids)| {
                 let route = &self.routes[*ordinal];
                 let conninfo = route.conninfo.as_deref().ok_or_else(|| {
                     DistannExpandError::Internal(format!(
@@ -2972,6 +4145,10 @@ impl PhysicalMultiOwnerExpander<'_> {
                     query_digest: self.query_digest,
                     vec_ids: owned,
                     code_threshold,
+                    candidate_limit: candidate_limit.map(|limit| {
+                        i32::try_from(limit).unwrap_or(i32::MAX)
+                    }),
+                    skip_neighbor_vec_ids: skip_ids,
                 })
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
@@ -2987,8 +4164,51 @@ impl PhysicalMultiOwnerExpander<'_> {
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let decode_started = Instant::now();
-        for ((ordinal, _), response) in remote_work.into_iter().zip(responses) {
-            place_physical_owner_responses(ordinal, &buckets[ordinal], response?, &mut ordered)?;
+        for ((ordinal, _, cached_mask, _), response) in remote_work.into_iter().zip(responses) {
+            let mut response = response?;
+            if cached_mask.iter().any(|cached| *cached) {
+                let gateway = self.gateway.ok_or_else(|| {
+                    DistannExpandError::Internal(
+                        "gateway-cached expansion rows without a gateway copy set".to_owned(),
+                    )
+                })?;
+                let filled = super::gateway_copy::fill_gateway_rows(
+                    &mut response,
+                    &cached_mask,
+                    gateway,
+                    code_threshold,
+                    |copy| {
+                        let count = copy.neighbor_vec_ids.len();
+                        if copy.neighbor_codes.len() != count * self.code_len {
+                            return Err(format!(
+                                "gateway copy for vec_id {:#018x} has a malformed code payload",
+                                copy.vec_id
+                            ));
+                        }
+                        let mut dists = vec![0.0; count];
+                        self.prepared.score_dists_batch(
+                            &copy.neighbor_codes,
+                            self.code_len,
+                            count,
+                            &mut dists,
+                        )?;
+                        Ok(dists)
+                    },
+                )?;
+                // Re-apply the batch L limit over the whole owner batch now
+                // that cached rows carry their candidates again; the owner
+                // applied it to the uncached subset only, and top-L of
+                // (top-L(subset) ∪ cached) equals top-L of the full batch, so
+                // the Task 205 semantics are preserved exactly.
+                super::scan::prune_and_limit_neighbor_batch(&mut response, None, candidate_limit)?;
+                super::gateway_copy::record_served(filled);
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::GatewayCopiesServed,
+                    filled,
+                );
+            }
+            place_physical_owner_responses(ordinal, &buckets[ordinal], response, &mut ordered)?;
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         super::stage_counters::record(
@@ -3013,8 +4233,9 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
         &mut self,
         vec_ids: &[u64],
         code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
-        let mut expanded = self.expand_nodes_raw(vec_ids, code_threshold)?;
+        let mut expanded = self.expand_nodes_raw(vec_ids, code_threshold, candidate_limit)?;
         if !super::options::benchmark_exact_neighbor() {
             return Ok(expanded);
         }
@@ -3030,7 +4251,7 @@ impl DistannNodeExpander for PhysicalMultiOwnerExpander<'_> {
             .collect::<std::collections::BTreeSet<_>>()
             .into_iter()
             .collect::<Vec<_>>();
-        let exact_neighbors = self.expand_nodes_raw(&neighbor_ids, None)?;
+        let exact_neighbors = self.expand_nodes_raw(&neighbor_ids, None, None)?;
         let exact_distances = exact_neighbors
             .into_iter()
             .map(|node| {
@@ -3100,6 +4321,50 @@ struct GenerationExpander<'a> {
 }
 
 impl GenerationExpander<'_> {
+    /// Read this owner's locally held full-precision vector for `node`.
+    ///
+    /// Task 210 P2: an FR-080 head landmark is co-placed with its row-tier
+    /// vector under the same FR-078 hash (ADR-085 D11), so an owner can
+    /// materialise its own head shard without any vector crossing the wire.
+    fn local_source_vector(&self, node: &DistannNodeTuple) -> Result<Vec<f32>, DistannExpandError> {
+        let mut tid = pg_sys::ItemPointerData::default();
+        pgrx::itemptr::item_pointer_set_all(
+            &mut tid,
+            node.heap_tid.block_number,
+            node.heap_tid.offset_number,
+        );
+        unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+        let found = unsafe {
+            pg_sys::table_tuple_fetch_row_version(
+                self.row_relation.as_ptr(),
+                &mut tid,
+                self.snapshot,
+                self.slot.as_ptr(),
+            )
+        };
+        if !found {
+            return Err(DistannExpandError::Internal(format!(
+                "EC_GENERATION_MISSING: row tier missing vec_id {:#018x}",
+                node.vec_id
+            )));
+        }
+        let mut is_null = false;
+        let datum =
+            unsafe { pg_sys::slot_getattr(self.slot.as_ptr(), self.source_attnum, &mut is_null) };
+        if is_null {
+            return Err(DistannExpandError::Internal(
+                "EC_SCHEMA_MISMATCH: frozen source vector is NULL".to_owned(),
+            ));
+        }
+        let vector = unsafe { crate::am::ec_diskann::ecvector_datum_to_vec(datum) };
+        if vector.len() != usize::from(self.descriptor.dimensions) {
+            return Err(DistannExpandError::Internal(
+                "EC_SCHEMA_MISMATCH: frozen source vector dimension mismatch".to_owned(),
+            ));
+        }
+        Ok(vector)
+    }
+
     fn exact_distance(&self, node: &DistannNodeTuple) -> Result<f32, DistannExpandError> {
         let mut tid = pg_sys::ItemPointerData::default();
         pgrx::itemptr::item_pointer_set_all(
@@ -3142,11 +4407,22 @@ impl GenerationExpander<'_> {
     }
 }
 
-impl DistannNodeExpander for GenerationExpander<'_> {
-    fn expand_nodes(
+impl GenerationExpander<'_> {
+    /// Expand with a gateway-copy skip mask (TRAV-30, Task 210 P3). Ids in
+    /// `skip_neighbors` still get their record read and exact distance — the
+    /// result half stays owner-authoritative — but their neighbour payload is
+    /// omitted (empty arrays) because the coordinator reconstructs it from its
+    /// bounded gateway copy, so those bytes never cross the wire and this
+    /// owner skips their scoring work. The batch L limit then covers only the
+    /// rows that carry neighbours; the coordinator re-applies it over the full
+    /// batch after filling the cached rows, which preserves the Task 205
+    /// batch-threshold semantics exactly.
+    fn expand_nodes_masked(
         &mut self,
         vec_ids: &[u64],
-        _code_threshold: Option<f32>,
+        code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
+        skip_neighbors: &std::collections::HashSet<u64>,
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let graph_started = Instant::now();
@@ -3169,7 +4445,7 @@ impl DistannNodeExpander for GenerationExpander<'_> {
             i64::try_from(duration_ns(graph_started.elapsed())).unwrap_or(i64::MAX);
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let score_started = Instant::now();
-        let responses = vec_ids
+        let mut responses = vec_ids
             .iter()
             .map(|vec_id| {
                 let node = records.get(vec_id).ok_or_else(|| {
@@ -3178,16 +4454,26 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                         self.generation.epoch
                     ))
                 })?;
-                let count = usize::from(node.neighbor_count);
-                let mut neighbor_dists = vec![0.0; count];
-                self.prepared
-                    .score_dists_batch(
-                        &node.neighbor_codes[..count * self.code_len],
-                        self.code_len,
-                        count,
-                        &mut neighbor_dists,
-                    )
-                    .map_err(DistannExpandError::Internal)?;
+                let (neighbor_vec_ids, neighbor_code_dists) = if skip_neighbors.contains(vec_id) {
+                    (Vec::new(), Vec::new())
+                } else {
+                    let count = usize::from(node.neighbor_count);
+                    let mut neighbor_dists = vec![0.0; count];
+                    self.prepared
+                        .score_dists_batch(
+                            &node.neighbor_codes[..count * self.code_len],
+                            self.code_len,
+                            count,
+                            &mut neighbor_dists,
+                        )
+                        .map_err(DistannExpandError::Internal)?;
+                    super::scan::prune_and_limit_neighbors(
+                        &node.neighbor_vec_ids[..count],
+                        &neighbor_dists,
+                        None,
+                        None,
+                    )?
+                };
                 Ok(DistannExpandedNode {
                     vec_id: node.vec_id,
                     exact_dist: (!node.tombstoned)
@@ -3195,8 +4481,9 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                         .transpose()?,
                     is_tombstone: node.tombstoned,
                     heap_tid: node.heap_tid,
-                    neighbor_vec_ids: node.neighbor_vec_ids[..count].to_vec(),
-                    neighbor_code_dists: neighbor_dists,
+                    neighbor_vec_ids,
+                    neighbor_code_dists,
+                    neighbors_pruned: 0,
                     owner_total_ns: 0,
                     owner_open_validate_ns: 0,
                     owner_graph_read_ns: 0,
@@ -3208,6 +4495,11 @@ impl DistannNodeExpander for GenerationExpander<'_> {
                 })
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
+        super::scan::prune_and_limit_neighbor_batch(
+            &mut responses,
+            code_threshold,
+            candidate_limit,
+        )?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let responses = {
             let mut responses = responses;
@@ -3220,5 +4512,21 @@ impl DistannNodeExpander for GenerationExpander<'_> {
             responses
         };
         Ok(responses)
+    }
+}
+
+impl DistannNodeExpander for GenerationExpander<'_> {
+    fn expand_nodes(
+        &mut self,
+        vec_ids: &[u64],
+        code_threshold: Option<f32>,
+        candidate_limit: Option<usize>,
+    ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
+        self.expand_nodes_masked(
+            vec_ids,
+            code_threshold,
+            candidate_limit,
+            &std::collections::HashSet::new(),
+        )
     }
 }
