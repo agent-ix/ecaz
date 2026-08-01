@@ -31,7 +31,8 @@ belongs (Task 210, `reviews/task-210/006-zero-byte-head/`).
 ## Inputs
 
 - Reloptions on the control index:
-  - `head_sampling_rate` (float; 0 disables the law — see override below),
+  - `head_sampling_rate` (float; default 0 = law disabled — see override
+    below),
   - `head_cap_floor` (int; default 4096, the ADR-085 D3 measured retention),
   - `head_cap_ceiling` (int; default 1,048,576, the frozen v1 upper bound),
   - `head_index_cap` (int; the pre-existing explicit cap, retained as the
@@ -57,7 +58,9 @@ belongs (Task 210, `reviews/task-210/006-zero-byte-head/`).
   (`training_landmarks_exact` requires C = 4096) SHALL be reconciled: a
   trained generation either pins the explicit cap or the law's resolved C
   must satisfy the policy's validity domain; an inconsistent combination
-  SHALL fail the build, not silently re-size.
+  SHALL fail the build with `EC_HEAD_TRAINING`
+  ([FR-078](../build/FR-078-distann-hash-placement.md) error class), not
+  silently re-size.
 - The default law (the shipped rate) SHALL be chosen from measured A/B
   evidence per the benchmark gate below; until a rate is landed as the
   default, the shipped default SHALL remain the explicit cap (law
@@ -91,9 +94,10 @@ belongs (Task 210, `reviews/task-210/006-zero-byte-head/`).
   [FR-078](../build/FR-078-distann-hash-placement.md) (captured record
   count); [FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md)
   (manifest digest chain); ADR-087 (zero-byte coordinator head).
-- **Downstream**: Task 212 crown cache (capacity independent of C — the
-  crown's bound must not inherit the law) and Task 213 fused head hop
-  (seed-quality assumptions).
+- **Downstream**: [FR-089](./FR-089-distann-crown-cache.md) (Task 212 crown
+  cache: capacity independent of C — the crown's bound must not inherit the
+  law) and [FR-090](./FR-090-distann-fused-head-hop.md) (Task 213 fused head
+  hop: seed-quality assumptions).
 
 ## Verification scope (deliberate)
 

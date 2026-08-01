@@ -316,9 +316,10 @@ membership-only mode). Per-landmark rows of the coordinator head.
 #### ec_distann_head_shard_replica
 
 Storage class: bounded — an attested copy of head shards on non-owner nodes
-per [FR-080](../read/FR-080-distann-coordinator-head-index.md) §4.1
-semantics: at most C landmarks divided across the roster, times the replica
-count; never O(N) content.
+per the head-shard replica clauses of
+[FR-080](../read/FR-080-distann-coordinator-head-index.md) (the
+DISTRIBUTEDANN-paper §4.1 mechanism): at most C landmarks divided across
+the roster, times the replica count; never O(N) content.
 
 - Key columns: 34-byte `epoch_fingerprint` scope, `shard_ordinal >= 0`,
   `vec_id`, `vector real[]` NOT NULL (a replica must hold the shard's

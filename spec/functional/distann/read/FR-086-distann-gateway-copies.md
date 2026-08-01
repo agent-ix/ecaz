@@ -109,8 +109,8 @@ sequenceDiagram
 - **Downstream**:
   [NFR-021](../../../non-functional/NFR-021-distann-distribution-invariant.md)
   (bounded-structure conformance); ADR-087 (selection of TRAV-30 over the
-  FR-084 replica); Task 212 crown cache (builds on the same bounded
-  codes-only class).
+  FR-084 replica); [FR-089](./FR-089-distann-crown-cache.md) (Task 212 crown
+  cache, which builds on the same bounded codes-only class).
 
 ## Measured outcome (Task 210 P3)
 

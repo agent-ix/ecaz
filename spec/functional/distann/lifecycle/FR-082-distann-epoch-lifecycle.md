@@ -186,7 +186,7 @@ The version-2 canonical epoch manifest SHALL contain these fields in this order:
 | codec_parameters | length-prefixed bytes | canonical version-1 codec kind and shape subrecord defined below |
 | build_options | length-prefixed bytes | canonical version-1 legacy or version-2 trained-head graph/build options subrecord defined below |
 | row_schema_fingerprint | byte[32] | FR-078 schema identity |
-| head_sample_digest | byte[32] | canonical coordinator head-sample identity |
+| head_sample_digest | byte[32] | canonical head identity: the membership digest under the sharded multi-owner default, the full head-sample digest otherwise (shape contract owned by [FR-080](../read/FR-080-distann-coordinator-head-index.md) persistence) |
 | global_record_count | u64 | exact source vec_id cardinality |
 | global_graph_digest | byte[32] | canonical stitched graph content |
 | global_row_tier_digest | byte[32] | canonical frozen row payload content |

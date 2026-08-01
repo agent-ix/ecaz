@@ -55,6 +55,27 @@ specified-but-removed.
 
 ## Status
 
-P0 complete pending review. P1 (elevation to `spec/functional/distann/`)
-starts next; the inventory's per-phase work lists (C/D → P2, E → P3, F → P4)
-drive the remaining phases.
+P0 complete pending review. Burn-down (2026-08-01, same session):
+
+- **P1 done** — set elevated to `spec/functional/distann/`
+  (build/read/storage/lifecycle + indexes, 40 files' references rewritten,
+  0 broken relative links), FR-085 domain-model anchor authored
+  (`94bf89095`, `6dbe7777f`).
+- **P2 done** — architecture cluster rewritten (FR-080 sharded head, FR-084
+  demotion posture, new FR-086 gateway copies, ADR-087 superseding
+  ADR-086/amending ADR-085) at `1c9e90e86`; FR-075..083 amended with dated
+  implementation-gap notes at `b20b44164`; NFR-017..022 verification
+  sections rebased to enforcement reality at `95802fb66`. Inventory §H
+  [CODE?] items were NOT absorbed as spec truth — they stay flagged for a
+  coder task.
+- **P3 done** — FR-087 catalog relations (all 20 tables, storage classes,
+  REVOKE/reclaim gaps as normative obligations) in `b20b44164`.
+- **P4 done** — six flows diagrammed in owning FRs (`854d495db`,
+  `216b53e46`).
+- **P5** — quire validation clean per commit; base `/spec-review` pass and
+  verbosity spot-pass recorded in `spec/reviews/base.md` (see follow-up
+  commit). Remaining verbosity candidates are listed there rather than
+  churned this round.
+- Tasks 211/212/213 P0 specs landed against the elevated structure
+  (FR-088/089/090) with their own packets
+  (`reviews/task-21{1,2,3}/001-*/`).

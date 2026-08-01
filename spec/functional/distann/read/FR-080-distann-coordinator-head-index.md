@@ -54,7 +54,8 @@ clause 3).
   persisted shape, not the session GUC, SHALL govern the read path.
 - **Serving — sharded search.** When the persisted head is membership-only
   (and `ec_distann.sharded_head_search` is on, the default), seed selection
-  SHALL fan a head-search request to every head-shard holder: each holder
+  SHALL fan a head-search request (`ec_distann_head_search_physical`) to
+  every head-shard holder: each holder
   materializes its shard's landmarks from locally held vectors, builds (and
   caches per backend) a navigable per-shard graph, exact-scores or
   code-scores per the bound head policy, and returns at most `seed_count`
@@ -64,6 +65,9 @@ clause 3).
   and replica serve identical topology. The coordinator SHALL merge
   per-holder seeds deterministically — (distance, vec_id) order, dedup,
   truncate to `seed_count` — and SHALL NOT receive landmark vectors.
+  `seed_count` is fixed internal policy, `max(2 × BW, 32)` for the
+  session's beam width, not a reloption or production GUC (a
+  benchmark-feature override is compile-gated out of production builds).
 - **Head-shard replicas.** Where `ec_distann.head_replica_count` > 0, each
   head shard MAY additionally be served by that many replica nodes.
   Population SHALL export/import per (shard, replica) pair — including
