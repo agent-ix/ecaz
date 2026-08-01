@@ -108,6 +108,9 @@ pub struct RecallArgs {
     /// Write per-query top-k prediction rows for cross-AM consistency checks.
     #[arg(long)]
     pub predictions_output: Option<PathBuf>,
+    /// Capture production ec_distann crown activation counters on this backend.
+    #[arg(long)]
+    pub report_distann_crown_stats: bool,
 }
 
 pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
@@ -162,6 +165,9 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
 
     let client = psql::connect(conn).await?;
     super::apply_session_gucs(&client, &session_gucs).await?;
+    let crown_stats_available = args.report_distann_crown_stats
+        && profile.name == "ec_distann"
+        && super::reset_distann_crown_stats(&client).await?;
     if psql::index_count_with_am(&client, &corpus_table, profile.access_method).await? == 0 {
         return Err(eyre!(
             "{} on {:?}",
@@ -365,7 +371,17 @@ pub async fn run(conn: &ConnectionOptions, args: RecallArgs) -> Result<()> {
         });
     }
 
-    let output = t.to_string();
+    let mut output = t.to_string();
+    if crown_stats_available {
+        if let Some(stats) = super::snapshot_distann_crown_stats(&client).await? {
+            output.push('\n');
+            output.push_str(&super::format_distann_crown_stats(
+                "recall",
+                &args.prefix,
+                stats,
+            ));
+        }
+    }
     println!("{output}");
     if let Some(path) = args.log_output {
         if let Some(parent) = path.parent() {

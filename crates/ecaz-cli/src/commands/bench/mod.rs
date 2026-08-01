@@ -50,6 +50,80 @@ pub(crate) fn sweep_value_label(profile: &IndexProfile, value: i32) -> String {
     format!("{}={value}", profile.sweep_axis_label())
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DistannCrownStats {
+    pub(crate) crown_seeds_served: i64,
+    pub(crate) crown_fallbacks: i64,
+    pub(crate) fused_head_hops: i64,
+}
+
+impl DistannCrownStats {
+    pub(crate) fn add_assign(&mut self, other: Self) {
+        self.crown_seeds_served = self
+            .crown_seeds_served
+            .saturating_add(other.crown_seeds_served);
+        self.crown_fallbacks = self.crown_fallbacks.saturating_add(other.crown_fallbacks);
+        self.fused_head_hops = self.fused_head_hops.saturating_add(other.fused_head_hops);
+    }
+}
+
+pub(crate) async fn reset_distann_crown_stats(client: &Client) -> Result<bool> {
+    let available = client
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_reset_crown_stats()') IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if available {
+        client
+            .batch_execute("SELECT ec_distann_reset_crown_stats()")
+            .await?;
+    }
+    Ok(available)
+}
+
+pub(crate) async fn snapshot_distann_crown_stats(
+    client: &Client,
+) -> Result<Option<DistannCrownStats>> {
+    let available = client
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_crown_stats()') IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if !available {
+        return Ok(None);
+    }
+    let Some(row) = client
+        .query_opt(
+            "SELECT crown_seeds_served, crown_fallbacks, fused_head_hops
+               FROM ec_distann_crown_stats()",
+            &[],
+        )
+        .await?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(DistannCrownStats {
+        crown_seeds_served: row.get(0),
+        crown_fallbacks: row.get(1),
+        fused_head_hops: row.get(2),
+    }))
+}
+
+pub(crate) fn format_distann_crown_stats(
+    lane: &str,
+    label: &str,
+    stats: DistannCrownStats,
+) -> String {
+    format!(
+        "[distann-crown-stats] lane={lane} label={label} crown_seeds_served={} crown_fallbacks={} fused_head_hops={}",
+        stats.crown_seeds_served, stats.crown_fallbacks, stats.fused_head_hops
+    )
+}
+
 const EC_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
 const EC_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS: i32 = 1_000_000;
 

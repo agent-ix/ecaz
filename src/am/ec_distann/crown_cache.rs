@@ -141,6 +141,13 @@ fn ec_distann_crown_stats() -> TableIterator<'static, (name!(crown_seeds_served,
     ))
 }
 
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_reset_crown_stats() {
+    CROWN_SEEDS_SERVED.store(0, Ordering::Relaxed);
+    CROWN_FALLBACKS.store(0, Ordering::Relaxed);
+    FUSED_HEAD_HOPS.store(0, Ordering::Relaxed);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
