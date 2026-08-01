@@ -1265,10 +1265,25 @@ impl RetainedGenerationScan {
         if members.is_empty() || seed_count == 0 {
             return Ok(Vec::new());
         }
+        // The shard ordinal derives from the members (005 review finding 2):
+        // on a replica path `self.generation.owner_ordinal` is the SERVING
+        // node's ordinal, and folding that into the key and graph seed would
+        // give the same shard a different topology per serving node. The
+        // members are the authoritative identity — uniform ownership is
+        // validated in the derivation.
+        let shard_ordinal = super::placement::shard_owner_ordinal(
+            members,
+            self.descriptor.roster.len(),
+            self.descriptor.placement_hash_version,
+        )
+        .map_err(DistannExpandError::BadInput)?;
+        let shard_ordinal = u32::try_from(shard_ordinal).map_err(|_| {
+            DistannExpandError::Internal("shard ordinal exceeds u32".to_owned())
+        })?;
         // The shard is epoch-immutable and its build is deterministic in every
         // keyed input, so it is built once per backend per epoch, not per RPC.
         let shard_key = owner_head_shard_key(
-            self.generation.owner_ordinal,
+            shard_ordinal,
             members,
             self.descriptor.graph_degree,
             build_list_size,
@@ -1323,7 +1338,7 @@ impl RetainedGenerationScan {
         // neither is asked for ids it does not own, which resolve_nodes
         // correctly rejects.
         let mut from_replica = false;
-        let resolved = match self.replica_head_vectors(members)? {
+        let resolved = match self.replica_head_vectors(members, shard_ordinal)? {
             Some(replica) => {
                 // Activation counter (003a review finding 2): replica serving
                 // must be provable in a run, not inferred from routing. Cache
@@ -1347,7 +1362,7 @@ impl RetainedGenerationScan {
             }
         };
         let shard = super::head_sample::build_owner_head_shard(
-            self.generation.owner_ordinal,
+            shard_ordinal,
             self.descriptor.dimensions,
             resolved,
             usize::from(self.descriptor.graph_degree),
@@ -1429,6 +1444,7 @@ impl RetainedGenerationScan {
     fn replica_head_vectors(
         &self,
         members: &[u64],
+        shard_ordinal: u32,
     ) -> Result<Option<Vec<(u64, Vec<f32>)>>, DistannExpandError> {
         let table =
             super::generation_catalog::extension_relation_name("ec_distann_head_shard_replica")
@@ -1444,13 +1460,15 @@ impl RetainedGenerationScan {
                     &format!(
                         "SELECT vec_id, vector FROM {table}
                           WHERE index_oid = $1::oid AND epoch_fingerprint = $2::bytea
-                            AND vec_id = ANY($3::bigint[])"
+                            AND vec_id = ANY($3::bigint[])
+                            AND shard_ordinal = $4::integer"
                     ),
                     None,
                     &[
                         self.index_oid.into(),
                         fingerprint.into(),
                         wire.as_slice().into(),
+                        i32::try_from(shard_ordinal).unwrap_or(-1).into(),
                     ],
                 )
                 .map_err(|error| format!("replica head lookup failed: {error}"))?
