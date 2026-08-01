@@ -5826,6 +5826,7 @@ fn create_distann_participant_lifecycle_fixture_with_rows(
                 head_policy: crate::am::ec_distann::DistannHeadPolicy::CurrentSampleGraph,
                 training_query_count: 0,
                 training_query_digest: [0; 32],
+                head_sizing: None,
             },
         },
         row_schema_fingerprint: descriptor.row_schema.fingerprint().unwrap(),

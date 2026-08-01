@@ -59,6 +59,8 @@ const DISTANN_FORMAT_V1_MAX_BUILD_SHARDS: u32 = 4096;
 const DISTANN_BUILD_OPTIONS_V1_BYTES: usize = 26;
 const DISTANN_BUILD_OPTIONS_V2_VERSION: u16 = 2;
 const DISTANN_BUILD_OPTIONS_V2_BYTES: usize = 65;
+const DISTANN_BUILD_OPTIONS_V3_VERSION: u16 = 3;
+const DISTANN_BUILD_OPTIONS_V3_BYTES: usize = 102;
 pub const DISTANN_TRAINING_QUERY_COUNT: u32 = 200;
 pub const DISTANN_TRAINED_HEAD_INDEX_CAP: u32 = 4096;
 
@@ -577,6 +579,77 @@ impl DistannGenerationDescriptor {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DistannHeadSizingAttestation {
+    pub resolved_capacity: u32,
+    pub sample_count: u64,
+    pub rate_bits: u64,
+    pub floor: u32,
+    pub ceiling: u32,
+    pub captured_record_count: u64,
+    pub law_active: bool,
+}
+
+impl DistannHeadSizingAttestation {
+    pub const MIN_CAPACITY: u32 = DISTANN_FORMAT_V1_MIN_HEAD_INDEX_CAP;
+    pub const MAX_CAPACITY: u32 = DISTANN_FORMAT_V1_MAX_HEAD_INDEX_CAP;
+
+    pub fn resolve(
+        rate: f64,
+        floor: u32,
+        ceiling: u32,
+        captured_record_count: u64,
+    ) -> Result<u32, String> {
+        if !rate.is_finite() || rate < 0.0 || floor > ceiling {
+            return Err("EC_HEAD_SIZING: invalid head sampling law bounds".to_owned());
+        }
+        if floor < Self::MIN_CAPACITY
+            || floor > Self::MAX_CAPACITY
+            || ceiling < Self::MIN_CAPACITY
+            || ceiling > Self::MAX_CAPACITY
+        {
+            return Err("EC_HEAD_SIZING: head sampling law bounds are outside 16..=1048576".to_owned());
+        }
+        if rate == 0.0 {
+            return Err("EC_HEAD_SIZING: rate zero does not resolve a law capacity".to_owned());
+        }
+        let scaled = rate * captured_record_count as f64;
+        if !scaled.is_finite() {
+            return Err("EC_HEAD_SIZING: rate multiplied by captured count is non-finite".to_owned());
+        }
+        let requested = scaled.ceil();
+        let resolved = requested.clamp(floor as f64, ceiling as f64);
+        Ok(resolved as u32)
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if !self.law_active
+            || self.rate_bits == 0
+            || !f64::from_bits(self.rate_bits).is_finite()
+            || f64::from_bits(self.rate_bits) < 0.0
+            || self.floor > self.ceiling
+            || self.floor < Self::MIN_CAPACITY
+            || self.ceiling > Self::MAX_CAPACITY
+            || self.resolved_capacity < self.floor
+            || self.resolved_capacity > self.ceiling
+            || self.sample_count > self.captured_record_count
+            || self.sample_count == 0 && self.captured_record_count != 0
+        {
+            return Err("EC_HEAD_SIZING: invalid sizing attestation".to_owned());
+        }
+        let expected = Self::resolve(
+            f64::from_bits(self.rate_bits),
+            self.floor,
+            self.ceiling,
+            self.captured_record_count,
+        )?;
+        if expected != self.resolved_capacity {
+            return Err("EC_HEAD_SIZING: resolved capacity disagrees with attested law".to_owned());
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct DistannBuildOptions {
     pub build_list_size: u16,
@@ -588,6 +661,7 @@ pub struct DistannBuildOptions {
     pub head_policy: DistannHeadPolicy,
     pub training_query_count: u32,
     pub training_query_digest: [u8; 32],
+    pub head_sizing: Option<DistannHeadSizingAttestation>,
 }
 
 impl DistannBuildOptions {
@@ -628,11 +702,33 @@ impl DistannBuildOptions {
                 }
             }
         }
+        if let Some(attestation) = self.head_sizing {
+            attestation.validate()?;
+            if self.head_policy == DistannHeadPolicy::TrainingLandmarksExact
+                && attestation.resolved_capacity != DISTANN_TRAINED_HEAD_INDEX_CAP
+            {
+                return Err(
+                    "EC_HEAD_TRAINING: trained head policy requires resolved cap 4096".to_owned(),
+                );
+            }
+            if self.head_index_cap != attestation.resolved_capacity {
+                return Err(
+                    "EC_HEAD_SIZING: build option cap disagrees with resolved capacity".to_owned(),
+                );
+            }
+        }
         let mut encoder = CanonicalEncoder::with_capacity(match self.head_policy {
-            DistannHeadPolicy::CurrentSampleGraph => DISTANN_BUILD_OPTIONS_V1_BYTES,
-            DistannHeadPolicy::TrainingLandmarksExact => DISTANN_BUILD_OPTIONS_V2_BYTES,
+            DistannHeadPolicy::CurrentSampleGraph if self.head_sizing.is_none() => {
+                DISTANN_BUILD_OPTIONS_V1_BYTES
+            }
+            DistannHeadPolicy::TrainingLandmarksExact if self.head_sizing.is_none() => {
+                DISTANN_BUILD_OPTIONS_V2_BYTES
+            }
+            _ => DISTANN_BUILD_OPTIONS_V3_BYTES,
         });
-        if self.head_policy == DistannHeadPolicy::TrainingLandmarksExact {
+        if self.head_sizing.is_some() {
+            encoder.put_u16(DISTANN_BUILD_OPTIONS_V3_VERSION);
+        } else if self.head_policy == DistannHeadPolicy::TrainingLandmarksExact {
             encoder.put_u16(DISTANN_BUILD_OPTIONS_V2_VERSION);
         }
         encoder.put_u16(self.build_list_size);
@@ -641,7 +737,19 @@ impl DistannBuildOptions {
         encoder.put_f32(self.closure_epsilon);
         encoder.put_u32(self.head_index_cap);
         encoder.put_u32(self.build_shards);
-        if self.head_policy == DistannHeadPolicy::TrainingLandmarksExact {
+        if self.head_sizing.is_some() {
+            encoder.put_u8(self.head_policy as u8);
+            encoder.put_u32(self.training_query_count);
+            encoder.put_fixed(&self.training_query_digest);
+            let attestation = self.head_sizing.expect("checked above");
+            encoder.put_u32(attestation.resolved_capacity);
+            encoder.put_u64(attestation.sample_count);
+            encoder.put_u64(attestation.rate_bits);
+            encoder.put_u32(attestation.floor);
+            encoder.put_u32(attestation.ceiling);
+            encoder.put_u64(attestation.captured_record_count);
+            encoder.put_u8(u8::from(attestation.law_active));
+        } else if self.head_policy == DistannHeadPolicy::TrainingLandmarksExact {
             encoder.put_u8(self.head_policy as u8);
             encoder.put_u32(self.training_query_count);
             encoder.put_fixed(&self.training_query_digest);
@@ -662,12 +770,15 @@ impl DistannBuildOptions {
                 head_policy: DistannHeadPolicy::CurrentSampleGraph,
                 training_query_count: 0,
                 training_query_digest: [0; 32],
+                head_sizing: None,
             };
             decoder.finish("build options v1")?;
             options.encode()?;
             return Ok(options);
         }
-        if input.len() != DISTANN_BUILD_OPTIONS_V2_BYTES {
+        if input.len() != DISTANN_BUILD_OPTIONS_V2_BYTES
+            && input.len() != DISTANN_BUILD_OPTIONS_V3_BYTES
+        {
             return Err(format!(
                 "EC_GENERATION_DESCRIPTOR: build options are {} bytes, expected {DISTANN_BUILD_OPTIONS_V1_BYTES} or {DISTANN_BUILD_OPTIONS_V2_BYTES}",
                 input.len()
@@ -675,21 +786,47 @@ impl DistannBuildOptions {
         }
         let mut decoder = CanonicalDecoder::new(input, "build options")?;
         let version = decoder.get_u16("build options version")?;
-        if version != DISTANN_BUILD_OPTIONS_V2_VERSION {
+        if version != DISTANN_BUILD_OPTIONS_V2_VERSION
+            && version != DISTANN_BUILD_OPTIONS_V3_VERSION
+        {
             return Err(format!(
                 "EC_GENERATION_DESCRIPTOR: unsupported build options version {version}"
             ));
         }
+        let is_v3 = version == DISTANN_BUILD_OPTIONS_V3_VERSION;
+        let build_list_size = decoder.get_u16("build list size")?;
+        let alpha = decoder.get_f32("alpha")?;
+        let seed = decoder.get_u64("seed")?;
+        let closure_epsilon = decoder.get_f32("closure epsilon")?;
+        let head_index_cap = decoder.get_u32("head index cap")?;
+        let build_shards = decoder.get_u32("build shards")?;
+        let head_policy = DistannHeadPolicy::decode(decoder.get_u8("head policy")?)?;
+        let training_query_count = decoder.get_u32("training query count")?;
+        let training_query_digest = decoder.get_fixed("training query digest")?;
+        let head_sizing = if is_v3 {
+            Some(DistannHeadSizingAttestation {
+                resolved_capacity: decoder.get_u32("resolved head capacity")?,
+                sample_count: decoder.get_u64("head sample count")?,
+                rate_bits: decoder.get_u64("head sampling rate bits")?,
+                floor: decoder.get_u32("head capacity floor")?,
+                ceiling: decoder.get_u32("head capacity ceiling")?,
+                captured_record_count: decoder.get_u64("captured record count")?,
+                law_active: decoder.get_u8("head sizing law active")? != 0,
+            })
+        } else {
+            None
+        };
         let options = Self {
-            build_list_size: decoder.get_u16("build list size")?,
-            alpha: decoder.get_f32("alpha")?,
-            seed: decoder.get_u64("seed")?,
-            closure_epsilon: decoder.get_f32("closure epsilon")?,
-            head_index_cap: decoder.get_u32("head index cap")?,
-            build_shards: decoder.get_u32("build shards")?,
-            head_policy: DistannHeadPolicy::decode(decoder.get_u8("head policy")?)?,
-            training_query_count: decoder.get_u32("training query count")?,
-            training_query_digest: decoder.get_fixed("training query digest")?,
+            build_list_size,
+            alpha,
+            seed,
+            closure_epsilon,
+            head_index_cap,
+            build_shards,
+            head_policy,
+            training_query_count,
+            training_query_digest,
+            head_sizing,
         };
         decoder.finish("build options")?;
         options.encode()?;
@@ -996,6 +1133,7 @@ mod tests {
                 head_policy: DistannHeadPolicy::CurrentSampleGraph,
                 training_query_count: 0,
                 training_query_digest: [0; 32],
+                head_sizing: None,
             },
             expected_global_count: 10,
             expected_global_graph_digest: [2; 32],
@@ -1056,6 +1194,7 @@ mod tests {
             head_policy: DistannHeadPolicy::CurrentSampleGraph,
             training_query_count: 0,
             training_query_digest: [0; 32],
+            head_sizing: None,
         };
         let current_bytes = current.encode().unwrap();
         assert_eq!(current_bytes.len(), DISTANN_BUILD_OPTIONS_V1_BYTES);
@@ -1086,5 +1225,52 @@ mod tests {
         let mut unsupported = trained_bytes;
         unsupported[2 + DISTANN_BUILD_OPTIONS_V1_BYTES] = 9;
         assert!(DistannBuildOptions::decode(&unsupported).is_err());
+    }
+
+    #[test]
+    fn head_scaling_attestation_is_deterministic_and_digest_bound() {
+        let attestation = DistannHeadSizingAttestation {
+            resolved_capacity: 16,
+            sample_count: 5,
+            rate_bits: 0.5_f64.to_bits(),
+            floor: 16,
+            ceiling: 100,
+            captured_record_count: 10,
+            law_active: true,
+        };
+        let options = DistannBuildOptions {
+            head_index_cap: 16,
+            head_sizing: Some(attestation),
+            ..DistannBuildOptions {
+                build_list_size: 100,
+                alpha: 1.2,
+                seed: 42,
+                closure_epsilon: 0.3,
+                head_index_cap: 16,
+                build_shards: 0,
+                head_policy: DistannHeadPolicy::CurrentSampleGraph,
+                training_query_count: 0,
+                training_query_digest: [0; 32],
+                head_sizing: None,
+            }
+        };
+        let encoded = options.encode().unwrap();
+        assert_eq!(encoded.len(), DISTANN_BUILD_OPTIONS_V3_BYTES);
+        assert_eq!(DistannBuildOptions::decode(&encoded).unwrap(), options);
+
+        let mut tampered = attestation;
+        tampered.rate_bits = 2.0_f64.to_bits();
+        assert!(DistannBuildOptions {
+            head_sizing: Some(tampered),
+            ..options
+        }
+        .encode()
+        .is_err());
+        assert_eq!(
+            DistannHeadSizingAttestation::resolve(0.5, 16, 100, 10).unwrap(),
+            16
+        );
+        assert!(DistannHeadSizingAttestation::resolve(-0.1, 16, 100, 10).is_err());
+        assert!(DistannHeadSizingAttestation::resolve(0.5, 100, 16, 10).is_err());
     }
 }

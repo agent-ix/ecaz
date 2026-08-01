@@ -149,6 +149,15 @@ pub struct LocalMultinodePg18Args {
     /// sensitivity matrices can vary the cap through `ecaz bench suite`.
     #[arg(long, default_value_t = 4096)]
     pub head_index_cap: u32,
+    /// Task 211 head sizing law rate.
+    #[arg(long)]
+    pub head_sampling_rate: Option<f64>,
+    /// Task 211 head sizing law lower clamp.
+    #[arg(long)]
+    pub head_cap_floor: Option<u32>,
+    /// Task 211 head sizing law upper clamp.
+    #[arg(long)]
+    pub head_cap_ceiling: Option<u32>,
     /// Session beam width applied to both physical and single benchmark arms.
     #[arg(long)]
     pub beam_width: Option<u32>,
@@ -174,6 +183,15 @@ pub struct LocalMultinodePg18Args {
     /// the coordinator caches that many head landmarks' routing payloads.
     #[arg(long)]
     pub gateway_copy_capacity: Option<u32>,
+    /// Task 212 bounded deterministic crown-cache capacity on physical scans.
+    #[arg(long)]
+    pub crown_capacity: Option<u32>,
+    /// Task 212 conservative width pruning using the crown cache.
+    #[arg(long, default_value_t = false)]
+    pub crown_width_pruning: bool,
+    /// Task 213 fused head-hop seed expansion using crown-ranked seeds.
+    #[arg(long, default_value_t = false)]
+    pub fused_head_hop: bool,
     /// Control arm for head-sharding A/Bs now that the sharded head is the
     /// shipped default (fe5822f46): forces the legacy coordinator-local head
     /// by setting `ec_distann.shard_head_storage=off` on the building session
@@ -502,6 +520,35 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if !(16..=1_048_576).contains(&args.head_index_cap) {
         bail!("--head-index-cap must be in 16..=1048576");
+    }
+    if args.head_sampling_rate.is_none()
+        && (args.head_cap_floor.is_some() || args.head_cap_ceiling.is_some())
+    {
+        bail!("--head-cap-floor/--head-cap-ceiling require --head-sampling-rate");
+    }
+    if let Some(rate) = args.head_sampling_rate {
+        if !rate.is_finite() || rate < 0.0 {
+            bail!("--head-sampling-rate must be finite and non-negative");
+        }
+        let floor = args.head_cap_floor.unwrap_or(4096);
+        let ceiling = args.head_cap_ceiling.unwrap_or(1_048_576);
+        if !(16..=1_048_576).contains(&floor) || !(16..=1_048_576).contains(&ceiling) {
+            bail!("--head-cap-floor/--head-cap-ceiling must be in 16..=1048576");
+        }
+        if floor > ceiling {
+            bail!("--head-cap-floor must not exceed --head-cap-ceiling");
+        }
+    }
+    if args.crown_capacity.is_some_and(|value| value > 1_048_576) {
+        bail!("--crown-capacity must be in 0..=1048576");
+    }
+    if (args.crown_width_pruning || args.fused_head_hop)
+        && args.crown_capacity.unwrap_or(0) == 0
+    {
+        bail!("--crown-width-pruning/--fused-head-hop require --crown-capacity >= 1");
+    }
+    if (args.crown_width_pruning || args.fused_head_hop) && !args.physical_benchmark {
+        bail!("--crown-width-pruning/--fused-head-hop require --physical-benchmark");
     }
     if args
         .beam_width
@@ -924,6 +971,7 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
                 args.queries,
                 args.graph_degree,
                 args.head_index_cap,
+                &head_sizing_reloptions(args),
             ))
         }
         None => Ok(setup_sql(args)),
@@ -959,6 +1007,7 @@ fn real_setup_sql(
     queries_limit: u32,
     gd: u32,
     head_index_cap: u32,
+    head_sizing: &str,
 ) -> String {
     // Escape the paths as SQL string literals (double any single quote) so a
     // path containing `'` cannot break out of the COPY ... FROM '<path>' literal
@@ -985,11 +1034,13 @@ fn real_setup_sql(
            FROM dmq_stage ORDER BY id LIMIT {queries_limit};\n\
          DROP TABLE dmq_stage;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap});\n",
+         WITH (graph_degree = {gd}, head_index_cap = {head_index_cap}{head_sizing});\n",
+        head_sizing = head_sizing,
     )
 }
 
 fn setup_sql(args: &LocalMultinodePg18Args) -> String {
+    let head_sizing = head_sizing_reloptions(args);
     format!(
         "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'peter') THEN CREATE ROLE peter LOGIN SUPERUSER; END IF; END $$;\n\
          DROP TABLE IF EXISTS dm;\n\
@@ -1005,11 +1056,26 @@ fn setup_sql(args: &LocalMultinodePg18Args) -> String {
            FROM generate_series(1, {rows}) AS g\n\
          ) s;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap});\n",
+           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap}{head_sizing});\n",
         dim = args.dim,
         rows = args.rows,
         gd = args.graph_degree,
         head_index_cap = args.head_index_cap,
+        head_sizing = head_sizing,
+    )
+}
+
+/// Build-time reloptions for Task 211. An omitted rate preserves the legacy
+/// explicit-cap surface; a supplied rate is persisted in the generation
+/// descriptor and attested against the captured row count by the extension.
+fn head_sizing_reloptions(args: &LocalMultinodePg18Args) -> String {
+    let Some(rate) = args.head_sampling_rate else {
+        return String::new();
+    };
+    format!(
+        ", head_sampling_rate = {rate}, head_cap_floor = {}, head_cap_ceiling = {}",
+        args.head_cap_floor.unwrap_or(4096),
+        args.head_cap_ceiling.unwrap_or(1_048_576),
     )
 }
 
@@ -1423,6 +1489,36 @@ fn append_gateway_copy_guc(args: &mut Vec<String>, arm: &str, capacity: Option<u
         args.extend([
             "--session-guc".into(),
             format!("ec_distann.gateway_copy_capacity={capacity}"),
+        ]);
+    }
+}
+
+fn append_crown_gucs(
+    args: &mut Vec<String>,
+    arm: &str,
+    capacity: Option<u32>,
+    width_pruning: bool,
+    fused_head_hop: bool,
+) {
+    if arm != "physical" {
+        return;
+    }
+    if let Some(capacity) = capacity {
+        args.extend([
+            "--session-guc".into(),
+            format!("ec_distann.crown_capacity={capacity}"),
+        ]);
+    }
+    if width_pruning {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.crown_width_pruning=on".into(),
+        ]);
+    }
+    if fused_head_hop {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.fused_head_hop=on".into(),
         ]);
     }
 }
@@ -4587,6 +4683,7 @@ async fn run_physical_benchmarks(
         0
     } else {
         let single_started = Instant::now();
+        let head_sizing = head_sizing_reloptions(args);
         coordinator
             .batch_execute(&format!(
                 "CREATE TABLE {single_corpus} AS
@@ -4595,8 +4692,8 @@ async fn run_physical_benchmarks(
                  CREATE INDEX {single_index} ON {single_corpus}
                      USING ec_distann (embedding ecvector_distann_ip_ops)
                      WITH (graph_degree = {}, head_index_cap = {},
-                           neighbor_code_format = 'rabitq');",
-                args.graph_degree, args.head_index_cap
+                           neighbor_code_format = 'rabitq'{});",
+                args.graph_degree, args.head_index_cap, head_sizing
             ))
             .await?;
         single_started.elapsed().as_millis()
@@ -4965,12 +5062,18 @@ async fn run_physical_benchmarks(
             variant_hop_rounds,
         ));
         lines.push(format!(
-            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} head_search_width={} head_seed_count={} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
             variant.name,
             variant.strategy,
             args.head_index_cap,
+            args.head_sampling_rate,
+            args.head_cap_floor,
+            args.head_cap_ceiling,
             variant.head_search_width,
             variant.head_seed_count,
+            args.crown_capacity,
+            args.crown_width_pruning,
+            args.fused_head_hop,
             variant.neighbor_score_mode,
             variant.materialization_batch_size,
             variant.owner_payload_plan_cache,
@@ -5104,6 +5207,13 @@ async fn run_physical_benchmarks(
                     args.head_replica_count,
                 );
                 append_gateway_copy_guc(&mut recall_args, arm, args.gateway_copy_capacity);
+                append_crown_gucs(
+                    &mut recall_args,
+                    arm,
+                    args.crown_capacity,
+                    args.crown_width_pruning,
+                    args.fused_head_hop,
+                );
             }
             let recall = run_physical_bench_child(recall_args).await?;
             let row = benchmark_table_row(&recall)?;
@@ -5116,8 +5226,10 @@ async fn run_physical_benchmarks(
                 prediction_paths.insert(variant.to_owned(), predictions_output);
             }
             lines.push(format!(
-                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
-                args.head_index_cap, row[1], row[2]
+                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
+                args.head_index_cap, args.head_sampling_rate, args.head_cap_floor,
+                args.head_cap_ceiling, args.crown_capacity, args.crown_width_pruning,
+                args.fused_head_hop, row[1], row[2]
             ));
         }
 
@@ -5203,14 +5315,27 @@ async fn run_physical_benchmarks(
             args.head_replica_count,
         );
         append_gateway_copy_guc(&mut latency_args, arm, args.gateway_copy_capacity);
+        append_crown_gucs(
+            &mut latency_args,
+            arm,
+            args.crown_capacity,
+            args.crown_width_pruning,
+            args.fused_head_hop,
+        );
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
         let latency = run_physical_bench_child(latency_args).await?;
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
             args.head_index_cap,
+            args.head_sampling_rate,
+            args.head_cap_floor,
+            args.head_cap_ceiling,
+            args.crown_capacity,
+            args.crown_width_pruning,
+            args.fused_head_hop,
             row[1],
             benchmark_ms(&row[2])?,
             benchmark_ms(&row[5])?,
