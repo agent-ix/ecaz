@@ -1,7 +1,16 @@
 # Task 214: ec_distann Spec Remediation
 
-Status: **ready** (2026-08-01). Priority: P1 (documentation debt; blocks no
+Status: **complete** (2026-08-01). Priority: P1 (documentation debt; blocks no
 runtime work but degrades every review that leans on the spec).
+
+Closeout: all phases P0–P5 done same-day (P0 drift inventory
+`reviews/task-214/001-drift-inventory/`, 78 findings; P1 elevation to
+`spec/functional/distann/` + FR-085 domain model; P2 amendments incl.
+FR-086/ADR-087; P3 FR-087 catalog; P4 six flow diagrams; P5 base
+spec-review + failure-domain/integrity/scope-boundary analyses with all
+high/medium findings resolved — `spec/reviews/*.md`). Packet request open
+for reviewer feedback; candidate code bugs surfaced by the audit are
+listed in the packet inventory §H, not fixed here.
 
 Entry gate: none. Runs independently of 211–213; their P0 spec additions
 should land against the remediated structure where sequencing allows.

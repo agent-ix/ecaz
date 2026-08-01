@@ -1,6 +1,15 @@
 # Task 213: ec_distann Fused Head Hop
 
-Status: **ready** (2026-08-01). Priority: P1.
+Status: **in progress — P0 complete** (2026-08-01). Priority: P1.
+
+P0 spec landed as
+`spec/functional/distann/read/FR-090-distann-fused-head-hop.md` (hardened:
+fused request defined as an ordinary FR-079 expansion whose requested
+vec_ids are the crown-ranked seed candidates, seed_count-bounded first
+round with NFR-019 accounting, mid-request failure semantics, exact-policy
+claimability condition); packet
+`reviews/task-213/001-fused-head-hop-spec/` open. P1/P2 remain behind the
+Task 212 P1 entry gate.
 
 Entry gate: Task 212 P1 (the crown exists and its counters prove activation).
 
