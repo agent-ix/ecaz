@@ -29,6 +29,16 @@ non-conforming lanes MAY be reported as context. They SHALL NOT be the control
 against which a PROMOTE, STOP, or ITERATE decision is made, and they SHALL NOT
 be recorded as the program's latency or recall baseline.
 
+**Activation evidence.** Every new coordinator-resident or
+protocol-narrowing mechanism (bounded caches, pruning, fusion — the
+FR-086/FR-089/FR-090 class and any successor) SHALL pre-register under the
+[NFR-021](./NFR-021-distann-distribution-invariant.md) storage-class
+vocabulary and SHALL ship activation counters asserted non-zero in every
+candidate arm of its A/B. An arm whose mechanism cannot be shown active is
+not evidence for that mechanism (four Task 210 mechanisms ran inert inside
+green suite runs; this clause generalizes the per-FR observability
+requirements so future mechanisms inherit the obligation).
+
 This requirement does not demote latency. Latency remains a primary ec_distann
 objective; it is to be measured against the distributed architecture, not
 against a design that abandons it.

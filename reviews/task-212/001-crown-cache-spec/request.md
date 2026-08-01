@@ -42,3 +42,10 @@ Design points worth challenge:
 ## Status
 
 Open — awaiting reviewer feedback.
+
+## Update (2026-08-01, same session)
+
+The spec was subsequently hardened by the failure-domain, integrity, and
+scope-boundary analyses (`spec/reviews/{failure-domain,integrity,scope-boundary}.md`,
+findings + resolutions recorded there). Material additions: see the
+resolution lists for the FR this packet reviews.

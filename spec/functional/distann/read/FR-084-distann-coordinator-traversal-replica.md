@@ -38,7 +38,11 @@ clause 4. It SHALL be reachable only through the off-by-default session GUC
 `ec_distann.allow_nonconforming_replica`, SHALL never be selected by
 default, and SHALL never be a decision-bearing benchmark arm
 ([NFR-022](../../../non-functional/NFR-022-distann-control-validity.md) —
-context lanes only). The ADR-086 promotion track ("Ready-replica preference
+context lanes only). In storage audits, the replica's payload relations
+(`replica_relid`, `directory_relid`) SHALL carry the NFR-021 class
+`coordinator_resident_unsharded` — they are exactly that — and are
+admissible only in a context lane pre-registered non-conforming; they are
+never `bounded` and never unclassified. The ADR-086 promotion track ("Ready-replica preference
 as the normal path") is withdrawn; the selected bounded successor direction
 is the TRAV-30 gateway-copy mechanism
 ([FR-086](./FR-086-distann-gateway-copies.md)).

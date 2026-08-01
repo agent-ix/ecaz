@@ -37,33 +37,55 @@ distributed protocol; it never substitutes for it (the FR-084 bright line).
   never attempt to mirror the aggregate head.
 - **Selection.** Crown membership SHALL be a static, deterministic,
   structural selection from the head membership (a coarser sample of the
-  head or its upper navigation layers), sized to capacity; the selection
-  digest SHALL be attested. Frequency-aware admission is out of scope until
-  a measured skew case justifies its nondeterminism.
+  head or its upper navigation layers), sized to capacity. The selection
+  digest SHALL be computed by the populating backend over the selected
+  entry set, keyed by the identity `(epoch_fingerprint, capacity)` — the
+  same selection function and identity on every backend, so equal
+  identities imply equal crowns. Frequency-aware admission is out of scope
+  until a measured skew case justifies its nondeterminism.
 - **Content.** Entries SHALL hold exactly `(vec_id, quantized code)`.
   Nothing vector-shaped SHALL be resident at the coordinator.
 - **Lifecycle.** The crown SHALL be epoch-fingerprint-keyed and per-backend,
-  populated lazily by bounded batch RPCs from the owners (owners remain the
-  source of truth), rebuilt on epoch flip, and discarded and repopulated on
-  a capacity GUC change (the FR-086 staleness rule). There SHALL be no
-  serve-time remote calls. The crown is rebuild-only by design: head
-  membership is frozen within an epoch (D10), so crown and head cannot
-  diverge; inserts reach new rows through owner graphs, not through the
-  head.
+  rebuilt on epoch flip, and discarded and repopulated on a capacity GUC
+  change (the FR-086 staleness rule). **Population** is lazy in the sense
+  of deferred-to-first-use, never per-entry-on-demand: it runs at scan
+  open (the first scan per backend against a pinned epoch), as bounded
+  batch RPCs from the owners (owners remain the source of truth), before
+  traversal serving begins. A population RPC failure SHALL leave the crown
+  unpopulated and the scan on the full-fan-out path (resilient degrade,
+  never an error). Once traversal is serving, there SHALL be no remote
+  calls on behalf of the crown — a miss falls back, it does not fetch.
+  **"Populated"** (the predicate
+  [FR-090](./FR-090-distann-fused-head-hop.md)'s entry gate consumes)
+  means: the backend's crown holds the complete selected subset for the
+  pinned `(epoch_fingerprint, capacity)` identity, recorded as a
+  population-complete flag at fill time. The crown is rebuild-only by
+  design: head membership is frozen within an epoch (D10), so crown and
+  head cannot diverge; inserts reach new rows through owner graphs, not
+  through the head.
 - **Fallback.** A crown miss (or crown off/unpopulated) SHALL fall back to
   the full sharded head fan-out
   ([FR-080](./FR-080-distann-coordinator-head-index.md)): identical
   results, one round trip slower, never a wrong answer
   ([NFR-021](../../../non-functional/NFR-021-distann-distribution-invariant.md)
   clause 4).
-- **Width pruning.** When the crown is populated, the coordinator MAY use
-  crown scores to fan the head search only to promising shard holders.
-  Without [FR-090](./FR-090-distann-fused-head-hop.md), the crown's win is
-  owner CPU and tail width, not the round trip itself; A/B evidence SHALL
-  report that honestly rather than promising latency.
-- **Conformance.** The crown SHALL pre-register under NFR-021 as a bounded
-  conforming structure; its resident bytes SHALL be itemised on the
-  coordinator storage row and stay within the stated capacity.
+- **Width pruning (explicit measured arm, never a silent default).** Crown
+  scores MAY narrow the head fan-out to promising shard holders only when
+  (a) a dedicated pruning GUC enables the arm, and (b) the crown is
+  population-complete for the pinned identity — a shard whose landmarks
+  the crown does not fully hold SHALL NOT be pruned. Pruning by
+  construction can change the merged seed set, so a pruning arm is a
+  labeled seed-set change measured under
+  [FR-090](./FR-090-distann-fused-head-hop.md)'s honesty rule — it is
+  excluded from AC-1's identity claim and SHALL NOT be promoted to default
+  without A/B evidence. Without FR-090, the pruning arm's win is owner CPU
+  and tail width, not the round trip itself; A/B evidence SHALL report
+  that honestly rather than promising latency.
+- **Conformance.** The crown SHALL pre-register under
+  [NFR-021](../../../non-functional/NFR-021-distann-distribution-invariant.md)'s
+  storage-class vocabulary as the bounded codes-only subclass (NFR-021 owns
+  that definition; this FR cites it); its resident bytes SHALL be itemised
+  on the coordinator storage row and stay within the stated capacity.
 - **Observability.** The extension SHALL expose activation counters
   (`crown_seeds_served`, `crown_fallbacks`) from day one; the candidate arm
   of any A/B SHALL assert non-zero activation (four Task 210 mechanisms ran
@@ -74,17 +96,17 @@ distributed protocol; it never substitutes for it (the FR-084 bright line).
 | ID | Constraint | Type | Validation |
 |----|------------|------|------------|
 | FR-089-CON-1 | Crown resident bytes SHALL be bounded by capacity × (8 + code bytes + entry header), independent of both N and C | Memory | Analysis + storage audit |
-| FR-089-CON-2 | Crown selection SHALL be deterministic for a fixed epoch and capacity; the selection digest is attested | Determinism | Test |
+| FR-089-CON-2 | Crown selection SHALL be deterministic for the identity (epoch_fingerprint, capacity); equal identities yield equal crowns and equal selection digests on every backend | Determinism | Test |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-089-AC-1 | With the crown on, per-query results are identical to the crown-off path (fallback correctness); a forced miss produces identical results one RTT slower | Test |
+| FR-089-AC-1 | With the crown on and width pruning off, per-query results are identical to the crown-off path; a forced miss or population failure produces identical results via the full sharded fan-out | Test |
 | FR-089-AC-2 | Admission past capacity is refused; resident bytes never exceed the stated bound as C or N grow | Test |
 | FR-089-AC-3 | Epoch flip and capacity change discard the crown; no cross-epoch or cross-capacity reuse | Test |
 | FR-089-AC-4 | Nothing vector-shaped is resident at the coordinator; entries decode to (vec_id, code) only | Inspection + test |
-| FR-089-AC-5 | Candidate A/B arms at 10k/50k/100k show non-zero `crown_seeds_served`, `coordinator_resident_unsharded_bytes=0`, `outstanding_distribution_gap=none`, and crown bytes within capacity | Analysis (bench) |
+| FR-089-AC-5 | Candidate A/B arms at 10k/50k/100k show non-zero `crown_seeds_served`, a conforming NFR-021 verdict with zero coordinator_resident_unsharded derived bytes, and crown resident bytes itemised within the stated capacity | Analysis (bench) |
 
 ## Dependencies
 

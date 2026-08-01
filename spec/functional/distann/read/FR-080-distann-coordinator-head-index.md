@@ -55,7 +55,10 @@ clause 3).
 - **Serving — sharded search.** When the persisted head is membership-only
   (and `ec_distann.sharded_head_search` is on, the default), seed selection
   SHALL fan a head-search request (`ec_distann_head_search_physical`) to
-  every head-shard holder: each holder
+  every head-shard holder — except where an explicitly enabled
+  [FR-089](./FR-089-distann-crown-cache.md) width-pruning arm narrows the
+  fan-out or [FR-090](./FR-090-distann-fused-head-hop.md) fuses the hop
+  entirely: each holder
   materializes its shard's landmarks from locally held vectors, builds (and
   caches per backend) a navigable per-shard graph, exact-scores or
   code-scores per the bound head policy, and returns at most `seed_count`
@@ -68,6 +71,10 @@ clause 3).
   `seed_count` is fixed internal policy, `max(2 × BW, 32)` for the
   session's beam width, not a reloption or production GUC (a
   benchmark-feature override is compile-gated out of production builds).
+  Landmarks tombstoned mid-epoch remain head members for the epoch (D10
+  frozen membership) and are not excluded from head search on any path —
+  fused, unfused, or crown-assisted identically; result-half tombstone
+  authority is always the owner's at expansion time.
 - **Head-shard replicas.** Where `ec_distann.head_replica_count` > 0, each
   head shard MAY additionally be served by that many replica nodes.
   Population SHALL export/import per (shard, replica) pair — including
@@ -76,7 +83,14 @@ clause 3).
   a shard from a replica only when the attested replica count covers the
   session's requested count, choosing the serving node by deterministic
   query digest; otherwise routing SHALL clamp to the shard owner. Replicas
-  are non-authoritative and rebuildable.
+  are non-authoritative and rebuildable. Attestation proves import
+  completed, not perpetual servability: a serve failure on a selected
+  replica SHALL fall back to the shard owner for that request; a failure
+  on the owner path surfaces as the ordinary owner-path error. Replica
+  copy and attestation rows are epoch-scoped and SHALL be reclaimed at
+  epoch retirement and index drop
+  ([FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md) owns the
+  reclaim step).
 - **Coordinator caches.** The physical epoch/head cache SHALL be keyed on
   the exact `(index_oid, logical_index_uuid, build_id, epoch_fingerprint)`
   identity, retain at most two immutable epoch entries per backend with LRU
@@ -95,13 +109,16 @@ clause 3).
   Unknown or inconsistent policy metadata fails closed.
 - **Strictness.** If the persisted membership or sample is missing or fails
   to decode, scans SHALL error (no silent medoid-entry fallback).
-- **Legacy coordinator-resident head.** The pre-sharding shape (full
+- **Pre-sharding head shape.** The coordinator-resident shape (full
   vectors persisted at the coordinator, searched locally with zero remote
   calls) SHALL remain reachable only as the single-owner degenerate case
-  and as an explicit fixture control arm; on a multi-owner roster it is
+  and as an explicit fixture context arm; on a multi-owner roster it is
   non-conforming under NFR-021 and SHALL NOT be a decision-bearing
   benchmark arm
   ([NFR-022](../../../non-functional/NFR-022-distann-control-validity.md)).
+  (Terminology: "legacy lane" is reserved for the v4
+  `distributed_control=false` fixture substrate — see FR-085's bounded
+  context; this pre-sharding shape lives inside the physical lane.)
 
 ## Flows
 
@@ -153,7 +170,7 @@ sequenceDiagram
 | ID | Constraint | Type | Validation |
 |----|------------|------|------------|
 | FR-080-CON-1 | Coordinator-resident head state on a multi-owner roster SHALL be O(C) identifiers (4 + 8·C bytes membership) plus merged seeds bounded by seed_count; landmark vectors SHALL reside only on owners (~C/roster each) and attested replicas | Memory | Analysis + storage audit |
-| FR-080-CON-2 | C is a reloption (`head_index_cap`) with a documented default; head-shard serving state per node SHALL be bounded by its shard size and replica assignments, independent of total N | Memory | Analysis + unit test |
+| FR-080-CON-2 | C is the capacity resolved per [FR-088](./FR-088-distann-head-scaling-law.md) (the explicit `head_index_cap` reloption when the law is disabled, its default documented); head-shard serving state per node SHALL be bounded by its shard size and replica assignments, independent of total N | Memory | Analysis + unit test |
 
 ## Acceptance Criteria
 
@@ -190,5 +207,6 @@ respectively 0.995 / 0.995 / 1.000 at 10k, 0.975 / 0.980 / 0.980 at 50k, and
 two proven remote owners. The 100k result rejects 64 and retains the D3
 default of 4096 over 256 for its final 0.005 recall increment; warm physical
 p50 at 4096 was also no worse in this matrix (70.7, 100.8, and 78.9 ms).
-Head sizing as a scaling law (rate × N with bounds) is Task 211 scope and
-will amend this requirement.
+Head sizing as a scaling law (rate × N with bounds) is owned by
+[FR-088](./FR-088-distann-head-scaling-law.md), which resolves C at T2;
+this measured outcome fixes the law's floor default (4096).

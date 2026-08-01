@@ -33,14 +33,26 @@ round-trip cost: +8.6% @10k / +5.1% @100k
 
 ## Behavior
 
-- **Fused request.** When the crown is populated for the pinned epoch, the
-  scan MAY skip the dedicated
+- **Fused request.** When the crown is population-complete for the pinned
+  epoch ([FR-089](./FR-089-distann-crown-cache.md)'s populated predicate),
+  the scan MAY skip the dedicated
   [FR-080](./FR-080-distann-coordinator-head-index.md) head fan-out and
   SHALL instead carry the seed work in the first
   [FR-079](./FR-079-distann-remote-expansion-protocol.md) expansion
-  request: crown-code-ranked seed candidates are requested alongside the
-  first frontier expansion, and each owner returns exact distances for the
-  seed candidates it owns within that response.
+  request. **No wire extension exists or is permitted for this**: the
+  fused first request is an ordinary FR-079 expansion whose requested
+  `vec_ids` ARE the crown-code-ranked seed candidates, split per owner by
+  hash placement exactly like any frontier batch; owners expand them
+  (exact distances and neighbor payloads return in that response). FR-079
+  owns the wire; this FR owns only which ids the first request names.
+- **Bounds and accounting.** The fused first round SHALL request at most
+  `seed_count` ids ([FR-080](./FR-080-distann-coordinator-head-index.md)'s
+  fixed policy, max(2 × BW, 32)); subsequent rounds remain BW-bounded. The
+  fused path's per-attempt expansion bound is therefore
+  `seed_count + BW × (H − 1)`; the
+  [NFR-019](../../../non-functional/NFR-019-distann-per-query-touch-bound.md)
+  counters SHALL report the fused first round's size so the accounting is
+  visible in evidence.
 - **Positional contract.** The fused first request SHALL preserve
   FR-079-AC-1: one response row per requested id, in request order, across
   all owners.
@@ -55,10 +67,23 @@ round-trip cost: +8.6% @10k / +5.1% @100k
   policy SHALL either reproduce the unfused path's seed set exactly (exact
   policy — the fixture's seed-digest check holds) or the arm SHALL be
   labeled a seed-set change and measured as one — never silently both.
+  **The exact policy is claimable only when the crown covers the full head
+  membership** (capacity ≥ selected sample_count, so the fused candidate
+  universe equals the unfused one); with a coarser crown, exact
+  reproduction is structurally impossible and the arm is a labeled
+  seed-set change by construction.
 - **Fallback.** When the crown is off, unpopulated, or misses, the scan
   SHALL use the unfused two-phase path (dedicated head fan-out, then
   traversal) with identical results. The fused path is an accelerator with
   a correct slow path, never the only path.
+- **Mid-request failure.** Fallback is a pre-request decision; once the
+  fused first expansion is in flight, failure follows FR-079/FR-082
+  semantics: an epoch mismatch consumes the scan's single refresh-retry
+  and the retry SHALL re-enter via the **unfused** path (the crown is
+  keyed to the stale fingerprint and must repopulate), with all
+  crown-derived candidate state discarded; a non-retriable owner failure
+  aborts the query exactly as an unfused expansion failure would. No
+  partial fused state is ever reused across an attempt boundary.
 - **Distribution invariant.** The fused hop SHALL add nothing resident at
   the coordinator beyond the FR-089 crown
   ([NFR-021](../../../non-functional/NFR-021-distann-distribution-invariant.md)).

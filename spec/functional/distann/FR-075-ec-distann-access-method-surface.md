@@ -51,9 +51,12 @@ unchanged.
   `ec_distann.gateway_copy_capacity` (default 0). Their normative semantics
   are owned by [FR-080](./read/FR-080-distann-coordinator-head-index.md) and
   [FR-086](./read/FR-086-distann-gateway-copies.md); FR-075 only registers
-  the surface. `ec_distann.crown_capacity` (default 0,
-  [FR-089](./read/FR-089-distann-crown-cache.md)) joins this registry when
-  the crown lands; it is specced but not yet implemented.
+  the surface. Specced but not yet implemented (join this registry when
+  their tasks land): `ec_distann.crown_capacity` (default 0,
+  [FR-089](./read/FR-089-distann-crown-cache.md)) and the
+  [FR-088](./read/FR-088-distann-head-scaling-law.md) sizing reloptions
+  `head_sampling_rate` (default 0), `head_cap_floor` (default 4096), and
+  `head_cap_ceiling` (default 1,048,576).
 - `ec_distann.allow_nonconforming_replica` (default off): explicit opt-in
   for the non-conforming coordinator traversal replica of
   [FR-084](./read/FR-084-distann-coordinator-traversal-replica.md) under

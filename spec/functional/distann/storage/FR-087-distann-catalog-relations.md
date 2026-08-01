@@ -35,15 +35,20 @@ table privileges SHALL be revoked from PUBLIC for every relation in this
 schema.
 
 Under [NFR-021](../../../non-functional/NFR-021-distann-distribution-invariant.md)
-each relation carries a storage class:
+each relation carries a storage class. **NFR-021's storage-class vocabulary
+is the single normative definition**; the summaries here cite it and apply
+it per relation:
 
-- **control** — metadata whose row count is bounded by roster size, build
-  count, and epoch count, never by corpus size N. These relations MUST audit
-  to zero derived vector bytes.
-- **bounded** — copies of the bounded head structure (capacity C divided
-  across the roster, times the replica count) or the explicitly
-  non-conforming traversal replica bookkeeping. Bounded relations may hold
-  landmark vectors but never O(N) graph or row-tier content.
+- **control** — control-plane metadata whose row count is bounded by roster
+  size, build count, and epoch count, never by corpus size N (includes the
+  membership-only head's bounded id blob per NFR-021). These relations MUST
+  audit to zero derived vector bytes.
+- **bounded** — structures bounded by an NFR-021-admitted parameter that is
+  never a function of N: here, head capacity C times the replica multiple
+  (the head-shard copy tables, which may hold landmark vectors but never
+  O(N) graph or row-tier content). The traversal replica's payload
+  relations are NOT bounded — FR-084 classes them
+  `coordinator_resident_unsharded`.
 
 ## Schema
 
@@ -67,7 +72,7 @@ each relation carries a storage class:
       { "relation": "ec_distann_generation_batch", "storage_class": "control", "scope": "build", "primary_key": ["index_oid", "logical_index_uuid", "build_id", "batch_seq"] }
     ],
     "head_state_replicas": [
-      { "relation": "ec_distann_generation_head_state", "storage_class": "bounded", "scope": "build", "primary_key": ["index_oid", "logical_index_uuid", "build_id"], "gaps": ["revoke_missing"] },
+      { "relation": "ec_distann_generation_head_state", "storage_class": "control", "scope": "build", "primary_key": ["index_oid", "logical_index_uuid", "build_id"], "gaps": ["revoke_missing"] },
       { "relation": "ec_distann_generation_head_sample", "storage_class": "bounded", "scope": "build", "primary_key": ["index_oid", "logical_index_uuid", "build_id", "sample_ordinal"], "gaps": ["revoke_missing"] },
       { "relation": "ec_distann_head_shard_replica", "storage_class": "bounded", "scope": "epoch_fingerprint", "primary_key": ["index_oid", "epoch_fingerprint", "vec_id"], "gaps": ["revoke_missing", "no_reclaim_path"] },
       { "relation": "ec_distann_head_replica_state", "storage_class": "control", "scope": "epoch_fingerprint", "primary_key": ["index_oid", "epoch_fingerprint"], "gaps": ["revoke_missing", "no_reclaim_path"] }
@@ -270,9 +275,10 @@ acknowledgement ledger for the handoff stream.
 
 #### ec_distann_generation_head_state
 
-Storage class: bounded (capacity C metadata; membership-only rows hold zero
-vector bytes). Per-build head attestation row: makes an empty head
-distinguishable from a missing or corrupt one.
+Storage class: control (per NFR-021, digests, counts, and the
+membership-only head's bounded id blob are control-plane metadata;
+membership-only rows hold zero vector bytes). Per-build head attestation
+row: makes an empty head distinguishable from a missing or corrupt one.
 
 - Key columns: `dimensions` in `(0, 65535]`, `sample_count >= 0`, 32-byte
   `head_sample_digest`, `head_graph_digest`, `training_query_digest`;
@@ -333,11 +339,14 @@ the roster, times the replica count; never O(N) content.
   routing).
 - Lifecycle: epoch-scoped and rebuildable.
 - Gaps (normative obligations, current code non-conforming):
-  1. Rows for a retired epoch or a dropped index SHALL be deleted; as
-     audited there is no deletion path anywhere (not in
-     `catalog_index_cleanup`, not in any retire/reclaim endpoint), so stale
-     epochs and dropped indexes leak rows. Candidate code fix: add this
-     relation to index cleanup and to epoch retirement.
+  1. Rows for a retired epoch or a dropped index SHALL be deleted — the
+     behavioral reclaim obligation is owned by
+     [FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md)'s retire
+     application clause (this FR records the schema). As audited there is
+     no deletion path anywhere (not in `catalog_index_cleanup`, not in any
+     retire/reclaim endpoint), so stale epochs and dropped indexes leak
+     rows. Candidate code fix: add this relation to index cleanup and to
+     epoch retirement.
   2. SHALL be in the REVOKE block; as audited it is not.
 
 #### ec_distann_head_replica_state
@@ -504,8 +513,9 @@ Storage class: bounded catalog metadata for the opt-in, non-conforming
 coordinator graph copy of
 [FR-084](../read/FR-084-distann-coordinator-traversal-replica.md) (the O(N)
 payload lives in the separate `replica_relid` / `directory_relid`
-relations, which NFR-021 accounts as non-conforming replica bytes, not as
-this catalog row).
+relations, which FR-084 assigns the class `coordinator_resident_unsharded`
+— admissible only in a non-conforming context lane — not this catalog
+row).
 
 - Key columns: v4 `build_id`, 34-byte `epoch_fingerprint`, 32-byte
   `generation_descriptor_digest`, optional 32-byte `content_digest`;

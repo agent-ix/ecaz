@@ -1,50 +1,98 @@
 ---
 id: SR-002
-title: Failure-Domain Analysis of the ec_distann Spec Batch
+title: "Failure-Domain Analysis of the Tasks 211-214 DistANN Spec Round"
 type: SpecReview
 analysis: failure-domain
-scope: "spec/functional/distann/, spec/non-functional/NFR-017..020, spec/adr/ADR-085, StR-008; re-run against revision d25ea9e0c (co-placed heap rerank, lean record — FR-076/078/079, ADR-085 D11, NFR-018); reconciled at b19551e21 (every finding dispositioned, both former highs downgraded and addressed)"
-review_set: all
+scope: "FR-088, FR-089, FR-090 (new mechanisms, primary), FR-080 and FR-086 (rewritten this round); context FR-085, FR-082, FR-079, NFR-021; branch task-203-ec-distann-conformance @ 8165ff2d8; grounded against reviews/task-214/001-drift-inventory/artifacts/"
+review_set: subset
 ---
-# SR-002: Failure-Domain Analysis — ec_distann Spec Batch
+# SR-002: Failure-Domain Analysis — Tasks 211-214 Spec Round
 
 ## Summary
 
-As of `b19551e21`, every failure-domain finding in this review has a clear
-disposition: all sixteen are now either RESOLVED (the spec fix closes the gap
-outright) or ADDRESSED (the spec now specifies the behavior and drills it). The
-two findings originally rated **high** for identity/consistency —
-FND-001 (epoch-mismatch retry vs in-scan consistency) and FND-002 (insert-time
-vec_id collision) — are both **downgraded to low and addressed**: FR-082 now
-specifies full-scan restart under the refreshed epoch (with NFR-019 resetting
-the BW×H accounting per attempt), and FR-083 defines insert-time identity
-collision as an error. The three remaining originally-high findings from the
-`d25ea9e0c` two-object rerank split (FND-012 heap-row-absent outcome, FND-013
-runtime co-placement drift, FND-016 heap tier under epoch immutability) are all
-**RESOLVED**: FR-079 gained the fourth structural-fault outcome and its drills,
-FR-078 requires a runtime co-placement check, and FR-082 brings the heap tier
-under D10 immutability so `heap_tid` resolves an epoch-frozen vector. The
-identity/DML/epoch/beam findings on the record layer (FND-003..FND-011) are
-likewise dispositioned by the FR-079/FR-081/FR-082/FR-083 fixes. No finding
-remains open.
+This round examines the three new read-path mechanisms — FR-088 head scaling
+law, FR-089 crown cache, FR-090 fused head hop — plus the rewritten FR-080
+(sharded head) and FR-086 (gateway copies), for unstated failure modes,
+identity confusion, purity gaps, and topological edge cases (quoin
+spec-failure-domain-analysis method). The prior round's SR-002 content
+(ec_distann base batch, reconciled at b19551e21, all findings dispositioned)
+stands in git history; this document supersedes it for the current scope.
+
+Two high findings: FR-089's width-pruning clause contradicts its own
+identical-results acceptance criterion and, combined with lazy partial
+population, permits a silent set-level narrowing of the head search that no
+per-entry miss/fallback ever triggers; and FR-090 never defines the fused
+request's wire shape — FR-079 has no seed-candidate field, and whether
+crown-ranked candidates are expanded (neighbors returned) or only
+exact-scored is ambiguous, so the round-trip saving, fan width, threshold
+application, and NFR-019 accounting are all asserted over an undefined
+request. The remaining findings cluster on: law-resolution edge cases
+(C vs sample_count identity at C>N, clamp with floor>ceiling, NaN/negative
+rate, defaulted-vs-explicit cap precedence, float determinism across ISAs,
+no slot in the frozen FR-082 manifest layouts for the sizing attestation);
+lazy-population trust-boundary gaps (population-RPC failure policy,
+"populated" undefined, mid-fused-request failure re-entry); attestation and
+identity gaps (crown selection digest depends on a session GUC the build
+cannot attest, replica attested-but-unservable behavior, gateway subset
+nondeterminism); and within-epoch tombstone staleness in both code caches.
 
 ## Findings
 
 | ID | Severity | Summary | Refs |
 |----|----------|---------|------|
-| FND-001 | low | ADDRESSED — FR-082 specifies full-scan restart under the refreshed epoch (discard partial state, at most once, then error), FR-082-AC-2 drills it, and NFR-019 resets the BW×H accounting per attempt. Lowered from high. | FR-082, FR-081, NFR-019, NFR-020, EC-019, EC-022 |
-| FND-002 | low | ADDRESSED — FR-083 "Insert-time identity collision" errors when the computed vec_id exists with a different source_identity; EC-020 covers hash collision at build AND incremental insert (TC-038/TC-043). Lowered from high. | FR-083, FR-076, ADR-085 D6, EC-020 |
-| FND-003 | medium | ADDRESSED — FR-083 UPDATE = tombstone-of-old + insert-of-new under the same vec_id; in-flight scans observe either version, never both (FR-082 visibility rule). | FR-076, FR-083, ADR-085 D6 |
-| FND-004 | medium | RESOLVED (b19551e21) — FR-083 delete routes the tombstone write to the hash-owning node and RETAINS the co-placed heap row under FR-082 epoch immutability (reclaimed only at the next epoch build). | FR-083, FR-078, FR-078-AC-4, NFR-020 |
-| FND-005 | medium | RESOLVED — FR-083 incremental insert's back-edge re-prune SHALL NOT drop an edge that disconnects a node from the medoid (reachability/FR-077-CON-3 preserved); within-epoch immutability keeps tombstoned records' adjacency intact; next epoch build repairs. | FR-083, FR-077-CON-3, EC-023, NFR-017 |
-| FND-006 | medium | RESOLVED — FR-079 defines code_threshold and candidate_limit over the explicit L-bounded retained-candidate heap. Ordered-result equivalence is claimed only against the matching L-bounded control path, with deterministic threshold ties and per-response l; default endpoint arguments remain NULL. | FR-079, FR-081-AC-4, NFR-020 |
-| FND-007 | medium | ADDRESSED — FR-081 states a beam that exhausts before k returns the fewer-than-k results as a complete result (not a fault); empty index → zero rows. | FR-081, FR-075-AC-3, NFR-020 |
-| FND-008 | medium | RESOLVED — FR-082's published-epoch mutation model now enumerates the permitted in-place mutations (tombstone-flag sets, delta-buffer appends, incremental-insert record appends + back-edge amendments) and states the fingerprint attests to roster/placement/format/build-time record set/vector tier — not the mutable delta/tombstone state; the concurrent-mutation visibility rule (FR-082-AC-4) pins reader consistency, and the heap-tier dimension is closed by FND-016. | FR-082, FR-083, ADR-085 D5, ADR-085 D10 |
-| FND-009 | low | RESOLVED — FR-082-AC-6: a wedged in-flight count never auto-reclaims; storage retained until the logged operator override. | FR-082, NFR-020 |
-| FND-010 | low | ADDRESSED — FR-080 states scans SHALL error if the persisted sample is missing/undecodable (strict policy, no silent medoid fallback). | FR-080, NFR-020 |
-| FND-011 | low | RESOLVED — FR-083 bounds per-insert work by the FR-081 traversal cap plus ≤ graph_degree back-edge amendments (the NFR-019 insert-path counterpart). | NFR-019, FR-083 |
-| FND-012 | high | RESOLVED — FR-079 adds a fourth outcome (record present, co-placed vector missing → distinct structural fault, case d); EC-024; missing_heap_row drill in TC-042. | FR-079, FR-079-AC-3, FR-076, FR-082, NFR-020 |
-| FND-013 | high | RESOLVED — FR-078 requires a runtime co-placement check: heap_tid not resolving node-locally → the FR-079 case (d) structural fault, never a silent skip; EC-025. | FR-078, FR-078-AC-4, FR-079, NFR-020 |
-| FND-014 | medium | RESOLVED — FR-079 lets a tombstone return exact_dist NULL with no heap read (results exclude it anyway); FR-083 also retains the heap row under immutability; EC-026. | FR-079, FR-076, FR-076-AC-4, FR-083 |
-| FND-015 | medium | RESOLVED — FR-079 maps a failed record or heap read to the corresponding structural fault, non-retriable (distinct from the retriable epoch-mismatch). | FR-079, NFR-020, FR-081 |
-| FND-016 | high | RESOLVED — FR-082 brings the heap tier under D10 immutability; heap_tid resolves the epoch-frozen vector, not a base-table TID subject to VACUUM/TID-reuse; +AC-5; EC-027. | FR-082, ADR-085 D10, FR-079, FR-078, NFR-020 |
+| FND-001 | high | FR-089 width pruning contradicts FR-089-AC-1: fanning the head search only to "promising" shard holders can change the merged seed set (and thus results), and under lazy partial population a not-yet-populated shard scores as unpromising and is pruned — a set-level narrowing that no per-entry "crown miss" fallback ever detects; silent substitution risk of the kind NFR-021 clause 4 exists to forbid | FR-089, FR-089-AC-1, FR-080, NFR-021 |
+| FND-002 | high | FR-090 never defines the fused request's wire shape: FR-079's endpoint has no seed-candidate field and FR-090 amends no signature; whether crown-ranked seed candidates are expanded (neighbors returned — the RTT actually saved) or only exact-scored is ambiguous, and the fused first round's fan width (seed_count? BW? crown-rank cutoff?) and its NFR-019 BW×H accounting are unstated — FR-090-AC-1/AC-2 assert order and threshold semantics over an undefined request | FR-090, FR-079, FR-080, NFR-019 |
+| FND-003 | medium | FR-090 mid-fused-request failure is unhandled: fallback is specified only as a pre-request decision (crown off/unpopulated/miss); an epoch-mismatch during the fused first expansion restarts "from the head index" (FR-082) without saying whether the retry re-enters fused or unfused, and a non-retriable owner failure aborts the query (FR-079) so the promised "correct slow path" is unreachable mid-scan; what partial state (crown-ranked candidates, partially returned seed distances) is discarded and whether the attempt budget resets is unstated | FR-090, FR-082, FR-079, NFR-019 |
+| FND-004 | medium | Population trust boundary unstated for both code caches: FR-089 ("populated lazily by bounded batch RPCs") and FR-086 ("populated per epoch via bounded owner batch RPCs") never define when population runs relative to a scan, the failure policy of a population RPC (strict abort vs resilient degrade-to-fallback), or what "populated" means for a lazily filled cache — yet FR-090's entry gate ("when the crown is populated for the pinned epoch") keys on exactly that undefined predicate | FR-089, FR-086, FR-090 |
+| FND-005 | medium | FR-089 selection-digest attestation has an identity gap: crown selection is "sized to capacity" where capacity is a per-session GUC, so a build/manifest-time attested digest cannot exist for all capacities; who computes and attests the digest, when, and under what key (epoch × capacity? per backend?) is unstated, and per-backend GUC divergence makes "the" crown of an epoch ill-defined while the lifecycle clause keys the crown by epoch fingerprint only | FR-089, FR-089-CON-2, FR-088 |
+| FND-006 | medium | FR-088 conflates resolved capacity C with actual head size: with floor 4096 and N < floor, C > N and the selected membership has sample_count < C; the manifest attests C while the membership blob decodes sample_count (FR-080-AC-8) — which number governs trained-policy validity (C = 4096), crown capacity-vs-C comparisons, and the frozen 16..=1,048,576 validity domain is unstated | FR-088, FR-088-CON-1, FR-080-AC-8, FR-089 |
+| FND-007 | medium | FR-088 law-resolution misconfiguration domain undefined: floor > ceiling makes clamp undefined (panics in the obvious implementation), floor below 16 or ceiling above 1,048,576 escapes the frozen validity domain CON-1 asserts, and rate NaN (fails `> 0`, silently disabling the law), negative, or infinite are never rejected; no validation point (reloption set vs T2 build) or error class is named | FR-088, FR-088-CON-1 |
+| FND-008 | medium | FR-088 precedence between law and explicit cap is undecidable in the stated config model: `head_index_cap` is a pre-existing reloption with a default, and reloptions do not distinguish "explicitly set" from "defaulted", so a build with rate > 0 and an untouched cap cannot tell which branch ("explicit cap takes precedence") applies; the override attestation bit then attests an unobservable distinction | FR-088, FR-088-AC-3, FR-080-CON-2 |
+| FND-009 | medium | FR-088's sizing attestation has no home in the digest chain: the FR-082 v2 manifest and its v1/v2 build_options subrecords are frozen fixed-layout wire formats (30 bytes, `head_index_cap u32`) with no slot for rate, floor, ceiling, N, or the override flag; whether attestation requires a manifest v3 / options v3 (and what old-epoch decode does) is unstated, yet FR-088-AC-2 requires tamper-evidence through that chain | FR-088, FR-088-AC-2, FR-082 |
+| FND-010 | medium | FR-088 determinism claim rests on unstated float semantics: `ceil(rate × N)` near an integer boundary can resolve differently across float widths, rounding modes, and ISAs (Intel / Graviton / M5 are all supported lanes), and the canonical encoding of `rate` inside the attestation (bit pattern vs decimal) is unstated — "identical build inputs yield identical C" and CON-2's replay-identical attestation need both pinned | FR-088, FR-088-CON-2, FR-082 |
+| FND-011 | medium | FR-080 replica attested-but-unservable behavior undefined: attestation proves import completed, not that the copy remains readable; when routing selects a replica whose imported shard fails to serve (corruption, dropped copy table rows), whether the scan retries the shard owner or errors is unstated; replica copy-table cleanup at epoch retire/reclaim and for nodes removed from the successor roster is also unstated (stale attested copies accumulate outside the FR-082 reclaim inventory) | FR-080, FR-082, NFR-021 |
+| FND-012 | low | FR-086 gateway subset is selection-nondeterministic: "refusal-bounded subset" makes membership depend on population batch order, which is unstated — unlike the crown's attested deterministic selection — so per-backend gateway sets diverge and response-byte A/B metrics (FR-086-AC-5) are not reproducible across backends or runs; results are unaffected (AC-1) but the measured quantity is | FR-086, FR-086-AC-5, FR-089 |
+| FND-013 | low | Within-epoch tombstone staleness in both code caches: head membership is frozen (D10) but landmarks can be tombstoned mid-epoch (FR-083); the rebuild-only crown keeps ranking a tombstoned landmark as a promising seed and the gateway entry caches a tombstone flag whose authority is the owner anyway (purpose and staleness of the cached flag unstated); whether head search excludes tombstoned landmarks — and whether fused and unfused paths agree on that — is unstated, a seed-set-equivalence hazard for FR-090-AC-4 | FR-089, FR-086, FR-090, FR-083, FR-085 |
+| FND-014 | low | FR-088 leaves N's composition unstated: "cumulative captured record count at T2 seal" does not say whether tombstoned and replaced records captured by the build snapshot count toward N, so two builds over the same live set with different DML history can resolve different C while both claim the law | FR-088, FR-078, FR-083 |
+| FND-015 | medium | FR-090 exact seed policy is structurally unachievable when crown ⊂ head: with capacity < C the coordinator selects seeds from a coarser universe than the unfused owner-shard search, so reproducing the unfused seed set exactly is impossible in general; the condition under which the exact policy (and the fixture seed-digest check) is claimable — capacity ≥ C? crown = full head? — is unstated, leaving AC-4's dichotomy without a decidable trigger | FR-090, FR-090-AC-4, FR-089, FR-088 |
+
+## Resolutions (same session, post-review)
+
+- FND-001 resolved: FR-089 width pruning is now an explicit measured arm —
+  dedicated GUC, population-complete precondition (no pruning of shards the
+  crown does not fully hold), labeled seed-set change excluded from AC-1.
+- FND-002 resolved: FR-090 defines the fused request as an ordinary FR-079
+  expansion whose requested vec_ids are the crown-ranked seed candidates
+  (no wire extension), bounded by seed_count on round 1, with the
+  NFR-019 accounting stated (`seed_count + BW × (H − 1)`).
+- FND-003 resolved: FR-090 mid-request failure clause added — epoch
+  mismatch consumes the single retry and re-enters unfused with crown
+  state discarded; non-retriable owner failure aborts per FR-079.
+- FND-004 resolved: FR-089 population runs at scan open before serving,
+  degrades resiliently on RPC failure, and "populated" is defined as the
+  population-complete predicate FR-090 consumes; FR-086 subset selection
+  made deterministic (membership-order prefix).
+- FND-005 resolved: FR-089 selection digest computed by the populating
+  backend under the identity (epoch_fingerprint, capacity); CON-2 amended.
+- FND-006 resolved: FR-088 attests both resolved C and sample_count and
+  names which governs what.
+- FND-007 resolved: FR-088 validation clause added (EC_HEAD_SIZING at T2
+  for non-finite/negative rate, floor > ceiling, out-of-domain bounds).
+- FND-008 resolved: precedence is rate-only (rate = 0 ⇒ explicit cap);
+  the unobservable "explicitly set" distinction is removed; AC-3 rewritten.
+- FND-009 resolved: attestation carrier named — build-options v3 subrecord
+  (FR-078 wire family) with the v1/v2 decode rule.
+- FND-010 resolved: arithmetic pinned (one f64 multiply, ceil, clamp);
+  rate attested as its IEEE-754 bit pattern.
+- FND-011 resolved: FR-080 replica serve-failure falls back to the shard
+  owner; replica copy/attestation reclaim assigned to FR-082 (with the
+  known no-deletion-path gap note).
+- FND-012 resolved: FR-086 deterministic membership-order-prefix subset.
+- FND-013 resolved: FR-080 states frozen-membership tombstone semantics
+  identical across fused/unfused/crown paths; FR-086 marks the cached
+  flag advisory with owner authority at expansion time.
+- FND-014 resolved: FR-088 defines N as snapshot-captured records
+  (excludes dead-at-capture; later tombstones do not re-size).
+- FND-015 resolved: FR-090 exact seed policy claimable only when crown
+  capacity ≥ sample_count; coarser crowns are labeled seed-set changes by
+  construction.

@@ -26,7 +26,10 @@ published global graph via distributed self-insertion without a rebuild.
 This requirement is explicitly scoped into two tiers, and every clause below
 names its tier:
 
-- **Tier 1 — Shipped now.** DML on the legacy single-node lane (the
+- **Tier 1 — Current contract.** The tier names the lane and contract
+  status, not blanket shipped-ness: two Tier-1 clauses carry flagged
+  nonconformances (the v5 noop delete; the unhardened fold endpoint) and
+  say so inline. DML on the legacy single-node lane (the
   [FR-085](../FR-085-distann-domain-model.md) fixture/bootstrap substrate):
   local in-place tombstone delete, the bounded delta-buffer interim insert
   with same-statement visibility, and the fold maintenance endpoint. On the
@@ -44,7 +47,7 @@ names its tier:
 
 ## Behavior
 
-### Tier 1 — Shipped Now
+### Tier 1 — Current Contract (legacy lane; two flagged nonconformances)
 
 - **Local tombstone delete (legacy lane)**: on a non-distributed-control
   index, `ambulkdelete` SHALL set the tombstone flag (FR-076 flag bit) in

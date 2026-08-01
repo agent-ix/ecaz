@@ -55,7 +55,10 @@ neighbors into the beam and exact distances into the result heap.
   tombstone authority still come from the owner rows.
 - Head seeding on a multi-owner roster SHALL follow the persisted head shape:
   a membership-only head fans a per-shard head-search request to every
-  head-shard holder and merges at most `seed_count` seeds per holder
+  head-shard holder — except where an explicitly enabled
+  [FR-089](./FR-089-distann-crown-cache.md) width-pruning arm narrows the
+  fan-out or [FR-090](./FR-090-distann-fused-head-hop.md) fuses the hop —
+  and merges at most `seed_count` seeds per holder
   deterministically, per [FR-080](./FR-080-distann-coordinator-head-index.md);
   the merged seeds feed the hop-round frontier. The coordinator-local descent
   is only the single-owner degenerate shape.

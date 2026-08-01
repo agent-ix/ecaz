@@ -25,7 +25,12 @@ read; a tombstone may skip it
 ADR-085 D11). Exact-rerank row reads are therefore no greater than expanded
 records and remain bounded by BW × H. Final payload materialization is driven
 in fixed global-ranked windows of `W = 10`. Let `D = max(initial_search_bar ×
-64, 1024)`, fixed once when the scan begins. For an unqualified top-k scan in
+64, 1024)`, fixed once when the scan begins, where `initial_search_bar` is
+the scan's effective initial result bound — `ec_distann.top_k`, or the
+pushed-down `ORDER BY ... LIMIT` bound when the planner provides a smaller
+one (owned by
+[FR-081](../functional/distann/read/FR-081-distann-query-orchestration.md)'s
+iterative-deepening clause). For an unqualified top-k scan in
 the absence of tombstone or snapshot-visibility skips, payload row-tier reads
 are bounded by `min(D, W × ceil(k / W))`; the final window may therefore
 over-read at most `W - 1` ranked slots. If `t` tombstone or snapshot-invisible

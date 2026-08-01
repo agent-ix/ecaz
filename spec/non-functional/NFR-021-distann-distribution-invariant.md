@@ -34,9 +34,12 @@ below hold, at every measured scale. The ec_distann index SHALL be distributed.
    and relation or projection count — never by `N`.
 3. **A structure the reference design distributes SHALL be distributed here even
    when it is small.** The FR-080 head index SHALL be sharded across the roster
-   (§2.2) and replicated for capacity (§4.1) regardless of its capacity `C`.
-   Smallness, constancy in `N`, and a measured absence of storage pressure are
-   **not** exemptions.
+   (§2.2) and servable with replication for capacity (§4.1) regardless of its
+   capacity `C`. The shard owner counts as each shard's first serving node;
+   `ec_distann.head_replica_count` (default 0) adds attested replicas beyond
+   the owner, so the shipped default — every shard served by its owner —
+   satisfies this clause under clause 5. Smallness, constancy in `N`, and a
+   measured absence of storage pressure are **not** exemptions.
 4. **No read path SHALL silently substitute a non-distributed structure for a
    distributed one.** A non-conforming accelerator is reachable only through an
    explicit opt-in, labels every result and every emitted row it produces, and
@@ -128,7 +131,7 @@ term as a first-class requirement.
 | unsharded O(N) derived-relation bytes resident on a coordinator or non-owner | 0 | 0 | relation-classified per-node storage audit |
 | coordinator-resident index and index-derived bytes, itemised by relation | bounded structures only | every relation classified, and each one bounded by `k`, `L`, dimension, roster size, or relation count | per-node storage audit; an unclassified coordinator-resident relation makes the verdict `unavailable`, never a pass |
 | head index bytes resident on a node outside the serving roster | 0 | 0 | per-node storage audit (head sample, head graph, and head cache attributed to their holding node) |
-| head index replica count | ≥ 1 per roster shard | sharded across the roster; capacity `C` is not a factor | build manifest inspection (not yet mechanized — see Verification) |
+| head shard serving nodes | ≥ 1 per roster shard (the owner); + `head_replica_count` attested replicas | sharded across the roster; capacity `C` is not a factor | build manifest inspection (not yet mechanized — see Verification) |
 | coordinator-owned graph records when the coordinator is outside the serving roster | 0 | 0 | topology audit |
 | non-conforming accelerator reachable without an explicit opt-in | 0 | 0 | default-configuration run: the accelerator is never opened and no arm carries its label |
 
@@ -141,14 +144,23 @@ tag. The class vocabulary is normative:
   resident on the coordinator. Always a distribution gap: any non-zero bytes
   in this class are a hard violation (the known-gap allowlist is empty by
   design).
-- `bounded` — a structure bounded by `k`, `L`, dimension, roster size, or
-  relation/projection count (the permitted list in the Statement). The
-  conformance reader skips `bounded` rows in the derived-bytes check, so the
-  tag is load-bearing: **no emitter currently produces it**, and a producer
-  claiming `bounded` SHALL guarantee the bound by construction and name the
-  bounding parameter in the emitting code and the packet manifest. An
-  unbounded structure tagged `bounded` is a conformance-machinery defect, not
-  a pass.
+- `bounded` — a structure bounded by a stated parameter that is never a
+  function of `N`. Admitted bounding parameters: `k`, `L`, dimension, roster
+  size, relation/projection count (the permitted list in the Statement),
+  head capacity `C` and its replica multiple (owner- or replica-resident
+  head-shard state per FR-080), and the stated capacity GUCs
+  (`ec_distann.gateway_copy_capacity`, `ec_distann.crown_capacity`). Within
+  this class, the **bounded codes-only subclass** (FR-086 gateway copies,
+  FR-089 crown) additionally holds only identifiers and quantized codes —
+  never full-precision vectors — and is the only `bounded` form permitted
+  to be coordinator-resident and corpus-derived. This vocabulary is the
+  single normative definition; FR-086/FR-087/FR-089 cite it and SHALL NOT
+  restate their own. The conformance reader skips `bounded` rows in the
+  derived-bytes check, so the tag is load-bearing: **no emitter currently
+  produces it**, and a producer claiming `bounded` SHALL guarantee the
+  bound by construction and name the bounding parameter in the emitting
+  code and the packet manifest. An unbounded structure tagged `bounded` is
+  a conformance-machinery defect, not a pass.
 - `control` — control-plane metadata: digests, counts, and the
   membership-only head's bounded id blob (roster-like state, not
   corpus-derived).

@@ -29,11 +29,14 @@ the whole index satisfies the summed budget and is nonetheless a breach.
 **A full index replica — including a replica whose non-owned records are
 filtered or tombstoned, and including a derived, optional, or rebuildable
 performance object that holds graph records or full-precision vectors for
-vec_ids the node does not own — SHALL NOT be built, and is not a valid
-distributed measurement lane.** The FR-084 coordinator traversal replica as
-specified is an instance of this excluded class. See
-[NFR-021](./NFR-021-distann-distribution-invariant.md) for the governing
-per-node invariant.
+vec_ids the node does not own — SHALL NOT be built or resident in any
+conforming or measured decision lane, and is not a valid distributed
+measurement lane.** The FR-084 coordinator traversal replica is an instance
+of this excluded class: it remains implemented solely as the
+[NFR-021](./NFR-021-distann-distribution-invariant.md) clause-4
+non-conforming opt-in (`ec_distann.allow_nonconforming_replica`, default
+off, context lanes only per ADR-087) and SHALL NOT exist in any lane this
+NFR measures. See NFR-021 for the governing per-node invariant.
 
 ## Scope
 

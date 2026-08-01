@@ -322,9 +322,12 @@ Collapsed granularity notes (Task 214 rebase to the shipped taxonomy):
 - `EC_SCHEMA_MISMATCH` is no longer a distinct code; the materialization
   schema-fingerprint mismatch raises `EC_BAD_INPUT` with a
   schema-mismatch message.
-- `EC_EPOCH_FINGERPRINT_VERSION` is no longer a distinct code; an unknown
+- `EC_EPOCH_FINGERPRINT_VERSION` is no longer a distinct code **on the
+  expansion/materialization endpoints of this FR**; there an unknown
   fingerprint version surfaces as message text within the enclosing epoch
-  decode error class.
+  decode error class. The lifecycle surface retains it as a distinct
+  normative code per
+  [FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md).
 - `EC_REMOTE_INTERNAL` is spelled `EC_INTERNAL`.
 - `EC_UNSUPPORTED_PROJECTION` is a coordinator plan-time error, not an
   owner-endpoint category.

@@ -305,6 +305,19 @@ successor_activation bytea, successor_activation_digest bytea) RETURNS void`
 retire_decision bytea, retire_decision_digest bytea)
 RETURNS void`
 
+Retire application and index cleanup SHALL also reclaim the
+epoch-fingerprint-scoped head-replica state for the retired epoch: the
+`ec_distann_head_shard_replica` copy rows and the
+`ec_distann_head_replica_state` attestation row
+([FR-080](../read/FR-080-distann-coordinator-head-index.md) populates
+them; this FR owns their teardown, and
+[FR-087](../storage/FR-087-distann-catalog-relations.md) records the
+schema).
+
+> Implementation gap (Task 214 audit, 2026-08-01): no deletion path exists
+> today for either relation — retired epochs and dropped indexes leak
+> their rows. Candidate code fix; the requirement stands.
+
 `ec_distann_reclaim_cancelled_generation(index_regclass regclass,
 cancellation_audit bytea, cancellation_audit_digest bytea) RETURNS void`
 

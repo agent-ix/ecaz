@@ -31,29 +31,58 @@ belongs (Task 210, `reviews/task-210/006-zero-byte-head/`).
 ## Inputs
 
 - Reloptions on the control index:
-  - `head_sampling_rate` (float; default 0 = law disabled — see override
-    below),
+  - `head_sampling_rate` (float; default 0 = law disabled; the **only**
+    switch between law and explicit cap — see precedence below),
   - `head_cap_floor` (int; default 4096, the ADR-085 D3 measured retention),
-  - `head_cap_ceiling` (int; default 1,048,576, the frozen v1 upper bound),
-  - `head_index_cap` (int; the pre-existing explicit cap, retained as the
-    fixture/pin override).
-- N: the build's cumulative captured record count at T2 seal time
+  - `head_cap_ceiling` (int; default 1,048,576, the upper bound of the
+    frozen v1 head-cap validity domain defined by
+    [FR-078](../build/FR-078-distann-hash-placement.md)'s build-options
+    validity rules),
+  - `head_index_cap` (int; the pre-existing explicit cap, governing
+    whenever the law is disabled — the fixture/pin path).
+- N: the build's captured record count at T2 seal time — the count of
+  records captured under the frozen build snapshot
   ([FR-078](../build/FR-078-distann-hash-placement.md) owner-stream
-  accounting).
+  accounting), which excludes tuples dead at capture; records later
+  tombstoned within the epoch do not change the already-resolved C.
 
 ## Behavior
 
 - When `head_sampling_rate` > 0, the T2 build SHALL resolve
   `C = clamp(ceil(rate × N), floor, ceiling)` from the captured record
-  count and use that C for head selection (FR-080 Selection). Resolution
-  SHALL be deterministic: identical build inputs yield identical C.
-- When an explicit `head_index_cap` is set (fixture pin) or
-  `head_sampling_rate` is 0, the build SHALL use the explicit cap unchanged
-  (the pre-law behavior). The explicit cap takes precedence over the law.
-- The epoch manifest SHALL attest the sizing decision: resolved C, the law
-  inputs (rate, floor, ceiling, N), and whether an explicit override was in
-  force. Attestation SHALL be bound into the manifest digest chain so a
-  replayed build cannot silently resolve a different head size.
+  count and use that C for head selection (FR-080 Selection). The
+  arithmetic is pinned for cross-ISA determinism: one f64 multiplication
+  of the reloption's f64 rate by N converted to f64, then `ceil`, then the
+  clamp — identical build inputs yield identical C on every supported
+  lane.
+- **Precedence is observable by the rate alone**: `head_sampling_rate` = 0
+  (the default) means the explicit `head_index_cap` governs unchanged (the
+  pre-law behavior and the fixture/pin path); rate > 0 means the law
+  governs and `head_index_cap` is ignored for sizing. There is no
+  "explicitly set cap" detection — reloptions cannot distinguish set from
+  defaulted, so the rate is the single switch.
+- **Validation.** At T2 build time (before any capture work) the build
+  SHALL reject with the stable error class `EC_HEAD_SIZING`: a non-finite
+  or negative `head_sampling_rate`; `head_cap_floor` >
+  `head_cap_ceiling`; and a floor or ceiling outside the frozen v1
+  head-cap validity domain (16..=1,048,576 per
+  [FR-078](../build/FR-078-distann-hash-placement.md)).
+- **Resolved capacity vs selected size.** C is the sizing cap; the actual
+  selected membership MAY be smaller (`sample_count` < C whenever N < C,
+  e.g. N below the floor). `sample_count` governs storage and decode
+  (FR-080-AC-8's membership blob); resolved C governs the validity domain
+  and the trained-policy check. Both SHALL be attested.
+- **Attestation carrier.** The sizing attestation — resolved C, selected
+  `sample_count`, rate (as its IEEE-754 f64 bit pattern, u64 LE), floor,
+  ceiling, N, and the law-active flag — SHALL be carried in a version-3
+  build-options subrecord extending
+  [FR-078](../build/FR-078-distann-hash-placement.md)'s build_options
+  wire family, and is thereby bound into the existing build-spec/manifest
+  digest chain ([FR-082](../lifecycle/FR-082-distann-epoch-lifecycle.md))
+  so a replayed build cannot silently resolve a different head size.
+  Pre-law epochs (options v1/v2) decode as law-inactive with the explicit
+  cap attested; no compatibility shim beyond that decode rule is required
+  (research posture: format bumps are free, indexes rebuild).
 - The trained-head policy's exact-cap requirement
   (`training_landmarks_exact` requires C = 4096) SHALL be reconciled: a
   trained generation either pins the explicit cap or the law's resolved C
@@ -73,16 +102,16 @@ belongs (Task 210, `reviews/task-210/006-zero-byte-head/`).
 
 | ID | Constraint | Type | Validation |
 |----|------------|------|------------|
-| FR-088-CON-1 | Resolved C SHALL always lie within [floor, ceiling] and within the frozen v1 head-cap validity domain (16..=1,048,576) | Integrity | Unit test |
+| FR-088-CON-1 | Resolved C SHALL always lie within [floor, ceiling] and within the frozen v1 head-cap validity domain (16..=1,048,576, owned by [FR-078](../build/FR-078-distann-hash-placement.md)); the trained-policy exact-cap rule (C = 4096, [FR-078](../build/FR-078-distann-hash-placement.md) v2 options) SHALL be enforced against resolved C | Integrity | Unit test |
 | FR-088-CON-2 | The sizing attestation SHALL be digest-bound in the epoch manifest; two builds over identical inputs attest identical sizing | Determinism | Test |
 
 ## Acceptance Criteria
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-088-AC-1 | With a rate configured, resolved C equals clamp(ceil(rate × N), floor, ceiling) for the build's captured N, deterministically across replays | Test |
-| FR-088-AC-2 | The epoch manifest attests resolved C, rate, floor, ceiling, N, and override status; tampering with any attested field breaks the digest chain | Test |
-| FR-088-AC-3 | An explicit head_index_cap (or rate = 0) bypasses the law and is attested as an override | Test |
+| FR-088-AC-1 | With a rate configured, resolved C equals clamp(ceil(rate × N), floor, ceiling) for the build's captured N, deterministically across replays and ISAs (pinned f64 arithmetic) | Test |
+| FR-088-AC-2 | The v3 build-options attestation carries resolved C, sample_count, rate bit pattern, floor, ceiling, N, and the law-active flag; tampering with any attested field breaks the digest chain | Test |
+| FR-088-AC-3 | Rate = 0 (default) uses the explicit head_index_cap and attests law-inactive; misconfiguration (non-finite/negative rate, floor > ceiling, out-of-domain bounds) fails with EC_HEAD_SIZING | Test |
 | FR-088-AC-4 | A trained-head generation with a law-resolved C incompatible with its policy fails the build with a stable error | Test |
 | FR-088-AC-5 | Rate sweep A/B at 10k/50k/100k reports recall, latency, storage, and per-arm hop/frontier counters (`traversal_hop_rounds` non-zero); an arm improving latency without moving hop counts is flagged in the packet, not promoted | Analysis (bench) |
 | FR-088-AC-6 | Coordinator head-relation derived bytes remain zero as C grows (membership-only persistence) | Test + storage audit |

@@ -29,15 +29,24 @@ already bounded by C and expanded first by every scan.
 
 - **Bound.** Capacity SHALL be the `ec_distann.gateway_copy_capacity`
   session GUC (0..65536, default 0 = disabled), a stated constant
-  independent of corpus size. Inserts past capacity SHALL be refused, not
+  independent of corpus size. The set is **per-backend** (like the FR-089
+  crown and the owner-side head-shard caches); CON-1's resident-bytes
+  bound applies per backend. Inserts past capacity SHALL be refused, not
   evicted, so the structure cannot exceed its bound under any traversal
-  pattern. When the head membership exceeds capacity, the set holds a
-  refusal-bounded subset.
+  pattern. When the head membership exceeds capacity, the set SHALL hold
+  the deterministic head-membership-order prefix that fits (so every
+  backend at equal capacity holds the same subset and A/B response-byte
+  measurements are reproducible).
 - **Content.** Each entry SHALL hold exactly `(vec_id, tombstone flag,
   neighbor vec_ids, quantized neighbor codes)` — the
   [FR-079](./FR-079-distann-remote-expansion-protocol.md) candidate half.
-  Full-precision vectors, row payloads, and exact distances SHALL NOT be
-  cached.
+  The cached tombstone flag is advisory routing data as of population
+  time; tombstone authority remains the owner's at expansion time
+  (mid-epoch tombstones are seen through owner responses, identically
+  with the set on or off). Full-precision vectors, row payloads, and
+  exact distances SHALL NOT be cached. This is the
+  [NFR-021](../../../non-functional/NFR-021-distann-distribution-invariant.md)
+  bounded codes-only subclass (NFR-021 owns the class definition).
 - **Population.** The set SHALL be populated per epoch from the head
   membership via bounded owner batch RPCs
   (`ec_distann_gateway_routing_export`); owners remain the source of truth.
@@ -88,7 +97,7 @@ sequenceDiagram
 
 | ID | Constraint | Type | Validation |
 |----|------------|------|------------|
-| FR-086-CON-1 | Resident gateway-copy bytes SHALL be bounded by capacity × (degree × (8 + code bytes) + entry header), independent of N | Memory | Analysis + unit test |
+| FR-086-CON-1 | Resident gateway-copy bytes per backend SHALL be bounded by capacity × (degree × (8 + code bytes) + entry header), independent of N | Memory | Analysis + unit test |
 
 ## Acceptance Criteria
 

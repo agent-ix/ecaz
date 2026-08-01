@@ -40,6 +40,8 @@ and mutated only by building and publishing a successor epoch.
 | Gateway copy | Bounded coordinator-resident routing payload (landmark neighbor ids + quantized codes, never vectors) letting owners omit neighbor payloads the coordinator can reconstruct. |
 | Hop round | One synchronized traversal step: coordinator batches frontier candidates per owner, owners expand and code-score neighbors under pushed-down threshold and limit, coordinator merges. |
 | Traversal replica | Opt-in, non-authoritative, rebuildable coordinator copy of the graph (FR-084); non-conforming under the distribution invariant and never decision-bearing. |
+| Crown | Fixed-capacity coordinator navigation cache over a subset of head landmarks, codes only (FR-089); capacity independent of N and C; narrows the protocol, never substitutes. |
+| Fused head hop | First traversal expansion carrying the seed work: crown codes answer the candidate half at the coordinator, exact seed distances return with the first owner expansion (FR-090). |
 | Scan pin | Shared-memory registration binding an open scan to its epoch fingerprint so retirement fences observe in-flight readers. |
 
 ## Architecture
@@ -183,9 +185,15 @@ protocol ([FR-079](./read/FR-079-distann-remote-expansion-protocol.md)), the
 head ([FR-080](./read/FR-080-distann-coordinator-head-index.md)), query
 orchestration ([FR-081](./read/FR-081-distann-query-orchestration.md)), the
 epoch lifecycle ([FR-082](./lifecycle/FR-082-distann-epoch-lifecycle.md)),
-the DML path ([FR-083](./lifecycle/FR-083-distann-dml-path.md)), and the
+the DML path ([FR-083](./lifecycle/FR-083-distann-dml-path.md)), the
 opt-in traversal replica
-([FR-084](./read/FR-084-distann-coordinator-traversal-replica.md)).
+([FR-084](./read/FR-084-distann-coordinator-traversal-replica.md)),
+bounded gateway copies
+([FR-086](./read/FR-086-distann-gateway-copies.md)), the catalog surface
+([FR-087](./storage/FR-087-distann-catalog-relations.md)), the head
+scaling law ([FR-088](./read/FR-088-distann-head-scaling-law.md)), the
+crown cache ([FR-089](./read/FR-089-distann-crown-cache.md)), and the
+fused head hop ([FR-090](./read/FR-090-distann-fused-head-hop.md)).
 
 Inside the boundary, "epoch" always means a published build epoch (the only
 visibility boundary for coherent graph state), "owner" always means the hash
@@ -207,7 +215,7 @@ conformance envelope for benchmark evidence is
 
 | ID | Criteria | Verification |
 |----|----------|--------------|
-| FR-085-AC-1 | The spec defines the DistANN bounded context using control index, logical index UUID, roster, hash placement, vec_id, generation, build epoch, manifest, fingerprint, active-epoch pointer, head, head shard, head replica, gateway copy, hop round, traversal replica, and scan pin | Inspection |
+| FR-085-AC-1 | The spec defines the DistANN bounded context using control index, logical index UUID, roster, hash placement, vec_id, generation, build epoch, manifest, fingerprint, active-epoch pointer, head, head shard, head replica, gateway copy, crown, fused head hop, hop round, traversal replica, and scan pin | Inspection |
 | FR-085-AC-2 | The spec states the single-global-graph rule and disjoint per-epoch hash ownership, never describing shards as independent indexes | Inspection |
 | FR-085-AC-3 | The spec defines epoch publication (durable decision + pointer CAS) as the only visibility boundary for coherent graph state | Inspection |
 | FR-085-AC-4 | The spec states the coordinator distribution invariant: membership-only head persistence, bounded code-only structures, and the opt-in non-conforming status of any coordinator graph copy | Inspection |
@@ -220,6 +228,7 @@ conformance envelope for benchmark evidence is
 
 - **Upstream**: [StR-008](../../stakeholder/StR-008-distributed-search-single-instance-economics.md)
   distributed search at single-instance economics.
-- **Downstream**: FR-075..FR-084 (the requirements scoped by the Bounded
+- **Downstream**: FR-075..FR-090 (the requirements scoped by the Bounded
   Context section above); [NFR-017](../../non-functional/NFR-017-distann-latency-recall-gate.md)..[NFR-022](../../non-functional/NFR-022-distann-control-validity.md);
-  ADR-085 (single global graph), ADR-086 (traversal replica).
+  ADR-085 (single global graph), ADR-086 (traversal replica), ADR-087
+  (sharded head default, replica demotion).
