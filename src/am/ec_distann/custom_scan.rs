@@ -1401,32 +1401,44 @@ unsafe fn run_physical_generation_search(
         .collect::<Vec<_>>();
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let total_started = Instant::now();
-    if state.physical_generation.is_none() {
+    let collection = super::scan::run_scan_attempt_with_restart(|| {
+        // A retry must discard the old epoch-scoped crown and physical
+        // generation before reopening.  The fresh open repopulates the crown
+        // only for the active fingerprint/capacity, then the complete search
+        // (including head selection) is re-entered under that state.
+        state.physical_generation = None;
         state.physical_generation = Some(
             super::generation_read::PhysicalGenerationScan::open(state.index_oid)
-                .unwrap_or_else(|error| pgrx::error!("{error}")),
+                .map_err(|error| super::expand_error::DistannExpandError::Internal(error.to_string()))?,
         );
-    }
+        let context = state
+            .physical_generation
+            .as_ref()
+            .expect("physical generation initialized");
+        if state.frozen_row_slot.is_null() {
+            let estate = (*scan_state).ps.state;
+            if let Some(relation) = context.row_relation() {
+                state.frozen_row_slot = pg_sys::ExecInitExtraTupleSlot(
+                    estate,
+                    (*relation).rd_att,
+                    pg_sys::table_slot_callbacks(relation),
+                );
+                if state.frozen_row_slot.is_null() {
+                    return Err(super::expand_error::DistannExpandError::Internal(
+                        "EC_GENERATION_MISSING: could not allocate frozen row-tier slot".to_owned(),
+                    ));
+                }
+            }
+        }
+        context
+            .search(snapshot, source_attnum, &state.query, effective)
+            .map_err(super::generation_read::PhysicalGenerationScan::classify_search_error)
+    })
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
     let context = state
         .physical_generation
         .as_ref()
         .expect("physical generation initialized");
-    if state.frozen_row_slot.is_null() {
-        let estate = (*scan_state).ps.state;
-        if let Some(relation) = context.row_relation() {
-            state.frozen_row_slot = pg_sys::ExecInitExtraTupleSlot(
-                estate,
-                (*relation).rd_att,
-                pg_sys::table_slot_callbacks(relation),
-            );
-            if state.frozen_row_slot.is_null() {
-                pgrx::error!("EC_GENERATION_MISSING: could not allocate frozen row-tier slot");
-            }
-        }
-    }
-    let collection = context
-        .search(snapshot, source_attnum, &state.query, effective)
-        .unwrap_or_else(|error| pgrx::error!("{error}"));
     #[cfg(feature = "distann-head-attribution-benchmark")]
     super::stage_counters::record_work(
         super::stage_counters::DistannMaterializationWork::RankedCandidates,

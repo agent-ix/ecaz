@@ -3228,6 +3228,21 @@ impl PhysicalGenerationScan {
             .is_some_and(|cache| cache.capacity() != crown_capacity)
         {
             crown = None;
+            super::crown_cache::record_cleared();
+            cache_physical_epoch(CachedPhysicalEpoch {
+                index_oid,
+                logical_index_uuid,
+                build_id: active.build_id,
+                fingerprint: active.fingerprint,
+                descriptor: Arc::clone(&descriptor),
+                descriptor_digest,
+                head_index: head_index.clone(),
+                gateway_copies: gateway_copies.clone(),
+                crown: None,
+            });
+        }
+        if crown_capacity == 0 {
+            super::crown_cache::record_cleared();
         }
         if crown.is_none() && crown_capacity > 0 {
             if let Some(head) = head_index.as_ref() {
@@ -3240,6 +3255,7 @@ impl PhysicalGenerationScan {
                 ) {
                     let populated = Arc::new(populated);
                     crown = Some(Arc::clone(&populated));
+                    super::crown_cache::record_population(&populated);
                     cache_physical_epoch(CachedPhysicalEpoch {
                         index_oid,
                         logical_index_uuid,
@@ -3253,6 +3269,9 @@ impl PhysicalGenerationScan {
                     });
                 }
             }
+        }
+        if let Some(crown) = crown.as_ref() {
+            super::crown_cache::record_population(crown);
         }
         let generation =
             generation_catalog::lookup_generation(index_oid, logical_index_uuid, active.build_id)?;
@@ -3569,6 +3588,17 @@ impl PhysicalGenerationScan {
         })
     }
 
+    /// Preserve the retriable epoch category after the physical search path's
+    /// legacy string-shaped setup errors have been collapsed.  Remote owner
+    /// errors retain the stable category token in their Display form.
+    pub(crate) fn classify_search_error(message: String) -> DistannExpandError {
+        if message.starts_with("[EC_EPOCH_MISMATCH]") {
+            DistannExpandError::EpochMismatch(message)
+        } else {
+            DistannExpandError::Internal(message)
+        }
+    }
+
     /// Whether head-shard replicas were populated for this epoch (Task 210 P2b).
     /// Whether this epoch's replica population attests at least
     /// `requested_count` replicas per shard. Population records the count only
@@ -3729,16 +3759,19 @@ impl PhysicalGenerationScan {
     fn select_seed_candidates(&self, query: &[f32]) -> Result<Vec<DistannSeedCandidate>, String> {
         let fused = super::options::fused_head_hop();
         let width_pruning = super::options::crown_width_pruning();
-        // A populated crown is itself an admissible seed source.  The fused
-        // and width-pruning switches select how those seeds are consumed, but
-        // a plain crown arm must still exercise the cache for Task 212/213
-        // A/B attribution.
-        if super::options::crown_capacity() > 0 || fused || width_pruning {
+        // The crown is a candidate cache, not a replacement for the FR-080
+        // head fan-out.  Only the explicit FR-090 fused arm may use ranked
+        // crown ids as traversal seeds; width pruning may use crown scores to
+        // narrow complete shards.  A plain crown-on arm must therefore remain
+        // result-neutral and execute the ordinary full sharded head search.
+        if super::options::crown_capacity() > 0 {
             let production_seed_count = (super::options::current_beam_width() * 2).max(32);
             let search_width = super::options::current_head_search_width(production_seed_count);
             let seed_count = super::options::current_head_seed_count(production_seed_count);
             let Some(crown) = self.crown.as_ref() else {
-                super::crown_cache::record_fallback();
+                if fused || width_pruning {
+                    super::crown_cache::record_fallback();
+                }
                 return self.select_seed_candidates_without_crown(query);
             };
             let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)?;
@@ -3747,7 +3780,7 @@ impl PhysicalGenerationScan {
                 &self.descriptor.codec_artifact,
                 query,
             )?;
-            let seeds = crown.rank(query, seed_count, |code| {
+            let seeds = crown.rank(seed_count, |code| {
                 let mut distance = [0.0_f32; 1];
                 prepared
                     .score_dists_batch(code, code_len, 1, &mut distance)
@@ -3768,11 +3801,18 @@ impl PhysicalGenerationScan {
                 && self.routes.len() > 1
             {
                 if let Some(head) = self.head_index.as_ref() {
+                    // A width arm is intentionally more selective than the
+                    // ordinary head seed count.  This leaves a measurable
+                    // candidate-shard decision while retaining the complete
+                    // crown-held shard safety rule below.
                     let promising = seeds
                         .iter()
+                        .take((seed_count / self.routes.len().max(1)).max(1))
                         .map(|seed| seed.vec_id)
                         .collect::<std::collections::HashSet<_>>();
+                    let crown_ids = crown.entry_ids().collect::<std::collections::HashSet<_>>();
                     let mut filtered_members = Vec::new();
+                    let mut pruned_shards = 0;
                     for ordinal in 0..self.routes.len() {
                         let shard = super::head_sample::head_shard_members(
                             head.members(),
@@ -3780,13 +3820,19 @@ impl PhysicalGenerationScan {
                             self.routes.len(),
                             self.descriptor.placement_hash_version,
                         );
-                        let complete = shard.iter().all(|vec_id| crown.contains(*vec_id));
+                        let complete = shard.iter().all(|vec_id| crown_ids.contains(vec_id));
                         let keep = !complete || shard.iter().any(|vec_id| promising.contains(vec_id));
                         if keep {
                             filtered_members.extend(shard);
+                        } else {
+                            pruned_shards += 1;
                         }
                     }
-                    if !filtered_members.is_empty() && filtered_members.len() < head.members().len() {
+                    if pruned_shards > 0
+                        && !filtered_members.is_empty()
+                        && filtered_members.len() < head.members().len()
+                    {
+                        super::crown_cache::record_width_pruned_shards(pruned_shards);
                         return self.sharded_head_seeds(
                             query,
                             &filtered_members,
@@ -3797,10 +3843,11 @@ impl PhysicalGenerationScan {
                     }
                 }
             }
-            // Plain crown arms consume the attested, ranked subset directly;
-            // fused arms returned above and width-pruned arms may instead
-            // perform the ordinary shard expansion after filtering.
-            return Ok(seeds);
+            // Keep the plain crown arm identical to crown-off.  The ranking
+            // above is still exercised and counted for activation, but its
+            // candidates are not allowed to replace the authoritative head
+            // search unless one of the explicit measured arms opted in.
+            return self.select_seed_candidates_without_crown(query);
         }
         self.select_seed_candidates_without_crown(query)
     }
@@ -4215,7 +4262,12 @@ fn populate_crown_cache(
     if capacity == 0 || routes.is_empty() || head_members.is_empty() {
         return None;
     }
-    let selected = super::crown_cache::DistannCrownCache::select_member_ids(head_members, capacity);
+    let selected = super::crown_cache::DistannCrownCache::select_member_ids_for_roster(
+        head_members,
+        capacity,
+        routes.len(),
+        descriptor.placement_hash_version,
+    );
     let buckets = super::placement::group_by_owning_node(
         &selected,
         routes.len(),

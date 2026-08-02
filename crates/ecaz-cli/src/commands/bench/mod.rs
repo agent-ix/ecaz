@@ -52,17 +52,29 @@ pub(crate) fn sweep_value_label(profile: &IndexProfile, value: i32) -> String {
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct DistannCrownStats {
+    pub(crate) capacity: i64,
+    pub(crate) entries: i64,
+    pub(crate) resident_bytes: i64,
+    pub(crate) resident_bytes_bound: i64,
     pub(crate) crown_seeds_served: i64,
     pub(crate) crown_fallbacks: i64,
+    pub(crate) crown_width_pruned_shards: i64,
     pub(crate) fused_head_hops: i64,
 }
 
 impl DistannCrownStats {
     pub(crate) fn add_assign(&mut self, other: Self) {
+        self.capacity = self.capacity.max(other.capacity);
+        self.entries = self.entries.max(other.entries);
+        self.resident_bytes = self.resident_bytes.max(other.resident_bytes);
+        self.resident_bytes_bound = self.resident_bytes_bound.max(other.resident_bytes_bound);
         self.crown_seeds_served = self
             .crown_seeds_served
             .saturating_add(other.crown_seeds_served);
         self.crown_fallbacks = self.crown_fallbacks.saturating_add(other.crown_fallbacks);
+        self.crown_width_pruned_shards = self
+            .crown_width_pruned_shards
+            .saturating_add(other.crown_width_pruned_shards);
         self.fused_head_hops = self.fused_head_hops.saturating_add(other.fused_head_hops);
     }
 }
@@ -98,7 +110,9 @@ pub(crate) async fn snapshot_distann_crown_stats(
     }
     let Some(row) = client
         .query_opt(
-            "SELECT crown_seeds_served, crown_fallbacks, fused_head_hops
+            "SELECT capacity, entries, resident_bytes, resident_bytes_bound,
+                    crown_seeds_served,
+                    crown_fallbacks, crown_width_pruned_shards, fused_head_hops
                FROM ec_distann_crown_stats()",
             &[],
         )
@@ -107,9 +121,14 @@ pub(crate) async fn snapshot_distann_crown_stats(
         return Ok(None);
     };
     Ok(Some(DistannCrownStats {
-        crown_seeds_served: row.get(0),
-        crown_fallbacks: row.get(1),
-        fused_head_hops: row.get(2),
+        capacity: row.get(0),
+        entries: row.get(1),
+        resident_bytes: row.get(2),
+        resident_bytes_bound: row.get(3),
+        crown_seeds_served: row.get(4),
+        crown_fallbacks: row.get(5),
+        crown_width_pruned_shards: row.get(6),
+        fused_head_hops: row.get(7),
     }))
 }
 
@@ -119,8 +138,15 @@ pub(crate) fn format_distann_crown_stats(
     stats: DistannCrownStats,
 ) -> String {
     format!(
-        "[distann-crown-stats] lane={lane} label={label} crown_seeds_served={} crown_fallbacks={} fused_head_hops={}",
-        stats.crown_seeds_served, stats.crown_fallbacks, stats.fused_head_hops
+        "[distann-crown-stats] lane={lane} label={label} capacity={} entries={} resident_bytes={} resident_bytes_bound={} crown_seeds_served={} crown_fallbacks={} crown_width_pruned_shards={} fused_head_hops={}",
+        stats.capacity,
+        stats.entries,
+        stats.resident_bytes,
+        stats.resident_bytes_bound,
+        stats.crown_seeds_served,
+        stats.crown_fallbacks,
+        stats.crown_width_pruned_shards,
+        stats.fused_head_hops
     )
 }
 

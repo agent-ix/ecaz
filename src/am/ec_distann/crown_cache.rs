@@ -44,6 +44,53 @@ impl DistannCrownCache {
             .collect()
     }
 
+    /// Select a deterministic subset that includes one complete owner shard
+    /// whenever the fixed capacity can hold it.  Width pruning needs a real
+    /// complete shard to prove activation; the remaining capacity is filled
+    /// by the ordinary structural sample.  The placement identity is frozen
+    /// by the epoch descriptor, so equal inputs produce equal crowns.
+    pub(crate) fn select_member_ids_for_roster(
+        members: &[u64],
+        capacity: usize,
+        owner_count: usize,
+        placement_hash_version: u16,
+    ) -> Vec<u64> {
+        let mut ordered = members.to_vec();
+        ordered.sort_unstable();
+        ordered.dedup();
+        if capacity == 0 || ordered.is_empty() {
+            return Vec::new();
+        }
+        if ordered.len() <= capacity || owner_count == 0 {
+            return ordered.into_iter().take(capacity).collect();
+        }
+
+        let complete_shard = (0..owner_count).find_map(|owner| {
+            let shard = super::head_sample::head_shard_members(
+                &ordered,
+                owner,
+                owner_count,
+                placement_hash_version,
+            );
+            (shard.len() <= capacity).then_some(shard)
+        });
+        let Some(complete_shard) = complete_shard else {
+            return Self::select_member_ids(&ordered, capacity);
+        };
+
+        let mut selected = complete_shard;
+        for member in ordered {
+            if selected.len() >= capacity {
+                break;
+            }
+            if !selected.contains(&member) {
+                selected.push(member);
+            }
+        }
+        selected.sort_unstable();
+        selected
+    }
+
     pub(crate) fn from_entries(
         capacity: usize,
         epoch_fingerprint: [u8; 34],
@@ -94,9 +141,12 @@ impl DistannCrownCache {
         self.entries.iter().any(|entry| entry.vec_id == vec_id)
     }
 
+    pub(crate) fn entry_ids(&self) -> impl Iterator<Item = u64> + '_ {
+        self.entries.iter().map(|entry| entry.vec_id)
+    }
+
     pub(crate) fn rank<F>(
         &self,
-        query: &[f32],
         seed_count: usize,
         mut score: F,
     ) -> Result<Vec<DistannSeedCandidate>, String>
@@ -113,7 +163,6 @@ impl DistannCrownCache {
                 .total_cmp(&right.1)
                 .then_with(|| left.0.cmp(&right.0))
         });
-        let _ = query;
         Ok(ranked
             .into_iter()
             .take(seed_count)
@@ -124,19 +173,62 @@ impl DistannCrownCache {
 
 static CROWN_SEEDS_SERVED: AtomicU64 = AtomicU64::new(0);
 static CROWN_FALLBACKS: AtomicU64 = AtomicU64::new(0);
+static CROWN_ENTRIES: AtomicU64 = AtomicU64::new(0);
+static CROWN_RESIDENT_BYTES: AtomicU64 = AtomicU64::new(0);
+static CROWN_RESIDENT_BYTES_BOUND: AtomicU64 = AtomicU64::new(0);
+static CROWN_WIDTH_PRUNED_SHARDS: AtomicU64 = AtomicU64::new(0);
 static FUSED_HEAD_HOPS: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn record_seeds_served(count: usize) {
     CROWN_SEEDS_SERVED.fetch_add(count as u64, Ordering::Relaxed);
 }
 pub(crate) fn record_fallback() { CROWN_FALLBACKS.fetch_add(1, Ordering::Relaxed); }
+pub(crate) fn record_population(cache: &DistannCrownCache) {
+    CROWN_ENTRIES.store(cache.len() as u64, Ordering::Relaxed);
+    CROWN_RESIDENT_BYTES.store(cache.resident_bytes() as u64, Ordering::Relaxed);
+    let entry_bytes = cache
+        .entries
+        .iter()
+        .map(|entry| 8usize.saturating_add(entry.search_code.len()))
+        .max()
+        .unwrap_or(0);
+    CROWN_RESIDENT_BYTES_BOUND.store(
+        cache.capacity.saturating_mul(entry_bytes) as u64,
+        Ordering::Relaxed,
+    );
+}
+pub(crate) fn record_cleared() {
+    CROWN_ENTRIES.store(0, Ordering::Relaxed);
+    CROWN_RESIDENT_BYTES.store(0, Ordering::Relaxed);
+    CROWN_RESIDENT_BYTES_BOUND.store(0, Ordering::Relaxed);
+}
+pub(crate) fn record_width_pruned_shards(count: usize) {
+    CROWN_WIDTH_PRUNED_SHARDS.fetch_add(count as u64, Ordering::Relaxed);
+}
 pub(crate) fn record_fused_head_hop() { FUSED_HEAD_HOPS.fetch_add(1, Ordering::Relaxed); }
 
 #[pg_extern(volatile, parallel_restricted)]
-fn ec_distann_crown_stats() -> TableIterator<'static, (name!(crown_seeds_served, i64), name!(crown_fallbacks, i64), name!(fused_head_hops, i64))> {
+fn ec_distann_crown_stats() -> TableIterator<
+    'static,
+    (
+        name!(capacity, i64),
+        name!(entries, i64),
+        name!(resident_bytes, i64),
+        name!(resident_bytes_bound, i64),
+        name!(crown_seeds_served, i64),
+        name!(crown_fallbacks, i64),
+        name!(crown_width_pruned_shards, i64),
+        name!(fused_head_hops, i64),
+    ),
+> {
     TableIterator::once((
+        i64::try_from(super::options::crown_capacity()).unwrap_or(i64::MAX),
+        i64::try_from(CROWN_ENTRIES.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
+        i64::try_from(CROWN_RESIDENT_BYTES.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
+        i64::try_from(CROWN_RESIDENT_BYTES_BOUND.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
         i64::try_from(CROWN_SEEDS_SERVED.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
         i64::try_from(CROWN_FALLBACKS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
+        i64::try_from(CROWN_WIDTH_PRUNED_SHARDS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
         i64::try_from(FUSED_HEAD_HOPS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
     ))
 }
@@ -145,6 +237,7 @@ fn ec_distann_crown_stats() -> TableIterator<'static, (name!(crown_seeds_served,
 fn ec_distann_reset_crown_stats() {
     CROWN_SEEDS_SERVED.store(0, Ordering::Relaxed);
     CROWN_FALLBACKS.store(0, Ordering::Relaxed);
+    CROWN_WIDTH_PRUNED_SHARDS.store(0, Ordering::Relaxed);
     FUSED_HEAD_HOPS.store(0, Ordering::Relaxed);
 }
 
@@ -172,5 +265,48 @@ mod tests {
         let cache = DistannCrownCache::from_entries(2, fp, &selected, complete).unwrap();
         assert_eq!(cache.len(), 2);
         assert!(cache.resident_bytes() <= 2 * (8 + 2));
+    }
+
+    #[test]
+    fn selection_digest_binds_epoch_capacity_and_codes_only_entries() {
+        let selected = [10, 20];
+        let entries = vec![
+            DistannCrownEntry { vec_id: 10, search_code: vec![1, 2] },
+            DistannCrownEntry { vec_id: 20, search_code: vec![3, 4] },
+        ];
+        let first = DistannCrownCache::from_entries(2, [7; 34], &selected, entries.clone())
+            .unwrap();
+        let next_epoch = DistannCrownCache::from_entries(2, [8; 34], &selected, entries.clone())
+            .unwrap();
+        let next_capacity = DistannCrownCache::from_entries(3, [7; 34], &selected, entries)
+            .unwrap();
+        assert_ne!(first.selection_digest(), next_epoch.selection_digest());
+        assert_ne!(first.selection_digest(), next_capacity.selection_digest());
+        assert_eq!(first.resident_bytes(), 20);
+        assert_eq!(first.epoch_fingerprint(), [7; 34]);
+    }
+
+    #[test]
+    fn roster_selection_can_attest_a_complete_shard() {
+        let members = (0_u64..48).collect::<Vec<_>>();
+        let selected = DistannCrownCache::select_member_ids_for_roster(
+            &members,
+            20,
+            3,
+            super::super::placement::DISTANN_PLACEMENT_HASH_V1,
+        );
+        let complete = (0..3)
+            .map(|owner| {
+                super::super::head_sample::head_shard_members(
+                    &members,
+                    owner,
+                    3,
+                    super::super::placement::DISTANN_PLACEMENT_HASH_V1,
+                )
+            })
+            .find(|shard| shard.len() <= 20)
+            .expect("one shard fits the crown capacity");
+        assert!(complete.iter().all(|vec_id| selected.contains(vec_id)));
+        assert!(selected.len() <= 20);
     }
 }

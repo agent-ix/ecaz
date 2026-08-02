@@ -780,7 +780,7 @@ impl DistannBuildOptions {
             && input.len() != DISTANN_BUILD_OPTIONS_V3_BYTES
         {
             return Err(format!(
-                "EC_GENERATION_DESCRIPTOR: build options are {} bytes, expected {DISTANN_BUILD_OPTIONS_V1_BYTES} or {DISTANN_BUILD_OPTIONS_V2_BYTES}",
+                "EC_GENERATION_DESCRIPTOR: build options are {} bytes, expected {DISTANN_BUILD_OPTIONS_V1_BYTES}, {DISTANN_BUILD_OPTIONS_V2_BYTES}, or {DISTANN_BUILD_OPTIONS_V3_BYTES}",
                 input.len()
             ));
         }
