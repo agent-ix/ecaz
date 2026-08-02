@@ -1,13 +1,13 @@
-head=9c8f2aafb
+head=a08f6fe60
 cargo_check_pg18=passed
 cargo_check_pg18_distann_head_attribution_benchmark=passed
 cargo_check_ecaz_cli=passed
 cargo_test_crown_cache=2 passed
 suite_dry_run_task212=9 steps expanded; crown flags present on candidate arms
-bench_suite_task212=completed_9_steps
-bench_results=bench-run-v3/results.jsonl
-bench_10k_control_crown_width=0.9940/38.20_vs_0.9990/35.00_vs_0.9990/32.90
-bench_50k_control_crown_width=0.9595/50.60_vs_0.9555/43.50_vs_0.9555/45.00
-bench_100k_control_crown_width=0.9145/54.20_vs_0.9135/41.40_vs_0.9135/41.50
-crown_stats=recall_6400_latency_1600_fallbacks_0
+bench_suite_task212=completed_counter_enabled_9_steps
+bench_results=bench-run-counters/results.jsonl
+bench_10k_control_crown_width=0.9940/39.50_vs_0.9990/36.60_vs_0.9990/33.40_storage=1.235467/1.235600/1.235467_hops=11.90/9.90/9.90
+bench_50k_control_crown_width=0.9595/52.70_vs_0.9555/56.40_vs_0.9555/43.50_storage=1.332640/1.332667/1.332693_hops=16.10/13.60/13.60
+bench_100k_control_crown_width=0.9145/53.30_vs_0.9135/41.50_vs_0.9135/41.20_storage=1.351173/1.351173/1.351173_hops=15.68/12.48/12.48
+crown_stats=recall_6400_latency_1600_fallbacks_0_each_candidate_arm; coordinator_resident_unsharded_bytes=0; outstanding_distribution_gap=none
 external_run_dirs=removed_after_capture

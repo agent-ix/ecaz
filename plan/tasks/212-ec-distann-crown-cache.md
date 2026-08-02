@@ -1,13 +1,15 @@
 # Task 212: ec_distann Crown Cache
 
-Status: **in progress — P0 complete** (2026-08-01). Priority: P1.
+Status: **complete** (2026-08-01). Priority: P1.
 
 P0 spec landed as
 `spec/functional/distann/read/FR-089-distann-crown-cache.md` (hardened:
 width pruning is an explicit measured arm with a population-complete
 precondition; population timing + populated predicate defined; selection
 digest keyed (epoch_fingerprint, capacity)); packet
-`reviews/task-212/001-crown-cache-spec/` open. P1–P3 remain.
+`reviews/task-212/001-crown-cache-spec/` open. P1–P3 are complete in
+`reviews/task-212/002-crown-cache-implementation/`, with activation counters
+and storage invariants recorded across the 10k/50k/100k matrix.
 
 Entry gate: Task 210 merged. Spec phase (P0) can start immediately; the final
 sizing sweep references Task 211's chosen law but does not wait on it.

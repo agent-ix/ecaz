@@ -2,42 +2,36 @@
 
 - Task: `plan/tasks/213-ec-distann-fused-head-hop.md`
 - Packet: `reviews/task-213/002-fused-head-hop-implementation/`
-- Code commit: `4fe5d5c53` (`feat(distann): implement head sizing crown cache and fused hops`)
-- Follow-up commit: `9c8f2aafb` (fused-hop counters and seed-set provenance)
-- Final code fix: `0a526ac1e` (exercise crown seeds in plain arms)
+- Code head: `a08f6fe60` (`fix(distann): apply head sizing to physical fixtures`)
 - Date: 2026-08-01. Coder: Codex
 
 ## What to review
 
-This checkpoint adds the crown-gated fused path:
-
-- `ec_distann.fused_head_hop` is exposed as an explicit physical-arm GUC;
-- crown-ranked seeds feed the first ordinary owner expansion, preserving the
-  existing exact owner traversal/result path and fallback when the crown is
-  unavailable;
-- `fused_head_hops` is counted in the production counter endpoint;
-- unfused crown use and conservative width pruning remain separately selectable;
-- the suite runner forwards the controls so fused/unfused A/B arms can share
-  one physical generation.
+This checkpoint adds the crown-gated fused first expansion, preserves the
+unfused fallback, labels the seed-set change, and reports the fused-hop
+activation counter.
 
 ## Validation
 
-PG18 library and benchmark-feature compiles pass, and the crown support tests
-pass (`2 passed`). The required crown-on fused/unfused `ecaz bench suite` A/B
-completed at 10k/50k/100k.
+PG18 checks and crown support tests (`2 passed`) succeeded. The final
+crown-on unfused/fused matrix completed at 10k/50k/100k:
 
-| scale | unfused recall / ms | fused recall / ms | storage ratio |
-| --- | --- | --- | --- |
-| 10k | 0.9990 / 33.90 | 0.9990 / 34.80 | 1.235467 |
-| 50k | 0.9555 / 44.60 | 0.9555 / 44.60 | 1.332667 |
-| 100k | 0.9135 / 40.80 | 0.9135 / 41.30 | 1.351173 |
+| scale | unfused recall / ms | fused recall / ms |
+| --- | --- | --- |
+| 10k | 0.9990 / 35.40 | 0.9990 / 34.20 |
+| 50k | 0.9555 / 45.30 | 0.9555 / 45.70 |
+| 100k | 0.9135 / 44.20 | 0.9135 / 41.10 |
 
-The packet-local counter lines show crown seeds served (6,400 recall; 1,600
-latency), zero fallbacks, and fused head hops (200 recall; 50 latency) on each
-fused physical arm.
+Storage ratios are `1.235467/1.235600`, `1.332667/1.332667`, and
+`1.351147/1.351173`. Each arm served 6400 recall and 1600 latency crown
+seeds with zero fallbacks; fused arms recorded 200 recall and 50 latency
+fused hops. Recall is unchanged at every scale, and fused provenance marks
+the seed-set change explicitly.
 
-See `artifacts/manifest.md` and `artifacts/validation.log`.
+The structured source is `artifacts/bench-run-counters/results.jsonl`; packet
+provenance and counter evidence are in `artifacts/manifest.md` and the
+packet-local `distann-multinode-summary.log` files.
 
 ## Status
 
-Open — implementation and benchmark evidence complete; awaiting outside reviewer feedback.
+Open — implementation and evidence complete; awaiting outside reviewer feedback.

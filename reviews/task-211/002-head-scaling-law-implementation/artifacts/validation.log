@@ -1,12 +1,13 @@
-head=9c8f2aafb
+head=a08f6fe60
 cargo_check_pg18=passed
 cargo_check_pg18_distann_head_attribution_benchmark=passed
 cargo_check_ecaz_cli=passed
 cargo_test_head_scaling_attestation=1 passed
 suite_dry_run_task211=6 steps expanded; law flags present on law arms
-bench_suite_task211=completed_6_steps
-bench_results=bench-run-v2/results.jsonl
-bench_10k_control_law=0.9940/39.00_vs_0.9940/37.90_storage=1.235867
-bench_50k_control_law=0.9595/51.80_vs_0.9595/51.00_storage=1.332667
-bench_100k_control_law=0.9145/53.00_vs_0.9145/52.00_storage=1.351147
+bench_suite_task211=completed_corrected_law_3_steps_plus_final_control_100k
+bench_results=bench-run-law-fixed/results.jsonl; control_baseline=reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-counters/results.jsonl
+bench_10k_control_law=0.9940/39.50_vs_0.9950/39.10_storage=1.235467/1.235467_hops=11.90_vs_11.60_sample_count=200
+bench_50k_control_law=0.9595/52.70_vs_0.9555/53.50_storage=1.332640/1.332693_hops=16.10_vs_14.20_sample_count=1000
+bench_100k_control_law=0.9145/53.30_vs_0.9155/55.80_storage=1.351173/1.351147_hops=15.68_vs_14.96_sample_count=2000
+default_decision=fixed_head_index_cap_4096_retained; law_rate=0.02_opt_in
 external_run_dirs=removed_after_capture
