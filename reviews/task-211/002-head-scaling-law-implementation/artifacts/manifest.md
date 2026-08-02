@@ -1,10 +1,11 @@
 # Task 211 implementation artifacts
 
 - Task bucket: `reviews/task-211/`; packet: `002-head-scaling-law-implementation`
-- Code head: `cc6a01c662b191e75194bf2c6b38222b6906924b`
-- Installed PG18 release extension: `cc6a01c662b191e75194bf2c6b38222b6906924b-dirty`
-  (`-dirty` reflects packet suite JSON edits during the shared validation run;
-  the source code head is clean at the stated commit).
+- Code head: `73e56d83b7f38bcdd0cdb0b2fbf1df27199e0456`
+- Installed PG18 release extension: `591d9b5483511c63c9474f08d81fb36ea87fd0fc-dirty`
+  (the extension was built before the source checkpoint commit; its source
+  content matches the committed code, while the dirty marker reflects the
+  shared worktree state).
 - Validation: PG18 library/CLI checks and the deterministic attestation test
   passed; see `validation.log`.
 - Suite configs: `task211-head-law-suite.json` (three corrected 0.02 law arms)
@@ -24,6 +25,10 @@
   - 100k control `0.9145 / 53.30 / 1.351173`; law `0.9155 / 55.80 / 1.351147`; sampled records `2000`; hops `15.68` vs `14.96`.
 - Decision: the law is implemented and measured, but the shipped default stays
   at fixed cap 4096 under the task stop condition; rate `0.02` remains opt-in.
+- Scope note: `0.02` is the selected candidate for this gate; no broader rate
+  sweep is claimed here, and rate selection is deferred to the 1M+ scale gate.
+  Cross-ISA determinism rides the standing Graviton lane; this packet is
+  Intel-host evidence only.
 - Physical surface: isolated one-index-per-table multinode arms. All external
   run directories were removed after capture. No corpus data is committed.
 - Reviewer follow-up: the stale V1/V2-only decode error text was corrected to
