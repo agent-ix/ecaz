@@ -128,6 +128,8 @@ static ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC: GucSetting<i32> = GucSetting::<i32>::
 /// asked to expand, simulating a `missing_node_record` (an owned record absent
 /// from the node's directory). The scan must error, never silently under-return.
 static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+#[cfg(feature = "pg_test")]
+static ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 /// NFR-020 fault injection (debug only): when true, `graph_insert_record` (the
 /// FR-083 fold path) raises an error after staging the new node + directory pages
@@ -627,6 +629,15 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "pg_test")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.debug_fail_crown_population",
+        c"Task 212 test fault: make bounded crown population fail before serving.",
+        c"When on, physical crown population returns no cache so the scan must use the ordinary full-head fallback. This GUC exists only in pg_test builds and is off by default.",
+        &ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_distann.debug_fail_insert",
         c"NFR-020 fault injection (debug): fail a graph insert after staging, before publish.",
@@ -691,6 +702,15 @@ pub(super) fn scan_profile_notice_enabled() -> bool {
 
 pub(super) fn physical_epoch_cache_enabled() -> bool {
     ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC.get()
+}
+
+pub(super) fn debug_fail_crown_population() -> bool {
+    #[cfg(feature = "pg_test")]
+    {
+        return ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC.get();
+    }
+    #[cfg(not(feature = "pg_test"))]
+    false
 }
 
 pub(super) fn materialization_batch_size() -> usize {

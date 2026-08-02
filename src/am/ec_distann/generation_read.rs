@@ -350,6 +350,30 @@ fn ec_distann_debug_retained_epoch_cache_len() -> i64 {
     RETAINED_EPOCH_CACHE.with(|cache| cache.borrow().len() as i64)
 }
 
+#[cfg(feature = "pg_test")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_debug_crown_cache_state() -> TableIterator<
+    'static,
+    (
+        name!(capacity, i64),
+        name!(entries, i64),
+        name!(epoch_fingerprint, Vec<u8>),
+    ),
+> {
+    let state = PHYSICAL_EPOCH_CACHE.with(|cache| {
+        cache.borrow().iter().rev().find_map(|entry| {
+            entry.crown.as_ref().map(|crown| {
+                (
+                    i64::try_from(crown.capacity()).unwrap_or(i64::MAX),
+                    i64::try_from(crown.len()).unwrap_or(i64::MAX),
+                    crown.epoch_fingerprint().to_vec(),
+                )
+            })
+        })
+    });
+    TableIterator::new(state.into_iter())
+}
+
 fn cached_physical_epoch(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
@@ -4268,6 +4292,10 @@ fn populate_crown_cache(
     routes: &[PhysicalOwnerRoute],
     head_members: &[u64],
 ) -> Option<super::crown_cache::DistannCrownCache> {
+    if super::options::debug_fail_crown_population() {
+        pgrx::warning!("ec_distann crown population forced to fail by pg_test fault");
+        return None;
+    }
     let capacity = super::options::crown_capacity();
     if capacity == 0 || routes.is_empty() || head_members.is_empty() {
         return None;
