@@ -1237,4 +1237,41 @@ mod tests {
         );
         assert!(DistannSourceIdentityProvider::parse_reloption("none").is_err());
     }
+
+    #[test]
+    fn head_sizing_reloption_validation_rejects_invalid_bounds() {
+        let mut options = EcDistannOptions::DEFAULT;
+        options.head_sampling_rate = -0.01;
+        assert!(options.validate_head_sizing_inputs().is_err());
+
+        options = EcDistannOptions::DEFAULT;
+        options.head_cap_floor = 8192;
+        options.head_cap_ceiling = 4096;
+        assert!(options.validate_head_sizing_inputs().is_err());
+
+        options = EcDistannOptions::DEFAULT;
+        options.head_cap_floor = 8;
+        assert!(options.validate_head_sizing_inputs().is_err());
+    }
+
+    #[test]
+    fn head_sizing_resolution_covers_untrained_and_trained_policies() {
+        let mut options = EcDistannOptions::DEFAULT;
+        let (explicit, attestation) = options.resolve_head_sizing(100_000, false).unwrap();
+        assert_eq!(explicit, 4096);
+        assert!(attestation.is_none());
+
+        options.head_sampling_rate = 0.02;
+        options.head_cap_floor = 16;
+        options.head_cap_ceiling = 4096;
+        let (resolved, attestation) = options.resolve_head_sizing(100_000, false).unwrap();
+        assert_eq!(resolved, 2000);
+        assert!(attestation.is_some());
+        assert!(options.resolve_head_sizing(100_000, true).is_err());
+
+        options.head_sampling_rate = 0.04096;
+        let (trained, attestation) = options.resolve_head_sizing(100_000, true).unwrap();
+        assert_eq!(trained, 4096);
+        assert!(attestation.is_some());
+    }
 }

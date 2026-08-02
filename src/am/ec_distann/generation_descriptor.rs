@@ -1257,6 +1257,7 @@ mod tests {
         let encoded = options.encode().unwrap();
         assert_eq!(encoded.len(), DISTANN_BUILD_OPTIONS_V3_BYTES);
         assert_eq!(DistannBuildOptions::decode(&encoded).unwrap(), options);
+        assert_eq!(options.encode().unwrap(), encoded);
 
         let mut tampered = attestation;
         tampered.rate_bits = 2.0_f64.to_bits();

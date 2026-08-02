@@ -1534,9 +1534,10 @@ fn validate_crown_activation(
     args: &LocalMultinodePg18Args,
     stats_seen: bool,
     crown_seeds_served: i64,
-    crown_width_pruned_shards: i64,
+    _crown_width_pruned_shards: i64,
     crown_width_pruning_activations: i64,
     fused_head_hops: i64,
+    fused_first_round_requested_ids: i64,
 ) -> Result<()> {
     if args.crown_capacity.is_none() {
         return Ok(());
@@ -1546,14 +1547,17 @@ fn validate_crown_activation(
             "crown-enabled physical arm did not report ec_distann crown counters"
         );
     }
-    if crown_seeds_served <= 0 {
-        bail!("crown-enabled physical arm served zero crown seeds");
-    }
     if args.crown_width_pruning && crown_width_pruning_activations <= 0 {
         bail!("crown-width arm reported zero crown_width_pruning_activations");
     }
+    if args.fused_head_hop && crown_seeds_served <= 0 {
+        bail!("fused crown arm served zero crown seeds");
+    }
     if args.fused_head_hop && fused_head_hops <= 0 {
         bail!("fused-head-hop arm reported zero fused_head_hops");
+    }
+    if args.fused_head_hop && fused_first_round_requested_ids <= 0 {
+        bail!("fused-head-hop arm reported zero fused first-round requested ids");
     }
     Ok(())
 }
@@ -5179,9 +5183,9 @@ async fn run_physical_benchmarks(
         arm_hop_rounds,
     ) in benchmark_arms
     {
-        let seed_label = if args.fused_head_hop {
+        let seed_label = if arm == "physical" && args.fused_head_hop {
             format!("{seed_strategy}+crown_fused")
-        } else if args.crown_width_pruning {
+        } else if arm == "physical" && args.crown_width_pruning {
             format!("{seed_strategy}+crown_width_pruned")
         } else {
             seed_strategy.clone()
@@ -5295,6 +5299,7 @@ async fn run_physical_benchmarks(
                 let mut crown_width_pruned_shards = 0_i64;
                 let mut crown_width_pruning_activations = 0_i64;
                 let mut fused_head_hops = 0_i64;
+                let mut fused_first_round_requested_ids = 0_i64;
                 for stats in recall
                     .lines()
                     .filter_map(|line| line.strip_prefix("[distann-crown-stats] "))
@@ -5319,6 +5324,11 @@ async fn run_physical_benchmarks(
                         })?;
                     fused_head_hops = crown_counter(stats, "fused_head_hops")
                         .ok_or_else(|| eyre!("crown stats omitted fused_head_hops"))?;
+                    fused_first_round_requested_ids = crown_counter(
+                        stats,
+                        "fused_first_round_requested_ids",
+                    )
+                    .ok_or_else(|| eyre!("crown stats omitted fused_first_round_requested_ids"))?;
                     lines.push(format!(
                         "physical_benchmark_crown_stats scale={scale} variant={variant} arm={arm} {stats}"
                     ));
@@ -5330,6 +5340,7 @@ async fn run_physical_benchmarks(
                     crown_width_pruned_shards,
                     crown_width_pruning_activations,
                     fused_head_hops,
+                    fused_first_round_requested_ids,
                 )?;
                 crown_storage.insert(
                     variant.to_owned(),
@@ -5464,6 +5475,7 @@ async fn run_physical_benchmarks(
             let mut crown_width_pruned_shards = 0_i64;
             let mut crown_width_pruning_activations = 0_i64;
             let mut fused_head_hops = 0_i64;
+            let mut fused_first_round_requested_ids = 0_i64;
             for stats in latency
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-crown-stats] "))
@@ -5486,6 +5498,11 @@ async fn run_physical_benchmarks(
                         .ok_or_else(|| eyre!("crown stats omitted crown_width_pruning_activations"))?;
                 fused_head_hops = crown_counter(stats, "fused_head_hops")
                     .ok_or_else(|| eyre!("crown stats omitted fused_head_hops"))?;
+                fused_first_round_requested_ids = crown_counter(
+                    stats,
+                    "fused_first_round_requested_ids",
+                )
+                .ok_or_else(|| eyre!("crown stats omitted fused_first_round_requested_ids"))?;
                 lines.push(format!(
                     "physical_benchmark_crown_stats scale={scale} variant={variant} arm={arm} {stats}"
                 ));
@@ -5497,6 +5514,7 @@ async fn run_physical_benchmarks(
                 crown_width_pruned_shards,
                 crown_width_pruning_activations,
                 fused_head_hops,
+                fused_first_round_requested_ids,
             )?;
             crown_storage.insert(
                 variant.to_owned(),

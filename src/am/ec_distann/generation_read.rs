@@ -3774,6 +3774,13 @@ impl PhysicalGenerationScan {
                 }
                 return self.select_seed_candidates_without_crown(query);
             };
+            // A plain crown is an identity-preserving control arm.  Do not
+            // spend a query scoring crown entries when neither consumer is
+            // enabled: the ranked candidates would only be discarded before
+            // the authoritative full-head search.
+            if !fused && !width_pruning {
+                return self.select_seed_candidates_without_crown(query);
+            }
             let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)?;
             let code_len = binding.code_len(usize::from(self.descriptor.dimensions))?;
             let prepared = DistannPreparedQuery::prepare_artifact(
@@ -3790,7 +3797,6 @@ impl PhysicalGenerationScan {
                 super::crown_cache::record_fallback();
                 return self.select_seed_candidates_without_crown(query);
             }
-            super::crown_cache::record_seeds_served(seeds.len());
             if width_pruning {
                 // This counter attests that the candidate arm was entered;
                 // crown_width_pruned_shards separately reports actual shard
@@ -3798,7 +3804,9 @@ impl PhysicalGenerationScan {
                 super::crown_cache::record_width_pruning_activation();
             }
             if fused {
+                super::crown_cache::record_seeds_served(seeds.len());
                 super::crown_cache::record_fused_head_hop();
+                super::crown_cache::record_fused_first_round_requested_ids(seeds.len());
                 return Ok(seeds);
             }
             if width_pruning
@@ -3849,10 +3857,6 @@ impl PhysicalGenerationScan {
                     }
                 }
             }
-            // Keep the plain crown arm identical to crown-off.  The ranking
-            // above is still exercised and counted for activation, but its
-            // candidates are not allowed to replace the authoritative head
-            // search unless one of the explicit measured arms opted in.
             return self.select_seed_candidates_without_crown(query);
         }
         self.select_seed_candidates_without_crown(query)

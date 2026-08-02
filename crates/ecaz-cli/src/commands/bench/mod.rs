@@ -61,6 +61,7 @@ pub(crate) struct DistannCrownStats {
     pub(crate) crown_width_pruned_shards: i64,
     pub(crate) crown_width_pruning_activations: i64,
     pub(crate) fused_head_hops: i64,
+    pub(crate) fused_first_round_requested_ids: i64,
 }
 
 impl DistannCrownStats {
@@ -80,6 +81,9 @@ impl DistannCrownStats {
             .crown_width_pruning_activations
             .saturating_add(other.crown_width_pruning_activations);
         self.fused_head_hops = self.fused_head_hops.saturating_add(other.fused_head_hops);
+        self.fused_first_round_requested_ids = self
+            .fused_first_round_requested_ids
+            .saturating_add(other.fused_first_round_requested_ids);
     }
 }
 
@@ -117,7 +121,8 @@ pub(crate) async fn snapshot_distann_crown_stats(
             "SELECT capacity, entries, resident_bytes, resident_bytes_bound,
                     crown_seeds_served,
                     crown_fallbacks, crown_width_pruned_shards,
-                    crown_width_pruning_activations, fused_head_hops
+                    crown_width_pruning_activations, fused_head_hops,
+                    fused_first_round_requested_ids
                FROM ec_distann_crown_stats()",
             &[],
         )
@@ -135,6 +140,7 @@ pub(crate) async fn snapshot_distann_crown_stats(
         crown_width_pruned_shards: row.get(6),
         crown_width_pruning_activations: row.get(7),
         fused_head_hops: row.get(8),
+        fused_first_round_requested_ids: row.get(9),
     }))
 }
 
@@ -144,7 +150,7 @@ pub(crate) fn format_distann_crown_stats(
     stats: DistannCrownStats,
 ) -> String {
     format!(
-        "[distann-crown-stats] lane={lane} label={label} capacity={} entries={} resident_bytes={} resident_bytes_bound={} crown_seeds_served={} crown_fallbacks={} crown_width_pruned_shards={} crown_width_pruning_activations={} fused_head_hops={}",
+        "[distann-crown-stats] lane={lane} label={label} capacity={} entries={} resident_bytes={} resident_bytes_bound={} crown_seeds_served={} crown_fallbacks={} crown_width_pruned_shards={} crown_width_pruning_activations={} fused_head_hops={} fused_first_round_requested_ids={}",
         stats.capacity,
         stats.entries,
         stats.resident_bytes,
@@ -153,7 +159,8 @@ pub(crate) fn format_distann_crown_stats(
         stats.crown_fallbacks,
         stats.crown_width_pruned_shards,
         stats.crown_width_pruning_activations,
-        stats.fused_head_hops
+        stats.fused_head_hops,
+        stats.fused_first_round_requested_ids
     )
 }
 
