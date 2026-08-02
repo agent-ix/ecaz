@@ -1535,6 +1535,7 @@ fn validate_crown_activation(
     stats_seen: bool,
     crown_seeds_served: i64,
     crown_width_pruned_shards: i64,
+    crown_width_pruning_activations: i64,
     fused_head_hops: i64,
 ) -> Result<()> {
     if args.crown_capacity.is_none() {
@@ -1548,8 +1549,8 @@ fn validate_crown_activation(
     if crown_seeds_served <= 0 {
         bail!("crown-enabled physical arm served zero crown seeds");
     }
-    if args.crown_width_pruning && crown_width_pruned_shards <= 0 {
-        bail!("crown-width arm reported zero crown_width_pruned_shards");
+    if args.crown_width_pruning && crown_width_pruning_activations <= 0 {
+        bail!("crown-width arm reported zero crown_width_pruning_activations");
     }
     if args.fused_head_hop && fused_head_hops <= 0 {
         bail!("fused-head-hop arm reported zero fused_head_hops");
@@ -5292,6 +5293,7 @@ async fn run_physical_benchmarks(
                 let mut reported_crown_resident_bytes_bound = 0_i64;
                 let mut crown_seeds_served = 0_i64;
                 let mut crown_width_pruned_shards = 0_i64;
+                let mut crown_width_pruning_activations = 0_i64;
                 let mut fused_head_hops = 0_i64;
                 for stats in recall
                     .lines()
@@ -5311,6 +5313,10 @@ async fn run_physical_benchmarks(
                         .ok_or_else(|| eyre!("crown stats omitted crown_seeds_served"))?;
                     crown_width_pruned_shards = crown_counter(stats, "crown_width_pruned_shards")
                         .ok_or_else(|| eyre!("crown stats omitted crown_width_pruned_shards"))?;
+                    crown_width_pruning_activations =
+                        crown_counter(stats, "crown_width_pruning_activations").ok_or_else(|| {
+                            eyre!("crown stats omitted crown_width_pruning_activations")
+                        })?;
                     fused_head_hops = crown_counter(stats, "fused_head_hops")
                         .ok_or_else(|| eyre!("crown stats omitted fused_head_hops"))?;
                     lines.push(format!(
@@ -5322,6 +5328,7 @@ async fn run_physical_benchmarks(
                     crown_stats_seen,
                     crown_seeds_served,
                     crown_width_pruned_shards,
+                    crown_width_pruning_activations,
                     fused_head_hops,
                 )?;
                 crown_storage.insert(
@@ -5455,6 +5462,7 @@ async fn run_physical_benchmarks(
             let mut reported_crown_resident_bytes_bound = 0_i64;
             let mut crown_seeds_served = 0_i64;
             let mut crown_width_pruned_shards = 0_i64;
+            let mut crown_width_pruning_activations = 0_i64;
             let mut fused_head_hops = 0_i64;
             for stats in latency
                 .lines()
@@ -5473,6 +5481,9 @@ async fn run_physical_benchmarks(
                     .ok_or_else(|| eyre!("crown stats omitted crown_seeds_served"))?;
                 crown_width_pruned_shards = crown_counter(stats, "crown_width_pruned_shards")
                     .ok_or_else(|| eyre!("crown stats omitted crown_width_pruned_shards"))?;
+                crown_width_pruning_activations =
+                    crown_counter(stats, "crown_width_pruning_activations")
+                        .ok_or_else(|| eyre!("crown stats omitted crown_width_pruning_activations"))?;
                 fused_head_hops = crown_counter(stats, "fused_head_hops")
                     .ok_or_else(|| eyre!("crown stats omitted fused_head_hops"))?;
                 lines.push(format!(
@@ -5484,6 +5495,7 @@ async fn run_physical_benchmarks(
                 crown_stats_seen,
                 crown_seeds_served,
                 crown_width_pruned_shards,
+                crown_width_pruning_activations,
                 fused_head_hops,
             )?;
             crown_storage.insert(

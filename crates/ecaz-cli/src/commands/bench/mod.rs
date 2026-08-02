@@ -59,6 +59,7 @@ pub(crate) struct DistannCrownStats {
     pub(crate) crown_seeds_served: i64,
     pub(crate) crown_fallbacks: i64,
     pub(crate) crown_width_pruned_shards: i64,
+    pub(crate) crown_width_pruning_activations: i64,
     pub(crate) fused_head_hops: i64,
 }
 
@@ -75,6 +76,9 @@ impl DistannCrownStats {
         self.crown_width_pruned_shards = self
             .crown_width_pruned_shards
             .saturating_add(other.crown_width_pruned_shards);
+        self.crown_width_pruning_activations = self
+            .crown_width_pruning_activations
+            .saturating_add(other.crown_width_pruning_activations);
         self.fused_head_hops = self.fused_head_hops.saturating_add(other.fused_head_hops);
     }
 }
@@ -112,7 +116,8 @@ pub(crate) async fn snapshot_distann_crown_stats(
         .query_opt(
             "SELECT capacity, entries, resident_bytes, resident_bytes_bound,
                     crown_seeds_served,
-                    crown_fallbacks, crown_width_pruned_shards, fused_head_hops
+                    crown_fallbacks, crown_width_pruned_shards,
+                    crown_width_pruning_activations, fused_head_hops
                FROM ec_distann_crown_stats()",
             &[],
         )
@@ -128,7 +133,8 @@ pub(crate) async fn snapshot_distann_crown_stats(
         crown_seeds_served: row.get(4),
         crown_fallbacks: row.get(5),
         crown_width_pruned_shards: row.get(6),
-        fused_head_hops: row.get(7),
+        crown_width_pruning_activations: row.get(7),
+        fused_head_hops: row.get(8),
     }))
 }
 
@@ -138,7 +144,7 @@ pub(crate) fn format_distann_crown_stats(
     stats: DistannCrownStats,
 ) -> String {
     format!(
-        "[distann-crown-stats] lane={lane} label={label} capacity={} entries={} resident_bytes={} resident_bytes_bound={} crown_seeds_served={} crown_fallbacks={} crown_width_pruned_shards={} fused_head_hops={}",
+        "[distann-crown-stats] lane={lane} label={label} capacity={} entries={} resident_bytes={} resident_bytes_bound={} crown_seeds_served={} crown_fallbacks={} crown_width_pruned_shards={} crown_width_pruning_activations={} fused_head_hops={}",
         stats.capacity,
         stats.entries,
         stats.resident_bytes,
@@ -146,6 +152,7 @@ pub(crate) fn format_distann_crown_stats(
         stats.crown_seeds_served,
         stats.crown_fallbacks,
         stats.crown_width_pruned_shards,
+        stats.crown_width_pruning_activations,
         stats.fused_head_hops
     )
 }

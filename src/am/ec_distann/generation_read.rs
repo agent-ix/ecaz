@@ -3791,6 +3791,12 @@ impl PhysicalGenerationScan {
                 return self.select_seed_candidates_without_crown(query);
             }
             super::crown_cache::record_seeds_served(seeds.len());
+            if width_pruning {
+                // This counter attests that the candidate arm was entered;
+                // crown_width_pruned_shards separately reports actual shard
+                // removals when the complete-shard rule permits them.
+                super::crown_cache::record_width_pruning_activation();
+            }
             if fused {
                 super::crown_cache::record_fused_head_hop();
                 return Ok(seeds);

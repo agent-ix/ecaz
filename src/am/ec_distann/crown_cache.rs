@@ -177,6 +177,7 @@ static CROWN_ENTRIES: AtomicU64 = AtomicU64::new(0);
 static CROWN_RESIDENT_BYTES: AtomicU64 = AtomicU64::new(0);
 static CROWN_RESIDENT_BYTES_BOUND: AtomicU64 = AtomicU64::new(0);
 static CROWN_WIDTH_PRUNED_SHARDS: AtomicU64 = AtomicU64::new(0);
+static CROWN_WIDTH_PRUNING_ACTIVATIONS: AtomicU64 = AtomicU64::new(0);
 static FUSED_HEAD_HOPS: AtomicU64 = AtomicU64::new(0);
 
 pub(crate) fn record_seeds_served(count: usize) {
@@ -205,6 +206,9 @@ pub(crate) fn record_cleared() {
 pub(crate) fn record_width_pruned_shards(count: usize) {
     CROWN_WIDTH_PRUNED_SHARDS.fetch_add(count as u64, Ordering::Relaxed);
 }
+pub(crate) fn record_width_pruning_activation() {
+    CROWN_WIDTH_PRUNING_ACTIVATIONS.fetch_add(1, Ordering::Relaxed);
+}
 pub(crate) fn record_fused_head_hop() { FUSED_HEAD_HOPS.fetch_add(1, Ordering::Relaxed); }
 
 #[pg_extern(volatile, parallel_restricted)]
@@ -218,6 +222,7 @@ fn ec_distann_crown_stats() -> TableIterator<
         name!(crown_seeds_served, i64),
         name!(crown_fallbacks, i64),
         name!(crown_width_pruned_shards, i64),
+        name!(crown_width_pruning_activations, i64),
         name!(fused_head_hops, i64),
     ),
 > {
@@ -229,6 +234,8 @@ fn ec_distann_crown_stats() -> TableIterator<
         i64::try_from(CROWN_SEEDS_SERVED.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
         i64::try_from(CROWN_FALLBACKS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
         i64::try_from(CROWN_WIDTH_PRUNED_SHARDS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
+        i64::try_from(CROWN_WIDTH_PRUNING_ACTIVATIONS.load(Ordering::Relaxed))
+            .unwrap_or(i64::MAX),
         i64::try_from(FUSED_HEAD_HOPS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
     ))
 }
@@ -238,6 +245,7 @@ fn ec_distann_reset_crown_stats() {
     CROWN_SEEDS_SERVED.store(0, Ordering::Relaxed);
     CROWN_FALLBACKS.store(0, Ordering::Relaxed);
     CROWN_WIDTH_PRUNED_SHARDS.store(0, Ordering::Relaxed);
+    CROWN_WIDTH_PRUNING_ACTIVATIONS.store(0, Ordering::Relaxed);
     FUSED_HEAD_HOPS.store(0, Ordering::Relaxed);
 }
 
