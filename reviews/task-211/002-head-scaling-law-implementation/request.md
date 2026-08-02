@@ -2,7 +2,7 @@
 
 - Task: `plan/tasks/211-ec-distann-head-scaling-law.md`
 - Packet: `reviews/task-211/002-head-scaling-law-implementation/`
-- Code head: `a08f6fe60` (`fix(distann): apply head sizing to physical fixtures`)
+- Code head: `cc6a01c66` (`Expose crown width activation provenance`)
 - Date: 2026-08-01. Coder: Codex
 
 ## What to review
@@ -33,4 +33,6 @@ baseline in the Task 212 packet, with provenance summarized in
 
 ## Status
 
-Open — implementation and evidence complete; awaiting outside reviewer feedback.
+Open — reviewer accepted the implementation with non-blocking notes; the
+stale V1/V2-only decode text is fixed and the packet remains open for outside
+acknowledgement.

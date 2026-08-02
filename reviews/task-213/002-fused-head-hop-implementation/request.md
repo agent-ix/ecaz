@@ -2,36 +2,29 @@
 
 - Task: `plan/tasks/213-ec-distann-fused-head-hop.md`
 - Packet: `reviews/task-213/002-fused-head-hop-implementation/`
-- Code head: `a08f6fe60` (`fix(distann): apply head sizing to physical fixtures`)
+- Code head: `cc6a01c66` (`Expose crown width activation provenance`)
 - Date: 2026-08-01. Coder: Codex
 
-## What to review
+## Reviewer follow-up
 
-This checkpoint adds the crown-gated fused first expansion, preserves the
-unfused fallback, labels the seed-set change, and reports the fused-hop
-activation counter.
+The reviewer’s requested changes are implemented:
 
-## Validation
+- the unfused crown path uses the full head fan-out, while the fused path
+  returns crown seeds and records fused-hop activation;
+- the seed digest probe sets the exact arm GUCs on the coordinator;
+- existing scan tests cover positional restart, threshold, and first-round
+  semantics;
+- physical custom-scan search now retries typed epoch-mismatch failures by
+  discarding stale generation/crown state and reopening the active epoch.
 
-PG18 checks and crown support tests (`2 passed`) succeeded. The final
-crown-on unfused/fused matrix completed at 10k/50k/100k:
+## Validation and evidence
 
-| scale | unfused recall / ms | fused recall / ms |
-| --- | --- | --- |
-| 10k | 0.9990 / 35.40 | 0.9990 / 34.20 |
-| 50k | 0.9555 / 45.30 | 0.9555 / 45.70 |
-| 100k | 0.9135 / 44.20 | 0.9135 / 41.10 |
+PG18 checks and four focused crown-cache tests passed. The final
+`ecaz bench suite` completed all six unfused/fused steps at 10k/50k/100k.
+Fused provenance marks the seed-set change, crown fallbacks remain zero, and
+the fused-hop counters are nonzero on every scale. Results and storage
+provenance are summarized in `artifacts/manifest.md`; structured results are
+in `artifacts/bench-run-final2/results.jsonl`.
 
-Storage ratios are `1.235467/1.235600`, `1.332667/1.332667`, and
-`1.351147/1.351173`. Each arm served 6400 recall and 1600 latency crown
-seeds with zero fallbacks; fused arms recorded 200 recall and 50 latency
-fused hops. Recall is unchanged at every scale, and fused provenance marks
-the seed-set change explicitly.
-
-The structured source is `artifacts/bench-run-counters/results.jsonl`; packet
-provenance and counter evidence are in `artifacts/manifest.md` and the
-packet-local `distann-multinode-summary.log` files.
-
-## Status
-
-Open — implementation and evidence complete; awaiting outside reviewer feedback.
+Status: open — reviewer follow-up is complete; awaiting outside reviewer
+acknowledgement.

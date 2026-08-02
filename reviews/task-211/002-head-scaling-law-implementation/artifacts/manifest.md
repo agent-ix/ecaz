@@ -1,8 +1,10 @@
 # Task 211 implementation artifacts
 
 - Task bucket: `reviews/task-211/`; packet: `002-head-scaling-law-implementation`
-- Code head: `a08f6fe6080dd3023241c3cf38a822fac9bb44c2`
-- Installed PG18 extension SHA: `0a526ac1eb840a975ac00130201058b187f4057d`
+- Code head: `cc6a01c662b191e75194bf2c6b38222b6906924b`
+- Installed PG18 release extension: `cc6a01c662b191e75194bf2c6b38222b6906924b-dirty`
+  (`-dirty` reflects packet suite JSON edits during the shared validation run;
+  the source code head is clean at the stated commit).
 - Validation: PG18 library/CLI checks and the deterministic attestation test
   passed; see `validation.log`.
 - Suite configs: `task211-head-law-suite.json` (three corrected 0.02 law arms)
@@ -24,3 +26,6 @@
   at fixed cap 4096 under the task stop condition; rate `0.02` remains opt-in.
 - Physical surface: isolated one-index-per-table multinode arms. All external
   run directories were removed after capture. No corpus data is committed.
+- Reviewer follow-up: the stale V1/V2-only decode error text was corrected to
+  include V3. The remaining notes are non-blocking and do not alter the
+  measured decision to keep fixed-cap 4096 as the default.
