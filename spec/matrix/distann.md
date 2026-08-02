@@ -292,7 +292,7 @@ Unimplemented feature; all rows owned by Task 211
 | FR-088-AC-3 | Test | ✅ `head_sizing_reloption_validation_rejects_invalid_bounds`; resolver rejects invalid law bounds |
 | FR-088-AC-4 | Test | ✅ `head_sizing_resolution_covers_untrained_and_trained_policies` exercises both policy branches |
 | FR-088-AC-5 | Analysis (bench) | ✅ `reviews/task-211/002-head-scaling-law-implementation/artifacts/bench-run-law-fixed/`; selected rate 0.02 evidence at 10k/50k/100k; broader rate selection explicitly deferred to the 1M+ gate |
-| FR-088-AC-6 | Test + storage audit | ✅ zero-byte head audit in `reviews/task-211/002-head-scaling-law-implementation/artifacts/bench-run-law-fixed/` |
+| FR-088-AC-6 | Test + storage audit | ⚠️ Partial: zero-byte head audit in `reviews/task-211/002-head-scaling-law-implementation/artifacts/bench-run-law-fixed/`; dedicated test half remains |
 | FR-088-CON-1 | Unit test | ✅ resolver and build-option encode cross-checks in Task 211 validation |
 | FR-088-CON-2 | Test | ✅ deterministic attestation/build-option digest assertion |
 
@@ -309,7 +309,7 @@ Unimplemented feature; all rows owned by Task 212
 | FR-089-AC-4 | Inspection + test | ✅ codes-only storage and resident-byte bound in Task 212 storage rows |
 | FR-089-AC-5 | Analysis (bench) | ✅ plain crown identity A/B at 10k/50k/100k; single-variable width-pruning A/B at 10k/50k/100k activates the path but prunes zero shards and shows no latency benefit; both outcomes are separately labeled |
 | FR-089-CON-1 | Analysis + storage audit | ✅ bounded crown storage rows in Task 212 packet |
-| FR-089-CON-2 | Test | ✅ identical cache entries produce identical serialized bytes/digest; cross-backend equivalence remains an operational invariant |
+| FR-089-CON-2 | Test | ⚠️ Partial: identical cache entries produce identical serialized bytes/digest; cross-backend equivalence remains an unenforced operational invariant |
 
 ### FR-090 — Fused Head Hop (`spec/functional/distann/read/FR-090-distann-fused-head-hop.md`)
 
