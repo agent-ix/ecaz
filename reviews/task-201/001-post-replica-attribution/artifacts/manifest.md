@@ -31,3 +31,8 @@ The measured trigger is owner payload/executor residual, not head or graph corre
 3. **MAT-26** batch detoast/binary-send by physical block — secondary, triggered only if heap/varlena work dominates after MAT-40.
 
 Only MAT-40 is advanced in packet 002. No head, graph, neighbor-codec, or replica-lifecycle change is included.
+
+RSS/allocation follow-up for the fixed normal-replica path is captured in the
+closeout packet’s packet-local memory suite:
+`../004-closeout/artifacts/memory-key-lines.log` and
+`../004-closeout/artifacts/memory-run/`.

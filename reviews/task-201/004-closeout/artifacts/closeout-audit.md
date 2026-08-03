@@ -5,7 +5,7 @@
 | criterion | result |
 | --- | --- |
 | Attribute residual post-replica latency on a fresh PG18 100k physical generation | **pass** — owner fallback and normal replica are separately labeled; no failed-replica work is included |
-| Reconcile local traversal, owner payload, coordinator residual, session reuse, remote work, and memory evidence | **pass** — packet 001 records stage counters, rows/bytes, exact reads/candidate work, and RSS/allocation observations |
+| Reconcile local traversal, owner payload, coordinator residual, session reuse, remote work, and memory evidence | **pass** — packet 001 records stage counters, rows/bytes, exact reads/candidate work; this packet adds normal-path RSS/HWM series for both arms |
 | Screen no more than three candidates and advance no more than one | **pass** — MAT-40, MAT-21, MAT-26 screened; MAT-40 only advanced |
 | Run a same-generation isolated candidate A/B | **pass** — packet 002, MAT-40 owner payload plan cache toggle, 100k fresh physical A/B |
 | Run relevant 10k/50k/100k release matrix | **pass** — packet 003, all suite steps succeeded with recall + latency + storage |

@@ -1,0 +1,5 @@
+[memory] extension_git_sha=c830b184fe4c750936ab13eab2891f63f06ba3d0 build_profile=release scale=100k nodes=3 physical=true shared_table=true query_sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[control] normal-replica-memory-control plan_cache=false samples=23 rss_first=159544KB rss_last=187296KB rss_delta=27752KB hwm_peak=187296KB final_plateau=true
+[mat40] normal-replica-memory-mat40 plan_cache=true samples=20 rss_first=170000KB rss_last=185752KB rss_delta=15752KB hwm_peak=191804KB final_plateau=true
+[latency] control mean=18.90 p50=17.50 p95=29.70 p99=49.80 max=58.60; MAT-40 mean=16.10 p50=16.00 p95=19.10 p99=20.80 max=21.20
+[series] physical-normal-replica-memory-control-latency.memory-series.log; physical-normal-replica-memory-mat40-latency.memory-series.log
