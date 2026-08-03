@@ -686,6 +686,12 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     head_index_cap: Option<u32>,
     #[serde(default)]
+    head_sampling_rate: Option<f64>,
+    #[serde(default)]
+    head_cap_floor: Option<u32>,
+    #[serde(default)]
+    head_cap_ceiling: Option<u32>,
+    #[serde(default)]
     beam_width: Option<u32>,
     /// FR-081 retained candidate heap size L applied to benchmark query arms.
     #[serde(default)]
@@ -696,6 +702,12 @@ struct DistannLocalMultinodeStep {
     head_replica_count: Option<u32>,
     #[serde(default)]
     gateway_copy_capacity: Option<u32>,
+    #[serde(default)]
+    crown_capacity: Option<u32>,
+    #[serde(default)]
+    crown_width_pruning: bool,
+    #[serde(default)]
+    fused_head_hop: bool,
     #[serde(default)]
     local_head: bool,
     #[serde(default)]
@@ -3981,6 +3993,53 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.head_sampling_rate.is_none()
+                    && (step.head_cap_floor.is_some() || step.head_cap_ceiling.is_some())
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} head bounds require head_sampling_rate",
+                        step.name
+                    )
+                }
+                if let Some(rate) = step.head_sampling_rate {
+                    if !rate.is_finite() || rate < 0.0 {
+                        bail!(
+                            "distann-local-multinode step {:?} head_sampling_rate must be finite and non-negative",
+                            step.name
+                        )
+                    }
+                    let floor = step.head_cap_floor.unwrap_or(4096);
+                    let ceiling = step.head_cap_ceiling.unwrap_or(1_048_576);
+                    if !(16..=1_048_576).contains(&floor)
+                        || !(16..=1_048_576).contains(&ceiling)
+                        || floor > ceiling
+                    {
+                        bail!(
+                            "distann-local-multinode step {:?} head bounds must satisfy 16 <= floor <= ceiling <= 1048576",
+                            step.name
+                        )
+                    }
+                }
+                if step.crown_capacity.is_some_and(|value| value > 1_048_576) {
+                    bail!(
+                        "distann-local-multinode step {:?} crown_capacity must be in 0..=1048576",
+                        step.name
+                    )
+                }
+                if (step.crown_width_pruning || step.fused_head_hop)
+                    && step.crown_capacity.unwrap_or(0) == 0
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} crown features require crown_capacity >= 1",
+                        step.name
+                    )
+                }
+                if (step.crown_width_pruning || step.fused_head_hop) && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} crown features require physical_benchmark",
+                        step.name
+                    )
+                }
                 if step
                     .beam_width
                     .is_some_and(|value| !(1..=64).contains(&value))
@@ -5317,6 +5376,21 @@ fn expand_distann_local_multinode(
     );
     push_opt_arg(
         &mut args,
+        "--head-sampling-rate",
+        step.head_sampling_rate.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--head-cap-floor",
+        step.head_cap_floor.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--head-cap-ceiling",
+        step.head_cap_ceiling.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
         "--beam-width",
         step.beam_width.map(|v| v.to_string()).as_deref(),
     );
@@ -5338,6 +5412,17 @@ fn expand_distann_local_multinode(
         "--gateway-copy-capacity",
         step.gateway_copy_capacity.map(|v| v.to_string()).as_deref(),
     );
+    push_opt_arg(
+        &mut args,
+        "--crown-capacity",
+        step.crown_capacity.map(|v| v.to_string()).as_deref(),
+    );
+    if step.crown_width_pruning {
+        args.push("--crown-width-pruning".into());
+    }
+    if step.fused_head_hop {
+        args.push("--fused-head-hop".into());
+    }
     if step.local_head {
         args.push("--local-head".into());
     }

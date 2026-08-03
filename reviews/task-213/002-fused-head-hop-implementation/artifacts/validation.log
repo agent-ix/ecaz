@@ -1,0 +1,13 @@
+head=a08f6fe60
+cargo_check_pg18=passed
+cargo_check_pg18_distann_head_attribution_benchmark=passed
+cargo_check_ecaz_cli=passed
+cargo_test_crown_cache=2 passed
+suite_dry_run_task213=6 steps expanded; fused flag present only on fused arms
+bench_suite_task213=completed_counter_enabled_6_steps
+bench_results=bench-run-counters/results.jsonl
+bench_10k_unfused_fused=0.9990/35.40_vs_0.9990/34.20_storage=1.235467/1.235600_hops=9.90/9.90
+bench_50k_unfused_fused=0.9555/45.30_vs_0.9555/45.70_storage=1.332667/1.332667_hops=13.60/13.60
+bench_100k_unfused_fused=0.9135/44.20_vs_0.9135/41.10_storage=1.351147/1.351173_hops=12.48/12.48
+crown_stats=recall_6400_latency_1600_fallbacks_0_each_arm; fused_hops_recall_200_latency_50_each_fused_arm; coordinator_resident_unsharded_bytes=0
+external_run_dirs=removed_after_capture

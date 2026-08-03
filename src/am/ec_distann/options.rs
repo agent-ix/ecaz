@@ -22,6 +22,7 @@ use super::{
     ECDISTANN_MIN_BUILD_SHARDS, ECDISTANN_MIN_CLOSURE_EPSILON, ECDISTANN_MIN_GRAPH_DEGREE,
     ECDISTANN_MIN_HEAD_INDEX_CAP,
 };
+use super::generation_descriptor::DistannHeadSizingAttestation;
 
 /// FR-081 beam width BW: frontier candidates expanded per hop round.
 static ECDISTANN_BEAM_WIDTH_GUC: GucSetting<i32> =
@@ -52,6 +53,15 @@ static ECDISTANN_HEAD_REPLICA_COUNT_GUC: GucSetting<i32> = GucSetting::<i32>::ne
 /// routing payloads a coordinator may cache. A stated constant, never a
 /// function of N. 0 disables gateway copies.
 static ECDISTANN_GATEWAY_COPY_CAPACITY_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
+
+/// FR-089 bounded coordinator crown capacity in `(vec_id, search_code)` entries.
+static ECDISTANN_CROWN_CAPACITY_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
+/// FR-089 explicit width-pruning arm. Off by default; only population-complete
+/// crown shards may be omitted by the caller.
+static ECDISTANN_CROWN_WIDTH_PRUNING_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+/// FR-090 explicit fused-head-hop arm. Off until the crown activation gate is
+/// demonstrated by a Task 212 packet.
+static ECDISTANN_FUSED_HEAD_HOP_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 /// NFR-021 clause 3 (Task 210 P2a): persist the FR-080 head as membership only,
 /// so the coordinator holds landmark ids -- bounded by capacity C -- and never a
@@ -118,6 +128,8 @@ static ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC: GucSetting<i32> = GucSetting::<i32>::
 /// asked to expand, simulating a `missing_node_record` (an owned record absent
 /// from the node's directory). The scan must error, never silently under-return.
 static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+#[cfg(feature = "pg_test")]
+static ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 /// NFR-020 fault injection (debug only): when true, `graph_insert_record` (the
 /// FR-083 fold path) raises an error after staging the new node + directory pages
@@ -163,6 +175,9 @@ struct EcDistannReloptions {
     graph_degree: i32,
     build_list_size: i32,
     head_index_cap: i32,
+    head_sampling_rate: f64,
+    head_cap_floor: i32,
+    head_cap_ceiling: i32,
     build_shards: i32,
     distributed_control: bool,
     // Postgres real reloptions are stored as C doubles; downcast to f32 when
@@ -262,6 +277,9 @@ pub(super) struct EcDistannOptions {
     pub(super) graph_degree: i32,
     pub(super) build_list_size: i32,
     pub(super) head_index_cap: i32,
+    pub(super) head_sampling_rate: f64,
+    pub(super) head_cap_floor: i32,
+    pub(super) head_cap_ceiling: i32,
     /// FR-077 build-shard count (0 = auto, 1 = monolithic fallback, >=2
     /// sharded closure-overlap build + stitch).
     pub(super) build_shards: i32,
@@ -279,6 +297,9 @@ impl EcDistannOptions {
         graph_degree: ECDISTANN_DEFAULT_GRAPH_DEGREE,
         build_list_size: ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
         head_index_cap: ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
+        head_sampling_rate: 0.0,
+        head_cap_floor: ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
+        head_cap_ceiling: ECDISTANN_MAX_HEAD_INDEX_CAP,
         build_shards: ECDISTANN_DEFAULT_BUILD_SHARDS,
         alpha: ECDISTANN_DEFAULT_ALPHA,
         closure_epsilon: ECDISTANN_DEFAULT_CLOSURE_EPSILON,
@@ -286,6 +307,64 @@ impl EcDistannOptions {
         source_identity: DistannSourceIdentityProvider::None,
         distributed_control: false,
     };
+
+    pub(super) fn validate_head_sizing_inputs(&self) -> Result<(), String> {
+        let floor = u32::try_from(self.head_cap_floor)
+            .map_err(|_| "EC_HEAD_SIZING: head_cap_floor is outside the v1 domain".to_owned())?;
+        let ceiling = u32::try_from(self.head_cap_ceiling)
+            .map_err(|_| "EC_HEAD_SIZING: head_cap_ceiling is outside the v1 domain".to_owned())?;
+        if !self.head_sampling_rate.is_finite() || self.head_sampling_rate < 0.0 {
+            return Err("EC_HEAD_SIZING: head_sampling_rate must be finite and non-negative".to_owned());
+        }
+        if floor < DistannHeadSizingAttestation::MIN_CAPACITY
+            || floor > DistannHeadSizingAttestation::MAX_CAPACITY
+            || ceiling < DistannHeadSizingAttestation::MIN_CAPACITY
+            || ceiling > DistannHeadSizingAttestation::MAX_CAPACITY
+            || floor > ceiling
+        {
+            return Err("EC_HEAD_SIZING: head sampling law bounds are outside 16..=1048576".to_owned());
+        }
+        Ok(())
+    }
+
+    pub(super) fn resolve_head_sizing(
+        &self,
+        captured_record_count: u64,
+        trained_policy: bool,
+    ) -> Result<(u32, Option<DistannHeadSizingAttestation>), String> {
+        self.validate_head_sizing_inputs()?;
+        let floor = self.head_cap_floor as u32;
+        let ceiling = self.head_cap_ceiling as u32;
+        if self.head_sampling_rate == 0.0 {
+            let explicit = u32::try_from(self.head_index_cap)
+                .map_err(|_| "EC_HEAD_SIZING: explicit head_index_cap is out of range".to_owned())?;
+            if trained_policy && explicit != 4096 {
+                return Err("EC_HEAD_TRAINING: trained head policy requires cap 4096".to_owned());
+            }
+            return Ok((explicit, None));
+        }
+        let resolved = DistannHeadSizingAttestation::resolve(
+            self.head_sampling_rate,
+            floor,
+            ceiling,
+            captured_record_count,
+        )?;
+        if trained_policy && resolved != 4096 {
+            return Err("EC_HEAD_TRAINING: trained head policy requires resolved cap 4096".to_owned());
+        }
+        Ok((
+            resolved,
+            Some(DistannHeadSizingAttestation {
+                resolved_capacity: resolved,
+                sample_count: 0,
+                rate_bits: self.head_sampling_rate.to_bits(),
+                floor,
+                ceiling,
+                captured_record_count,
+                law_active: true,
+            }),
+        ))
+    }
 }
 
 pub(super) fn register_gucs() {
@@ -374,6 +453,32 @@ pub(super) fn register_gucs() {
         &ECDISTANN_GATEWAY_COPY_CAPACITY_GUC,
         0,
         65536,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_int_guc(
+        c"ec_distann.crown_capacity",
+        c"FR-089 bounded coordinator crown capacity in search-code entries.",
+        c"Zero disables the epoch-scoped crown. The bound is independent of corpus size and head size; entries contain only vec_id and quantized search code.",
+        &ECDISTANN_CROWN_CAPACITY_GUC,
+        0,
+        ECDISTANN_MAX_HEAD_INDEX_CAP,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.crown_width_pruning",
+        c"FR-089 explicit crown width-pruning measurement arm.",
+        c"When enabled, only crown-covered promising head shards may be narrowed; the default preserves the full sharded head fan-out.",
+        &ECDISTANN_CROWN_WIDTH_PRUNING_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.fused_head_hop",
+        c"FR-090 fused crown seed expansion measurement arm.",
+        c"When enabled with a population-complete crown, crown-ranked seed ids enter the first ordinary expansion request and the dedicated head fan-out is skipped.",
+        &ECDISTANN_FUSED_HEAD_HOP_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -524,6 +629,15 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "pg_test")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.debug_fail_crown_population",
+        c"Task 212 test fault: make bounded crown population fail before serving.",
+        c"When on, physical crown population returns no cache so the scan must use the ordinary full-head fallback. This GUC exists only in pg_test builds and is off by default.",
+        &ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_bool_guc(
         c"ec_distann.debug_fail_insert",
         c"NFR-020 fault injection (debug): fail a graph insert after staging, before publish.",
@@ -588,6 +702,15 @@ pub(super) fn scan_profile_notice_enabled() -> bool {
 
 pub(super) fn physical_epoch_cache_enabled() -> bool {
     ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC.get()
+}
+
+pub(super) fn debug_fail_crown_population() -> bool {
+    #[cfg(feature = "pg_test")]
+    {
+        return ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC.get();
+    }
+    #[cfg(not(feature = "pg_test"))]
+    false
 }
 
 pub(super) fn materialization_batch_size() -> usize {
@@ -869,6 +992,18 @@ pub(super) fn debug_fail_tombstone_write() -> bool {
     ECDISTANN_DEBUG_FAIL_TOMBSTONE_WRITE_GUC.get()
 }
 
+pub(super) fn crown_capacity() -> usize {
+    usize::try_from(ECDISTANN_CROWN_CAPACITY_GUC.get()).unwrap_or(0)
+}
+
+pub(super) fn crown_width_pruning() -> bool {
+    ECDISTANN_CROWN_WIDTH_PRUNING_GUC.get()
+}
+
+pub(super) fn fused_head_hop() -> bool {
+    ECDISTANN_FUSED_HEAD_HOP_GUC.get()
+}
+
 pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
     reloptions: pg_sys::Datum,
     validate: bool,
@@ -909,6 +1044,35 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
             ECDISTANN_MIN_HEAD_INDEX_CAP,
             ECDISTANN_MAX_HEAD_INDEX_CAP,
             offset_of!(EcDistannReloptions, head_index_cap) as i32,
+        );
+        pg_sys::add_local_real_reloption(
+            &mut relopts,
+            b"head_sampling_rate\0".as_ptr().cast(),
+            b"FR-088 head capacity sampling rate; zero keeps the explicit head_index_cap law-inactive.\0"
+                .as_ptr()
+                .cast(),
+            0.0,
+            -1.0e308,
+            1.0e308,
+            offset_of!(EcDistannReloptions, head_sampling_rate) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            b"head_cap_floor\0".as_ptr().cast(),
+            b"FR-088 lower bound for the resolved head sampling law.\0".as_ptr().cast(),
+            ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
+            i32::MIN,
+            i32::MAX,
+            offset_of!(EcDistannReloptions, head_cap_floor) as i32,
+        );
+        pg_sys::add_local_int_reloption(
+            &mut relopts,
+            b"head_cap_ceiling\0".as_ptr().cast(),
+            b"FR-088 upper bound for the resolved head sampling law.\0".as_ptr().cast(),
+            ECDISTANN_MAX_HEAD_INDEX_CAP,
+            i32::MIN,
+            i32::MAX,
+            offset_of!(EcDistannReloptions, head_cap_ceiling) as i32,
         );
         pg_sys::add_local_int_reloption(
             &mut relopts,
@@ -1024,6 +1188,9 @@ impl EcDistannReloptionsView {
             graph_degree: reloptions.graph_degree,
             build_list_size: reloptions.build_list_size,
             head_index_cap: reloptions.head_index_cap,
+            head_sampling_rate: reloptions.head_sampling_rate,
+            head_cap_floor: reloptions.head_cap_floor,
+            head_cap_ceiling: reloptions.head_cap_ceiling,
             build_shards: reloptions.build_shards,
             alpha: reloptions.alpha as f32,
             closure_epsilon: reloptions.closure_epsilon as f32,
@@ -1089,5 +1256,42 @@ mod tests {
             DistannSourceIdentityProvider::Include
         );
         assert!(DistannSourceIdentityProvider::parse_reloption("none").is_err());
+    }
+
+    #[test]
+    fn head_sizing_reloption_validation_rejects_invalid_bounds() {
+        let mut options = EcDistannOptions::DEFAULT;
+        options.head_sampling_rate = -0.01;
+        assert!(options.validate_head_sizing_inputs().is_err());
+
+        options = EcDistannOptions::DEFAULT;
+        options.head_cap_floor = 8192;
+        options.head_cap_ceiling = 4096;
+        assert!(options.validate_head_sizing_inputs().is_err());
+
+        options = EcDistannOptions::DEFAULT;
+        options.head_cap_floor = 8;
+        assert!(options.validate_head_sizing_inputs().is_err());
+    }
+
+    #[test]
+    fn head_sizing_resolution_covers_untrained_and_trained_policies() {
+        let mut options = EcDistannOptions::DEFAULT;
+        let (explicit, attestation) = options.resolve_head_sizing(100_000, false).unwrap();
+        assert_eq!(explicit, 4096);
+        assert!(attestation.is_none());
+
+        options.head_sampling_rate = 0.02;
+        options.head_cap_floor = 16;
+        options.head_cap_ceiling = 4096;
+        let (resolved, attestation) = options.resolve_head_sizing(100_000, false).unwrap();
+        assert_eq!(resolved, 2000);
+        assert!(attestation.is_some());
+        assert!(options.resolve_head_sizing(100_000, true).is_err());
+
+        options.head_sampling_rate = 0.04096;
+        let (trained, attestation) = options.resolve_head_sizing(100_000, true).unwrap();
+        assert_eq!(trained, 4096);
+        assert!(attestation.is_some());
     }
 }

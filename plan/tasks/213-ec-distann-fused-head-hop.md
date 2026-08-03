@@ -1,6 +1,6 @@
 # Task 213: ec_distann Fused Head Hop
 
-Status: **in progress — P0 complete** (2026-08-01). Priority: P1.
+Status: **complete** (2026-08-02). Priority: P1.
 
 P0 spec landed as
 `spec/functional/distann/read/FR-090-distann-fused-head-hop.md` (hardened:
@@ -8,8 +8,13 @@ fused request defined as an ordinary FR-079 expansion whose requested
 vec_ids are the crown-ranked seed candidates, seed_count-bounded first
 round with NFR-019 accounting, mid-request failure semantics, exact-policy
 claimability condition); packet
-`reviews/task-213/001-fused-head-hop-spec/` open. P1/P2 remain behind the
-Task 212 P1 entry gate.
+`reviews/task-213/001-fused-head-hop-spec/` open. The fused consumer is
+implemented in
+`reviews/task-213/002-fused-head-hop-implementation/`, with fused-hop
+activation counters and measured recall across 10k/50k/100k. The shared
+capacity matrix selected 2048 entries for the opt-in fused configuration.
+Defaults remain opt-in because all measured fused arms are labeled
+`seed_set_change=true`; this preserves the existing default recall policy.
 
 Entry gate: Task 212 P1 (the crown exists and its counters prove activation).
 

@@ -149,6 +149,15 @@ pub struct LocalMultinodePg18Args {
     /// sensitivity matrices can vary the cap through `ecaz bench suite`.
     #[arg(long, default_value_t = 4096)]
     pub head_index_cap: u32,
+    /// Task 211 head sizing law rate.
+    #[arg(long)]
+    pub head_sampling_rate: Option<f64>,
+    /// Task 211 head sizing law lower clamp.
+    #[arg(long)]
+    pub head_cap_floor: Option<u32>,
+    /// Task 211 head sizing law upper clamp.
+    #[arg(long)]
+    pub head_cap_ceiling: Option<u32>,
     /// Session beam width applied to both physical and single benchmark arms.
     #[arg(long)]
     pub beam_width: Option<u32>,
@@ -174,6 +183,15 @@ pub struct LocalMultinodePg18Args {
     /// the coordinator caches that many head landmarks' routing payloads.
     #[arg(long)]
     pub gateway_copy_capacity: Option<u32>,
+    /// Task 212 bounded deterministic crown-cache capacity on physical scans.
+    #[arg(long)]
+    pub crown_capacity: Option<u32>,
+    /// Task 212 conservative width pruning using the crown cache.
+    #[arg(long, default_value_t = false)]
+    pub crown_width_pruning: bool,
+    /// Task 213 fused head-hop seed expansion using crown-ranked seeds.
+    #[arg(long, default_value_t = false)]
+    pub fused_head_hop: bool,
     /// Control arm for head-sharding A/Bs now that the sharded head is the
     /// shipped default (fe5822f46): forces the legacy coordinator-local head
     /// by setting `ec_distann.shard_head_storage=off` on the building session
@@ -502,6 +520,35 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if !(16..=1_048_576).contains(&args.head_index_cap) {
         bail!("--head-index-cap must be in 16..=1048576");
+    }
+    if args.head_sampling_rate.is_none()
+        && (args.head_cap_floor.is_some() || args.head_cap_ceiling.is_some())
+    {
+        bail!("--head-cap-floor/--head-cap-ceiling require --head-sampling-rate");
+    }
+    if let Some(rate) = args.head_sampling_rate {
+        if !rate.is_finite() || rate < 0.0 {
+            bail!("--head-sampling-rate must be finite and non-negative");
+        }
+        let floor = args.head_cap_floor.unwrap_or(4096);
+        let ceiling = args.head_cap_ceiling.unwrap_or(1_048_576);
+        if !(16..=1_048_576).contains(&floor) || !(16..=1_048_576).contains(&ceiling) {
+            bail!("--head-cap-floor/--head-cap-ceiling must be in 16..=1048576");
+        }
+        if floor > ceiling {
+            bail!("--head-cap-floor must not exceed --head-cap-ceiling");
+        }
+    }
+    if args.crown_capacity.is_some_and(|value| value > 1_048_576) {
+        bail!("--crown-capacity must be in 0..=1048576");
+    }
+    if (args.crown_width_pruning || args.fused_head_hop)
+        && args.crown_capacity.unwrap_or(0) == 0
+    {
+        bail!("--crown-width-pruning/--fused-head-hop require --crown-capacity >= 1");
+    }
+    if (args.crown_width_pruning || args.fused_head_hop) && !args.physical_benchmark {
+        bail!("--crown-width-pruning/--fused-head-hop require --physical-benchmark");
     }
     if args
         .beam_width
@@ -924,6 +971,7 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
                 args.queries,
                 args.graph_degree,
                 args.head_index_cap,
+                &head_sizing_reloptions(args),
             ))
         }
         None => Ok(setup_sql(args)),
@@ -959,6 +1007,7 @@ fn real_setup_sql(
     queries_limit: u32,
     gd: u32,
     head_index_cap: u32,
+    head_sizing: &str,
 ) -> String {
     // Escape the paths as SQL string literals (double any single quote) so a
     // path containing `'` cannot break out of the COPY ... FROM '<path>' literal
@@ -985,11 +1034,13 @@ fn real_setup_sql(
            FROM dmq_stage ORDER BY id LIMIT {queries_limit};\n\
          DROP TABLE dmq_stage;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap});\n",
+         WITH (graph_degree = {gd}, head_index_cap = {head_index_cap}{head_sizing});\n",
+        head_sizing = head_sizing,
     )
 }
 
 fn setup_sql(args: &LocalMultinodePg18Args) -> String {
+    let head_sizing = head_sizing_reloptions(args);
     format!(
         "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'peter') THEN CREATE ROLE peter LOGIN SUPERUSER; END IF; END $$;\n\
          DROP TABLE IF EXISTS dm;\n\
@@ -1005,11 +1056,26 @@ fn setup_sql(args: &LocalMultinodePg18Args) -> String {
            FROM generate_series(1, {rows}) AS g\n\
          ) s;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap});\n",
+           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap}{head_sizing});\n",
         dim = args.dim,
         rows = args.rows,
         gd = args.graph_degree,
         head_index_cap = args.head_index_cap,
+        head_sizing = head_sizing,
+    )
+}
+
+/// Build-time reloptions for Task 211. An omitted rate preserves the legacy
+/// explicit-cap surface; a supplied rate is persisted in the generation
+/// descriptor and attested against the captured row count by the extension.
+fn head_sizing_reloptions(args: &LocalMultinodePg18Args) -> String {
+    let Some(rate) = args.head_sampling_rate else {
+        return String::new();
+    };
+    format!(
+        ", head_sampling_rate = {rate}, head_cap_floor = {}, head_cap_ceiling = {}",
+        args.head_cap_floor.unwrap_or(4096),
+        args.head_cap_ceiling.unwrap_or(1_048_576),
     )
 }
 
@@ -1050,6 +1116,7 @@ fn recall_sql(roster: &str, queries: u32, top_k: u32, real: bool) -> String {
 }
 
 fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Result<String> {
+    let head_sizing = head_sizing_reloptions(args);
     let physical_dim = if let Some(corpus_prefix) = &args.corpus_prefix {
         let staged_dir = args
             .staged_dir
@@ -1192,10 +1259,10 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
          {shard_head_storage}
          CREATE INDEX dm_idx ON dm USING ec_distann
              (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
-             WITH (distributed_control = true, source_identity = 'include',
+            WITH (distributed_control = true, source_identity = 'include',
                    graph_degree = {}, head_index_cap = {},
-                   neighbor_code_format = 'rabitq');",
-        args.graph_degree, args.head_index_cap
+                   neighbor_code_format = 'rabitq'{});",
+        args.graph_degree, args.head_index_cap, head_sizing
     ))
 }
 
@@ -1425,6 +1492,74 @@ fn append_gateway_copy_guc(args: &mut Vec<String>, arm: &str, capacity: Option<u
             format!("ec_distann.gateway_copy_capacity={capacity}"),
         ]);
     }
+}
+
+fn append_crown_gucs(
+    args: &mut Vec<String>,
+    arm: &str,
+    capacity: Option<u32>,
+    width_pruning: bool,
+    fused_head_hop: bool,
+) {
+    if arm != "physical" {
+        return;
+    }
+    if let Some(capacity) = capacity {
+        args.extend([
+            "--session-guc".into(),
+            format!("ec_distann.crown_capacity={capacity}"),
+        ]);
+    }
+    if width_pruning {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.crown_width_pruning=on".into(),
+        ]);
+    }
+    if fused_head_hop {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.fused_head_hop=on".into(),
+        ]);
+    }
+}
+
+fn crown_counter(line: &str, name: &str) -> Option<i64> {
+    line.split_whitespace()
+        .find_map(|field| field.strip_prefix(&format!("{name}=")))
+        .and_then(|value| value.parse().ok())
+}
+
+fn validate_crown_activation(
+    args: &LocalMultinodePg18Args,
+    stats_seen: bool,
+    crown_seeds_served: i64,
+    _crown_width_pruned_shards: i64,
+    crown_width_pruning_activations: i64,
+    fused_head_hops: i64,
+    fused_first_round_requested_ids: i64,
+) -> Result<()> {
+    if args.crown_capacity.is_none() {
+        return Ok(());
+    }
+    if !stats_seen {
+        bail!(
+            "crown-enabled physical arm did not report ec_distann crown counters"
+        );
+    }
+    if args.crown_width_pruning && crown_width_pruning_activations <= 0 {
+        bail!("crown-width arm reported zero crown_width_pruning_activations");
+    }
+    if args.fused_head_hop && crown_seeds_served <= 0 {
+        bail!("fused crown arm served zero crown seeds");
+    }
+    if args.fused_head_hop && fused_head_hops <= 0 {
+        bail!("fused-head-hop arm reported zero fused_head_hops");
+    }
+    if args.fused_head_hop && fused_first_round_requested_ids <= 0 {
+        bail!("fused-head-hop arm reported zero fused first-round requested ids");
+    }
+    Ok(())
 }
 
 fn append_nonconforming_replica_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
@@ -4587,6 +4722,7 @@ async fn run_physical_benchmarks(
         0
     } else {
         let single_started = Instant::now();
+        let head_sizing = head_sizing_reloptions(args);
         coordinator
             .batch_execute(&format!(
                 "CREATE TABLE {single_corpus} AS
@@ -4595,8 +4731,8 @@ async fn run_physical_benchmarks(
                  CREATE INDEX {single_index} ON {single_corpus}
                      USING ec_distann (embedding ecvector_distann_ip_ops)
                      WITH (graph_degree = {}, head_index_cap = {},
-                           neighbor_code_format = 'rabitq');",
-                args.graph_degree, args.head_index_cap
+                           neighbor_code_format = 'rabitq'{});",
+                args.graph_degree, args.head_index_cap, head_sizing
             ))
             .await?;
         single_started.elapsed().as_millis()
@@ -4830,11 +4966,19 @@ async fn run_physical_benchmarks(
         task199_no_replica_insert_throughput(coordinator, scale, &physical_corpus, &mut lines)
             .await?;
     }
+    let mut crown_storage = std::collections::HashMap::<String, (i64, i64, i64, i64)>::new();
     let mut same_seed_digests =
         std::collections::HashMap::<(String, u32, u32), (String, String)>::new();
     for variant in &seed_variants {
         let variant_beam_width = variant.beam_width.unwrap_or(beam_width);
         let variant_hop_rounds = variant.hop_rounds.unwrap_or(hop_rounds);
+        let seed_label = if args.fused_head_hop {
+            format!("{}+crown_fused", variant.strategy)
+        } else if args.crown_width_pruning {
+            format!("{}+crown_width_pruned", variant.strategy)
+        } else {
+            variant.strategy.clone()
+        };
         if explicit_seed_controls {
             coordinator
                 .batch_execute(&format!(
@@ -4889,6 +5033,21 @@ async fn run_physical_benchmarks(
                 attested_neighbor_score
             );
         }
+        // The digest probe must execute under the same crown/fused session
+        // settings as the benchmark children. Otherwise it only observes the
+        // coordinator connection's default path and falsely reports same-seed
+        // provenance for every arm.
+        coordinator
+            .batch_execute(&format!(
+                "SET ec_distann.crown_capacity = {};\n\
+                 SET ec_distann.crown_width_pruning = {};\n\
+                 SET ec_distann.fused_head_hop = {};",
+                args.crown_capacity.unwrap_or(0),
+                if args.crown_width_pruning { "on" } else { "off" },
+                if args.fused_head_hop { "on" } else { "off" },
+            ))
+            .await
+            .wrap_err("configuring coordinator crown provenance settings")?;
         if has_seed_id_digest {
             let digest_rows = coordinator
                 .query(
@@ -4936,9 +5095,10 @@ async fn run_physical_benchmarks(
                 register_same_seed_digest(&mut same_seed_digests, variant, &seed_id_digest)?
                     .unwrap_or_else(|| "none".to_owned());
             lines.push(format!(
-                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} queries={} seed_id_digest={} compared_with={} same_seed=true",
+                "physical_benchmark_seed_digest scale={scale} variant={} seed_strategy={} seed_set_change={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} queries={} seed_id_digest={} compared_with={} same_seed={}",
                 variant.name,
-                variant.strategy,
+                seed_label,
+                args.fused_head_hop || args.crown_width_pruning,
                 variant.head_search_width,
                 variant.head_seed_count,
                 variant.neighbor_score_mode,
@@ -4948,6 +5108,7 @@ async fn run_physical_benchmarks(
                 args.queries,
                 seed_id_digest,
                 compared_with,
+                !(args.fused_head_hop || args.crown_width_pruning),
             ));
         }
         benchmark_arms.push((
@@ -4965,12 +5126,19 @@ async fn run_physical_benchmarks(
             variant_hop_rounds,
         ));
         lines.push(format!(
-            "physical_benchmark_build scale={scale} variant={} seed_strategy={} head_index_cap={} head_search_width={} head_seed_count={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            "physical_benchmark_build scale={scale} variant={} seed_strategy={} seed_set_change={} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} head_search_width={} head_seed_count={} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
             variant.name,
-            variant.strategy,
+            seed_label,
+            args.fused_head_hop || args.crown_width_pruning,
             args.head_index_cap,
+            args.head_sampling_rate,
+            args.head_cap_floor,
+            args.head_cap_ceiling,
             variant.head_search_width,
             variant.head_seed_count,
+            args.crown_capacity,
+            args.crown_width_pruning,
+            args.fused_head_hop,
             variant.neighbor_score_mode,
             variant.materialization_batch_size,
             variant.owner_payload_plan_cache,
@@ -5015,6 +5183,13 @@ async fn run_physical_benchmarks(
         arm_hop_rounds,
     ) in benchmark_arms
     {
+        let seed_label = if arm == "physical" && args.fused_head_hop {
+            format!("{seed_strategy}+crown_fused")
+        } else if arm == "physical" && args.crown_width_pruning {
+            format!("{seed_strategy}+crown_width_pruned")
+        } else {
+            seed_strategy.clone()
+        };
         if traversal_replica && traversal_replica_digest.is_none() {
             traversal_owner_baseline = Some(
                 task198_replica_semantic_result(
@@ -5065,6 +5240,7 @@ async fn run_physical_benchmarks(
                 recall_args.extend([
                     "--truth-corpus-file".into(),
                     truth_corpus.display().to_string(),
+                    "--report-distann-crown-stats".into(),
                 ]);
                 if explicit_seed_controls {
                     recall_args.extend([
@@ -5104,8 +5280,78 @@ async fn run_physical_benchmarks(
                     args.head_replica_count,
                 );
                 append_gateway_copy_guc(&mut recall_args, arm, args.gateway_copy_capacity);
+                append_crown_gucs(
+                    &mut recall_args,
+                    arm,
+                    args.crown_capacity,
+                    args.crown_width_pruning,
+                    args.fused_head_hop,
+                );
             }
             let recall = run_physical_bench_child(recall_args).await?;
+            if arm == "physical" {
+                let mut crown_stats_seen = false;
+                let mut reported_crown_capacity = 0_i64;
+                let mut reported_crown_entries = 0_i64;
+                let mut reported_crown_resident_bytes = 0_i64;
+                let mut reported_crown_resident_bytes_bound = 0_i64;
+                let mut crown_seeds_served = 0_i64;
+                let mut crown_width_pruned_shards = 0_i64;
+                let mut crown_width_pruning_activations = 0_i64;
+                let mut fused_head_hops = 0_i64;
+                let mut fused_first_round_requested_ids = 0_i64;
+                for stats in recall
+                    .lines()
+                    .filter_map(|line| line.strip_prefix("[distann-crown-stats] "))
+                {
+                    crown_stats_seen = true;
+                    reported_crown_capacity = crown_counter(stats, "capacity")
+                        .ok_or_else(|| eyre!("crown stats omitted capacity"))?;
+                    reported_crown_entries = crown_counter(stats, "entries")
+                        .ok_or_else(|| eyre!("crown stats omitted entries"))?;
+                    reported_crown_resident_bytes = crown_counter(stats, "resident_bytes")
+                        .ok_or_else(|| eyre!("crown stats omitted resident_bytes"))?;
+                    reported_crown_resident_bytes_bound =
+                        crown_counter(stats, "resident_bytes_bound")
+                            .ok_or_else(|| eyre!("crown stats omitted resident_bytes_bound"))?;
+                    crown_seeds_served = crown_counter(stats, "crown_seeds_served")
+                        .ok_or_else(|| eyre!("crown stats omitted crown_seeds_served"))?;
+                    crown_width_pruned_shards = crown_counter(stats, "crown_width_pruned_shards")
+                        .ok_or_else(|| eyre!("crown stats omitted crown_width_pruned_shards"))?;
+                    crown_width_pruning_activations =
+                        crown_counter(stats, "crown_width_pruning_activations").ok_or_else(|| {
+                            eyre!("crown stats omitted crown_width_pruning_activations")
+                        })?;
+                    fused_head_hops = crown_counter(stats, "fused_head_hops")
+                        .ok_or_else(|| eyre!("crown stats omitted fused_head_hops"))?;
+                    fused_first_round_requested_ids = crown_counter(
+                        stats,
+                        "fused_first_round_requested_ids",
+                    )
+                    .ok_or_else(|| eyre!("crown stats omitted fused_first_round_requested_ids"))?;
+                    lines.push(format!(
+                        "physical_benchmark_crown_stats scale={scale} variant={variant} arm={arm} {stats}"
+                    ));
+                }
+                validate_crown_activation(
+                    args,
+                    crown_stats_seen,
+                    crown_seeds_served,
+                    crown_width_pruned_shards,
+                    crown_width_pruning_activations,
+                    fused_head_hops,
+                    fused_first_round_requested_ids,
+                )?;
+                crown_storage.insert(
+                    variant.to_owned(),
+                    (
+                        reported_crown_capacity,
+                        reported_crown_entries,
+                        reported_crown_resident_bytes,
+                        reported_crown_resident_bytes_bound,
+                    ),
+                );
+            }
             let row = benchmark_table_row(&recall)?;
             let membership_recall = row[3].parse::<f64>()?;
             let distinct_recall = row[12].parse::<f64>()?;
@@ -5116,8 +5362,10 @@ async fn run_physical_benchmarks(
                 prediction_paths.insert(variant.to_owned(), predictions_output);
             }
             lines.push(format!(
-                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
-                args.head_index_cap, row[1], row[2]
+                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_label} seed_set_change={} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
+                args.head_index_cap, args.head_sampling_rate, args.head_cap_floor,
+                args.head_cap_ceiling, args.crown_capacity, args.crown_width_pruning,
+                args.fused_head_hop, args.fused_head_hop || args.crown_width_pruning, row[1], row[2]
             ));
         }
 
@@ -5161,6 +5409,9 @@ async fn run_physical_benchmarks(
         if arm == "physical" && args.benchmark_hold_transaction {
             latency_args.push("--hold-transaction".into());
         }
+        if arm == "physical" {
+            latency_args.push("--report-distann-crown-stats".into());
+        }
         if arm == "physical" && args.sample_backend_memory {
             latency_args.extend([
                 "--sample-backend-memory".into(),
@@ -5203,14 +5454,89 @@ async fn run_physical_benchmarks(
             args.head_replica_count,
         );
         append_gateway_copy_guc(&mut latency_args, arm, args.gateway_copy_capacity);
+        append_crown_gucs(
+            &mut latency_args,
+            arm,
+            args.crown_capacity,
+            args.crown_width_pruning,
+            args.fused_head_hop,
+        );
         if arm == "physical" && args.distann_stage_counters {
             latency_args.push("--distann-stage-counters".into());
         }
         let latency = run_physical_bench_child(latency_args).await?;
+        if arm == "physical" {
+            let mut crown_stats_seen = false;
+            let mut reported_crown_capacity = 0_i64;
+            let mut reported_crown_entries = 0_i64;
+            let mut reported_crown_resident_bytes = 0_i64;
+            let mut reported_crown_resident_bytes_bound = 0_i64;
+            let mut crown_seeds_served = 0_i64;
+            let mut crown_width_pruned_shards = 0_i64;
+            let mut crown_width_pruning_activations = 0_i64;
+            let mut fused_head_hops = 0_i64;
+            let mut fused_first_round_requested_ids = 0_i64;
+            for stats in latency
+                .lines()
+                .filter_map(|line| line.strip_prefix("[distann-crown-stats] "))
+            {
+                crown_stats_seen = true;
+                reported_crown_capacity = crown_counter(stats, "capacity")
+                    .ok_or_else(|| eyre!("crown stats omitted capacity"))?;
+                reported_crown_entries = crown_counter(stats, "entries")
+                    .ok_or_else(|| eyre!("crown stats omitted entries"))?;
+                reported_crown_resident_bytes = crown_counter(stats, "resident_bytes")
+                    .ok_or_else(|| eyre!("crown stats omitted resident_bytes"))?;
+                reported_crown_resident_bytes_bound = crown_counter(stats, "resident_bytes_bound")
+                    .ok_or_else(|| eyre!("crown stats omitted resident_bytes_bound"))?;
+                crown_seeds_served = crown_counter(stats, "crown_seeds_served")
+                    .ok_or_else(|| eyre!("crown stats omitted crown_seeds_served"))?;
+                crown_width_pruned_shards = crown_counter(stats, "crown_width_pruned_shards")
+                    .ok_or_else(|| eyre!("crown stats omitted crown_width_pruned_shards"))?;
+                crown_width_pruning_activations =
+                    crown_counter(stats, "crown_width_pruning_activations")
+                        .ok_or_else(|| eyre!("crown stats omitted crown_width_pruning_activations"))?;
+                fused_head_hops = crown_counter(stats, "fused_head_hops")
+                    .ok_or_else(|| eyre!("crown stats omitted fused_head_hops"))?;
+                fused_first_round_requested_ids = crown_counter(
+                    stats,
+                    "fused_first_round_requested_ids",
+                )
+                .ok_or_else(|| eyre!("crown stats omitted fused_first_round_requested_ids"))?;
+                lines.push(format!(
+                    "physical_benchmark_crown_stats scale={scale} variant={variant} arm={arm} {stats}"
+                ));
+            }
+            validate_crown_activation(
+                args,
+                crown_stats_seen,
+                crown_seeds_served,
+                crown_width_pruned_shards,
+                crown_width_pruning_activations,
+                fused_head_hops,
+                fused_first_round_requested_ids,
+            )?;
+            crown_storage.insert(
+                variant.to_owned(),
+                (
+                    reported_crown_capacity,
+                    reported_crown_entries,
+                    reported_crown_resident_bytes,
+                    reported_crown_resident_bytes_bound,
+                ),
+            );
+        }
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
             args.head_index_cap,
+            args.head_sampling_rate,
+            args.head_cap_floor,
+            args.head_cap_ceiling,
+            args.crown_capacity,
+            args.crown_width_pruning,
+            args.fused_head_hop,
+            args.fused_head_hop || args.crown_width_pruning,
             row[1],
             benchmark_ms(&row[2])?,
             benchmark_ms(&row[5])?,
@@ -5520,8 +5846,29 @@ async fn run_physical_benchmarks(
         lines.push(format!(
             "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_generation_head_state relation_bytes={head_state_bytes} storage_derived=false arm_invariant=true nfr_021_class=control",
         ));
+        let (
+            crown_capacity,
+            crown_entries,
+            crown_resident_bytes,
+            crown_resident_bytes_bound,
+        ) = crown_storage
+            .get(&variant.name)
+            .copied()
+            .unwrap_or_default();
+        if crown_resident_bytes > crown_resident_bytes_bound {
+            bail!(
+                "crown resident bytes exceed bound for variant {}: {} > {}",
+                variant.name,
+                crown_resident_bytes,
+                crown_resident_bytes_bound
+            );
+        }
+        lines.push(format!(
+            "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_crown_cache relation_bytes={crown_resident_bytes} crown_capacity={crown_capacity} crown_entries={crown_entries} crown_resident_bytes={crown_resident_bytes} crown_resident_bytes_bound={crown_resident_bytes_bound} storage_derived=false nfr_021_class=bounded_codes_only within_capacity_bound=true",
+        ));
         let coordinator_head_bytes = head_sample_bytes + head_graph_bytes;
-        let coordinator_total_resident_bytes = derived_relation_bytes + coordinator_head_bytes;
+        let coordinator_total_resident_bytes =
+            derived_relation_bytes + coordinator_head_bytes + crown_resident_bytes;
         let cluster_graph_side_bytes = owner_graph_side_bytes + derived_relation_bytes;
         let max_single_node_graph_side_bytes =
             max_owner_graph_side_bytes.max(derived_relation_bytes);
@@ -5543,7 +5890,7 @@ async fn run_physical_benchmarks(
             ));
         }
         lines.push(format!(
-            "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} coordinator_resident_unsharded_bytes={coordinator_head_bytes} total_resident_bytes={coordinator_total_resident_bytes} derived_relation_bytes={derived_relation_bytes} relations_itemised=true",
+            "physical_benchmark_storage_node scale={scale} {shared} arm=physical node=coordinator node_role=coordinator graph_bytes=0 directory_bytes=0 control_bytes=0 graph_side_bytes={derived_relation_bytes} row_tier_bytes=0 head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} crown_resident_bytes={crown_resident_bytes} coordinator_resident_unsharded_bytes={coordinator_head_bytes} total_resident_bytes={coordinator_total_resident_bytes} derived_relation_bytes={derived_relation_bytes} relations_itemised=true",
         ));
         lines.push(format!(
             "physical_benchmark_storage scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=false owners={} physical_generation_bytes={physical_generation_bytes} owner_graph_side_bytes={owner_graph_side_bytes} owner_row_tier_bytes={owner_row_tier_bytes} owner_total_bytes={owner_total_bytes} derived_relation_bytes={derived_relation_bytes} cluster_graph_side_bytes={cluster_graph_side_bytes} max_single_node_graph_side_bytes={max_single_node_graph_side_bytes} control_index_bytes={control_index_bytes} coordinator_source_bytes={coordinator_source_bytes} single_index_bytes={single_index_bytes} single_source_bytes={single_source_bytes} raw_vector_bytes={raw_vector_bytes} cluster_index_space_amplification={cluster_index_space_amplification:.6}",

@@ -1,0 +1,370 @@
+{
+  "suite": "task212-crown-capacity-and-pruning-followup",
+  "schema_version": 1,
+  "config": "reviews/task-212/002-crown-cache-implementation/artifacts/task212-followup-suite.json",
+  "config_sha256": "63e86a4100078e7156c72b120ddad35c70aaaa54f128584e393b7b44632ed530",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785702397270,
+  "runner_git_commit": "591d9b5483511c63c9474f08d81fb36ea87fd0fc-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "fused-cap512-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/fused-cap512-10k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap2048-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/fused-cap2048-10k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap4096-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/fused-cap4096-10k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap512-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "50k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/fused-cap512-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap2048-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "50k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/fused-cap2048-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap4096-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "50k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/fused-cap4096-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap512-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "100k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/fused-cap512-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap2048-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "100k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/fused-cap2048-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap4096-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "100k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/fused-cap4096-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pruning-off-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-off-10k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task212-pruning-off-10k",
+        "--log-file",
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-off-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "42500",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--crown-capacity",
+        "2048",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "pruning-off:persisted_head:32:32:rabitq:0:off:4:100:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
+      ],
+      "selected": true,
+      "tags": [
+        "task212",
+        "pruning",
+        "off",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-off-10k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785702397296,
+      "finished_at_unix_ms": 1785702620329,
+      "duration_ms": 237237,
+      "exit_code": 0
+    },
+    {
+      "name": "pruning-on-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-on-10k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task212-pruning-on-10k",
+        "--log-file",
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-on-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--crown-capacity",
+        "2048",
+        "--crown-width-pruning",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "pruning-on:persisted_head:32:32:rabitq:0:off:4:100:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
+      ],
+      "selected": true,
+      "tags": [
+        "task212",
+        "pruning",
+        "on",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-on-10k/distann-multinode-summary.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1785702620330,
+      "finished_at_unix_ms": 1785702783499,
+      "duration_ms": 173835,
+      "exit_code": 1
+    },
+    {
+      "name": "pruning-off-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "pruning",
+        "off",
+        "50k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-off-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pruning-on-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "pruning",
+        "on",
+        "50k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-on-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pruning-off-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "pruning",
+        "off",
+        "100k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-off-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "pruning-on-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "pruning",
+        "on",
+        "100k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-10k/pruning-on-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}
