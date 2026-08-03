@@ -1,7 +1,0 @@
-[suite] task201-normal-replica-memory-100k
-[provenance] scale=100k extension_git_sha=c830b184fe4c750936ab13eab2891f63f06ba3d0 extension_build_profile=release nodes=3 physical shared-table surface=true query_sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
-[settings] trained_4096_exact_head persisted_head width32 seeds32 BW4/H100 graph32 rabitq lazy10 300 queries 10 warmups memory_interval_ms=250
-[control] variant=normal-replica-memory-control plan_cache=false mean_ms=18.90 p50_ms=17.50 p95_ms=29.70 p99_ms=49.80 max_ms=58.60 rss_samples=23 rss_first_kb=159544 rss_last_kb=187296 rss_delta_kb=27752 hwm_peak_kb=187296 final_plateau=true
-[mat40] variant=normal-replica-memory-mat40 plan_cache=true mean_ms=16.10 p50_ms=16.00 p95_ms=19.10 p99_ms=20.80 max_ms=21.20 rss_samples=20 rss_first_kb=170000 rss_last_kb=185752 rss_delta_kb=15752 hwm_peak_kb=191804 final_plateau=true
-[memory] no monotonic unbounded growth was observed in the sampled final plateau; endpoint RSS was lower for MAT-40 than control. The HWM is per-backend and includes startup/cache acquisition.
-[validation] release_preflight=pass physical_topology_gate=pass remote_owner_checks=pass shared_generation=true
