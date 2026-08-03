@@ -10,7 +10,7 @@ seq: 002
 
 # Review request: pre-registered partition-union A/B
 
-Head SHA: `ea7f0af53d2ffb6c29fefde5fe9a3fc448237260`
+Code head SHA: `59aeb6c58fa3e2f0db1774a6c3c8a5ab62308e78`
 
 `artifacts/task207-100k-union-ab.json` is the canonical `ecaz bench suite`
 configuration for the primary Task 207 construction A/B. It holds BW=128,
@@ -23,5 +23,7 @@ Each step includes persisted-head and owner-oracle variants so membership and
 end-to-end movement can be separated. The two fixture run directories are
 outside the repository. Audit/dry-run output is in `artifacts/suite-dry-run.md`.
 
-No benchmark result is claimed yet; the physical extension run remains open on
-this host.
+The packet also contains a short 10k diagnostic A/B config at
+`artifacts/task207-10k-union-ab.json`, using the same fixed BW=128/H=5 shape
+as the 100k pre-registration. Its result rows will be added after the run;
+the required 10k/50k/100k closeout remains open.

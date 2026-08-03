@@ -1,6 +1,6 @@
 # Artifact manifest
 
-- head SHA: `ea7f0af53d2ffb6c29fefde5fe9a3fc448237260`
+- head SHA: `59aeb6c58fa3e2f0db1774a6c3c8a5ab62308e78`
 - task bucket: `reviews/task-207`
 - packet: `002-union-construction`
 - lane / fixture: PG18; 3-owner distann local multinode; control/candidate A/B
@@ -17,5 +17,7 @@
 Artifacts:
 
 - `task207-100k-union-ab.json`: checked-in SuiteConfig
-- `run/suite-manifest.json`: runner-generated dry-run manifest
+- `task207-10k-union-ab.json`: checked-in diagnostic SuiteConfig
+- `run/suite-manifest.json`: runner-generated 100k dry-run manifest
+- `run-10k/suite-manifest.json`: runner-generated 10k dry-run manifest
 - `suite-dry-run.md`: cited audit and expansion output
