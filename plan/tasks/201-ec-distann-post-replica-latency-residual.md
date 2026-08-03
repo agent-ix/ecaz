@@ -1,7 +1,10 @@
 # Task 201: ec_distann Post-Replica Latency Residual
 
-Status: **proposed — latency lane for the current PC** (2026-07-29). Priority:
-P1 latency follow-up after Task 199.
+Status: **closeout review requested — no-promotion outcome** (2026-08-03;
+`reviews/task-201/004-closeout/`). The attribution, isolated candidate, release
+matrix, and normal-path RSS/HWM evidence are complete; MAT-40 is not promoted
+and the frozen Task 199 control remains unchanged. Priority: P1 latency
+follow-up after Task 199.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`. This task
 owns the post-replica latency attribution and one isolated optimization; it
