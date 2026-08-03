@@ -1,6 +1,6 @@
 # Task 211: ec_distann Head Scaling Law
 
-Status: **in progress** (2026-08-02). Priority: P1.
+Status: **complete** (2026-08-03). Priority: P1.
 
 P0 spec landed as
 `spec/functional/distann/read/FR-088-distann-head-scaling-law.md`
@@ -16,6 +16,12 @@ win at all three staged scales. The implementation gate therefore treats
 0.02 as the selected candidate; broader rate selection is deferred to the
 1M+ scale gate. Cross-ISA determinism rides the standing Graviton lane; this
 packet is Intel-host evidence only.
+
+Task 211 is complete: the 0.02 law candidate was measured at 10k/50k/100k,
+the corrected evidence selected it as the implementation candidate, and the
+fixed 4096 cap remains the shipped default because the law did not produce a
+consistent win at all staged scales. Broader rate selection and 1M+ validation
+remain explicit follow-up work, not an open Task 211 gate.
 
 Entry gate: Task 210 merged (sharded, membership-only head is the shipped
 default — `reviews/task-210/006-zero-byte-head/`). Tasks 212/213 build on
