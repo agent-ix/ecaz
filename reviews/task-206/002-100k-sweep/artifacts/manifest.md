@@ -1,6 +1,6 @@
 # Artifact manifest
 
-- head SHA: `55a730d80e20d17177d23fb9f7246382665e37ed`
+- head SHA: `59aeb6c58fa3e2f0db1774a6c3c8a5ab62308e78`
 - task bucket: `reviews/task-206`
 - packet: `002-100k-sweep`
 - lane / fixture: PG18; 3-owner distann local multinode; pre-registered only
@@ -19,3 +19,5 @@ Artifacts:
 - `task206-100k-sweep.json`: checked-in SuiteConfig
 - `run/suite-manifest.json`: runner-generated dry-run manifest
 - `suite-dry-run.md`: cited audit and nine-arm expansion output
+- `setup-attempt.md`: packet-local log summary for the stopped setup attempt
+- `run/100k/*.log`: runner and per-node PostgreSQL logs from that attempt

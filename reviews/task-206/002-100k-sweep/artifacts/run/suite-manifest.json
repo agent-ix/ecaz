@@ -3,9 +3,9 @@
   "schema_version": 1,
   "config": "reviews/task-206/002-100k-sweep/artifacts/task206-100k-sweep.json",
   "config_sha256": "79bbb3d06bd8f2b943b3520d403c221becef991350ae9f8a4090e8df02f122c8",
-  "dry_run": true,
-  "generated_at_unix_ms": 1785798317140,
-  "runner_git_commit": "55a730d807f3c974b1cd02c6cd680b63e0ffb3e8",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785798904325,
+  "runner_git_commit": "59aeb6c58fa3e2f0db1774a6c3c8a5ab62308e78",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -89,7 +89,8 @@
       "expected_artifacts": [
         "reviews/task-206/002-100k-sweep/artifacts/run/100k/distann-multinode-summary.log"
       ],
-      "status": "dry-run"
+      "status": "pending",
+      "started_at_unix_ms": 1785798904350
     }
   ]
 }

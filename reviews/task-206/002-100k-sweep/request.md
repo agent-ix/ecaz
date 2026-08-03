@@ -10,7 +10,7 @@ seq: 002
 
 # Review request: pre-registered 100k traversal sweep
 
-Head SHA: `55a730d80e20d17177d23fb9f7246382665e37ed`
+Head SHA: `59aeb6c58fa3e2f0db1774a6c3c8a5ab62308e78`
 
 `artifacts/task206-100k-sweep.json` is the canonical `ecaz bench suite`
 configuration for Task 206 phase 2. It registers nine independent arms:
@@ -19,10 +19,12 @@ and the monolithic head control (`build_shards=1`). The fixture run directory
 is outside the repository under `$ECAZ_CLUSTER_ROOT`.
 
 The suite audit passed and the dry-run emitted all nine expanded commands;
-those outputs are recorded in `artifacts/suite-dry-run.md`. No latency, recall,
-or storage result is claimed yet. The archived 100k corpus path is present,
-but the actual multinode fixture/extension run has not been executed on this
-host.
+those outputs are recorded in `artifacts/suite-dry-run.md`. An actual run was
+started after installing the release extension for this SHA and passed the
+release preflight, but it stalled during physical setup while loading/building
+the 100k coordinator corpus before any benchmark rows were produced. The
+diagnostic is recorded in `artifacts/setup-attempt.md`; no latency, recall, or
+storage result is claimed.
 
 Please review the pre-registration and leave findings under this packet's
 `feedback/` directory.
