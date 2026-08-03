@@ -1,17 +1,18 @@
 # Task 212: ec_distann Crown Cache
 
-Status: **in progress** (2026-08-02). Priority: P1.
+Status: **complete** (2026-08-02). Priority: P1.
 
 P0 spec landed as
 `spec/functional/distann/read/FR-089-distann-crown-cache.md` (hardened:
 width pruning is an explicit measured arm with a population-complete
 precondition; population timing + populated predicate defined; selection
 digest keyed (epoch_fingerprint, capacity)); packet
-`reviews/task-212/001-crown-cache-spec/` open. P1 is complete in
-`reviews/task-212/002-crown-cache-implementation/`, with activation counters
-and storage invariants recorded across the 10k/50k/100k matrix. The
-single-variable pruning A/B is now complete, but it shows no pruned shards or
-latency improvement at the tested geometry. The capacity sweep remains open.
+`reviews/task-212/001-crown-cache-spec/` open. P1, the single-variable pruning
+A/B, and the fused capacity sweep are complete in
+`reviews/task-212/002-crown-cache-implementation/`. The pruning A/B activated
+but pruned zero shards and showed no latency improvement. The fused capacity
+matrix selected 2048 entries as the opt-in capacity; production defaults remain
+off because the measured fused arms are explicitly seed-set-changing.
 
 Entry gate: Task 210 merged. Spec phase (P0) can start immediately; the final
 sizing sweep references Task 211's chosen law but does not wait on it.
@@ -77,8 +78,9 @@ nondeterminism.
   Task 213's fused hop — without 213 the crown's win is owner CPU and tail
   width.) The equal-seed-count A/B completed, with activation but zero shards
   pruned and no measured latency benefit at capacity 2048.
-- **P3 — sizing sweep.** Crown capacity × (Task 211's head law) at
-  10k/50k/100k. 1M+ deferred with Task 211's scale bound.
+- **P3 — sizing sweep.** Complete: fused crown capacity 512/2048/4096 at
+  10k/50k/100k. Capacity 2048 is selected for the opt-in fused configuration;
+  1M+ remains deferred with Task 211's scale bound.
 
 ## Benchmark gate
 

@@ -1,22 +1,23 @@
 # Task 212 implementation artifacts
 
 - Task bucket: `reviews/task-212/`; packet: `002-crown-cache-implementation`
-- Code head: `73e56d83b7f38bcdd0cdb0b2fbf1df27199e0456`
-- Installed PG18 release extension: `591d9b5483511c63c9474f08d81fb36ea87fd0fc-dirty`
-  (the extension was built before the source checkpoint commit; its source
-  content matches the committed code, while the dirty marker reflects the
-  shared worktree state).
-- Validation: PG18 cargo checks and four focused crown-cache tests passed;
-  see `validation.log`.
+- Code head: `a8b1699528e593b45f55fc25329199714d4627ff`
+- Installed PG18 release extension: `a8b1699528e593b45f55fc25329199714d4627ff`
+  (release profile, committed tree; three-node preflight was unanimous).
+- Validation: PG18 focused physical handoff test passed after the lifecycle
+  coverage was added; see `validation-followup.log`.
 - Suite configs: `task212-crown-suite.json`, `task212-followup-suite.json`, and
   `task212-pruning-suite.json`.
-- Final suite source of truth: `bench-run-final2/suite-manifest.json` and
-  `bench-run-final2/results.jsonl` (all 9 steps succeeded).
+- Capacity source of truth: `capacity-matrix-summary.md`, the compact
+  per-arm summary logs under `bench-run-capacity-release-a8b169952/`, and
+  `suite-manifest-r2.json` plus `results-r2.jsonl` for the two successful 100k
+  reruns. The summary table is the merged nine-arm result record; the earlier
+  partial-initialization records are not evidence.
 - Single-variable pruning source of truth:
   `bench-run-pruning-10k-fixed/results.jsonl` and
   `bench-run-pruning-50-100k/results.jsonl` (the corrected 10k arm plus all
   four 50k/100k arms succeeded).
-- Command: `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-212/002-crown-cache-implementation/artifacts/task212-crown-suite.json --artifact-dir reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-final2 --log-file reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-final2/suite.log --continue-on-error`
+- Command: `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-212/002-crown-cache-implementation/artifacts/task212-capacity-suite.json --artifact-dir reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952 --continue-on-error`
 - Pruning command (2026-08-02T15:25:30-07:00): `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-212/002-crown-cache-implementation/artifacts/task212-pruning-suite.json --artifact-dir reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-50-100k --log-file reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-pruning-50-100k/suite.log --continue-on-error`
 - Corpus query SHA: 10k `a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8`,
   50k `95ac7992578aa80bb193657f10fbcbf1ea3867e559739244bf5a467f7a5a9fa3`,
@@ -40,8 +41,9 @@
   recall/latency deltas must not be attributed to pruning alone. A promotion
   decision requires a single-variable `persisted_head`, equal-seed-count,
   pruning-off versus pruning-on A/B at capacity 2048 at every scale.
-- Crown stats: plain arms served 6400 recall and 1600 latency seeds with zero
-  fallbacks. Width activation was nonzero at every scale; recall-arm pruning
+- Crown stats: after the gating fix, plain arms rank and consume zero crown
+  seeds; they use the full head fan-out. Width activation was nonzero at every
+  scale; recall-arm pruning
   was 0/67/71 shards at 10k/50k/100k, with 200/200/200 pruning activations.
   The 10k cap-1024 arm recorded activation even when no complete shard could
   be removed.
@@ -58,11 +60,11 @@
   recall and 50 times on latency at each scale, but pruned zero shards at
   every scale. This is an activation and no-effect result, not evidence of a
   pruning latency win.
-- Capacity evidence currently covers fused 512 and 2048 at 10k plus the
-  crown 2048 matrix at 10k/50k/100k; the full 512/2048/4096 × 10k/50k/100k
-  sizing sweep remains open.
+- The full fused 512/2048/4096 × 10k/50k/100k sizing sweep is complete;
+  `capacity-matrix-summary.md` records the exact result table and the selected
+  2048-entry opt-in capacity.
 - Storage rows itemize `ec_distann_crown_cache` as bounded codes-only storage:
-  `capacity=1024 or 2048`, `entries=capacity`, `resident_bytes=bound`, and
+  `capacity=512, 2048, or 4096`, `entries=capacity`, `resident_bytes=bound`, and
   `within_capacity_bound=true`; coordinator unsharded bytes remain zero.
 - Artifacts retained in this packet are only the suite manifest, structured
   results, and compact per-arm summary logs. Corpus data, predictions,

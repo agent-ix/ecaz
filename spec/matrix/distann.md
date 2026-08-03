@@ -303,9 +303,9 @@ Unimplemented feature; all rows owned by Task 212
 
 | AC / CON | Verification (spec) | Status |
 | --- | --- | --- |
-| FR-089-AC-1 | Test | ⚠️ Partial: `reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-final2/` proves identity/activation; forced-miss and population-failure integration test remains |
+| FR-089-AC-1 | Test | ✅ `test_distann_three_owner_physical_handoff` forces crown population failure, verifies fallback counters, and compares fallback results with the cache-off referent |
 | FR-089-AC-2 | Test | ✅ `CrownCache::from_entries` validation and bounded serialized bytes |
-| FR-089-AC-3 | Test | ⚠️ Partial: epoch/capacity discard is implemented; end-to-end discard test remains |
+| FR-089-AC-3 | Test | ✅ `test_distann_three_owner_physical_handoff` verifies capacity replacement and a changed epoch fingerprint after successor publication |
 | FR-089-AC-4 | Inspection + test | ✅ codes-only storage and resident-byte bound in Task 212 storage rows |
 | FR-089-AC-5 | Analysis (bench) | ✅ plain crown identity A/B at 10k/50k/100k; single-variable width-pruning A/B at 10k/50k/100k activates the path but prunes zero shards and shows no latency benefit; both outcomes are separately labeled |
 | FR-089-CON-1 | Analysis + storage audit | ✅ bounded crown storage rows in Task 212 packet |
@@ -320,8 +320,8 @@ Unimplemented feature; all rows owned by Task 213
 | --- | --- | --- |
 | FR-090-AC-1 | Test | ⚠️ Partial: inherited FR-079 positional-contract coverage; dedicated forced fused-request fixture remains |
 | FR-090-AC-2 | Test | ⚠️ Partial: shared expansion implementation preserves threshold path; dedicated fused/unfused semantic test remains |
-| FR-090-AC-3 | Test | ⚠️ Partial: fallback implementation and zero-fallback benchmark evidence; forced crown-miss test remains |
-| FR-090-AC-4 | Test + fixture | ✅ All current 2048-capacity arms are explicitly `seed_set_change=true`; exact claims are restricted to the documented shared code-scored/full-membership condition |
+| FR-090-AC-3 | Test | ✅ shared `test_distann_three_owner_physical_handoff` forces population failure and verifies identical fallback results; fused benchmark arms report zero fallbacks |
+| FR-090-AC-4 | Test + fixture | ✅ Capacity 512/2048/4096 arms are explicitly `seed_set_change=true`; exact claims are restricted to the amended shared code-scored/full-membership condition |
 | FR-090-AC-5 | Analysis (bench) | ✅ Post-fix Task 213 packet: fused 33.40/41.30/38.90 ms vs unfused 39.80/50.30/51.60 ms at 10k/50k/100k; fused requested-id accounting is 1600 latency / 6400 recall per arm |
 | FR-090-CON-1 | Test + bench | ✅ Recall movement is labeled and measured; no exact-policy claim is made for the approximate 2048-capacity arms |
 

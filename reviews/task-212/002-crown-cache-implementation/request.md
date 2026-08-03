@@ -2,7 +2,7 @@
 
 - Task: `plan/tasks/212-ec-distann-crown-cache.md`
 - Packet: `reviews/task-212/002-crown-cache-implementation/`
-- Code head: `cc6a01c66` (`Expose crown width activation provenance`)
+- Code head: `a8b1699528e593b45f55fc25329199714d4627ff` (`test(distann): verify crown fallback and lifecycle`)
 - Date: 2026-08-01. Coder: Codex
 
 ## Reviewer follow-up
@@ -30,5 +30,12 @@ explicitly labeled as a seed-set-changing approximate arm. Recall and
 storage evidence are summarized in `artifacts/manifest.md`; structured
 results are in `artifacts/bench-run-final2/results.jsonl`.
 
-Status: open — reviewer follow-up is complete; awaiting outside reviewer
-acknowledgement.
+Status: complete pending outside reviewer acknowledgement. The full fused
+capacity matrix is complete at 512/2048/4096 × 10k/50k/100k; capacity 2048 is
+selected for the opt-in fused configuration. The plain and pruning arms remain
+result-neutral/no-effect findings as required by their attribution contracts.
+
+The exact merged capacity table and provenance are in
+`artifacts/capacity-matrix-summary.md`; the two final 100k suite records are in
+`artifacts/bench-run-capacity-release-a8b169952/suite-manifest-r2.json` and
+`results-r2.jsonl`.

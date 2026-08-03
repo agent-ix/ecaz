@@ -1,13 +1,11 @@
 # Task 213 implementation artifacts
 
 - Task bucket: `reviews/task-213/`; packet: `002-fused-head-hop-implementation`
-- Code head: `73e56d83b7f38bcdd0cdb0b2fbf1df27199e0456`
-- Installed PG18 release extension: `591d9b5483511c63c9474f08d81fb36ea87fd0fc-dirty`
-  (the extension was built before the source checkpoint commit; its source
-  content matches the committed code, while the dirty marker reflects the
-  shared worktree state).
-- Validation: PG18 cargo checks and four focused crown-cache tests passed;
-  see `validation.log`.
+- Code head: `a8b1699528e593b45f55fc25329199714d4627ff`
+- Installed PG18 release extension: `a8b1699528e593b45f55fc25329199714d4627ff`
+  (release profile, committed tree; three-node preflight was unanimous).
+- Validation: PG18 focused physical handoff test passed after lifecycle
+  coverage was added; see the Task 212 packet's `validation-followup.log`.
 - Suite config: `task213-fused-suite.json`.
 - Final suite source of truth: `bench-run-final2/suite-manifest.json` and
   `bench-run-final2/results.jsonl` (all 6 steps succeeded).
@@ -31,6 +29,11 @@
 - Post-fix latency means were unfused versus fused: 10k `39.80 -> 33.40 ms`,
   50k `50.30 -> 41.30 ms`, and 100k `51.60 -> 38.90 ms`; post-fix recall was
   `0.9940 -> 0.9985`, `0.9595 -> 0.9585`, and `0.9145 -> 0.9300`.
+- The shared release capacity matrix covers fused capacities 512, 2048, and
+  4096 at 10k/50k/100k. Capacity 2048 is selected for the opt-in fused
+  configuration: it is the latency winner at all three scales and is within
+  0.001 recall of capacity 4096 at 100k. Every capacity arm is labeled
+  `seed_set_change=true`.
 - Post-fix unfused arms reported `crown_seeds_served=0`,
   `fused_head_hops=0`, and `fused_first_round_requested_ids=0`. Fused recall
   arms reported `crown_seeds_served=6400`, `fused_head_hops=200`, and
