@@ -145,6 +145,11 @@ pub struct LocalMultinodePg18Args {
     /// ec_distann graph degree reloption.
     #[arg(long, default_value_t = 32)]
     pub graph_degree: u32,
+    /// Number of partition-local Vamana builds used for the physical head
+    /// union. Zero selects the extension's automatic policy; one preserves
+    /// the monolithic control; values >=2 exercise Task 207 construction.
+    #[arg(long, default_value_t = 1)]
+    pub build_shards: u32,
     /// Persisted coordinator head-sample cap reloption. Exposed so FR-080
     /// sensitivity matrices can vary the cap through `ecaz bench suite`.
     #[arg(long, default_value_t = 4096)]
@@ -503,11 +508,14 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if !(16..=1_048_576).contains(&args.head_index_cap) {
         bail!("--head-index-cap must be in 16..=1048576");
     }
+    if args.build_shards > 4096 {
+        bail!("--build-shards must be in 0..=4096");
+    }
     if args
         .beam_width
-        .is_some_and(|value| !(1..=64).contains(&value))
+        .is_some_and(|value| !(1..=256).contains(&value))
     {
-        bail!("--beam-width must be in 1..=64");
+        bail!("--beam-width must be in 1..=256");
     }
     if args
         .candidate_heap_limit
@@ -724,7 +732,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     crate::ecaz_println!("[distann-multicluster] repo={}", repo_root.display());
     crate::ecaz_println!("[distann-multicluster] pgbin={}", pgbin.display());
     crate::ecaz_println!(
-        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} head_index_cap={}",
+        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} graph_degree={} build_shards={} head_index_cap={}",
         match mode {
             FixtureMode::Physical => "physical",
             FixtureMode::ReplicatedServingControl => "replicated-serving-control",
@@ -735,6 +743,8 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         args.base_port,
         args.rows,
         args.dim,
+        args.graph_degree,
+        args.build_shards,
         args.head_index_cap
     );
 
@@ -924,6 +934,7 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
                 args.queries,
                 args.graph_degree,
                 args.head_index_cap,
+                args.build_shards,
             ))
         }
         None => Ok(setup_sql(args)),
@@ -959,6 +970,7 @@ fn real_setup_sql(
     queries_limit: u32,
     gd: u32,
     head_index_cap: u32,
+    build_shards: u32,
 ) -> String {
     // Escape the paths as SQL string literals (double any single quote) so a
     // path containing `'` cannot break out of the COPY ... FROM '<path>' literal
@@ -985,7 +997,8 @@ fn real_setup_sql(
            FROM dmq_stage ORDER BY id LIMIT {queries_limit};\n\
          DROP TABLE dmq_stage;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap});\n",
+           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
+                 build_shards = {build_shards});\n",
     )
 }
 
@@ -1005,11 +1018,13 @@ fn setup_sql(args: &LocalMultinodePg18Args) -> String {
            FROM generate_series(1, {rows}) AS g\n\
          ) s;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap});\n",
+           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
+                 build_shards = {build_shards});\n",
         dim = args.dim,
         rows = args.rows,
         gd = args.graph_degree,
         head_index_cap = args.head_index_cap,
+        build_shards = args.build_shards,
     )
 }
 
@@ -1194,8 +1209,9 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
              (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
              WITH (distributed_control = true, source_identity = 'include',
                    graph_degree = {}, head_index_cap = {},
+                   build_shards = {},
                    neighbor_code_format = 'rabitq');",
-        args.graph_degree, args.head_index_cap
+        args.graph_degree, args.head_index_cap, args.build_shards
     ))
 }
 
@@ -1659,9 +1675,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                     })
                 })
                 .transpose()?;
-            if beam_width.is_some_and(|width| !(1..=64).contains(&width)) {
+            if beam_width.is_some_and(|width| !(1..=256).contains(&width)) {
                 bail!(
-                    "benchmark seed variant beam width must be in 1..=64, got {value:?}"
+                    "benchmark seed variant beam width must be in 1..=256, got {value:?}"
                 );
             }
             let hop_rounds = fields

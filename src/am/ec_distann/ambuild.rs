@@ -102,6 +102,9 @@ pub(crate) struct PhysicalGraphWorkspace {
     codes: Vec<Vec<u8>>,
     graph: crate::am::VamanaGraph,
     medoid: u32,
+    /// Per-partition Vamana BFS prefixes used to build the §3 head union.
+    /// `None` is the monolithic/single-partition fallback.
+    head_partition_nodes: Option<Vec<Vec<u32>>>,
     codec_artifact: DistannCodecArtifact,
     shape: DistannHandoffShape,
 }
@@ -124,11 +127,26 @@ impl PhysicalGraphWorkspace {
         head_index_cap: usize,
         training: Option<&super::head_sample::DistannTrainingQuerySet>,
     ) -> Result<super::head_sample::DistannHeadSample, String> {
-        let vectors = self
+        let vector_refs = self
             .capture
             .rows
             .iter()
-            .map(|row| row.source_vector.clone())
+            .map(|row| row.source_vector.as_slice())
+            .collect::<Vec<_>>();
+        if training.is_none() {
+            if let Some(partitions) = self.head_partition_nodes.as_deref() {
+                return super::head_sample::build_partition_union_head_sample(
+                    partitions,
+                    head_index_cap,
+                    self.capture.dimensions,
+                    &self.vec_ids,
+                    &vector_refs,
+                );
+            }
+        }
+        let vectors = vector_refs
+            .iter()
+            .map(|vector| (*vector).to_vec())
             .collect::<Vec<_>>();
         if let Some(training) = training {
             return super::head_sample::build_training_head_sample(
@@ -969,8 +987,8 @@ pub(crate) fn build_physical_graph_workspace(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
-    let (graph, medoid) = if node_count == 0 {
-        (crate::am::VamanaGraph::empty(0, graph_degree), 0)
+    let (graph, medoid, head_partition_nodes) = if node_count == 0 {
+        (crate::am::VamanaGraph::empty(0, graph_degree), 0, None)
     } else {
         let dist = |left: u32, right: u32| -> f32 {
             source_inner_product_distance(source_refs[left as usize], source_refs[right as usize])
@@ -980,7 +998,8 @@ pub(crate) fn build_physical_graph_workspace(
             usize::try_from(options.build_shards.max(0)).unwrap_or(0),
         );
         if shard_count >= 2 {
-            let (graph, medoid, stats) = super::shard_build::build_sharded_graph(
+            let (graph, medoid, stats, head_partition_nodes) =
+                super::shard_build::build_sharded_graph(
                 &source_refs,
                 usize::from(dimensions),
                 graph_degree,
@@ -988,6 +1007,7 @@ pub(crate) fn build_physical_graph_workspace(
                 options.alpha,
                 shard_count,
                 options.closure_epsilon,
+                options.head_index_cap as usize,
                 seed,
             )?;
             pgrx::notice!(
@@ -1000,7 +1020,7 @@ pub(crate) fn build_physical_graph_workspace(
                 stats.build_peak_completion_bytes,
                 stats.stitch_peak_retained_bytes,
             );
-            (graph, medoid)
+            (graph, medoid, Some(head_partition_nodes))
         } else {
             let medoid =
                 crate::am::approximate_medoid(node_count, DISTANN_MEDOID_SAMPLE_CAP, seed, dist);
@@ -1016,6 +1036,7 @@ pub(crate) fn build_physical_graph_workspace(
                 )
                 .0,
                 medoid,
+                None,
             )
         }
     };
@@ -1030,6 +1051,7 @@ pub(crate) fn build_physical_graph_workspace(
         codes,
         graph,
         medoid,
+        head_partition_nodes,
         codec_artifact,
         shape,
     })
@@ -1444,8 +1466,8 @@ unsafe fn flush_build_state(
         node_count,
         usize::try_from(state.options.build_shards.max(0)).unwrap_or(0),
     );
-    let (graph, medoid) = if shard_count >= 2 {
-        let (graph, medoid, shard_stats) = super::shard_build::build_sharded_graph(
+    let (graph, medoid, head_partition_nodes) = if shard_count >= 2 {
+        let (graph, medoid, shard_stats, head_regions) = super::shard_build::build_sharded_graph(
             &source_refs,
             usize::from(dimensions),
             state.options.graph_degree as usize,
@@ -1453,6 +1475,7 @@ unsafe fn flush_build_state(
             state.options.alpha,
             shard_count,
             state.options.closure_epsilon,
+            state.options.head_index_cap as usize,
             seed,
         )?;
         // FR-077-AC-3 / ADR-085 D8: surface the closure/stitch manifest rows.
@@ -1477,7 +1500,7 @@ unsafe fn flush_build_state(
             shard_stats.build_peak_completion_bytes,
             shard_stats.reachability_repairs,
         );
-        (graph, medoid)
+        (graph, medoid, Some(head_regions))
     } else {
         let medoid =
             crate::am::approximate_medoid(node_count, DISTANN_MEDOID_SAMPLE_CAP, seed, dist);
@@ -1490,7 +1513,7 @@ unsafe fn flush_build_state(
             seed,
             dist,
         );
-        (graph, medoid)
+        (graph, medoid, None)
     };
 
     // Stage FR-076 node records; adjacency references neighbors by vec_id
@@ -1544,6 +1567,7 @@ unsafe fn flush_build_state(
         state.options.head_index_cap as usize,
         &vec_ids,
         &source_refs,
+        head_partition_nodes.as_deref(),
     )?;
 
     let handle = NonNull::new(index_relation)
@@ -1651,32 +1675,42 @@ fn stage_head_sample_chain(
     head_index_cap: usize,
     vec_ids: &[u64],
     source_refs: &[&[f32]],
+    partition_nodes: Option<&[Vec<u32>]>,
 ) -> Result<ItemPointer, String> {
     let node_count = vec_ids.len();
     let cap = head_index_cap.min(node_count).max(1);
-    let mut sampled = Vec::with_capacity(cap);
-    let mut visited = vec![false; node_count];
-    let mut queue = std::collections::VecDeque::new();
-    visited[medoid as usize] = true;
-    queue.push_back(medoid);
-    while let Some(node) = queue.pop_front() {
-        sampled.push(node);
-        if sampled.len() >= cap {
-            break;
-        }
-        for neighbor in &graph.neighbors[node as usize] {
-            let index = *neighbor as usize;
-            if !visited[index] {
-                visited[index] = true;
-                queue.push_back(*neighbor);
-            }
-        }
-    }
+    let sample = if let Some(partition_nodes) = partition_nodes {
+        let vectors = source_refs.to_vec();
+        super::head_sample::build_partition_union_head_sample(
+            partition_nodes,
+            cap,
+            vectors.first().map_or(0, |vector| vector.len()) as u16,
+            vec_ids,
+            &vectors,
+        )?
+    } else {
+        let vectors = source_refs.iter().map(|source| (*source).to_vec()).collect::<Vec<_>>();
+        super::head_sample::build_head_sample(
+            graph,
+            medoid,
+            cap,
+            vectors.first().map_or(0, |vector| vector.len()) as u16,
+            vec_ids,
+            &vectors,
+        )?
+    };
 
-    // Stage in reverse for next_tid linking; the head yields BFS order.
+    let mut node_by_vec_id = HashMap::with_capacity(vec_ids.len());
+    for (node, vec_id) in vec_ids.iter().copied().enumerate() {
+        node_by_vec_id.insert(vec_id, node);
+    }
+    // Stage in reverse for next_tid linking; the head yields its deterministic
+    // partition-union or graph-BFS order.
     let mut next_tid = ItemPointer::INVALID;
-    for node in sampled.iter().rev() {
-        let index = *node as usize;
+    for entry in sample.entries.iter().rev() {
+        let index = *node_by_vec_id
+            .get(&entry.vec_id)
+            .ok_or_else(|| "EC_HEAD_SAMPLE: staged sample vec_id is absent".to_owned())?;
         let tuple = DistannHeadSampleTuple {
             next_tid,
             vec_id: vec_ids[index],

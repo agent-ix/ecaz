@@ -684,6 +684,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     graph_degree: Option<u32>,
     #[serde(default)]
+    build_shards: Option<u32>,
+    #[serde(default)]
     head_index_cap: Option<u32>,
     #[serde(default)]
     beam_width: Option<u32>,
@@ -3966,6 +3968,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.build_shards.is_some_and(|value| value > 4096) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set build_shards in 0..=4096",
+                        step.name
+                    )
+                }
                 if step.top_k == Some(0) {
                     bail!(
                         "distann-local-multinode step {:?} must set top_k >= 1",
@@ -3983,10 +3991,10 @@ impl SuiteStep {
                 }
                 if step
                     .beam_width
-                    .is_some_and(|value| !(1..=64).contains(&value))
+                    .is_some_and(|value| !(1..=256).contains(&value))
                 {
                     bail!(
-                        "distann-local-multinode step {:?} must set beam_width in 1..=64",
+                        "distann-local-multinode step {:?} must set beam_width in 1..=256",
                         step.name
                     )
                 }
@@ -4172,10 +4180,10 @@ impl SuiteStep {
                         }
                         if variant
                             .beam_width
-                            .is_some_and(|value| !(1..=64).contains(&value))
+                            .is_some_and(|value| !(1..=256).contains(&value))
                         {
                             bail!(
-                                "distann-local-multinode step {:?} benchmark seed variant {:?} beam_width must be in 1..=64",
+                                "distann-local-multinode step {:?} benchmark seed variant {:?} beam_width must be in 1..=256",
                                 step.name,
                                 variant.name
                             )
@@ -5309,6 +5317,11 @@ fn expand_distann_local_multinode(
         &mut args,
         "--graph-degree",
         step.graph_degree.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--build-shards",
+        step.build_shards.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -6722,6 +6735,7 @@ psql header noise\n\
             "name": "cap-256",
             "nodes": 3,
             "head_index_cap": 256,
+            "build_shards": 4,
             "beam_width": 16,
             "hop_rounds": 25,
             "seed_strategy": "head_sample_exact",
@@ -6746,6 +6760,9 @@ psql header noise\n\
         assert!(command
             .windows(2)
             .any(|window| window == ["--head-index-cap", "256"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--build-shards", "4"]));
         assert!(command
             .windows(2)
             .any(|window| window == ["--beam-width", "16"]));
@@ -7797,7 +7814,7 @@ psql header noise\n\
     #[test]
     fn distann_local_multinode_rejects_out_of_range_search_shape() {
         for field in [
-            r#""beam_width": 65"#,
+            r#""beam_width": 257"#,
             r#""hop_rounds": 257"#,
             r#""head_search_width": 4097"#,
             r#""head_seed_count": 0"#,

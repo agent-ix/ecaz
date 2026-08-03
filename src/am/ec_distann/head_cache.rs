@@ -1,6 +1,7 @@
 //! FR-080 coordinator head index: an in-memory Vamana graph over the
 //! persisted entry-region sample, cached per backend and keyed on the
-//! index oid, validated against a metadata fingerprint.
+//! a bounded two-entry LRU keyed on logical index/build/epoch identity and
+//! validated against a metadata fingerprint.
 //!
 //! The cache entry also carries the vec_id→TID directory and (for
 //! GroupedPq) the flat codebooks — all query-independent state that would
@@ -10,7 +11,7 @@
 //! means index content cannot change without a REINDEX, which moves the
 //! chain heads and invalidates the entry.
 
-use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use crate::storage::{page::ItemPointer, relation::RelationHandle};
@@ -72,11 +73,38 @@ pub(crate) struct DistannIndexCacheEntry {
     pub(crate) flat_codebooks: Option<Vec<f32>>,
 }
 
-type CacheMap = HashMap<u32, Arc<DistannIndexCacheEntry>>;
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DistannCacheKey {
+    index_oid: u32,
+    logical_index_uuid: [u8; 16],
+    build_id: [u8; 16],
+    epoch_fingerprint: [u8; 32],
+}
+
+impl DistannCacheKey {
+    /// Legacy local indexes predate the physical generation catalog and do not
+    /// have separate build/epoch UUIDs. Their persisted active epoch and
+    /// content digest are the stable equivalents; the metadata fingerprint is
+    /// still checked on every hit below.
+    fn legacy(index_oid: u32, metadata: &DistannMetadataPage) -> Self {
+        let mut build_id = [0_u8; 16];
+        build_id[..8].copy_from_slice(&metadata.active_epoch.to_le_bytes());
+        let mut epoch_fingerprint = [0_u8; 32];
+        epoch_fingerprint[..8].copy_from_slice(&metadata.content_digest.to_le_bytes());
+        Self {
+            index_oid,
+            logical_index_uuid: metadata.logical_index_uuid,
+            build_id,
+            epoch_fingerprint,
+        }
+    }
+}
+
+type CacheMap = VecDeque<(DistannCacheKey, Arc<DistannIndexCacheEntry>)>;
 
 fn cache() -> &'static Mutex<CacheMap> {
     static CACHE: OnceLock<Mutex<CacheMap>> = OnceLock::new();
-    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+    CACHE.get_or_init(|| Mutex::new(VecDeque::new()))
 }
 
 /// Fetch (or build) the cached query-independent scan state for an index.
@@ -87,21 +115,30 @@ pub(crate) fn cached_index_entry(
 ) -> Result<Arc<DistannIndexCacheEntry>, String> {
     let fingerprint = DistannCacheFingerprint::of(metadata);
     {
-        let cache = cache()
+        let mut cache = cache()
             .lock()
             .map_err(|_| "ec_distann head cache lock poisoned".to_owned())?;
-        if let Some(entry) = cache.get(&index_oid) {
+        let key = DistannCacheKey::legacy(index_oid, metadata);
+        if let Some(position) = cache.iter().position(|(cached, _)| *cached == key) {
+            let (cached_key, entry) = cache.remove(position).expect("cache position exists");
             if entry.fingerprint == fingerprint {
-                return Ok(Arc::clone(entry));
+                let result = Arc::clone(&entry);
+                cache.push_front((cached_key, entry));
+                return Ok(result);
             }
         }
     }
 
     let entry = Arc::new(build_cache_entry(handle, metadata, fingerprint)?);
-    cache()
+    let key = DistannCacheKey::legacy(index_oid, metadata);
+    let mut cache = cache()
         .lock()
-        .map_err(|_| "ec_distann head cache lock poisoned".to_owned())?
-        .insert(index_oid, Arc::clone(&entry));
+        .map_err(|_| "ec_distann head cache lock poisoned".to_owned())?;
+    if let Some(position) = cache.iter().position(|(cached, _)| *cached == key) {
+        cache.remove(position);
+    }
+    cache.push_front((key, Arc::clone(&entry)));
+    cache.truncate(2);
     Ok(entry)
 }
 

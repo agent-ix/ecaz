@@ -345,6 +345,14 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
             "ec_distann scan requires candidate_heap_limit >= 1".to_owned(),
         ));
     }
+    let expansion_budget = params
+        .beam_width
+        .checked_mul(params.hop_rounds)
+        .ok_or_else(|| {
+            DistannExpandError::BadInput(
+                "ec_distann scan beam_width * hop_rounds exceeds usize".to_owned(),
+            )
+        })?;
 
     // Beam pool ordered by code distance; `enqueued` dedupes by vec_id
     // (FR-081: visited-set dedupe is by vec_id, expansion at most once).
@@ -538,10 +546,13 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
         }
     }
 
-    debug_assert!(
-        counters.records_expanded <= params.beam_width * params.hop_rounds,
-        "BW x H expansion cap violated"
-    );
+    if counters.records_expanded > expansion_budget {
+        return Err(DistannExpandError::Internal(format!(
+            "ec_distann expansion cap violated: expanded {} records, budget is {} (BW={} H={})",
+            counters.records_expanded, expansion_budget, params.beam_width, params.hop_rounds
+        )));
+    }
+    debug_assert!(counters.records_expanded <= expansion_budget);
     hits.sort_unstable_by(|left, right| {
         left.exact_dist
             .total_cmp(&right.exact_dist)

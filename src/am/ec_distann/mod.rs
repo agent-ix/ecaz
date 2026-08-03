@@ -258,7 +258,10 @@ pub(super) const ECDISTANN_MAX_BUILD_SHARDS: i32 = 4096;
 /// FR-081 BW default; matches the ec_diskann batched-beam width measured in
 /// Task 168 (packet 002 A/B).
 pub(super) const ECDISTANN_DEFAULT_BEAM_WIDTH: i32 = 4;
-pub(super) const ECDISTANN_MAX_BEAM_WIDTH: i32 = 64;
+/// The paper's distributed regime reaches BW=128. Keep headroom for the
+/// surrounding sweep without making an unbounded GUC; NFR-019 still limits
+/// each query by `beam_width * hop_rounds`.
+pub(super) const ECDISTANN_MAX_BEAM_WIDTH: i32 = 256;
 /// FR-081 L: maximum number of retained unexpanded candidates used to derive
 /// the owner-side code-score floor.
 pub(super) const ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT: i32 = 32;
