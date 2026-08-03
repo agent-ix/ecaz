@@ -1,0 +1,30 @@
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=c830b184fe4c750936ab13eab2891f63f06ba3d0 extension_build_profile=release debug_override=false
+[distann-multicluster] physical_benchmark_provenance scale=100k extension_git_sha=c830b184fe4c750936ab13eab2891f63f06ba3d0 extension_build_profile=release nodes=3 unanimous=true stage_counter_only=false corpus_prefix=ec_real_100k query_sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782
+[distann-multicluster] physical_benchmark_seed_digest scale=100k variant=owner-fallback-control seed_strategy=persisted_head head_search_width=32 head_seed_count=32 beam_width=4 hop_rounds=100 neighbor_score_mode=rabitq materialization_batch_size=10 owner_payload_plan_cache=false traversal_replica=false queries=200 seed_id_digest=488caa73ad3f6c22864f9af309569ba4fe6edd72c8d535e71eec7bff78af6d50 same_seed=true
+[distann-multicluster] physical_benchmark_seed_digest scale=100k variant=normal-replica seed_strategy=persisted_head head_search_width=32 head_seed_count=32 beam_width=4 hop_rounds=100 neighbor_score_mode=rabitq materialization_batch_size=10 owner_payload_plan_cache=false traversal_replica=true queries=200 seed_id_digest=488caa73ad3f6c22864f9af309569ba4fe6edd72c8d535e71eec7bff78af6d50 compared_with=owner-fallback-control same_seed=true
+[distann-multicluster] physical_benchmark_recall scale=100k variant=owner-fallback-control recall=0.9625 distinct_recall_ci95_low=0.9532 distinct_recall_ci95_high=0.9700 queries=200 trials=2000
+[distann-multicluster] physical_benchmark_recall scale=100k variant=normal-replica recall=0.9625 distinct_recall_ci95_low=0.9532 distinct_recall_ci95_high=0.9700 queries=200 trials=2000
+[distann-multicluster] physical_benchmark_latency scale=100k variant=owner-fallback-control count=50 mean_ms=19.70 p50_ms=19.70 p95_ms=22.60 p99_ms=24.10 max_ms=24.50
+[distann-multicluster] physical_benchmark_latency scale=100k variant=normal-replica count=50 mean_ms=17.40 p50_ms=17.10 p95_ms=21.40 p99_ms=22.40 max_ms=22.60
+[distann-multicluster] physical_benchmark_stage scale=100k variant=owner-fallback-control stage=custom_scan_total mean_ms=17.580394
+[distann-multicluster] physical_benchmark_stage scale=100k variant=owner-fallback-control stage=head_score mean_ms=2.198442
+[distann-multicluster] physical_benchmark_stage scale=100k variant=owner-fallback-control stage=traversal_total mean_ms=7.543010
+[distann-multicluster] physical_benchmark_stage scale=100k variant=owner-fallback-control stage=remote_expand mean_ms=6.148534
+[distann-multicluster] physical_benchmark_stage scale=100k variant=owner-fallback-control stage=remote_materialize mean_ms=7.045952
+[distann-multicluster] physical_benchmark_stage scale=100k variant=owner-fallback-control stage=materialize_owner_payload_sql_work mean_ms=8.711206
+[distann-multicluster] physical_benchmark_stage scale=100k variant=normal-replica stage=custom_scan_total mean_ms=15.078800
+[distann-multicluster] physical_benchmark_stage scale=100k variant=normal-replica stage=head_score mean_ms=2.362101
+[distann-multicluster] physical_benchmark_stage scale=100k variant=normal-replica stage=traversal_total mean_ms=3.615159
+[distann-multicluster] physical_benchmark_stage scale=100k variant=normal-replica stage=replica_graph_vector_read mean_ms=3.334809
+[distann-multicluster] physical_benchmark_stage scale=100k variant=normal-replica stage=replica_score mean_ms=0.197905
+[distann-multicluster] physical_benchmark_stage scale=100k variant=normal-replica stage=remote_materialize mean_ms=7.474063
+[distann-multicluster] physical_benchmark_stage scale=100k variant=normal-replica stage=materialize_owner_payload_sql_work mean_ms=8.922244
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=owner-fallback-control metric=remote_rows_returned value=332 mean_per_scan=6.640000
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=normal-replica metric=remote_rows_returned value=332 mean_per_scan=6.640000
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=owner-fallback-control metric=payload_bytes_returned value=8350092 mean_per_scan=167001.840000
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=normal-replica metric=payload_bytes_returned value=8350092 mean_per_scan=167001.840000
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=owner-fallback-control metric=replica_scans value=0 mean_per_scan=0.000000
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=normal-replica metric=replica_scans value=50 mean_per_scan=1.000000
+[distann-multicluster] physical_benchmark_storage scale=100k variant=owner-fallback-control storage_shared=true owners=3 physical_generation_bytes=3188056064 coordinator_source_bytes=2367225856 control_index_bytes=24576
+[distann-multicluster] physical_benchmark_storage scale=100k variant=normal-replica storage_shared=true owners=3 physical_generation_bytes=3188056064 coordinator_source_bytes=2367225856 control_index_bytes=24576
+[distann-multicluster] physical_materialization_correctness scale=100k scenario=mixed_local_remote pass=true rows=10 query_offset=0 remote_consumed=7 local_consumed=3 duplicate_requested=0
