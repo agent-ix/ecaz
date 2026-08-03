@@ -21,3 +21,6 @@ Artifacts:
 - `run/suite-manifest.json`: runner-generated 100k dry-run manifest
 - `run-10k/suite-manifest.json`: runner-generated 10k dry-run manifest
 - `suite-dry-run.md`: cited audit and expansion output
+- `run-10k/results.jsonl`: normalized 10k A/B result rows
+- `run-10k/control/` and `run-10k/candidate/`: packet-local per-arm logs,
+  summaries, and prediction artifacts

@@ -3,9 +3,9 @@
   "schema_version": 1,
   "config": "reviews/task-207/002-union-construction/artifacts/task207-10k-union-ab.json",
   "config_sha256": "e5f0359ab79bbe62cc1b187d6ee3f07b2a4f527f11616713d48563dac181366c",
-  "dry_run": true,
-  "generated_at_unix_ms": 1785799959190,
-  "runner_git_commit": "b3081003d4b77ad5907de4263c57957e2d45463d-dirty",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785799974008,
+  "runner_git_commit": "9cb9717085f78c476825fb915ab7fa433d3f24ac",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -73,7 +73,11 @@
       "expected_artifacts": [
         "reviews/task-207/002-union-construction/artifacts/run-10k/control/distann-multinode-summary.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1785799974029,
+      "finished_at_unix_ms": 1785800203821,
+      "duration_ms": 230168,
+      "exit_code": 0
     },
     {
       "name": "task207-10k-candidate",
@@ -134,7 +138,11 @@
       "expected_artifacts": [
         "reviews/task-207/002-union-construction/artifacts/run-10k/candidate/distann-multinode-summary.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1785800203822,
+      "finished_at_unix_ms": 1785800422451,
+      "duration_ms": 219064,
+      "exit_code": 0
     }
   ]
 }

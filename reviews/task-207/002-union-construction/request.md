@@ -25,5 +25,8 @@ outside the repository. Audit/dry-run output is in `artifacts/suite-dry-run.md`.
 
 The packet also contains a short 10k diagnostic A/B config at
 `artifacts/task207-10k-union-ab.json`, using the same fixed BW=128/H=5 shape
-as the 100k pre-registration. Its result rows will be added after the run;
-the required 10k/50k/100k closeout remains open.
+as the 100k pre-registration. On 10k, the candidate raised recall from 0.9529
+to 0.9615 and reduced p50 latency from 188.9 ms to 185.4 ms; physical
+generation storage increased from 242,745,344 to 244,285,440 bytes. The
+packet-local `run-10k/results.jsonl` and per-arm summaries are the source of
+truth. The required 50k/100k closeout remains open.
