@@ -1,0 +1,18 @@
+2026-08-03 11:47:32.054 PDT [974245] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-03 11:47:32.067 PDT [974245] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-03 11:47:32.067 PDT [974245] LOG:  listening on IPv4 address "127.0.0.1", port 43430
+2026-08-03 11:47:32.080 PDT [974251] LOG:  database system was shut down at 2026-08-03 11:47:29 PDT
+2026-08-03 11:47:32.087 PDT [974245] LOG:  database system is ready to accept connections
+2026-08-03 11:48:27.964 PDT [974358] ERROR:  EC_HEAD_TRAINING: expected 200 training queries, found 0
+2026-08-03 11:48:27.964 PDT [974358] STATEMENT:  SELECT ec_distann_build_epoch_with_training(
+	                 'public.dm_idx'::regclass, 1, '71717171-7171-4171-8171-717171717171'::uuid,
+	                 'ec_distann_training_queries'::regclass);
+	             DROP TABLE ec_distann_training_queries;
+2026-08-03 11:48:27.965 PDT [974245] LOG:  received fast shutdown request
+2026-08-03 11:48:27.970 PDT [974245] LOG:  aborting any active transactions
+2026-08-03 11:48:27.971 PDT [974245] LOG:  background worker "logical replication launcher" (PID 974254) exited with exit code 1
+2026-08-03 11:48:27.985 PDT [974358] FATAL:  terminating connection due to administrator command
+2026-08-03 11:48:28.003 PDT [974249] LOG:  shutting down
+2026-08-03 11:48:28.008 PDT [974249] LOG:  checkpoint starting: shutdown immediate
+2026-08-03 11:48:28.637 PDT [974249] LOG:  checkpoint complete: wrote 4931 buffers (30.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 8 recycled; write=0.033 s, sync=0.543 s, total=0.634 s; sync files=251, longest=0.357 s, average=0.003 s; distance=137931 kB, estimate=137931 kB; lsn=0/9E07368, redo lsn=0/9E07368
+2026-08-03 11:48:28.670 PDT [974245] LOG:  database system is shut down

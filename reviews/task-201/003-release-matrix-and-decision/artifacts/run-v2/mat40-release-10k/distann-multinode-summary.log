@@ -1,0 +1,7 @@
+[suite] task201-mat40-release-10k
+[provenance] scale=10k extension_git_sha=c830b184fe4c750936ab13eab2891f63f06ba3d0 extension_build_profile=release nodes=3 physical shared-table surface=true
+[queries] evaluation_query_sha256=a2c191bb742017d849e73f6e6866e8e0f0bac1579ba212f7fc76b8eb09904ae8 training_query_source=ec_real_50k_queries.tsv training_slice=rows_201_400
+[control] variant=normal-replica-mat40-control recall=0.9990 mean_ms=15.60 p50_ms=15.20 p95_ms=18.80 p99_ms=19.20 max_ms=19.30 physical_generation_bytes=242745344 coordinator_source_bytes=166715392 control_index_bytes=24576
+[candidate] variant=normal-replica-mat40-candidate owner_payload_plan_cache=true recall=0.9990 mean_ms=16.10 p50_ms=16.10 p95_ms=18.90 p99_ms=19.60 max_ms=19.80 physical_generation_bytes=242745344 coordinator_source_bytes=166715392 control_index_bytes=24576
+[delta] candidate_vs_control_mean_ms=+0.50 (+3.2%) recall_delta=0 storage_delta=0
+[validation] physical_topology_gate=pass materialization_correctness=pass

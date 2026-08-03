@@ -1,0 +1,6 @@
+[matrix] suite=task201-mat40-release-matrix steps=10k,50k,100k status=all_succeeded extension_git_sha=c830b184fe4c750936ab13eab2891f63f06ba3d0 build_profile=release nodes=3 physical=true shared_table=true
+[10k] control recall=0.9990 mean_ms=15.60 p95_ms=18.80 p99_ms=19.20 max_ms=19.30; candidate recall=0.9990 mean_ms=16.10 p95_ms=18.90 p99_ms=19.60 max_ms=19.80; delta=+0.50ms/+3.2%; storage=242745344B/166715392B/24576B both
+[50k] control recall=0.9685 mean_ms=16.40 p95_ms=18.60 p99_ms=19.40 max_ms=19.90; candidate recall=0.9685 mean_ms=16.20 p95_ms=18.40 p99_ms=19.30 max_ms=19.60; delta=-0.20ms/-1.2%; storage=1242750976B/833224704B/24576B both
+[100k] control recall=0.9625 mean_ms=16.00 p95_ms=18.80 p99_ms=19.30 max_ms=19.50; candidate recall=0.9625 mean_ms=15.80 p95_ms=18.50 p99_ms=19.10 max_ms=19.10; delta=-0.20ms/-1.2%; storage=2496651264B/1666342912B/24576B both
+[decision] recall unchanged at every scale; storage unchanged; latency is +3.2% at 10k and only -1.2% at 50k/100k. MAT-40 is not promoted and no default change is justified.
+[validation] physical_topology_gate=pass materialization_correctness=pass suite_manifest_steps=3/3

@@ -1,0 +1,14 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=43430 rows=2000 dim=16 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=c830b184fe4c750936ab13eab2891f63f06ba3d0 extension_build_profile=release debug_override=false
+[distann-multicluster] physical_setup_start rows=2000 nodes=3
+
+   0: [91mdb error[0m
+   1: [91mERROR: EC_HEAD_TRAINING: expected 200 training queries, found 0[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m5651[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
