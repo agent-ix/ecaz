@@ -1,0 +1,79 @@
+{
+  "suite": "task206-10k-diagnostic",
+  "schema_version": 1,
+  "config": "reviews/task-206/003-full-scale-decision/artifacts/task206-10k-diagnostic.json",
+  "config_sha256": "84fdc35048a8f4d3cfecc086e82a2f47e0b3b940122aa1c089a6b836364ca0f6",
+  "dry_run": true,
+  "generated_at_unix_ms": 1785799646468,
+  "runner_git_commit": "74d752ddb551aeca247aae9202e51801ae052a00",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "task206-10k-bw32-h8",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-206/003-full-scale-decision/artifacts/run/10k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task206-10k-bw32-h8",
+        "--log-file",
+        "reviews/task-206/003-full-scale-decision/artifacts/run/10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "5",
+        "--benchmark-warmup-iterations",
+        "2",
+        "--base-port",
+        "41420",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "32",
+        "--hop-rounds",
+        "8",
+        "--benchmark-seed-variant",
+        "bw32-h8:persisted_head:128:200:rabitq:0:off:32:8:off",
+        "--queries",
+        "50",
+        "--top-k",
+        "200",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
+      ],
+      "selected": true,
+      "tags": [
+        "task206",
+        "diagnostic",
+        "10k",
+        "bw32-h8",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-206/003-full-scale-decision/artifacts/run/10k/distann-multinode-summary.log"
+      ],
+      "status": "dry-run"
+    }
+  ]
+}
