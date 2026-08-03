@@ -3620,6 +3620,12 @@ fn test_distann_three_owner_physical_handoff() {
             &[],
         )
         .expect("physical multi-owner CustomScan should serve frozen rows");
+    // `benchmark_exact_neighbor` makes each neighbor comparison exact; it
+    // does not turn the distributed graph walk into an exhaustive top-k
+    // search.  The physical ANN handoff can therefore legitimately return
+    // fewer than the requested 30 rows.  Keep the strict cardinality check
+    // in an exhaustive-query fixture; this test's invariant is that the
+    // returned rows cover all three owners.
     assert!(
         served.len() >= 3,
         "physical ANN handoff should return rows from the roster"
