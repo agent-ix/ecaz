@@ -28,3 +28,6 @@ truth.
 This is not yet the required 10k/50k/100k recall+latency+storage closeout
 matrix: 50k and 100k result rows are still open, and the 100k setup attempt is
 recorded separately as stalled before metrics.
+
+`artifacts/task206-50k-diagnostic.json` is now pre-registered for the next
+real-corpus scale using the same BW32/H8 diagnostic shape.

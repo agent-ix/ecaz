@@ -15,7 +15,9 @@
 Artifacts:
 
 - `task206-10k-diagnostic.json`: checked-in SuiteConfig
+- `task206-50k-diagnostic.json`: checked-in 50k SuiteConfig
 - `run/suite-manifest.json`: runner-generated dry-run manifest
+- `run-50k/suite-manifest.json`: runner-generated 50k dry-run manifest
 - `suite-dry-run.md`: audit and expansion result
 - `run/results.jsonl`: normalized suite result rows cited by the request
 - `run/10k/distann-multinode-summary.log`: packet-local runner summary with
