@@ -24,3 +24,5 @@ Artifacts:
   topology, recall, latency, and storage lines
 - `run/10k/physical-bw32-h8-{recall,latency}.log`: child benchmark outputs
 - `run/10k/*-predictions.json`: recall prediction artifacts
+- `run-50k/50k/*.log`: setup-only runner and per-node PostgreSQL logs from the
+  stopped 50k attempt

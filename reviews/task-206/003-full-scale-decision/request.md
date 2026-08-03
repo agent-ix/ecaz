@@ -31,3 +31,8 @@ recorded separately as stalled before metrics.
 
 `artifacts/task206-50k-diagnostic.json` is now pre-registered for the next
 real-corpus scale using the same BW32/H8 diagnostic shape.
+
+The 50k attempt passed release preflight but stalled in physical setup before
+topology or benchmark rows, with node1 at approximately 2.4 GB and a static
+925 MB PostgreSQL temporary file. Its setup-only logs are recorded under
+`artifacts/run-50k/`; no 50k metrics are claimed.

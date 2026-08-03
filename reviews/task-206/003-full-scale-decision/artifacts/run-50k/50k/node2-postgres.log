@@ -1,0 +1,45 @@
+2026-08-03 16:41:51.043 PDT [1052137] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-03 16:41:51.053 PDT [1052137] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-03 16:41:51.053 PDT [1052137] LOG:  listening on IPv4 address "127.0.0.1", port 41441
+2026-08-03 16:41:51.061 PDT [1052143] LOG:  database system was shut down at 2026-08-03 16:41:49 PDT
+2026-08-03 16:41:51.066 PDT [1052137] LOG:  database system is ready to accept connections
+2026-08-03 16:46:51.591 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:36.366 PDT [1052141] ERROR:  could not open file "base/5/3079": No such file or directory
+2026-08-03 16:47:36.366 PDT [1052141] CONTEXT:  writing block 0 of relation "base/5/3079"
+2026-08-03 16:47:37.370 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:37.370 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:38.370 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:38.370 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:39.371 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:39.371 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:40.371 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:40.371 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:41.371 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:41.371 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:42.371 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:42.371 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:43.371 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:43.372 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:44.372 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:44.372 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:45.372 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:45.372 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:46.314 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:46.314 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:47.314 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:47.315 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:48.315 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:48.315 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:49.315 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:49.315 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:50.315 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:50.315 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:51.315 PDT [1052141] LOG:  checkpoint starting: time
+2026-08-03 16:47:51.315 PDT [1052141] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:51.410 PDT [1052146] ERROR:  could not open file "global/6100": No such file or directory
+2026-08-03 16:47:51.411 PDT [1052137] LOG:  background worker "logical replication launcher" (PID 1052146) exited with exit code 1
+2026-08-03 16:47:51.411 PDT [1052137] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 16:47:51.411 PDT [1052137] LOG:  performing immediate shutdown because data directory lock file is invalid
+2026-08-03 16:47:51.411 PDT [1052137] LOG:  received immediate shutdown request
+2026-08-03 16:47:51.411 PDT [1052137] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 16:47:51.417 PDT [1052137] LOG:  database system is shut down

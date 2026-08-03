@@ -1,0 +1,39 @@
+2026-08-03 16:41:51.160 PDT [1052150] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-03 16:41:51.170 PDT [1052150] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-03 16:41:51.170 PDT [1052150] LOG:  listening on IPv4 address "127.0.0.1", port 41442
+2026-08-03 16:41:51.178 PDT [1052156] LOG:  database system was shut down at 2026-08-03 16:41:50 PDT
+2026-08-03 16:41:51.183 PDT [1052150] LOG:  database system is ready to accept connections
+2026-08-03 16:46:51.722 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:36.312 PDT [1052154] ERROR:  could not open file "base/1/2841": No such file or directory
+2026-08-03 16:47:36.312 PDT [1052154] CONTEXT:  writing block 1 of relation "base/1/2841"
+2026-08-03 16:47:37.313 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:37.313 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:38.314 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:38.314 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:39.314 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:39.314 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:40.314 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:40.314 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:41.314 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:41.314 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:42.315 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:42.315 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:43.316 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:43.316 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:44.316 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:44.316 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:45.316 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:45.317 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:46.259 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:46.259 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:47.259 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:47.259 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:48.259 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:48.259 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:49.259 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:49.259 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:50.259 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:50.259 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:51.260 PDT [1052154] LOG:  checkpoint starting: time
+2026-08-03 16:47:51.260 PDT [1052154] ERROR:  could not open directory "pg_logical/snapshots": No such file or directory
+2026-08-03 16:47:51.642 PDT [1052158] ERROR:  could not open file "global/1262": No such file or directory
