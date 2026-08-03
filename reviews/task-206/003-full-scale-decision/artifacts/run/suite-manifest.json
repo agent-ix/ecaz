@@ -3,9 +3,9 @@
   "schema_version": 1,
   "config": "reviews/task-206/003-full-scale-decision/artifacts/task206-10k-diagnostic.json",
   "config_sha256": "84fdc35048a8f4d3cfecc086e82a2f47e0b3b940122aa1c089a6b836364ca0f6",
-  "dry_run": true,
-  "generated_at_unix_ms": 1785799646468,
-  "runner_git_commit": "74d752ddb551aeca247aae9202e51801ae052a00",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785799660823,
+  "runner_git_commit": "fdb8aff2853867f5440e47de9b9c8c5ed6554389",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -73,7 +73,11 @@
       "expected_artifacts": [
         "reviews/task-206/003-full-scale-decision/artifacts/run/10k/distann-multinode-summary.log"
       ],
-      "status": "dry-run"
+      "status": "succeeded",
+      "started_at_unix_ms": 1785799660845,
+      "finished_at_unix_ms": 1785799878087,
+      "duration_ms": 217685,
+      "exit_code": 0
     }
   ]
 }
