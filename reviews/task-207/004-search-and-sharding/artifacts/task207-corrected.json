@@ -56,7 +56,7 @@
         { "name": "union-persisted", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "nfr_021": { "id": "task207-union-candidate", "role": "candidate", "admissibility": "conforming", "rationale": "Fixed four-shard three-owner physical graph with explicitly marker-attested partition-union head construction." } }
       ],
       "corpus_prefix": "ec_real_10k",
-      "staged_dir": "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
     },
     {
       "kind": "distann-local-multinode",

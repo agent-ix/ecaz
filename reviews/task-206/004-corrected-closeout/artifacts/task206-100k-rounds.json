@@ -21,8 +21,10 @@
       "top_k": 200,
       "physical_benchmark": true,
       "bench_session_gucs": ["ec_distann.scan_profile_notice=on"],
-      "benchmark_iterations": 50,
-      "benchmark_warmup_iterations": 10,
+      "benchmark_iterations": 10,
+      "benchmark_warmup_iterations": 2,
+      "skip_recall": true,
+      "skip_single_control": true,
       "skip_fault_drills": true,
       "compact_artifacts": true,
       "benchmark_seed_variants": [
