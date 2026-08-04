@@ -742,6 +742,9 @@ struct DistannLocalMultinodeStep {
     corpus_prefix: Option<String>,
     #[serde(default)]
     staged_dir: Option<PathBuf>,
+    /// Session GUCs applied to physical benchmark child commands.
+    #[serde(default)]
+    bench_session_gucs: Vec<String>,
 }
 
 impl DistannLocalMultinodeStep {
@@ -5454,6 +5457,9 @@ fn expand_distann_local_multinode(
     }
     push_opt_arg(&mut args, "--corpus-prefix", step.corpus_prefix.as_deref());
     push_opt_path(&mut args, "--staged-dir", step.staged_dir.as_deref());
+    for guc in &step.bench_session_gucs {
+        push_arg(&mut args, "--bench-session-guc", guc);
+    }
     args
 }
 

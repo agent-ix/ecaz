@@ -256,6 +256,10 @@ pub struct LocalMultinodePg18Args {
     /// `data/staged-current`). Only used with `--corpus-prefix`.
     #[arg(long)]
     pub staged_dir: Option<PathBuf>,
+    /// Additional session GUCs applied to physical benchmark child commands.
+    /// This carries packet-local instrumentation such as per-round notices.
+    #[arg(long = "bench-session-guc")]
+    pub bench_session_gucs: Vec<String>,
     /// Inject one exact-peer provider fault into the first remote owner query.
     #[arg(long, value_enum)]
     pub remote_socket_fault: Option<RemoteSocketFaultArg>,
@@ -1374,7 +1378,21 @@ async fn run_physical_bench_child(args: Vec<String>) -> Result<String> {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let mut captured = String::from_utf8_lossy(&output.stdout).into_owned();
+    // PostgreSQL NOTICE records are delivered on the child connection's
+    // stderr by the reporting client. Keep them with the benchmark stdout so
+    // the parent can persist structured per-round telemetry in its summary.
+    captured.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(captured)
+}
+
+fn append_distann_notice_lines(summary: &mut Vec<String>, child_output: &str) {
+    summary.extend(
+        child_output
+            .lines()
+            .filter(|line| line.trim_start().starts_with("[postgres notice] "))
+            .map(str::to_owned),
+    );
 }
 
 fn append_materialization_benchmark_guc(
@@ -5092,6 +5110,11 @@ async fn run_physical_benchmarks(
                 format!("ec_distann.candidate_heap_limit={candidate_heap_limit}"),
             ]);
             if arm == "physical" {
+                for guc in &args.bench_session_gucs {
+                    recall_args.extend(["--session-guc".into(), guc.clone()]);
+                }
+            }
+            if arm == "physical" {
                 recall_args.extend([
                     "--truth-corpus-file".into(),
                     truth_corpus.display().to_string(),
@@ -5136,6 +5159,7 @@ async fn run_physical_benchmarks(
                 append_gateway_copy_guc(&mut recall_args, arm, args.gateway_copy_capacity);
             }
             let recall = run_physical_bench_child(recall_args).await?;
+            append_distann_notice_lines(&mut lines, &recall);
             let row = benchmark_table_row(&recall)?;
             let membership_recall = row[3].parse::<f64>()?;
             let distinct_recall = row[12].parse::<f64>()?;
@@ -5182,6 +5206,11 @@ async fn run_physical_benchmarks(
             "--session-guc".into(),
             format!("ec_distann.candidate_heap_limit={candidate_heap_limit}"),
         ]);
+        if arm == "physical" {
+            for guc in &args.bench_session_gucs {
+                latency_args.extend(["--session-guc".into(), guc.clone()]);
+            }
+        }
         if args.benchmark_backend_batch_size > 0 {
             latency_args.extend([
                 "--worker-batch-size".into(),
@@ -5237,6 +5266,7 @@ async fn run_physical_benchmarks(
             latency_args.push("--distann-stage-counters".into());
         }
         let latency = run_physical_bench_child(latency_args).await?;
+        append_distann_notice_lines(&mut lines, &latency);
         let row = benchmark_table_row(&latency)?;
         lines.push(format!(
             "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
