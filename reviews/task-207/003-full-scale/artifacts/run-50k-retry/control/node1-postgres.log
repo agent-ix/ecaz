@@ -1,0 +1,20 @@
+2026-08-03 17:59:39.974 PDT [1064211] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-03 17:59:39.989 PDT [1064211] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-03 17:59:39.989 PDT [1064211] LOG:  listening on IPv4 address "127.0.0.1", port 41520
+2026-08-03 17:59:40.000 PDT [1064217] LOG:  database system was shut down at 2026-08-03 17:59:36 PDT
+2026-08-03 17:59:40.006 PDT [1064211] LOG:  database system is ready to accept connections
+2026-08-03 18:01:51.258 PDT [1064215] LOG:  checkpoint starting: wal
+2026-08-03 18:06:21.488 PDT [1064215] LOG:  checkpoint complete: wrote 92 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.807 s, sync=0.175 s, total=270.248 s; sync files=284, longest=0.010 s, average=0.001 s; distance=537265 kB, estimate=537265 kB; lsn=0/333F2E70, redo lsn=0/22400CC8
+2026-08-03 18:06:51.261 PDT [1064215] LOG:  checkpoint starting: time
+2026-08-03 18:10:51.346 PDT [1064215] LOG:  checkpoint complete: wrote 83 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 23 recycled; write=239.695 s, sync=0.167 s, total=240.086 s; sync files=88, longest=0.091 s, average=0.002 s; distance=381540 kB, estimate=521693 kB; lsn=0/57B93000, redo lsn=0/39899FD8
+2026-08-03 18:10:51.847 PDT [1064215] LOG:  checkpoint starting: wal
+2026-08-03 18:11:57.135 PDT [1064215] LOG:  checkpoint complete: wrote 21 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=65.129 s, sync=0.010 s, total=65.288 s; sync files=25, longest=0.002 s, average=0.001 s; distance=535956 kB, estimate=535956 kB; lsn=0/768C7BA0, redo lsn=0/5A3FF258
+2026-08-03 18:13:28.174 PDT [1064215] LOG:  checkpoint starting: wal
+2026-08-03 18:13:32.693 PDT [1064211] LOG:  received fast shutdown request
+2026-08-03 18:13:32.697 PDT [1064211] LOG:  aborting any active transactions
+2026-08-03 18:13:32.698 PDT [1064211] LOG:  background worker "logical replication launcher" (PID 1064220) exited with exit code 1
+2026-08-03 18:13:33.134 PDT [1064215] LOG:  checkpoint complete: wrote 611 buffers (3.7%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=4.556 s, sync=0.273 s, total=4.960 s; sync files=3, longest=0.257 s, average=0.091 s; distance=540667 kB, estimate=540667 kB; lsn=0/8D4E9528, redo lsn=0/7B3FE188
+2026-08-03 18:13:33.134 PDT [1064215] LOG:  shutting down
+2026-08-03 18:13:33.139 PDT [1064215] LOG:  checkpoint starting: shutdown immediate
+2026-08-03 18:13:33.369 PDT [1064215] LOG:  checkpoint complete: wrote 15787 buffers (96.4%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 18 recycled; write=0.064 s, sync=0.100 s, total=0.235 s; sync files=5, longest=0.063 s, average=0.020 s; distance=295853 kB, estimate=516186 kB; lsn=0/8D4E95A0, redo lsn=0/8D4E95A0
+2026-08-03 18:13:33.395 PDT [1064211] LOG:  database system is shut down

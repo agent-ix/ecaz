@@ -1,17 +1,17 @@
 {
-  "name": "task207-50k-union-construction-ab",
+  "name": "task207-100k-union-construction-ab-persisted",
   "schema_version": 1,
-  "artifact_dir": "reviews/task-207/003-full-scale/artifacts/run-50k",
+  "artifact_dir": "reviews/task-207/003-full-scale/artifacts/run-100k",
   "defaults": { "pg": 18 },
   "steps": [
     {
       "kind": "distann-local-multinode",
-      "name": "task207-50k-union-control",
-      "tags": ["task207", "phase1", "50k", "control"],
+      "name": "task207-100k-union-control",
+      "tags": ["task207", "phase1", "100k", "control", "persisted-head"],
       "artifact_dir": "${artifact_dir}/control",
-      "run_dir": "/home/peter/.ecaz/clusters/task207-50k-union-control",
+      "run_dir": "/home/peter/.ecaz/clusters/task207-100k-union-control",
       "nodes": 3,
-      "base_port": 41520,
+      "base_port": 41620,
       "graph_degree": 32,
       "build_shards": 1,
       "head_index_cap": 4096,
@@ -27,17 +27,17 @@
       "benchmark_seed_variants": [
         { "name": "control-persisted-head", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq" }
       ],
-      "corpus_prefix": "ec_real_50k",
-      "staged_dir": "/home/peter/dev/ecaz/data/task111a_real50k"
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
     },
     {
       "kind": "distann-local-multinode",
-      "name": "task207-50k-union-candidate",
-      "tags": ["task207", "phase1", "50k", "candidate"],
+      "name": "task207-100k-union-candidate",
+      "tags": ["task207", "phase1", "100k", "candidate", "persisted-head"],
       "artifact_dir": "${artifact_dir}/candidate",
-      "run_dir": "/home/peter/.ecaz/clusters/task207-50k-union-candidate",
+      "run_dir": "/home/peter/.ecaz/clusters/task207-100k-union-candidate",
       "nodes": 3,
-      "base_port": 41530,
+      "base_port": 41630,
       "graph_degree": 32,
       "build_shards": 4,
       "head_index_cap": 4096,
@@ -53,8 +53,8 @@
       "benchmark_seed_variants": [
         { "name": "candidate-persisted-head", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq" }
       ],
-      "corpus_prefix": "ec_real_50k",
-      "staged_dir": "/home/peter/dev/ecaz/data/task111a_real50k"
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
     }
   ]
 }

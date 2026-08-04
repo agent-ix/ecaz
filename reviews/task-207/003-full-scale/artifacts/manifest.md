@@ -16,8 +16,12 @@
 
 Artifacts:
 
-- `task207-50k-union-ab.json`: checked-in 50k SuiteConfig
-- `../002-union-construction/artifacts/task207-100k-union-ab.json`: checked-in
-  100k SuiteConfig
-- `run-50k/`: suite manifest, structured results, and packet-local logs after
-  execution
+- `task207-50k-union-ab.json`: checked-in 50k persisted-head SuiteConfig
+- `task207-100k-union-ab-persisted.json`: checked-in 100k persisted-head
+  SuiteConfig
+- `owner-scan-attempt.md`: disposition of the stopped full-scale owner-scan
+  attempt
+- `run-50k-feature/control/`: packet-local setup logs from that stopped
+  attempt; no result numbers are claimed
+- `run-50k/` and `run-100k/`: suite manifests, structured results, and
+  packet-local logs after execution

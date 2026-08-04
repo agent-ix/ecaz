@@ -1,0 +1,24 @@
+2026-08-03 18:28:20.156 PDT [1069904] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-03 18:28:20.170 PDT [1069904] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-03 18:28:20.170 PDT [1069904] LOG:  listening on IPv4 address "127.0.0.1", port 41521
+2026-08-03 18:28:20.180 PDT [1069911] LOG:  database system was shut down at 2026-08-03 18:28:18 PDT
+2026-08-03 18:28:20.187 PDT [1069904] LOG:  database system is ready to accept connections
+2026-08-03 18:33:20.648 PDT [1069909] LOG:  checkpoint starting: time
+2026-08-03 18:34:08.730 PDT [1069909] LOG:  checkpoint complete: wrote 481 buffers (2.9%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=47.991 s, sync=0.072 s, total=48.083 s; sync files=261, longest=0.004 s, average=0.001 s; distance=3995 kB, estimate=3995 kB; lsn=0/1B3B4C8, redo lsn=0/1B3B438
+2026-08-03 18:34:52.154 PDT [1070735] ERROR:  canceling autovacuum task
+2026-08-03 18:34:52.154 PDT [1070735] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17747_71717171717141718171717171717171"
+2026-08-03 18:34:52.155 PDT [1070735] LOG:  skipping vacuum of "_ecdz_graph_17747_71717171717141718171717171717171" --- lock not available
+2026-08-03 18:35:52.398 PDT [1070867] ERROR:  canceling autovacuum task
+2026-08-03 18:35:52.398 PDT [1070867] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17747_71717171717141718171717171717171"
+2026-08-03 18:35:52.400 PDT [1070867] LOG:  skipping vacuum of "_ecdz_graph_17747_71717171717141718171717171717171" --- lock not available
+2026-08-03 18:36:50.735 PDT [1071017] LOG:  skipping analyze of "_ecdz_row_17747_71717171717141718171717171717171" --- lock not available
+2026-08-03 18:36:50.735 PDT [1071017] LOG:  skipping vacuum of "_ecdz_graph_17747_71717171717141718171717171717171" --- lock not available
+2026-08-03 18:38:20.098 PDT [1069909] LOG:  checkpoint starting: time
+2026-08-03 18:38:33.819 PDT [1069909] LOG:  checkpoint complete: wrote 136 buffers (0.8%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 21 recycled; write=13.635 s, sync=0.041 s, total=13.722 s; sync files=62, longest=0.005 s, average=0.001 s; distance=348921 kB, estimate=348921 kB; lsn=0/16FFFAC0, redo lsn=0/16FF9918
+2026-08-03 18:43:20.275 PDT [1069909] LOG:  checkpoint starting: time
+2026-08-03 18:43:20.331 PDT [1069909] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.018 s, sync=0.006 s, total=0.057 s; sync files=14, longest=0.003 s, average=0.001 s; distance=68 kB, estimate=314035 kB; lsn=0/1700A998, redo lsn=0/1700A940
+2026-08-03 18:44:21.117 PDT [1069904] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 18:44:21.117 PDT [1069904] LOG:  performing immediate shutdown because data directory lock file is invalid
+2026-08-03 18:44:21.117 PDT [1069904] LOG:  received immediate shutdown request
+2026-08-03 18:44:21.117 PDT [1069904] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 18:44:21.164 PDT [1069904] LOG:  database system is shut down

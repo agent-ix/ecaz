@@ -1,0 +1,27 @@
+2026-08-03 18:28:20.026 PDT [1069891] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-03 18:28:20.040 PDT [1069891] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-03 18:28:20.040 PDT [1069891] LOG:  listening on IPv4 address "127.0.0.1", port 41520
+2026-08-03 18:28:20.052 PDT [1069897] LOG:  database system was shut down at 2026-08-03 18:28:16 PDT
+2026-08-03 18:28:20.058 PDT [1069891] LOG:  database system is ready to accept connections
+2026-08-03 18:30:30.279 PDT [1069895] LOG:  checkpoint starting: wal
+2026-08-03 18:35:00.417 PDT [1069895] LOG:  checkpoint complete: wrote 92 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.799 s, sync=0.204 s, total=270.138 s; sync files=284, longest=0.024 s, average=0.001 s; distance=537255 kB, estimate=537255 kB; lsn=0/31FDD1F8, redo lsn=0/223FE498
+2026-08-03 18:35:30.096 PDT [1069895] LOG:  checkpoint starting: time
+2026-08-03 18:39:39.187 PDT [1069895] LOG:  checkpoint complete: wrote 80 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 22 recycled; write=248.679 s, sync=0.157 s, total=249.091 s; sync files=88, longest=0.100 s, average=0.002 s; distance=360934 kB, estimate=519623 kB; lsn=0/564003E0, redo lsn=0/38477E78
+2026-08-03 18:39:39.844 PDT [1069895] LOG:  checkpoint starting: wal
+2026-08-03 18:40:51.952 PDT [1069895] LOG:  checkpoint complete: wrote 50 buffers (0.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=71.945 s, sync=0.008 s, total=72.109 s; sync files=25, longest=0.001 s, average=0.001 s; distance=539285 kB, estimate=539285 kB; lsn=0/75563BB8, redo lsn=0/5931D4E8
+2026-08-03 18:42:24.590 PDT [1069895] LOG:  checkpoint starting: wal
+2026-08-03 18:43:13.014 PDT [1069895] LOG:  checkpoint complete: wrote 688 buffers (4.2%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=47.760 s, sync=0.254 s, total=48.425 s; sync files=18, longest=0.215 s, average=0.015 s; distance=541577 kB, estimate=541577 kB; lsn=0/980FC778, redo lsn=0/7A3FF9C0
+2026-08-03 18:43:15.245 PDT [1069895] LOG:  checkpoint starting: wal
+2026-08-03 18:43:34.261 PDT [1069895] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=18.273 s, sync=0.468 s, total=19.016 s; sync files=4, longest=0.455 s, average=0.117 s; distance=536834 kB, estimate=541102 kB; lsn=0/B1125D68, redo lsn=0/9B0401C0
+2026-08-03 18:44:20.950 PDT [1069891] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 18:44:20.950 PDT [1069891] LOG:  performing immediate shutdown because data directory lock file is invalid
+2026-08-03 18:44:20.950 PDT [1069891] LOG:  received immediate shutdown request
+2026-08-03 18:44:20.950 PDT [1069891] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 18:44:20.950 PDT [1070230] LOG:  could not send data to client: Broken pipe
+2026-08-03 18:44:20.950 PDT [1070230] STATEMENT:  SELECT q.id::text,
+	                                encode(ec_distann_physical_seed_id_digest(
+	                                    'dm_idx'::regclass, q.source), 'hex')
+	                           FROM task179_physical_50k_queries q
+	                          ORDER BY q.id
+	                          LIMIT 200
+2026-08-03 18:44:21.184 PDT [1069891] LOG:  database system is shut down

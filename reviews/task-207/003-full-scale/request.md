@@ -12,13 +12,14 @@ seq: 003
 
 Code head SHA: `59aeb6c58fa3e2f0db1774a6c3c8a5ab62308e78`
 
-This packet registers the required 50k Task 207 control/candidate A/B through
-`ecaz bench suite`. It holds BW=128, H=5, head cap 4096, top-k 200, and seed
-count 200 fixed while comparing `build_shards=1` with the `build_shards=4`
-per-partition BFS-prefix union. Each arm includes persisted-head and
-owner-oracle variants. The existing 100k registration is
-`../002-union-construction/artifacts/task207-100k-union-ab.json`; its completed
-run will be captured here if required for closeout.
+This packet registers the required 50k and 100k Task 207 control/candidate A/B
+through `ecaz bench suite`. It holds BW=128, H=5, head cap 4096, top-k 200,
+and seed count 200 fixed while comparing `build_shards=1` with the
+`build_shards=4` per-partition BFS-prefix union. The full-scale arms use the
+persisted-head production strategy so the construction change is isolated.
+The owner-scan oracle remains covered by the 10k diagnostic; a full-scale
+owner-scan attempt was stopped after it produced no result artifact because
+the exact owner scan makes the 50k latency matrix impractical.
 
 The 10k diagnostic already recorded a candidate recall increase from 0.9529 to
 0.9615 and a physical storage increase from 242,745,344 to 244,285,440 bytes.
