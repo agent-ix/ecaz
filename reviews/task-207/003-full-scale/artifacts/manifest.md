@@ -25,3 +25,7 @@ Artifacts:
   attempt; no result numbers are claimed
 - `run-50k/` and `run-100k/`: suite manifests, structured results, and
   packet-local logs after execution
+- `run-50k-final/results.jsonl`: completed 50k persisted-head A/B result rows
+- `run-50k-final/control/` and `run-50k-final/candidate/`: completed 50k
+  per-arm logs, predictions, topology, and storage evidence
+- `result-summary-50k.md`: cited 50k result summary

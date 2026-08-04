@@ -23,8 +23,11 @@ the exact owner scan makes the 50k latency matrix impractical.
 
 The 10k diagnostic already recorded a candidate recall increase from 0.9529 to
 0.9615 and a physical storage increase from 242,745,344 to 244,285,440 bytes.
-The 50k and 100k results are intentionally left open until the suite artifacts
-land.
+The completed 50k A/B raised recall from 0.8814 to 0.8994, reduced p50 latency
+from 333.0 ms to 323.6 ms, and increased physical generation storage by
+2,506,752 bytes. See `artifacts/result-summary-50k.md` and
+`artifacts/run-50k-final/results.jsonl`. The 100k result remains open until
+its suite artifacts land.
 
 Please review the preregistration and leave findings under this packet's
 `feedback/` directory.
