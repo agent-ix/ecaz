@@ -1689,6 +1689,27 @@ mod tests {
     }
 
     #[test]
+    fn partition_union_uses_full_prefix_supply_after_overlap() {
+        // A per-shard ceil(C/S) prefix can underfill after deduplication. The
+        // union contract gives every partition up to C candidates, then caps
+        // the deterministic round-robin union at C.
+        let partitions = vec![vec![0, 1, 2, 3, 4, 5], vec![0, 1, 2, 6, 7, 8]];
+        let vec_ids = (10_u64..20).collect::<Vec<_>>();
+        let vectors = (0..vec_ids.len())
+            .map(|node| vec![node as f32, 1.0])
+            .collect::<Vec<_>>();
+        let sample = build_partition_union_head_sample(
+            &partitions,
+            8,
+            2,
+            &vec_ids,
+            &vectors,
+        )
+        .expect("partition union should build");
+        assert_eq!(sample.entries.len(), 8);
+    }
+
+    #[test]
     fn partition_union_rejects_missing_partitions_and_out_of_range_nodes() {
         let vectors = vec![vec![1.0, 0.0]];
         assert!(build_partition_union_head_sample(&[], 4, 2, &[1], &vectors).is_err());

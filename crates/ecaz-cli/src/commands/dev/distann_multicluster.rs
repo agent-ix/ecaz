@@ -150,6 +150,9 @@ pub struct LocalMultinodePg18Args {
     /// the monolithic control; values >=2 exercise Task 207 construction.
     #[arg(long, default_value_t = 1)]
     pub build_shards: u32,
+    /// Task 207 head construction A/B, independent of the sharded graph.
+    #[arg(long, default_value = "stitched_bfs")]
+    pub head_construction: String,
     /// Persisted coordinator head-sample cap reloption. Exposed so FR-080
     /// sensitivity matrices can vary the cap through `ecaz bench suite`.
     #[arg(long, default_value_t = 4096)]
@@ -510,6 +513,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.build_shards > 4096 {
         bail!("--build-shards must be in 0..=4096");
+    }
+    if !matches!(
+        args.head_construction.as_str(),
+        "stitched_bfs" | "partition_union"
+    ) {
+        bail!("--head-construction must be stitched_bfs or partition_union");
     }
     if args
         .beam_width
@@ -935,6 +944,7 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
                 args.graph_degree,
                 args.head_index_cap,
                 args.build_shards,
+                &args.head_construction,
             ))
         }
         None => Ok(setup_sql(args)),
@@ -971,6 +981,7 @@ fn real_setup_sql(
     gd: u32,
     head_index_cap: u32,
     build_shards: u32,
+    head_construction: &str,
 ) -> String {
     // Escape the paths as SQL string literals (double any single quote) so a
     // path containing `'` cannot break out of the COPY ... FROM '<path>' literal
@@ -998,7 +1009,8 @@ fn real_setup_sql(
          DROP TABLE dmq_stage;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
            WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
-                 build_shards = {build_shards});\n",
+                 build_shards = {build_shards}, head_construction = '{head_construction}');\n",
+        head_construction = head_construction,
     )
 }
 
@@ -1019,12 +1031,13 @@ fn setup_sql(args: &LocalMultinodePg18Args) -> String {
          ) s;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
            WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
-                 build_shards = {build_shards});\n",
+                 build_shards = {build_shards}, head_construction = '{head_construction}');\n",
         dim = args.dim,
         rows = args.rows,
         gd = args.graph_degree,
         head_index_cap = args.head_index_cap,
         build_shards = args.build_shards,
+        head_construction = args.head_construction,
     )
 }
 
@@ -1210,8 +1223,9 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
              WITH (distributed_control = true, source_identity = 'include',
                    graph_degree = {}, head_index_cap = {},
                    build_shards = {},
+                   head_construction = '{}',
                    neighbor_code_format = 'rabitq');",
-        args.graph_degree, args.head_index_cap, args.build_shards
+        args.graph_degree, args.head_index_cap, args.build_shards, args.head_construction
     ))
 }
 

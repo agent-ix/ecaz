@@ -105,6 +105,9 @@ pub(crate) struct PhysicalGraphWorkspace {
     /// Per-partition Vamana BFS prefixes used to build the §3 head union.
     /// `None` is the monolithic/single-partition fallback.
     head_partition_nodes: Option<Vec<Vec<u32>>>,
+    /// Persisted A/B selector; graph topology and head construction are
+    /// intentionally independent (Task 207).
+    head_construction: super::options::HeadConstruction,
     codec_artifact: DistannCodecArtifact,
     shape: DistannHandoffShape,
 }
@@ -134,7 +137,10 @@ impl PhysicalGraphWorkspace {
             .map(|row| row.source_vector.as_slice())
             .collect::<Vec<_>>();
         if training.is_none() {
-            if let Some(partitions) = self.head_partition_nodes.as_deref() {
+            if self.head_construction == super::options::HeadConstruction::PartitionUnion {
+                let partitions = self.head_partition_nodes.as_deref().ok_or_else(|| {
+                    "EC_HEAD_SAMPLE: partition_union requires a sharded graph".to_owned()
+                })?;
                 return super::head_sample::build_partition_union_head_sample(
                     partitions,
                     head_index_cap,
@@ -987,6 +993,7 @@ pub(crate) fn build_physical_graph_workspace(
         })
         .collect::<Result<Vec<_>, String>>()?;
 
+    let head_construction = options.head_construction;
     let (graph, medoid, head_partition_nodes) = if node_count == 0 {
         (crate::am::VamanaGraph::empty(0, graph_degree), 0, None)
     } else {
@@ -1052,6 +1059,7 @@ pub(crate) fn build_physical_graph_workspace(
         graph,
         medoid,
         head_partition_nodes,
+        head_construction,
         codec_artifact,
         shape,
     })
@@ -1568,6 +1576,7 @@ unsafe fn flush_build_state(
         &vec_ids,
         &source_refs,
         head_partition_nodes.as_deref(),
+        state.options.head_construction,
     )?;
 
     let handle = NonNull::new(index_relation)
@@ -1583,6 +1592,16 @@ unsafe fn flush_build_state(
     metadata.grouped_codebook_head = grouped_codebook_head;
     metadata.directory_head = directory_head;
     metadata.head_sample_head = head_sample_head;
+    if state.options.head_construction
+        == super::options::HeadConstruction::PartitionUnion
+    {
+        metadata.flags |= super::page::DISTANN_METADATA_FLAG_HEAD_PARTITION_UNION;
+    }
+    pgrx::notice!(
+        "ec_distann head construction activation: construction={} partition_union_active={}",
+        state.options.head_construction.as_str(),
+        metadata.is_partition_union_head(),
+    );
     // FR-082 build-time content digest (Task 164, reviewer 2026-07-08-01 P1):
     // binds the sorted vec_id set + co-placed source vectors + stitched
     // adjacency so the epoch fingerprint distinguishes two graphs that share
@@ -1676,10 +1695,14 @@ fn stage_head_sample_chain(
     vec_ids: &[u64],
     source_refs: &[&[f32]],
     partition_nodes: Option<&[Vec<u32>]>,
+    head_construction: super::options::HeadConstruction,
 ) -> Result<ItemPointer, String> {
     let node_count = vec_ids.len();
     let cap = head_index_cap.min(node_count).max(1);
-    let sample = if let Some(partition_nodes) = partition_nodes {
+    let sample = if head_construction == super::options::HeadConstruction::PartitionUnion {
+        let partition_nodes = partition_nodes.ok_or_else(|| {
+            "EC_HEAD_SAMPLE: partition_union requires a sharded graph".to_owned()
+        })?;
         let vectors = source_refs.to_vec();
         super::head_sample::build_partition_union_head_sample(
             partition_nodes,

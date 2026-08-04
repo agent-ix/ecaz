@@ -686,6 +686,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     build_shards: Option<u32>,
     #[serde(default)]
+    head_construction: Option<String>,
+    #[serde(default)]
     head_index_cap: Option<u32>,
     #[serde(default)]
     beam_width: Option<u32>,
@@ -3079,6 +3081,12 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
     let mut rows = Vec::new();
     for line in raw.lines() {
         let line = line.trim();
+        if let Some(rest) = line.strip_prefix("[postgres notice] ec_distann_scan_round ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_scan_round".into(), values));
+            }
+            continue;
+        }
         let Some(body) = line.find(PREFIX).map(|idx| &line[idx + PREFIX.len()..]) else {
             continue;
         };
@@ -3971,6 +3979,16 @@ impl SuiteStep {
                 if step.build_shards.is_some_and(|value| value > 4096) {
                     bail!(
                         "distann-local-multinode step {:?} must set build_shards in 0..=4096",
+                        step.name
+                    )
+                }
+                if step
+                    .head_construction
+                    .as_deref()
+                    .is_some_and(|value| !matches!(value, "stitched_bfs" | "partition_union"))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} head_construction must be stitched_bfs or partition_union",
                         step.name
                     )
                 }
@@ -5322,6 +5340,11 @@ fn expand_distann_local_multinode(
         &mut args,
         "--build-shards",
         step.build_shards.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--head-construction",
+        step.head_construction.as_deref(),
     );
     push_opt_arg(
         &mut args,

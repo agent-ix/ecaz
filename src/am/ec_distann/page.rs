@@ -43,6 +43,9 @@ pub const DISTANN_NEIGHBOR_CODEC_TURBOQUANT: u8 = 3;
 pub const DISTANN_METADATA_BYTES: usize = 97;
 pub const DISTANN_CONTROL_METADATA_BYTES: usize = 113;
 pub const DISTANN_METADATA_FLAG_DISTRIBUTED_CONTROL: u8 = 0x01;
+/// Durable Task 207 activation marker for the per-partition head union.
+/// Absence means the stitched/global BFS control construction.
+pub const DISTANN_METADATA_FLAG_HEAD_PARTITION_UNION: u8 = 0x02;
 
 pub const DISTANN_METADATA_FORMAT_VERSION_OFFSET: usize = 0;
 pub const DISTANN_METADATA_ENTRY_POINT_OFFSET: usize = 2;
@@ -218,6 +221,10 @@ impl DistannMetadataPage {
             && self.flags & DISTANN_METADATA_FLAG_DISTRIBUTED_CONTROL != 0
     }
 
+    pub fn is_partition_union_head(&self) -> bool {
+        self.flags & DISTANN_METADATA_FLAG_HEAD_PARTITION_UNION != 0
+    }
+
     pub fn encoded_len_for_version(format_version: u16) -> Result<usize, String> {
         match format_version {
             INDEX_FORMAT_V1_DISTANN => Ok(DISTANN_METADATA_BYTES),
@@ -293,9 +300,11 @@ impl DistannMetadataPage {
 
         let flags = input[DISTANN_METADATA_FLAGS_OFFSET];
         match format_version {
-            INDEX_FORMAT_V1_DISTANN if flags != 0 => {
+            INDEX_FORMAT_V1_DISTANN
+                if flags & !DISTANN_METADATA_FLAG_HEAD_PARTITION_UNION != 0 =>
+            {
                 return Err(format!(
-                    "invalid legacy distann metadata flags: got {flags:#04x}, expected zero"
+                    "invalid legacy distann metadata flags: got {flags:#04x}, expected zero or head-union marker"
                 ));
             }
             INDEX_FORMAT_V5_DISTANN_CONTROL

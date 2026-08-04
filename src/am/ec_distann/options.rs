@@ -171,6 +171,37 @@ struct EcDistannReloptions {
     closure_epsilon: f64,
     neighbor_code_format_offset: i32,
     source_identity_offset: i32,
+    head_construction_offset: i32,
+}
+
+/// Task 207 construction A/B. The graph topology (`build_shards`) and the
+/// head construction must be independently selectable so a measurement can
+/// hold the sharded graph fixed while changing only the head pool.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HeadConstruction {
+    StitchedBfs,
+    PartitionUnion,
+}
+
+impl HeadConstruction {
+    pub(crate) const DEFAULT: Self = Self::StitchedBfs;
+
+    pub(crate) const fn as_str(self) -> &'static str {
+        match self {
+            Self::StitchedBfs => "stitched_bfs",
+            Self::PartitionUnion => "partition_union",
+        }
+    }
+
+    fn parse_reloption(raw: &str) -> Result<Self, String> {
+        match raw {
+            "stitched_bfs" => Ok(Self::StitchedBfs),
+            "partition_union" => Ok(Self::PartitionUnion),
+            other => Err(format!(
+                "invalid ec_distann head_construction reloption: expected 'stitched_bfs' or 'partition_union', got {other:?}"
+            )),
+        }
+    }
 }
 
 /// Neighbor-code codec selected by the `neighbor_code_format` reloption.
@@ -272,6 +303,7 @@ pub(super) struct EcDistannOptions {
     /// FR-075 logical coordinator index. False preserves the legacy v4 local
     /// graph build and metadata bytes; true creates metadata only.
     pub(super) distributed_control: bool,
+    pub(super) head_construction: HeadConstruction,
 }
 
 impl EcDistannOptions {
@@ -285,6 +317,7 @@ impl EcDistannOptions {
         neighbor_code_format: NeighborCodeFormat::DEFAULT,
         source_identity: DistannSourceIdentityProvider::None,
         distributed_control: false,
+        head_construction: HeadConstruction::DEFAULT,
     };
 }
 
@@ -972,6 +1005,17 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
             None,
             offset_of!(EcDistannReloptions, source_identity_offset) as i32,
         );
+        pg_sys::add_local_string_reloption(
+            &mut relopts,
+            b"head_construction\0".as_ptr().cast(),
+            b"Task 207 head construction: 'stitched_bfs' control or 'partition_union' candidate.\0"
+                .as_ptr()
+                .cast(),
+            ptr::null(),
+            None,
+            None,
+            offset_of!(EcDistannReloptions, head_construction_offset) as i32,
+        );
         pg_sys::build_local_reloptions(&mut relopts, reloptions, validate) as *mut pg_sys::bytea
     })
 }
@@ -1019,6 +1063,14 @@ impl EcDistannReloptionsView {
                 .unwrap_or_else(|e| pgrx::error!("{e}")),
             None => DistannSourceIdentityProvider::None,
         };
+        let head_construction = match self.read_string_reloption(
+            reloptions.head_construction_offset,
+            "head_construction",
+        ) {
+            Some(value) => HeadConstruction::parse_reloption(&value)
+                .unwrap_or_else(|e| pgrx::error!("{e}")),
+            None => HeadConstruction::DEFAULT,
+        };
 
         EcDistannOptions {
             graph_degree: reloptions.graph_degree,
@@ -1030,6 +1082,7 @@ impl EcDistannReloptionsView {
             neighbor_code_format,
             source_identity,
             distributed_control: reloptions.distributed_control,
+            head_construction,
         }
     }
 }
@@ -1059,6 +1112,10 @@ mod tests {
         assert_eq!(defaults.head_index_cap, 4096);
         assert_eq!(defaults.neighbor_code_format, NeighborCodeFormat::RaBitQ);
         assert!(!defaults.distributed_control);
+        assert_eq!(
+            defaults.head_construction,
+            super::HeadConstruction::StitchedBfs
+        );
         assert_eq!(
             defaults.source_identity,
             DistannSourceIdentityProvider::None

@@ -625,6 +625,18 @@ unsafe fn execute_distann_scan(
                 counters.beam_exhausted,
                 collection.hits.len(),
             );
+            for round in &counters.rounds {
+                pgrx::notice!(
+                    "ec_distann_scan_round round={} requested_nodes={} expanded_nodes={} transport_wait_ns={} straggler_spread_ns={} request_bytes={} response_bytes={}",
+                    round.round,
+                    round.requested_nodes,
+                    round.expanded_nodes,
+                    round.transport_wait_ns,
+                    round.straggler_spread_ns,
+                    round.request_bytes,
+                    round.response_bytes,
+                );
+            }
         }
         opaque.early_exit = collection.counters.early_exit;
         opaque.proven_k = effective_top_k;

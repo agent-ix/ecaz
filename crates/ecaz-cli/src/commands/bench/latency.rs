@@ -184,7 +184,16 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     };
     super::validate_adaptive_nprobe_options(profile, adaptive_nprobe_options)?;
     super::validate_ivf_scratch_soa_batch_decode(profile, args.ivf_scratch_soa_batch_decode)?;
-    let session_gucs = super::parse_session_gucs(&args.session_gucs)?;
+    let mut session_gucs = super::parse_session_gucs(&args.session_gucs)?;
+    if args.distann_stage_counters
+        && !session_gucs
+            .iter()
+            .any(|(name, _)| name == "ec_distann.scan_profile_notice")
+    {
+        // Per-hop Task 206 telemetry is emitted as NOTICE records. Keep the
+        // instrumentation opt-in with the existing stage-counter switch.
+        session_gucs.push(("ec_distann.scan_profile_notice".to_owned(), "on".to_owned()));
+    }
 
     let corpus_table = format!("{}_corpus", args.prefix);
     let queries_table = format!("{}_queries", args.prefix);
@@ -768,7 +777,9 @@ async fn open_worker_client(
     ivf_scratch_soa_batch_decode: bool,
     force_index: bool,
 ) -> Result<(tokio_postgres::Client, tokio_postgres::Statement)> {
-    let client = psql::connect(conn).await?;
+    // NOTICE records carry per-round traversal attribution. The suite captures
+    // stderr into the packet-local run log and parses the structured lines.
+    let client = psql::connect_reporting_notices(conn).await?;
     psql::prefer_ordered_ann_path(&client).await?;
     client
         .batch_execute(&format!("SET {guc} = {value}"))

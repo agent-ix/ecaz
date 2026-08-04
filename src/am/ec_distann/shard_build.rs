@@ -676,7 +676,10 @@ pub(super) fn build_sharded_graph(
         build_list_size,
         alpha,
         seed,
-        (head_cap.saturating_add(shard_count - 1) / shard_count).max(1),
+        // Each partition may contribute up to the full global cap. Splitting
+        // C by S before deduplication under-fills the union whenever closure
+        // overlap repeats nodes across partitions (Task 207 review P2).
+        head_cap.max(1),
         &dist,
     )?;
 

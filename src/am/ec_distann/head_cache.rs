@@ -1,6 +1,6 @@
 //! FR-080 coordinator head index: an in-memory Vamana graph over the
 //! persisted entry-region sample, cached per backend and keyed on the
-//! a bounded two-entry LRU keyed on logical index/build/epoch identity and
+//! bounded two-entry-per-index LRU keyed on logical index/build/epoch identity and
 //! validated against a metadata fingerprint.
 //!
 //! The cache entry also carries the vec_id→TID directory and (for
@@ -86,7 +86,7 @@ impl DistannCacheKey {
     /// have separate build/epoch UUIDs. Their persisted active epoch and
     /// content digest are the stable equivalents; the metadata fingerprint is
     /// still checked on every hit below.
-    fn legacy(index_oid: u32, metadata: &DistannMetadataPage) -> Self {
+    fn from_metadata(index_oid: u32, metadata: &DistannMetadataPage) -> Self {
         let mut build_id = [0_u8; 16];
         build_id[..8].copy_from_slice(&metadata.active_epoch.to_le_bytes());
         let mut epoch_fingerprint = [0_u8; 32];
@@ -114,11 +114,14 @@ pub(crate) fn cached_index_entry(
     metadata: &DistannMetadataPage,
 ) -> Result<Arc<DistannIndexCacheEntry>, String> {
     let fingerprint = DistannCacheFingerprint::of(metadata);
+    if !super::options::physical_epoch_cache_enabled() {
+        return Ok(Arc::new(build_cache_entry(handle, metadata, fingerprint)?));
+    }
     {
         let mut cache = cache()
             .lock()
             .map_err(|_| "ec_distann head cache lock poisoned".to_owned())?;
-        let key = DistannCacheKey::legacy(index_oid, metadata);
+        let key = DistannCacheKey::from_metadata(index_oid, metadata);
         if let Some(position) = cache.iter().position(|(cached, _)| *cached == key) {
             let (cached_key, entry) = cache.remove(position).expect("cache position exists");
             if entry.fingerprint == fingerprint {
@@ -130,7 +133,7 @@ pub(crate) fn cached_index_entry(
     }
 
     let entry = Arc::new(build_cache_entry(handle, metadata, fingerprint)?);
-    let key = DistannCacheKey::legacy(index_oid, metadata);
+    let key = DistannCacheKey::from_metadata(index_oid, metadata);
     let mut cache = cache()
         .lock()
         .map_err(|_| "ec_distann head cache lock poisoned".to_owned())?;
@@ -138,7 +141,22 @@ pub(crate) fn cached_index_entry(
         cache.remove(position);
     }
     cache.push_front((key, Arc::clone(&entry)));
-    cache.truncate(2);
+    // FR-080 bounds two epoch entries per logical index. A global truncate(2)
+    // makes three indexes thrash one another in a backend that alternates
+    // scans; retain unrelated indexes and evict only the oldest entry for the
+    // index being inserted.
+    let mut seen_for_index = 0_usize;
+    let mut position = cache.len();
+    while position > 0 {
+        position -= 1;
+        if cache[position].0.index_oid == index_oid {
+            seen_for_index += 1;
+            if seen_for_index > 2 {
+                cache.remove(position);
+                break;
+            }
+        }
+    }
     Ok(entry)
 }
 
