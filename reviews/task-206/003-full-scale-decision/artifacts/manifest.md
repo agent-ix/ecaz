@@ -26,3 +26,7 @@ Artifacts:
 - `run/10k/*-predictions.json`: recall prediction artifacts
 - `run-50k/50k/*.log`: setup-only runner and per-node PostgreSQL logs from the
   stopped 50k attempt
+- `run-50k-retry/suite-manifest.json` and `run-50k-retry/results.jsonl`:
+  completed 50k suite artifacts
+- `run-50k-retry/50k/`: completed 50k runner summary, child benchmark logs,
+  predictions, and per-node PostgreSQL logs
