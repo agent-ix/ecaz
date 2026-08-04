@@ -1,0 +1,36 @@
+{
+  "name": "task206-100k-round-telemetry",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-206/004-corrected-closeout/artifacts/round-run",
+  "defaults": { "pg": 18 },
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "task206-100k-round-telemetry",
+      "tags": ["task206", "corrected", "phase2", "100k", "round-telemetry"],
+      "artifact_dir": "${artifact_dir}/100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task206-round-100k",
+      "nodes": 3,
+      "base_port": 42260,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 64,
+      "hop_rounds": 8,
+      "queries": 50,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "bench_session_gucs": ["ec_distann.scan_profile_notice=on"],
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "bw64-h8-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-round-telemetry", "role": "candidate", "admissibility": "conforming", "rationale": "Same three-owner physical topology and bounded coordinator state as the corrected decision lane; this arm adds only per-round NOTICE observability." } },
+        { "name": "bw64-h8-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-round-telemetry", "role": "candidate", "admissibility": "conforming", "rationale": "Same three-owner physical topology and bounded coordinator state as the corrected decision lane; this arm adds only per-round NOTICE observability." } }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
+    }
+  ]
+}

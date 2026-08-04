@@ -12,9 +12,9 @@
 - timestamp: pending corrected run
 - corpus/query inputs: external staged `ec_real_10k`, `ec_real_50k`, `ec_real_100k`; no corpus files committed
 
-The latency lane uses 10 warmups and 50 timed queries. The uninstrumented
-performance lane enables `ec_distann.scan_profile_notice` directly and captures
-per-round NOTICE records for requested/expanded nodes, transport wait,
+The latency lane uses 10 warmups and 50 timed queries. The focused telemetry
+rerun uses `bench_session_gucs=["ec_distann.scan_profile_notice=on"]` and
+captures per-round NOTICE records for requested/expanded nodes, transport wait,
 straggler spread, and request/response bytes. Aggregate stage counters and the
 owner-oracle control are isolated in `task206-owner-control.json`, which uses
 the benchmark-feature extension.
