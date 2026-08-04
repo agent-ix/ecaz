@@ -10,7 +10,7 @@ seq: 003
 
 # Review request: full-scale partition-union A/B
 
-Code head SHA: `59aeb6c58fa3e2f0db1774a6c3c8a5ab62308e78`
+Code head SHA: `3fb1319af`
 
 This packet registers the required 50k and 100k Task 207 control/candidate A/B
 through `ecaz bench suite`. It holds BW=128, H=5, head cap 4096, top-k 200,
@@ -26,8 +26,11 @@ The 10k diagnostic already recorded a candidate recall increase from 0.9529 to
 The completed 50k A/B raised recall from 0.8814 to 0.8994, reduced p50 latency
 from 333.0 ms to 323.6 ms, and increased physical generation storage by
 2,506,752 bytes. See `artifacts/result-summary-50k.md` and
-`artifacts/run-50k-final/results.jsonl`. The 100k result remains open until
-its suite artifacts land.
+`artifacts/run-50k-final/results.jsonl`. The completed 100k A/B measured
+control recall/p50/storage of 0.9182 / 344.0 ms / 2,496,659,456 bytes and
+candidate recall/p50/storage of 0.9124 / 337.0 ms / 2,497,167,360 bytes.
+See `artifacts/result-summary-100k.md` and
+`artifacts/run-100k-final/results.jsonl`.
 
 Please review the preregistration and leave findings under this packet's
 `feedback/` directory.
