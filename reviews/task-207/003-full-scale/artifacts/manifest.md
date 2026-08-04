@@ -1,0 +1,23 @@
+# Artifact manifest
+
+- head SHA: `59aeb6c58fa3e2f0db1774a6c3c8a5ab62308e78`
+- task bucket: `reviews/task-207`
+- packet: `003-full-scale`
+- lane / fixture: PG18; 3-owner distann local multinode; control/candidate A/B
+- storage format / rerank mode: physical distann; `rabitq` neighbor scoring
+- isolated one-index-per-table or shared-table surface: one fixture per A/B
+  step; each suite step is isolated
+- command: `target/debug/ecaz bench suite audit --config artifacts/task207-50k-union-ab.json`
+- command: `target/debug/ecaz bench suite run --config artifacts/task207-50k-union-ab.json --dry-run`
+- timestamp: `2026-08-03T18:00:00-07:00` (packet preparation)
+- corpus: `ec_real_50k`, source directory
+  `/home/peter/dev/ecaz/data/task111a_real50k`; corpus/query files are
+  external and are not committed
+
+Artifacts:
+
+- `task207-50k-union-ab.json`: checked-in 50k SuiteConfig
+- `../002-union-construction/artifacts/task207-100k-union-ab.json`: checked-in
+  100k SuiteConfig
+- `run-50k/`: suite manifest, structured results, and packet-local logs after
+  execution
