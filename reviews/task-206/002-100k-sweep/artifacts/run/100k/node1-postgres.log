@@ -1,0 +1,16 @@
+2026-08-03 16:15:08.383 PDT [1045713] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-03 16:15:08.396 PDT [1045713] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-03 16:15:08.396 PDT [1045713] LOG:  listening on IPv4 address "127.0.0.1", port 41260
+2026-08-03 16:15:08.408 PDT [1045719] LOG:  database system was shut down at 2026-08-03 16:15:05 PDT
+2026-08-03 16:15:08.415 PDT [1045713] LOG:  database system is ready to accept connections
+2026-08-03 16:19:25.626 PDT [1045717] LOG:  checkpoint starting: wal
+2026-08-03 16:19:35.986 PDT [1045717] LOG:  checkpoint complete: wrote 93 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 1 removed, 32 recycled; write=8.640 s, sync=1.410 s, total=10.361 s; sync files=267, longest=1.005 s, average=0.006 s; distance=537255 kB, estimate=537255 kB; lsn=0/41BF3780, redo lsn=0/223FE568
+2026-08-03 16:19:36.087 PDT [1045717] LOG:  checkpoints are occurring too frequently (11 seconds apart)
+2026-08-03 16:19:36.087 PDT [1045717] HINT:  Consider increasing the configuration parameter "max_wal_size".
+2026-08-03 16:19:36.087 PDT [1045717] LOG:  checkpoint starting: wal
+2026-08-03 16:24:06.145 PDT [1045717] LOG:  checkpoint complete: wrote 92 buffers (0.6%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.919 s, sync=0.019 s, total=270.059 s; sync files=68, longest=0.003 s, average=0.001 s; distance=540684 kB, estimate=540684 kB; lsn=0/53088A80, redo lsn=0/434015E8
+2026-08-03 16:26:09.222 PDT [1045713] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 16:26:09.222 PDT [1045713] LOG:  performing immediate shutdown because data directory lock file is invalid
+2026-08-03 16:26:09.222 PDT [1045713] LOG:  received immediate shutdown request
+2026-08-03 16:26:09.222 PDT [1045713] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 16:26:09.619 PDT [1045713] LOG:  database system is shut down

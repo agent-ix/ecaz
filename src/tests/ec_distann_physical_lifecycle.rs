@@ -2202,6 +2202,15 @@ fn test_distann_trained_head_build_replay_publish_and_inspection() {
     assert_eq!(policy.get::<_, i32>(5), 32);
     assert_eq!(policy.get::<_, i32>(6), 64);
     assert_eq!(policy.get::<_, i32>(7), 32);
+    let construction = client
+        .query_one(
+            "SELECT head_construction, marker_attested
+               FROM ec_distann_active_head_construction('ec_distann_th_idx'::regclass)",
+            &[],
+        )
+        .expect("active physical head construction should be inspectable");
+    assert_eq!(construction.get::<_, String>(0), "stitched_bfs");
+    assert!(construction.get::<_, bool>(1));
     let first_head_digest = client
         .query_one(
             &format!(
@@ -2243,9 +2252,49 @@ fn test_distann_trained_head_build_replay_publish_and_inspection() {
         .batch_execute(&format!(
             "SELECT ec_distann_abort_epoch_build(
                  'ec_distann_th_idx'::regclass, '{second_build}'::uuid);
-             DROP TABLE ec_distann_th_source CASCADE;
-             DROP TABLE ec_distann_th_training;"
+             ALTER INDEX ec_distann_th_idx SET (head_construction = 'partition_union');"
         ))
+        .expect("partition-union marker setup should commit");
+
+    let partition_build = "69696969-6969-4969-8969-696969696969";
+    client
+        .batch_execute(&format!(
+            "SELECT ec_distann_begin_epoch_build(
+                 'ec_distann_th_idx'::regclass, 9, '{partition_build}'::uuid);
+             SELECT ec_distann_build_epoch_with_training(
+                 'ec_distann_th_idx'::regclass, 9, '{partition_build}'::uuid,
+                 'ec_distann_th_training'::regclass);"
+        ))
+        .expect("partition-union trained-head build should reach Ready");
+    for statement in [
+        format!(
+            "SELECT ec_distann_decide_epoch_publish(
+                 'ec_distann_th_idx'::regclass, '{partition_build}'::uuid)"
+        ),
+        format!(
+            "SELECT ec_distann_recover_epoch_publish(
+                 'ec_distann_th_idx'::regclass, '{partition_build}'::uuid)"
+        ),
+    ] {
+        client
+            .batch_execute(&statement)
+            .expect("partition-union publication should succeed");
+    }
+    let partition_marker = client
+        .query_one(
+            "SELECT head_construction, marker_attested
+               FROM ec_distann_active_head_construction('ec_distann_th_idx'::regclass)",
+            &[],
+        )
+        .expect("partition-union marker should be inspectable");
+    assert_eq!(partition_marker.get::<_, String>(0), "partition_union");
+    assert!(partition_marker.get::<_, bool>(1));
+
+    client
+        .batch_execute(
+            "DROP TABLE ec_distann_th_source CASCADE;
+             DROP TABLE ec_distann_th_training;",
+        )
         .expect("trained-head fixture should clean up");
 }
 

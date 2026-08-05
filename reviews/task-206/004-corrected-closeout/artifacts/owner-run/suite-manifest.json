@@ -1,0 +1,133 @@
+{
+  "suite": "task206-owner-control-feature",
+  "schema_version": 1,
+  "config": "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-206/004-corrected-closeout/artifacts/task206-owner-control.json",
+  "config_sha256": "4a5bab249ae8347728100b62f78b213aa1ff7f20eae64768489bbde6db8b2b34",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785887729449,
+  "runner_git_commit": "c147b29873c9f940579497a2d39329f088ecff2f-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "task206-10k-owner-control",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-206/004-corrected-closeout/artifacts/owner-run/10k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task206-owner-10k",
+        "--log-file",
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-206/004-corrected-closeout/artifacts/owner-run/10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "42060",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "64",
+        "--hop-rounds",
+        "8",
+        "--benchmark-seed-variant",
+        "owner-traversal-control:owner_scan:128:200:rabitq:0:off:64:8:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "200",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
+      ],
+      "selected": true,
+      "tags": [
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "owner-traversal-control",
+          "id": "task206-owner-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Owner-oracle seed control on the same three-owner physical roster; feature-enabled diagnostics are not used for the uninstrumented decision latency."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-206/004-corrected-closeout/artifacts/owner-run/10k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785887729481,
+      "finished_at_unix_ms": 1785888141770,
+      "duration_ms": 415020,
+      "exit_code": 0
+    },
+    {
+      "name": "task206-50k-owner-control",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "owner-traversal-control",
+          "id": "task206-owner-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Owner-oracle seed control on the same three-owner physical roster; feature-enabled diagnostics are not used for the uninstrumented decision latency."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-206/004-corrected-closeout/artifacts/owner-run/50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task206-100k-owner-control",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "owner-traversal-control",
+          "id": "task206-owner-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Owner-oracle seed control on the same three-owner physical roster; feature-enabled diagnostics are not used for the uninstrumented decision latency."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-206/004-corrected-closeout/artifacts/owner-run/100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

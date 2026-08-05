@@ -1,0 +1,12 @@
+2026-08-03 16:15:08.487 PDT [1045726] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-03 16:15:08.503 PDT [1045726] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-03 16:15:08.503 PDT [1045726] LOG:  listening on IPv4 address "127.0.0.1", port 41261
+2026-08-03 16:15:08.514 PDT [1045732] LOG:  database system was shut down at 2026-08-03 16:15:06 PDT
+2026-08-03 16:15:08.524 PDT [1045726] LOG:  database system is ready to accept connections
+2026-08-03 16:20:08.053 PDT [1045730] LOG:  checkpoint starting: time
+2026-08-03 16:20:56.116 PDT [1045730] LOG:  checkpoint complete: wrote 479 buffers (2.9%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=47.925 s, sync=0.077 s, total=48.064 s; sync files=261, longest=0.009 s, average=0.001 s; distance=3972 kB, estimate=3972 kB; lsn=0/1B37670, redo lsn=0/1B358B8
+2026-08-03 16:26:09.276 PDT [1045726] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 16:26:09.276 PDT [1045726] LOG:  performing immediate shutdown because data directory lock file is invalid
+2026-08-03 16:26:09.276 PDT [1045726] LOG:  received immediate shutdown request
+2026-08-03 16:26:09.276 PDT [1045726] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-03 16:26:09.281 PDT [1045726] LOG:  database system is shut down

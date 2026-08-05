@@ -328,6 +328,75 @@ pub(crate) fn build_head_sample(
     Ok(sample)
 }
 
+/// Build the physical head pool from the union of bounded top-layer prefixes
+/// emitted by the partition-local Vamana builds. The input order is stable
+/// `(partition ordinal, BFS order)`; a round-robin walk gives every partition
+/// one representative before spending the remaining cap on deeper prefixes.
+/// Closure overlap can place one node in more than one partition, so the
+/// resulting pool is deduplicated by global node id.
+pub(crate) fn build_partition_union_head_sample<V: AsRef<[f32]>>(
+    partition_nodes: &[Vec<u32>],
+    cap: usize,
+    dimensions: u16,
+    vec_ids: &[u64],
+    vectors: &[V],
+) -> Result<DistannHeadSample, String> {
+    if vec_ids.len() != vectors.len() {
+        return Err("EC_HEAD_SAMPLE: partition union/source cardinality mismatch".to_owned());
+    }
+    if !vec_ids.is_empty() && partition_nodes.is_empty() {
+        return Err("EC_HEAD_SAMPLE: partition union has no partitions".to_owned());
+    }
+    for partition in partition_nodes {
+        for &node in partition {
+            if node as usize >= vec_ids.len() {
+                return Err("EC_HEAD_SAMPLE: partition head node is outside the corpus".to_owned());
+            }
+        }
+    }
+    if vec_ids.is_empty() || cap == 0 {
+        return Ok(DistannHeadSample {
+            dimensions,
+            entries: Vec::new(),
+        });
+    }
+    let sample_cap = cap.min(vec_ids.len());
+    let mut cursors = vec![0_usize; partition_nodes.len()];
+    let mut selected = Vec::with_capacity(sample_cap);
+    let mut seen = HashSet::with_capacity(sample_cap);
+    while selected.len() < sample_cap {
+        let before = selected.len();
+        for (partition, cursor) in partition_nodes.iter().zip(cursors.iter_mut()) {
+            while *cursor < partition.len() {
+                let node = partition[*cursor] as usize;
+                *cursor += 1;
+                if seen.insert(node) {
+                    selected.push(node);
+                    break;
+                }
+            }
+            if selected.len() == sample_cap {
+                break;
+            }
+        }
+        if selected.len() == before {
+            break;
+        }
+    }
+    let sample = DistannHeadSample {
+        dimensions,
+        entries: selected
+            .into_iter()
+            .map(|node| DistannHeadSampleEntry {
+                vec_id: vec_ids[node],
+                vector: vectors[node].as_ref().to_vec(),
+            })
+            .collect(),
+    };
+    sample.validate(cap)?;
+    Ok(sample)
+}
+
 /// Deterministic, query-independent geometric region used by Task 181 both to
 /// select landmarks and to report evaluation-query coverage.  Twelve fixed
 /// sparse random hyperplanes give 4096 bounded regions without fitting state
@@ -792,6 +861,7 @@ pub(crate) fn persist_head_sample(
     sample: &DistannHeadSample,
     graph: &DistannPersistedHeadGraph,
     build_options: super::generation_descriptor::DistannBuildOptions,
+    head_construction: super::options::HeadConstruction,
     membership_only: bool,
 ) -> Result<(), String> {
     graph.validate(sample.entries.len(), usize::MAX)?;
@@ -810,10 +880,12 @@ pub(crate) fn persist_head_sample(
                      index_oid, logical_index_uuid, build_id, dimensions,
                      sample_count, head_sample_digest,
                      head_policy, training_query_count, training_query_digest,
-                     head_graph_entry, head_graph_digest, membership
+                     head_graph_entry, head_graph_digest, membership,
+                     head_construction
                  ) VALUES ($1::oid, $2::uuid, $3::uuid, $4::integer,
                            $5::integer, $6::bytea, $7::smallint, $8::integer,
-                           $9::bytea, $10::integer, $11::bytea, $12::bytea)"
+                           $9::bytea, $10::integer, $11::bytea, $12::bytea,
+                           $13::smallint)"
             ),
             None,
             &[
@@ -840,6 +912,7 @@ pub(crate) fn persist_head_sample(
                     None::<Vec<u8>>
                 }
                 .into(),
+                i16::from(head_construction as u8).into(),
             ],
         )
         .map_err(|error| format!("EC_HEAD_SAMPLE: state insert failed: {error}"))?;
@@ -1591,6 +1664,60 @@ mod tests {
                 })
                 .collect(),
         }
+    }
+
+    #[test]
+    fn partition_union_is_round_robin_deduplicated_and_capped() {
+        let partitions = vec![vec![0, 1, 2], vec![2, 3, 4], vec![5, 6]];
+        let vec_ids = (10_u64..20).collect::<Vec<_>>();
+        let vectors = (0..vec_ids.len())
+            .map(|node| vec![node as f32, 1.0])
+            .collect::<Vec<_>>();
+        let sample = build_partition_union_head_sample(
+            &partitions,
+            4,
+            2,
+            &vec_ids,
+            &vectors,
+        )
+        .expect("partition union should build");
+        assert_eq!(
+            sample
+                .entries
+                .iter()
+                .map(|entry| entry.vec_id)
+                .collect::<Vec<_>>(),
+            vec![10, 12, 15, 11]
+        );
+        assert_eq!(sample.entries.len(), 4);
+    }
+
+    #[test]
+    fn partition_union_uses_full_prefix_supply_after_overlap() {
+        // A per-shard ceil(C/S) prefix can underfill after deduplication. The
+        // union contract gives every partition up to C candidates, then caps
+        // the deterministic round-robin union at C.
+        let partitions = vec![vec![0, 1, 2, 3, 4, 5], vec![0, 1, 2, 6, 7, 8]];
+        let vec_ids = (10_u64..20).collect::<Vec<_>>();
+        let vectors = (0..vec_ids.len())
+            .map(|node| vec![node as f32, 1.0])
+            .collect::<Vec<_>>();
+        let sample = build_partition_union_head_sample(
+            &partitions,
+            8,
+            2,
+            &vec_ids,
+            &vectors,
+        )
+        .expect("partition union should build");
+        assert_eq!(sample.entries.len(), 8);
+    }
+
+    #[test]
+    fn partition_union_rejects_missing_partitions_and_out_of_range_nodes() {
+        let vectors = vec![vec![1.0, 0.0]];
+        assert!(build_partition_union_head_sample(&[], 4, 2, &[1], &vectors).is_err());
+        assert!(build_partition_union_head_sample(&[vec![1]], 4, 2, &[1], &vectors).is_err());
     }
 
     #[test]

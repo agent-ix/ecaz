@@ -2,7 +2,7 @@
 id: FR-080
 title: DistANN Sharded Head Index
 type: FR
-status: PROPOSED
+status: ACCEPTED
 relationships:
   - target: "ix://agent-ix/ecaz/FR-077"
     type: "depends_on"
@@ -30,9 +30,12 @@ clause 3).
   entry medoid plus one seed per remaining connected component (vec_id
   order), regions filled round-robin by depth to the cap, deterministic
   under a fixed seed. Every connected component of the stitched graph SHALL
-  be represented. *Successor direction (tracked, not shipped): deriving the
-  sample as a per-build-partition union per DISTRIBUTEDANN §3 — the Task 203
-  conformance finding; a change here re-opens this clause.*
+  be represented. A `head_construction=partition_union` arm instead takes a
+  deterministic round-robin union of the per-build-partition prefixes, with
+  up to C candidates supplied by each partition before global deduplication
+  and capping. The persisted metadata marker
+  `DISTANN_METADATA_FLAG_HEAD_PARTITION_UNION` proves which construction was
+  active; the default remains `stitched_bfs`.
 - **Trained selection.** An explicit `training_landmarks_exact` generation
   MAY instead select the same bounded cap from exactly 200 ordered, finite,
   dimension-matched training queries supplied by a PostgreSQL relation. The
@@ -101,6 +104,13 @@ clause 3).
   validation on every scan without changing results. Owner-side per-backend
   head-shard caches SHALL be bounded and keyed on a digest of the shard
   ordinal, member list, build parameters, and head policy.
+
+  The shipped local head cache currently uses the legacy metadata tuple as
+  the build/epoch surrogate until the physical-generation catalog is active;
+  it still includes index OID and logical UUID, validates the metadata
+  fingerprint on hits, and bounds entries to two per index rather than two
+  globally. The Userset switch is implemented and applies to this cache as
+  well as the physical-generation cache.
 - **Query seeding.** A query SHALL apply the active generation's bound head
   policy first; the merged seeds feed the hop-round frontier of
   [FR-081](./FR-081-distann-query-orchestration.md). Under
@@ -178,7 +188,7 @@ sequenceDiagram
 |----|----------|--------------|
 | FR-080-AC-1 | On a multi-owner roster, no landmark vector crosses the wire to the coordinator: holders return at most seed_count seeds each and coordinator head relations hold zero derived bytes | Test + storage audit |
 | FR-080-AC-2 | Selection and per-shard graph construction are deterministic for a fixed seed, epoch, and member list; owner and replica serve identical shard topology via the members-derived ordinal | Test |
-| FR-080-AC-3 | Every connected component of the stitched graph is represented in the head sample | Test (property/BFS) |
+| FR-080-AC-3 | Every connected component of the stitched graph is represented in the head sample | Test (property/BFS); partition-union activation is additionally marker-verified |
 | FR-080-AC-4 | Recall sensitivity to C is measured and recorded (informs the default) | Analysis (bench) |
 | FR-080-AC-5 | Warm repeated scans reuse one validated epoch entry; cache identity cannot alias OID/UUID/build/fingerprint changes; at most two epoch entries per backend | Test + benchmark |
 | FR-080-AC-6 | Trained policy input/count/digest and selected head are deterministic and fingerprint-bound; replay with different input fails | Test |

@@ -91,6 +91,13 @@ ADD COLUMN IF NOT EXISTS training_query_digest bytea NOT NULL
     DEFAULT decode(repeat('00', 32), 'hex');
 
 ALTER TABLE ec_distann_generation_head_state
+ADD COLUMN IF NOT EXISTS head_construction smallint NOT NULL DEFAULT 0;
+
+ALTER TABLE ec_distann_generation_head_state
+ADD CONSTRAINT ec_distann_generation_head_state_construction_check
+CHECK (head_construction IN (0, 1));
+
+ALTER TABLE ec_distann_generation_head_state
 ADD CONSTRAINT ec_distann_generation_head_state_policy_check
 CHECK (head_policy IN (0, 1));
 
@@ -121,6 +128,9 @@ ALTER COLUMN training_query_count DROP DEFAULT;
 ALTER TABLE ec_distann_generation_head_state
 ALTER COLUMN training_query_digest DROP DEFAULT;
 
+ALTER TABLE ec_distann_generation_head_state
+ALTER COLUMN head_construction DROP DEFAULT;
+
 CREATE FUNCTION ec_distann_build_epoch_with_training(
     index_regclass regclass,
     epoch bigint,
@@ -146,6 +156,15 @@ STRICT STABLE
 LANGUAGE c
 AS 'MODULE_PATHNAME', 'ec_distann_active_head_policy_wrapper';
 
+CREATE FUNCTION ec_distann_active_head_construction(index_regclass regclass)
+RETURNS TABLE (
+    head_construction text,
+    marker_attested boolean
+)
+STRICT STABLE
+LANGUAGE c
+AS 'MODULE_PATHNAME', 'ec_distann_active_head_construction_wrapper';
+
 ALTER FUNCTION ec_distann_build_epoch_with_training(regclass, bigint, uuid, regclass)
     SECURITY DEFINER;
 ALTER FUNCTION ec_distann_build_epoch_with_training(regclass, bigint, uuid, regclass)
@@ -157,3 +176,8 @@ ALTER FUNCTION ec_distann_active_head_policy(regclass) SECURITY DEFINER;
 ALTER FUNCTION ec_distann_active_head_policy(regclass)
     SET search_path TO pg_catalog, @extschema@, pg_temp;
 REVOKE ALL ON FUNCTION ec_distann_active_head_policy(regclass) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_active_head_construction(regclass) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_active_head_construction(regclass)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_active_head_construction(regclass) FROM PUBLIC;

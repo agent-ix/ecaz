@@ -10,6 +10,7 @@ use color_eyre::eyre::{bail, eyre, Context, Result};
 use ecaz_fault_injection::ProviderMode;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -145,6 +146,14 @@ pub struct LocalMultinodePg18Args {
     /// ec_distann graph degree reloption.
     #[arg(long, default_value_t = 32)]
     pub graph_degree: u32,
+    /// Number of partition-local Vamana builds used for the physical head
+    /// union. Zero selects the extension's automatic policy; one preserves
+    /// the monolithic control; values >=2 exercise Task 207 construction.
+    #[arg(long, default_value_t = 1)]
+    pub build_shards: u32,
+    /// Task 207 head construction A/B, independent of the sharded graph.
+    #[arg(long, default_value = "stitched_bfs")]
+    pub head_construction: String,
     /// Persisted coordinator head-sample cap reloption. Exposed so FR-080
     /// sensitivity matrices can vary the cap through `ecaz bench suite`.
     #[arg(long, default_value_t = 4096)]
@@ -266,6 +275,10 @@ pub struct LocalMultinodePg18Args {
     /// `data/staged-current`). Only used with `--corpus-prefix`.
     #[arg(long)]
     pub staged_dir: Option<PathBuf>,
+    /// Additional session GUCs applied to physical benchmark child commands.
+    /// This carries packet-local instrumentation such as per-round notices.
+    #[arg(long = "bench-session-guc")]
+    pub bench_session_gucs: Vec<String>,
     /// Inject one exact-peer provider fault into the first remote owner query.
     #[arg(long, value_enum)]
     pub remote_socket_fault: Option<RemoteSocketFaultArg>,
@@ -521,6 +534,15 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if !(16..=1_048_576).contains(&args.head_index_cap) {
         bail!("--head-index-cap must be in 16..=1048576");
     }
+    if args.build_shards > 4096 {
+        bail!("--build-shards must be in 0..=4096");
+    }
+    if !matches!(
+        args.head_construction.as_str(),
+        "stitched_bfs" | "partition_union"
+    ) {
+        bail!("--head-construction must be stitched_bfs or partition_union");
+    }
     if args.head_sampling_rate.is_none()
         && (args.head_cap_floor.is_some() || args.head_cap_ceiling.is_some())
     {
@@ -552,9 +574,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args
         .beam_width
-        .is_some_and(|value| !(1..=64).contains(&value))
+        .is_some_and(|value| !(1..=256).contains(&value))
     {
-        bail!("--beam-width must be in 1..=64");
+        bail!("--beam-width must be in 1..=256");
     }
     if args
         .candidate_heap_limit
@@ -771,7 +793,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     crate::ecaz_println!("[distann-multicluster] repo={}", repo_root.display());
     crate::ecaz_println!("[distann-multicluster] pgbin={}", pgbin.display());
     crate::ecaz_println!(
-        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} head_index_cap={}",
+        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} graph_degree={} build_shards={} head_index_cap={}",
         match mode {
             FixtureMode::Physical => "physical",
             FixtureMode::ReplicatedServingControl => "replicated-serving-control",
@@ -782,6 +804,8 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         args.base_port,
         args.rows,
         args.dim,
+        args.graph_degree,
+        args.build_shards,
         args.head_index_cap
     );
 
@@ -971,6 +995,8 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
                 args.queries,
                 args.graph_degree,
                 args.head_index_cap,
+                args.build_shards,
+                &args.head_construction,
                 &head_sizing_reloptions(args),
             ))
         }
@@ -1007,6 +1033,8 @@ fn real_setup_sql(
     queries_limit: u32,
     gd: u32,
     head_index_cap: u32,
+    build_shards: u32,
+    head_construction: &str,
     head_sizing: &str,
 ) -> String {
     // Escape the paths as SQL string literals (double any single quote) so a
@@ -1034,7 +1062,9 @@ fn real_setup_sql(
            FROM dmq_stage ORDER BY id LIMIT {queries_limit};\n\
          DROP TABLE dmq_stage;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-         WITH (graph_degree = {gd}, head_index_cap = {head_index_cap}{head_sizing});\n",
+           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
+                 build_shards = {build_shards}, head_construction = '{head_construction}'{head_sizing});\n",
+        head_construction = head_construction,
         head_sizing = head_sizing,
     )
 }
@@ -1056,11 +1086,14 @@ fn setup_sql(args: &LocalMultinodePg18Args) -> String {
            FROM generate_series(1, {rows}) AS g\n\
          ) s;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
-           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap}{head_sizing});\n",
+           WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
+                 build_shards = {build_shards}, head_construction = '{head_construction}'{head_sizing});\n",
         dim = args.dim,
         rows = args.rows,
         gd = args.graph_degree,
         head_index_cap = args.head_index_cap,
+        build_shards = args.build_shards,
+        head_construction = args.head_construction,
         head_sizing = head_sizing,
     )
 }
@@ -1261,8 +1294,14 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
              (embedding ecvector_distann_ip_ops) INCLUDE (source_id)
             WITH (distributed_control = true, source_identity = 'include',
                    graph_degree = {}, head_index_cap = {},
+                   build_shards = {},
+                   head_construction = '{}',
                    neighbor_code_format = 'rabitq'{});",
-        args.graph_degree, args.head_index_cap, head_sizing
+        args.graph_degree,
+        args.head_index_cap,
+        args.build_shards,
+        args.head_construction,
+        head_sizing
     ))
 }
 
@@ -1411,7 +1450,21 @@ async fn run_physical_bench_child(args: Vec<String>) -> Result<String> {
             String::from_utf8_lossy(&output.stderr)
         );
     }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    let mut captured = String::from_utf8_lossy(&output.stdout).into_owned();
+    // PostgreSQL NOTICE records are delivered on the child connection's
+    // stderr by the reporting client. Keep them with the benchmark stdout so
+    // the parent can persist structured per-round telemetry in its summary.
+    captured.push_str(&String::from_utf8_lossy(&output.stderr));
+    Ok(captured)
+}
+
+fn append_distann_notice_lines(summary: &mut Vec<String>, child_output: &str) {
+    summary.extend(
+        child_output
+            .lines()
+            .filter(|line| line.trim_start().starts_with("[postgres notice] "))
+            .map(str::to_owned),
+    );
 }
 
 fn append_materialization_benchmark_guc(
@@ -1794,9 +1847,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                     })
                 })
                 .transpose()?;
-            if beam_width.is_some_and(|width| !(1..=64).contains(&width)) {
+            if beam_width.is_some_and(|width| !(1..=256).contains(&width)) {
                 bail!(
-                    "benchmark seed variant beam width must be in 1..=64, got {value:?}"
+                    "benchmark seed variant beam width must be in 1..=256, got {value:?}"
                 );
             }
             let hop_rounds = fields
@@ -4652,10 +4705,20 @@ async fn run_physical_benchmarks(
                 "production head-policy attestation mismatch: requested {production_policy}, got {attested_policy}"
             );
         }
+        let construction = coordinator
+            .query_one(
+                "SELECT head_construction, marker_attested
+                   FROM ec_distann_active_head_construction('dm_idx'::regclass)",
+                &[],
+            )
+            .await
+            .wrap_err("attesting Task 207 active physical head construction")?;
         Some(format!(
-            "physical_benchmark_head_policy scale={scale} policy={} scoring_mode={} training_queries={} training_query_digest={} head_index_cap={} returned_seed_count={} sample_count={} head_sample_digest={}",
+            "physical_benchmark_head_policy scale={scale} policy={} scoring_mode={} head_construction={} head_construction_marker_attested={} training_queries={} training_query_digest={} head_index_cap={} returned_seed_count={} sample_count={} head_sample_digest={}",
             attested_policy,
             policy.get::<_, String>(1),
+            construction.get::<_, String>(0),
+            construction.get::<_, bool>(1),
             policy.get::<_, i32>(2),
             policy.get::<_, String>(3),
             policy.get::<_, i32>(4),
@@ -5237,6 +5300,11 @@ async fn run_physical_benchmarks(
                 format!("ec_distann.candidate_heap_limit={candidate_heap_limit}"),
             ]);
             if arm == "physical" {
+                for guc in &args.bench_session_gucs {
+                    recall_args.extend(["--session-guc".into(), guc.clone()]);
+                }
+            }
+            if arm == "physical" {
                 recall_args.extend([
                     "--truth-corpus-file".into(),
                     truth_corpus.display().to_string(),
@@ -5289,6 +5357,7 @@ async fn run_physical_benchmarks(
                 );
             }
             let recall = run_physical_bench_child(recall_args).await?;
+            append_distann_notice_lines(&mut lines, &recall);
             if arm == "physical" {
                 let mut crown_stats_seen = false;
                 let mut reported_crown_capacity = 0_i64;
@@ -5400,6 +5469,11 @@ async fn run_physical_benchmarks(
             "--session-guc".into(),
             format!("ec_distann.candidate_heap_limit={candidate_heap_limit}"),
         ]);
+        if arm == "physical" {
+            for guc in &args.bench_session_gucs {
+                latency_args.extend(["--session-guc".into(), guc.clone()]);
+            }
+        }
         if args.benchmark_backend_batch_size > 0 {
             latency_args.extend([
                 "--worker-batch-size".into(),
@@ -5465,6 +5539,7 @@ async fn run_physical_benchmarks(
             latency_args.push("--distann-stage-counters".into());
         }
         let latency = run_physical_bench_child(latency_args).await?;
+        append_distann_notice_lines(&mut lines, &latency);
         if arm == "physical" {
             let mut crown_stats_seen = false;
             let mut reported_crown_capacity = 0_i64;
@@ -5744,6 +5819,95 @@ async fn run_physical_benchmarks(
     let head_graph_bytes = head.get::<_, i64>(3);
     let head_state_bytes = head.get::<_, i64>(4);
     let head_cache_estimated_bytes = head_sample_bytes + head_graph_bytes;
+    let head_membership = coordinator
+        .query_one(
+            "SELECT state.head_construction,
+                    state.membership,
+                    COALESCE((SELECT array_agg(sample.vec_id ORDER BY sample.sample_ordinal)
+                                FROM ec_distann_generation_head_sample sample
+                               WHERE sample.index_oid = state.index_oid
+                                 AND sample.logical_index_uuid = state.logical_index_uuid
+                                 AND sample.build_id = state.build_id), ARRAY[]::bigint[])
+               FROM ec_distann_active_epoch active
+               JOIN ec_distann_generation_head_state state
+                 USING (index_oid, logical_index_uuid, build_id)
+              WHERE active.index_oid = 'dm_idx'::regclass",
+            &[],
+        )
+        .await
+        .wrap_err("reading persisted head membership")?;
+    let head_construction = match head_membership.get::<_, i16>(0) {
+        0 => "stitched_bfs",
+        1 => "partition_union",
+        other => bail!("invalid persisted head construction marker {other}"),
+    };
+    let mut head_ids = head_membership.get::<_, Vec<i64>>(2);
+    if head_ids.is_empty() {
+        if let Some(blob) = head_membership.get::<_, Option<Vec<u8>>>(1) {
+            if blob.len() < 4 {
+                bail!("persisted head membership blob is truncated");
+            }
+            let count = u32::from_le_bytes(blob[..4].try_into().unwrap()) as usize;
+            if count != head_sample_count as usize || blob.len() != 4 + count * 8 {
+                bail!(
+                    "persisted head membership blob has count={count} bytes={} expected_count={head_sample_count}",
+                    blob.len()
+                );
+            }
+            head_ids = blob[4..]
+                .chunks_exact(8)
+                .map(|chunk| i64::from_le_bytes(chunk.try_into().unwrap()))
+                .collect();
+        }
+    }
+    if head_ids.len() != head_sample_count as usize {
+        bail!(
+            "persisted head membership count={} does not match sample_count={head_sample_count}",
+            head_ids.len()
+        );
+    }
+    let logical_id_by_vec_id = coordinator
+        .query(
+            &format!("SELECT id, source_id::text FROM {physical_corpus}"),
+            &[],
+        )
+        .await
+        .wrap_err("reading logical ids for persisted head membership")?
+        .into_iter()
+        .map(|row| {
+            let logical_id = row.get::<_, i64>(0);
+            let source_id = row.get::<_, String>(1);
+            let identity = source_identity_uuid_bytes(&source_id)?;
+            Ok((distann_vec_id_from_source_identity(&identity), logical_id))
+        })
+        .collect::<Result<HashMap<_, _>>>()?;
+    let logical_head_ids = head_ids
+        .iter()
+        .map(|vec_id| {
+            logical_id_by_vec_id.get(vec_id).copied().ok_or_else(|| {
+                eyre!("persisted head vec_id {vec_id} has no logical source-id mapping")
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut membership_hasher = Sha256::new();
+    for id in &head_ids {
+        membership_hasher.update(id.to_le_bytes());
+    }
+    let head_membership_path = log_dir.join("physical-head-membership.json");
+    let head_membership_json = serde_json::json!({
+        "scale": scale,
+        "head_construction": head_construction,
+        "sample_count": head_ids.len(),
+        "head_sample_digest": head_sample_digest,
+        "ids_sha256": hex::encode(membership_hasher.finalize()),
+        "vec_ids": head_ids,
+        "logical_ids": logical_head_ids,
+    });
+    fs::write(
+        &head_membership_path,
+        serde_json::to_vec_pretty(&head_membership_json)?,
+    )
+    .wrap_err_with(|| format!("writing {}", head_membership_path.display()))?;
     let remote_owners = if args.coordinator_outside_roster {
         nodes.len()
     } else {
@@ -5900,6 +6064,12 @@ async fn run_physical_benchmarks(
             "physical_benchmark_head scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=true sample_count={head_sample_count} head_sample_digest={head_sample_digest} head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} head_cache_estimated_bytes={head_cache_estimated_bytes}"
         ));
         lines.push(format!(
+            "physical_benchmark_head_membership scale={scale} {shared} head_construction={head_construction} sample_count={} ids_sha256={} artifact={}",
+            head_ids.len(),
+            head_membership_json["ids_sha256"].as_str().unwrap_or_default(),
+            head_membership_path.display(),
+        ));
+        lines.push(format!(
             "physical_benchmark_engagement scale={scale} {shared} arm=physical remote_owners={remote_owners} materialize_probes={remote_owners} pass={}",
             remote_owners > 0
         ));
@@ -5931,6 +6101,32 @@ fn benchmark_log_value(line: &str, key: &str) -> Option<String> {
     line.split_whitespace()
         .find_map(|field| field.strip_prefix(&format!("{key}=")))
         .map(ToOwned::to_owned)
+}
+
+fn distann_vec_id_from_source_identity(identity: &[u8; 16]) -> i64 {
+    let low = u64::from_le_bytes(identity[..8].try_into().expect("identity low bytes"));
+    let high = u64::from_le_bytes(identity[8..].try_into().expect("identity high bytes"));
+    let mut value = low ^ 0x6469_7374_616e_6e01;
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    value ^= value >> 33;
+    value = value.wrapping_add(high);
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    value ^= value >> 33;
+    value as i64
+}
+
+fn source_identity_uuid_bytes(value: &str) -> Result<[u8; 16]> {
+    let compact = value.replace('-', "");
+    let bytes = hex::decode(compact).wrap_err("decoding source identity UUID")?;
+    bytes
+        .try_into()
+        .map_err(|_| eyre!("source identity UUID has invalid length"))
 }
 
 fn benchmark_log_line<'a>(contents: &'a str, prefix: &str) -> Option<&'a str> {

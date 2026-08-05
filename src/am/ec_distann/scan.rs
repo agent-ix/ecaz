@@ -97,6 +97,17 @@ pub(crate) struct DistannOrchestrationParams {
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DistannRoundCounters {
+    pub(crate) round: usize,
+    pub(crate) requested_nodes: usize,
+    pub(crate) expanded_nodes: usize,
+    pub(crate) transport_wait_ns: u64,
+    pub(crate) straggler_spread_ns: u64,
+    pub(crate) request_bytes: usize,
+    pub(crate) response_bytes: usize,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct DistannScanCounters {
     pub(crate) rounds_executed: usize,
     pub(crate) records_expanded: usize,
@@ -105,6 +116,9 @@ pub(crate) struct DistannScanCounters {
     pub(crate) pushdown_rounds_with_threshold: usize,
     pub(crate) early_exit: bool,
     pub(crate) beam_exhausted: bool,
+    /// Per-hop attribution required by Task 206. This is populated for both
+    /// local and physical expanders; local transport fields remain zero.
+    pub(crate) rounds: Vec<DistannRoundCounters>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -345,6 +359,14 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
             "ec_distann scan requires candidate_heap_limit >= 1".to_owned(),
         ));
     }
+    let expansion_budget = params
+        .beam_width
+        .checked_mul(params.hop_rounds)
+        .ok_or_else(|| {
+            DistannExpandError::BadInput(
+                "ec_distann scan beam_width * hop_rounds exceeds usize".to_owned(),
+            )
+        })?;
 
     // Beam pool ordered by code distance; `enqueued` dedupes by vec_id
     // (FR-081: visited-set dedupe is by vec_id, expansion at most once).
@@ -451,6 +473,40 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
             )));
         }
         counters.rounds_executed += 1;
+        let owner_times = responses
+            .iter()
+            .map(|response| response.owner_total_ns.max(0) as u64)
+            .filter(|value| *value > 0)
+            .collect::<Vec<_>>();
+        let max_owner = owner_times.iter().copied().max().unwrap_or(0);
+        let min_owner = owner_times.iter().copied().min().unwrap_or(0);
+        let transport_wait_ns = responses
+            .iter()
+            .map(|response| {
+                response
+                    .coordinator_rpc_ns
+                    .saturating_sub(response.owner_total_ns)
+                    .saturating_sub(response.coordinator_decode_ns)
+                    .max(0) as u64
+            })
+            .max()
+            .unwrap_or(0);
+        let response_bytes = responses
+            .iter()
+            .map(|response| usize::try_from(response.owner_response_bytes.max(0)).unwrap_or(usize::MAX))
+            .sum();
+        counters.rounds.push(DistannRoundCounters {
+            round: counters.rounds_executed - 1,
+            requested_nodes: batch.len(),
+            expanded_nodes: responses.len(),
+            transport_wait_ns,
+            straggler_spread_ns: max_owner.saturating_sub(min_owner),
+            // The wire request is one vec_id u64 per requested node plus the
+            // fixed bind/query envelope. Keep the estimate explicit: the
+            // physical endpoint's exact response bytes are authoritative.
+            request_bytes: batch.len().saturating_mul(std::mem::size_of::<u64>()),
+            response_bytes,
+        });
         #[cfg(feature = "distann-head-attribution-benchmark")]
         {
             super::stage_counters::record_work(
@@ -538,10 +594,13 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
         }
     }
 
-    debug_assert!(
-        counters.records_expanded <= params.beam_width * params.hop_rounds,
-        "BW x H expansion cap violated"
-    );
+    if counters.records_expanded > expansion_budget {
+        return Err(DistannExpandError::Internal(format!(
+            "ec_distann expansion cap violated: expanded {} records, budget is {} (BW={} H={})",
+            counters.records_expanded, expansion_budget, params.beam_width, params.hop_rounds
+        )));
+    }
+    debug_assert!(counters.records_expanded <= expansion_budget);
     hits.sort_unstable_by(|left, right| {
         left.exact_dist
             .total_cmp(&right.exact_dist)
@@ -882,6 +941,26 @@ mod tests {
             .expect("search should succeed");
         assert_eq!(counters.rounds_executed, 2);
         assert_eq!(counters.records_expanded, 2, "BW x H = 2 hard cap");
+    }
+
+    #[test]
+    fn distann_orchestration_accepts_maximum_beam_width_without_budget_overflow() {
+        let mut expander = MockExpander {
+            nodes: HashMap::from([(1, (-1.0, false, vec![]))]),
+            calls: Vec::new(),
+        };
+        let seeds = [DistannSeedCandidate {
+            vec_id: 1,
+            dist: -1.0,
+        }];
+        let (_, counters) = distann_orchestrated_search(
+            &seeds,
+            &mut expander,
+            params(256, 1, 1),
+        )
+        .expect("BW=256 should remain within the checked budget");
+        assert!(counters.records_expanded <= 256);
+        assert_eq!(counters.rounds.len(), counters.rounds_executed);
     }
 
     #[test]

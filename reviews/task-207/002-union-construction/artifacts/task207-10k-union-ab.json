@@ -1,0 +1,60 @@
+{
+  "name": "task207-10k-union-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-207/002-union-construction/artifacts/run-10k",
+  "defaults": { "pg": 18 },
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "task207-10k-control",
+      "tags": ["task207", "diagnostic", "10k", "control"],
+      "artifact_dir": "${artifact_dir}/control",
+      "run_dir": "/home/peter/.ecaz/clusters/task207-10k-control",
+      "nodes": 3,
+      "base_port": 41520,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 128,
+      "hop_rounds": 5,
+      "queries": 50,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "benchmark_iterations": 5,
+      "benchmark_warmup_iterations": 2,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "control", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "task207-10k-candidate",
+      "tags": ["task207", "diagnostic", "10k", "candidate"],
+      "artifact_dir": "${artifact_dir}/candidate",
+      "run_dir": "/home/peter/.ecaz/clusters/task207-10k-candidate",
+      "nodes": 3,
+      "base_port": 41530,
+      "graph_degree": 32,
+      "build_shards": 4,
+      "head_index_cap": 4096,
+      "beam_width": 128,
+      "hop_rounds": 5,
+      "queries": 50,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "benchmark_iterations": 5,
+      "benchmark_warmup_iterations": 2,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "candidate", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
+    }
+  ]
+}

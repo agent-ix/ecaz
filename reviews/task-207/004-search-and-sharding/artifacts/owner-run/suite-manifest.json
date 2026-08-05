@@ -1,0 +1,199 @@
+{
+  "suite": "task207-owner-control-feature",
+  "schema_version": 1,
+  "config": "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-207/004-search-and-sharding/artifacts/task207-owner-control.json",
+  "config_sha256": "cd9a7df2aada6214ea2b4ea0eff4fdaf6deecb43bf50dcbf05ee7015bc65d725",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785887132239,
+  "runner_git_commit": "c147b29873c9f940579497a2d39329f088ecff2f-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "task207-10k-stitched-owner",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "metrics_mode=benchmark"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "stitched-owner-oracle",
+          "id": "task207-stitched-owner-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Owner-oracle membership control on the identical fixed four-shard physical graph."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-207/004-search-and-sharding/artifacts/owner-run/10k-stitched/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task207-10k-union-owner",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "metrics_mode=benchmark"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "union-owner-oracle",
+          "id": "task207-union-owner-control",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Owner-oracle membership control on the identical fixed four-shard physical graph."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-207/004-search-and-sharding/artifacts/owner-run/10k-union/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task207-50k-stitched-owner",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "metrics_mode=benchmark"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "stitched-owner-oracle",
+          "id": "task207-stitched-owner-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Owner-oracle membership control on the identical fixed four-shard physical graph."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-207/004-search-and-sharding/artifacts/owner-run/50k-stitched/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task207-50k-union-owner",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "metrics_mode=benchmark"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "union-owner-oracle",
+          "id": "task207-union-owner-control",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Owner-oracle membership control on the identical fixed four-shard physical graph."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-207/004-search-and-sharding/artifacts/owner-run/50k-union/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task207-100k-stitched-owner",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "metrics_mode=benchmark"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "stitched-owner-oracle",
+          "id": "task207-stitched-owner-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Owner-oracle membership control on the identical fixed four-shard physical graph."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-207/004-search-and-sharding/artifacts/owner-run/100k-stitched/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "task207-100k-union-owner",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-207/004-search-and-sharding/artifacts/owner-run/100k-union",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task207-owner-100k-union",
+        "--log-file",
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-207/004-search-and-sharding/artifacts/owner-run/100k-union/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "42210",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "4",
+        "--head-construction",
+        "partition_union",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "128",
+        "--hop-rounds",
+        "5",
+        "--benchmark-seed-variant",
+        "union-owner-oracle:owner_scan:128:128:rabitq:0:off:128:5:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "200",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
+      ],
+      "selected": true,
+      "tags": [
+        "metrics_mode=benchmark"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "union-owner-oracle",
+          "id": "task207-union-owner-control",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Owner-oracle membership control on the identical fixed four-shard physical graph."
+        }
+      ],
+      "expected_artifacts": [
+        "/home/peter/dev/ecaz/.worktrees/task-206-207/reviews/task-207/004-search-and-sharding/artifacts/owner-run/100k-union/distann-multinode-summary.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1785887132364,
+      "finished_at_unix_ms": 1785888777500,
+      "duration_ms": 1655216
+    }
+  ]
+}

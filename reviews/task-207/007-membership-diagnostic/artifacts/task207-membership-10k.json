@@ -1,0 +1,64 @@
+{
+  "name": "task207-membership-10k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-207/007-membership-diagnostic/artifacts/run",
+  "defaults": { "pg": 18 },
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "task207-membership-10k-stitched",
+      "tags": ["task207", "membership", "10k", "control"],
+      "artifact_dir": "${artifact_dir}/stitched",
+      "run_dir": "/home/peter/.ecaz/clusters/task207-membership-10k-stitched",
+      "nodes": 3,
+      "base_port": 42260,
+      "graph_degree": 32,
+      "build_shards": 4,
+      "head_construction": "stitched_bfs",
+      "head_index_cap": 4096,
+      "beam_width": 128,
+      "hop_rounds": 5,
+      "queries": 200,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "benchmark_iterations": 1,
+      "benchmark_warmup_iterations": 0,
+      "skip_single_control": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "stitched-persisted", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "task207-membership-10k-union",
+      "tags": ["task207", "membership", "10k", "candidate"],
+      "artifact_dir": "${artifact_dir}/union",
+      "run_dir": "/home/peter/.ecaz/clusters/task207-membership-10k-union",
+      "nodes": 3,
+      "base_port": 42270,
+      "graph_degree": 32,
+      "build_shards": 4,
+      "head_construction": "partition_union",
+      "head_index_cap": 4096,
+      "beam_width": 128,
+      "hop_rounds": 5,
+      "queries": 200,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "benchmark_iterations": 1,
+      "benchmark_warmup_iterations": 0,
+      "skip_single_control": true,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "union-persisted", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
+    }
+  ]
+}

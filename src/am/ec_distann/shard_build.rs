@@ -39,7 +39,7 @@
 //! head-index changes beyond consuming multi-shard entry samples).
 
 use std::cmp::Reverse;
-use std::collections::{BinaryHeap, VecDeque};
+use std::collections::{BinaryHeap, HashMap, VecDeque};
 use std::mem::size_of;
 #[cfg(not(test))]
 use std::ptr::NonNull;
@@ -141,6 +141,8 @@ pub(super) struct ShardBuildStats {
 /// `nodes` is sorted ascending so the stitch can k-way-merge by node id and
 /// hold only one node group at a time (ADR-085 D8).
 struct ShardGraph {
+    /// Global node id of the shard-local Vamana medoid.
+    entry: u32,
     /// Global node ids that belong to this shard, ascending.
     nodes: Vec<u32>,
     /// Parallel to `nodes`: each entry is the shard-local Vamana adjacency of
@@ -302,6 +304,8 @@ impl ShardSpoolIo {
 struct EncodedShard {
     bytes: Vec<u8>,
     entry_count: usize,
+    /// Bounded per-partition top-layer BFS prefix used by the physical head.
+    head_nodes: Vec<u32>,
 }
 
 struct ShardSpill {
@@ -311,6 +315,7 @@ struct ShardSpill {
 
 struct ShardSpool {
     spills: Vec<Option<ShardSpill>>,
+    head_regions: Vec<Option<Vec<u32>>>,
     bytes_written: u64,
     build_peak_completion_bytes: usize,
 }
@@ -319,6 +324,7 @@ impl ShardSpool {
     fn create(shard_count: usize) -> Result<Self, String> {
         Ok(Self {
             spills: (0..shard_count).map(|_| None).collect(),
+            head_regions: (0..shard_count).map(|_| None).collect(),
             bytes_written: 0,
             build_peak_completion_bytes: 0,
         })
@@ -329,8 +335,9 @@ impl ShardSpool {
         shard_index: usize,
         graph: ShardGraph,
         graph_degree: usize,
+        head_cap: usize,
     ) -> Result<(), String> {
-        let encoded = encode_shard(shard_index, graph, graph_degree)?;
+        let encoded = encode_shard(shard_index, graph, graph_degree, head_cap)?;
         self.append_encoded_shard(shard_index, encoded)
     }
 
@@ -343,7 +350,10 @@ impl ShardSpool {
         shard_index: usize,
         encoded: EncodedShard,
     ) -> Result<(), String> {
-        if shard_index >= self.spills.len() || self.spills[shard_index].is_some() {
+        if shard_index >= self.spills.len()
+            || self.spills[shard_index].is_some()
+            || self.head_regions[shard_index].is_some()
+        {
             return Err(format!(
                 "ec_distann duplicate or invalid shard spool index {shard_index}"
             ));
@@ -363,6 +373,7 @@ impl ShardSpool {
             io,
             entry_count: encoded.entry_count,
         });
+        self.head_regions[shard_index] = Some(encoded.head_nodes);
         Ok(())
     }
 }
@@ -375,6 +386,7 @@ fn encode_shard(
     shard_index: usize,
     graph: ShardGraph,
     graph_degree: usize,
+    head_cap: usize,
 ) -> Result<EncodedShard, String> {
     if graph.nodes.len() != graph.neighbors.len() {
         return Err(format!(
@@ -390,6 +402,7 @@ fn encode_shard(
     }
 
     let entry_count = graph.nodes.len();
+    let head_nodes = shard_head_nodes(&graph, head_cap)?;
     let payload_words = graph.neighbors.iter().try_fold(0_usize, |total, neighbors| {
         if neighbors.len() > graph_degree {
             return Err(format!(
@@ -422,7 +435,49 @@ fn encode_shard(
         }
     }
     debug_assert_eq!(bytes.len(), encoded_capacity);
-    Ok(EncodedShard { bytes, entry_count })
+    Ok(EncodedShard {
+        bytes,
+        entry_count,
+        head_nodes,
+    })
+}
+
+/// Return the deterministic top-layer prefix of one partition's Vamana graph.
+/// The physical head later unions these prefixes across partitions and builds
+/// its own persisted Vamana graph over the union. Only vec ids survive the
+/// shard worker boundary, keeping this addition bounded by the head cap.
+fn shard_head_nodes(graph: &ShardGraph, cap: usize) -> Result<Vec<u32>, String> {
+    if graph.nodes.is_empty() || cap == 0 {
+        return Ok(Vec::new());
+    }
+    let mut positions = HashMap::with_capacity(graph.nodes.len());
+    for (position, node) in graph.nodes.iter().copied().enumerate() {
+        positions.insert(node, position);
+    }
+    let entry = positions
+        .get(&graph.entry)
+        .copied()
+        .ok_or_else(|| "ec_distann shard entry is absent from its node list".to_owned())?;
+    let mut visited = vec![false; graph.nodes.len()];
+    let mut queue = VecDeque::from([entry]);
+    visited[entry] = true;
+    let mut selected = Vec::with_capacity(cap.min(graph.nodes.len()));
+    while let Some(position) = queue.pop_front() {
+        selected.push(graph.nodes[position]);
+        if selected.len() == cap.min(graph.nodes.len()) {
+            break;
+        }
+        for neighbor in &graph.neighbors[position] {
+            let Some(&neighbor_position) = positions.get(neighbor) else {
+                return Err("ec_distann shard adjacency escapes its partition".to_owned());
+            };
+            if !visited[neighbor_position] {
+                visited[neighbor_position] = true;
+                queue.push_back(neighbor_position);
+            }
+        }
+    }
+    Ok(selected)
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -596,8 +651,9 @@ pub(super) fn build_sharded_graph(
     alpha: f32,
     shard_count: usize,
     closure_epsilon: f32,
+    head_cap: usize,
     seed: u64,
-) -> Result<(VamanaGraph, u32, ShardBuildStats), String> {
+) -> Result<(VamanaGraph, u32, ShardBuildStats, Vec<Vec<u32>>), String> {
     let node_count = source_refs.len();
     debug_assert!(shard_count >= 2, "monolithic build handled by caller");
 
@@ -614,8 +670,18 @@ pub(super) fn build_sharded_graph(
         duplication_factor,
         max_shard_size,
     } = assign_shards(source_refs, dimensions, shard_count, closure_epsilon, seed)?;
-    let mut shard_spool =
-        build_shard_spool(members, graph_degree, build_list_size, alpha, seed, &dist)?;
+    let mut shard_spool = build_shard_spool(
+        members,
+        graph_degree,
+        build_list_size,
+        alpha,
+        seed,
+        // Each partition may contribute up to the full global cap. Splitting
+        // C by S before deduplication under-fills the union whenever closure
+        // overlap repeats nodes across partitions (Task 207 review P2).
+        head_cap.max(1),
+        &dist,
+    )?;
 
     let (graph, mut stats) =
         stitch_shard_spool(node_count, &mut shard_spool, graph_degree, alpha, &dist)?;
@@ -626,7 +692,12 @@ pub(super) fn build_sharded_graph(
     let mut graph = graph;
     stats.reachability_repairs = repair_reachability(&mut graph, medoid, graph_degree, &dist)?;
 
-    Ok((graph, medoid, stats))
+    let head_regions = shard_spool
+        .head_regions
+        .into_iter()
+        .map(|region| region.unwrap_or_default())
+        .collect();
+    Ok((graph, medoid, stats, head_regions))
 }
 
 /// Spherical k-means + closure-overlap band. A node is assigned to its nearest
@@ -762,6 +833,7 @@ fn build_shard_spool<D>(
     build_list_size: usize,
     alpha: f32,
     seed: u64,
+    head_cap: usize,
     dist: &D,
 ) -> Result<ShardSpool, String>
 where
@@ -786,7 +858,7 @@ where
                 seed,
                 dist,
             );
-            let encoded = encode_shard(shard_index, graph, graph_degree)?;
+            let encoded = encode_shard(shard_index, graph, graph_degree, head_cap)?;
             spool.append_encoded_shard(shard_index, encoded)?;
         }
         return Ok(spool);
@@ -824,7 +896,7 @@ where
                     seed,
                     dist,
                 );
-                let mut result = encode_shard(shard_index, graph, graph_degree);
+                let mut result = encode_shard(shard_index, graph, graph_degree, head_cap);
                 let mut encoded_bytes = result
                     .as_ref()
                     .map(|encoded| encoded.bytes.len())
@@ -945,6 +1017,7 @@ where
     let shard_len = global_ids.len();
     if shard_len == 0 {
         return ShardGraph {
+            entry: 0,
             nodes: Vec::new(),
             neighbors: Vec::new(),
         };
@@ -982,6 +1055,7 @@ where
         .collect();
 
     ShardGraph {
+        entry: global_ids[medoid as usize],
         nodes: global_ids.to_vec(),
         neighbors,
     }
@@ -1221,7 +1295,7 @@ where
 {
     let mut spool = ShardSpool::create(shard_graphs.len())?;
     for (shard_index, graph) in shard_graphs.into_iter().enumerate() {
-        spool.append_shard(shard_index, graph, graph_degree)?;
+        spool.append_shard(shard_index, graph, graph_degree, usize::MAX)?;
     }
     stitch_shard_spool(node_count, &mut spool, graph_degree, alpha, dist)
 }
@@ -1382,7 +1456,7 @@ mod tests {
         seed: u64,
     ) -> (VamanaGraph, u32, ShardBuildStats) {
         let refs = refs(corpus);
-        build_sharded_graph(
+        let (graph, medoid, stats, _head_regions) = build_sharded_graph(
             &refs,
             dimensions,
             graph_degree,
@@ -1390,9 +1464,11 @@ mod tests {
             /* alpha */ 1.2,
             shard_count,
             closure_epsilon,
+            /* head_cap */ 4096,
             seed,
         )
-        .expect("sharded build should succeed")
+        .expect("sharded build should succeed");
+        (graph, medoid, stats)
     }
 
     proptest! {
@@ -1592,6 +1668,7 @@ mod tests {
 
         // Present the stitched graph as one shard covering every node.
         let single = ShardGraph {
+            entry: 0,
             nodes: (0..node_count as u32).collect(),
             neighbors: graph.neighbors.clone(),
         };
@@ -1652,6 +1729,7 @@ mod tests {
     }
 
     fn raw_spool(shards: Vec<(usize, Vec<u8>)>) -> ShardSpool {
+        let shard_count = shards.len();
         let bytes_written = shards.iter().map(|(_, bytes)| bytes.len() as u64).sum();
         ShardSpool {
             spills: shards
@@ -1663,6 +1741,7 @@ mod tests {
                     })
                 })
                 .collect(),
+            head_regions: (0..shard_count).map(|_| None).collect(),
             bytes_written,
             build_peak_completion_bytes: 0,
         }

@@ -1,0 +1,5 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz/.worktrees/task-206-207
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=41440 rows=2000 dim=16 graph_degree=32 build_shards=1 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=59aeb6c58fa3e2f0db1774a6c3c8a5ab62308e78 extension_build_profile=release debug_override=false
+[distann-multicluster] physical_setup_start rows=2000 nodes=3

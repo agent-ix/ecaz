@@ -1,0 +1,62 @@
+{
+  "name": "task207-100k-union-construction-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-207/002-union-construction/artifacts/run",
+  "defaults": { "pg": 18 },
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "task207-100k-union-control",
+      "tags": ["task207", "phase1", "100k", "control"],
+      "artifact_dir": "${artifact_dir}/control",
+      "run_dir": "/home/peter/.ecaz/clusters/task207-100k-union-control",
+      "nodes": 3,
+      "base_port": 41320,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 128,
+      "hop_rounds": 5,
+      "queries": 200,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "control-persisted-head", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq" },
+        { "name": "control-owner-oracle", "seed_strategy": "owner_scan", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "task207-100k-union-candidate",
+      "tags": ["task207", "phase1", "100k", "candidate"],
+      "artifact_dir": "${artifact_dir}/candidate",
+      "run_dir": "/home/peter/.ecaz/clusters/task207-100k-union-candidate",
+      "nodes": 3,
+      "base_port": 41330,
+      "graph_degree": 32,
+      "build_shards": 4,
+      "head_index_cap": 4096,
+      "beam_width": 128,
+      "hop_rounds": 5,
+      "queries": 200,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "candidate-persisted-head", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq" },
+        { "name": "candidate-owner-oracle", "seed_strategy": "owner_scan", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq" }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
+    }
+  ]
+}
