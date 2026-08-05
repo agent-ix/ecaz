@@ -32,7 +32,6 @@ lane reports measured transport fields and the effective seed count.
 
 - Suite config: `artifacts/task206-feature-seed-ab.json`
 - Run artifacts: `artifacts/run/`
-- Code head: `53d1fec9f`
+- Code head: `366a7973d`
 - Cache test and both default/feature PG18 compile checks are recorded in the
   validation artifact once the feature run completes.
-

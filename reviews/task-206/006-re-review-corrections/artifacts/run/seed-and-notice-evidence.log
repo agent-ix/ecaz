@@ -1,0 +1,11 @@
+Corrected physical seed-control and observability evidence.
+
+10k: feature-k128 head_seed_count=128 seed_id_digest=e39b7925e9156d38e72d4d4bb62983fba0638f5f9c0809158429bd2291dc73d0
+10k: feature-k200 head_seed_count=200 seed_id_digest=9f392f52d75c2de642fa45e52b081adf3a3bb36b4a89a99baea583e16ad4be47
+50k: feature-k128 head_seed_count=128 seed_id_digest=49346b6ff5a6e6faeb132e4e46c3b85192f42042aadd34776c0680dd3575cc28
+50k: feature-k200 head_seed_count=200 seed_id_digest=d73acb6b055d4cb175ad5877ee573f07fa896a7ce0c82dcc2e2fc48f3d3864e1
+100k: feature-k128 head_seed_count=128 seed_id_digest=2c69e8be300e5fa19868f82bc1167daedfedf5264deb1dd08b23a1cec7d10e96
+100k: feature-k200 head_seed_count=200 seed_id_digest=b0ddd2261248a3c5350488e3f616339dd3c3dd4e364dc7ff7649ce7b47973ed8
+
+100k physical path notice:
+ec_distann_scan_round round=0 requested_nodes=64 expanded_nodes=unmeasured transport_wait_ns=1239324 straggler_spread_ns=1021885 request_bytes=512 response_bytes=112190

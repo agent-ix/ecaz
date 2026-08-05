@@ -1,6 +1,6 @@
 # Task 206 re-review correction manifest
 
-- head SHA: `53d1fec9f`
+- code checkpoint: `366a7973d` (includes the persisted-marker regression test)
 - task bucket: `reviews/task-206/006-re-review-corrections/`
 - lane: PG18 attribution-feature physical diagnostic
 - matrix: three-owner physical distann, `build_shards=1`, BW64/H8, top-k 200
@@ -16,5 +16,9 @@
 The feature build is an observability/seed-control diagnostic. Its latency
 must not be pooled with the clean release matrix in packet 005. Every cited
 result must come from the packet-local suite `results.jsonl` and the compact
-notice logs under `artifacts/run/`.
+evidence under `artifacts/run/`.
 
+The completed suite is recorded in `artifacts/run/results.jsonl` and
+`artifacts/run/suite-manifest.json`. The raw per-node logs and generated
+predictions remain uncommitted operational output; `result-summary.md` and
+`validation-final.md` contain the compact cited evidence.
