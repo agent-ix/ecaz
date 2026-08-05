@@ -1,0 +1,92 @@
+{
+  "name": "task206-feature-seed-ab",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-206/006-re-review-corrections/artifacts/run",
+  "defaults": { "pg": 18 },
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "task206-feature-10k-seed-ab",
+      "tags": ["task206", "feature", "seed-ab", "10k"],
+      "artifact_dir": "${artifact_dir}/10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task206-feature-seed-10k",
+      "nodes": 3,
+      "base_port": 42160,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 64,
+      "hop_rounds": 8,
+      "queries": 200,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "bench_session_gucs": ["ec_distann.scan_profile_notice=on"],
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "feature-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "control", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } },
+        { "name": "feature-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "candidate", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } }
+      ],
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "task206-feature-50k-seed-ab",
+      "tags": ["task206", "feature", "seed-ab", "50k"],
+      "artifact_dir": "${artifact_dir}/50k",
+      "run_dir": "/home/peter/.ecaz/clusters/task206-feature-seed-50k",
+      "nodes": 3,
+      "base_port": 42170,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 64,
+      "hop_rounds": 8,
+      "queries": 200,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "bench_session_gucs": ["ec_distann.scan_profile_notice=on"],
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "feature-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "control", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } },
+        { "name": "feature-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "candidate", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } }
+      ],
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task111a_real50k"
+    },
+    {
+      "kind": "distann-local-multinode",
+      "name": "task206-feature-100k-seed-ab",
+      "tags": ["task206", "feature", "seed-ab", "100k"],
+      "artifact_dir": "${artifact_dir}/100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task206-feature-seed-100k",
+      "nodes": 3,
+      "base_port": 42180,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 64,
+      "hop_rounds": 8,
+      "queries": 200,
+      "top_k": 200,
+      "physical_benchmark": true,
+      "bench_session_gucs": ["ec_distann.scan_profile_notice=on"],
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        { "name": "feature-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "control", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } },
+        { "name": "feature-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "candidate", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
+    }
+  ]
+}
