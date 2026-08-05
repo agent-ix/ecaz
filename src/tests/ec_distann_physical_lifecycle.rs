@@ -2202,6 +2202,15 @@ fn test_distann_trained_head_build_replay_publish_and_inspection() {
     assert_eq!(policy.get::<_, i32>(5), 32);
     assert_eq!(policy.get::<_, i32>(6), 64);
     assert_eq!(policy.get::<_, i32>(7), 32);
+    let construction = client
+        .query_one(
+            "SELECT head_construction, marker_attested
+               FROM ec_distann_active_head_construction('ec_distann_th_idx'::regclass)",
+            &[],
+        )
+        .expect("active physical head construction should be inspectable");
+    assert_eq!(construction.get::<_, String>(0), "stitched_bfs");
+    assert!(construction.get::<_, bool>(1));
     let first_head_digest = client
         .query_one(
             &format!(
