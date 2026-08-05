@@ -1,0 +1,3 @@
+
+[suite:task207-corrected-search-and-sharding] audit passed: 6 steps
+[suite:task207-corrected-search-and-sharding] corrected dry-run: 10k/50k/100k, fixed build_shards=4, stitched_bfs control vs partition_union candidate, persisted_head width=128, 50 timed iterations, 10 warmups

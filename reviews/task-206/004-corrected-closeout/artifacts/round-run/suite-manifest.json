@@ -1,0 +1,106 @@
+{
+  "suite": "task206-100k-round-telemetry",
+  "schema_version": 1,
+  "config": "reviews/task-206/004-corrected-closeout/artifacts/task206-100k-rounds.json",
+  "config_sha256": "412932297abdd3b668797db759336816af099c48fda522a330d8c0b88a7a847c",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785869259292,
+  "runner_git_commit": "07317e5945a681533c0015d6e25862164c2d3500-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "task206-100k-round-telemetry",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-206/004-corrected-closeout/artifacts/round-run/100k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task206-round-100k",
+        "--log-file",
+        "reviews/task-206/004-corrected-closeout/artifacts/round-run/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--skip-recall",
+        "--skip-single-control",
+        "--benchmark-iterations",
+        "10",
+        "--benchmark-warmup-iterations",
+        "2",
+        "--base-port",
+        "42260",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "64",
+        "--hop-rounds",
+        "8",
+        "--benchmark-seed-variant",
+        "bw64-h8-k128:persisted_head:128:128:rabitq:0:off:64:8:off",
+        "--benchmark-seed-variant",
+        "bw64-h8-k200:persisted_head:128:200:rabitq:0:off:64:8:off",
+        "--queries",
+        "50",
+        "--top-k",
+        "200",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/task106_full_sweep_100k",
+        "--bench-session-guc",
+        "ec_distann.scan_profile_notice=on"
+      ],
+      "selected": true,
+      "tags": [
+        "task206",
+        "corrected",
+        "phase2",
+        "100k",
+        "round-telemetry",
+        "metrics_mode=benchmark"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "bw64-h8-k128",
+          "id": "task206-round-telemetry",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Same three-owner physical topology and bounded coordinator state as the corrected decision lane; this arm adds only per-round NOTICE observability."
+        },
+        {
+          "variant": "bw64-h8-k200",
+          "id": "task206-round-telemetry",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Same three-owner physical topology and bounded coordinator state as the corrected decision lane; this arm adds only per-round NOTICE observability."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-206/004-corrected-closeout/artifacts/round-run/100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785869259371,
+      "finished_at_unix_ms": 1785870726125,
+      "duration_ms": 1474357,
+      "exit_code": 0
+    }
+  ]
+}
