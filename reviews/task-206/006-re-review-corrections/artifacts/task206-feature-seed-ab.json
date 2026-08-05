@@ -26,8 +26,8 @@
       "skip_fault_drills": true,
       "compact_artifacts": true,
       "benchmark_seed_variants": [
-        { "name": "feature-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "control", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } },
-        { "name": "feature-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "candidate", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } }
+        { "name": "feature-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "control", "admissibility": "nonconforming", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } },
+        { "name": "feature-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "candidate", "admissibility": "nonconforming", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } }
       ],
       "corpus_prefix": "ec_real_10k",
       "staged_dir": "/home/peter/dev/ecaz/data/task106_intel_dbpedia_staged"
@@ -54,8 +54,8 @@
       "skip_fault_drills": true,
       "compact_artifacts": true,
       "benchmark_seed_variants": [
-        { "name": "feature-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "control", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } },
-        { "name": "feature-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "candidate", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } }
+        { "name": "feature-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "control", "admissibility": "nonconforming", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } },
+        { "name": "feature-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "candidate", "admissibility": "nonconforming", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } }
       ],
       "corpus_prefix": "ec_real_50k",
       "staged_dir": "/home/peter/dev/ecaz/data/task111a_real50k"
@@ -82,8 +82,8 @@
       "skip_fault_drills": true,
       "compact_artifacts": true,
       "benchmark_seed_variants": [
-        { "name": "feature-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "control", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } },
-        { "name": "feature-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "candidate", "admissibility": "diagnostic", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } }
+        { "name": "feature-k128", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 128, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "control", "admissibility": "nonconforming", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } },
+        { "name": "feature-k200", "seed_strategy": "persisted_head", "head_search_width": 128, "head_seed_count": 200, "neighbor_score_mode": "rabitq", "beam_width": 64, "hop_rounds": 8, "nfr_021": { "id": "task206-feature-seed-ab", "role": "candidate", "admissibility": "nonconforming", "rationale": "Feature build exposes the benchmark seed controls and physical scan notices." } }
       ],
       "corpus_prefix": "ec_real_100k",
       "staged_dir": "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
