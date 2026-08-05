@@ -129,6 +129,9 @@ pub struct LatencyArgs {
     /// Write the final latency table to this path in addition to stdout.
     #[arg(long)]
     pub log_output: Option<PathBuf>,
+    /// Capture production ec_distann crown activation counters per sweep.
+    #[arg(long)]
+    pub report_distann_crown_stats: bool,
 }
 
 pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
@@ -155,6 +158,11 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     if args.distann_stage_counters && profile.name != "ec_distann" {
         return Err(eyre!(
             "--distann-stage-counters is only supported with --profile ec_distann"
+        ));
+    }
+    if args.report_distann_crown_stats && profile.name != "ec_distann" {
+        return Err(eyre!(
+            "--report-distann-crown-stats is only supported with --profile ec_distann"
         ));
     }
     let guc = profile
@@ -250,6 +258,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
     let mut ivf_stage_counter_lines = Vec::new();
     let mut distann_stage_counter_lines = Vec::new();
     let mut distann_materialization_work_lines = Vec::new();
+    let mut distann_crown_stats_lines = Vec::new();
     let mut backend_memory_lines = Vec::new();
     let memory_series_output = if args.sample_backend_memory {
         if let Some(path) = args.memory_series_output.as_ref() {
@@ -310,6 +319,7 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
                 args.task87_candidate_batch_counters,
                 args.ivf_stage_counters,
                 args.distann_stage_counters,
+                args.report_distann_crown_stats,
             )
             .await?;
             if args.task87_candidate_batch_counters {
@@ -339,6 +349,13 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
                         &sweep.distann_materialization_work,
                     ),
                 );
+            }
+            if let Some(stats) = sweep.distann_crown_stats {
+                distann_crown_stats_lines.push(super::format_distann_crown_stats(
+                    "latency",
+                    &sweep_label,
+                    stats,
+                ));
             }
             let stats = summarize(&sweep.durations);
             let mut row = vec![
@@ -397,6 +414,10 @@ pub async fn run(conn: &ConnectionOptions, args: LatencyArgs) -> Result<()> {
         output.push('\n');
         output.push_str(&distann_materialization_work_lines.join("\n"));
     }
+    if !distann_crown_stats_lines.is_empty() {
+        output.push('\n');
+        output.push_str(&distann_crown_stats_lines.join("\n"));
+    }
     println!("{output}");
     if let Some(path) = args.log_output {
         if let Some(parent) = path.parent() {
@@ -441,6 +462,7 @@ async fn run_sweep_point(
     task87_candidate_batch_counters: bool,
     ivf_stage_counters: bool,
     distann_stage_counters: bool,
+    report_distann_crown_stats: bool,
 ) -> Result<LatencySweepResult> {
     let bar = ProgressBar::new(iterations as u64);
     bar.set_style(
@@ -501,6 +523,7 @@ async fn run_sweep_point(
                 task87_candidate_batch_counters,
                 ivf_stage_counters,
                 distann_stage_counters,
+                report_distann_crown_stats,
                 bar,
             )
             .await
@@ -514,6 +537,7 @@ async fn run_sweep_point(
     let mut ivf_stage_counter_sets = Vec::new();
     let mut distann_stage_counter_sets = Vec::new();
     let mut distann_materialization_work_sets = Vec::new();
+    let mut merged_crown_stats: Option<super::DistannCrownStats> = None;
     let mut timed_started_at = None;
     let mut timed_finished_at = None;
     for h in handles {
@@ -525,6 +549,9 @@ async fn run_sweep_point(
         ivf_stage_counter_sets.push(result.ivf_stage_counters);
         distann_stage_counter_sets.push(result.distann_stage_counters);
         distann_materialization_work_sets.push(result.distann_materialization_work);
+        if let Some(stats) = result.distann_crown_stats {
+            merged_crown_stats.get_or_insert_default().add_assign(stats);
+        }
         if let Some(started_at) = result.timed_started_at {
             timed_started_at = Some(
                 timed_started_at.map_or(started_at, |earliest: Instant| earliest.min(started_at)),
@@ -553,6 +580,7 @@ async fn run_sweep_point(
         distann_materialization_work: super::merge_distann_materialization_work(
             distann_materialization_work_sets,
         ),
+        distann_crown_stats: merged_crown_stats,
     })
 }
 
@@ -586,6 +614,7 @@ async fn worker(
     task87_candidate_batch_counters: bool,
     ivf_stage_counters: bool,
     distann_stage_counters: bool,
+    report_distann_crown_stats: bool,
     bar: Arc<ProgressBar>,
 ) -> Result<LatencyWorkerResult> {
     let mut durations = Vec::new();
@@ -595,6 +624,7 @@ async fn worker(
     let mut ivf_stage_counter_sets = Vec::new();
     let mut distann_stage_counter_sets = Vec::new();
     let mut distann_materialization_work_sets = Vec::new();
+    let mut distann_crown_stats: Option<super::DistannCrownStats> = None;
     let mut timed_started_at = None;
     let mut timed_finished_at = None;
     let batch_size = if worker_batch_size == 0 {
@@ -632,6 +662,9 @@ async fn worker(
             } else {
                 client.query(&stmt, &[q, &k_i64]).await?;
             }
+        }
+        if report_distann_crown_stats {
+            super::reset_distann_crown_stats(&client).await?;
         }
         if task87_candidate_batch_counters {
             super::reset_block_kernel_counters(&client).await?;
@@ -716,6 +749,12 @@ async fn worker(
         memory_series.extend(batch_memory_series.lock().await.iter().cloned());
         batch_result?;
 
+        if report_distann_crown_stats {
+            if let Some(stats) = super::snapshot_distann_crown_stats(&client).await? {
+                distann_crown_stats.get_or_insert_default().add_assign(stats);
+            }
+        }
+
         task87_counter_sets.push(if task87_candidate_batch_counters {
             super::snapshot_block_kernel_counters(&client).await?
         } else {
@@ -760,6 +799,7 @@ async fn worker(
         distann_materialization_work: super::merge_distann_materialization_work(
             distann_materialization_work_sets,
         ),
+        distann_crown_stats,
     })
 }
 
@@ -896,6 +936,7 @@ struct LatencySweepResult {
     ivf_stage_counters: Vec<super::IvfStageCounterSnapshot>,
     distann_stage_counters: Vec<super::DistannStageCounterSnapshot>,
     distann_materialization_work: Vec<super::DistannMaterializationWorkSnapshot>,
+    distann_crown_stats: Option<super::DistannCrownStats>,
 }
 
 #[derive(Debug, Default)]
@@ -909,6 +950,7 @@ struct LatencyWorkerResult {
     ivf_stage_counters: Vec<super::IvfStageCounterSnapshot>,
     distann_stage_counters: Vec<super::DistannStageCounterSnapshot>,
     distann_materialization_work: Vec<super::DistannMaterializationWorkSnapshot>,
+    distann_crown_stats: Option<super::DistannCrownStats>,
 }
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]

@@ -1,14 +1,27 @@
 # Task 211: ec_distann Head Scaling Law
 
-Status: **in progress — P0 complete** (2026-08-01). Priority: P1.
+Status: **complete** (2026-08-03). Priority: P1.
 
 P0 spec landed as
 `spec/functional/distann/read/FR-088-distann-head-scaling-law.md`
 (hardened by the failure-domain/integrity/scope-boundary round: rate-only
 precedence, `EC_HEAD_SIZING` validation, build-options v3 attestation
 carrier, pinned f64 arithmetic); packet
-`reviews/task-211/001-head-scaling-law-spec/` open. P1 (build-side law)
-and P2 (rate sweep) remain.
+`reviews/task-211/001-head-scaling-law-spec/` open. P1 build-side law and the
+P2 staged evidence gate are present in
+`reviews/task-211/002-head-scaling-law-implementation/`. The measured 0.02
+candidate remains an explicit opt-in law; the shipped default remains the
+fixed 4096 cap because the corrected A/B evidence did not show a consistent
+win at all three staged scales. The implementation gate therefore treats
+0.02 as the selected candidate; broader rate selection is deferred to the
+1M+ scale gate. Cross-ISA determinism rides the standing Graviton lane; this
+packet is Intel-host evidence only.
+
+Task 211 is complete: the 0.02 law candidate was measured at 10k/50k/100k,
+the corrected evidence selected it as the implementation candidate, and the
+fixed 4096 cap remains the shipped default because the law did not produce a
+consistent win at all staged scales. Broader rate selection and 1M+ validation
+remain explicit follow-up work, not an open Task 211 gate.
 
 Entry gate: Task 210 merged (sharded, membership-only head is the shipped
 default — `reviews/task-210/006-zero-byte-head/`). Tasks 212/213 build on

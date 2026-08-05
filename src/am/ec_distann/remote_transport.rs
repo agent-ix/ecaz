@@ -860,6 +860,82 @@ pub(crate) struct DistannGatewayRoutingRequest<'a> {
     pub(crate) member_vec_ids: &'a [u64],
 }
 
+pub(crate) struct DistannCrownCodeRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) member_vec_ids: &'a [u64],
+}
+
+pub(crate) fn remote_crown_code_batch(
+    requests: &[DistannCrownCodeRequest<'_>],
+) -> Vec<Result<Vec<super::crown_cache::DistannCrownEntry>, DistannExpandError>> {
+    if requests.is_empty() {
+        return Vec::new();
+    }
+    let wire_ids = requests
+        .iter()
+        .map(|request| {
+            request
+                .member_vec_ids
+                .iter()
+                .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
+                .collect::<Vec<_>>()
+        })
+        .collect::<Vec<_>>();
+    let conn_keys = requests
+        .iter()
+        .map(|request| lifecycle_connection_key(request.conninfo))
+        .collect::<Vec<_>>();
+    let outcome = with_transport_state::<_, DistannExpandError>(|state| {
+        let DistannTransportState { runtime, connections } = state;
+        runtime.block_on(async {
+            let specs = requests
+                .iter()
+                .enumerate()
+                .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
+                .collect::<Vec<_>>();
+            ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
+                .await
+                .map_err(DistannExpandError::Internal)?;
+            let futures = requests.iter().enumerate().map(|(index, request)| {
+                run_one_crown_code(
+                    &connections[&conn_keys[index]].client,
+                    request,
+                    &wire_ids[index],
+                )
+            });
+            Ok(join_owner_futures(futures).await)
+        })
+    });
+    match outcome {
+        Ok(results) => results,
+        Err(error) => requests.iter().map(|_| Err(error.clone())).collect(),
+    }
+}
+
+async fn run_one_crown_code(
+    client: &tokio_postgres::Client,
+    request: &DistannCrownCodeRequest<'_>,
+    wire_ids: &[i64],
+) -> Result<Vec<super::crown_cache::DistannCrownEntry>, DistannExpandError> {
+    let rows = client
+        .query(
+            "SELECT vec_id, search_code FROM ec_distann_crown_code_export($1::text::regclass, $2::bytea, $3::bigint[])",
+            &[&request.index_regclass, &request.epoch_fingerprint, &wire_ids],
+        )
+        .await
+        .map_err(|error| DistannExpandError::Internal(format!("ec_distann crown export failed: {error}")))?;
+    rows.into_iter()
+        .map(|row| {
+            Ok(super::crown_cache::DistannCrownEntry {
+                vec_id: u64::from_le_bytes(row.try_get::<_, i64>(0).map_err(row_err)?.to_le_bytes()),
+                search_code: row.try_get(1).map_err(row_err)?,
+            })
+        })
+        .collect()
+}
+
 const GATEWAY_ROUTING_SQL: &str = "SELECT vec_id, is_tombstone, neighbor_vec_ids, neighbor_codes
    FROM ec_distann_gateway_routing_export(
        $1::text::regclass, $2::bytea, $3::bigint[])";

@@ -318,6 +318,8 @@ pub(super) fn build_epoch(
             index_relation.heap_relation_oid(),
         )
         .ok_or_else(|| "EC_BUILD_INCOMPLETE: source heap could not open".to_owned())?;
+        let options = super::super::options::relation_options(index_relation.as_ptr());
+        options.validate_head_sizing_inputs()?;
         let index_info = crate::am::common::index_info::IndexInfoGuard::build(
             index_relation.as_ptr(),
             "ec_distann_build_epoch",
@@ -339,13 +341,16 @@ pub(super) fn build_epoch(
                 )
             })
             .transpose()?;
+        let (resolved_head_cap, mut head_sizing) = options.resolve_head_sizing(
+            workspace.record_count(),
+            training.is_some(),
+        )?;
 
         // Counting/digest pass before the first participant begin.
         let expectations =
             workspace.owner_expectations(&roster, super::super::DISTANN_PLACEMENT_HASH_VERSION)?;
         let (global_count, global_graph_digest, global_row_tier_digest) =
             workspace.global_digests()?;
-        let options = super::super::options::relation_options(index_relation.as_ptr());
         let to_u16 = |value: i32, field: &str| -> Result<u16, String> {
             u16::try_from(value).map_err(|_| format!("EC_BUILD_STATE: {field} out of range"))
         };
@@ -357,7 +362,7 @@ pub(super) fn build_epoch(
             alpha: options.alpha,
             seed: metadata.seed,
             closure_epsilon: options.closure_epsilon,
-            head_index_cap: to_u32(options.head_index_cap, "head_index_cap")?,
+            head_index_cap: resolved_head_cap,
             build_shards: to_u32(options.build_shards, "build_shards")?,
             head_policy: if training.is_some() {
                 DistannHeadPolicy::TrainingLandmarksExact
@@ -369,12 +374,20 @@ pub(super) fn build_epoch(
                 .map(|set| set.queries.len() as u32)
                 .unwrap_or(0),
             training_query_digest: training.as_ref().map(|set| set.digest).unwrap_or([0; 32]),
+            head_sizing: None,
         };
-        build_options.encode()?;
         let head_sample = workspace.head_sample(
             build_options.head_index_cap as usize,
             training.as_ref(),
         )?;
+        if let Some(attestation) = &mut head_sizing {
+            attestation.sample_count = head_sample.entries.len() as u64;
+        }
+        let build_options = DistannBuildOptions {
+            head_sizing,
+            ..build_options
+        };
+        build_options.encode()?;
         // Task 210 P2a: under membership-only storage the coordinator holds no
         // landmark vectors, so the manifest must attest the same shape the
         // state row and the load path use -- otherwise the manifest

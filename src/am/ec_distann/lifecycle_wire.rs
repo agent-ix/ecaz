@@ -973,6 +973,7 @@ mod tests {
                     crate::am::ec_distann::generation_descriptor::DistannHeadPolicy::CurrentSampleGraph,
                 training_query_count: 0,
                 training_query_digest: [0; 32],
+                head_sizing: None,
             },
             expected_global_count: manifest.global_record_count,
             expected_global_graph_digest: manifest.global_graph_digest,

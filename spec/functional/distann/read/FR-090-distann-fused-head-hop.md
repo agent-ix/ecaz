@@ -68,22 +68,24 @@ round-trip cost: +8.6% @10k / +5.1% @100k
   policy — the fixture's seed-digest check holds) or the arm SHALL be
   labeled a seed-set change and measured as one — never silently both.
   **The exact policy is claimable only when the crown covers the full head
-  membership** (capacity ≥ selected sample_count, so the fused candidate
-  universe equals the unfused one); with a coarser crown, exact
-  reproduction is structurally impossible and the arm is a labeled
-  seed-set change by construction.
+  membership and both arms use the same code-scored head policy** (capacity ≥
+  selected sample_count makes the candidate universe equal, while the shared
+  code-scored policy makes ranking comparable); with a coarser crown or a
+  different scoring policy, exact reproduction is not claimed and the arm is
+  a labeled seed-set change by construction.
 - **Fallback.** When the crown is off, unpopulated, or misses, the scan
   SHALL use the unfused two-phase path (dedicated head fan-out, then
   traversal) with identical results. The fused path is an accelerator with
   a correct slow path, never the only path.
 - **Mid-request failure.** Fallback is a pre-request decision; once the
   fused first expansion is in flight, failure follows FR-079/FR-082
-  semantics: an epoch mismatch consumes the scan's single refresh-retry
-  and the retry SHALL re-enter via the **unfused** path (the crown is
-  keyed to the stale fingerprint and must repopulate), with all
-  crown-derived candidate state discarded; a non-retriable owner failure
-  aborts the query exactly as an unfused expansion failure would. No
-  partial fused state is ever reused across an attempt boundary.
+  semantics: an epoch mismatch consumes the scan's single refresh-retry,
+  discards all crown-derived candidate state and the stale crown reference,
+  reopens against the active fingerprint, and may re-enter the fused path
+  only after a fresh crown has been populated for that fingerprint. A
+  non-retriable owner failure aborts the query exactly as an unfused
+  expansion failure would. No partial fused state is ever reused across an
+  attempt boundary.
 - **Distribution invariant.** The fused hop SHALL add nothing resident at
   the coordinator beyond the FR-089 crown
   ([NFR-021](../../../non-functional/NFR-021-distann-distribution-invariant.md)).

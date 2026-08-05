@@ -1,0 +1,273 @@
+{
+  "suite": "task212-fused-crown-capacity",
+  "schema_version": 1,
+  "config": "reviews/task-212/002-crown-cache-implementation/artifacts/task212-capacity-suite.json",
+  "config_sha256": "307bcc9782a2eda0b7d51c82321ed9239507c14995f6f0cfbfc8ce409bca52c2",
+  "dry_run": false,
+  "generated_at_unix_ms": 1785719967110,
+  "runner_git_commit": "a8b1699528e593b45f55fc25329199714d4627ff",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "fused-cap512-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap512-10k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap2048-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap2048-10k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap4096-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "10k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap4096-10k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap512-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "50k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap512-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap2048-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "50k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap2048-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap4096-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "50k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap4096-50k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap512-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "100k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap512-100k/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "fused-cap2048-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap2048-100k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task212-capacity-cap2048-100k-r2",
+        "--log-file",
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap2048-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--skip-single-control",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "42680",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--crown-capacity",
+        "2048",
+        "--fused-head-hop",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "fused-cap2048:head_sample_exact:32:32:rabitq:0:off:4:100:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
+      ],
+      "selected": true,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "100k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap2048-100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785719967135,
+      "finished_at_unix_ms": 1785721427563,
+      "duration_ms": 1556537,
+      "exit_code": 0
+    },
+    {
+      "name": "fused-cap4096-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap4096-100k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task212-capacity-cap4096-100k-r2",
+        "--log-file",
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap4096-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--skip-single-control",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "42690",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--crown-capacity",
+        "4096",
+        "--fused-head-hop",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "fused-cap4096:head_sample_exact:32:32:rabitq:0:off:4:100:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/task106_full_sweep_100k"
+      ],
+      "selected": true,
+      "tags": [
+        "task212",
+        "capacity",
+        "fused",
+        "100k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-212/002-crown-cache-implementation/artifacts/bench-run-capacity-release-a8b169952/fused-cap4096-100k/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1785721427563,
+      "finished_at_unix_ms": 1785722894660,
+      "duration_ms": 1563420,
+      "exit_code": 0
+    }
+  ]
+}

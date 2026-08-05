@@ -1,0 +1,11 @@
+Command: cargo pgrx test pg18 test_distann_three_owner_physical_handoff --no-default-features --features 'pg18 pg_test'
+Result: test tests::pg_test_distann_three_owner_physical_handoff ... ok
+Result: test result: ok. 1 passed; 0 failed; finished in 73.53s
+
+Assertion-nit follow-up (2026-08-03):
+Command: cargo pgrx test pg18 test_distann_three_owner_physical_handoff --no-default-features --features 'pg18 pg_test'
+Result: test tests::pg_test_distann_three_owner_physical_handoff ... ok
+Result: test result: ok. 1 passed; 0 failed; finished in 72.10s
+Change validated: the relaxed cardinality assertion is documented as
+intentional because exact-neighbor scoring does not make the distributed ANN
+walk exhaustive; the test retains the all-three-owner coverage invariant.

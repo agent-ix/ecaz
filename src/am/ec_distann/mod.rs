@@ -32,6 +32,7 @@ pub(crate) use self::ambuild::{
 mod canonical_wire;
 mod cost;
 mod coordinator_retirement;
+mod crown_cache;
 mod custom_scan;
 mod dml;
 mod epoch;
@@ -97,6 +98,7 @@ pub(crate) use self::coordinator_retirement::ensure_fingerprint_not_retiring as 
 pub use self::generation_descriptor::{
     roster_digest, DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
     DistannGenerationDescriptor, DistannHeadPolicy, DistannOwnerExpectation, DistannRosterEntry,
+    DistannHeadSizingAttestation,
     DISTANN_BUILD_SPEC_VERSION, DISTANN_BUILD_SPEC_VERSION_OFFSET, DISTANN_CODEC_ARTIFACT_VERSION,
     DISTANN_CODEC_ARTIFACT_VERSION_OFFSET, DISTANN_GENERATION_DESCRIPTOR_COORDINATOR_UUID_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_DIMENSIONS_OFFSET,

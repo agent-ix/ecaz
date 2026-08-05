@@ -271,6 +271,7 @@ mod cache_tests {
                 descriptor_digest,
                 head_index: None,
                 gateway_copies: None,
+                crown: None,
             });
         };
         let first = identity(0x11);
@@ -333,6 +334,7 @@ struct CachedPhysicalEpoch {
     /// TRAV-30 (Task 210 P3): the bounded gateway routing copies for this
     /// epoch. `None` until populated; populated at most once per cached epoch.
     gateway_copies: Option<Arc<super::gateway_copy::DistannGatewayCopySet>>,
+    crown: Option<Arc<super::crown_cache::DistannCrownCache>>,
 }
 
 thread_local! {
@@ -406,6 +408,30 @@ pub(crate) unsafe fn register_generation_cache_invalidation() {
 #[pg_extern]
 fn ec_distann_debug_retained_epoch_cache_len() -> i64 {
     RETAINED_EPOCH_CACHE.with(|cache| cache.borrow().len() as i64)
+}
+
+#[cfg(feature = "pg_test")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_debug_crown_cache_state() -> TableIterator<
+    'static,
+    (
+        name!(capacity, i64),
+        name!(entries, i64),
+        name!(epoch_fingerprint, Vec<u8>),
+    ),
+> {
+    let state = PHYSICAL_EPOCH_CACHE.with(|cache| {
+        cache.borrow().iter().rev().find_map(|entry| {
+            entry.crown.as_ref().map(|crown| {
+                (
+                    i64::try_from(crown.capacity()).unwrap_or(i64::MAX),
+                    i64::try_from(crown.len()).unwrap_or(i64::MAX),
+                    crown.epoch_fingerprint().to_vec(),
+                )
+            })
+        })
+    });
+    TableIterator::new(state.into_iter())
 }
 
 fn cached_physical_epoch(
@@ -2101,6 +2127,36 @@ fn ec_distann_gateway_routing_export(
     TableIterator::new(rows.into_iter())
 }
 
+/// Export only the quantized search code required by the FR-089 crown. No
+/// neighbor payload or full-precision vector crosses the coordinator boundary.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_crown_code_export(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    member_vec_ids: Vec<i64>,
+) -> TableIterator<'static, (name!(vec_id, i64), name!(search_code, Vec<u8>))> {
+    let members = member_vec_ids
+        .iter()
+        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let rows = (|| {
+        let scan = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)?;
+        Ok::<_, DistannExpandError>(
+            scan.resolve_nodes(&members)?
+                .into_iter()
+                .map(|node| {
+                    (
+                        i64::from_le_bytes(node.vec_id.to_le_bytes()),
+                        node.search_code,
+                    )
+                })
+                .collect::<Vec<_>>(),
+        )
+    })()
+    .unwrap_or_else(|error| error.raise());
+    TableIterator::new(rows.into_iter())
+}
+
 /// Distribute bounded head-shard copies to §4.1 replicas (Task 210 P2b).
 ///
 /// For each shard, pull its landmarks from the owner and push them to the
@@ -3081,6 +3137,7 @@ pub(crate) struct PhysicalGenerationScan {
     /// TRAV-30 bounded gateway routing copies (Task 210 P3); `None` when the
     /// capacity GUC is 0, the roster is single-node, or population failed.
     gateway_copies: Option<Arc<super::gateway_copy::DistannGatewayCopySet>>,
+    crown: Option<Arc<super::crown_cache::DistannCrownCache>>,
     _scan_token: ScanTokenGuard,
 }
 
@@ -3203,7 +3260,7 @@ impl PhysicalGenerationScan {
             );
         }
 
-        let (descriptor, descriptor_digest, head_index, mut gateway_copies) = if let Some(cached) =
+        let (descriptor, descriptor_digest, head_index, mut gateway_copies, mut crown) = if let Some(cached) =
             cached_physical_epoch(index_oid, logical_index_uuid, &active)
         {
             (
@@ -3211,6 +3268,7 @@ impl PhysicalGenerationScan {
                 cached.descriptor_digest,
                 cached.head_index,
                 cached.gateway_copies,
+                cached.crown,
             )
         } else {
             let candidate = super::build_coordinator::load_build_candidate(
@@ -3256,8 +3314,9 @@ impl PhysicalGenerationScan {
                 descriptor_digest,
                 head_index: head_index.clone(),
                 gateway_copies: None,
+                crown: None,
             });
-            (descriptor, descriptor_digest, head_index, None)
+            (descriptor, descriptor_digest, head_index, None, None)
         };
         let routes = physical_owner_routes(
             index_oid,
@@ -3291,6 +3350,7 @@ impl PhysicalGenerationScan {
                 descriptor_digest,
                 head_index: head_index.clone(),
                 gateway_copies: None,
+                crown: crown.clone(),
             });
         }
         if gateway_copies.is_none() && gateway_capacity > 0 {
@@ -3313,9 +3373,61 @@ impl PhysicalGenerationScan {
                         descriptor_digest,
                         head_index: head_index.clone(),
                         gateway_copies: Some(populated),
+                        crown: crown.clone(),
                     });
                 }
             }
+        }
+        let crown_capacity = super::options::crown_capacity();
+        if crown
+            .as_ref()
+            .is_some_and(|cache| cache.capacity() != crown_capacity)
+        {
+            crown = None;
+            super::crown_cache::record_cleared();
+            cache_physical_epoch(CachedPhysicalEpoch {
+                index_oid,
+                logical_index_uuid,
+                build_id: active.build_id,
+                fingerprint: active.fingerprint,
+                descriptor: Arc::clone(&descriptor),
+                descriptor_digest,
+                head_index: head_index.clone(),
+                gateway_copies: gateway_copies.clone(),
+                crown: None,
+            });
+        }
+        if crown_capacity == 0 {
+            super::crown_cache::record_cleared();
+        }
+        if crown.is_none() && crown_capacity > 0 {
+            if let Some(head) = head_index.as_ref() {
+                if let Some(populated) = populate_crown_cache(
+                    index_oid,
+                    &active.fingerprint,
+                    &descriptor,
+                    &routes,
+                    head.members(),
+                ) {
+                    let populated = Arc::new(populated);
+                    crown = Some(Arc::clone(&populated));
+                    super::crown_cache::record_population(&populated);
+                    cache_physical_epoch(CachedPhysicalEpoch {
+                        index_oid,
+                        logical_index_uuid,
+                        build_id: active.build_id,
+                        fingerprint: active.fingerprint,
+                        descriptor: Arc::clone(&descriptor),
+                        descriptor_digest,
+                        head_index: head_index.clone(),
+                        gateway_copies: gateway_copies.clone(),
+                        crown: Some(populated),
+                    });
+                }
+            }
+        }
+        if let Some(crown) = crown.as_ref() {
+            super::crown_cache::record_population(crown);
         }
         let generation =
             generation_catalog::lookup_generation(index_oid, logical_index_uuid, active.build_id)?;
@@ -3380,6 +3492,7 @@ impl PhysicalGenerationScan {
             routes,
             head_index,
             gateway_copies,
+            crown,
             _scan_token: scan_token,
         })
     }
@@ -3648,6 +3761,17 @@ impl PhysicalGenerationScan {
         Ok(collection)
     }
 
+    /// Preserve the retriable epoch category after the physical search path's
+    /// legacy string-shaped setup errors have been collapsed.  Remote owner
+    /// errors retain the stable category token in their Display form.
+    pub(crate) fn classify_search_error(message: String) -> DistannExpandError {
+        if message.starts_with("[EC_EPOCH_MISMATCH]") {
+            DistannExpandError::EpochMismatch(message)
+        } else {
+            DistannExpandError::Internal(message)
+        }
+    }
+
     /// Whether head-shard replicas were populated for this epoch (Task 210 P2b).
     /// Whether this epoch's replica population attests at least
     /// `requested_count` replicas per shard. Population records the count only
@@ -3806,6 +3930,115 @@ impl PhysicalGenerationScan {
     }
 
     fn select_seed_candidates(&self, query: &[f32]) -> Result<Vec<DistannSeedCandidate>, String> {
+        let fused = super::options::fused_head_hop();
+        let width_pruning = super::options::crown_width_pruning();
+        // The crown is a candidate cache, not a replacement for the FR-080
+        // head fan-out.  Only the explicit FR-090 fused arm may use ranked
+        // crown ids as traversal seeds; width pruning may use crown scores to
+        // narrow complete shards.  A plain crown-on arm must therefore remain
+        // result-neutral and execute the ordinary full sharded head search.
+        if super::options::crown_capacity() > 0 {
+            let production_seed_count = (super::options::current_beam_width() * 2).max(32);
+            let search_width = super::options::current_head_search_width(production_seed_count);
+            let seed_count = super::options::current_head_seed_count(production_seed_count);
+            let Some(crown) = self.crown.as_ref() else {
+                if fused || width_pruning {
+                    super::crown_cache::record_fallback();
+                }
+                return self.select_seed_candidates_without_crown(query);
+            };
+            // A plain crown is an identity-preserving control arm.  Do not
+            // spend a query scoring crown entries when neither consumer is
+            // enabled: the ranked candidates would only be discarded before
+            // the authoritative full-head search.
+            if !fused && !width_pruning {
+                return self.select_seed_candidates_without_crown(query);
+            }
+            let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)?;
+            let code_len = binding.code_len(usize::from(self.descriptor.dimensions))?;
+            let prepared = DistannPreparedQuery::prepare_artifact(
+                &self.descriptor.codec_artifact,
+                query,
+            )?;
+            let seeds = crown.rank(seed_count, |code| {
+                let mut distance = [0.0_f32; 1];
+                prepared
+                    .score_dists_batch(code, code_len, 1, &mut distance)
+                    .map(|_| distance[0])
+            })?;
+            if seeds.is_empty() {
+                super::crown_cache::record_fallback();
+                return self.select_seed_candidates_without_crown(query);
+            }
+            if width_pruning {
+                // This counter attests that the candidate arm was entered;
+                // crown_width_pruned_shards separately reports actual shard
+                // removals when the complete-shard rule permits them.
+                super::crown_cache::record_width_pruning_activation();
+            }
+            if fused {
+                super::crown_cache::record_seeds_served(seeds.len());
+                super::crown_cache::record_fused_head_hop();
+                super::crown_cache::record_fused_first_round_requested_ids(seeds.len());
+                return Ok(seeds);
+            }
+            if width_pruning
+                && super::options::current_physical_seed_mode()?
+                    == super::options::PhysicalSeedMode::PersistedHead
+                && self.routes.len() > 1
+            {
+                if let Some(head) = self.head_index.as_ref() {
+                    // A width arm is intentionally more selective than the
+                    // ordinary head seed count.  This leaves a measurable
+                    // candidate-shard decision while retaining the complete
+                    // crown-held shard safety rule below.
+                    let promising = seeds
+                        .iter()
+                        .take((seed_count / self.routes.len().max(1)).max(1))
+                        .map(|seed| seed.vec_id)
+                        .collect::<std::collections::HashSet<_>>();
+                    let crown_ids = crown.entry_ids().collect::<std::collections::HashSet<_>>();
+                    let mut filtered_members = Vec::new();
+                    let mut pruned_shards = 0;
+                    for ordinal in 0..self.routes.len() {
+                        let shard = super::head_sample::head_shard_members(
+                            head.members(),
+                            ordinal,
+                            self.routes.len(),
+                            self.descriptor.placement_hash_version,
+                        );
+                        let complete = shard.iter().all(|vec_id| crown_ids.contains(vec_id));
+                        let keep = !complete || shard.iter().any(|vec_id| promising.contains(vec_id));
+                        if keep {
+                            filtered_members.extend(shard);
+                        } else {
+                            pruned_shards += 1;
+                        }
+                    }
+                    if pruned_shards > 0
+                        && !filtered_members.is_empty()
+                        && filtered_members.len() < head.members().len()
+                    {
+                        super::crown_cache::record_width_pruned_shards(pruned_shards);
+                        return self.sharded_head_seeds(
+                            query,
+                            &filtered_members,
+                            search_width,
+                            seed_count,
+                            head.policy(),
+                        );
+                    }
+                }
+            }
+            return self.select_seed_candidates_without_crown(query);
+        }
+        self.select_seed_candidates_without_crown(query)
+    }
+
+    fn select_seed_candidates_without_crown(
+        &self,
+        query: &[f32],
+    ) -> Result<Vec<DistannSeedCandidate>, String> {
         if query.len() != usize::from(self.descriptor.dimensions) {
             return Err(format!(
                 "EC_SCHEMA_MISMATCH: query has {} dimensions, generation requires {}",
@@ -4196,6 +4429,102 @@ fn populate_gateway_copies(
     }
     super::gateway_copy::record_population(&set);
     Some(set)
+}
+
+/// Populate the FR-089 crown lazily from owner-held search codes. The
+/// selection is deterministic and capacity-bounded before any RPC is issued;
+/// a failed population simply leaves the scan on the ordinary head path.
+fn populate_crown_cache(
+    index_oid: pg_sys::Oid,
+    fingerprint: &[u8; 34],
+    descriptor: &DistannGenerationDescriptor,
+    routes: &[PhysicalOwnerRoute],
+    head_members: &[u64],
+) -> Option<super::crown_cache::DistannCrownCache> {
+    if super::options::debug_fail_crown_population() {
+        pgrx::warning!("ec_distann crown population forced to fail by pg_test fault");
+        return None;
+    }
+    let capacity = super::options::crown_capacity();
+    if capacity == 0 || routes.is_empty() || head_members.is_empty() {
+        return None;
+    }
+    let selected = super::crown_cache::DistannCrownCache::select_member_ids_for_roster(
+        head_members,
+        capacity,
+        routes.len(),
+        descriptor.placement_hash_version,
+    );
+    let buckets = super::placement::group_by_owning_node(
+        &selected,
+        routes.len(),
+        descriptor.placement_hash_version,
+    );
+    let mut entries = Vec::with_capacity(selected.len());
+    let mut remote_work = Vec::new();
+    for (ordinal, bucket) in buckets.iter().enumerate() {
+        if bucket.is_empty() {
+            continue;
+        }
+        let ids = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
+        let route = &routes[ordinal];
+        if let Some(conninfo) = route.conninfo.as_deref() {
+            remote_work.push((ordinal, ids, conninfo));
+            continue;
+        }
+        if !route.is_local {
+            pgrx::warning!("ec_distann crown population disabled: owner {ordinal} has no connection descriptor");
+            return None;
+        }
+        let local = match RetainedGenerationScan::open(index_oid, fingerprint) {
+            Ok(local) => local,
+            Err(error) => {
+                pgrx::warning!("ec_distann crown population disabled: local open failed: {error}");
+                return None;
+            }
+        };
+        let nodes = match local.resolve_nodes(&ids) {
+            Ok(nodes) => nodes,
+            Err(error) => {
+                pgrx::warning!("ec_distann crown population disabled: local resolve failed: {error}");
+                return None;
+            }
+        };
+        entries.extend(nodes.into_iter().map(|node| super::crown_cache::DistannCrownEntry {
+            vec_id: node.vec_id,
+            search_code: node.search_code,
+        }));
+    }
+    let requests = remote_work
+        .iter()
+        .map(|(ordinal, ids, conninfo)| super::remote_transport::DistannCrownCodeRequest {
+            conninfo,
+            index_regclass: &routes[*ordinal].remote_index_regclass,
+            epoch_fingerprint: fingerprint,
+            member_vec_ids: ids,
+        })
+        .collect::<Vec<_>>();
+    for response in super::remote_transport::remote_crown_code_batch(&requests) {
+        match response {
+            Ok(mut remote_entries) => entries.append(&mut remote_entries),
+            Err(error) => {
+                pgrx::warning!("ec_distann crown population disabled: remote export failed: {error}");
+                return None;
+            }
+        }
+    }
+    match super::crown_cache::DistannCrownCache::from_entries(
+        capacity,
+        *fingerprint,
+        &selected,
+        entries,
+    ) {
+        Ok(cache) => Some(cache),
+        Err(error) => {
+            pgrx::warning!("ec_distann crown population disabled: {error}");
+            None
+        }
+    }
 }
 
 struct PhysicalMultiOwnerExpander<'a> {

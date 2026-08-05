@@ -412,7 +412,7 @@ pub mod bench_api {
         DistannAbandonedBindingSetV1, DistannBuildCandidateV1, DistannBuildOptions,
         DistannBuildSpec, DistannCancelPublishAuditV1, DistannCodecArtifact,
         DistannEpochFingerprint, DistannEpochManifestV2,
-        DistannGenerationDescriptor, DistannHeadPolicy,
+        DistannGenerationDescriptor, DistannHeadPolicy, DistannHeadSizingAttestation,
         DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape, DistannManifestBuildOptions,
         DistannManifestCodecParameters, DistannMetadataPage, DistannNodeTuple,
         DistannOwnerExpectation, DistannPublishedEpochIdentity, DistannReadyReceipt,

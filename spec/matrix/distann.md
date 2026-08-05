@@ -287,14 +287,14 @@ Unimplemented feature; all rows owned by Task 211
 
 | AC / CON | Verification (spec) | Status |
 | --- | --- | --- |
-| FR-088-AC-1 | Test | ❌ Planned (Task 211) |
-| FR-088-AC-2 | Test | ❌ Planned (Task 211) |
-| FR-088-AC-3 | Test | ❌ Planned (Task 211) |
-| FR-088-AC-4 | Test | ❌ Planned (Task 211) |
-| FR-088-AC-5 | Analysis (bench) | ❌ Planned (Task 211) |
-| FR-088-AC-6 | Test + storage audit | ❌ Planned (Task 211) |
-| FR-088-CON-1 | Unit test | ❌ Planned (Task 211) |
-| FR-088-CON-2 | Test | ❌ Planned (Task 211) |
+| FR-088-AC-1 | Test | ✅ `head_scaling_attestation_is_deterministic_and_digest_bound`; `head_sizing_resolution_covers_untrained_and_trained_policies` |
+| FR-088-AC-2 | Test | ✅ v3 attestation encode/decode and tamper refusal in `head_scaling_attestation_is_deterministic_and_digest_bound` |
+| FR-088-AC-3 | Test | ✅ `head_sizing_reloption_validation_rejects_invalid_bounds`; resolver rejects invalid law bounds |
+| FR-088-AC-4 | Test | ✅ `head_sizing_resolution_covers_untrained_and_trained_policies` exercises both policy branches |
+| FR-088-AC-5 | Analysis (bench) | ✅ `reviews/task-211/002-head-scaling-law-implementation/artifacts/bench-run-law-fixed/`; selected rate 0.02 evidence at 10k/50k/100k; broader rate selection explicitly deferred to the 1M+ gate |
+| FR-088-AC-6 | Test + storage audit | ⚠️ Partial: zero-byte head audit in `reviews/task-211/002-head-scaling-law-implementation/artifacts/bench-run-law-fixed/`; dedicated test half remains |
+| FR-088-CON-1 | Unit test | ✅ resolver and build-option encode cross-checks in Task 211 validation |
+| FR-088-CON-2 | Test | ✅ deterministic attestation/build-option digest assertion |
 
 ### FR-089 — Crown Cache (`spec/functional/distann/read/FR-089-distann-crown-cache.md`)
 
@@ -303,13 +303,13 @@ Unimplemented feature; all rows owned by Task 212
 
 | AC / CON | Verification (spec) | Status |
 | --- | --- | --- |
-| FR-089-AC-1 | Test | ❌ Planned (Task 212) |
-| FR-089-AC-2 | Test | ❌ Planned (Task 212) |
-| FR-089-AC-3 | Test | ❌ Planned (Task 212) |
-| FR-089-AC-4 | Inspection + test | ❌ Planned (Task 212) |
-| FR-089-AC-5 | Analysis (bench) | ❌ Planned (Task 212) |
-| FR-089-CON-1 | Analysis + storage audit | ❌ Planned (Task 212) |
-| FR-089-CON-2 | Test | ❌ Planned (Task 212) |
+| FR-089-AC-1 | Test | ✅ `test_distann_three_owner_physical_handoff` forces crown population failure, verifies fallback counters, and compares fallback results with the cache-off referent |
+| FR-089-AC-2 | Test | ✅ `CrownCache::from_entries` validation and bounded serialized bytes |
+| FR-089-AC-3 | Test | ✅ `test_distann_three_owner_physical_handoff` verifies capacity replacement and a changed epoch fingerprint after successor publication |
+| FR-089-AC-4 | Inspection + test | ✅ codes-only storage and resident-byte bound in Task 212 storage rows |
+| FR-089-AC-5 | Analysis (bench) | ✅ plain crown identity A/B at 10k/50k/100k; single-variable width-pruning A/B at 10k/50k/100k activates the path but prunes zero shards and shows no latency benefit; both outcomes are separately labeled |
+| FR-089-CON-1 | Analysis + storage audit | ✅ bounded crown storage rows in Task 212 packet |
+| FR-089-CON-2 | Test | ⚠️ Partial: identical cache entries produce identical serialized bytes/digest; cross-backend equivalence remains an unenforced operational invariant |
 
 ### FR-090 — Fused Head Hop (`spec/functional/distann/read/FR-090-distann-fused-head-hop.md`)
 
@@ -318,12 +318,12 @@ Unimplemented feature; all rows owned by Task 213
 
 | AC / CON | Verification (spec) | Status |
 | --- | --- | --- |
-| FR-090-AC-1 | Test | ❌ Planned (Task 213) |
-| FR-090-AC-2 | Test | ❌ Planned (Task 213) |
-| FR-090-AC-3 | Test | ❌ Planned (Task 213) |
-| FR-090-AC-4 | Test + fixture | ❌ Planned (Task 213) |
-| FR-090-AC-5 | Analysis (bench) | ❌ Planned (Task 213) |
-| FR-090-CON-1 | Test + bench | ❌ Planned (Task 213) |
+| FR-090-AC-1 | Test | ⚠️ Partial: inherited FR-079 positional-contract coverage; dedicated forced fused-request fixture remains |
+| FR-090-AC-2 | Test | ⚠️ Partial: shared expansion implementation preserves threshold path; dedicated fused/unfused semantic test remains |
+| FR-090-AC-3 | Test | ✅ shared `test_distann_three_owner_physical_handoff` forces population failure and verifies identical fallback results; fused benchmark arms report zero fallbacks |
+| FR-090-AC-4 | Test + fixture | ✅ Capacity 512/2048/4096 arms are explicitly `seed_set_change=true`; exact claims are restricted to the amended shared code-scored/full-membership condition |
+| FR-090-AC-5 | Analysis (bench) | ✅ Post-fix Task 213 packet: fused 33.40/41.30/38.90 ms vs unfused 39.80/50.30/51.60 ms at 10k/50k/100k; fused requested-id accounting is 1600 latency / 6400 recall per arm |
+| FR-090-CON-1 | Test + bench | ✅ Recall movement is labeled and measured; no exact-policy claim is made for the approximate 2048-capacity arms |
 
 ## Non-Functional Requirement Coverage
 
@@ -331,7 +331,7 @@ Unimplemented feature; all rows owned by Task 213
 | --- | --- | --- | --- |
 | NFR-017 (latency/recall gate) | Pre-registered `ecaz bench suite` four-way comparison on the Task 146 protocol | Not executable yet: prerequisite branch merges (`task-138` distinct_recall emitter, `task-146` anchors `reviews/task-146/006-anchor-results/`) must land on the measuring branch; no gate packet exists | ❌ Planned (gate packet; blocked on task-138/task-146 merges) |
 | NFR-018 (space amplification ≤4×) | Per-arm storage step + summed ratio row | `assert_distann_storage_ratio_rows` mechanically pairs storage rows with ratio rows (suite); the 4.0× budget comparison itself is manual review per the spec's 2026-08-01 enforcement audit | ⚠️ Partial (mechanized budget gate: code-fix backlog) |
-| NFR-019 (per-query touch bound) | Counter emission + per-cell cap assertions | unit:scan `distann_orchestration_hop_rounds_cap_bounds_expansions`; unit:custom_scan `ranked_windows_are_deterministic_and_proven_bounded`; per the spec's 2026-08-01 audit the mechanical assertion regime (EXPLAIN surface, release-build cap check, suite assertions, cross-scale ratio row) does not exist | ⚠️ Partial (assertion machinery: code-fix backlog) |
+| NFR-019 (per-query touch bound) | Counter emission + per-cell cap assertions | unit:scan `distann_orchestration_hop_rounds_cap_bounds_expansions`; unit:custom_scan `ranked_windows_are_deterministic_and_proven_bounded`; FR-090 fused counters now emit `fused_first_round_requested_ids` and the 10k/50k/100k packet reports it alongside `fused_head_hops` | ⚠️ Partial (first-round accounting is covered; full mechanical EXPLAIN/cap assertion regime remains) |
 | NFR-020-AC-1 | Fault drill | mc: TC-042 fault matrix (fail-closed per class); basic: `test_ec_distann_fault_drills_distinct_classes` | ✅ Covered |
 | NFR-020-AC-2 | Crash drill | phys abort/recovery guards + `reviews/task-179/018-publish-crash-window/`; not drilled at every pre-decision boundary | ⚠️ Partial |
 | NFR-020-AC-3 | Crash drill | phys: `test_distann_multi_epoch_publish` recovery + crash-window packet; not drilled at every post-decision boundary | ⚠️ Partial |

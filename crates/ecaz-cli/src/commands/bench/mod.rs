@@ -50,6 +50,120 @@ pub(crate) fn sweep_value_label(profile: &IndexProfile, value: i32) -> String {
     format!("{}={value}", profile.sweep_axis_label())
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct DistannCrownStats {
+    pub(crate) capacity: i64,
+    pub(crate) entries: i64,
+    pub(crate) resident_bytes: i64,
+    pub(crate) resident_bytes_bound: i64,
+    pub(crate) crown_seeds_served: i64,
+    pub(crate) crown_fallbacks: i64,
+    pub(crate) crown_width_pruned_shards: i64,
+    pub(crate) crown_width_pruning_activations: i64,
+    pub(crate) fused_head_hops: i64,
+    pub(crate) fused_first_round_requested_ids: i64,
+}
+
+impl DistannCrownStats {
+    pub(crate) fn add_assign(&mut self, other: Self) {
+        self.capacity = self.capacity.max(other.capacity);
+        self.entries = self.entries.max(other.entries);
+        self.resident_bytes = self.resident_bytes.max(other.resident_bytes);
+        self.resident_bytes_bound = self.resident_bytes_bound.max(other.resident_bytes_bound);
+        self.crown_seeds_served = self
+            .crown_seeds_served
+            .saturating_add(other.crown_seeds_served);
+        self.crown_fallbacks = self.crown_fallbacks.saturating_add(other.crown_fallbacks);
+        self.crown_width_pruned_shards = self
+            .crown_width_pruned_shards
+            .saturating_add(other.crown_width_pruned_shards);
+        self.crown_width_pruning_activations = self
+            .crown_width_pruning_activations
+            .saturating_add(other.crown_width_pruning_activations);
+        self.fused_head_hops = self.fused_head_hops.saturating_add(other.fused_head_hops);
+        self.fused_first_round_requested_ids = self
+            .fused_first_round_requested_ids
+            .saturating_add(other.fused_first_round_requested_ids);
+    }
+}
+
+pub(crate) async fn reset_distann_crown_stats(client: &Client) -> Result<bool> {
+    let available = client
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_reset_crown_stats()') IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if available {
+        client
+            .batch_execute("SELECT ec_distann_reset_crown_stats()")
+            .await?;
+    }
+    Ok(available)
+}
+
+pub(crate) async fn snapshot_distann_crown_stats(
+    client: &Client,
+) -> Result<Option<DistannCrownStats>> {
+    let available = client
+        .query_one(
+            "SELECT to_regprocedure('ec_distann_crown_stats()') IS NOT NULL",
+            &[],
+        )
+        .await?
+        .get::<_, bool>(0);
+    if !available {
+        return Ok(None);
+    }
+    let Some(row) = client
+        .query_opt(
+            "SELECT capacity, entries, resident_bytes, resident_bytes_bound,
+                    crown_seeds_served,
+                    crown_fallbacks, crown_width_pruned_shards,
+                    crown_width_pruning_activations, fused_head_hops,
+                    fused_first_round_requested_ids
+               FROM ec_distann_crown_stats()",
+            &[],
+        )
+        .await?
+    else {
+        return Ok(None);
+    };
+    Ok(Some(DistannCrownStats {
+        capacity: row.get(0),
+        entries: row.get(1),
+        resident_bytes: row.get(2),
+        resident_bytes_bound: row.get(3),
+        crown_seeds_served: row.get(4),
+        crown_fallbacks: row.get(5),
+        crown_width_pruned_shards: row.get(6),
+        crown_width_pruning_activations: row.get(7),
+        fused_head_hops: row.get(8),
+        fused_first_round_requested_ids: row.get(9),
+    }))
+}
+
+pub(crate) fn format_distann_crown_stats(
+    lane: &str,
+    label: &str,
+    stats: DistannCrownStats,
+) -> String {
+    format!(
+        "[distann-crown-stats] lane={lane} label={label} capacity={} entries={} resident_bytes={} resident_bytes_bound={} crown_seeds_served={} crown_fallbacks={} crown_width_pruned_shards={} crown_width_pruning_activations={} fused_head_hops={} fused_first_round_requested_ids={}",
+        stats.capacity,
+        stats.entries,
+        stats.resident_bytes,
+        stats.resident_bytes_bound,
+        stats.crown_seeds_served,
+        stats.crown_fallbacks,
+        stats.crown_width_pruned_shards,
+        stats.crown_width_pruning_activations,
+        stats.fused_head_hops,
+        stats.fused_first_round_requested_ids
+    )
+}
+
 const EC_MAX_ADAPTIVE_NPROBE_SCORE_GAP_MICROS: i32 = 1_000_000;
 const EC_MAX_ADAPTIVE_NPROBE_SCORE_MARGIN_RATIO_BPS: i32 = 1_000_000;
 
