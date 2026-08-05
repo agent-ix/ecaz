@@ -2,6 +2,10 @@
 
 - Task bucket: `reviews/task-207/007-membership-diagnostic/`
 - Validation date: 2026-08-04.
+- Capture code checkpoint: `8eea5f965`; the later single-owner digest fix is
+  `482a34e56`. The structured result rows report extension source SHA
+  `534e37299`, while the packet-local head-membership capture is from the
+  capture checkpoint above.
 - Runner: `ecaz bench suite` with `task207-membership-10k.json`.
 - Topology: 3 local PostgreSQL nodes, four build shards, 10k staged corpus.
 - Arms: `stitched_bfs` and `partition_union`, one 10k step each.
