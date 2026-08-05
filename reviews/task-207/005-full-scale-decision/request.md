@@ -8,12 +8,17 @@ seq: 1
 
 # Task 207 full-scale decision
 
+> Superseded by `../006-re-review-corrections/` for effective seed wording,
+> physical activation attestation, owner-lane interpretation, and search-path
+> disposition.
+
 This packet closes the corrected construction/search A/B requested by review.
 Both arms use fixed `build_shards=4`; only the head construction toggles:
 `stitched_bfs` control versus `partition_union` candidate. The candidate uses
 the full per-shard cap and carries the persisted construction marker. The
-production search path remains `persisted_head` with width 128 and seed count
-128; no production default is changed.
+production search path remains `persisted_head`; the release build's effective
+seed derivation at BW128 was 256/256 because benchmark-only seed GUCs were
+compiled out. No production default is changed.
 
 ## Decision
 
@@ -25,9 +30,9 @@ slower at 50k and 100k, while storage is effectively identical. Keep
 explicit arm. The 100k sign behavior is recorded as the finding, not averaged
 away.
 
-The owner-oracle lane was run separately with `owner_scan` on the identical
-fixed four-shard physical graph. It reports membership recall and remote-owner
-activation; those controls are diagnostic and are not substituted for the
+The old owner-oracle lane was run separately with `owner_scan`, but its output
+was head-independent and captured top-k 32 rather than the main top-k 200. It
+is withdrawn from membership/overlap evidence and is not substituted for the
 release A/B latency decision.
 
 NFR-021 was preregistered as conforming for every physical arm. All three

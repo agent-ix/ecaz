@@ -1,5 +1,9 @@
 # Task 206 result summary
 
+> Superseded for the k-head axis by `../006-re-review-corrections/`. The
+> release rows below requested 128 versus 200 but both used the compiled
+> production derivation; they are not a seed-count A/B.
+
 Decision-arm results copied from the packet-local `run/results.jsonl` and
 scale summaries. Recall is `recall@k`; latency is mean/p50/p95/p99/max ms.
 

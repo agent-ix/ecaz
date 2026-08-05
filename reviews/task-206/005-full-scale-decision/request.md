@@ -8,6 +8,11 @@ seq: 1
 
 # Task 206 full-scale decision
 
+> Superseded by `../006-re-review-corrections/` for the k-head axis: the
+> release A/B compiled out the benchmark seed controls, so its requested 128
+> versus 200 rows were inert. The shipped default is BW4/H100; BW64/H8 is a
+> recommendation for separate productionization.
+
 This packet closes the reviewer-requested corrected measurement lane. The
 release, uninstrumented A/B matrix is the decision evidence; the feature build
 and telemetry lane are diagnostic only.

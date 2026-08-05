@@ -1,5 +1,9 @@
 # Artifact manifest
 
+> Superseded note: packet `../006-re-review-corrections/` corrects effective
+> release seed derivation, records the physical activation marker, and
+> withdraws the head-independent owner-oracle rows.
+
 - code head for the release decision matrix: `a6289dddf7802097f81d46ab8956e417222f0263` (clean release source)
 - task bucket / packet: `reviews/task-207/005-full-scale-decision`
 - preregistration/config: `../004-search-and-sharding/artifacts/task207-corrected.json`

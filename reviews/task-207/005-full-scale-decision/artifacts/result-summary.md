@@ -1,5 +1,9 @@
 # Task 207 result summary
 
+> Packet `../006-re-review-corrections/` supersedes the owner-oracle table and
+> effective-seed wording below. The release construction decision remains,
+> but owner rows do not establish head membership or overlap@k.
+
 Release decision-arm results. Latency is mean/p50/p95/p99/max ms; storage
 amplification is the cluster graph-side normalized ratio.
 

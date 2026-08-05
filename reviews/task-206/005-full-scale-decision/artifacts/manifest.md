@@ -1,5 +1,9 @@
 # Artifact manifest
 
+> Superseded note: packet `../006-re-review-corrections/` retracts the
+> release k-head comparison because the benchmark seed controls were compiled
+> out.
+
 - code head for the release decision matrix: `a6289dddf7802097f81d46ab8956e417222f0263` (clean release source)
 - task bucket / packet: `reviews/task-206/005-full-scale-decision`
 - preregistration/config: `../004-corrected-closeout/artifacts/task206-corrected.json`
