@@ -1,10 +1,16 @@
 # Validation
 
-Code checkpoint: `8eea5f965` (`Capture physical head membership and scan rounds`).
+Code checkpoint: `482a34e56` (`Align single-owner head digest with persisted shape`),
+including the scan-round capture changes in its parent `8eea5f965`.
 
 - `PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo check -p ecaz-cli --offline --all-targets` — passed.
 - `PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo test -p ecaz-cli --offline --bin ecaz distann_physical_scan_round_notice_is_structured_from_fixture_summary` — passed.
-- Focused PG18 lifecycle test — result recorded below after completion.
+- `PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo pgrx test pg18 test_distann_trained_head_build_replay_publish_and_inspection --no-default-features --features pg18 --pgdata /home/peter/.cargo-target/task-206-207-pgdata` — passed: 1 test, including the new `partition_union` marker assertion.
+
+The first run exposed and was corrected by the current checkpoint: the
+single-owner fixture was using a full-vector persisted state while the manifest
+was using a membership-only digest. The digest/graph/persistence decision is
+now shared as one `membership_only` condition.
 
 The parser regression covers the fixture summary form that previously caused
 the structured scan-round rows to be dropped. No benchmark matrix was rerun.

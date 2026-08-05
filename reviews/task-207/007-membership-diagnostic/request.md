@@ -18,6 +18,7 @@ sets for head-membership@k and head-set overlap.
 This is diagnostic evidence only. It does not promote `partition_union`, alter
 the shipped policy, or change the release seed interpretation.
 
-The capture and lifecycle-test code checkpoint is `8eea5f965`. Results and
+The capture and lifecycle-test code checkpoint is `482a34e56` (with capture
+implementation in parent `8eea5f965`). Results and
 provenance are in `artifacts/manifest.md`; the compact comparison is in
 `artifacts/membership-analysis.md`.
