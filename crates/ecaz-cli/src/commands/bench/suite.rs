@@ -3094,6 +3094,17 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             continue;
         };
         let body = body.trim();
+        // Physical benchmark child stderr is appended to the fixture summary
+        // with the fixture prefix, so notices arrive as
+        // `[distann-multicluster] [postgres notice] ...`. Keep accepting the
+        // unwrapped form above for direct parser callers, but parse the
+        // durable summary shape here as well.
+        if let Some(rest) = body.strip_prefix("[postgres notice] ec_distann_scan_round ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_scan_round".into(), values));
+            }
+            continue;
+        }
         if let Some(rest) = body.strip_prefix("release_profile_preflight ") {
             if let Some(mut values) = parse_space_key_values(rest.trim()) {
                 let passed = values.get("status").is_some_and(|value| value == "passed")
@@ -3194,6 +3205,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_head ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_head".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_head_membership ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_head_membership".into(), values));
             }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_head_policy ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
@@ -4599,7 +4614,13 @@ impl SuiteStep {
                     return step
                         .artifact_dir
                         .iter()
-                        .map(|dir| dir.join("distann-multinode-summary.log"))
+                        .flat_map(|dir| {
+                            let mut artifacts = vec![dir.join("distann-multinode-summary.log")];
+                            if step.physical_benchmark {
+                                artifacts.push(dir.join("physical-head-membership.json"));
+                            }
+                            artifacts
+                        })
                         .collect();
                 }
                 let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
@@ -6402,6 +6423,22 @@ psql header noise\n\
     }
 
     #[test]
+    fn distann_physical_scan_round_notice_is_structured_from_fixture_summary() {
+        let raw = "[distann-multicluster] [postgres notice] ec_distann_scan_round round=0 requested_nodes=64 expanded_nodes=unmeasured transport_wait_ns=1239324 straggler_spread_ns=1021885 request_bytes=512 response_bytes=112190\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].0, "physical_benchmark_scan_round");
+        assert_eq!(
+            rows[0].1.get("transport_wait_ns").map(String::as_str),
+            Some("1239324")
+        );
+        assert_eq!(
+            rows[0].1.get("response_bytes").map(String::as_str),
+            Some("112190")
+        );
+    }
+
+    #[test]
     fn distann_physical_topology_and_gate_are_structured() {
         let raw = "[distann-multicluster] physical_topology phase=published node=2 state=Published records=33 rows=33 non_owned=0 orphans=0 graph_bytes=65536 row_bytes=16384 directory_bytes=16384 control_bytes=8192\n\
 [distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=3 source_rows=90\n\
@@ -6411,6 +6448,7 @@ psql header noise\n\
 [distann-multicluster] physical_benchmark_recall scale=10k arm=physical seed_strategy=persisted_head queries=10 trials=100 recall=1.0000 mean_ms=10727.91\n\
 [distann-multicluster] physical_benchmark_latency scale=10k arm=physical seed_strategy=persisted_head count=5 mean_ms=10744.10 p50_ms=10664.70 p95_ms=11065.20 p99_ms=11125.80 max_ms=11141.00 concurrency=1 cache=warm\n\
 [distann-multicluster] physical_benchmark_head scale=10k head_index_cap=4096 head_search_width=32 head_seed_count=32 seed_strategy=persisted_head neighbor_score_mode=rabitq sample_count=4096 head_sample_bytes=25231360 head_graph_bytes=540672 head_cache_estimated_bytes=25772032\n\
+[distann-multicluster] physical_benchmark_head_membership scale=10k head_construction=partition_union sample_count=4096 ids_sha256=abcd artifact=artifacts/physical-head-membership.json\n\
 [distann-multicluster] physical_benchmark_head_policy scale=10k policy=training_landmarks_exact scoring_mode=exact_landmark_scan training_queries=200 training_query_digest=aaaa head_index_cap=4096 returned_seed_count=32 sample_count=4096 head_sample_digest=bbbb\n";
         let rows = parse_distann_multinode_rows(raw);
         let topology = rows
@@ -6452,6 +6490,12 @@ psql header noise\n\
             metric == "physical_benchmark_head"
                 && values.get("sample_count").map(String::as_str) == Some("4096")
                 && values.get("head_search_width").map(String::as_str) == Some("32")
+        }));
+        assert!(rows.iter().any(|(metric, values)| {
+            metric == "physical_benchmark_head_membership"
+                && values.get("head_construction").map(String::as_str)
+                    == Some("partition_union")
+                && values.get("sample_count").map(String::as_str) == Some("4096")
         }));
         assert!(rows.iter().any(|(metric, values)| {
             metric == "physical_benchmark_head_policy"

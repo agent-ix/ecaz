@@ -10,6 +10,7 @@ use color_eyre::eyre::{bail, eyre, Context, Result};
 use ecaz_fault_injection::ProviderMode;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -5488,6 +5489,95 @@ async fn run_physical_benchmarks(
     let head_graph_bytes = head.get::<_, i64>(3);
     let head_state_bytes = head.get::<_, i64>(4);
     let head_cache_estimated_bytes = head_sample_bytes + head_graph_bytes;
+    let head_membership = coordinator
+        .query_one(
+            "SELECT state.head_construction,
+                    state.membership,
+                    COALESCE((SELECT array_agg(sample.vec_id ORDER BY sample.sample_ordinal)
+                                FROM ec_distann_generation_head_sample sample
+                               WHERE sample.index_oid = state.index_oid
+                                 AND sample.logical_index_uuid = state.logical_index_uuid
+                                 AND sample.build_id = state.build_id), ARRAY[]::bigint[])
+               FROM ec_distann_active_epoch active
+               JOIN ec_distann_generation_head_state state
+                 USING (index_oid, logical_index_uuid, build_id)
+              WHERE active.index_oid = 'dm_idx'::regclass",
+            &[],
+        )
+        .await
+        .wrap_err("reading persisted head membership")?;
+    let head_construction = match head_membership.get::<_, i16>(0) {
+        0 => "stitched_bfs",
+        1 => "partition_union",
+        other => bail!("invalid persisted head construction marker {other}"),
+    };
+    let mut head_ids = head_membership.get::<_, Vec<i64>>(2);
+    if head_ids.is_empty() {
+        if let Some(blob) = head_membership.get::<_, Option<Vec<u8>>>(1) {
+            if blob.len() < 4 {
+                bail!("persisted head membership blob is truncated");
+            }
+            let count = u32::from_le_bytes(blob[..4].try_into().unwrap()) as usize;
+            if count != head_sample_count as usize || blob.len() != 4 + count * 8 {
+                bail!(
+                    "persisted head membership blob has count={count} bytes={} expected_count={head_sample_count}",
+                    blob.len()
+                );
+            }
+            head_ids = blob[4..]
+                .chunks_exact(8)
+                .map(|chunk| i64::from_le_bytes(chunk.try_into().unwrap()))
+                .collect();
+        }
+    }
+    if head_ids.len() != head_sample_count as usize {
+        bail!(
+            "persisted head membership count={} does not match sample_count={head_sample_count}",
+            head_ids.len()
+        );
+    }
+    let logical_id_by_vec_id = coordinator
+        .query(
+            &format!("SELECT id, source_id::text FROM {physical_corpus}"),
+            &[],
+        )
+        .await
+        .wrap_err("reading logical ids for persisted head membership")?
+        .into_iter()
+        .map(|row| {
+            let logical_id = row.get::<_, i64>(0);
+            let source_id = row.get::<_, String>(1);
+            let identity = source_identity_uuid_bytes(&source_id)?;
+            Ok((distann_vec_id_from_source_identity(&identity), logical_id))
+        })
+        .collect::<Result<HashMap<_, _>>>()?;
+    let logical_head_ids = head_ids
+        .iter()
+        .map(|vec_id| {
+            logical_id_by_vec_id.get(vec_id).copied().ok_or_else(|| {
+                eyre!("persisted head vec_id {vec_id} has no logical source-id mapping")
+            })
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let mut membership_hasher = Sha256::new();
+    for id in &head_ids {
+        membership_hasher.update(id.to_le_bytes());
+    }
+    let head_membership_path = log_dir.join("physical-head-membership.json");
+    let head_membership_json = serde_json::json!({
+        "scale": scale,
+        "head_construction": head_construction,
+        "sample_count": head_ids.len(),
+        "head_sample_digest": head_sample_digest,
+        "ids_sha256": hex::encode(membership_hasher.finalize()),
+        "vec_ids": head_ids,
+        "logical_ids": logical_head_ids,
+    });
+    fs::write(
+        &head_membership_path,
+        serde_json::to_vec_pretty(&head_membership_json)?,
+    )
+    .wrap_err_with(|| format!("writing {}", head_membership_path.display()))?;
     let remote_owners = if args.coordinator_outside_roster {
         nodes.len()
     } else {
@@ -5623,6 +5713,12 @@ async fn run_physical_benchmarks(
             "physical_benchmark_head scale={scale} {shared} arm=physical stored_neighbor_code_format=rabitq storage_shared=true sample_count={head_sample_count} head_sample_digest={head_sample_digest} head_sample_bytes={head_sample_bytes} head_graph_bytes={head_graph_bytes} head_cache_estimated_bytes={head_cache_estimated_bytes}"
         ));
         lines.push(format!(
+            "physical_benchmark_head_membership scale={scale} {shared} head_construction={head_construction} sample_count={} ids_sha256={} artifact={}",
+            head_ids.len(),
+            head_membership_json["ids_sha256"].as_str().unwrap_or_default(),
+            head_membership_path.display(),
+        ));
+        lines.push(format!(
             "physical_benchmark_engagement scale={scale} {shared} arm=physical remote_owners={remote_owners} materialize_probes={remote_owners} pass={}",
             remote_owners > 0
         ));
@@ -5654,6 +5750,32 @@ fn benchmark_log_value(line: &str, key: &str) -> Option<String> {
     line.split_whitespace()
         .find_map(|field| field.strip_prefix(&format!("{key}=")))
         .map(ToOwned::to_owned)
+}
+
+fn distann_vec_id_from_source_identity(identity: &[u8; 16]) -> i64 {
+    let low = u64::from_le_bytes(identity[..8].try_into().expect("identity low bytes"));
+    let high = u64::from_le_bytes(identity[8..].try_into().expect("identity high bytes"));
+    let mut value = low ^ 0x6469_7374_616e_6e01;
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    value ^= value >> 33;
+    value = value.wrapping_add(high);
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xff51_afd7_ed55_8ccd);
+    value ^= value >> 33;
+    value = value.wrapping_mul(0xc4ce_b9fe_1a85_ec53);
+    value ^= value >> 33;
+    value as i64
+}
+
+fn source_identity_uuid_bytes(value: &str) -> Result<[u8; 16]> {
+    let compact = value.replace('-', "");
+    let bytes = hex::decode(compact).wrap_err("decoding source identity UUID")?;
+    bytes
+        .try_into()
+        .map_err(|_| eyre!("source identity UUID has invalid length"))
 }
 
 fn benchmark_log_line<'a>(contents: &'a str, prefix: &str) -> Option<&'a str> {
