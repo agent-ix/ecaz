@@ -1,5 +1,13 @@
 # Task 183: ec_distann Residual Recall and Latency Optimization
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete — outside-reviewed STOP; no Task 183 candidate**
 (2026-07-17). Phase 1 rejected
 exact-neighbor traversal (0.9605 recall / 113.1 ms p50 versus RaBitQ at 0.9625 /

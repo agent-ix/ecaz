@@ -1,5 +1,13 @@
 # Task 208: ec_distann NFR-021/NFR-022 Conformance Gates
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **IN REVIEW** (2026-07-30). The NFR-021 measurement contradiction is
 reconciled, phases 1-3 are implemented in `reviews/task-208/001-gates/`, and
 the phase-4 retrospective sweep is recorded in

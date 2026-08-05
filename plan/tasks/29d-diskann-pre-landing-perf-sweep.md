@@ -1,5 +1,13 @@
 # Task 29d: DiskANN Pre-Landing Performance Sweep
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: complete on `main` as part of Task 29 (status fixup 2026-05-31).
 Closeout packet: `reviews/task-29d/003-11109-task29d-final-readiness/`.
 Owner: coder1 / runtime-index track

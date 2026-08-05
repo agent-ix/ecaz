@@ -1,5 +1,13 @@
 # Task 36: SIMD↔Scalar Differential Validation
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **review requested for the current local SIMD inventory** — successor
 to Task 34 (comprehensive hardening). The authoritative `make simd-diff` lane
 now includes the original public harness plus focused current-kernel suites

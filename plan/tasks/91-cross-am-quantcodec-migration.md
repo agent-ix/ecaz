@@ -1,5 +1,13 @@
 # Task 91: Cross-AM `QuantCodec` Trait Migration
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: complete (2026-06-09, closeout `reviews/task-91/021-quantcodec-closeout/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (kernel/architecture unification follow-up to Task 87)

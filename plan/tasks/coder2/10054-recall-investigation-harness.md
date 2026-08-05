@@ -1,5 +1,13 @@
 # Task: Recall Investigation Harness on ExternalRecallContext
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Motivation: The A4 real-corpus lane (reviews 218/220/221/222) has just landed
 the `ExternalRecallContext` refactor on `fix/a4-real-corpus-recall-lane` and is
 about to run the first official DBpedia number against the `ec_hnsw_real_10k`

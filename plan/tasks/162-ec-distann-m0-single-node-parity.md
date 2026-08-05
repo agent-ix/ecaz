@@ -1,5 +1,13 @@
 # Task 162: ec_distann M0 — Single-Node Parity
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **done — banded M0 exit** (2026-07-07). Reviewer signoff:
 `reviews/task-162/004-parity-remeasure/feedback/2026-07-07-01-reviewer.md`;
 operator acceptance: `.../2026-07-07-02-coder.md`. Outcome: parity vs

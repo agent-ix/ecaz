@@ -1,5 +1,13 @@
 # Task 12: Real-Corpus Recall Validation
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: done for `v0.1` A4 signoff — actual parquet is fetched, canonical `10K` / `50K` subsets are staged, real `10K` passes strongly, and broader real `50K` gate slices also pass comfortably on `main`.
 
 ## Scope

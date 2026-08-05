@@ -1,5 +1,13 @@
 # Task 165: ec_distann M3 — Multinode Lifecycle + Fault Drills
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: partial / replicated-serving control only (2026-07-10). Depends on:
 Task 164. The 12-drill transport/fanout matrix and single-relation lifecycle
 model remain useful evidence, but the current metadata page has only one graph

@@ -1,5 +1,13 @@
 # Task 144: HNSW int8_approx exact-score default revisit
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete - default flipped + confirmed** (2026-07-03). Flip landed
 on main as `3f69d74c0` (`exact` → `auto`: int8_approx on the no-QJL 4-bit
 lane, exact elsewhere). Default path confirmed in

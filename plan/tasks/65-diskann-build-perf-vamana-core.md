@@ -1,5 +1,13 @@
 # Task 65: DiskANN Build Performance — Vamana Core Overhaul
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** 2026-05-28. Direct follow-up to Task 29c
 (`plan/tasks/29c-diskann-build-perf.md`) and packet `11104`'s
 pass-1 Vamana timing split. Single-process build only; parallel

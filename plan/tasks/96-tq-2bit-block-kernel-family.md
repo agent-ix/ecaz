@@ -1,5 +1,13 @@
 # Task 96: TurboQuant no-QJL 2-bit Block Kernel Family
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: deferred (2026-06-09; Phase 0 surface-inventory stop condition in `reviews/task-96/001-surface-inventory-stop-condition/` found no current TurboQuant no-QJL 2-bit AM consumer; stop condition accepted by reviewer. Per project decision, TQ mode/bit-allocation questions — including whether to introduce a 2-bit surface — are deferred to the complete post-kernel index × quant × mode profile under Task 99. Do not resume Task 96 before that profile lands.)
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 2 (denser-than-4-bit kernel; depends on 2-bit storage adoption)

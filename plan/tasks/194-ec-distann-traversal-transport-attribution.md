@@ -1,5 +1,13 @@
 # Task 194: ec_distann Traversal Transport Attribution and One Candidate
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete — STOP** (2026-07-22). Priority: P2. Inherits Task 187's
 complete nine-way Phase 1 contract. Roadmap candidates: `TRAV-01` (complete),
 then at most one of the families Task 187 listed.

@@ -1,5 +1,13 @@
 # Task 187: ec_distann Traversal Transport Optimization
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **proposed, unblocked by Task 191** (2026-07-20). Priority: P2 latency
 follow-up. Task 191 promoted and release-validated lazy10 as the retained
 production baseline.

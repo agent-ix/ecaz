@@ -1,5 +1,13 @@
 # Task: NFR-001 Latency Lane on Real DBpedia Corpus
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Motivation: `docs/RECALL_REAL_CORPUS.md:260-264` already notes that `NFR-001`
 latency benchmarking reuses the same loader path as the A4 recall lane but
 targets a different reporting surface (`ecaz bench latency`). Now

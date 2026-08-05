@@ -1,5 +1,13 @@
 # Task 115: IVF RaBitQ Residual Quantization
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **merged to `main` 2026-06-19** (residual mode implemented + recall-safe,
 opt-in; recall-per-probe promotion bench-gated and deferred). Reviewed in
 `reviews/task-115/001-residual-scoring-design/` (APPROVED) and

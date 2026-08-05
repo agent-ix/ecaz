@@ -1,5 +1,13 @@
 # Task 189: ec_distann Hybrid Distance and Codec Evaluation
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **proposed, conditionally dormant** (2026-07-19). Priority: P3.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate

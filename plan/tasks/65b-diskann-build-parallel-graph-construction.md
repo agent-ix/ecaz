@@ -1,5 +1,13 @@
 # Task 65b: DiskANN Build — Parallel Vamana Graph Construction
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** 2026-06-06 (rayon stepping-stone per ADR-075;
 closeout `reviews/task-65b/021-closeout-audit/`). Direct follow-up to Task 65
 (`plan/tasks/65-diskann-build-perf-vamana-core.md`) and the

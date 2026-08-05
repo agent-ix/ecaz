@@ -1,5 +1,13 @@
 # Task 124: IVF TurboQuant Stage-2 Rerank Pipeline
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **measured — awaiting review; Phase 6 (IO-sensitive) is the
 remaining gate** (2026-07-04).
 Owner: Codex (measurement re-baseline; branch `task-124-stage2-pareto`,

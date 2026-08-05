@@ -1,5 +1,13 @@
 # Task 15: Land PqFastScan as First-Class Index Format
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-16) — ADR-032 landed: the `StorageFormat`
 enum + `storage_format` reloption selector and the TurboQuant /
 PqFastScan variants are live in `src/am/ec_hnsw/{options,graph}.rs`, with

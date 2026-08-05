@@ -1,5 +1,13 @@
 # Task 60: ec_diskann RaBitQ Storage Format
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-16) — `storage_format = 'rabitq'` for
 `ec_diskann` landed on `main` (merge `a8b2aca41`; benchmark artifacts
 `0be251132`; packets `reviews/task-60/001`–`014`). DiskANN/Vamana now

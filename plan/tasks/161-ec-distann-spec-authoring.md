@@ -1,5 +1,13 @@
 # Task 161: ec_distann Spec Authoring (StR-008, FR-075..083, NFR-017..020, ADR-085)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: in progress (2026-07-06; spec batch + test matrix + full spec-review
 committed on `task-161-ec-distann-specs`; closes when the batch merges).
 Owner: Agent IX. One branch: `task-161-ec-distann-specs` (worktree

@@ -1,5 +1,13 @@
 # Task 166: ec_distann M4 — Bench Gate vs Anchors (Program Gate)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: measured / single-instance control only (2026-07-10). The
 10k/50k/100k comparator packet landed, but it did not activate a roster or
 exercise remote expansion/materialization and therefore cannot close the

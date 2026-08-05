@@ -1,5 +1,13 @@
 # Task 97: TurboQuant QJL Block Kernel Family (Gamma + Residual Signs)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-16) — QJL block-kernel family (surface inventory, qjl32 counter kind/design, scalar reference, AVX2/NEON/SVE code slices, IVF/SPIRE/HNSW AM registration, HNSW hot/cold exact-payload batching, local PG18 suite evidence for the production QJL fixture `dim=1024,bits=4,seed=42`, AVX2 candidate-parallel transpose + octet-tail follow-ups, forced NEON parity hook) landed with reviewer-approved local evidence through `reviews/task-97/`. The remaining Graviton 4 runtime-dispatch/vector-length/counter evidence was covered by the Task 105/106/107 production G4 sweep on the newer build.
 Owner: coder (to be assigned). Phase III parallel.
 Priority: 2 (QJL variant; per-candidate metadata complicates kernel)

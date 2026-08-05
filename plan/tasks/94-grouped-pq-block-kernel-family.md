@@ -1,5 +1,13 @@
 # Task 94: Grouped-PQ / PqFastScan Block Kernel Family (All AMs × All ISAs)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-16) — grouped-PQ/PqFastScan block kernels,
 all codec registrations, the F8 shuffle-repack slice, and the
 release-backend AC5 rerun landed with reviewer-approved local evidence

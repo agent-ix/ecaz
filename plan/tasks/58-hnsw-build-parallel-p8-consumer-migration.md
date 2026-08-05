@@ -1,5 +1,13 @@
 # Task 58: HNSW `build_parallel.rs` P8 Consumer Migration
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-16) — HNSW `build_parallel.rs` P8
 consumer migration landed (−28 src/); the Task 58.1 follow-up was
 CLOSE-APPROVED (`cb08dfef5`) after a level-playing-field experiment

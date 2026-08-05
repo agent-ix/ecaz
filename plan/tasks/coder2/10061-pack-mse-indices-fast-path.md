@@ -1,5 +1,13 @@
 # Task: Bytewise Fast Path for `pack_mse_indices`
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Motivation: `pack_mse_indices` (`src/quant/prod.rs:330`) packs MSE
 codebook indices via `write_bits_le`, which loops **one bit at a time**
 and redoes the byte/bit math on every iteration. For the `(1536, 4)`

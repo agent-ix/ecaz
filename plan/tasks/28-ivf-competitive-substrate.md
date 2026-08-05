@@ -1,5 +1,13 @@
 # Task 28 Follow-On: IVF Competitive Substrate
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **landed on `main` for the local IVF competitive-substrate lane**.
 The former A1-A10 merge gate is closed for local v1 landing; larger product
 benchmarks and fresh 990k exact fills are deferred to dedicated benchmark

@@ -1,5 +1,13 @@
 # Task 16: TurboQuant Iteration with PqFastScan Learnings
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: complete on `main` (2026-05-31). TurboQuant is the active storage
 format for SPIRE leaves (used by Tasks 68/72/73) and is a first-class peer to
 PqFastScan across `ec_hnsw` / `ec_ivf` / `ec_spire`. The `ecvector` row-model

@@ -1,5 +1,13 @@
 # Task: Bulk `encode_to_tqvector` SQL Surface
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Motivation: `encode_to_tqvector` (`src/lib.rs:430`) is the SQL entry
 point that callers use to populate the `embedding tqvector` column
 from a `real[]`. Today it is single-row: each call pays pgrx

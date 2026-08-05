@@ -1,5 +1,13 @@
 # Task 29b: DiskANN Cleanup and Vacuum Consistency
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: landed on `main`, follows Task 29a (binary-sidecar prefilter)
 Owner: coder1 / runtime-index track
 Backstory: `reviews/task-29/015-11099-task29-diskann-landing-readiness/feedback.md`

@@ -1,5 +1,13 @@
 # Task 87: Candidate-Batched Scoring Across Access Methods
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: complete (2026-06-08; see reviews/task-87/023-phase7-methodology-and-closeout/)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (kernel-level optimization unlock; follows Task 86)

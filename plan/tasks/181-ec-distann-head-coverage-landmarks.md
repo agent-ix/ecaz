@@ -1,5 +1,13 @@
 # Task 181: ec_distann Head-Coverage and Landmark Selection Benchmark
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: completed — outside-reviewed GO to Task 182 (corrected 2026-07-15;
 review ACCEPT 2026-07-17). The best bounded
 candidate reached 0.9990 / 0.9685 / 0.9625 distinct recall at 10k/50k/100k.

@@ -1,5 +1,13 @@
 # Task 134: TQ small-batch scorer for graph AMs (HNSW/DiskANN)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **measured - negative / no code change** (2026-07-02;
 `reviews/task-134/001-graph-am-verify/`). Owner: Codex. Priority: P3
 Follow-up to Task 125/126.

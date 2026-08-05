@@ -1,5 +1,13 @@
 # Task: Per-Level Graph Structure Diagnostic
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Motivation: Review 212 discovered that the build was collapsing the HNSW hierarchy
 to level 0. Once the fix lands, coder-1 needs to validate the fixed hierarchy's
 structure. There is no diagnostic that shows the full level distribution or

@@ -1,5 +1,13 @@
 # Task 164: ec_distann M2 — Hash Placement, Remote Expansion, Two-Node Read Path
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: partial / replicated-serving control only (2026-07-10). Depends on:
 Tasks 162, 163. The remote expansion/orchestration substrate landed, but the
 fixture built a complete graph on every node and filtered serving ownership.

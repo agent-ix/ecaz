@@ -1,5 +1,13 @@
 # Task 169: IVF coarse-payload density pareto at the new defaults (1/2-bit + exact rerank vs 4-bit TQ)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **measured — awaiting review** (2026-07-03). Owner: Codex.
 Priority: P2. Packet: `reviews/task-169/001-density-pareto/` —
 **rb1 (1-bit + heap_f32 rerank, dense) pareto-dominates the TQ

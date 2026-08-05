@@ -1,5 +1,13 @@
 # Task 168: DiskANN Batched-Beam Expansion + Prefetch (rabitq streaming path)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: done (2026-07-07; merged to main in `e9bb9430d`, evidence in
 `reviews/task-168/001..005`; Phase 3 prefetch shelved as a measured loss,
 all other phases landed). Successor to the closed Task 70

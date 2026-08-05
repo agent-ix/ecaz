@@ -1,5 +1,13 @@
 # Task 43b: Miri / cargo-careful Exhaustive Safety Extension
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **parked, scoped post-Task-35**
 
 Sequencing: Task 35 (unsafe burndown) runs first. 43b begins after 35

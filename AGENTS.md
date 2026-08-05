@@ -232,6 +232,45 @@ and stored in the owning packet.
   `spec/non-functional/NFR-007-benchmark-provenance.md`; no fabricated numbers,
   every cited result traces to a `results.jsonl` artifact.
 
+### Distributed Measurement: Multi-Node Arms Only
+
+**Any decision about distributed behavior MUST be measured on a multi-node
+configuration. A single-node or single-instance arm is NEVER acceptable as the
+basis for a decision about a distributed algorithm.**
+
+ec_distann — and any other distributed access method — ships as a distributed
+system. A single node is not distributed and never can be. Measuring one and
+concluding about the other is a category error, not an approximation.
+
+- **The one permitted use of a single-instance arm:** a labeled baseline that
+  quantifies how much overhead distribution adds. Report it, then set it aside.
+- **Forbidden uses:** gate, threshold, promotion control, Pareto reference,
+  headline result, or the organizing frame of a task, packet, or recommendation.
+- **Label node count at every number.** Every latency/recall/storage figure in a
+  `request.md`, `manifest.md`, summary table, or report to the operator must
+  state its arm's node count. Never place a single-instance number in the same
+  table as multi-node numbers without labeling both.
+- **Never switch arm classes mid-analysis without saying so.** If earlier tables
+  were multi-node and a later comparison introduces a single-instance arm, say so
+  at the point of use, not in a footnote.
+- **Matched arms or no comparison.** Compared arms must match on beam width, hop
+  rounds, head search width / seed count, `top_k`, sweep, corpus, and iteration
+  count. The `distann-local-multinode` fixture derives its single control's BW/H
+  from the *step* defaults rather than per-variant values
+  (`distann_multicluster.rs` pushes the single arm with top-level values and the
+  physical arms with per-variant ones), so that row is config-matched to at most
+  one variant per run — check before citing it.
+- **Loopback is not a network.** `distann-local-multinode` runs every node on one
+  host. It is valid for measuring software overhead and invalid for any claim
+  about network cost or real multi-host behavior; say which you are measuring.
+
+Precedent, and why this is non-negotiable: Tasks 198/199 promoted a coordinator
+traversal replica holding every owner's graph records and full-precision vectors
+on one node. It became the program's latency control, so forward work was
+measured against a single-node index. Task 190 was closed INVALID, Task 201 was
+superseded, and Task 210 (P0) exists to restore sharding. This rule exists so
+that class of error cannot recur.
+
 ### Benchmark Runner: `ecaz bench suite` Only
 
 **All benchmark matrices, sweeps, and multi-step measurement runs MUST be

@@ -1,5 +1,13 @@
 # Task: Compute Encode `gamma` Without an Inverse SRHT
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Motivation: `ProdQuantizer::encode` (`src/quant/prod.rs:79`) currently
 runs a forward SRHT, MSE-quantizes the rotated coordinates, then runs an
 **inverse** SRHT (`qjl::decode_mse_only`, `src/quant/qjl.rs:10`) just so

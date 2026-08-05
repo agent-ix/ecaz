@@ -1,5 +1,13 @@
 # Task 102: lut32 SIMD Block Kernels (TQ no-QJL 4-bit, All ISAs)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-16; in-epic — landed inside the
 unify/batching epic) — real AVX2/NEON/SVE2 kernels for the flagship
 lut32 TQ no-QJL 4-bit lane landed (NEON repack approved in packet 002

@@ -1,5 +1,13 @@
 # Task 122: TurboQuant Performance and Rerank Pipeline Optimization
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-27; TQ-only closeout after split: keep experimental / promote TurboQuant-focused follow-up as Task 124; closeout `reviews/task-122/010-closeout-keep-experimental/`, original approval `reviews/task-122/010-closeout-keep-experimental/feedback/2026-06-27-01-reviewer.md`, completion marker `reviews/task-122/012-completion-status/`, numbering correction `reviews/task-122/013-task124-correction/`, TQ-only split `reviews/task-122/014-tq-only-split/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 2 (post-Task 89 TurboQuant performance follow-up)

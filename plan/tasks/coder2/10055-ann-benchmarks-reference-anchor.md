@@ -1,5 +1,13 @@
 # Task: ann-benchmarks Reference Anchor Probe
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Motivation: Review 218 item 7 flagged that the real-corpus A4 lane has no
 external oracle. If `build_external_recall_context` or the Qdrant parquet
 converter path (`ecaz corpus prepare`) has a subtle bug, every

@@ -1,5 +1,13 @@
 # Task 105: Production-Target Optimization + Full-Scale Benchmark Sweep
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: COMPLETE — merged to `main` 2026-06-13 (PR #32, merge commit
 `afa7fb28e`). Phase 1 merged earlier (`main=1345ca603`, PR #31); Phase 2
 ran green on both lanes at all four scales (packets 004/005); Phase 3

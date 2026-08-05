@@ -1,5 +1,13 @@
 # Task 132: TQ scorer LUT dimension tiling (durable L1D fix)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **measured - alloc-free driver landed, dimension tiling shelved**
 (2026-07-02; `reviews/task-132/001-alloc-free-batch-driver/`). Owner: Codex.
 Priority: P2 TQ-scorer-speed follow-up to Task 125.

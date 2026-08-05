@@ -1,5 +1,13 @@
 # Task 106: Unified-Driver Coverage Closeout (Targeted Gap Pass)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: complete (2026-06-14, closeout). Evidence: `reviews/task-106/`
 packets 001–004; reviewer judged closeable in
 `reviews/task-106/004-aws-targeted-bench/feedback/2026-06-14-01-reviewer.md`

@@ -1,5 +1,13 @@
 # Task 113: IVF Bound-Aware Candidate Pruning
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **merged to `main` 2026-06-19** (recall-safe code complete; latency
 promotion bench deferred to the Intel bench host). Reviewed in
 `reviews/task-113/001-bound-contract-audit/` (Phase 1) and

@@ -1,5 +1,13 @@
 # Task: Reusable Scratch Buffers for `ProdQuantizer::encode`
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Motivation: `ProdQuantizer::encode` (`src/quant/prod.rs:79`) allocates
 ~6 fresh `Vec<f32>` of size `transform_dim` plus a `Vec<CodeIndex>` of
 size `original_dim` per call. For the `(1536, 4)` real-corpus build

@@ -1,5 +1,13 @@
 # Task 14: ADR-030 V2 Grouped Search-Code Index
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: shelved (2026-05-31) — superseded by Task 15 (PqFastScan first-class)
 and Task 16 (TurboQuant iteration), both landed on `main`. The
 `adr030-v2-grouped-index` branch on origin is retained for history but is not

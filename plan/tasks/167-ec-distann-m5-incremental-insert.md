@@ -1,5 +1,13 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: partial / requires physical-generation adaptation (2026-07-10).
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
 (gate verdict remains committed scope unless the operator explicitly descopes

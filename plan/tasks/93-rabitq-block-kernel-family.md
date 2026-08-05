@@ -1,5 +1,13 @@
 # Task 93: RaBitQ Block Kernel Family (All AMs × All ISAs)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: complete (2026-06-10, closeout `reviews/task-93/007-closeout-status/`,
 reviewer-approved with owner lane decisions recorded 2026-06-10: the
 Graviton SVE lane and the Intel AVX2 measurement are both explicitly

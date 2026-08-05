@@ -1,5 +1,13 @@
 # Task 30 Phase 12c: SPIRE Test Coverage
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: CLOSED on `task-30-spire` (2026-05-15). Final closeout packet:
 `764-c1-spire-phase12c-final-closeout`; live 12c.4 READ schema-drift guard:
 `763-c1-spire-read-schema-drift-guard`.

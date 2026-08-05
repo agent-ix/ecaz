@@ -1,5 +1,13 @@
 # Task 111d: IVF Pre-Transposed Canonical Block Geometry
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **won't pursue** (2026-06-17; closed by Task 111c packet
 `reviews/task-111c/005-closeout-status/`). Task 111c packet 004 exhausted the
 page-scatter locality lever and the reviewer explicitly recommended stopping

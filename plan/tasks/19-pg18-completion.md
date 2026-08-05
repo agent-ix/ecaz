@@ -1,5 +1,13 @@
 # Task 19: PG18 Completion — Flip from Scaffolding to Primary Target
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-16) — the shared PG18 infrastructure slice is wired and validated on `main` (`task19-parallel-index-build` merged), PG17 fallback is preserved, preload-aware shared-pgstat activation coverage has a dedicated repo lane, parallel-scan callbacks are shelved indefinitely, and the only residual was optional ReadStream measurement.
 
 Executes ADR-016 (PG18 primary target) and ADR-017 (module identity).

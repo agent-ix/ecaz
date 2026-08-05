@@ -1,5 +1,13 @@
 # Task 192: ec_distann Owner Endpoint Validation Amortization
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete — PROMOTE to Task 195** (2026-07-21). Priority: P1 latency follow-up to
 Task 187's STOP. Roadmap candidates: `MAT-37` and `MAT-38` (their
 "catalog/open share" trigger is now measured — see Entry gate).

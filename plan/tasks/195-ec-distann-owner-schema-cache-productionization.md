@@ -1,5 +1,13 @@
 # Task 195: ec_distann Owner Schema Cache Productionization
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete — outside-reviewed ACCEPT; PROMOTE** (2026-07-22).
 Priority: P1. Promotes Task 192's measured `MAT-37`/`MAT-38` winner without
 carrying benchmark controls into production.

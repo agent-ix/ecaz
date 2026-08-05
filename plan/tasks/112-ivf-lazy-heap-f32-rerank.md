@@ -1,5 +1,13 @@
 # Task 112: IVF Lazy Heap-F32 Rerank
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **infrastructure merged to `main` 2026-06-19; latency win is conditional
 and deferred (not realized).** Phases 1–4 (lazy-rerank driver + correctness
 contract + `ec_ivf.lazy_heap_rerank` gate + considered/skipped counters) landed

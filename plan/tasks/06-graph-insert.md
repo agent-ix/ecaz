@@ -1,5 +1,13 @@
 # Task 06: Graph-Aware Insert
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: complete on `main` — graph-aware insert is the live insert path
 for HNSW (A1–A5 slices all landed). Subsequent AM insert paths (IVF, DiskANN,
 SPIRE) are owned by their respective access-method tasks. Last packet:

@@ -1,5 +1,13 @@
 # Task 73: SPIRE Recall Characterization + Routing-Quality Slices
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: complete (2026-05-31, closeout `reviews/task-73/002-closeout/`, reviewer acceptance `reviews/task-73/003-completion-audit/feedback/2026-05-31-01-reviewer.md`, follow-up acknowledgements `reviews/task-73/004-reviewer-followup/`)
 Owner: coder (to be assigned). One coder, one branch.
 Priority: 1 (publishable competitive concern; recall gap vs other AMs is the load-bearing finding)

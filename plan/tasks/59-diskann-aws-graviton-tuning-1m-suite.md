@@ -1,5 +1,13 @@
 # Task 59: DiskANN AWS Graviton Tuning and 1M Benchmark Suite
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-16) — AWS Graviton DiskANN tuning + full
 `ecaz bench suite` through 1M landed and reviewer-accepted: 1M suite
 completed end-to-end (0.9655 recall@10 @ 5.2 ms p50; 455 MiB index) and

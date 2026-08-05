@@ -1,5 +1,13 @@
 # Task 52: Common P8 Finish — Typed Shared-Header + ShmToc Wrappers
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete** (2026-06-16) — additive P8 typed shared-header /
 ShmToc wrappers landed on `main` via `Merge task-52-reconcile`
 (`833f29cba`); reviewer ACK `1b0cff66c`. Packets under

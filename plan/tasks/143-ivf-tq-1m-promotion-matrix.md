@@ -1,5 +1,13 @@
 # Task 143: IVF TQ 1m promotion matrix (layout × scorer defaults)
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **complete — defaults landed** (2026-07-03, operator-approved). Owner: Codex. Priority: P2
 
 Outcome: both defaults flipped at `815518d82` and confirmed on the pure

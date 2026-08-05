@@ -1,5 +1,13 @@
 # Task 131: SPIRE Streaming Global Top-K Pruning
 
+> **MULTI-NODE MEASUREMENT RULE (NON-NEGOTIABLE).** Any decision about
+> distributed behavior — latency, recall, storage, or overhead — MUST be measured
+> on a multi-node configuration. A single-node / single-instance arm is NEVER
+> acceptable as the basis for a decision about a distributed algorithm; its only
+> permitted use is a clearly labeled baseline that quantifies distribution
+> overhead. Label every reported number with its arm's node count. See
+> AGENTS.md → "Distributed Measurement: Multi-Node Arms Only".
+
 Status: **closed — shelved after accepted revised closeout** (2026-07-02; see
 `reviews/task-131/028-revised-closeout-decision/feedback/2026-07-02-01-reviewer.md`):
 packet 028 was accepted as the final closeout. The task shelves streaming
