@@ -308,6 +308,7 @@ pub(crate) struct DistannHitCollection {
     pub(crate) hits: Vec<DistannScanHit>,
     pub(crate) counters: DistannScanCounters,
     pub(crate) multi_node: bool,
+    pub(crate) head_seed_count: usize,
 }
 
 /// Shared FR-080/FR-081 search core: head-index descent → seeds → (single- or
@@ -352,6 +353,7 @@ pub(crate) unsafe fn collect_distann_hits(
             hits: Vec::new(),
             counters: DistannScanCounters::default(),
             multi_node: false,
+            head_seed_count: 0,
         };
     }
     if raw_query.len() != usize::from(metadata.dimensions) {
@@ -566,6 +568,7 @@ pub(crate) unsafe fn collect_distann_hits(
         hits,
         counters,
         multi_node,
+        head_seed_count: seeds.len(),
     }
 }
 
@@ -611,33 +614,12 @@ unsafe fn execute_distann_scan(
             true,
         );
 
-        if options::scan_profile_notice_enabled() {
-            let counters = &collection.counters;
-            pgrx::notice!(
-                "ec_distann_scan_profile beam_width={} hop_rounds={} top_k={} rounds_executed={} records_expanded={} neighbors_code_scored={} early_exit={} beam_exhausted={} result_count={}",
-                options::current_beam_width(),
-                options::current_hop_rounds(),
-                effective_top_k,
-                counters.rounds_executed,
-                counters.records_expanded,
-                counters.neighbors_code_scored,
-                counters.early_exit,
-                counters.beam_exhausted,
-                collection.hits.len(),
-            );
-            for round in &counters.rounds {
-                pgrx::notice!(
-                    "ec_distann_scan_round round={} requested_nodes={} expanded_nodes={} transport_wait_ns={} straggler_spread_ns={} request_bytes={} response_bytes={}",
-                    round.round,
-                    round.requested_nodes,
-                    round.expanded_nodes,
-                    round.transport_wait_ns,
-                    round.straggler_spread_ns,
-                    round.request_bytes,
-                    round.response_bytes,
-                );
-            }
-        }
+        super::generation_read::emit_scan_profile_notice(
+            &collection.counters,
+            effective_top_k,
+            collection.head_seed_count,
+            collection.hits.len(),
+        );
         opaque.early_exit = collection.counters.early_exit;
         opaque.proven_k = effective_top_k;
         opaque.result_buf = collection.hits;

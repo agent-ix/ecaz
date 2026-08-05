@@ -4565,10 +4565,20 @@ async fn run_physical_benchmarks(
                 "production head-policy attestation mismatch: requested {production_policy}, got {attested_policy}"
             );
         }
+        let construction = coordinator
+            .query_one(
+                "SELECT head_construction, marker_attested
+                   FROM ec_distann_active_head_construction('dm_idx'::regclass)",
+                &[],
+            )
+            .await
+            .wrap_err("attesting Task 207 active physical head construction")?;
         Some(format!(
-            "physical_benchmark_head_policy scale={scale} policy={} scoring_mode={} training_queries={} training_query_digest={} head_index_cap={} returned_seed_count={} sample_count={} head_sample_digest={}",
+            "physical_benchmark_head_policy scale={scale} policy={} scoring_mode={} head_construction={} head_construction_marker_attested={} training_queries={} training_query_digest={} head_index_cap={} returned_seed_count={} sample_count={} head_sample_digest={}",
             attested_policy,
             policy.get::<_, String>(1),
+            construction.get::<_, String>(0),
+            construction.get::<_, bool>(1),
             policy.get::<_, i32>(2),
             policy.get::<_, String>(3),
             policy.get::<_, i32>(4),

@@ -555,6 +555,10 @@ CREATE TABLE ec_distann_generation_head_state (
     training_query_digest bytea NOT NULL CHECK (octet_length(training_query_digest) = 32),
     head_graph_entry integer NOT NULL CHECK (head_graph_entry >= 0),
     head_graph_digest bytea NOT NULL CHECK (octet_length(head_graph_digest) = 32),
+    -- Task 207: the physical head construction is persisted with the active
+    -- candidate so a benchmark cannot confuse a requested reloption with the
+    -- construction that was actually activated.
+    head_construction smallint NOT NULL CHECK (head_construction IN (0, 1)),
     -- Membership-only head (NFR-021 clause 3, Task 210): the coordinator's
     -- entire head persistence is this bounded id list (u32 count + u64 ids,
     -- canonical LE); the sample table then holds zero rows for the build.

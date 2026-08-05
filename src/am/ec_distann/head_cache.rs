@@ -102,6 +102,21 @@ impl DistannCacheKey {
 
 type CacheMap = VecDeque<(DistannCacheKey, Arc<DistannIndexCacheEntry>)>;
 
+fn evict_oldest_for_index<T>(cache: &mut VecDeque<(DistannCacheKey, T)>, index_oid: u32) {
+    let matching = cache
+        .iter()
+        .filter(|(key, _)| key.index_oid == index_oid)
+        .count();
+    if matching <= 2 {
+        return;
+    }
+    let position = cache
+        .iter()
+        .rposition(|(key, _)| key.index_oid == index_oid)
+        .expect("matching cache entry exists");
+    cache.remove(position);
+}
+
 fn cache() -> &'static Mutex<CacheMap> {
     static CACHE: OnceLock<Mutex<CacheMap>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(VecDeque::new()))
@@ -145,18 +160,7 @@ pub(crate) fn cached_index_entry(
     // makes three indexes thrash one another in a backend that alternates
     // scans; retain unrelated indexes and evict only the oldest entry for the
     // index being inserted.
-    let mut seen_for_index = 0_usize;
-    let mut position = cache.len();
-    while position > 0 {
-        position -= 1;
-        if cache[position].0.index_oid == index_oid {
-            seen_for_index += 1;
-            if seen_for_index > 2 {
-                cache.remove(position);
-                break;
-            }
-        }
-    }
+    evict_oldest_for_index(&mut cache, index_oid);
     Ok(entry)
 }
 
@@ -223,4 +227,38 @@ fn build_cache_entry(
         head_vectors,
         flat_codebooks,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn key(index_oid: u32, epoch: u8) -> DistannCacheKey {
+        DistannCacheKey {
+            index_oid,
+            logical_index_uuid: [index_oid as u8; 16],
+            build_id: [epoch; 16],
+            epoch_fingerprint: [epoch; 32],
+        }
+    }
+
+    #[test]
+    fn cache_eviction_removes_oldest_matching_index() {
+        let mut cache = VecDeque::from([
+            (key(7, 3), ()),
+            (key(7, 2), ()),
+            (key(7, 1), ()),
+            (key(9, 1), ()),
+        ]);
+
+        evict_oldest_for_index(&mut cache, 7);
+
+        let epochs = cache
+            .iter()
+            .filter(|(entry, _)| entry.index_oid == 7)
+            .map(|(entry, _)| entry.build_id[0])
+            .collect::<Vec<_>>();
+        assert_eq!(epochs, vec![3, 2]);
+        assert!(cache.iter().any(|(entry, _)| entry.index_oid == 9));
+    }
 }

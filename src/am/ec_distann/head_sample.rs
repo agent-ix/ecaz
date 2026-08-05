@@ -861,6 +861,7 @@ pub(crate) fn persist_head_sample(
     sample: &DistannHeadSample,
     graph: &DistannPersistedHeadGraph,
     build_options: super::generation_descriptor::DistannBuildOptions,
+    head_construction: super::options::HeadConstruction,
     membership_only: bool,
 ) -> Result<(), String> {
     graph.validate(sample.entries.len(), usize::MAX)?;
@@ -879,10 +880,12 @@ pub(crate) fn persist_head_sample(
                      index_oid, logical_index_uuid, build_id, dimensions,
                      sample_count, head_sample_digest,
                      head_policy, training_query_count, training_query_digest,
-                     head_graph_entry, head_graph_digest, membership
+                     head_graph_entry, head_graph_digest, membership,
+                     head_construction
                  ) VALUES ($1::oid, $2::uuid, $3::uuid, $4::integer,
                            $5::integer, $6::bytea, $7::smallint, $8::integer,
-                           $9::bytea, $10::integer, $11::bytea, $12::bytea)"
+                           $9::bytea, $10::integer, $11::bytea, $12::bytea,
+                           $13::smallint)"
             ),
             None,
             &[
@@ -909,6 +912,7 @@ pub(crate) fn persist_head_sample(
                     None::<Vec<u8>>
                 }
                 .into(),
+                i16::from(head_construction as u8).into(),
             ],
         )
         .map_err(|error| format!("EC_HEAD_SAMPLE: state insert failed: {error}"))?;

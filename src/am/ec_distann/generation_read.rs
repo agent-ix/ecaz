@@ -45,6 +45,66 @@ pub(crate) struct ActiveGenerationIdentity {
     pub(crate) fingerprint: [u8; 34],
 }
 
+pub(crate) fn emit_scan_profile_notice(
+    counters: &super::scan::DistannScanCounters,
+    top_k: usize,
+    head_seed_count: usize,
+    result_count: usize,
+) {
+    if !super::options::scan_profile_notice_enabled() {
+        return;
+    }
+    pgrx::notice!(
+        "ec_distann_scan_profile beam_width={} hop_rounds={} top_k={} head_seed_count={} rounds_executed={} records_expanded={} neighbors_code_scored={} early_exit={} beam_exhausted={} result_count={}",
+        super::options::current_beam_width(),
+        super::options::current_hop_rounds(),
+        top_k,
+        head_seed_count,
+        counters.rounds_executed,
+        counters.records_expanded,
+        counters.neighbors_code_scored,
+        counters.early_exit,
+        counters.beam_exhausted,
+        result_count,
+    );
+    for round in &counters.rounds {
+        // The physical expander reports requested response slots here, not
+        // a measured count of records actually expanded. Keep that distinction
+        // visible instead of publishing a misleading numeric zero/count.
+        let expanded_nodes = "unmeasured";
+        let transport_wait_ns = if cfg!(feature = "distann-head-attribution-benchmark") {
+            round.transport_wait_ns.to_string()
+        } else {
+            "absent".to_owned()
+        };
+        let straggler_spread_ns = if cfg!(feature = "distann-head-attribution-benchmark") {
+            round.straggler_spread_ns.to_string()
+        } else {
+            "absent".to_owned()
+        };
+        let request_bytes = if cfg!(feature = "distann-head-attribution-benchmark") {
+            round.request_bytes.to_string()
+        } else {
+            "absent".to_owned()
+        };
+        let response_bytes = if cfg!(feature = "distann-head-attribution-benchmark") {
+            round.response_bytes.to_string()
+        } else {
+            "absent".to_owned()
+        };
+        pgrx::notice!(
+            "ec_distann_scan_round round={} requested_nodes={} expanded_nodes={} transport_wait_ns={} straggler_spread_ns={} request_bytes={} response_bytes={}",
+            round.round,
+            round.requested_nodes,
+            expanded_nodes,
+            transport_wait_ns,
+            straggler_spread_ns,
+            request_bytes,
+            response_bytes,
+        );
+    }
+}
+
 fn graph_slot_attr(
     slot: &TupleTableSlotGuard<'_>,
     attnum: i32,
@@ -2804,6 +2864,78 @@ fn ec_distann_active_head_policy(
     TableIterator::once(result)
 }
 
+/// Surface the physical head-construction marker persisted with the active
+/// generation head state. This is deliberately separate from the existing
+/// policy function so its stable return shape remains compatible with older
+/// clients.
+#[pg_extern(stable, strict)]
+fn ec_distann_active_head_construction(
+    index_regclass: PgRelation,
+) -> TableIterator<
+    'static,
+    (
+        name!(head_construction, String),
+        name!(marker_attested, bool),
+    ),
+> {
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    let result = (|| -> Result<_, String> {
+        let (control, _handle, _metadata, logical_index_uuid) =
+            super::generation_store::open_control_index(
+                index_oid,
+                pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                "ec_distann_active_head_construction",
+            )?;
+        drop(control);
+        let active = generation_catalog::extension_relation_name("ec_distann_active_epoch")?;
+        let state =
+            generation_catalog::extension_relation_name("ec_distann_generation_head_state")?;
+        Spi::connect(|client| {
+            client
+                .select(
+                    &format!(
+                        "SELECT state.head_construction
+                           FROM {active} active
+                           JOIN {state} state
+                             USING (index_oid, logical_index_uuid, build_id)
+                          WHERE active.index_oid = $1::oid
+                            AND active.logical_index_uuid = $2::uuid"
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into()],
+                )
+                .map_err(|error| {
+                    format!("EC_HEAD_SAMPLE: active construction lookup failed: {error}")
+                })?
+                .map(|row| {
+                    let value = row["head_construction"]
+                        .value::<i16>()
+                        .map_err(|error| {
+                            format!("EC_HEAD_SAMPLE: head construction decode failed: {error}")
+                        })?
+                        .ok_or_else(|| "head construction marker NULL".to_owned())?;
+                    let construction = match value {
+                        0 => "stitched_bfs",
+                        1 => "partition_union",
+                        other => {
+                            return Err(format!(
+                                "EC_HEAD_SAMPLE: invalid head construction marker {other}"
+                            ))
+                        }
+                    };
+                    Ok((construction.to_owned(), true))
+                })
+                .next()
+                .transpose()
+                .map_err(|error| format!("EC_HEAD_SAMPLE: active construction decode failed: {error}"))?
+                .ok_or_else(|| "EC_GENERATION_MISSING: active head construction is absent".to_owned())
+        })
+    })()
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    TableIterator::once(result)
+}
+
 /// Records the active physical neighbor-scoring strategy in benchmark
 /// provenance. Production builds can only attest the persisted RaBitQ path.
 #[pg_extern(stable, parallel_safe)]
@@ -3318,6 +3450,7 @@ impl PhysicalGenerationScan {
                 hits: Vec::new(),
                 counters: Default::default(),
                 multi_node: self.routes.len() > 1,
+                head_seed_count: 0,
             });
         }
 
@@ -3391,11 +3524,19 @@ impl PhysicalGenerationScan {
                             super::stage_counters::DistannQueryStage::TraversalTotal,
                             traversal_started.elapsed(),
                         );
-                        return Ok(DistannHitCollection {
+                        let collection = DistannHitCollection {
                             hits,
                             counters,
                             multi_node: self.routes.len() > 1,
-                        });
+                            head_seed_count: all_seeds.len(),
+                        };
+                        emit_scan_profile_notice(
+                            &collection.counters,
+                            effective_top_k,
+                            collection.head_seed_count,
+                            collection.hits.len(),
+                        );
+                        return Ok(collection);
                     }
                     Err(error) => {
                         let reason = bounded_replica_failure_reason(
@@ -3492,11 +3633,19 @@ impl PhysicalGenerationScan {
             super::stage_counters::DistannQueryStage::TraversalTotal,
             traversal_started.elapsed(),
         );
-        Ok(DistannHitCollection {
+        let collection = DistannHitCollection {
             hits,
             counters,
             multi_node: self.routes.len() > 1,
-        })
+            head_seed_count: all_seeds.len(),
+        };
+        emit_scan_profile_notice(
+            &collection.counters,
+            effective_top_k,
+            collection.head_seed_count,
+            collection.hits.len(),
+        );
+        Ok(collection)
     }
 
     /// Whether head-shard replicas were populated for this epoch (Task 210 P2b).
