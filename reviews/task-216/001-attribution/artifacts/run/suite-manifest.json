@@ -1,0 +1,98 @@
+{
+  "suite": "task216-100k-attribution",
+  "schema_version": 1,
+  "config": "reviews/task-216/001-attribution/artifacts/task216-100k-attribution.json",
+  "config_sha256": "1d47d75edd8352973e39e69327a5e6929b97321e6be4621119fc088b543a6cb8",
+  "dry_run": false,
+  "generated_at_unix_ms": 1786037362160,
+  "runner_git_commit": "c09c9113f3f48dcbd0f5acf7c3b8a96888d00764",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "task216-100k-production-control",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-216/001-attribution/artifacts/run/100k-production-control",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task216-attribution-100k",
+        "--log-file",
+        "reviews/task-216/001-attribution/artifacts/run/100k-production-control/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--base-port",
+        "42320",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "production-control:persisted_head:32:32:rabitq:0:off:4:100:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task216",
+        "attribution",
+        "control",
+        "ec_real_100k",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production-control",
+          "id": "task216-production-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh 100k sharded-owner control using shipped BW4/H100/L32 behavior; full-metrics feature instrumentation is diagnostic only and is not a release-latency decision arm."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-216/001-attribution/artifacts/run/100k-production-control/distann-multinode-summary.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1786037362181,
+      "finished_at_unix_ms": 1786039245128,
+      "duration_ms": 1969707,
+      "exit_code": 0
+    }
+  ]
+}

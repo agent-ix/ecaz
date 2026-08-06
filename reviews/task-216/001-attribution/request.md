@@ -36,3 +36,21 @@ candidate is advanced by this pre-registration.
 The Task 215 release matrix is still active. Its results will not be mixed
 with this attribution lane; any wide-beam diagnostic view will be labeled
 secondary and non-decision evidence.
+
+## Completed diagnostic
+
+The fresh 100k attribution run completed and is recorded in `artifacts/run/`.
+The compact disposition is in `artifacts/attribution-disposition.md`; the
+source of truth remains `artifacts/run/results.jsonl` and the packet-local
+summary/latency logs. The run is attribution-only: no source change and no
+Task 215 BW64/H8 stacking.
+
+The measured dominant region is owner endpoint/payload SQL materialization,
+not traversal response encoding. `MAT-15` is the strongest next isolated
+hypothesis, `MAT-21` is secondary, and `TRAV-05` is rejected by the stage
+split. No candidate advances in this packet.
+
+The suite’s physical step succeeded and topology/serving/reconciliation gates
+passed. Its final NFR-021 registration assertion reported `unavailable` because
+the diagnostic intentionally has only one scale; this limitation is recorded
+explicitly and does not make the run a conforming release decision cell.
