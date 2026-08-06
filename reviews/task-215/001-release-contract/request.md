@@ -4,11 +4,12 @@ This packet requests review of the BW64/H8 productionization contract before
 the default-change code checkpoint and normal PG18 release A/B.
 
 The candidate is exactly the review-closed Task 206 point: BW64/H8, production
-head seed derivation yielding 128 effective seeds, and the already-reviewed
-Task 205 `candidate_heap_limit=32` path. The control remains BW4/H100 with
-the same L=32 owner-traversal surface. The contract changes no persisted
-format or index lifecycle behavior and provides SQL/session rollback to the
-current defaults.
+head seed derivation yielding 128 effective seeds, and the same
+`candidate_heap_limit=32` session GUC used by the control. The runtime's
+existing safety clamp makes the effective candidate heap at least the beam
+width, so the release arm records effective L=64 for BW64; control remains
+effective L=32. The contract changes no persisted format or index lifecycle
+behavior and provides SQL/session rollback to the current defaults.
 
 Please review `artifacts/release-contract.md` and
 `artifacts/manifest.md`. The packet intentionally makes no default-change or

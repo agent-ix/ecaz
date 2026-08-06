@@ -9,7 +9,10 @@ The production default change is limited to the two FR-081 search-budget GUCs:
 | `ec_distann.beam_width` | 4 | 64 |
 | `ec_distann.hop_rounds` | 100 | 8 |
 
-`ec_distann.candidate_heap_limit` remains 32. With the normal production head
+`ec_distann.candidate_heap_limit` remains 32 as a session GUC. The existing
+runtime safety clamp resolves the effective heap to at least the beam width,
+so the control executes with effective L=32 while BW64 executes with effective
+L=64; this is not a new index or benchmark-only behavior. With the normal production head
 derivation, `head_search_width = (beam_width * 2).max(32)` and the effective
 seed count follows that width: 32 in the control and 128 in the candidate.
 No benchmark-only seed override is part of the candidate.
