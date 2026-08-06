@@ -24,6 +24,15 @@ p99 54.70 ms, max 55.60 ms.
 
 The full-metrics stage decomposition, in milliseconds per scan, was:
 
+Denominator note: `custom_scan_total`, `traversal_total`, and the other
+scan-level rows are per-scan totals. The rows whose counters have
+`samples=100`—including `materialize_owner_endpoint_work`,
+`materialize_owner_payload_sql_work`, and `materialize_request_roundtrip_work`—
+sum wall time from two remote owners across 50 scans. Their corresponding
+per-owner means are approximately 20.291, 19.690, and 23.053 ms/owner/scan;
+the summed values are retained because they describe total remote owner work,
+but must not be read as a single-owner or additive whole-scan duration.
+
 | Stage | Mean ms |
 | --- | ---: |
 | `custom_scan_total` | 37.208 |
