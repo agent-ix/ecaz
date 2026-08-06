@@ -31,6 +31,10 @@ rows are in `artifacts/run-r2/results.jsonl`, and the generated report is in
 - Entry-gate accounting: standalone Task 208/210 evidence was skipped. The
   matrix's topology/engagement/storage rows are cited as matrix evidence only,
   not as a replacement for those entry-gate packets.
+- Mechanism-view accounting: full-metrics hop/round/work/byte counters were
+  deliberately skipped from the uninstrumented release decision arms; the
+  labeled owner-side diagnostic is separately recorded in
+  `reviews/task-216/001-attribution/` and is not pooled with this matrix.
 - Run captured: `2026-08-06T17:16:49Z` manifest/report audit
 - Config SHA256: `3c9e3bf558070ff08a83b1c8e95862fd647a5a92619aa8a205ad6e24ab1ae035`
 - Suite manifest SHA256: `afa4cab65d37c1c48ffbfd9e6a98048d3376ef350e0f7e3346b60487cda31a38`

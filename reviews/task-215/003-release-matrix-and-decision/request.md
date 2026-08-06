@@ -19,3 +19,6 @@ ms rows: Task 206 used top-k 200/L200, while this release gate used top-k 10
 and effective L64. The higher-recall/lower-latency trade is explicitly rejected
 under the recall-equivalence clause, and the skipped standalone Task 208/210
 entry-gate evidence is declared in `artifacts/decision.md` and the manifest.
+The packet also explicitly records why mechanism counters were not added to
+the uninstrumented release arms: Task 216 owns that separate diagnostic view,
+and its feature-build latency is not release-decision evidence.

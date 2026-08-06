@@ -58,6 +58,19 @@ and NFR rows, but those rows are not being represented as a substitute for
 the required accepted Task 208/210 evidence. This omission does not change the
 STOP verdict; it prevents any promotion claim beyond the measured matrix.
 
+## Mechanism-view accounting
+
+The normal-release matrix deliberately did not add full-metrics hop,
+per-round, expanded-work, or request/response-byte instrumentation to the six
+decision arms. The STOP is therefore based only on the release-contract
+surfaces actually measured here: recall/CI, end-to-end latency and tails,
+storage, topology/engagement, and release provenance. Adding an attribution
+feature to these arms would have changed the release-latency surface and would
+not have been a clean decision A/B. The separate Task 216 packet now supplies
+the labeled owner-side mechanism view; its diagnostic latency is not pooled
+with this release matrix. No missing mechanism row is being treated as a
+positive release result, and no benchmark rerun is required for this STOP.
+
 All six arms were normal PG18 release builds at source SHA
 `ea51a9c8bdce1f412652ac743ae0d055af8daa76`, with three sharded owners, no
 coordinator full-graph replica, no attribution feature, and no Task 216
