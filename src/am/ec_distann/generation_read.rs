@@ -1363,9 +1363,8 @@ impl RetainedGenerationScan {
             self.descriptor.placement_hash_version,
         )
         .map_err(DistannExpandError::BadInput)?;
-        let shard_ordinal = u32::try_from(shard_ordinal).map_err(|_| {
-            DistannExpandError::Internal("shard ordinal exceeds u32".to_owned())
-        })?;
+        let shard_ordinal = u32::try_from(shard_ordinal)
+            .map_err(|_| DistannExpandError::Internal("shard ordinal exceeds u32".to_owned()))?;
         // The shard is epoch-immutable and its build is deterministic in every
         // keyed input, so it is built once per backend per epoch, not per RPC.
         let shard_key = owner_head_shard_key(
@@ -1840,26 +1839,34 @@ impl RetainedGenerationScan {
                         ))
                     })?
                     .unwrap_or_default();
+                let offsets = row["payload_offsets"]
+                    .value::<Vec<i64>>()
+                    .map_err(|error| {
+                        DistannExpandError::Internal(format!(
+                            "physical payload offsets decode failed: {error}"
+                        ))
+                    })?
+                    .unwrap_or_default();
                 let values = row["payload_values"]
-                    .value::<pgrx::datum::Array<&[u8]>>()
+                    .value::<Vec<u8>>()
                     .map_err(|error| {
                         DistannExpandError::Internal(format!(
                             "physical payload values decode failed: {error}"
                         ))
                     })?
-                    .map(|array| {
-                        array
-                            .iter_deny_null()
-                            .map(<[u8]>::to_vec)
-                            .collect::<Vec<_>>()
-                    })
                     .unwrap_or_default();
-                if nulls.len() != column_count || values.len() != column_count {
+                let final_offset = offsets.last().copied().unwrap_or(0);
+                let offsets_valid = offsets.windows(2).all(|window| window[0] <= window[1])
+                    && final_offset >= 0
+                    && usize::try_from(final_offset)
+                        .ok()
+                        .is_some_and(|end| end == values.len());
+                if nulls.len() != column_count || offsets.len() != column_count || !offsets_valid {
                     return Err(DistannExpandError::Internal(
-                        "physical payload column count mismatch".to_owned(),
+                        "physical packed payload shape mismatch".to_owned(),
                     ));
                 }
-                Ok((missing, nulls, values))
+                Ok((missing, nulls, offsets, values))
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()
         })?;
@@ -1871,12 +1878,13 @@ impl RetainedGenerationScan {
         let rows = nodes
             .into_iter()
             .zip(payloads)
-            .map(|(node, (missing, nulls, values))| {
+            .map(|(node, (missing, nulls, offsets, values))| {
                 (
                     i64::from_le_bytes(node.vec_id.to_le_bytes()),
                     node.tombstoned,
                     missing,
                     nulls,
+                    offsets,
                     values,
                 )
             })
@@ -1934,7 +1942,7 @@ fn ec_distann_debug_retained_epoch_cache_contains(
 }
 
 type PhysicalExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
-type PhysicalPayloadRow = (i64, bool, bool, Vec<bool>, Vec<Vec<u8>>);
+type PhysicalPayloadRow = (i64, bool, bool, Vec<bool>, Vec<i64>, Vec<u8>);
 
 struct PhysicalPayloadBatch {
     rows: Vec<PhysicalPayloadRow>,
@@ -2029,7 +2037,14 @@ fn expand_physical_nodes_impl(
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
         .collect::<Vec<_>>();
     RetainedGenerationScan::open(index_oid, epoch_fingerprint)?
-        .expand(query, query_digest, &ids, code_threshold, candidate_limit, &skip)
+        .expand(
+            query,
+            query_digest,
+            &ids,
+            code_threshold,
+            candidate_limit,
+            &skip,
+        )
         .map(|expanded| {
             expanded
                 .into_iter()
@@ -2286,11 +2301,7 @@ fn populate_head_replicas_impl(
                      DO UPDATE SET replica_count = EXCLUDED.replica_count"
                 ),
                 None,
-                &[
-                    index_oid.into(),
-                    fingerprint.into(),
-                    replica_count.into(),
-                ],
+                &[index_oid.into(), fingerprint.into(), replica_count.into()],
             )
             .map_err(|error| {
                 DistannExpandError::Internal(format!("recording head replica state: {error}"))
@@ -2984,8 +2995,12 @@ fn ec_distann_active_head_construction(
                 })
                 .next()
                 .transpose()
-                .map_err(|error| format!("EC_HEAD_SAMPLE: active construction decode failed: {error}"))?
-                .ok_or_else(|| "EC_GENERATION_MISSING: active head construction is absent".to_owned())
+                .map_err(|error| {
+                    format!("EC_HEAD_SAMPLE: active construction decode failed: {error}")
+                })?
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: active head construction is absent".to_owned()
+                })
         })
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"));
@@ -3021,7 +3036,8 @@ fn ec_distann_materialize_physical_row_payloads(
         name!(is_tombstone, bool),
         name!(tuple_payload_missing, bool),
         name!(payload_nulls, Vec<bool>),
-        name!(payload_values, Vec<Vec<u8>>),
+        name!(payload_offsets, Vec<i64>),
+        name!(payload_values, Vec<u8>),
     ),
 > {
     let ids = vec_ids
@@ -3063,7 +3079,8 @@ fn ec_distann_materialize_physical_row_payloads_profile(
         name!(is_tombstone, bool),
         name!(tuple_payload_missing, bool),
         name!(payload_nulls, Vec<bool>),
-        name!(payload_values, Vec<Vec<u8>>),
+        name!(payload_offsets, Vec<i64>),
+        name!(payload_values, Vec<u8>),
         name!(owner_total_ns, i64),
         name!(owner_open_validate_ns, i64),
         name!(owner_node_lookup_ns, i64),
@@ -3095,11 +3112,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     let payload_bytes = batch
         .rows
         .iter()
-        .map(|(_, _, _, nulls, values)| {
-            nulls
-                .len()
-                .saturating_add(values.iter().map(Vec::len).sum::<usize>())
-        })
+        .map(|(_, _, _, nulls, _offsets, values)| nulls.len().saturating_add(values.len()))
         .sum::<usize>();
     let owner_total_ns = i64::try_from(owner_total_ns).unwrap_or(i64::MAX);
     let owner_open_validate_ns = i64::try_from(owner_open_validate_ns).unwrap_or(i64::MAX);
@@ -3113,6 +3126,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             row.2,
             row.3,
             row.4,
+            row.5,
             owner_total_ns,
             owner_open_validate_ns,
             owner_node_lookup_ns,
@@ -3143,7 +3157,8 @@ pub(crate) struct PhysicalGenerationScan {
 
 pub(crate) struct PhysicalRemotePayload {
     pub(crate) payload_nulls: Vec<bool>,
-    pub(crate) payload_values: Vec<Vec<u8>>,
+    pub(crate) payload_offsets: Vec<i64>,
+    pub(crate) payload_values: Vec<u8>,
 }
 
 fn bounded_replica_failure_reason(kind: &str, error: &str) -> String {
@@ -3260,64 +3275,65 @@ impl PhysicalGenerationScan {
             );
         }
 
-        let (descriptor, descriptor_digest, head_index, mut gateway_copies, mut crown) = if let Some(cached) =
-            cached_physical_epoch(index_oid, logical_index_uuid, &active)
-        {
-            (
-                cached.descriptor,
-                cached.descriptor_digest,
-                cached.head_index,
-                cached.gateway_copies,
-                cached.crown,
-            )
-        } else {
-            let candidate = super::build_coordinator::load_build_candidate(
-                index_oid,
-                logical_index_uuid,
-                active.build_id,
-            )?
-            .ok_or_else(|| "EC_GENERATION_MISSING: active build candidate is absent".to_owned())?;
-            let descriptor = Arc::new(DistannGenerationDescriptor::decode(
-                &candidate.generation_descriptor,
-            )?);
-            let descriptor_digest = descriptor.digest()?;
-            if descriptor_digest != candidate.generation_descriptor_digest
-                || descriptor.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes()
-            {
-                return Err(
-                    "EC_GENERATION_DESCRIPTOR: active generation descriptor identity mismatch"
-                        .to_owned(),
-                );
-            }
-            let head_index = {
-                let (head_sample, head_graph, manifest_build_options) =
-                    super::head_sample::load_head_sample(
-                        index_oid,
-                        logical_index_uuid,
-                        active.build_id,
-                        &active.fingerprint,
-                    )?;
-                super::head_sample::DistannPhysicalHeadIndex::load(
-                    head_sample,
-                    head_graph,
-                    usize::from(manifest_build_options.graph_degree),
-                    manifest_build_options.options.head_policy,
+        let (descriptor, descriptor_digest, head_index, mut gateway_copies, mut crown) =
+            if let Some(cached) = cached_physical_epoch(index_oid, logical_index_uuid, &active) {
+                (
+                    cached.descriptor,
+                    cached.descriptor_digest,
+                    cached.head_index,
+                    cached.gateway_copies,
+                    cached.crown,
+                )
+            } else {
+                let candidate = super::build_coordinator::load_build_candidate(
+                    index_oid,
+                    logical_index_uuid,
+                    active.build_id,
                 )?
-                .map(Arc::new)
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: active build candidate is absent".to_owned()
+                })?;
+                let descriptor = Arc::new(DistannGenerationDescriptor::decode(
+                    &candidate.generation_descriptor,
+                )?);
+                let descriptor_digest = descriptor.digest()?;
+                if descriptor_digest != candidate.generation_descriptor_digest
+                    || descriptor.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes()
+                {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: active generation descriptor identity mismatch"
+                            .to_owned(),
+                    );
+                }
+                let head_index = {
+                    let (head_sample, head_graph, manifest_build_options) =
+                        super::head_sample::load_head_sample(
+                            index_oid,
+                            logical_index_uuid,
+                            active.build_id,
+                            &active.fingerprint,
+                        )?;
+                    super::head_sample::DistannPhysicalHeadIndex::load(
+                        head_sample,
+                        head_graph,
+                        usize::from(manifest_build_options.graph_degree),
+                        manifest_build_options.options.head_policy,
+                    )?
+                    .map(Arc::new)
+                };
+                cache_physical_epoch(CachedPhysicalEpoch {
+                    index_oid,
+                    logical_index_uuid,
+                    build_id: active.build_id,
+                    fingerprint: active.fingerprint,
+                    descriptor: Arc::clone(&descriptor),
+                    descriptor_digest,
+                    head_index: head_index.clone(),
+                    gateway_copies: None,
+                    crown: None,
+                });
+                (descriptor, descriptor_digest, head_index, None, None)
             };
-            cache_physical_epoch(CachedPhysicalEpoch {
-                index_oid,
-                logical_index_uuid,
-                build_id: active.build_id,
-                fingerprint: active.fingerprint,
-                descriptor: Arc::clone(&descriptor),
-                descriptor_digest,
-                head_index: head_index.clone(),
-                gateway_copies: None,
-                crown: None,
-            });
-            (descriptor, descriptor_digest, head_index, None, None)
-        };
         let routes = physical_owner_routes(
             index_oid,
             logical_index_uuid,
@@ -3956,10 +3972,8 @@ impl PhysicalGenerationScan {
             }
             let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)?;
             let code_len = binding.code_len(usize::from(self.descriptor.dimensions))?;
-            let prepared = DistannPreparedQuery::prepare_artifact(
-                &self.descriptor.codec_artifact,
-                query,
-            )?;
+            let prepared =
+                DistannPreparedQuery::prepare_artifact(&self.descriptor.codec_artifact, query)?;
             let seeds = crown.rank(seed_count, |code| {
                 let mut distance = [0.0_f32; 1];
                 prepared
@@ -4008,7 +4022,8 @@ impl PhysicalGenerationScan {
                             self.descriptor.placement_hash_version,
                         );
                         let complete = shard.iter().all(|vec_id| crown_ids.contains(vec_id));
-                        let keep = !complete || shard.iter().any(|vec_id| promising.contains(vec_id));
+                        let keep =
+                            !complete || shard.iter().any(|vec_id| promising.contains(vec_id));
                         if keep {
                             filtered_members.extend(shard);
                         } else {
@@ -4307,6 +4322,7 @@ impl PhysicalGenerationScan {
                     requested,
                     PhysicalRemotePayload {
                         payload_nulls: payload.payload_nulls,
+                        payload_offsets: payload.payload_offsets,
                         payload_values: payload.payload_values,
                     },
                 );
@@ -4486,29 +4502,39 @@ fn populate_crown_cache(
         let nodes = match local.resolve_nodes(&ids) {
             Ok(nodes) => nodes,
             Err(error) => {
-                pgrx::warning!("ec_distann crown population disabled: local resolve failed: {error}");
+                pgrx::warning!(
+                    "ec_distann crown population disabled: local resolve failed: {error}"
+                );
                 return None;
             }
         };
-        entries.extend(nodes.into_iter().map(|node| super::crown_cache::DistannCrownEntry {
-            vec_id: node.vec_id,
-            search_code: node.search_code,
-        }));
+        entries.extend(
+            nodes
+                .into_iter()
+                .map(|node| super::crown_cache::DistannCrownEntry {
+                    vec_id: node.vec_id,
+                    search_code: node.search_code,
+                }),
+        );
     }
     let requests = remote_work
         .iter()
-        .map(|(ordinal, ids, conninfo)| super::remote_transport::DistannCrownCodeRequest {
-            conninfo,
-            index_regclass: &routes[*ordinal].remote_index_regclass,
-            epoch_fingerprint: fingerprint,
-            member_vec_ids: ids,
-        })
+        .map(
+            |(ordinal, ids, conninfo)| super::remote_transport::DistannCrownCodeRequest {
+                conninfo,
+                index_regclass: &routes[*ordinal].remote_index_regclass,
+                epoch_fingerprint: fingerprint,
+                member_vec_ids: ids,
+            },
+        )
         .collect::<Vec<_>>();
     for response in super::remote_transport::remote_crown_code_batch(&requests) {
         match response {
             Ok(mut remote_entries) => entries.append(&mut remote_entries),
             Err(error) => {
-                pgrx::warning!("ec_distann crown population disabled: remote export failed: {error}");
+                pgrx::warning!(
+                    "ec_distann crown population disabled: remote export failed: {error}"
+                );
                 return None;
             }
         }
