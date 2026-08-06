@@ -440,9 +440,10 @@ fn materialize_rows_impl(
         .collect())
 }
 
-/// One row-payload wire response row: the owning node's identity + tombstone plus
-/// the requested projection columns as PostgreSQL binary (`typsend`) values.
-type PayloadRow = (i64, bool, bool, Vec<bool>, Vec<Vec<u8>>);
+/// One row-payload wire response row: the owning node's identity + tombstone
+/// plus a packed binary payload. Offsets are cumulative byte ends, one per
+/// projected column, into the single flat buffer.
+type PayloadRow = (i64, bool, bool, Vec<bool>, Vec<i64>, Vec<u8>);
 
 /// FR-079/005-P1 row-payload shipping endpoint (the CustomScan data path). Where
 /// `ec_distann_materialize_rows` ships only the ctid — unusable off the loopback
@@ -450,7 +451,7 @@ type PayloadRow = (i64, bool, bool, Vec<bool>, Vec<Vec<u8>>);
 /// heap — this ships the *row column data itself*: for each owned vec_id, the
 /// owner resolves its heap ctid and encodes the requested projection columns to
 /// PostgreSQL binary via each column's `typsend` function. The coordinator's
-/// CustomScan reconstructs a virtual tuple from `payload_values` (via
+/// CustomScan reconstructs a virtual tuple from the packed `payload_values` (via
 /// `ReceiveFunctionCall`) and yields it directly, so a real multi-node scan
 /// returns owner-owned SQL rows without a local directory or a local heap fetch.
 ///
@@ -473,7 +474,8 @@ fn ec_distann_materialize_row_payloads(
         name!(is_tombstone, bool),
         name!(tuple_payload_missing, bool),
         name!(payload_nulls, Vec<bool>),
-        name!(payload_values, Vec<Vec<u8>>),
+        name!(payload_offsets, Vec<i64>),
+        name!(payload_values, Vec<u8>),
     ),
 > {
     let rows = materialize_row_payloads_impl(
@@ -522,7 +524,7 @@ fn materialize_row_payloads_impl(
     let column_count = payload_columns.len();
     let ctid_refs: Vec<&str> = ctid_texts.iter().map(String::as_str).collect();
 
-    let payloads: Vec<(bool, Vec<bool>, Vec<Vec<u8>>)> = Spi::connect(|client| {
+    let payloads: Vec<(bool, Vec<bool>, Vec<i64>, Vec<u8>)> = Spi::connect(|client| {
         let rows = client
             .select(sql.as_str(), None, &[ctid_refs.as_slice().into()])
             .map_err(|e| format!("ec_distann materialize row payload heap fetch failed: {e}"))?;
@@ -536,25 +538,38 @@ fn materialize_row_payloads_impl(
                 .value::<Vec<bool>>()
                 .map_err(|e| format!("ec_distann row payload nulls decode failed: {e}"))?
                 .unwrap_or_default();
-            let payload_values = row["payload_values"]
-                .value::<pgrx::datum::Array<&[u8]>>()
-                .map_err(|e| format!("ec_distann row payload values decode failed: {e}"))?
-                .map(|array| {
-                    array
-                        .iter_deny_null()
-                        .map(<[u8]>::to_vec)
-                        .collect::<Vec<_>>()
-                })
+            let payload_offsets = row["payload_offsets"]
+                .value::<Vec<i64>>()
+                .map_err(|e| format!("ec_distann row payload offsets decode failed: {e}"))?
                 .unwrap_or_default();
-            if payload_nulls.len() != column_count || payload_values.len() != column_count {
+            let payload_values = row["payload_values"]
+                .value::<Vec<u8>>()
+                .map_err(|e| format!("ec_distann row payload values decode failed: {e}"))?
+                .unwrap_or_default();
+            let final_offset = payload_offsets.last().copied().unwrap_or(0);
+            let offsets_valid = payload_offsets.windows(2).all(|window| window[0] <= window[1])
+                && final_offset >= 0
+                && usize::try_from(final_offset)
+                    .ok()
+                    .is_some_and(|end| end == payload_values.len());
+            if payload_nulls.len() != column_count
+                || payload_offsets.len() != column_count
+                || !offsets_valid
+            {
                 return Err(format!(
-                    "ec_distann row payload returned {} null flags and {} values for {} columns",
+                    "ec_distann row payload returned {} null flags and {} offsets for {} columns (flat payload {} bytes)",
                     payload_nulls.len(),
-                    payload_values.len(),
-                    column_count
+                    payload_offsets.len(),
+                    column_count,
+                    payload_values.len()
                 ));
             }
-            out.push((tuple_payload_missing, payload_nulls, payload_values));
+            out.push((
+                tuple_payload_missing,
+                payload_nulls,
+                payload_offsets,
+                payload_values,
+            ));
         }
         Ok(out)
     })
@@ -571,15 +586,17 @@ fn materialize_row_payloads_impl(
     Ok(resolved
         .into_iter()
         .zip(payloads)
-        .map(|((vec_id, _tid, is_tombstone), (missing, nulls, values))| {
-            (vec_id, is_tombstone, missing, nulls, values)
-        })
+        .map(
+            |((vec_id, _tid, is_tombstone), (missing, nulls, offsets, values))| {
+                (vec_id, is_tombstone, missing, nulls, offsets, values)
+            },
+        )
         .collect())
 }
 
 /// Build the owner-side per-ctid projection SQL. Each requested column becomes a
-/// `payload_nulls` boolean and a `payload_values` bytea (its `typsend` binary, or
-/// `''::bytea` when the row/column is NULL or the ctid resolves to no live tuple).
+/// `payload_nulls` boolean and a cumulative `payload_offsets` byte end into one
+/// flat `payload_values` bytea. NULL or missing values occupy an empty range.
 /// Column names are double-quote escaped; send functions are validated to plain
 /// (optionally schema-qualified) identifiers so the projection cannot inject SQL.
 /// Resolve a heap relation's **schema-qualified, quoted** name from its oid, for
@@ -631,9 +648,10 @@ pub(crate) fn build_payload_sql(
         null_exprs.push(format!(
             "(heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL)"
         ));
+        let value_alias = format!("payload_value_{}", value_exprs.len());
         value_exprs.push(format!(
             "CASE WHEN heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL \
-                  THEN ''::bytea ELSE {send}(heap.{ident}) END"
+                  THEN ''::bytea ELSE {send}(heap.{ident}) END AS {value_alias}"
         ));
     }
     let found_projection = if projected.is_empty() {
@@ -646,22 +664,48 @@ pub(crate) fn build_payload_sql(
     } else {
         format!("ARRAY[{}]::boolean[]", null_exprs.join(", "))
     };
-    let value_array = if value_exprs.is_empty() {
-        "ARRAY[]::bytea[]".to_owned()
+    let payload_offsets = if value_exprs.is_empty() {
+        "ARRAY[]::bigint[]".to_owned()
     } else {
-        format!("ARRAY[{}]::bytea[]", value_exprs.join(", "))
+        let cumulative = (0..value_exprs.len())
+            .map(|index| {
+                (0..=index)
+                    .map(|offset| format!("octet_length(payload.payload_value_{offset})::bigint"))
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            })
+            .collect::<Vec<_>>();
+        format!("ARRAY[{}]::bigint[]", cumulative.join(", "))
+    };
+    let payload_values = if value_exprs.is_empty() {
+        "''::bytea".to_owned()
+    } else {
+        (0..value_exprs.len())
+            .map(|index| format!("payload.payload_value_{index}"))
+            .collect::<Vec<_>>()
+            .join(" || ")
+    };
+    let value_projection = if value_exprs.is_empty() {
+        "''::bytea AS unused_payload_value".to_owned()
+    } else {
+        value_exprs.join(", ")
     };
     Ok(format!(
         "SELECT heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
                 {null_array} AS payload_nulls, \
-                {value_array} AS payload_values \
+                {payload_offsets} AS payload_offsets, \
+                {payload_values} AS payload_values \
            FROM unnest($1::text[]) WITH ORDINALITY AS candidate(ctid_text, ordinality) \
            LEFT JOIN LATERAL ( \
              SELECT {found_projection} \
                FROM {heap_relation} AS heap_row \
               WHERE heap_row.ctid = candidate.ctid_text::tid \
            ) AS heap ON true \
-          ORDER BY candidate.ordinality"
+          LEFT JOIN LATERAL ( \
+             SELECT {value_projection} \
+          ) AS payload ON true \
+          ORDER BY candidate.ordinality",
+        value_projection = value_projection
     ))
 }
 
@@ -842,4 +886,49 @@ fn expand_nodes_impl(
             )
         })
         .collect())
+}
+
+#[cfg(test)]
+mod payload_sql_tests {
+    use super::build_payload_sql;
+
+    #[test]
+    fn packed_payload_sql_has_cumulative_offsets_and_one_flat_buffer() {
+        let sql = build_payload_sql(
+            "\"public\".\"items\"",
+            &["id".to_owned(), "title".to_owned()],
+            &["pg_catalog.int8send".to_owned(), "pg_catalog.textsend".to_owned()],
+        )
+        .expect("valid payload SQL");
+
+        assert!(sql.contains("payload_offsets"));
+        assert!(sql.contains("ARRAY[octet_length(payload.payload_value_0)::bigint"));
+        assert!(sql.contains(
+            "octet_length(payload.payload_value_0)::bigint + octet_length(payload.payload_value_1)::bigint"
+        ));
+        assert!(sql.contains("payload.payload_value_0 || payload.payload_value_1"));
+        assert!(!sql.contains("bytea[]"));
+    }
+
+    #[test]
+    fn packed_payload_sql_handles_empty_projection() {
+        let sql = build_payload_sql("\"public\".\"items\"", &[], &[])
+            .expect("empty projection is valid");
+
+        assert!(sql.contains("ARRAY[]::boolean[] AS payload_nulls"));
+        assert!(sql.contains("ARRAY[]::bigint[] AS payload_offsets"));
+        assert!(sql.contains("''::bytea AS payload_values"));
+    }
+
+    #[test]
+    fn payload_sql_rejects_non_identifier_send_functions() {
+        let error = build_payload_sql(
+            "\"public\".\"items\"",
+            &["id".to_owned()],
+            &["pg_catalog.int8send; DROP TABLE items".to_owned()],
+        )
+        .expect_err("send function injection must be rejected");
+
+        assert!(error.contains("invalid send function name"));
+    }
 }
