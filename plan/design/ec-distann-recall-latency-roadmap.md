@@ -336,7 +336,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-11 | Pipeline consecutive hop rounds | conditional on RTT/round dominance |
 | TRAV-12 | Bounded owner-local subsearch per RPC | conditional on hop-RTT dominance |
 | TRAV-13 | Baton-passing owner orchestration | deferred until ADR-085 RTT reopen trigger |
-| TRAV-14 | More nodes per round at fixed BW x H work | **STOP — Task 215 release A/B (2026-08-06)**. BW64/H8 (effective L=64, 128 seeds) was 20–48% slower than BW4/H100/L32 at 10k/50k/100k on the normal release build and not recall-equivalent (recall rose); defaults stay BW4/H100. Caveat: the ~8× absolute-latency gap versus Task 206's accepted matrix is unreconciled, and the rejected point had materially higher recall — a recall-targeted reopen needs its own contract, not a repeat of this one. |
+| TRAV-14 | More nodes per round at fixed BW x H work | **STOP — Task 215 release A/B (2026-08-06)**. BW64/H8 (effective L=64, 128 seeds) was 20–48% slower than BW4/H100/L32 at 10k/50k/100k on the normal release build and not recall-equivalent (recall rose); defaults stay BW4/H100. The Task 215 reconciliation records that Task 206 used top_k=200/L200 while this normal-release run used top_k=10/effective L64, despite matching per-scale query hashes and warm-cache protocol; absolute latency rows are workload-specific. The higher-recall/slower-latency trade was explicitly rejected under the recall-equivalence clause. |
 | TRAV-15 | Wider rounds with fewer hops | **STOP — Task 215 release A/B (2026-08-06)**, same run and caveats as TRAV-14. Residual latency remains owner compute/serialization; that lane is Task 216. |
 | TRAV-16 | Confidence-based early termination for easy queries | conditional Task 188/187 |
 | TRAV-17 | Extra rounds for hard queries under a fixed maximum | conditional Task 188 |
@@ -504,26 +504,25 @@ or replacing a map do not require an ADR unless they alter a durable contract.
 The task index and older ledger text must distinguish review closure from
 productionization. Task 206 is review-closed, but its BW64/H8 recommendation
 is not the shipped default; Task 215 owns the normal-release decision. Task
-205's corrected implementation/A-B evidence is complete, but its outside
-review remains open for threshold-versus-limit attribution and final
-benchmark/provenance cleanup. Task 207 is review-closed with no promotion;
-its union-construction result does not justify repeating that lane unchanged.
+205 is review-closed with the threshold-versus-limit split explicitly
+withdrawn as unsupported by the available counters. Task 207 is review-closed
+with no promotion; its union-construction result does not justify repeating
+that lane unchanged.
 
 Status update (2026-08-06, end of day): items 1, 2, and the attribution half
 of item 4 are done. Task 205 is review-closed (accepted disposition in
 `reviews/task-205/005-attribution-closeout/`). Task 215's release A/B ran and
 recorded **STOP** — BW64/H8 was 20–48% slower on the normal release build and
-not recall-equivalent; defaults remain BW4/H100
+not recall-equivalent; defaults remain BW4/H100. Its decision-account
+follow-ups now reconcile the Task 206 work-surface gap, reject the
+higher-recall/slower-latency Pareto trade, declare the skipped Task 208/210
+entry gate, and point mechanism accounting to Task 216
 (`reviews/task-215/003-release-matrix-and-decision/`). Task 216's 100k
 attribution is accepted and selected MAT-15 (MAT-21 secondary, TRAV-05
 rejected). The remaining execution order is:
 
-1. land Task 215's decision-account follow-ups from reviewer feedback:
-   reconcile the ~8× absolute-latency gap against Task 206's accepted
-   matrix, state the Pareto-branch rejection explicitly, and record the
-   skipped Task 208/210 entry-gate item;
-2. start the now-unblocked Task 185 selection-objective lane; and
-3. run Task 216's MAT-15 isolated 100k A/B under
+1. start the now-unblocked Task 185 selection-objective lane; and
+2. run Task 216's MAT-15 isolated 100k A/B under
    `reviews/task-216/002-isolated-candidate/`, without stacking any
    Task 215 regime change.
 
