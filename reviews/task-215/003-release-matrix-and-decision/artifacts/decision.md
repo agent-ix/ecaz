@@ -25,8 +25,38 @@ with 128 production-derived head seeds, versus BW4/H100/L32 with 32 seeds.
 
 Candidate mean latency was slower by 20.2%, 39.4%, and 47.7% at 10k, 50k,
 and 100k respectively. Recall also changed materially at 50k and 100k; the
-candidate is not recall-equivalent. Storage differences were under 0.004% in
-these paired runs and do not offset the latency/recall failure.
+candidate is not recall-equivalent. The candidate's recall increase was
+0.0005, 0.0355, and 0.0535 at 10k, 50k, and 100k respectively, but it came
+with latency increases of 3.80, 8.20, and 10.20 ms. This is a recall/latency
+tradeoff, not a Pareto improvement: the candidate did not dominate the
+control, and the release contract requires recall equivalence unless the
+trade is explicitly accepted. This decision explicitly rejects that higher-
+recall trade under the recall-equivalence clause; a separate higher-recall
+lane would be needed to decide whether that quality gain is worth the latency
+cost. Storage differences were under 0.004% in these paired runs and do not
+offset the latency/recall failure.
+
+## Reconciliation with Task 206
+
+The accepted Task 206 absolute latency rows (roughly 194–231 ms) are not
+directly comparable to these 22.6–31.6 ms release rows. Task 206 measured
+`top_k=200` with `candidate_heap_limit=200`, while Task 215 measured `top_k=10`
+with effective `L=64` under BW64. Task 206 also used a different source/build
+and diagnostic scan-notice configuration. Both used warm-cache,
+single-concurrency sampling, and their per-scale query hashes match; neither
+packet claims a concurrent-load difference. The top-k/L materialization work
+surface is therefore the primary recorded confounder, but the artifacts do not
+isolate it from the build difference. See
+`artifacts/reconciliation-206.md` for the durable comparison and the rule for
+which environment generalizes to release decisions.
+
+## Entry-gate accounting
+
+The standalone Task 208/210 entry-gate evidence was skipped in this packet.
+The release matrix did collect its own topology, owner-engagement, storage,
+and NFR rows, but those rows are not being represented as a substitute for
+the required accepted Task 208/210 evidence. This omission does not change the
+STOP verdict; it prevents any promotion claim beyond the measured matrix.
 
 All six arms were normal PG18 release builds at source SHA
 `ea51a9c8bdce1f412652ac743ae0d055af8daa76`, with three sharded owners, no
