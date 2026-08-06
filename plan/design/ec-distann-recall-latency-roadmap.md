@@ -248,13 +248,13 @@ remain controls rather than new candidates.
 | MAT-12 | Rank-indexed payload storage instead of `HashMap<vec_id, payload>` | deferred after fixed-10 winner |
 | MAT-13 | Preserve request order and eliminate result-map lookup | deferred after fixed-10 winner |
 | MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | deferred after fixed-10 winner |
-| MAT-15 | Packed payload buffer with offsets and null bitmap | conditional on decode/copy share |
+| MAT-15 | Packed payload buffer with offsets and null bitmap | **selected — Task 216 packet 001 screen (2026-08-06)**: owner payload SQL/endpoint materialization is the measured dominant stage (~39 ms/scan owner-side vs 37 ms scan total at 100k); strongest isolated hypothesis, next is the packet-002 isolated 100k A/B |
 | MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on wire/decode share |
 | MAT-17 | Cache resolved row schema per published generation | **production behavior via accepted Task 195; exact-recall release A/B passed** |
 | MAT-18 | Cache attnum-to-send-function resolution | production behavior via accepted Task 195 |
 | MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
-| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | deferred after fixed-10 winner |
+| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **secondary — Task 216 packet 001 screen (2026-08-06)**: eligible within the dominant materialization region, behind MAT-15; at most one of the two advances |
 | MAT-22 | Return row-tier locator with expanded candidates | conditional; changes expansion wire payload |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
@@ -327,17 +327,17 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-02 | Coordinator cache of immutable decoded graph records | conditional on repeat-read evidence |
 | TRAV-03 | Bounded per-generation remote-node cache | conditional on TRAV-02 |
 | TRAV-04 | Owner cache of decoded graph pages/nodes | conditional on owner decode share |
-| TRAV-05 | Packed expansion response instead of row/array structures | conditional on wire/decode share |
+| TRAV-05 | Packed expansion response instead of row/array structures | **rejected — Task 216 packet 001 screen (2026-08-06)**: owner response encode measured 0.002 ms/scan at 100k; the named stage is not dominant in the conforming control |
 | TRAV-06 | Delta/compressed neighbor IDs | conditional on wire-byte share |
-| TRAV-07 | Contiguous packed neighbor codes and scores | conditional on decode/scoring share |
+| TRAV-07 | Contiguous packed neighbor codes and scores | **not selected — Task 216 packet 001 pre-registration (2026-08-06)** chose MAT-15/MAT-21/TRAV-05; the measured traversal stages (owner score 0.966 ms, graph read 1.221 ms/scan at 100k) are minor against materialization |
 | TRAV-08 | Bounded two-hop expansion in one RPC | conditional on RTT/round dominance |
 | TRAV-09 | Bounded neighbor prefetch data in expansion response | conditional on TRAV-08 |
 | TRAV-10 | Speculative next-owner expansion | deferred; wasted-work accounting required |
 | TRAV-11 | Pipeline consecutive hop rounds | conditional on RTT/round dominance |
 | TRAV-12 | Bounded owner-local subsearch per RPC | conditional on hop-RTT dominance |
 | TRAV-13 | Baton-passing owner orchestration | deferred until ADR-085 RTT reopen trigger |
-| TRAV-14 | More nodes per round at fixed BW x H work | **STOP VOID — reopened.** Task 194 packet 007 measured BW=8 (a 2× step) with `code_threshold` inert and no candidate-limit pushdown, so widening bought wire traffic instead of savings. Not evidence about the paper's BW=128/H=5 regime. Re-test after the pushdown protocol lands. |
-| TRAV-15 | Wider rounds with fewer hops | **STOP VOID — reopened.** Same run, same defect. It recorded the predicted signature of widening without pushdown: hops 10.0→5.88 and transport wait −0.744 ms, but expanded nodes 40.0→47.04 and straggler spread 0.411→0.736 ms. Recall improved 0.9625→0.9675. |
+| TRAV-14 | More nodes per round at fixed BW x H work | **STOP — Task 215 release A/B (2026-08-06)**. BW64/H8 (effective L=64, 128 seeds) was 20–48% slower than BW4/H100/L32 at 10k/50k/100k on the normal release build and not recall-equivalent (recall rose); defaults stay BW4/H100. The Task 215 reconciliation records that Task 206 used top_k=200/L200 while this normal-release run used top_k=10/effective L64, despite matching per-scale query hashes and warm-cache protocol; absolute latency rows are workload-specific. The higher-recall/slower-latency trade was explicitly rejected under the recall-equivalence clause. |
+| TRAV-15 | Wider rounds with fewer hops | **STOP — Task 215 release A/B (2026-08-06)**, same run and caveats as TRAV-14. Residual latency remains owner compute/serialization; that lane is Task 216. |
 | TRAV-16 | Confidence-based early termination for easy queries | conditional Task 188/187 |
 | TRAV-17 | Extra rounds for hard queries under a fixed maximum | conditional Task 188 |
 | TRAV-18 | Frontier-stability/score-gap adaptive work | conditional Task 188 |
@@ -345,7 +345,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-20 | Block-local owner expansion order | conditional on graph-read locality |
 | TRAV-21 | Reuse traversal/frontier scratch between queries | conditional on allocation profile |
 | TRAV-22 | Bounded bitset visited/frontier representation | conditional on mapping feasibility |
-| TRAV-23 | Borrow graph/code bytes instead of allocating decode buffers | conditional on allocation profile |
+| TRAV-23 | Borrow graph/code bytes instead of allocating decode buffers | **not selected — Task 216 packet 001 pre-registration (2026-08-06)** chose MAT-15/MAT-21/TRAV-05; traversal decode stages measured minor at 100k, so allocation borrowing has no dominant stage to target |
 | TRAV-24 | SIMD-batch all RaBitQ scoring returned per round | conditional on flush-width profile |
 | TRAV-25 | Reduce async runtime/context transitions | conditional on client/runtime share |
 | TRAV-26 | Persist owner query-preparation state | unmeasured; query-digest reuse already exists |
@@ -498,3 +498,39 @@ or replacing a map do not require an ADR unless they alter a durable contract.
   candidate, adversarial semantics/failure matrix, full-scale PROMOTE.
 - NFR-007 and NFR-017 through NFR-020: evidence, comparison, storage, bounded
   work, and failure contracts.
+
+## Current post-206 handoff (2026-08-06)
+
+The task index and older ledger text must distinguish review closure from
+productionization. Task 206 is review-closed, but its BW64/H8 recommendation
+is not the shipped default; Task 215 owns the normal-release decision. Task
+205 is review-closed with the threshold-versus-limit split explicitly
+withdrawn as unsupported by the available counters. Task 207 is review-closed
+with no promotion; its union-construction result does not justify repeating
+that lane unchanged.
+
+Status update (2026-08-06, end of day): items 1, 2, and the attribution half
+of item 4 are done. Task 205 is review-closed (accepted disposition in
+`reviews/task-205/005-attribution-closeout/`). Task 215's release A/B ran and
+recorded **STOP** — BW64/H8 was 20–48% slower on the normal release build and
+not recall-equivalent; defaults remain BW4/H100. Its decision-account
+follow-ups now reconcile the Task 206 work-surface gap, reject the
+higher-recall/slower-latency Pareto trade, declare the skipped Task 208/210
+entry gate, and point mechanism accounting to Task 216
+(`reviews/task-215/003-release-matrix-and-decision/`). Task 216's 100k
+attribution is accepted and selected MAT-15 (MAT-21 secondary, TRAV-05
+rejected). The remaining execution order is:
+
+1. start the now-unblocked Task 185 selection-objective lane; and
+2. run Task 216's MAT-15 isolated 100k A/B under
+   `reviews/task-216/002-isolated-candidate/`, without stacking any
+   Task 215 regime change.
+
+Task 216 imports the owner-side residual implication from the corrected Task
+205 and Task 206 evidence. Response-byte reduction alone is not sufficient:
+Task 205 left request bytes unchanged and moved end-to-end latency only
+modestly, while Task 206 attributed the larger residual to owner compute and
+serialization. The first candidate screen therefore belongs to packed
+expansion/neighbor representations, decode/copy allocation, or typed locator
+work only when stage evidence selects it. A useful candidate receives its own
+productionization task; a stage-local-only win is recorded as STOP.

@@ -257,8 +257,8 @@ pub(super) const ECDISTANN_DEFAULT_BUILD_SHARDS: i32 = 1;
 pub(super) const ECDISTANN_MIN_BUILD_SHARDS: i32 = 0;
 pub(super) const ECDISTANN_MAX_BUILD_SHARDS: i32 = 4096;
 
-/// FR-081 BW default; matches the ec_diskann batched-beam width measured in
-/// Task 168 (packet 002 A/B).
+/// FR-081 BW default; Task 215's wide-beam/few-round candidate did not pass
+/// the normal-release A/B gate, so the shipped default remains conservative.
 pub(super) const ECDISTANN_DEFAULT_BEAM_WIDTH: i32 = 4;
 /// The paper's distributed regime reaches BW=128. Keep headroom for the
 /// surrounding sweep without making an unbounded GUC; NFR-019 still limits
@@ -269,10 +269,9 @@ pub(super) const ECDISTANN_MAX_BEAM_WIDTH: i32 = 256;
 pub(super) const ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT: i32 = 32;
 pub(super) const ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT: i32 = 4096;
 
-/// FR-081 H default. H is the NFR-019 hard round cap, not the quality
-/// knob: the D9 early-exit (bounded by ec_distann.top_k) terminates real
-/// scans, so the default is generous and the M0 kill-check measures the
-/// recall-vs-H curve explicitly.
+/// FR-081 H default. H is the NFR-019 hard round cap, not the quality knob.
+/// Task 215 evaluated H=8 with BW=64; the measured STOP leaves the shipped
+/// default and SQL/session rollback at BW=4/H=100.
 pub(super) const ECDISTANN_DEFAULT_HOP_ROUNDS: i32 = 100;
 /// High ceiling so the bench sweep can match ec_diskann expansion budgets
 /// (BW x H up to ~800 at the default BW=4); D9 early-exit terminates long

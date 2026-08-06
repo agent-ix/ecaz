@@ -1,7 +1,8 @@
 # Task 185: ec_distann Gateway Landmark Selection
 
-Status: **proposed — entry gated on Task 206** (2026-07-19; gate added
-2026-07-29). Priority: P1 bounded-recall follow-up, independent of Task 184.
+Status: **proposed — entry unblocked after Task 206 review closure**
+(2026-08-06; gate added 2026-07-29). Priority: P1 bounded-recall follow-up,
+independent of Task 184.
 
 > **Entry gate and boundary (Task 203 audit, correction 2026-07-29-02).**
 >
@@ -12,7 +13,7 @@ Status: **proposed — entry gated on Task 206** (2026-07-19; gate added
 > returned. The unexplained fact this task exists to attack still stands: three
 > distinct 4,096-row objectives produced identical top-32 seeds.
 >
-> **Gate: do not start until Task 206 reports.** This task's diversity-aware
+> **Gate satisfied: Task 206 has reported.** This task's diversity-aware
 > returned-seed arm penalizes landmarks that share a traversal basin, and that
 > cannot pay off at the current BW=4, where the beam pops four candidates per
 > round. Running it now would reproduce `NEG-01`'s structure — a seed policy
