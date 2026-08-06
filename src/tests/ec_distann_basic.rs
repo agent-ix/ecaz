@@ -1308,11 +1308,11 @@ fn test_ec_distann_guc_defaults() {
     let beam_width = Spi::get_one::<String>("SHOW ec_distann.beam_width")
         .expect("SPI query should succeed")
         .expect("GUC should exist");
-    assert_eq!(beam_width, "64");
+    assert_eq!(beam_width, "4");
     let hop_rounds = Spi::get_one::<String>("SHOW ec_distann.hop_rounds")
         .expect("SPI query should succeed")
         .expect("GUC should exist");
-    assert_eq!(hop_rounds, "8");
+    assert_eq!(hop_rounds, "100");
     let top_k = Spi::get_one::<String>("SHOW ec_distann.top_k")
         .expect("SPI query should succeed")
         .expect("GUC should exist");

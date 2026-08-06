@@ -257,9 +257,9 @@ pub(super) const ECDISTANN_DEFAULT_BUILD_SHARDS: i32 = 1;
 pub(super) const ECDISTANN_MIN_BUILD_SHARDS: i32 = 0;
 pub(super) const ECDISTANN_MAX_BUILD_SHARDS: i32 = 4096;
 
-/// FR-081 BW default; the normal-release Task 215 gate promotes the reviewed
-/// wide-beam/few-round regime only after its A/B passes.
-pub(super) const ECDISTANN_DEFAULT_BEAM_WIDTH: i32 = 64;
+/// FR-081 BW default; Task 215's wide-beam/few-round candidate did not pass
+/// the normal-release A/B gate, so the shipped default remains conservative.
+pub(super) const ECDISTANN_DEFAULT_BEAM_WIDTH: i32 = 4;
 /// The paper's distributed regime reaches BW=128. Keep headroom for the
 /// surrounding sweep without making an unbounded GUC; NFR-019 still limits
 /// each query by `beam_width * hop_rounds`.
@@ -270,9 +270,9 @@ pub(super) const ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT: i32 = 32;
 pub(super) const ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT: i32 = 4096;
 
 /// FR-081 H default. H is the NFR-019 hard round cap, not the quality knob.
-/// Task 215's normal-release gate pairs H=8 with the promoted BW=64 regime;
-/// the SQL/session rollback remains BW=4/H=100.
-pub(super) const ECDISTANN_DEFAULT_HOP_ROUNDS: i32 = 8;
+/// Task 215 evaluated H=8 with BW=64; the measured STOP leaves the shipped
+/// default and SQL/session rollback at BW=4/H=100.
+pub(super) const ECDISTANN_DEFAULT_HOP_ROUNDS: i32 = 100;
 /// High ceiling so the bench sweep can match ec_diskann expansion budgets
 /// (BW x H up to ~800 at the default BW=4); D9 early-exit terminates long
 /// sweeps in practice.
