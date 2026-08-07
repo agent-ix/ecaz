@@ -5,7 +5,7 @@ role: coder
 status: open
 date: 2026-08-07
 seq: 01
-head: be1871b620be91e6a2424918cebf84a2b6df67c3
+head: 801bf5d78
 ---
 
 # Review request: physical gateway/basin attribution surface
@@ -58,20 +58,21 @@ screen in packet 003.
 
 ## Captured control run
 
-The checked-in suite completed successfully on 2026-08-07. The run used the
-release profile with `distann-head-attribution-benchmark` enabled; it is a
-feature-build diagnostic and is not comparable to a featureless production
-latency baseline.
+The checked-in suite completed successfully on 2026-08-07 after correcting the
+driver to trace the disjoint training relation. The run used the release
+profile with `distann-head-attribution-benchmark` enabled; it is a feature-build
+diagnostic and is not comparable to a featureless production latency baseline.
 
 - topology: 100,000 rows across three physical owners, two remote owners,
   topology and engagement gates passed;
-- trace: 200 evaluation queries, 32 seeds/query, 6,584 unique expansions,
-  98 shared-expansion events, no zero-hit queries, and no malformed records;
+- trace: 200 disjoint training queries (rows 201--400), represented in the
+  trace as query IDs 1--200, 32 seeds/query, 7,056 unique expansions, 95
+  shared-expansion events, no zero-hit queries, and no malformed records;
 - seed attribution: aggregate expansion counts by returned-seed position were
-  `[1630, 257, 1150, 3645, 0, ...]`; the first four positions account for all
+  `[1188, 304, 892, 4767, 0, ...]`; the first four positions account for all
   recorded expansions in this control;
 - context metrics: recall@32 `0.9205` (95% CI `[0.9078, 0.9316]`), one warm
-  latency sample `40.90 ms`, and physical generation bytes `2,496,626,688`.
+  latency sample `41.20 ms`, and physical generation bytes `2,496,626,688`.
 
 The trace is attribution evidence, not a candidate-policy result. It does not
 justify changing the head or selecting a gateway policy: the next slice must
@@ -80,8 +81,18 @@ coverage/redundancy and hard-query coverage, then preregister one gateway
 set-cover selector for the Phase 2 A/B screen.
 
 The durable evidence is under `artifacts/run/`; the suite manifest reports one
-succeeded step, zero missing artifacts, and a 2,114,406 ms duration. The
-stopped 6.5G cluster run directory was removed after capture.
+succeeded step, zero missing artifacts, and a 2,126,724 ms duration. The
+stopped 6.4G cluster run directory was removed after capture. An earlier
+evaluation-slice attempt and one interrupted retry were superseded and are
+not retained as packet evidence.
+
+## Driver correction
+
+The initial implementation traced `physical_queries`, which are the evaluation
+rows. Before retaining the result, the driver was corrected to require
+`training_query_path`, stage only rows 201--400 into a temporary relation, and
+emit `query_prefix=rows_201_400`. The corrected run is the only benchmark result
+claimed here.
 
 ## Review focus
 

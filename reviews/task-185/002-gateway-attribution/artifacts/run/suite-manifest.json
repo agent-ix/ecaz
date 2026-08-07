@@ -4,8 +4,8 @@
   "config": "reviews/task-185/002-gateway-attribution/artifacts/gateway-attribution-100k-suite.json",
   "config_sha256": "2a04a9ab1d7cfb32b8493da0602fa842b4e46af16d633d4ca948e8b159e754f6",
   "dry_run": false,
-  "generated_at_unix_ms": 1786131978114,
-  "runner_git_commit": "be1871b620be91e6a2424918cebf84a2b6df67c3",
+  "generated_at_unix_ms": 1786136580961,
+  "runner_git_commit": "5487636f976a27a6e08c4ae16980470b0140ebbe-dirty",
   "connection": {
     "database": "tqvector_bench",
     "host": null,
@@ -81,9 +81,9 @@
         "reviews/task-185/002-gateway-attribution/artifacts/run/training-landmarks-control-100k/physical-control-gateway-trace.json"
       ],
       "status": "succeeded",
-      "started_at_unix_ms": 1786131978138,
-      "finished_at_unix_ms": 1786133970797,
-      "duration_ms": 2114406,
+      "started_at_unix_ms": 1786136580989,
+      "finished_at_unix_ms": 1786138582969,
+      "duration_ms": 2126724,
       "exit_code": 0
     }
   ]

@@ -1,3 +1,8 @@
 command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo check -p ecaz-cli
 result: pass; one pre-existing unused-field warning in crates/ecaz-cli/src/commands/corpus/load.rs
-head: 436cae964
+head: 5487636f976a27a6e08c4ae16980470b0140ebbe-dirty during validation
+
+command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo build -p ecaz-cli
+result: pass; stable executable copied to /home/peter/.ecaz/task185-bin/ecaz for the live suite because the shared Cargo target was concurrently rebuilt
+
+driver correction: --gateway-trace requires --training-query-path and stages rows 201--400 before tracing
