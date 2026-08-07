@@ -1,6 +1,6 @@
 # Task 185: ec_distann Gateway Landmark Selection
 
-Status: **in progress — Phase 1 gateway attribution preregistered**
+Status: **in progress — Phase 1 100k control captured; attribution analysis pending**
 (2026-08-07; entry gate added 2026-07-29). Priority: P1 bounded-recall
 follow-up, independent of Task 184.
 

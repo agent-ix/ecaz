@@ -5,7 +5,7 @@ role: coder
 status: open
 date: 2026-08-07
 seq: 01
-head: 436cae964
+head: be1871b620be91e6a2424918cebf84a2b6df67c3
 ---
 
 # Review request: physical gateway/basin attribution surface
@@ -56,9 +56,32 @@ screen in packet 003.
   the suite runner forwards `gateway_trace` into the emitted command.
 - Suite audit and dry-run are recorded in packet-local artifacts.
 
-No benchmark run is claimed by this request yet. After review, run the checked-
-in suite config and capture the JSON trace, suite manifest, results, and
-summary lines under this packet before interpreting gateway candidates.
+## Captured control run
+
+The checked-in suite completed successfully on 2026-08-07. The run used the
+release profile with `distann-head-attribution-benchmark` enabled; it is a
+feature-build diagnostic and is not comparable to a featureless production
+latency baseline.
+
+- topology: 100,000 rows across three physical owners, two remote owners,
+  topology and engagement gates passed;
+- trace: 200 evaluation queries, 32 seeds/query, 6,584 unique expansions,
+  98 shared-expansion events, no zero-hit queries, and no malformed records;
+- seed attribution: aggregate expansion counts by returned-seed position were
+  `[1630, 257, 1150, 3645, 0, ...]`; the first four positions account for all
+  recorded expansions in this control;
+- context metrics: recall@32 `0.9205` (95% CI `[0.9078, 0.9316]`), one warm
+  latency sample `40.90 ms`, and physical generation bytes `2,496,626,688`.
+
+The trace is attribution evidence, not a candidate-policy result. It does not
+justify changing the head or selecting a gateway policy: the next slice must
+join the trace to the disjoint training truth set, compute per-seed marginal
+coverage/redundancy and hard-query coverage, then preregister one gateway
+set-cover selector for the Phase 2 A/B screen.
+
+The durable evidence is under `artifacts/run/`; the suite manifest reports one
+succeeded step, zero missing artifacts, and a 2,114,406 ms duration. The
+stopped 6.5G cluster run directory was removed after capture.
 
 ## Review focus
 
