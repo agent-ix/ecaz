@@ -4687,6 +4687,19 @@ impl SuiteStep {
                             if step.physical_benchmark {
                                 artifacts.push(dir.join("physical-head-membership.json"));
                             }
+                            if step.gateway_trace {
+                                let variants = if step.benchmark_seed_variants.is_empty() {
+                                    vec!["production".to_owned()]
+                                } else {
+                                    step.benchmark_seed_variants
+                                        .iter()
+                                        .map(|variant| variant.name.clone())
+                                        .collect::<Vec<_>>()
+                                };
+                                artifacts.extend(variants.into_iter().map(|variant| {
+                                    dir.join(format!("physical-{variant}-gateway-trace.json"))
+                                }));
+                            }
                             artifacts
                         })
                         .collect();
@@ -4694,14 +4707,27 @@ impl SuiteStep {
                 let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
                 if let Some(dir) = &step.artifact_dir {
                     artifacts.push(dir.join("distann-multinode-summary.log"));
-                    if step.physical_benchmark {
-                        artifacts.extend([
-                            dir.join("physical-recall.log"),
-                            dir.join("physical-latency.log"),
-                            dir.join("single-recall.log"),
-                            dir.join("single-latency.log"),
-                        ]);
-                    }
+                if step.physical_benchmark {
+                    artifacts.extend([
+                        dir.join("physical-recall.log"),
+                        dir.join("physical-latency.log"),
+                        dir.join("single-recall.log"),
+                        dir.join("single-latency.log"),
+                    ]);
+                }
+                if step.gateway_trace {
+                    let variants = if step.benchmark_seed_variants.is_empty() {
+                        vec!["production".to_owned()]
+                    } else {
+                        step.benchmark_seed_variants
+                            .iter()
+                            .map(|variant| variant.name.clone())
+                            .collect::<Vec<_>>()
+                    };
+                    artifacts.extend(variants.into_iter().map(|variant| {
+                        dir.join(format!("physical-{variant}-gateway-trace.json"))
+                    }));
+                }
                 }
                 artifacts
             }
