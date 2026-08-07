@@ -4426,6 +4426,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.gateway_trace && step.training_query_path.is_none() {
+                    bail!(
+                        "distann-local-multinode step {:?} gateway_trace requires training_query_path for disjoint attribution",
+                        step.name
+                    )
+                }
                 if step.stage_counter_only
                     && (!step.physical_benchmark || !step.distann_stage_counters)
                 {

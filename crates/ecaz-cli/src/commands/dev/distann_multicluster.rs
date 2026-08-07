@@ -485,6 +485,11 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.gateway_trace && !args.physical_benchmark {
         bail!("--gateway-trace requires --physical-benchmark");
     }
+    if args.gateway_trace && args.training_query_path.is_none() {
+        bail!(
+            "--gateway-trace requires --training-query-path so attribution uses the disjoint training slice"
+        );
+    }
     if args.stage_counter_only && (!args.physical_benchmark || !args.distann_stage_counters) {
         bail!("--stage-counter-only requires --physical-benchmark and --distann-stage-counters");
     }
@@ -4910,6 +4915,34 @@ async fn run_physical_benchmarks(
         args.queries,
         args.head_index_cap,
     ));
+    let gateway_trace_queries = if args.gateway_trace {
+        let training_path = std::fs::canonicalize(
+            args.training_query_path
+                .as_deref()
+                .expect("gateway trace validation requires a training query path"),
+        )?;
+        let training_path = training_path.display().to_string().replace('\'', "''");
+        coordinator
+            .batch_execute(&format!(
+                "CREATE TEMP TABLE ec_distann_task185_gateway_training_stage (
+                     load_ordinal bigserial, source_id bigint, vec text
+                 );
+                 COPY ec_distann_task185_gateway_training_stage (source_id, vec)
+                   FROM '{training_path}' WITH (FORMAT text, DELIMITER E'\\t');
+                 CREATE TEMP TABLE ec_distann_task185_gateway_training_queries AS
+                 SELECT (load_ordinal - 200)::bigint AS id,
+                        translate(vec, '[]', '{{}}')::real[] AS source
+                   FROM ec_distann_task185_gateway_training_stage
+                  WHERE load_ordinal BETWEEN 201 AND 400
+                  ORDER BY load_ordinal;
+                 DROP TABLE ec_distann_task185_gateway_training_stage;"
+            ))
+            .await
+            .wrap_err("staging Task 185 disjoint gateway-training queries")?;
+        Some("ec_distann_task185_gateway_training_queries")
+    } else {
+        None
+    };
     if let Some(iterations) = args.coverage_memory_regression_iterations {
         lines.push(
             run_coverage_memory_regression(
@@ -5476,7 +5509,7 @@ async fn run_physical_benchmarks(
                         &format!(
                             "WITH traces AS (
                                  SELECT q.id::bigint AS query_id, t.*
-                                   FROM {physical_queries} q
+                                   FROM {} q
                                   CROSS JOIN LATERAL ec_distann_physical_seed_gateway_trace_benchmark(
                                       'dm_idx'::regclass, q.source, {}) t
                                   ORDER BY q.id
@@ -5500,7 +5533,11 @@ async fn run_physical_benchmarks(
                                  ), '[]'::jsonb)
                              )::text
                                FROM traces",
-                            args.top_k, args.queries
+                            gateway_trace_queries
+                                .as_deref()
+                                .expect("gateway trace training relation"),
+                            args.top_k,
+                            args.queries
                         ),
                         &[],
                     )
@@ -5512,7 +5549,7 @@ async fn run_physical_benchmarks(
                     format!("writing Task 185 gateway trace {}", trace_path.display())
                 })?;
                 lines.push(format!(
-                    "physical_benchmark_gateway_trace scale={scale} variant={variant} arm={arm} queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
+                    "physical_benchmark_gateway_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_201_400 queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
                     args.queries,
                     args.top_k,
                     trace_path.display()
