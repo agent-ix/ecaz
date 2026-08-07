@@ -141,43 +141,16 @@ open-obligation boundaries are unverified, not passed.
 
 ## Acceptance Criteria
 
-### NFR-020-AC-1
 
-A scan fault produces a complete baseline-identical result or a classified
-error; no partial result is presented as complete.
-
-### NFR-020-AC-2
-
-A fault before the durable publish decision leaves the prior epoch active and
-the new generation resumable or abortable.
-
-### NFR-020-AC-3
-
-A fault after the durable publish decision leaves the prior epoch active until
-recovery finishes every participant, then activates the new epoch exactly once.
-
-### NFR-020-AC-4
-
-Retrying an acknowledged handoff or publication operation with identical bytes
-does not change counts, digests, or physical bytes.
-
-### NFR-020-AC-5
-
-Conflicting retries, schema drift, wrong ownership, missing coverage, and digest
-disagreement fail before publication and never alter the active pointer.
-
-### NFR-020-AC-6
-
-Degraded completion, if introduced later, requires a follow-up FR with explicit
-opt-in and result labeling; the default path never degrades silently.
-
-### NFR-020-AC-7
-
-Every non-crash scan exit releases its coordinator-local registration exactly
-once, backend death releases registrations with the dead scan, and no scan
-performs participant pin/WAL work. Participants reclaim only from a durable
-zero-in-flight retire decision; partial application recovers idempotently, and
-forced retirement remains an explicit audited non-active-epoch override.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-020-AC-1 | A scan fault produces a complete baseline-identical result or a classified error; no partial result is presented as complete. | Demonstration |
+| NFR-020-AC-2 | A fault before the durable publish decision leaves the prior epoch active and the new generation resumable or abortable. | Demonstration |
+| NFR-020-AC-3 | A fault after the durable publish decision leaves the prior epoch active until recovery finishes every participant, then activates the new epoch exactly once. | Demonstration |
+| NFR-020-AC-4 | Retrying an acknowledged handoff or publication operation with identical bytes does not change counts, digests, or physical bytes. | Demonstration |
+| NFR-020-AC-5 | Conflicting retries, schema drift, wrong ownership, missing coverage, and digest disagreement fail before publication and never alter the active pointer. | Inspection |
+| NFR-020-AC-6 | Degraded completion, if introduced later, requires a follow-up FR with explicit opt-in and result labeling; the default path never degrades silently. | Demonstration |
+| NFR-020-AC-7 | Every non-crash scan exit releases its coordinator-local registration exactly once, backend death releases registrations with the dead scan, and no scan performs participant pin/WAL work. Participants reclaim only from a durable zero-in-flight retire decision; partial application recovers idempotently, and forced retirement remains an explicit audited non-active-epoch override. | Demonstration |
 
 ## Dependencies
 

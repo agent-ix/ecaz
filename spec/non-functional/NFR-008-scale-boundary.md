@@ -39,14 +39,10 @@ rather than as an unfinished blocker for landed local implementation tasks.
 
 ## Acceptance Criteria
 
-### NFR-008-AC-1
 
-Docs/specs identify local IVF and DiskANN results as local evidence.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-008-AC-1 | Docs/specs identify local IVF and DiskANN results as local evidence. | Demonstration |
+| NFR-008-AC-2 | Specs do not list parallel index scan as active work. | Demonstration |
+| NFR-008-AC-3 | Future AWS/RDS-scale work is tracked as deferred measurement, not as an unfinished blocker for landed local implementation tasks. | Demonstration |
 
-### NFR-008-AC-2
-
-Specs do not list parallel index scan as active work.
-
-### NFR-008-AC-3
-
-Future AWS/RDS-scale work is tracked as deferred measurement, not as an unfinished blocker for landed local implementation tasks.

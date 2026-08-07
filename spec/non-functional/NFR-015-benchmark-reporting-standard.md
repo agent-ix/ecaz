@@ -66,26 +66,11 @@ counter fields required by the rules above.
 
 ## Acceptance Criteria
 
-### NFR-015-AC-1
 
-`docs/benchmark-reporting-standard.md` defines the required reporting fields
-for all current metric families.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-015-AC-1 | `docs/benchmark-reporting-standard.md` defines the required reporting fields for all current metric families. | Analysis |
+| NFR-015-AC-2 | `docs/benchmarks.md` and `docs/benchmark-index.md` link to the reporting standard and avoid benchmark rows whose scope cannot be traced to packet-local evidence or an explicit gap. | Analysis |
+| NFR-015-AC-3 | Future comparisons between `turboquant`, `pq_fastscan`, `rabitq`, trained quantizers, and future formats report the same candidate identity and metric fields so the rows can be compared across `ec_hnsw`, `ec_ivf`, `ec_diskann`, `ec_spire`, and future access methods. | Demonstration |
+| NFR-015-AC-4 | Block-kernel comparisons preserve enough counter fields to distinguish scoring-share wins from end-to-end latency changes and to identify structurally absent or missing-kernel cells in the Task 99 matrix. | Analysis |
 
-### NFR-015-AC-2
-
-`docs/benchmarks.md` and `docs/benchmark-index.md` link to the reporting
-standard and avoid benchmark rows whose scope cannot be traced to packet-local
-evidence or an explicit gap.
-
-### NFR-015-AC-3
-
-Future comparisons between `turboquant`, `pq_fastscan`, `rabitq`, trained
-quantizers, and future formats report the same candidate identity and metric
-fields so the rows can be compared across `ec_hnsw`, `ec_ivf`, `ec_diskann`,
-`ec_spire`, and future access methods.
-
-### NFR-015-AC-4
-
-Block-kernel comparisons preserve enough counter fields to distinguish
-scoring-share wins from end-to-end latency changes and to identify
-structurally absent or missing-kernel cells in the Task 99 matrix.

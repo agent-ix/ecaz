@@ -30,7 +30,11 @@ Benchmark claims drive landing decisions, README/spec assertions, and roadmap tr
 
 ## Validation Criteria
 
-1. `docs/benchmarks.md` separates local results from product benchmark claims.
-2. Review packets that cite measurements store raw logs under the packet `artifacts/` directory.
-3. `spec/tests.md` traces benchmark requirements to concrete evidence or explicitly marks the gap.
-4. `docs/benchmark-reporting-standard.md` defines the shared fields for AM, quantizer, storage-format, and option-set comparisons.
+
+| ID | Criteria | Validation |
+|----|----------|------------|
+| StR-006-VC-1 | `docs/benchmarks.md` separates local results from product benchmark claims. | Analysis |
+| StR-006-VC-2 | Review packets that cite measurements store raw logs under the packet `artifacts/` directory. | Demonstration |
+| StR-006-VC-3 | `spec/tests.md` traces benchmark requirements to concrete evidence or explicitly marks the gap. | Analysis |
+| StR-006-VC-4 | `docs/benchmark-reporting-standard.md` defines the shared fields for AM, quantizer, storage-format, and option-set comparisons. | Analysis |
+

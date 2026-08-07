@@ -139,31 +139,13 @@ Verification SHALL use inspection, SQL diagnostics, and PG18 fixtures for:
 
 ## Acceptance Criteria
 
-### NFR-014-AC-1
 
-No SQL-visible remote transport surface exposes raw conninfo or raw remote error
-text.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-014-AC-1 | No SQL-visible remote transport surface exposes raw conninfo or raw remote error text. | Demonstration |
+| NFR-014-AC-2 | Remote write readiness and prepared transaction recovery are documented with explicit operator action and failure modes. | Inspection |
+| NFR-014-AC-3 | Schema drift and endpoint identity mismatches fail before mutating remote state. | Inspection |
+| NFR-014-AC-4 | An unprivileged session cannot execute any EC_DISTANN internal distributed endpoint. | Demonstration |
+| NFR-014-AC-5 | Malformed or oversize EC_DISTANN payloads are rejected before storage mutation or allocation beyond the documented cap. | Inspection |
+| NFR-014-AC-6 | EC_DISTANN recovery and destructive lifecycle actions are attributable to a caller and target without exposing secrets or row payloads. | Demonstration |
 
-### NFR-014-AC-2
-
-Remote write readiness and prepared transaction recovery are documented with
-explicit operator action and failure modes.
-
-### NFR-014-AC-3
-
-Schema drift and endpoint identity mismatches fail before mutating remote state.
-
-### NFR-014-AC-4
-
-An unprivileged session cannot execute any EC_DISTANN internal distributed
-endpoint.
-
-### NFR-014-AC-5
-
-Malformed or oversize EC_DISTANN payloads are rejected before storage mutation
-or allocation beyond the documented cap.
-
-### NFR-014-AC-6
-
-EC_DISTANN recovery and destructive lifecycle actions are attributable to a
-caller and target without exposing secrets or row payloads.

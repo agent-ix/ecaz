@@ -193,47 +193,15 @@ any other rule in this NFR.
 
 ## Acceptance Criteria
 
-### NFR-016-AC-1
 
-Every entry in `fixtures/upgrade/matrix.csv` has a corresponding fixture
-file under `fixtures/on-disk/`, a decode test in
-`tests/on_disk_fixtures.rs`, and a byte-swap rejection test for its
-format-version discriminator.
-
-### NFR-016-AC-2
-
-Every persisted struct named in FR-007, FR-008, FR-013, FR-015,
-FR-022, FR-034, FR-035, FR-036, FR-076, FR-078, FR-082, and the SPIRE storage FRs has at least
-one static size or offset assertion in `tests/size_of_assertions.rs`.
-A pull request that changes any pinned size or offset without bumping
-the format version fails CI.
-
-### NFR-016-AC-3
-
-`fixtures/upgrade/matrix.csv` records the lifecycle state for every
-version Ecaz can read. A version that is removed from the encoder
-without a corresponding matrix update fails the upgrade-matrix test.
-
-### NFR-016-AC-4
-
-A new format version landed under this NFR ships with: (a) a release
-note entry, (b) a matrix row transition for the prior version, (c) a
-new fixture, (d) a new decode test, (e) updated static assertions.
-A new format version that lacks any of these artifacts fails review.
-
-### NFR-016-AC-5
-
-`make endian-qemu` runs on the schedule defined by NFR-005
-(build-and-CI) and decodes every fixture in `fixtures/on-disk/` on a
-big-endian target. Any fixture that decodes correctly on
-little-endian but fails on big-endian (or vice versa) is a bug under
-this NFR, not a fixture defect.
-
-### NFR-016-AC-6
-
-Forward-compatible extension blocks are encoded per the convention
-selected in the governing ADR. A payload kind whose forward-compat
-behavior is not documented in its FR is in violation of NFR-016-EV-5.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-016-AC-1 | Every entry in `fixtures/upgrade/matrix.csv` has a corresponding fixture file under `fixtures/on-disk/`, a decode test in `tests/on_disk_fixtures.rs`, and a byte-swap rejection test for its format-version discriminator. | Test |
+| NFR-016-AC-2 | Every persisted struct named in FR-007, FR-008, FR-013, FR-015, FR-022, FR-034, FR-035, FR-036, FR-076, FR-078, FR-082, and the SPIRE storage FRs has at least one static size or offset assertion in `tests/size_of_assertions.rs`. A pull request that changes any pinned size or offset without bumping the format version fails CI. | Inspection |
+| NFR-016-AC-3 | `fixtures/upgrade/matrix.csv` records the lifecycle state for every version Ecaz can read. A version that is removed from the encoder without a corresponding matrix update fails the upgrade-matrix test. | Test |
+| NFR-016-AC-4 | A new format version landed under this NFR ships with: (a) a release note entry, (b) a matrix row transition for the prior version, (c) a new fixture, (d) a new decode test, (e) updated static assertions. A new format version that lacks any of these artifacts fails review. | Test |
+| NFR-016-AC-5 | `make endian-qemu` runs on the schedule defined by NFR-005 (build-and-CI) and decodes every fixture in `fixtures/on-disk/` on a big-endian target. Any fixture that decodes correctly on little-endian but fails on big-endian (or vice versa) is a bug under this NFR, not a fixture defect. | Inspection |
+| NFR-016-AC-6 | Forward-compatible extension blocks are encoded per the convention selected in the governing ADR. A payload kind whose forward-compat behavior is not documented in its FR is in violation of NFR-016-EV-5. | Inspection |
 
 ## Verification
 

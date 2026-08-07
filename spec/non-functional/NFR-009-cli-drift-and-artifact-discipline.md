@@ -45,14 +45,10 @@ functional requirement, and drift discipline to a validation case.
 
 ## Acceptance Criteria
 
-### NFR-009-AC-1
 
-Docs expose the current CLI command tree and link from the README, usage guide, getting-started guide, and benchmark docs.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-009-AC-1 | Docs expose the current CLI command tree and link from the README, usage guide, getting-started guide, and benchmark docs. | Analysis |
+| NFR-009-AC-2 | The test matrix traces the CLI user story, functional requirement, and drift discipline to a validation case. | Test |
+| NFR-009-AC-3 | Benchmark docs instruct operators to use packet-local CLI logs for review evidence. | Analysis |
 
-### NFR-009-AC-2
-
-The test matrix traces the CLI user story, functional requirement, and drift discipline to a validation case.
-
-### NFR-009-AC-3
-
-Benchmark docs instruct operators to use packet-local CLI logs for review evidence.
