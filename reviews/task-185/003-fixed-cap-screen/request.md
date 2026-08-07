@@ -2,16 +2,16 @@
 task: 185
 packet: 003-fixed-cap-screen
 role: coder
-status: preregistration
+status: open
 date: 2026-08-07
 seq: 01
-head: a1f1e3fb1
+head: 917995972
 ---
 
 # Task 185 fixed-cap screen preregistration
 
 This packet is a preregistration for the next Task 185 measurement slice. It
-does not claim that a gateway candidate has been implemented or measured.
+does not claim that a gateway candidate has been selected or measured.
 
 ## Entry condition
 
@@ -22,6 +22,14 @@ positions 5--32 did not. That trace cannot score arbitrary 4,096-member head
 landmarks. The implementation checkpoint for this packet must therefore add a
 candidate-level isolated attribution surface, or a deterministic simulation
 proved byte-equivalent to it, before constructing a gateway selector.
+
+Implementation checkpoint `917995972` adds the first narrow surface: a
+benchmark-only endpoint that reruns the physical scan with exactly one member
+of the control's returned seed list. This isolates per-candidate expansion and
+truth-hit behavior from the 32-seed beam. It intentionally does not claim to
+score arbitrary head members, alter production selection, or constitute the
+gateway selector. Suite-driver wiring and the alternate-head candidate pool
+remain before the A/B run.
 
 ## Frozen screen
 
@@ -60,3 +68,11 @@ engagement, and unanimous release provenance. This first packet-003 screen is
 
 No production default, persisted format, graph, traversal, materialization,
 or release configuration changes are authorized by this preregistration.
+
+## Validation of the implementation checkpoint
+
+- PG18 feature build with `distann-head-attribution-benchmark`: pass.
+- PG18 featureless build: pass.
+- No benchmark run is attached to this checkpoint.
+
+The packet-local build logs and manifest are the durable validation evidence.

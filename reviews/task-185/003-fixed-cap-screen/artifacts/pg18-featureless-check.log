@@ -1,0 +1,4 @@
+command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo check -p ecaz --features pg18
+result: pass
+output: Finished `dev` profile [unoptimized + debuginfo] target(s) in 29.15s
+head: 917995972c53f02285cf4683dcb435a5c5b69bcd
