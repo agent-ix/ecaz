@@ -99,6 +99,10 @@ pub struct LocalMultinodePg18Args {
     /// regression gate for Task 200.
     #[arg(long)]
     pub coverage_memory_regression_iterations: Option<u32>,
+    /// Task 185 benchmark-only per-seed gateway/basin provenance. Writes one
+    /// compact JSON trace per physical seed variant under --artifact-dir.
+    #[arg(long, default_value_t = false)]
+    pub gateway_trace: bool,
     /// Maximum allowed RSS slope for the Task 200 coverage regression gate.
     #[arg(long, default_value_t = 100.0)]
     pub coverage_memory_regression_max_slope_kb_per_s: f64,
@@ -477,6 +481,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.distann_stage_counters && !args.physical_benchmark {
         bail!("--distann-stage-counters requires --physical-benchmark");
+    }
+    if args.gateway_trace && !args.physical_benchmark {
+        bail!("--gateway-trace requires --physical-benchmark");
     }
     if args.stage_counter_only && (!args.physical_benchmark || !args.distann_stage_counters) {
         bail!("--stage-counter-only requires --physical-benchmark and --distann-stage-counters");
@@ -4736,6 +4743,19 @@ async fn run_physical_benchmarks(
         )
         .await?
         .get::<_, bool>(0);
+    if args.gateway_trace
+        && !coordinator
+            .query_one(
+                "SELECT to_regprocedure('ec_distann_physical_seed_gateway_trace_benchmark(regclass,real[],integer)') IS NOT NULL",
+                &[],
+            )
+            .await?
+            .get::<_, bool>(0)
+    {
+        bail!(
+            "--gateway-trace requires an extension built with distann-head-attribution-benchmark"
+        );
+    }
     if args.head_policy.is_some() && !has_head_policy_provenance {
         bail!("Task 181 head policy requires extension head-policy provenance helper");
     }
@@ -5429,6 +5449,74 @@ async fn run_physical_benchmarks(
             let mean_ms = benchmark_ms(&row[11])?;
             if arm == "physical" {
                 prediction_paths.insert(variant.to_owned(), predictions_output);
+            }
+            if arm == "physical" && args.gateway_trace {
+                let seed_strategy_sql = seed_strategy.replace('\'', "''");
+                coordinator
+                    .batch_execute(&format!(
+                        "SET ec_distann.beam_width = {arm_beam_width};\n\
+                         SET ec_distann.hop_rounds = {arm_hop_rounds};\n\
+                         SET ec_distann.candidate_heap_limit = {candidate_heap_limit};\n\
+                         SET ec_distann.benchmark_seed_mode = '{seed_strategy_sql}';\n\
+                         SET ec_distann.benchmark_head_search_width = {head_search_width};\n\
+                         SET ec_distann.benchmark_head_seed_count = {head_seed_count};\n\
+                         SET ec_distann.benchmark_exact_neighbor = {};\n\
+                         SET ec_distann.sharded_head_search = {};",
+                        if neighbor_score_mode == "exact_neighbor" {
+                            "on"
+                        } else {
+                            "off"
+                        },
+                        if args.sharded_head { "on" } else { "off" },
+                    ))
+                    .await
+                    .wrap_err("configuring coordinator for Task 185 gateway trace")?;
+                let trace_json = coordinator
+                    .query_one(
+                        &format!(
+                            "WITH traces AS (
+                                 SELECT q.id::bigint AS query_id, t.*
+                                   FROM {physical_queries} q
+                                  CROSS JOIN LATERAL ec_distann_physical_seed_gateway_trace_benchmark(
+                                      'dm_idx'::regclass, q.source, {}) t
+                                  ORDER BY q.id
+                                  LIMIT {}
+                             )
+                             SELECT jsonb_build_object(
+                                 'queries', count(*),
+                                 'traces', COALESCE(jsonb_agg(
+                                     jsonb_build_object(
+                                         'query_id', query_id,
+                                         'seed_ids', seed_ids,
+                                         'seed_expanded_counts', seed_expanded_counts,
+                                         'seed_hit_counts', seed_hit_counts,
+                                         'hit_ids', hit_ids,
+                                         'hit_origin_masks', hit_origin_masks,
+                                         'expanded_unique', expanded_unique,
+                                         'expanded_overlap', expanded_overlap,
+                                         'records_expanded', records_expanded,
+                                         'rounds_executed', rounds_executed
+                                     ) ORDER BY query_id
+                                 ), '[]'::jsonb)
+                             )::text
+                               FROM traces",
+                            args.top_k, args.queries
+                        ),
+                        &[],
+                    )
+                    .await
+                    .wrap_err("collecting Task 185 gateway traces")?
+                    .get::<_, String>(0);
+                let trace_path = log_dir.join(format!("{arm}-{variant}-gateway-trace.json"));
+                fs::write(&trace_path, &trace_json).wrap_err_with(|| {
+                    format!("writing Task 185 gateway trace {}", trace_path.display())
+                })?;
+                lines.push(format!(
+                    "physical_benchmark_gateway_trace scale={scale} variant={variant} arm={arm} queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
+                    args.queries,
+                    args.top_k,
+                    trace_path.display()
+                ));
             }
             lines.push(format!(
                 "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_label} seed_set_change={} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",

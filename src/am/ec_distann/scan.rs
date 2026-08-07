@@ -24,7 +24,7 @@
 //! cannot improve the current kth exact distance.
 
 use std::cmp::Ordering;
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 
 use crate::storage::page::ItemPointer;
 
@@ -132,6 +132,7 @@ pub(crate) struct DistannScanHit {
 struct BeamCandidate {
     dist: f32,
     vec_id: u64,
+    origin_mask: u32,
 }
 
 /// The coordinator-derived Algorithm 1 controls for one hop round. `threshold`
@@ -373,11 +374,22 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
     let beam_capacity = seeds.len() + params.beam_width * params.hop_rounds * 8;
     let mut beam = BinaryHeap::with_capacity(beam_capacity);
     let mut enqueued: HashSet<u64> = HashSet::with_capacity(beam_capacity);
-    for seed in seeds {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    super::stage_counters::seed_trace_start(
+        &seeds.iter().map(|seed| seed.vec_id).collect::<Vec<_>>(),
+    );
+    let mut origins: HashMap<u64, u32> = HashMap::with_capacity(beam_capacity);
+    for (seed_index, seed) in seeds.iter().enumerate() {
         if enqueued.insert(seed.vec_id) {
+            let origin_mask = u32::try_from(seed_index)
+                .ok()
+                .and_then(|index| 1_u32.checked_shl(index))
+                .unwrap_or(0);
+            origins.insert(seed.vec_id, origin_mask);
             beam.push(BeamCandidate {
                 dist: seed.dist,
                 vec_id: seed.vec_id,
+                origin_mask,
             });
         }
     }
@@ -388,6 +400,7 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
     let mut hits: Vec<DistannScanHit> = Vec::new();
 
     let mut batch: Vec<u64> = Vec::with_capacity(params.beam_width);
+    let mut batch_origins: Vec<u32> = Vec::with_capacity(params.beam_width);
     for _round in 0..params.hop_rounds {
         let limits = if pushdown {
             derive_pushdown_limits(
@@ -405,6 +418,7 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
         // the heap avoids re-sorting the entire accumulated frontier on every
         // hop round.
         batch.clear();
+        batch_origins.clear();
         let mut best_unvisited = None;
         while let Some(candidate) = beam.pop() {
             if expanded.contains(&candidate.vec_id) {
@@ -414,6 +428,12 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                 best_unvisited = Some(candidate);
             }
             batch.push(candidate.vec_id);
+            batch_origins.push(
+                origins
+                    .get(&candidate.vec_id)
+                    .copied()
+                    .unwrap_or(candidate.origin_mask),
+            );
             if batch.len() >= params.beam_width {
                 break;
             }
@@ -526,7 +546,11 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                 responses.len(),
             );
         }
-        for (requested, response) in batch.iter().zip(responses.iter()) {
+        for ((requested, origin_mask), response) in batch
+            .iter()
+            .zip(batch_origins.iter())
+            .zip(responses.iter())
+        {
             if response.vec_id != *requested {
                 return Err(DistannExpandError::Internal(format!(
                     "ec_distann expansion order violation: requested vec_id {requested:#x}, got {:#x}",
@@ -555,7 +579,12 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                     heap_tid: response.heap_tid,
                     exact_dist,
                 });
+                #[cfg(feature = "distann-head-attribution-benchmark")]
+                super::stage_counters::seed_trace_hit(response.vec_id, *origin_mask);
             }
+
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            super::stage_counters::seed_trace_expanded(*origin_mask);
 
             if response.neighbor_vec_ids.len() != response.neighbor_code_dists.len() {
                 return Err(DistannExpandError::Internal(
@@ -569,6 +598,11 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                 .iter()
                 .zip(response.neighbor_code_dists.iter())
             {
+                let prior_origin_mask = origins.get(neighbor_vec_id).copied().unwrap_or(0);
+                let merged_origin_mask = prior_origin_mask | *origin_mask;
+                if merged_origin_mask != prior_origin_mask {
+                    origins.insert(*neighbor_vec_id, merged_origin_mask);
+                }
                 if enqueued.insert(*neighbor_vec_id) {
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     super::stage_counters::record_work(
@@ -580,6 +614,7 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                     beam.push(BeamCandidate {
                         dist: *code_dist,
                         vec_id: *neighbor_vec_id,
+                        origin_mask: merged_origin_mask,
                     });
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     super::stage_counters::record(
@@ -776,6 +811,39 @@ mod tests {
             top_k: k,
             debug_fail_hop_round: None,
         }
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn gateway_trace_records_shared_expansion_origins() {
+        let mut expander = MockExpander {
+            nodes: HashMap::from([
+                (1, (-0.9, false, vec![(3, -0.7)])),
+                (2, (-0.8, false, vec![(3, -0.6)])),
+                (3, (-0.5, false, vec![])),
+            ]),
+            calls: Vec::new(),
+        };
+        let seeds = [
+            DistannSeedCandidate {
+                vec_id: 1,
+                dist: -0.9,
+            },
+            DistannSeedCandidate {
+                vec_id: 2,
+                dist: -0.8,
+            },
+        ];
+        let (result, trace) = super::super::stage_counters::with_seed_trace(|| {
+            distann_orchestrated_search(&seeds, &mut expander, params(2, 4, 10))
+        });
+        result.expect("gateway trace search should succeed");
+        assert_eq!(trace.seed_ids, vec![1, 2]);
+        assert_eq!(trace.seed_expanded_counts, vec![2, 2]);
+        assert_eq!(trace.seed_hit_counts, vec![2, 2]);
+        assert_eq!(trace.expanded_unique, 3);
+        assert_eq!(trace.expanded_overlap, 1);
+        assert!(trace.hit_origin_masks.contains(&3));
     }
 
     #[test]
@@ -1080,6 +1148,7 @@ mod tests {
             beam.push(BeamCandidate {
                 dist: -(vec_id as f32),
                 vec_id,
+                origin_mask: 0,
             });
         }
         retain_best_candidates(&mut beam, 4);

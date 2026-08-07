@@ -354,6 +354,87 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
+/// Compact per-query seed provenance used only by Task 185's benchmark
+/// endpoint. The traversal records the origin mask carried by each expanded
+/// node; callers can join `hit_ids` to a held-out truth set.
+#[derive(Debug, Default)]
+pub(crate) struct DistannSeedTrace {
+    pub(crate) seed_ids: Vec<u64>,
+    pub(crate) seed_expanded_counts: Vec<u32>,
+    pub(crate) seed_hit_counts: Vec<u32>,
+    pub(crate) hit_ids: Vec<u64>,
+    pub(crate) hit_origin_masks: Vec<u32>,
+    pub(crate) expanded_unique: u64,
+    pub(crate) expanded_overlap: u64,
+}
+
+thread_local! {
+    static ACTIVE_SEED_TRACE: RefCell<Option<DistannSeedTrace>> =
+        const { RefCell::new(None) };
+}
+
+pub(crate) fn with_seed_trace<T>(operation: impl FnOnce() -> T) -> (T, DistannSeedTrace) {
+    ACTIVE_SEED_TRACE.with(|trace| {
+        assert!(
+            trace.borrow().is_none(),
+            "nested ec_distann seed tracing is unsupported"
+        );
+        *trace.borrow_mut() = Some(DistannSeedTrace::default());
+    });
+    let result = operation();
+    let trace = ACTIVE_SEED_TRACE
+        .with(|trace| trace.borrow_mut().take())
+        .expect("ec_distann seed trace disappeared");
+    (result, trace)
+}
+
+pub(crate) fn seed_trace_start(seed_ids: &[u64]) {
+    ACTIVE_SEED_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(trace) = trace.as_mut() else {
+            return;
+        };
+        trace.seed_ids.clear();
+        trace.seed_ids.extend_from_slice(seed_ids);
+        trace.seed_expanded_counts = vec![0; seed_ids.len()];
+        trace.seed_hit_counts = vec![0; seed_ids.len()];
+    });
+}
+
+pub(crate) fn seed_trace_expanded(origin_mask: u32) {
+    ACTIVE_SEED_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(trace) = trace.as_mut() else {
+            return;
+        };
+        trace.expanded_unique = trace.expanded_unique.saturating_add(1);
+        trace.expanded_overlap = trace
+            .expanded_overlap
+            .saturating_add(u64::from(origin_mask.count_ones().saturating_sub(1)));
+        for (index, count) in trace.seed_expanded_counts.iter_mut().enumerate() {
+            if origin_mask & (1_u32 << index) != 0 {
+                *count = count.saturating_add(1);
+            }
+        }
+    });
+}
+
+pub(crate) fn seed_trace_hit(vec_id: u64, origin_mask: u32) {
+    ACTIVE_SEED_TRACE.with(|trace| {
+        let mut trace = trace.borrow_mut();
+        let Some(trace) = trace.as_mut() else {
+            return;
+        };
+        trace.hit_ids.push(vec_id);
+        trace.hit_origin_masks.push(origin_mask);
+        for (index, count) in trace.seed_hit_counts.iter_mut().enumerate() {
+            if origin_mask & (1_u32 << index) != 0 {
+                *count = count.saturating_add(1);
+            }
+        }
+    });
+}
+
 struct AttributionBufferGuard;
 
 impl Drop for AttributionBufferGuard {

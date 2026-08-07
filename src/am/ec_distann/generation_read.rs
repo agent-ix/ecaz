@@ -2698,6 +2698,95 @@ fn ec_distann_physical_seed_coverage_benchmark(
     TableIterator::once(row)
 }
 
+/// Task 185 gateway/basin attribution. This runs the ordinary physical scan
+/// with a benchmark-only first-arrival origin mask on the bounded frontier.
+/// `hit_origin_masks` lets the harness intersect returned ids with a disjoint
+/// truth slice; the aggregate counts expose per-seed expanded-region overlap.
+/// It is intentionally absent from production builds and never affects seed
+/// selection or result ordering.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_physical_seed_gateway_trace_benchmark(
+    index_regclass: PgRelation,
+    query: Vec<f32>,
+    top_k: i32,
+) -> TableIterator<
+    'static,
+    (
+        name!(seed_ids, Vec<i64>),
+        name!(seed_expanded_counts, Vec<i32>),
+        name!(seed_hit_counts, Vec<i32>),
+        name!(hit_ids, Vec<i64>),
+        name!(hit_origin_masks, Vec<i64>),
+        name!(expanded_unique, i64),
+        name!(expanded_overlap, i64),
+        name!(records_expanded, i32),
+        name!(rounds_executed, i32),
+    ),
+> {
+    let top_k = usize::try_from(top_k)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("gateway trace top_k must be in 1..=4096"));
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    let index_guard = IndexRelationGuard::try_access_share(index_oid)
+        .unwrap_or_else(|| pgrx::error!("gateway trace could not open index relation"));
+    let source_attnum = super::routine::indexed_ecvector_attnum(index_guard.as_ptr())
+        .unwrap_or_else(|error| {
+            pgrx::error!("gateway trace source column resolution failed: {error}")
+        });
+    // SAFETY: SQL function execution has an active snapshot; the relation
+    // guard remains live for the duration of the physical search.
+    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if snapshot.is_null() {
+        pgrx::error!("gateway trace has no active snapshot");
+    }
+    let scan =
+        PhysicalGenerationScan::open(index_oid).unwrap_or_else(|error| pgrx::error!("{error}"));
+    let (result, trace) = super::stage_counters::with_seed_trace(|| {
+        scan.search(snapshot, source_attnum, &query, top_k)
+    });
+    let collection = result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    let seed_ids = trace
+        .seed_ids
+        .into_iter()
+        .map(|value| i64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let seed_expanded_counts = trace
+        .seed_expanded_counts
+        .into_iter()
+        .map(|value| i32::try_from(value).unwrap_or(i32::MAX))
+        .collect::<Vec<_>>();
+    let seed_hit_counts = trace
+        .seed_hit_counts
+        .into_iter()
+        .map(|value| i32::try_from(value).unwrap_or(i32::MAX))
+        .collect::<Vec<_>>();
+    let hit_ids = trace
+        .hit_ids
+        .into_iter()
+        .map(|value| i64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let hit_origin_masks = trace
+        .hit_origin_masks
+        .into_iter()
+        .map(i64::from)
+        .collect::<Vec<_>>();
+    TableIterator::once((
+        seed_ids,
+        seed_expanded_counts,
+        seed_hit_counts,
+        hit_ids,
+        hit_origin_masks,
+        i64::try_from(trace.expanded_unique).unwrap_or(i64::MAX),
+        i64::try_from(trace.expanded_overlap).unwrap_or(i64::MAX),
+        i32::try_from(collection.counters.records_expanded).unwrap_or(i32::MAX),
+        i32::try_from(collection.counters.rounds_executed).unwrap_or(i32::MAX),
+    ))
+}
+
 /// Task 200 attribution endpoint.  This intentionally repeats only the
 /// coordinator-side `PhysicalGenerationScan::open` call and drops each scan;
 /// it excludes owner seed scanning and head searches from the measurement.
