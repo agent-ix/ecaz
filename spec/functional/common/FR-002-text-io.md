@@ -64,13 +64,13 @@ The text I/O surface is registered as two `LANGUAGE c` SQL functions in `sql/boo
 | FR-002-AC-3 | Hex length not matching `code_len(dim, bits)` raises ERROR with "code length mismatch" | Test |
 
 ### FR-002-AC-1: Text round-trip
-`tqvector_out(tqvector_in(text))` SHALL produce the canonical form of any valid input text.
+`tqvector_out(tqvector_in(text))` produces the canonical form of any valid input text.
 
 ### FR-002-AC-2: Error on invalid hex
-Input `'[dim=4,bits=4]:ZZZZ'::tqvector` SHALL raise ERROR with a message containing "hex".
+Input `'[dim=4,bits=4]:ZZZZ'::tqvector` raises ERROR with a message containing "hex".
 
 ### FR-002-AC-3: Error on dimension mismatch
-Input with hex length not matching `code_len(dim, bits)` SHALL raise ERROR with "code length mismatch".
+Input with hex length not matching `code_len(dim, bits)` raises ERROR with "code length mismatch".
 
 ## Dependencies
 

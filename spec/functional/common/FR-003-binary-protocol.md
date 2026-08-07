@@ -40,10 +40,10 @@ The binary protocol surface is registered as two `LANGUAGE c` SQL functions in `
 | FR-003-AC-2 | Binary payloads shorter than `MIN_BINARY_BYTES` (6 bytes) raise ERROR | Test |
 
 ### FR-003-AC-1: Binary round-trip
-`tqvector_recv(tqvector_send(val))` SHALL produce a value identical to `val` for all valid tqvector values.
+`tqvector_recv(tqvector_send(val))` produces a value identical to `val` for all valid tqvector values.
 
 ### FR-003-AC-2: Reject truncated binary
-A binary payload shorter than `MIN_BINARY_BYTES` (6 bytes) SHALL raise ERROR. This threshold covers the 2-byte `dim` descriptor plus the required 4-byte `gamma` field; the trailing `code_bytes` length is validated separately against `code_len(dim, bits)`.
+A binary payload shorter than `MIN_BINARY_BYTES` (6 bytes) raises ERROR. This threshold covers the 2-byte `dim` descriptor plus the required 4-byte `gamma` field; the trailing `code_bytes` length is validated separately against `code_len(dim, bits)`.
 
 ## Dependencies
 

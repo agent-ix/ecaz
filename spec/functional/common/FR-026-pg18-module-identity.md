@@ -64,10 +64,10 @@ The module identity declared via `pgrx::pg_module_magic!` in `src/lib.rs` is fix
 
 ### FR-026-AC-1: Module visible
 On PG18, `SELECT module_name, version FROM pg_get_loaded_modules() WHERE module_name = 'ecaz'`
-SHALL return one row with the correct version.
+returns one row with the correct version.
 
 ### FR-026-AC-2: Version matches Cargo.toml
-The reported version SHALL match the `version` field in `Cargo.toml`.
+The reported version matches the `version` field in `Cargo.toml`.
 
 ## References
 

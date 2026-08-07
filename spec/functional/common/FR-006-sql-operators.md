@@ -74,10 +74,10 @@ The operator surface registered in `sql/bootstrap.sql` for the `tqvector` type. 
 | FR-006-AC-3 | `a <#> b` equals `b <#> a` for the `(tqvector, tqvector)` overload | Test |
 
 ### FR-006-AC-1: Operator usable in ORDER BY
-`SELECT * FROM t ORDER BY col <#> $query LIMIT 10` SHALL parse and execute when `$query` is `float4[]`.
+`SELECT * FROM t ORDER BY col <#> $query LIMIT 10` parses and executes when `$query` is `float4[]`.
 
 ### FR-006-AC-2: Index scan chosen
-EXPLAIN of the above query on an indexed table SHALL show an Index Scan using `ec_hnsw`.
+EXPLAIN of the above query on an indexed table shows an Index Scan using `ec_hnsw`.
 
 Current staged behavior:
 - ADR-011 is retired and the live cost model can now select `ec_hnsw` naturally.
@@ -88,7 +88,7 @@ Current staged behavior:
   descriptive-only.
 
 ### FR-006-AC-3: Operator commutativity
-`a <#> b` SHALL equal `b <#> a` for the `(tqvector, tqvector)` overload.
+`a <#> b` equals `b <#> a` for the `(tqvector, tqvector)` overload.
 
 ## Dependencies
 

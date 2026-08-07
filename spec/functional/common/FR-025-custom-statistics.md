@@ -131,21 +131,21 @@ The cumulative counters are held in `TqStatsCounters` (`src/am/common/stats.rs`)
 | FR-025-AC-5 | On PG17, `ecaz_stats()` raises an appropriate error or does not exist | Test |
 
 ### FR-025-AC-1: Stats function exists
-On PG18, `SELECT * FROM ecaz_stats()` SHALL return a row with all defined counters.
+On PG18, `SELECT * FROM ecaz_stats()` returns a row with all defined counters.
 
 ### FR-025-AC-2: Counters increment
-After running 10 HNSW scan queries, `total_scans_started` SHALL be ≥ 10 and `total_distance_calcs` SHALL be > 0.
+After running 10 HNSW scan queries, `total_scans_started` is ≥ 10 and `total_distance_calcs` is > 0.
 
 ### FR-025-AC-3: Reset blocker documented
 Until PostgreSQL exposes a reset surface for custom pgstat kinds in this environment, Ecaz
-SHALL document the limitation rather than claim that `pg_stat_reset_shared(text)` can reset the
+documents the limitation rather than claiming that `pg_stat_reset_shared(text)` can reset the
 custom kind directly.
 
 ### FR-025-AC-4: Persistence within session
-Counters SHALL accumulate across queries within a session. They SHALL NOT reset between queries.
+Counters accumulate across queries within a session. They do not reset between queries.
 
 ### FR-025-AC-5: PG17 graceful absence
-On PG17, calling `ecaz_stats()` SHALL raise an appropriate error or the function SHALL not exist.
+On PG17, calling `ecaz_stats()` raises an appropriate error or the function does not exist.
 
 ## References
 

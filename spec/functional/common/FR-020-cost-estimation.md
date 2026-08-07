@@ -169,19 +169,19 @@ flowchart TD
 | FR-020-AC-5 | ADR-011 remains marked superseded and the former blanket prohibitive-cost override is not used for non-empty valid indexes | Inspection |
 
 ### FR-020-AC-1: Planner selects index
-On a 10K-row table with a ec_hnsw index, `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` SHALL show "Index Scan using ec_hnsw".
+On a 10K-row table with a ec_hnsw index, `EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` shows "Index Scan using ec_hnsw".
 
 ### FR-020-AC-2: Planner prefers seqscan for small tables
 On a 50-row table with a ec_hnsw index, the planner MAY prefer sequential scan (cost model correctly identifies the crossover).
 
 ### FR-020-AC-3: Cost model uses metadata
-The cost model SHALL read `m`, `ef_search`, `dimensions`, and `max_level` from the index metadata page — not use hardcoded defaults.
+The cost model reads `m`, `ef_search`, `dimensions`, and `max_level` from the index metadata page — it does not use hardcoded defaults.
 
 ### FR-020-AC-4: amgettreeheight reports max_level
-On PG18, `amgettreeheight` SHALL return the `max_level` value from the metadata page.
+On PG18, `amgettreeheight` returns the `max_level` value from the metadata page.
 
 ### FR-020-AC-5: ADR-011 superseded
-ADR-011 SHALL remain marked as superseded, and the former blanket prohibitive-cost override SHALL NOT be used for non-empty valid indexes.
+ADR-011 remains marked as superseded, and the former blanket prohibitive-cost override is not used for non-empty valid indexes.
 
 ## References
 

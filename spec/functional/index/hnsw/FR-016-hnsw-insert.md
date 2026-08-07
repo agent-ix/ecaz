@@ -183,13 +183,13 @@ flowchart TD
 | FR-016-AC-4 | Queryable statistics expose total live nodes and nodes inserted since the last bulk build or REINDEX for recall-drift measurement | Test |
 
 ### FR-016-AC-1: Insert updates graph
-After inserting a new row into an indexed table, the new vector SHALL be reachable via HNSW search.
+After inserting a new row into an indexed table, the new vector is reachable via HNSW search.
 
 ### FR-016-AC-2: GenericXLog usage
-Every page modification in aminsert SHALL be wrapped in GenericXLogStart/GenericXLogFinish.
+Every page modification in aminsert is wrapped in GenericXLogStart/GenericXLogFinish.
 
 ### FR-016-AC-3: No deadlock under concurrent insert
-Concurrent inserts SHALL not deadlock when page locks are acquired in the protocol defined by FR-007.
+Concurrent inserts do not deadlock when page locks are acquired in the protocol defined by FR-007.
 
 Current validation note:
 - `main` now closes the lock-ordering and stale-plan retry portion of this requirement for the
@@ -197,7 +197,7 @@ Current validation note:
   runtime follow-up, so A5 should not be read as a throughput proof.
 
 ### FR-016-AC-4: Recall drift is measurable
-The implementation SHALL expose queryable statistics that identify total live nodes and nodes inserted since the last bulk build or REINDEX, so recall drift checkpoints can be measured as incremental inserts accumulate after bulk build.
+The implementation exposes queryable statistics that identify total live nodes and nodes inserted since the last bulk build or REINDEX, so recall drift checkpoints can be measured as incremental inserts accumulate after bulk build.
 
 ## Dependencies
 

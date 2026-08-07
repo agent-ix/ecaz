@@ -154,19 +154,19 @@ The on-disk layout is composed of one metadata page (`MetadataPage`) plus interl
 | FR-007-AC-5 | Concurrent inserts do not deadlock under stress (10 concurrent inserters for 30 seconds) | Test |
 
 ### FR-007-AC-1: Metadata page readable
-After CREATE INDEX, page 0 SHALL contain valid metadata with the specified M and ef_construction.
+After CREATE INDEX, page 0 contains valid metadata with the specified M and ef_construction.
 
 ### FR-007-AC-2: Element tuple round-trip
-Writing and reading a TqElementTuple to/from a page SHALL preserve all fields.
+Writing and reading a TqElementTuple to/from a page preserves all fields.
 
 ### FR-007-AC-3: Neighbor tuple integrity
-Each element's neighbortid SHALL point to a valid TqNeighborTuple on the same or adjacent page.
+Each element's neighbortid points to a valid TqNeighborTuple on the same or adjacent page.
 
 ### FR-007-AC-4: Page extension works
-Inserting more tuples than fit on a single page SHALL extend the relation without errors.
+Inserting more tuples than fit on a single page extends the relation without errors.
 
 ### FR-007-AC-5: Lock ordering prevents deadlock
-Concurrent inserts SHALL not deadlock (verified by stress test with 10 concurrent inserters for 30 seconds).
+Concurrent inserts do not deadlock (verified by stress test with 10 concurrent inserters for 30 seconds).
 
 ## Dependencies
 

@@ -96,16 +96,16 @@ The strategy-translation surface is captured by `StrategyTranslationSnapshot` (`
 | FR-023-AC-4 | Invalid inputs return `COMPARE_INVALID` and `InvalidStrategy` respectively | Test |
 
 ### FR-023-AC-1: Strategy translation registered
-On PG18, the `IndexAmRoutine` returned by `ec_hnsw_handler` SHALL have non-null `amtranslatestrategy` and `amtranslatecmptype` callbacks.
+On PG18, the `IndexAmRoutine` returned by `ec_hnsw_handler` has non-null `amtranslatestrategy` and `amtranslatecmptype` callbacks.
 
 ### FR-023-AC-2: COMPARE_LT mapping
-`amtranslatestrategy(1, opfamily)` SHALL return `COMPARE_LT`.
+`amtranslatestrategy(1, opfamily)` returns `COMPARE_LT`.
 
 ### FR-023-AC-3: Reverse mapping
-`amtranslatecmptype(COMPARE_LT, opfamily)` SHALL return strategy number 1.
+`amtranslatecmptype(COMPARE_LT, opfamily)` returns strategy number 1.
 
 ### FR-023-AC-4: Invalid inputs
-`amtranslatestrategy(99, opfamily)` SHALL return `COMPARE_INVALID`. `amtranslatecmptype(COMPARE_EQ, opfamily)` SHALL return `InvalidStrategy`.
+`amtranslatestrategy(99, opfamily)` returns `COMPARE_INVALID`. `amtranslatecmptype(COMPARE_EQ, opfamily)` returns `InvalidStrategy`.
 
 ## References
 

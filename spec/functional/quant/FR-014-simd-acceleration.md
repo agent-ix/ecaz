@@ -129,25 +129,25 @@ flowchart TD
 
 ### FR-014-AC-1: Scalar fallback correctness
 On a CPU without a family-supported SIMD ISA, every quantized scoring path
-SHALL produce correct results using scalar fallback.
+produces correct results using scalar fallback.
 
 ### FR-014-AC-2: SIMD-scalar equivalence
-Each accelerated family SHALL prove scalar/SIMD equivalence under its accepted
-anchor mode and SHALL preserve recall in benchmark cells used for acceptance.
+Each accelerated family proves scalar/SIMD equivalence under its accepted
+anchor mode and preserves recall in benchmark cells used for acceptance.
 
 ### FR-014-AC-3: No SIGILL on unsupported CPU
-Running the extension on a CPU without AVX2, NEON, SVE, or SVE2 support SHALL
-NOT produce an illegal instruction fault.
+Running the extension on a CPU without AVX2, NEON, SVE, or SVE2 support does
+not produce an illegal instruction fault.
 
 ### FR-014-AC-4: Counter attribution
 
-Accepted benchmark evidence SHALL include `(surface, quant_kind, isa)` rows
+Accepted benchmark evidence includes `(surface, quant_kind, isa)` rows
 with kernel/scalar counters and width buckets for any claimed block-kernel
 latency or coverage result.
 
 ### FR-014-AC-5: Completeness matrix
 
-The project-level Task 99 matrix SHALL identify every shipped
+The project-level Task 99 matrix identifies every shipped
 `(AM, quant, ISA)` cell as complete, partial, missing-kernel, structurally
 absent, or deferred, with source packets for measured claims.
 

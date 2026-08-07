@@ -63,10 +63,10 @@ flowchart TD
 | FR-011-AC-2 | Code audit confirms no index page is modified without GenericXLog wrapping | Inspection |
 
 ### FR-011-AC-1: Crash recovery
-After building an index, simulating a crash (kill -9), and restarting PostgreSQL, the index SHALL pass `REINDEX` without errors.
+After building an index, simulating a crash (kill -9), and restarting PostgreSQL, the index passes `REINDEX` without errors.
 
 ### FR-011-AC-2: No direct page writes
-A code audit SHALL confirm that no index page is modified without GenericXLog wrapping.
+A code audit confirms that no index page is modified without GenericXLog wrapping.
 
 ## Dependencies
 
