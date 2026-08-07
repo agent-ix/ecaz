@@ -47,15 +47,12 @@ of rows.
 
 ## Validation Criteria
 
-- `ecaz cloud up --profile 10k` reaches a queryable ecaz database in
-  under 10 minutes from a clean slate.
-- `ecaz cloud bench --profile 1m --suite smoke` produces a recall +
-  latency + storage artifact bundle uploaded to S3, with no manual
-  intervention.
-- `ecaz cloud pause` reduces the running profile's compute cost to
-  zero while preserving loaded data; `ecaz cloud resume` returns the
-  same profile to a queryable state.
-- `ecaz cloud down` followed by `ecaz cloud status` reports zero
-  paid resources for the profile.
-- The same harness drives `10m` and `100m` profiles without code
-  changes, only `tfvars` selection.
+
+| ID | Criteria | Validation |
+|----|----------|------------|
+| StR-007-VC-1 | `ecaz cloud up --profile 10k` reaches a queryable ecaz database in under 10 minutes from a clean slate. | Analysis |
+| StR-007-VC-2 | `ecaz cloud bench --profile 1m --suite smoke` produces a recall + latency + storage artifact bundle uploaded to S3, with no manual intervention. | Analysis |
+| StR-007-VC-3 | `ecaz cloud pause` reduces the running profile's compute cost to zero while preserving loaded data; `ecaz cloud resume` returns the same profile to a queryable state. | Demonstration |
+| StR-007-VC-4 | `ecaz cloud down` followed by `ecaz cloud status` reports zero paid resources for the profile. | Demonstration |
+| StR-007-VC-5 | The same harness drives `10m` and `100m` profiles without code changes, only `tfvars` selection. | Demonstration |
+
