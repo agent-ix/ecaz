@@ -1,0 +1,3 @@
+command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo check -p ecaz-cli
+result: pass; one pre-existing unused-field warning in crates/ecaz-cli/src/commands/corpus/load.rs
+head: 436cae964

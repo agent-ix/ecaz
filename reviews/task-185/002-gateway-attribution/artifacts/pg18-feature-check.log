@@ -1,0 +1,3 @@
+command: PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo check --features pg18,distann-head-attribution-benchmark
+result: pass
+head: 436cae964 (extension slice; suite runner does not alter the extension)

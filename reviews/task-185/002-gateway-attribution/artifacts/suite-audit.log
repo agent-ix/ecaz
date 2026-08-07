@@ -1,0 +1,3 @@
+command: /home/peter/.cargo-target/debug/ecaz bench suite audit --config reviews/task-185/002-gateway-attribution/artifacts/gateway-attribution-100k-suite.json
+result: [suite:task185-gateway-attribution-100k] audit passed: 1 steps
+head: 436cae964; result: audit passed after suite-runner forwarding and expected-artifact registration
