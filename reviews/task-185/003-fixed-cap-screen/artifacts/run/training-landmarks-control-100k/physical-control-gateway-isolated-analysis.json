@@ -1,0 +1,78 @@
+{
+  "schema": "task185-isolated-gateway-attribution-analysis-v1",
+  "corpus_rows": 100000,
+  "corpus_dim": 1536,
+  "corpus_sha256": "07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95",
+  "training_rows": "201-400",
+  "training_queries": 200,
+  "training_query_sha256": "a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782",
+  "truth_k": 10,
+  "trace_queries": 200,
+  "trace_seed_positions": 4,
+  "truth_join": "exact inner-product top-10; vec_id reconstructed from source_identity md5(id) with UUID v4/v8 fixture nibbles",
+  "truth_join_validation": {
+    "eval_first_query_matches_retained_cache": true,
+    "head_membership_mapping_spot_checked": true,
+    "trace_count": 800
+  },
+  "truth_coverage": {
+    "union_hits": 1833,
+    "possible": 2000,
+    "rate": 0.9165,
+    "zero_success_queries": 0,
+    "coverage_histogram": {
+      "5": 3,
+      "6": 6,
+      "7": 7,
+      "8": 23,
+      "9": 61,
+      "10": 100
+    },
+    "redundant_seed_truth_hits": 4343
+  },
+  "seed_summary": [
+    {
+      "seed_position": 1,
+      "expanded": 7484,
+      "hits": 1577,
+      "truth_coverage": 1577,
+      "ordered_marginal_truth_coverage": 1577,
+      "queries_with_truth_coverage": 195,
+      "mean_expanded": 37.42
+    },
+    {
+      "seed_position": 2,
+      "expanded": 8304,
+      "hits": 1495,
+      "truth_coverage": 1495,
+      "ordered_marginal_truth_coverage": 138,
+      "queries_with_truth_coverage": 195,
+      "mean_expanded": 41.52
+    },
+    {
+      "seed_position": 3,
+      "expanded": 7300,
+      "hits": 1567,
+      "truth_coverage": 1567,
+      "ordered_marginal_truth_coverage": 84,
+      "queries_with_truth_coverage": 196,
+      "mean_expanded": 36.5
+    },
+    {
+      "seed_position": 4,
+      "expanded": 6452,
+      "hits": 1537,
+      "truth_coverage": 1537,
+      "ordered_marginal_truth_coverage": 34,
+      "queries_with_truth_coverage": 199,
+      "mean_expanded": 32.26
+    }
+  ],
+  "trace_totals": {
+    "traces": 800,
+    "expanded_unique": 29540,
+    "expanded_overlap": 0,
+    "origin_masks_non_singleton": 0
+  },
+  "scope_note": "The isolated endpoint reruns exactly one member of the control's returned seed list. These marginals are valid for the returned-seed control basin; they do not score arbitrary members of the 4096-row head or constitute a selector result."
+}

@@ -8,10 +8,11 @@ seq: 01
 head: 2ffe120a5
 ---
 
-# Task 185 fixed-cap screen preregistration
+# Task 185 fixed-cap screen checkpoint
 
-This packet is a preregistration for the next Task 185 measurement slice. It
-does not claim that a gateway candidate has been selected or measured.
+This packet records the preregistered 100k control and isolated returned-seed
+attribution slice. It does not claim that a gateway candidate has been
+selected or that the fixed-cap A/B screen is complete.
 
 ## Entry condition
 
@@ -70,6 +71,28 @@ engagement, and unanimous release provenance. This first packet-003 screen is
 No production default, persisted format, graph, traversal, materialization,
 or release configuration changes are authorized by this preregistration.
 
+## Captured control and isolated attribution
+
+The valid 100k suite completed successfully through `ecaz bench suite`:
+
+- release-profile preflight passed on all three owners with unanimous
+  extension SHA `57ee20b5da9df0d5efe1a922a12808ab62ad52e9`;
+- physical topology and remote-owner engagement passed (`owners=3`,
+  `remote_verified=2`, `source_rows=100000`);
+- control recall@32 was `0.9205`, CI `[0.9078, 0.9316]`, with 200 queries and
+  2,000 distinct top-10 trials;
+- warm latency was `43.00 ms` after 10 warmups; physical generation was
+  `2,496,659,456` bytes, with construction `955,502 ms` and publication
+  `1,094,062 ms`;
+- isolated attribution completed 800 reruns (positions 1--4 × 200 training
+  queries), with exact training truth union coverage `1,833/2,000` and ordered
+  marginal coverage `[1,577, 138, 84, 34]`.
+
+The detailed result and provenance artifacts are listed in
+`artifacts/manifest.md`. The isolated endpoint still covers only members of
+the control's returned seed list; it is not arbitrary-head candidate scoring
+and no selector or production change is claimed.
+
 ## Validation of the implementation checkpoint
 
 - PG18 feature build with `distann-head-attribution-benchmark`: pass.
@@ -77,14 +100,14 @@ or release configuration changes are authorized by this preregistration.
 - Suite audit and dry-run: pass; the emitted command includes
   `--gateway-isolated-trace` and the bounded 200×4 training-slice isolated
   matrix. The frozen production/A-B contract remains 32 returned seeds.
-- Native 10k input-shape smoke: stopped during physical setup because the
-  10k query fixture contains only 200 rows and cannot provide the required
-  disjoint 200-row training slice after the held-out rows. No benchmark result
-  is claimed; see `artifacts/smoke-input-shape.log`.
 - Current release preflight: pass on three nodes with unanimous SHA
   `57ee20b5da9df0d5efe1a922a12808ab62ad52e9`.
-- Both 100k attempts were stopped during physical setup before benchmark
-  milestones; no result is claimed.
+- 100k control plus isolated attribution suite: pass, exit code 0; packet-local
+  recall, latency, storage, membership, prediction, trace, and normalized
+  result artifacts captured.
+- Native 10k smoke: stopped before measurement because its 200-row query file
+  cannot provide the disjoint rows 201--400 training slice; no 10k result is
+  claimed.
 
 The packet-local build logs, suite config, preflight log, and manifest are the
 durable validation evidence.
