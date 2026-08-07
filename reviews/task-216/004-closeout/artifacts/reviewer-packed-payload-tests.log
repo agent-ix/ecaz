@@ -1,0 +1,25 @@
+Reviewer validation of the packed-payload decode tests added by 48aeb54fe.
+
+Command:
+  PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config \
+    cargo test --no-default-features --features pg18 --lib materialization_candidate_tests
+
+Host: Intel desktop (local bench host), PG18 (pgrx 18.3), 2026-08-07.
+Tree: task-216-mat15-isolated @ 48aeb54fe.
+
+Build provenance note: build.rs stamped ECAZ_GIT_SHA=48aeb54fe...-dirty because
+the worktree carries 34 unrelated modified files. None of them are the files
+under review — custom_scan.rs, generation_read.rs, remote_endpoint.rs, and
+remote_transport.rs are all clean at 48aeb54fe, so the tested code is exactly
+the committed code.
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 3m 02s
+         Running unittests src/lib.rs
+
+    running 4 tests
+    test am::ec_distann::custom_scan::materialization_candidate_tests::packed_payload_ranges_preserve_a_middle_null_position ... ok
+    test am::ec_distann::custom_scan::materialization_candidate_tests::materialized_payload_survives_rank_shift_without_refetch ... ok
+    test am::ec_distann::custom_scan::materialization_candidate_tests::packed_payload_ranges_reject_malformed_offsets ... ok
+    test am::ec_distann::custom_scan::materialization_candidate_tests::ranked_windows_are_deterministic_and_proven_bounded ... ok
+
+    test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 2567 filtered out; finished in 0.00s
