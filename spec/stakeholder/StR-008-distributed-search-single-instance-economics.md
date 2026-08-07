@@ -39,24 +39,10 @@ mode.
 
 ## Validation Criteria
 
-This need is satisfied when a distributed access method demonstrates, on the
-standard staged corpora at 10k/50k/100k with release-verified builds via
-`ecaz bench suite`: distinct_recall@10 ≥ 0.999; 3-worker multinode p50 at or
-below the release single-instance IVF anchor at matched recall; and a
-per-query record-touch count bounded by the configured traversal budget
-(beam width × hop rounds), independent of corpus size.
 
-**Conformance precondition.** Every criterion above is evaluated only on a
-configuration satisfying
-[NFR-021](../non-functional/NFR-021-distann-distribution-invariant.md): no
-single node holding index state proportional to corpus size. A configuration
-that meets the p50 criterion by ceasing to distribute the index does not satisfy
-this need — it abandons it. The single-instance comparison exists to show that
-distribution need not cost latency, not to license removing the distribution.
-
-The corpus must remain distributed across the roster for a result to count. This
-precondition is stated explicitly because the other criteria are all *per-query
-work* bounds, which a single-node configuration satisfies trivially.
+| ID | Criteria | Validation |
+|----|----------|------------|
+| StR-008-VC-1 | A distributed access method demonstrates, on the standard staged corpora at 10k/50k/100k with release-verified builds via `ecaz bench suite`: distinct_recall@10 ≥ 0.999; 3-worker multinode p50 at or below the release single-instance IVF anchor at matched recall; and a per-query record-touch count bounded by the configured traversal budget (beam width × hop rounds), independent of corpus size. **Conformance precondition.** Every criterion above is evaluated only on a configuration satisfying [NFR-021](../non-functional/NFR-021-distann-distribution-invariant.md): no single node holding index state proportional to corpus size. A configuration that meets the p50 criterion by ceasing to distribute the index does not satisfy this need — it abandons it. The single-instance comparison exists to show that distribution need not cost latency, not to license removing the distribution. The corpus must remain distributed across the roster for a result to count. This precondition is stated explicitly because the other criteria are all *per-query work* bounds, which a single-node configuration satisfies trivially. | Analysis |
 
 ## Stakeholders
 
