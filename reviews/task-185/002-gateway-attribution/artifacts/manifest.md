@@ -47,6 +47,10 @@ Key trace audit: 200 disjoint-training traces, each with 32 seeds and query
 IDs 1--200 corresponding to source rows 201--400; 7,056 unique expansions;
 95 shared-expansion events; 0 zero-hit queries; 0 malformed records; origin
 mask histogram `1:1145, 2:297, 4:825, 5:22, 8:4694, 9:21, 10:7, 12:45`.
+Only returned seed positions 1--4 were expanded under BW4/H100; positions
+5--32 remained unexpanded and have zero attribution. This is sufficient for
+the control's effective-basin accounting, but not for alternate-head
+set-cover scoring.
 
 Truth-join audit: exact inner-product top-10 over the 100,000-row corpus
 (`corpus_sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95`)
@@ -60,3 +64,11 @@ Key benchmark lines: recall@32 `0.9205`, CI `[0.9078, 0.9316]`; warm latency
 count `4096`; topology `owners=3`, `remote_verified=2`; engagement `pass=true`.
 These metrics are control context only. No policy promotion or production
 latency claim is made from this feature-build diagnostic.
+
+## Selector boundary
+
+This packet deliberately does not claim a gateway selector. The trace records
+the current control's bounded traversal, not an isolated traversal for every
+candidate landmark in the 4,096-member head. Packet 003 must add that
+candidate-level surface or an equivalent deterministic simulation before
+ranking landmarks by marginal bounded-traversal truth coverage.

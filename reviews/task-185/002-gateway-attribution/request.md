@@ -42,11 +42,16 @@ the disjoint training slice and rows 1--200 evaluated for attribution.
 - feature-build diagnostic only; no production-latency promotion claim; and
 - run directory under `/home/peter/.ecaz/clusters`, never under `target/`.
 
-The trace's origin masks support post-processing of per-seed truth coverage and
-set-cover marginals by joining `hit_ids` to the packet's held-out truth cache.
-The endpoint reports first-arrival/merged-before-expansion provenance; any
-candidate policy requires a separately reviewed selector and isolated A/B
-screen in packet 003.
+The trace's origin masks support post-processing of the control's effective
+per-seed truth coverage and first-arrival overlap by joining `hit_ids` to the
+packet's held-out truth input. The endpoint reports first-arrival/merged-
+before-expansion provenance. It does not, by itself, score an alternate
+4,096-member head: under BW4/H100, the bounded frontier expanded only returned
+seed positions 1--4 in this run, while positions 5--32 remained unexpanded.
+Therefore the packet is diagnostic evidence for the control basin, not a
+set-cover score for arbitrary head members. Packet 003 must add an isolated
+candidate-level attribution surface (or an equivalent pre-registered
+simulation) before using gateway marginals to construct a new head.
 
 ## Validation
 
@@ -74,16 +79,19 @@ diagnostic and is not comparable to a featureless production latency baseline.
   members;
 - seed attribution: aggregate expansion counts by returned-seed position were
   `[1188, 304, 892, 4767, 0, ...]`; ordered marginal truth coverage was
-  `[207, 17, 147, 1152, 0, ...]`, so the fourth returned position dominates
-  the observed bounded-traversal truth coverage;
+  `[207, 17, 147, 1152, 0, ...]`. Only positions 1--4 entered expansion;
+  position 4 dominates the observed bounded-traversal truth coverage, but
+  this is an attribution of the control's ordering rather than evidence that
+  position 4 is a reusable gateway identity;
 - context metrics: recall@32 `0.9205` (95% CI `[0.9078, 0.9316]`), one warm
   latency sample `41.20 ms`, and physical generation bytes `2,496,626,688`.
 
 The trace is attribution evidence, not a candidate-policy result. It does not
-justify changing the head or selecting a gateway policy: the next slice must
-use the recorded truth join to compute selector features, then preregister one
-gateway set-cover selector for the Phase 2 A/B screen. The current analysis is
-still diagnostic; it does not use evaluation outcomes for policy selection.
+justify changing the head or selecting a gateway policy. The next slice must
+first expose candidate-level isolated traversal (using only rows 201--400 and
+their exact training truth) or a byte-equivalent simulation, then preregister
+one gateway set-cover selector for the Phase 2 A/B screen. The current analysis
+is still diagnostic; it does not use evaluation outcomes for policy selection.
 
 The durable evidence is under `artifacts/run/`; the suite manifest reports one
 succeeded step, zero missing artifacts, and a 2,126,724 ms duration. The
