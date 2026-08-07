@@ -66,18 +66,10 @@ suite run.
 
 ## Acceptance Criteria
 
-### NFR-011-AC-1
 
-The `dev`-profile load completes within the target wall time on
-the first end-to-end smoke run.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-011-AC-1 | The `dev`-profile load completes within the target wall time on the first end-to-end smoke run. | Analysis |
+| NFR-011-AC-2 | `corpus load` artifacts include a `throughput.json` recording `rows`, `bytes`, `wall_seconds`, `rows_per_sec`, `bytes_per_sec`, and `worker_count`. | Analysis |
+| NFR-011-AC-3 | Throughput artifacts are uploaded to the profile's S3 bucket under `bench-artifacts/<run-id>/load/`. | Analysis |
 
-### NFR-011-AC-2
-
-`corpus load` artifacts include a `throughput.json` recording
-`rows`, `bytes`, `wall_seconds`, `rows_per_sec`, `bytes_per_sec`,
-and `worker_count`.
-
-### NFR-011-AC-3
-
-Throughput artifacts are uploaded to the profile's S3 bucket under
-`bench-artifacts/<run-id>/load/`.

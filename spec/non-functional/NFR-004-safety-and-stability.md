@@ -169,28 +169,12 @@ completed evidence.
 
 ## Acceptance Criteria
 
-### NFR-004-AC-1
 
-`docs/hardening.md` documents every Task 34 hardening lane, its command, its
-tool prerequisites, and whether the lane is local, nightly, PG18/live-cluster,
-or standalone/report-only.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-004-AC-1 | `docs/hardening.md` documents every Task 34 hardening lane, its command, its tool prerequisites, and whether the lane is local, nightly, PG18/live-cluster, or standalone/report-only. | Demonstration |
+| NFR-004-AC-2 | `make hardening-local` runs the stable local hardening subset without requiring a live PostgreSQL cluster. | Demonstration |
+| NFR-004-AC-3 | `make hardening-nightly-local` runs the toolchain-sensitive local lanes or skips unsupported platform-specific sanitizer lanes with an explicit message. | Demonstration |
+| NFR-004-AC-4 | The review packet for a hardening-lane change stores raw tool logs and records which lanes passed, skipped, or remain manually gated. | Inspection |
+| NFR-004-AC-5 | New unsafe blocks require nearby `SAFETY` comments, and the unsafe audit baseline detects new uncommented unsafe lines. | Inspection |
 
-### NFR-004-AC-2
-
-`make hardening-local` runs the stable local hardening subset without requiring
-a live PostgreSQL cluster.
-
-### NFR-004-AC-3
-
-`make hardening-nightly-local` runs the toolchain-sensitive local lanes or
-skips unsupported platform-specific sanitizer lanes with an explicit message.
-
-### NFR-004-AC-4
-
-The review packet for a hardening-lane change stores raw tool logs and records
-which lanes passed, skipped, or remain manually gated.
-
-### NFR-004-AC-5
-
-New unsafe blocks require nearby `SAFETY` comments, and the unsafe audit
-baseline detects new uncommented unsafe lines.

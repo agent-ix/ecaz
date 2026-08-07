@@ -51,20 +51,11 @@ unevidenced performance requirements complete.
 
 ## Acceptance Criteria
 
-### NFR-007-AC-1
 
-Every benchmark row in `docs/benchmarks.md` cites a source packet under `benchmarks/<topic>/` (or a code-review packet under `reviews/task-{id}/{ordinal}-<topic>/`) or clearly states that the evidence is historical/local.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-007-AC-1 | Every benchmark row in `docs/benchmarks.md` cites a source packet under `benchmarks/<topic>/` (or a code-review packet under `reviews/task-{id}/{ordinal}-<topic>/`) or clearly states that the evidence is historical/local. | Analysis |
+| NFR-007-AC-2 | Benchmark packets used for measurement claims include `manifest.md` and packet-local raw logs under `benchmarks/<topic>/artifacts/`. Code-review packets that cite benchmark evidence link to the owning `benchmarks/<topic>/` packet. | Analysis |
+| NFR-007-AC-3 | `spec/tests.md` records measurement gaps rather than marking unevidenced performance requirements complete. | Inspection |
+| NFR-007-AC-4 | Latency and recall benchmark packets cite either a suite manifest backend profile field or an equivalent packet-local artifact proving the measured backend build profile. | Analysis |
 
-### NFR-007-AC-2
-
-Benchmark packets used for measurement claims include `manifest.md` and packet-local raw logs under `benchmarks/<topic>/artifacts/`. Code-review packets that cite benchmark evidence link to the owning `benchmarks/<topic>/` packet.
-
-### NFR-007-AC-3
-
-`spec/tests.md` records measurement gaps rather than marking unevidenced performance requirements complete.
-
-### NFR-007-AC-4
-
-Latency and recall benchmark packets cite either a suite manifest backend
-profile field or an equivalent packet-local artifact proving the measured
-backend build profile.

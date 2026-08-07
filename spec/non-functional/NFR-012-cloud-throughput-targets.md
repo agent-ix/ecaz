@@ -98,24 +98,11 @@ separately as `qps_high_recall`.
 
 ## Acceptance Criteria
 
-### NFR-012-AC-1
 
-`ecaz cloud bench` artifacts include `read_qps.json` recording
-`p50_us`, `p99_us`, `qps`, `nprobe`, `concurrency`, `cache_state`.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-012-AC-1 | `ecaz cloud bench` artifacts include `read_qps.json` recording `p50_us`, `p99_us`, `qps`, `nprobe`, `concurrency`, `cache_state`. | Demonstration |
+| NFR-012-AC-2 | `ecaz cloud bench` artifacts include `write_throughput.json` recording `single_row_per_sec`, `copy_rows_per_sec`, `wal_bytes_per_sec`. | Demonstration |
+| NFR-012-AC-3 | When more than one profile run's artifacts exist in S3, the harness emits a `comparison.md` cross-tabulating QPS and write throughput against targets above. | Analysis |
+| NFR-012-AC-4 | Distributed runs emit `coordinator_overhead_ms` (libpq round-trip + merge) as a separate field in `read_qps.json` so the "sharding wins?" question is answerable from artifacts alone. | Inspection |
 
-### NFR-012-AC-2
-
-`ecaz cloud bench` artifacts include `write_throughput.json`
-recording `single_row_per_sec`, `copy_rows_per_sec`, `wal_bytes_per_sec`.
-
-### NFR-012-AC-3
-
-When more than one profile run's artifacts exist in S3, the harness
-emits a `comparison.md` cross-tabulating QPS and write
-throughput against targets above.
-
-### NFR-012-AC-4
-
-Distributed runs emit `coordinator_overhead_ms` (libpq
-round-trip + merge) as a separate field in `read_qps.json` so the
-"sharding wins?" question is answerable from artifacts alone.

@@ -91,16 +91,10 @@ a product-scale claim.
 
 ## Acceptance Criteria
 
-### NFR-013-AC-1
 
-Local readiness spec rows and review packets distinguish local functionality,
-local production-readiness smoke, and AWS/RDS product-scale evidence.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-013-AC-1 | Local readiness spec rows and review packets distinguish local functionality, local production-readiness smoke, and AWS/RDS product-scale evidence. | Inspection |
+| NFR-013-AC-2 | Readiness artifacts record the GUCs and counters needed to interpret fanout, payload, timeout, strict/degraded, and concurrency behavior. | Inspection |
+| NFR-013-AC-3 | Specs do not promote local smoke results into product-scale claims. | Demonstration |
 
-### NFR-013-AC-2
-
-Readiness artifacts record the GUCs and counters needed to interpret fanout,
-payload, timeout, strict/degraded, and concurrency behavior.
-
-### NFR-013-AC-3
-
-Specs do not promote local smoke results into product-scale claims.

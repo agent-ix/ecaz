@@ -42,7 +42,11 @@ Different workloads favor different ANN tradeoffs: HNSW gives strong general-pur
 
 ## Validation Criteria
 
-1. `ecvector(dim)` works as the canonical indexed column type for HNSW, IVF, and DiskANN.
-2. `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` are registered by `CREATE EXTENSION ecaz`.
-3. Documentation and benchmarks distinguish default product guidance from local research/measurement lanes.
-4. SPIRE specs define PID-addressed partition objects, epoch publication, local multi-store placement, CustomScan distributed reads, typed tuple transport, coordinator-routed DML, 2PC recovery, and operator diagnostics.
+
+| ID | Criteria | Validation |
+|----|----------|------------|
+| StR-005-VC-1 | `ecvector(dim)` works as the canonical indexed column type for HNSW, IVF, and DiskANN. | Demonstration |
+| StR-005-VC-2 | `ec_hnsw`, `ec_ivf`, `ec_diskann`, and `ec_spire` are registered by `CREATE EXTENSION ecaz`. | Demonstration |
+| StR-005-VC-3 | Documentation and benchmarks distinguish default product guidance from local research/measurement lanes. | Inspection |
+| StR-005-VC-4 | SPIRE specs define PID-addressed partition objects, epoch publication, local multi-store placement, CustomScan distributed reads, typed tuple transport, coordinator-routed DML, 2PC recovery, and operator diagnostics. | Inspection |
+

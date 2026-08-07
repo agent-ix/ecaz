@@ -69,22 +69,11 @@ lifecycle rule.
 
 ## Acceptance Criteria
 
-### NFR-010-AC-1
 
-A teardown of any profile via `ecaz cloud down` followed by
-`ecaz cloud status` reports zero compute resources and only the
-intentionally-retained snapshot/bucket.
+| ID | Criteria | Verification |
+|----|----------|--------------|
+| NFR-010-AC-1 | A teardown of any profile via `ecaz cloud down` followed by `ecaz cloud status` reports zero compute resources and only the intentionally-retained snapshot/bucket. | Demonstration |
+| NFR-010-AC-2 | `ecaz cloud status --json` includes `estimated_hourly_usd` and `retained_monthly_usd` fields with non-null numeric values. | Demonstration |
+| NFR-010-AC-3 | A profile larger than `dev` cannot be `up`'d without `--confirm-cost <usd>` matching the projected daily cost. | Demonstration |
+| NFR-010-AC-4 | Terraform plan for any profile contains zero NAT gateway resources. | Demonstration |
 
-### NFR-010-AC-2
-
-`ecaz cloud status --json` includes `estimated_hourly_usd` and
-`retained_monthly_usd` fields with non-null numeric values.
-
-### NFR-010-AC-3
-
-A profile larger than `dev` cannot be `up`'d without
-`--confirm-cost <usd>` matching the projected daily cost.
-
-### NFR-010-AC-4
-
-Terraform plan for any profile contains zero NAT gateway resources.
