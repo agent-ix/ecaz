@@ -9,12 +9,13 @@
 | Latency mean/p50/p95/p99/max | matching `results.jsonl` and summary logs | proved |
 | Storage and topology gates | summary logs; zero orphans and two remote probes | proved |
 | Release/corpus/query provenance | packet 002 manifest and suite manifests | proved |
-| Candidate usefulness gate | candidate is slower: 86.10 ms vs 40.60 ms mean | failed, correctly STOPped |
-| Ordered identity/reproducibility gate | physical arrays differ in 2/200 rows; seed digests differ | failed, correctly STOPped |
+| Candidate usefulness gate | MAT-15 ceiling is 0.076/40.60 ms = 0.19%; bytes unchanged | failed, correctly STOPped |
+| Ordered identity/reproducibility gate | physical arrays differ in 2/200 rows because arms rebuilt generations | failed; lane carry-in recorded |
 | Full-scale 10k/50k/100k matrix | packet 002 says conditional on useful 100k result | not required after STOP |
 | Productionization/default change | no production commit or default change | not applicable |
 | Closeout review acceptance | packet 004 review feedback / PR review | pending |
 
 The final row is the only incomplete requirement. Task 216 must not be marked
 review-closed or complete until an outside reviewer accepts the STOP and the
-conditional full-scale decision.
+conditional full-scale decision. The corrected rationale and lane carry-ins
+are in packets 002–004.

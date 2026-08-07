@@ -21,4 +21,19 @@ generations, so this identity result is a reproducibility stop and is not
 asserted to be caused by the payload representation.
 
 Both suite result files record NFR-021 actual `unavailable` at this diagnostic
-scale. No NFR-021 conformance claim is made.
+scale. Fault drills were explicitly skipped by the checked-in config
+(`skip_fault_drills: true`); no outage-drill coverage is claimed. No NFR-021
+conformance claim is made.
+
+The stage counters put the owner SQL work at 40.376 ms summed over owners for
+control and 118.422 ms for MAT-15. Coordinator decode was 0.076 ms and 0.096
+ms per scan respectively. Returned payload bytes were 576,576 and 576,945.
+Thus MAT-15's addressable ceiling on this profile is 0.19% of the control
+scan, and there is no wire-byte reduction. The implementation regression is a
+secondary diagnostic, not the family-closing rationale.
+
+Carry-ins for MAT-21 or any successor candidate are: (1) build one generation
+and swap only the extension binary, or pin the drifting generation input,
+before asserting ordered-result identity; and (2) require a maximum-
+addressable-win calculation in candidate screening before advancing a
+stage-local hypothesis.

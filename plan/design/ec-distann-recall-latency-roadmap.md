@@ -248,13 +248,13 @@ remain controls rather than new candidates.
 | MAT-12 | Rank-indexed payload storage instead of `HashMap<vec_id, payload>` | deferred after fixed-10 winner |
 | MAT-13 | Preserve request order and eliminate result-map lookup | deferred after fixed-10 winner |
 | MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | deferred after fixed-10 winner |
-| MAT-15 | Packed payload buffer with offsets and null bitmap | **selected — Task 216 packet 001 screen (2026-08-06)**: owner payload SQL/endpoint materialization is the measured dominant stage (~39 ms/scan owner-side vs 37 ms scan total at 100k); strongest isolated hypothesis, next is the packet-002 isolated 100k A/B |
+| MAT-15 | Packed payload buffer with offsets and null bitmap | **STOP — Task 216 isolated 100k (2026-08-07)**: coordinator decode was only 0.076 ms against a 40.60 ms control scan (0.19%) and response bytes were unchanged. The candidate's owner-SQL regression is secondary evidence; this ceiling closes the family. |
 | MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on wire/decode share |
 | MAT-17 | Cache resolved row schema per published generation | **production behavior via accepted Task 195; exact-recall release A/B passed** |
 | MAT-18 | Cache attnum-to-send-function resolution | production behavior via accepted Task 195 |
 | MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
-| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **secondary — Task 216 packet 001 screen (2026-08-06)**: eligible within the dominant materialization region, behind MAT-15; at most one of the two advances |
+| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **deferred carry-in from Task 216 STOP (2026-08-07)**: not part of Task 216; future A/B must build one generation and swap only the extension binary (or pin drifting inputs), and calculate maximum addressable win before advancing |
 | MAT-22 | Return row-tier locator with expanded candidates | conditional; changes expansion wire payload |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
@@ -509,7 +509,7 @@ withdrawn as unsupported by the available counters. Task 207 is review-closed
 with no promotion; its union-construction result does not justify repeating
 that lane unchanged.
 
-Status update (2026-08-06, end of day): items 1, 2, and the attribution half
+Status update (2026-08-07): items 1, 2, and the attribution half
 of item 4 are done. Task 205 is review-closed (accepted disposition in
 `reviews/task-205/005-attribution-closeout/`). Task 215's release A/B ran and
 recorded **STOP** — BW64/H8 was 20–48% slower on the normal release build and
@@ -518,13 +518,16 @@ follow-ups now reconcile the Task 206 work-surface gap, reject the
 higher-recall/slower-latency Pareto trade, declare the skipped Task 208/210
 entry gate, and point mechanism accounting to Task 216
 (`reviews/task-215/003-release-matrix-and-decision/`). Task 216's 100k
-attribution is accepted and selected MAT-15 (MAT-21 secondary, TRAV-05
-rejected). The remaining execution order is:
+attribution is accepted; its isolated MAT-15 gate recorded a negative STOP and
+closed MAT-15 on its 0.19% addressable ceiling. The owner-SQL regression is
+secondary evidence, not the family rationale. The two arms were rebuilt
+independently, so future MAT-21 work carries a generation-swap/pinned-input
+requirement, and candidate screening carries a maximum-win gate. Task 216's
+closeout is review-pending. The remaining execution order is:
 
 1. start the now-unblocked Task 185 selection-objective lane; and
-2. run Task 216's MAT-15 isolated 100k A/B under
-   `reviews/task-216/002-isolated-candidate/`, without stacking any
-   Task 215 regime change.
+2. finish review of Task 216's negative closeout under
+   `reviews/task-216/004-closeout/`; no MAT-21 run is authorized by Task 216.
 
 Task 216 imports the owner-side residual implication from the corrected Task
 205 and Task 206 evidence. Response-byte reduction alone is not sufficient:
