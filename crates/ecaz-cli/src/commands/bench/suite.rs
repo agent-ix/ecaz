@@ -646,6 +646,9 @@ struct DistannLocalMultinodeStep {
     /// transaction. The fixture is reused when `reuse_fixture` is true.
     #[serde(default)]
     coverage_memory_regression_iterations: Option<u32>,
+    /// Task 185 feature-only physical seed gateway/basin provenance.
+    #[serde(default)]
+    gateway_trace: bool,
     #[serde(default)]
     coverage_memory_regression_max_slope_kb_per_s: Option<f64>,
     #[serde(default)]
@@ -4417,6 +4420,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.gateway_trace && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} gateway_trace requires physical_benchmark",
+                        step.name
+                    )
+                }
                 if step.stage_counter_only
                     && (!step.physical_benchmark || !step.distann_stage_counters)
                 {
@@ -5336,6 +5345,9 @@ fn expand_distann_local_multinode(
     }
     if step.physical_benchmark {
         args.push("--physical-benchmark".into());
+    }
+    if step.gateway_trace {
+        args.push("--gateway-trace".into());
     }
     if step.distann_stage_counters || explicit_full_metrics {
         args.push("--distann-stage-counters".into());
