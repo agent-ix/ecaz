@@ -28,6 +28,10 @@ A PostgreSQL extension SHALL provide a native data type that stores TurboQuant-c
 
 ## Validation Criteria
 
-- 1M vectors at 1536-dim, 4-bit stored in < 1GB of index space
-- ANN queries return results via standard SQL (ORDER BY ... <#> ... LIMIT k)
-- Extension installable via `CREATE EXTENSION ecaz` on PostgreSQL 18, with PostgreSQL 17 retained as a compatibility fallback
+
+| ID | Criteria | Validation |
+|----|----------|------------|
+| StR-001-VC-1 | 1M vectors at 1536-dim, 4-bit stored in < 1GB of index space. | Demonstration |
+| StR-001-VC-2 | ANN queries return results via standard SQL (ORDER BY ... <#> ... LIMIT k). | Demonstration |
+| StR-001-VC-3 | Extension installable via `CREATE EXTENSION ecaz` on PostgreSQL 18, with PostgreSQL 17 retained as a compatibility fallback. | Demonstration |
+

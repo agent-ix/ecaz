@@ -24,5 +24,9 @@ The `tqvector` extension SHALL be MIT licensed and fully owned by Agent-IX. It S
 
 ## Validation Criteria
 
-- LICENSE file declares MIT
-- `cargo deny check licenses` passes with no copyleft violations
+
+| ID | Criteria | Validation |
+|----|----------|------------|
+| StR-002-VC-1 | LICENSE file declares MIT. | Demonstration |
+| StR-002-VC-2 | `cargo deny check licenses` passes with no copyleft violations. | Demonstration |
+

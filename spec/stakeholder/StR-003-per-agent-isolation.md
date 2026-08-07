@@ -24,5 +24,9 @@ The HNSW index access method SHALL operate correctly on partitioned tables. A qu
 
 ## Validation Criteria
 
-- HNSW index per partition operates independently
-- INSERT/SCAN/VACUUM on one partition does not touch other partitions' index pages
+
+| ID | Criteria | Validation |
+|----|----------|------------|
+| StR-003-VC-1 | HNSW index per partition operates independently. | Demonstration |
+| StR-003-VC-2 | INSERT/SCAN/VACUUM on one partition does not touch other partitions' index pages. | Demonstration |
+
