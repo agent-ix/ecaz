@@ -48,3 +48,15 @@ MAT-15 can advance only if the comparison is attributable to this isolated
 representation change and all hard invariants pass. A latency win without
 recall/result identity and protocol proof is a rejection, not a promotion.
 
+## Isolated result
+
+The control and candidate completed the registered physical 100k suite on
+release PG18 builds. MAT-15 was rejected: physical mean latency increased
+from 40.60 ms to 86.10 ms, p95 from 54.30 ms to 113.70 ms, and p99 from
+57.20 ms to 127.00 ms. Recall was 0.9275 versus 0.9295 and storage was
+effectively unchanged (1.351173 versus 1.351160 amplification). The physical
+prediction files differed in 2 of 200 ordered query rows, while the single
+prediction files matched. The physical seed digests differed between runs,
+so that identity discrepancy is recorded as a hard reproducibility gate and
+not claimed as a candidate-caused regression. No packet-003 full-scale run is
+authorized under the preregistered usefulness rule.
