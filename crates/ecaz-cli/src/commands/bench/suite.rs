@@ -653,6 +653,9 @@ struct DistannLocalMultinodeStep {
     /// position. This is intentionally more expensive than gateway_trace.
     #[serde(default)]
     gateway_isolated_trace: bool,
+    /// Maximum returned seed positions to isolate per training query.
+    #[serde(default)]
+    gateway_isolated_seed_limit: Option<u32>,
     #[serde(default)]
     coverage_memory_regression_max_slope_kb_per_s: Option<f64>,
     #[serde(default)]
@@ -4448,6 +4451,20 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if let Some(limit) = step.gateway_isolated_seed_limit {
+                    if !(1..=4096).contains(&limit) {
+                        bail!(
+                            "distann-local-multinode step {:?} gateway_isolated_seed_limit must be in 1..=4096",
+                            step.name
+                        )
+                    }
+                    if !step.gateway_isolated_trace {
+                        bail!(
+                            "distann-local-multinode step {:?} gateway_isolated_seed_limit requires gateway_isolated_trace",
+                            step.name
+                        )
+                    }
+                }
                 if step.stage_counter_only
                     && (!step.physical_benchmark || !step.distann_stage_counters)
                 {
@@ -5428,6 +5445,13 @@ fn expand_distann_local_multinode(
     if step.gateway_isolated_trace {
         args.push("--gateway-isolated-trace".into());
     }
+    push_opt_arg(
+        &mut args,
+        "--gateway-isolated-seed-limit",
+        step.gateway_isolated_seed_limit
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
     if step.distann_stage_counters || explicit_full_metrics {
         args.push("--distann-stage-counters".into());
     }

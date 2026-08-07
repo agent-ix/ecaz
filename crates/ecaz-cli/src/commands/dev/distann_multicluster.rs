@@ -107,6 +107,10 @@ pub struct LocalMultinodePg18Args {
     /// position. This is intentionally more expensive than gateway_trace.
     #[arg(long, default_value_t = false)]
     pub gateway_isolated_trace: bool,
+    /// Maximum returned seed positions to isolate per training query. Omit to
+    /// isolate the complete configured seed list.
+    #[arg(long)]
+    pub gateway_isolated_seed_limit: Option<u32>,
     /// Maximum allowed RSS slope for the Task 200 coverage regression gate.
     #[arg(long, default_value_t = 100.0)]
     pub coverage_memory_regression_max_slope_kb_per_s: f64,
@@ -501,6 +505,14 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         bail!(
             "--gateway-isolated-trace requires --training-query-path so attribution uses the disjoint training slice"
         );
+    }
+    if let Some(limit) = args.gateway_isolated_seed_limit {
+        if !(1..=4096).contains(&limit) {
+            bail!("--gateway-isolated-seed-limit must be in 1..=4096");
+        }
+        if !args.gateway_isolated_trace {
+            bail!("--gateway-isolated-seed-limit requires --gateway-isolated-trace");
+        }
     }
     if args.stage_counter_only && (!args.physical_benchmark || !args.distann_stage_counters) {
         bail!("--stage-counter-only requires --physical-benchmark and --distann-stage-counters");
@@ -5568,6 +5580,17 @@ async fn run_physical_benchmarks(
                 ));
             }
             if arm == "physical" && args.gateway_isolated_trace {
+                let isolated_seed_count = args
+                    .gateway_isolated_seed_limit
+                    .unwrap_or(head_seed_count);
+                if isolated_seed_count == 0 || isolated_seed_count > head_seed_count {
+                    bail!(
+                        "--gateway-isolated-seed-limit {} exceeds arm {} head_seed_count {}",
+                        isolated_seed_count,
+                        variant,
+                        head_seed_count
+                    );
+                }
                 coordinator
                     .batch_execute(&format!(
                         "SET ec_distann.beam_width = {arm_beam_width};\n\
@@ -5625,9 +5648,9 @@ async fn run_physical_benchmarks(
                             gateway_trace_queries
                                 .as_deref()
                                 .expect("isolated gateway trace training relation"),
-                            head_seed_count,
+                            isolated_seed_count,
                             args.top_k,
-                            args.queries.saturating_mul(head_seed_count),
+                            args.queries.saturating_mul(isolated_seed_count),
                         ),
                         &[],
                     )
@@ -5645,7 +5668,7 @@ async fn run_physical_benchmarks(
                 lines.push(format!(
                     "physical_benchmark_gateway_isolated_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_201_400 queries={} seed_positions={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
                     args.queries,
-                    args.queries.saturating_mul(head_seed_count),
+                    args.queries.saturating_mul(isolated_seed_count),
                     args.top_k,
                     trace_path.display()
                 ));
