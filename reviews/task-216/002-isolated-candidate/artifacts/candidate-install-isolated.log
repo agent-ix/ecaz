@@ -1,0 +1,6 @@
+[install] repo=/home/peter/dev/ecaz/.worktrees/task-216-mat15-candidate
+[install] pgrx_home=/home/peter/.pgrx
+[install] pg_config=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config
+[install] backend artifact assertion passed
+[install] installed_backend=/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+[install] sha256=c4853c476994d404b874e3af38091fa9999d2139671bf084a9ead814d6f3a04d
