@@ -77,6 +77,10 @@ or release configuration changes are authorized by this preregistration.
 - Suite audit and dry-run: pass; the emitted command includes
   `--gateway-isolated-trace` and the bounded 200×4 training-slice isolated
   matrix. The frozen production/A-B contract remains 32 returned seeds.
+- Native 10k input-shape smoke: stopped during physical setup because the
+  10k query fixture contains only 200 rows and cannot provide the required
+  disjoint 200-row training slice after the held-out rows. No benchmark result
+  is claimed; see `artifacts/smoke-input-shape.log`.
 - Current release preflight: pass on three nodes with unanimous SHA
   `57ee20b5da9df0d5efe1a922a12808ab62ad52e9`.
 - Both 100k attempts were stopped during physical setup before benchmark

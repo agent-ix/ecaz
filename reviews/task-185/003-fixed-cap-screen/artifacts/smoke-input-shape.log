@@ -1,0 +1,22 @@
+Task 185 isolated gateway endpoint smoke preflight
+Date: 2026-08-07
+Head: 9b1455f922d4b53d65adfbe951697eba47c903b4
+
+The packet-local 10k smoke configuration was intentionally run through
+`ecaz bench suite` with 20 benchmark queries and a four-position isolated
+trace cap.  Release-profile extension preflight passed on all three nodes,
+but physical setup stopped before benchmark milestones:
+
+  ERROR: EC_HEAD_SAMPLE: training slice requires 200 rows, found 0
+
+Input shape:
+
+  data/staged-current/ec_real_10k_queries.tsv   200 rows
+  data/staged-current/ec_real_50k_queries.tsv  1000 rows
+  data/staged-current/ec_real_100k_queries.tsv 1000 rows
+
+The training-landmark path reserves a disjoint 200-row training slice after
+the query rows.  The native 10k fixture therefore cannot exercise this path;
+the failure is an input-fixture contract failure, not selector evidence.
+No recall, latency, storage, or isolated-attribution result was produced.
+The failed 10k cluster and raw run directory were removed after capture.

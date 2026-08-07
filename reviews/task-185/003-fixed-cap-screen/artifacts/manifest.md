@@ -43,7 +43,21 @@ result is claimed from it.
   `ccb200665aa95c0e1cffc2f600f9a0095bfd4af640920aaa5faa7241c14a7222`
 - `suite-run.log` — suite invocation record; SHA-256
   `584f998275bf4813286056b2a221eca68f87bd6331512fe95f38aace6d2437a1`
+- `gateway-isolated-attribution-10k-smoke-suite.json` — suite config for the
+  input-shape smoke; SHA-256
+  `79469dd0e9dd61855d0d5fbe2f2afc408efd0b870c6cb8f720b6bc99b82dd298`
+- `smoke-dry-run.log` — suite audit/dry-run for the bounded four-position
+  smoke; SHA-256
+  `977874d78b82988667054e2c77534f90af9d26643f478b5048e25892bb13a683`
+- `smoke-input-shape.log` — concise failure record and fixture row counts;
+  SHA-256
+  `b982828fdbcf5fa4ad4d5bf4bc7e8fa63a475d411461ec8bf0a08ae709ca2830`
 
 The 100k attempt was stopped during physical setup before any benchmark
 milestone or result artifact. Its temporary cluster and operational logs were
 removed; no incomplete measurement is used as evidence.
+
+The 10k smoke also stopped during physical setup: its native query fixture has
+200 rows, while the training-landmark path reserves rows 201--400. The exact
+failed cluster and raw operational output were removed; no smoke result is
+claimed.

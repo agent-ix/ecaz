@@ -1,0 +1,45 @@
+{
+  "name": "task185-gateway-isolated-attribution-10k-smoke",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-185/003-fixed-cap-screen/artifacts/smoke-run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "training-landmarks-smoke-10k",
+      "tags": ["task185", "endpoint-smoke", "isolated-gateway-attribution", "ec_real_10k"],
+      "artifact_dir": "${artifact_dir}/training-landmarks-smoke-10k",
+      "run_dir": "/home/peter/.ecaz/clusters/task185-gateway-isolated-attribution-10k-smoke",
+      "nodes": 3,
+      "base_port": 42050,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "head_policy": "training_landmarks",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_10k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 20,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 1,
+      "benchmark_warmup_iterations": 1,
+      "skip_single_control": true,
+      "skip_fault_drills": true,
+      "gateway_isolated_trace": true,
+      "gateway_isolated_seed_limit": 4,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        {
+          "name": "control",
+          "seed_strategy": "head_sample_exact",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        }
+      ],
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}
