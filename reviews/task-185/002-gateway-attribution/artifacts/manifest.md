@@ -38,6 +38,7 @@ The following validation artifacts are packet-local and record commands/results:
 - `run/results.jsonl` — normalized suite rows; SHA-256 `1846ea1ae9486c5a377e2069de130fbb30b16f7b8e1955d8de8ef9b1a7e9a09e`
 - `run/training-landmarks-control-100k/distann-multinode-summary.log` — topology, provenance, coverage, build, recall, latency, storage, head, and engagement lines; SHA-256 `4213ce35ab94df256cb52b84839cf54e6bad178a51c5ea5c33ad0f95f2ab5ad5`
 - `run/training-landmarks-control-100k/physical-control-gateway-trace.json` — 200 disjoint-training traces; SHA-256 `572e39e1eb3403f0950af57f9b1b80403004e812ef6461a008511529e8a893cb`
+- `run/training-landmarks-control-100k/physical-control-gateway-analysis.json` — exact truth join, per-seed coverage/marginals, redundancy, and hard-query summary; SHA-256 `808b610729423786dab1591805a08cd1b904f844ce8b99e1d3cdb6a29c52522d`
 - `run/training-landmarks-control-100k/physical-head-membership.json` — fixed 4,096-member head; SHA-256 `b10f32bbe9cde0b318fcefc8aaa6a081c7198c31cf990f98e9fda50b56b33686`
 - `run/training-landmarks-control-100k/physical-control-recall.log` — recall table and CI; SHA-256 `0ac11acc9c7b073d17abfcaecfe0e6d0e68f562b08981ec5038da085ea310328`
 - `run/training-landmarks-control-100k/physical-control-latency.log` — one warm latency sample; SHA-256 `4fc16f7c8f549c097841c642891c7b178d37d2e1a94af058dda89eb77178c83f`
@@ -46,6 +47,13 @@ Key trace audit: 200 disjoint-training traces, each with 32 seeds and query
 IDs 1--200 corresponding to source rows 201--400; 7,056 unique expansions;
 95 shared-expansion events; 0 zero-hit queries; 0 malformed records; origin
 mask histogram `1:1145, 2:297, 4:825, 5:22, 8:4694, 9:21, 10:7, 12:45`.
+
+Truth-join audit: exact inner-product top-10 over the 100,000-row corpus
+(`corpus_sha256=07275cfd5a7a4b415ddf5eacc086de98294ac978532df46ffae30f9202323a95`)
+found 1,523/2,000 truth ids (76.15%), with three zero-success queries and 30
+redundant seed truth hits. The logical-id-to-global-vec-id reconstruction was
+checked against every member of the persisted 4,096-row head. The corpus and
+any truth cache remain regenerable inputs and are not committed.
 
 Key benchmark lines: recall@32 `0.9205`, CI `[0.9078, 0.9316]`; warm latency
 `41.20 ms` (count 1); physical generation bytes `2,496,626,688`; head sample

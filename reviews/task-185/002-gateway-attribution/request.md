@@ -68,17 +68,22 @@ diagnostic and is not comparable to a featureless production latency baseline.
 - trace: 200 disjoint training queries (rows 201--400), represented in the
   trace as query IDs 1--200, 32 seeds/query, 7,056 unique expansions, 95
   shared-expansion events, no zero-hit queries, and no malformed records;
+- truth join: exact inner-product top-10 against the 100k corpus found 1,523
+  of 2,000 truth ids (76.15%), with three zero-success queries; the persisted
+  4,096-member head's logical-id-to-vec-id reconstruction matched all 4,096
+  members;
 - seed attribution: aggregate expansion counts by returned-seed position were
-  `[1188, 304, 892, 4767, 0, ...]`; the first four positions account for all
-  recorded expansions in this control;
+  `[1188, 304, 892, 4767, 0, ...]`; ordered marginal truth coverage was
+  `[207, 17, 147, 1152, 0, ...]`, so the fourth returned position dominates
+  the observed bounded-traversal truth coverage;
 - context metrics: recall@32 `0.9205` (95% CI `[0.9078, 0.9316]`), one warm
   latency sample `41.20 ms`, and physical generation bytes `2,496,626,688`.
 
 The trace is attribution evidence, not a candidate-policy result. It does not
 justify changing the head or selecting a gateway policy: the next slice must
-join the trace to the disjoint training truth set, compute per-seed marginal
-coverage/redundancy and hard-query coverage, then preregister one gateway
-set-cover selector for the Phase 2 A/B screen.
+use the recorded truth join to compute selector features, then preregister one
+gateway set-cover selector for the Phase 2 A/B screen. The current analysis is
+still diagnostic; it does not use evaluation outcomes for policy selection.
 
 The durable evidence is under `artifacts/run/`; the suite manifest reports one
 succeeded step, zero missing artifacts, and a 2,126,724 ms duration. The
