@@ -1678,6 +1678,38 @@ unsafe fn fetch_remote_payloads(
     result
 }
 
+/// Validate packed payload offsets and resolve each positional column to a byte
+/// range. NULL columns retain their position but do not consume a value range
+/// in the reconstructed tuple; their empty range is still validated so a
+/// malformed owner response cannot be silently accepted.
+fn packed_payload_ranges(
+    payload_nulls: &[bool],
+    payload_offsets: &[i64],
+    payload_values_len: usize,
+) -> Result<Vec<Option<(usize, usize)>>, String> {
+    if payload_nulls.len() != payload_offsets.len() {
+        return Err(format!(
+            "payload has {} null flags but {} offsets",
+            payload_nulls.len(),
+            payload_offsets.len()
+        ));
+    }
+    let mut ranges = Vec::with_capacity(payload_offsets.len());
+    let mut start = 0usize;
+    for (pos, end) in payload_offsets.iter().copied().enumerate() {
+        let end = usize::try_from(end)
+            .map_err(|_| format!("payload offset {end} at position {pos} is negative"))?;
+        if start > end || end > payload_values_len {
+            return Err(format!(
+                "payload offsets are invalid at position {pos}: {start}..{end} for {payload_values_len} bytes"
+            ));
+        }
+        ranges.push((!payload_nulls[pos]).then_some((start, end)));
+        start = end;
+    }
+    Ok(ranges)
+}
+
 /// Reconstruct a virtual tuple in the scan slot from an owner-shipped payload:
 /// each projected heap attnum's binary value is decoded via `ReceiveFunctionCall`
 /// and set on the matching slot attribute; all other attributes are NULL.
@@ -1688,6 +1720,9 @@ unsafe fn store_remote_payload(
     payload_offsets: &[i64],
     payload_values: &[u8],
 ) -> *mut pg_sys::TupleTableSlot {
+    let payload_ranges =
+        packed_payload_ranges(payload_nulls, payload_offsets, payload_values.len())
+            .unwrap_or_else(|e| pgrx::error!("EcDistannDistributedScan {e}"));
     let mut writer = TupleSlotWriter::from_raw_slot(slot, "EcDistannDistributedScan")
         .unwrap_or_else(|e| pgrx::error!("{e}"));
     writer.clear();
@@ -1704,29 +1739,10 @@ unsafe fn store_remote_payload(
             writer.set_null(attr_index);
             continue;
         };
-        if payload_nulls.get(pos).copied().unwrap_or(true) {
+        let Some((start, end)) = payload_ranges.get(pos).copied().flatten() else {
             writer.set_null(attr_index);
             continue;
-        }
-        let end = *payload_offsets
-            .get(pos)
-            .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan payload offset missing"));
-        let start = if pos == 0 {
-            0
-        } else {
-            *payload_offsets.get(pos - 1).unwrap_or_else(|| {
-                pgrx::error!("EcDistannDistributedScan previous payload offset missing")
-            })
         };
-        let start = usize::try_from(start).unwrap_or_else(|_| {
-            pgrx::error!("EcDistannDistributedScan payload offset is negative")
-        });
-        let end = usize::try_from(end).unwrap_or_else(|_| {
-            pgrx::error!("EcDistannDistributedScan payload offset is negative")
-        });
-        if start > end || end > payload_values.len() {
-            pgrx::error!("EcDistannDistributedScan packed payload offsets are invalid");
-        }
         let value = &payload_values[start..end];
         let datum = binary_value_to_datum(value, &mut state.payload_inputs[pos], &attr.name);
         writer.set_datum(attr_index, datum);
@@ -1809,8 +1825,29 @@ unsafe extern "C-unwind" fn end_custom_scan(node: *mut pg_sys::CustomScanState) 
 #[cfg(test)]
 mod materialization_candidate_tests {
     use super::{
-        pending_materialization_window, take_materialized_remote_output_by_id, CustomScanOutputRow,
+        packed_payload_ranges, pending_materialization_window,
+        take_materialized_remote_output_by_id, CustomScanOutputRow,
     };
+
+    #[test]
+    fn packed_payload_ranges_preserve_a_middle_null_position() {
+        assert_eq!(
+            packed_payload_ranges(&[false, true, false], &[3, 3, 6], 6),
+            Ok(vec![Some((0, 3)), None, Some((3, 6))])
+        );
+    }
+
+    #[test]
+    fn packed_payload_ranges_reject_malformed_offsets() {
+        for (nulls, offsets, values_len) in [
+            (vec![false], vec![-1], 0),
+            (vec![false, false], vec![3, 2], 3),
+            (vec![false], vec![4], 3),
+            (vec![false], vec![], 0),
+        ] {
+            assert!(packed_payload_ranges(&nulls, &offsets, values_len).is_err());
+        }
+    }
 
     #[test]
     fn ranked_windows_are_deterministic_and_proven_bounded() {
