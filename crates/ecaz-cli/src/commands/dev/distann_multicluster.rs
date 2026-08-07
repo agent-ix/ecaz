@@ -103,6 +103,10 @@ pub struct LocalMultinodePg18Args {
     /// compact JSON trace per physical seed variant under --artifact-dir.
     #[arg(long, default_value_t = false)]
     pub gateway_trace: bool,
+    /// Task 185 benchmark-only isolated attribution for each returned seed
+    /// position. This is intentionally more expensive than gateway_trace.
+    #[arg(long, default_value_t = false)]
+    pub gateway_isolated_trace: bool,
     /// Maximum allowed RSS slope for the Task 200 coverage regression gate.
     #[arg(long, default_value_t = 100.0)]
     pub coverage_memory_regression_max_slope_kb_per_s: f64,
@@ -485,9 +489,17 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.gateway_trace && !args.physical_benchmark {
         bail!("--gateway-trace requires --physical-benchmark");
     }
+    if args.gateway_isolated_trace && !args.physical_benchmark {
+        bail!("--gateway-isolated-trace requires --physical-benchmark");
+    }
     if args.gateway_trace && args.training_query_path.is_none() {
         bail!(
             "--gateway-trace requires --training-query-path so attribution uses the disjoint training slice"
+        );
+    }
+    if args.gateway_isolated_trace && args.training_query_path.is_none() {
+        bail!(
+            "--gateway-isolated-trace requires --training-query-path so attribution uses the disjoint training slice"
         );
     }
     if args.stage_counter_only && (!args.physical_benchmark || !args.distann_stage_counters) {
@@ -4748,17 +4760,17 @@ async fn run_physical_benchmarks(
         )
         .await?
         .get::<_, bool>(0);
-    if args.gateway_trace
+    if (args.gateway_trace || args.gateway_isolated_trace)
         && !coordinator
             .query_one(
-                "SELECT to_regprocedure('ec_distann_physical_seed_gateway_trace_benchmark(regclass,real[],integer)') IS NOT NULL",
+                "SELECT to_regprocedure('ec_distann_physical_seed_gateway_trace_benchmark(regclass,real[],integer)') IS NOT NULL AND to_regprocedure('ec_distann_physical_seed_isolated_gateway_trace_benchmark(regclass,real[],integer,integer)') IS NOT NULL",
                 &[],
             )
             .await?
             .get::<_, bool>(0)
     {
         bail!(
-            "--gateway-trace requires an extension built with distann-head-attribution-benchmark"
+            "gateway attribution requires an extension built with distann-head-attribution-benchmark"
         );
     }
     if args.head_policy.is_some() && !has_head_policy_provenance {
@@ -4915,7 +4927,7 @@ async fn run_physical_benchmarks(
         args.queries,
         args.head_index_cap,
     ));
-    let gateway_trace_queries = if args.gateway_trace {
+    let gateway_trace_queries = if args.gateway_trace || args.gateway_isolated_trace {
         let training_path = std::fs::canonicalize(
             args.training_query_path
                 .as_deref()
@@ -5551,6 +5563,89 @@ async fn run_physical_benchmarks(
                 lines.push(format!(
                     "physical_benchmark_gateway_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_201_400 queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
                     args.queries,
+                    args.top_k,
+                    trace_path.display()
+                ));
+            }
+            if arm == "physical" && args.gateway_isolated_trace {
+                coordinator
+                    .batch_execute(&format!(
+                        "SET ec_distann.beam_width = {arm_beam_width};\n\
+                         SET ec_distann.hop_rounds = {arm_hop_rounds};\n\
+                         SET ec_distann.candidate_heap_limit = {candidate_heap_limit};\n\
+                         SET ec_distann.benchmark_seed_mode = '{}';\n\
+                         SET ec_distann.benchmark_head_search_width = {head_search_width};\n\
+                         SET ec_distann.benchmark_head_seed_count = {head_seed_count};\n\
+                         SET ec_distann.benchmark_exact_neighbor = {};\n\
+                         SET ec_distann.sharded_head_search = {};",
+                        seed_strategy.replace('\'', "''"),
+                        if neighbor_score_mode == "exact_neighbor" {
+                            "on"
+                        } else {
+                            "off"
+                        },
+                        if args.sharded_head { "on" } else { "off" },
+                    ))
+                    .await
+                    .wrap_err("configuring coordinator for Task 185 isolated gateway trace")?;
+                let trace_json = coordinator
+                    .query_one(
+                        &format!(
+                            "WITH traces AS (
+                                 SELECT q.id::bigint AS query_id,
+                                        positions.position::integer AS seed_position,
+                                        t.*
+                                   FROM {} q
+                                  CROSS JOIN LATERAL generate_series(1, {}) AS positions(position)
+                                  CROSS JOIN LATERAL ec_distann_physical_seed_isolated_gateway_trace_benchmark(
+                                      'dm_idx'::regclass, q.source, {}, positions.position::integer) t
+                                  ORDER BY q.id, positions.position
+                                  LIMIT {}
+                             )
+                             SELECT jsonb_build_object(
+                                 'queries', count(DISTINCT query_id),
+                                 'seed_positions', count(*),
+                                 'traces', COALESCE(jsonb_agg(
+                                     jsonb_build_object(
+                                         'query_id', query_id,
+                                         'seed_position', seed_position,
+                                         'seed_ids', seed_ids,
+                                         'seed_expanded_counts', seed_expanded_counts,
+                                         'seed_hit_counts', seed_hit_counts,
+                                         'hit_ids', hit_ids,
+                                         'hit_origin_masks', hit_origin_masks,
+                                         'expanded_unique', expanded_unique,
+                                         'expanded_overlap', expanded_overlap,
+                                         'records_expanded', records_expanded,
+                                         'rounds_executed', rounds_executed
+                                     ) ORDER BY query_id, seed_position
+                                 ), '[]'::jsonb)
+                             )::text
+                               FROM traces",
+                            gateway_trace_queries
+                                .as_deref()
+                                .expect("isolated gateway trace training relation"),
+                            head_seed_count,
+                            args.top_k,
+                            args.queries.saturating_mul(head_seed_count),
+                        ),
+                        &[],
+                    )
+                    .await
+                    .wrap_err("collecting Task 185 isolated gateway traces")?
+                    .get::<_, String>(0);
+                let trace_path =
+                    log_dir.join(format!("{arm}-{variant}-gateway-isolated-trace.json"));
+                fs::write(&trace_path, &trace_json).wrap_err_with(|| {
+                    format!(
+                        "writing Task 185 isolated gateway trace {}",
+                        trace_path.display()
+                    )
+                })?;
+                lines.push(format!(
+                    "physical_benchmark_gateway_isolated_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_201_400 queries={} seed_positions={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
+                    args.queries,
+                    args.queries.saturating_mul(head_seed_count),
                     args.top_k,
                     trace_path.display()
                 ));

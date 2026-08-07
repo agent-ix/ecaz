@@ -649,6 +649,10 @@ struct DistannLocalMultinodeStep {
     /// Task 185 feature-only physical seed gateway/basin provenance.
     #[serde(default)]
     gateway_trace: bool,
+    /// Task 185 feature-only isolated attribution for every returned seed
+    /// position. This is intentionally more expensive than gateway_trace.
+    #[serde(default)]
+    gateway_isolated_trace: bool,
     #[serde(default)]
     coverage_memory_regression_max_slope_kb_per_s: Option<f64>,
     #[serde(default)]
@@ -4426,9 +4430,21 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.gateway_isolated_trace && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} gateway_isolated_trace requires physical_benchmark",
+                        step.name
+                    )
+                }
                 if step.gateway_trace && step.training_query_path.is_none() {
                     bail!(
                         "distann-local-multinode step {:?} gateway_trace requires training_query_path for disjoint attribution",
+                        step.name
+                    )
+                }
+                if step.gateway_isolated_trace && step.training_query_path.is_none() {
+                    bail!(
+                        "distann-local-multinode step {:?} gateway_isolated_trace requires training_query_path for disjoint attribution",
                         step.name
                     )
                 }
@@ -4706,6 +4722,21 @@ impl SuiteStep {
                                     dir.join(format!("physical-{variant}-gateway-trace.json"))
                                 }));
                             }
+                            if step.gateway_isolated_trace {
+                                let variants = if step.benchmark_seed_variants.is_empty() {
+                                    vec!["production".to_owned()]
+                                } else {
+                                    step.benchmark_seed_variants
+                                        .iter()
+                                        .map(|variant| variant.name.clone())
+                                        .collect::<Vec<_>>()
+                                };
+                                artifacts.extend(variants.into_iter().map(|variant| {
+                                    dir.join(format!(
+                                        "physical-{variant}-gateway-isolated-trace.json"
+                                    ))
+                                }));
+                            }
                             artifacts
                         })
                         .collect();
@@ -4732,6 +4763,19 @@ impl SuiteStep {
                     };
                     artifacts.extend(variants.into_iter().map(|variant| {
                         dir.join(format!("physical-{variant}-gateway-trace.json"))
+                    }));
+                }
+                if step.gateway_isolated_trace {
+                    let variants = if step.benchmark_seed_variants.is_empty() {
+                        vec!["production".to_owned()]
+                    } else {
+                        step.benchmark_seed_variants
+                            .iter()
+                            .map(|variant| variant.name.clone())
+                            .collect::<Vec<_>>()
+                    };
+                    artifacts.extend(variants.into_iter().map(|variant| {
+                        dir.join(format!("physical-{variant}-gateway-isolated-trace.json"))
                     }));
                 }
                 }
@@ -5380,6 +5424,9 @@ fn expand_distann_local_multinode(
     }
     if step.gateway_trace {
         args.push("--gateway-trace".into());
+    }
+    if step.gateway_isolated_trace {
+        args.push("--gateway-isolated-trace".into());
     }
     if step.distann_stage_counters || explicit_full_metrics {
         args.push("--distann-stage-counters".into());
