@@ -5,7 +5,7 @@ role: coder
 status: open
 date: 2026-08-07
 seq: 01
-head: 917995972
+head: 2ffe120a5
 ---
 
 # Task 185 fixed-cap screen preregistration
@@ -28,8 +28,9 @@ benchmark-only endpoint that reruns the physical scan with exactly one member
 of the control's returned seed list. This isolates per-candidate expansion and
 truth-hit behavior from the 32-seed beam. It intentionally does not claim to
 score arbitrary head members, alter production selection, or constitute the
-gateway selector. Suite-driver wiring and the alternate-head candidate pool
-remain before the A/B run.
+gateway selector. Suite-driver wiring was extended at `2ffe120a5` with a
+bounded isolated-position limit. The alternate-head candidate pool remains
+before the A/B run.
 
 ## Frozen screen
 
@@ -74,10 +75,11 @@ or release configuration changes are authorized by this preregistration.
 - PG18 feature build with `distann-head-attribution-benchmark`: pass.
 - PG18 featureless build: pass.
 - Suite audit and dry-run: pass; the emitted command includes
-  `--gateway-isolated-trace` and the 200×32 training-slice matrix.
+  `--gateway-isolated-trace` and the bounded 200×4 training-slice isolated
+  matrix. The frozen production/A-B contract remains 32 returned seeds.
 - Current release preflight: pass on three nodes with unanimous SHA
   `57ee20b5da9df0d5efe1a922a12808ab62ad52e9`.
-- The 100k attempt was stopped during physical setup before benchmark
+- Both 100k attempts were stopped during physical setup before benchmark
   milestones; no result is claimed.
 
 The packet-local build logs, suite config, preflight log, and manifest are the

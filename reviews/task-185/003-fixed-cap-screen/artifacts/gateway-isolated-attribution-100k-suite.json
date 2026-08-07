@@ -27,6 +27,7 @@
       "skip_single_control": true,
       "skip_fault_drills": true,
       "gateway_isolated_trace": true,
+      "gateway_isolated_seed_limit": 4,
       "compact_artifacts": true,
       "benchmark_seed_variants": [
         {
