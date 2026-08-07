@@ -1,8 +1,8 @@
 # Task 185: ec_distann Gateway Landmark Selection
 
-Status: **proposed — entry unblocked after Task 206 review closure**
-(2026-08-06; gate added 2026-07-29). Priority: P1 bounded-recall follow-up,
-independent of Task 184.
+Status: **in progress — Phase 1 gateway attribution preregistered**
+(2026-08-07; entry gate added 2026-07-29). Priority: P1 bounded-recall
+follow-up, independent of Task 184.
 
 > **Entry gate and boundary (Task 203 audit, correction 2026-07-29-02).**
 >
