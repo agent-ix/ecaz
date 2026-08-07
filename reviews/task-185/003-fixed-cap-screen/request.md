@@ -73,6 +73,12 @@ or release configuration changes are authorized by this preregistration.
 
 - PG18 feature build with `distann-head-attribution-benchmark`: pass.
 - PG18 featureless build: pass.
-- No benchmark run is attached to this checkpoint.
+- Suite audit and dry-run: pass; the emitted command includes
+  `--gateway-isolated-trace` and the 200×32 training-slice matrix.
+- Current release preflight: pass on three nodes with unanimous SHA
+  `57ee20b5da9df0d5efe1a922a12808ab62ad52e9`.
+- The 100k attempt was stopped during physical setup before benchmark
+  milestones; no result is claimed.
 
-The packet-local build logs and manifest are the durable validation evidence.
+The packet-local build logs, suite config, preflight log, and manifest are the
+durable validation evidence.

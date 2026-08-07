@@ -1,0 +1,44 @@
+{
+  "name": "task185-gateway-isolated-attribution-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-185/003-fixed-cap-screen/artifacts/run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "training-landmarks-control-100k",
+      "tags": ["task185", "phase1", "isolated-gateway-attribution", "control", "ec_real_100k"],
+      "artifact_dir": "${artifact_dir}/training-landmarks-control-100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task185-gateway-isolated-attribution-100k",
+      "nodes": 3,
+      "base_port": 41950,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "head_policy": "training_landmarks",
+      "training_query_path": "/home/peter/dev/ecaz/data/staged-current/ec_real_100k_queries.tsv",
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "benchmark_iterations": 1,
+      "benchmark_warmup_iterations": 10,
+      "skip_single_control": true,
+      "skip_fault_drills": true,
+      "gateway_isolated_trace": true,
+      "compact_artifacts": true,
+      "benchmark_seed_variants": [
+        {
+          "name": "control",
+          "seed_strategy": "head_sample_exact",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq"
+        }
+      ],
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current"
+    }
+  ]
+}

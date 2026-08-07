@@ -1,0 +1,7 @@
+suite: task185-gateway-isolated-attribution-100k
+config: gateway-isolated-attribution-100k-suite.json
+audit: passed; 1 step
+dry_run: passed; emitted --gateway-isolated-trace with 200 queries and 32 seed positions/query
+release_profile_preflight: passed; nodes=3; unanimous=true; extension_git_sha=57ee20b5da9df0d5efe1a922a12808ab62ad52e9; extension_build_profile=release; debug_override=false
+run_outcome: stopped during physical setup before benchmark milestones; no result artifact retained
+run_directory: /home/peter/.ecaz/clusters/task185-gateway-isolated-attribution-100k (removed after stop)
