@@ -13,9 +13,8 @@
 | Ordered identity/reproducibility gate | physical arrays differ in 2/200 rows because arms rebuilt generations | failed; lane carry-in recorded |
 | Full-scale 10k/50k/100k matrix | packet 002 says conditional on useful 100k result | not required after STOP |
 | Productionization/default change | no production commit or default change | not applicable |
-| Closeout review acceptance | packet 004 review feedback / PR review | pending |
+| Closeout review acceptance | `004-closeout/feedback/2026-08-07-02-reviewer.md` | proved |
 
-The final row is the only incomplete requirement. Task 216 must not be marked
-review-closed or complete until an outside reviewer accepts the STOP and the
-conditional full-scale decision. The corrected rationale and lane carry-ins
-are in packets 002–004.
+The reviewer accepted the negative STOP after the rationale and lane carry-ins
+were corrected. Task 216 is review-closed as a negative STOP; MAT-21 remains a
+separate future candidate rather than unfinished scope in this task.

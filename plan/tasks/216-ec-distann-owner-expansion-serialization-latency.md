@@ -1,6 +1,6 @@
 # Task 216: ec_distann Owner Expansion and Serialization Latency
 
-Status: **review pending — negative candidate STOP** (2026-08-07).
+Status: **review-closed — negative candidate STOP** (2026-08-07).
 Priority: P1 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
