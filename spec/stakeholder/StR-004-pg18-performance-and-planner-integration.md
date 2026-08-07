@@ -39,8 +39,12 @@ The extension SHALL:
 
 ## Validation Criteria
 
-- PG18 is the default build target and PG17 remains a compatibility fallback.
-- Planner selection, strategy translation, and EXPLAIN diagnostics are live for the implemented access-method surfaces.
-- `ecaz_stats()` is live, with shared pgstat behavior available through preload configuration.
-- Parallel HNSW build has landed locally; larger-scale speedup claims are deferred to AWS/RDS-class hardware.
-- Parallel index scan is marked shelved, not an active blocker.
+
+| ID | Criteria | Validation |
+|----|----------|------------|
+| StR-004-VC-1 | PG18 is the default build target and PG17 remains a compatibility fallback. | Demonstration |
+| StR-004-VC-2 | Planner selection, strategy translation, and EXPLAIN diagnostics are live for the implemented access-method surfaces. | Demonstration |
+| StR-004-VC-3 | `ecaz_stats()` is live, with shared pgstat behavior available through preload configuration. | Demonstration |
+| StR-004-VC-4 | Parallel HNSW build has landed locally; larger-scale speedup claims are deferred to AWS/RDS-class hardware. | Demonstration |
+| StR-004-VC-5 | Parallel index scan is marked shelved, not an active blocker. | Demonstration |
+
