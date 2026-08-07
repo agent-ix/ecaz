@@ -12,11 +12,16 @@
   persisted-head seeds 32, hop rounds 100, top-k 10, 50 iterations / 10
   warmups, `ec_real_100k`
 - Isolation: control is run from the pre-change release commit; candidate is
-  run from the MAT-15 commit. No MAT-21, Task 215 BW64/H8 defaults, or other
+  run from the MAT-15 commit. Each arm provisions a fresh generation; the
+  resulting seed digest/index drift is a known lane defect and prevents
+  ordered-identity claims. No MAT-21, Task 215 BW64/H8 defaults, or other
   traversal/materialization changes are included.
 - Artifact rule: suite manifests, `results.jsonl`, cited summaries, and
   validation logs remain under this packet's `artifacts/`; cluster run
   directories remain outside the repository and are removed after capture.
+- Fault drills: explicitly skipped in the checked-in config
+  (`skip_fault_drills: true`) at the diagnostic gate; no outage/failure-drill
+  coverage is claimed.
 
 - Control head SHA: `e8f15ab0c68887c176a260107fe826c402c2f827`
 - Candidate head SHA: `6662b302f8370695320dcb36edda3cd291c8c1bc`
@@ -43,12 +48,25 @@
   `2496659456 B` and amplification `1.351173`; candidate recall `0.9295`,
   mean/p50/p95/p99 latency `86.10/85.00/113.70/127.00 ms`, storage
   `2496634880 B` and amplification `1.351160`.
+- Stage attribution: `custom_scan_total` was `38.34` versus `83.78 ms`,
+  `materialize_owner_payload_sql_work` was `40.376` versus `118.422 ms`
+  owner-summed, `materialize_coordinator_decode` was `0.076` versus `0.096
+  ms`, and payload bytes were `576576` versus `576945`. The owner SQL stage
+  is the regression site; the coordinator decode ceiling is `0.076 / 40.60 =
+  0.19%` of the control scan.
 - The candidate's physical prediction artifact differs from control in 2 of
   200 ordered query rows. The single-surface prediction artifact is byte
   identical. The physical seed digests also differ (`d25e8d4d...` versus
-  `0e623a8d...`) despite the same nominal seed policy; this is recorded as a
-  hard identity reproducibility failure, not attributed to MAT-15 alone.
-- Decision: **STOP**. MAT-15 is materially slower end-to-end and fails the
-  isolated ordered-identity/reproducibility gate. Packet 003 full-scale
-  10k/50k/100k measurement is not authorized because the candidate was not
-  useful at the required first gate.
+  `0e623a8d...`) because each arm rebuilt a fresh generation. This is a lane
+  defect, not an unexplained or MAT-15-attributed regression.
+- Install provenance logs are packet-local:
+  `candidate-install.log` SHA256
+  `2816cc472e28df72769ab08f500ee3c59988396ee0a847dd10a785dd9d326306`,
+  `candidate-install-rerun.log` SHA256
+  `2816cc472e28df72769ab08f500ee3c59988396ee0a847dd10a785dd9d326306`, and
+  `candidate-install-isolated.log` SHA256
+  `05343f9ff268ba655b1b8634717c13f6267151f609e7726122a3b985c54047fa`.
+- Decision: **STOP**. MAT-15's measured addressable ceiling is 0.19% on this
+  profile and response bytes are unchanged; the slower SQL implementation is
+  secondary evidence. Packet 003 full-scale 10k/50k/100k measurement is not
+  authorized because the candidate was not useful at the required first gate.
