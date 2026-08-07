@@ -113,16 +113,16 @@ The Cargo feature flags in `[features]` of `Cargo.toml` select the PostgreSQL ta
 | FR-027-AC-4 | On PG18, `CREATE EXTENSION ecaz` invokes `_PG_init`, registering the EXPLAIN option and non-preload-blocked diagnostics setup | Test |
 
 ### FR-027-AC-1: PG18 builds
-`cargo pgrx build --features pg18 --release` SHALL succeed.
+`cargo pgrx build --features pg18 --release` succeeds.
 
 ### FR-027-AC-2: PG17 builds
-`cargo pgrx build --features pg17 --release` SHALL succeed with no PG18-specific code compiled.
+`cargo pgrx build --features pg17 --release` succeeds with no PG18-specific code compiled.
 
 ### FR-027-AC-3: Tests pass on both
-`cargo pgrx test pg17` and `cargo pgrx test pg18` SHALL both pass.
+`cargo pgrx test pg17` and `cargo pgrx test pg18` both pass.
 
 ### FR-027-AC-4: _PG_init called
-On PG18, `CREATE EXTENSION ecaz` SHALL invoke `_PG_init`, registering the EXPLAIN option and any PG18 diagnostics setup that is not still blocked on preload-time pgstat wiring.
+On PG18, `CREATE EXTENSION ecaz` invokes `_PG_init`, registering the EXPLAIN option and any PG18 diagnostics setup that is not still blocked on preload-time pgstat wiring.
 
 ## Dependencies
 

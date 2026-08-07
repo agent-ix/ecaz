@@ -274,28 +274,28 @@ flowchart TD
 | FR-021-AC-6 | All page writes during the leader's graph serialization phase use GenericXLog | Inspection |
 
 ### FR-021-AC-1: Parallel workers used
-With `max_parallel_maintenance_workers = 4` on a 100K-row table, `CREATE INDEX USING ec_hnsw` SHALL launch parallel workers.
+With `max_parallel_maintenance_workers = 4` on a 100K-row table, `CREATE INDEX USING ec_hnsw` launches parallel workers.
 
 ### FR-021-AC-2: Correctness
-The index produced by parallel build SHALL contain the same indexed heap tuple
+The index produced by parallel build contains the same indexed heap tuple
 set as a serial build on the same data. Concurrent graph assembly is not
-required to be byte-identical to serial topology; it SHALL meet the documented
+required to be byte-identical to serial topology; it meets the documented
 recall gates for the same fixture.
 
 ### FR-021-AC-3: Speedup
-Parallel build with 4 workers SHALL materially improve graph-phase and
+Parallel build with 4 workers materially improves graph-phase and
 wall-clock build time on representative 50k+ fixtures. Packet 666 records the
 first accepted real-50k source-scored result: about `9.20x` wall-clock speedup
 and `10.77x` graph-phase speedup against serial.
 
 ### FR-021-AC-4: Concurrent build
-`CREATE INDEX CONCURRENTLY ... USING ec_hnsw ...` SHALL work correctly with parallel workers.
+`CREATE INDEX CONCURRENTLY ... USING ec_hnsw ...` works correctly with parallel workers.
 
 ### FR-021-AC-5: Small table fallback
-On a 100-row table, the build SHALL fall back to serial execution without launching workers.
+On a 100-row table, the build falls back to serial execution without launching workers.
 
 ### FR-021-AC-6: GenericXLog safety
-All page writes during the leader's graph serialization phase SHALL use GenericXLog, identical to the serial build path.
+All page writes during the leader's graph serialization phase use GenericXLog, identical to the serial build path.
 
 ## References
 

@@ -58,10 +58,10 @@ tqvector_negative_query_inner_product(tqvector, real[]) RETURNS float4
 | FR-018-AC-2 | `tqvector_negative_query_inner_product(candidate, query)` equals `-1 * tqvector_query_inner_product(candidate, query)` for any valid inputs | Test |
 
 ### FR-018-AC-1: Negative code-to-code wrapper correctness
-For any valid inputs `a` and `b`, `tqvector_negative_inner_product(a, b)` SHALL equal `-1 * tqvector_inner_product(a, b)`.
+For any valid inputs `a` and `b`, `tqvector_negative_inner_product(a, b)` equals `-1 * tqvector_inner_product(a, b)`.
 
 ### FR-018-AC-2: Negative query wrapper correctness
-For any valid encoded candidate and raw query, `tqvector_negative_query_inner_product(candidate, query)` SHALL equal `-1 * tqvector_query_inner_product(candidate, query)`.
+For any valid encoded candidate and raw query, `tqvector_negative_query_inner_product(candidate, query)` equals `-1 * tqvector_query_inner_product(candidate, query)`.
 
 ## Dependencies
 

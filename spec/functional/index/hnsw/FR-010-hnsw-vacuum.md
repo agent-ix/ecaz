@@ -73,13 +73,13 @@ flowchart TD
 | FR-010-AC-3 | VACUUM concurrent with INSERT and SELECT for 60 seconds produces no errors, panics, or corrupted results (`ecaz stress vacuum` harness) | Demonstration |
 
 ### FR-010-AC-1: Deleted rows removed from results
-After DELETE + VACUUM, a search SHALL NOT return the deleted row.
+After DELETE + VACUUM, a search does not return the deleted row.
 
 ### FR-010-AC-2: Graph connectivity maintained
-After vacuuming 10% of rows, the remaining rows SHALL still be reachable. Recall SHALL NOT drop below 80% of pre-vacuum recall when measured using the same dataset, query set, ground-truth method, `m`, `ef_construction`, `ef_search`, and reporting conditions required by NFR-003.
+After vacuuming 10% of rows, the remaining rows are still reachable. Recall does not drop below 80% of pre-vacuum recall when measured using the same dataset, query set, ground-truth method, `m`, `ef_construction`, `ef_search`, and reporting conditions required by NFR-003.
 
 ### FR-010-AC-3: No corruption under concurrent load
-Running VACUUM concurrently with INSERT and SELECT for 60 seconds SHALL NOT produce errors, panics, or corrupted results.
+Running VACUUM concurrently with INSERT and SELECT for 60 seconds produces no errors, panics, or corrupted results.
 
 Current validation note:
 - `main` now carries `ecaz stress vacuum`, a CLI harness that runs concurrent

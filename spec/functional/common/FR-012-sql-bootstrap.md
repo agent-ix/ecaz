@@ -70,13 +70,13 @@ The extension control file (`ecaz.control`) declares the following settings, all
 | FR-012-AC-3 | `cargo pgrx test pg17` and `cargo pgrx test pg18` both pass | Test |
 
 ### FR-012-AC-1: Clean install
-`CREATE EXTENSION ecaz` on a fresh database SHALL succeed without errors.
+`CREATE EXTENSION ecaz` on a fresh database succeeds without errors.
 
 ### FR-012-AC-2: Clean uninstall
-`DROP EXTENSION ecaz CASCADE` SHALL remove all objects without orphans in pg_type, pg_operator, or pg_am.
+`DROP EXTENSION ecaz CASCADE` removes all objects without orphans in pg_type, pg_operator, or pg_am.
 
 ### FR-012-AC-3: Multi-version support
-`cargo pgrx test pg17` and `cargo pgrx test pg18` SHALL both pass.
+`cargo pgrx test pg17` and `cargo pgrx test pg18` both pass.
 
 ## Dependencies
 

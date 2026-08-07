@@ -140,22 +140,22 @@ flowchart TD
 | FR-013-AC-6 | QJL output is exactly `ceil(original_dim / 8)` bytes for any input dimension | Test |
 
 ### FR-013-AC-1: Codebook centroids are symmetric
-For any even number of centroids, the codebook SHALL be symmetric around zero (sum of all centroids < 1e-3).
+For any even number of centroids, the codebook is symmetric around zero (sum of all centroids < 1e-3).
 
 ### FR-013-AC-2: Beta PDF integrates to one
-The Beta PDF for any dimension d >= 2 SHALL integrate to 1.0 ± 0.001 over [-1, 1].
+The Beta PDF for any dimension d >= 2 integrates to 1.0 ± 0.001 over [-1, 1].
 
 ### FR-013-AC-3: SRHT rotation preserves norm
 `||SRHT(v)|| == ||v||` within floating-point tolerance (< 1e-5 relative error).
 
 ### FR-013-AC-4: Encode-decode round-trip fidelity
-For 1536-dim 4-bit encoding, the cosine similarity between the original and decoded vector SHALL be > 0.85 on average over random unit vectors.
+For 1536-dim 4-bit encoding, the cosine similarity between the original and decoded vector is > 0.85 on average over random unit vectors.
 
 ### FR-013-AC-5: Deterministic encoding
-Encoding the same vector with the same `(bits, seed)` SHALL produce byte-identical codes.
+Encoding the same vector with the same `(bits, seed)` produces byte-identical codes.
 
 ### FR-013-AC-6: QJL bit count correctness
-The QJL output SHALL be exactly `ceil(original_dim / 8)` bytes for any input dimension.
+The QJL output is exactly `ceil(original_dim / 8)` bytes for any input dimension.
 
 ## Dependencies
 

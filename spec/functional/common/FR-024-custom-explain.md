@@ -171,21 +171,21 @@ flowchart TD
 | FR-024-AC-5 | The per-node hook chains to any previously installed `explain_per_node_hook` | Inspection |
 
 ### FR-024-AC-1: Option recognized
-`EXPLAIN (ecaz) SELECT ...` SHALL parse without error when the extension is loaded.
+`EXPLAIN (ecaz) SELECT ...` parses without error when the extension is loaded.
 
 ### FR-024-AC-2: Stats emitted
 `EXPLAIN (FORMAT JSON, ecaz) SELECT ... ORDER BY col <#> $q LIMIT 10` on a table with an
-`ec_hnsw` index SHALL include a `"Ecaz Stats"` group with all defined counters. Text output
-SHALL still expose the same counter properties even though the group label is not guaranteed there.
+`ec_hnsw` index includes a `"Ecaz Stats"` group with all defined counters. Text output
+still exposes the same counter properties even though the group label is not guaranteed there.
 
 ### FR-024-AC-3: No output when disabled
-`EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` (without `ecaz` option) SHALL NOT include any Ecaz-specific output.
+`EXPLAIN SELECT ... ORDER BY col <#> $q LIMIT 10` (without `ecaz` option) includes no Ecaz-specific output.
 
 ### FR-024-AC-4: ANALYZE shows actuals
-`EXPLAIN (ecaz, ANALYZE) SELECT ...` SHALL show non-zero counter values reflecting actual scan execution.
+`EXPLAIN (ecaz, ANALYZE) SELECT ...` shows non-zero counter values reflecting actual scan execution.
 
 ### FR-024-AC-5: Hook chains
-If another extension has installed an `explain_per_node_hook`, Ecaz's hook SHALL chain to the previous hook after its own processing.
+If another extension has installed an `explain_per_node_hook`, Ecaz's hook chains to the previous hook after its own processing.
 
 ## References
 

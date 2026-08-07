@@ -254,22 +254,22 @@ flowchart TD
 | FR-009-AC-6 | Scanning a 50K-row index keeps simultaneously pinned buffers bounded (< 10) | Analysis |
 
 ### FR-009-AC-1: Top-k results returned
-`SELECT id FROM t ORDER BY col <#> $q LIMIT 10` SHALL return exactly 10 rows (given >= 10 rows in the table).
+`SELECT id FROM t ORDER BY col <#> $q LIMIT 10` returns exactly 10 rows (given >= 10 rows in the table).
 
 ### FR-009-AC-2: Results ordered by distance
-Results SHALL be ordered by ascending negative inner product (highest similarity first).
+Results are ordered by ascending negative inner product (highest similarity first).
 
 ### FR-009-AC-3: Index scan used
-EXPLAIN SHALL confirm an Index Scan using `ec_hnsw`, not a sequential scan, when the index exists and the bootstrap-stage planner cost override has been removed.
+EXPLAIN confirms an Index Scan using `ec_hnsw`, not a sequential scan, when the index exists and the bootstrap-stage planner cost override has been removed.
 
 ### FR-009-AC-4: ef_search affects recall
-Higher ef_search values SHALL produce higher recall at the cost of increased latency.
+Higher ef_search values produce higher recall at the cost of increased latency.
 
 ### FR-009-AC-5: GUC is session-settable
-`SET ec_hnsw.ef_search = 200` SHALL succeed and affect subsequent queries in the same session.
+`SET ec_hnsw.ef_search = 200` succeeds and affects subsequent queries in the same session.
 
 ### FR-009-AC-6: No excessive buffer pins
-During a scan of a 50K-row index, the maximum number of simultaneously pinned buffers SHALL be bounded (< 10).
+During a scan of a 50K-row index, the maximum number of simultaneously pinned buffers stays bounded (< 10).
 
 ## Dependencies
 

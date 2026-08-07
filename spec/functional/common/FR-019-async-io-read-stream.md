@@ -275,19 +275,19 @@ flowchart TD
 | FR-019-AC-5 | On PG18, `count_element_tuples()` uses a sequential ReadStream instead of per-page `ReadBufferExtended` | Inspection |
 
 ### FR-019-AC-1: PG18 scan uses ReadStream
-On PG18, `amgettuple` SHALL NOT call `ReadBufferExtended` directly during the bootstrap or linear scan phases. All page reads SHALL go through `read_stream_next_buffer()`.
+On PG18, `amgettuple` does not call `ReadBufferExtended` directly during the bootstrap or linear scan phases. All page reads go through `read_stream_next_buffer()`.
 
 ### FR-019-AC-2: PG17 fallback unchanged
-On PG17, scan behavior SHALL be identical to the pre-FR-019 implementation. No `read_stream` calls SHALL be present in the compiled binary.
+On PG17, scan behavior is identical to the pre-FR-019 implementation. No `read_stream` calls are present in the compiled binary.
 
 ### FR-019-AC-3: Cold-cache improvement measurable
-On PG18 with `io_method=worker` and `effective_io_concurrency=16`, cold-cache HNSW top-10 query latency SHALL be measurably lower than with `effective_io_concurrency=0` on the same dataset.
+On PG18 with `io_method=worker` and `effective_io_concurrency=16`, cold-cache HNSW top-10 query latency is measurably lower than with `effective_io_concurrency=0` on the same dataset.
 
 ### FR-019-AC-4: No buffer pin leaks
-After `amendscan`, zero buffers from the graph or linear stream SHALL remain pinned. `read_stream_end()` SHALL be called for both streams.
+After `amendscan`, zero buffers from the graph or linear stream remain pinned. `read_stream_end()` is called for both streams.
 
 ### FR-019-AC-5: Vacuum uses streaming reads
-On PG18, `count_element_tuples()` SHALL use a sequential `ReadStream` instead of per-page `ReadBufferExtended`.
+On PG18, `count_element_tuples()` uses a sequential `ReadStream` instead of per-page `ReadBufferExtended`.
 
 ## References
 

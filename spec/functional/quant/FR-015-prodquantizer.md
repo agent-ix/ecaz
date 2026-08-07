@@ -211,34 +211,34 @@ after construction and fully derived from `(original_dim, bits, seed)`:
 | FR-015-AC-10 | Index-local adapters preserve deterministic scalar scoring, route batches through `QuantCodec`, and keep AM code off ISA-specific kernel functions | Inspection |
 
 ### FR-015-AC-1: Encode produces correct code length
-`ProdQuantizer::new(1536, 4, 42).encode(&vec)` SHALL produce a quantized payload of exactly 772 bytes, consisting of 4-byte `gamma`, 576-byte `mse_packed`, and 192-byte `qjl_packed`.
+`ProdQuantizer::new(1536, 4, 42).encode(&vec)` produces a quantized payload of exactly 772 bytes, consisting of 4-byte `gamma`, 576-byte `mse_packed`, and 192-byte `qjl_packed`.
 
 ### FR-015-AC-2: Encode + decode round-trip
-Decode(encode(v)) SHALL have cosine similarity > 0.85 with v on average over a fixed-seed sample of 100 random 1536-dim unit vectors.
+Decode(encode(v)) has cosine similarity > 0.85 with v on average over a fixed-seed sample of 100 random 1536-dim unit vectors.
 
 ### FR-015-AC-3: Prepared-query scoring matches the declared formula
-`score_ip_encoded` with a prepared query SHALL match the formula declared in FR-013 within floating-point tolerance.
+`score_ip_encoded` with a prepared query matches the formula declared in FR-013 within floating-point tolerance.
 
 ### FR-015-AC-4: Code-to-code scoring is symmetric
 `score_ip_encoded_lite(a, b) == score_ip_encoded_lite(b, a)` for all valid inputs.
 
 ### FR-015-AC-5: Pack/unpack round-trip
-pack then unpack of MSE indices SHALL be lossless for all bit widths 1–7.
+pack then unpack of MSE indices is lossless for all bit widths 1–7.
 
 ### FR-015-AC-6: Deterministic construction
-Two `ProdQuantizer::new(1536, 4, 42)` instances SHALL produce identical codebooks and sign vectors.
+Two `ProdQuantizer::new(1536, 4, 42)` instances produce identical codebooks and sign vectors.
 
 ### FR-015-AC-7: Zero allocation in score_ip_encoded
-Repeated calls to `score_ip_encoded` with the same LUT SHALL not allocate heap memory (verified by benchmarking).
+Repeated calls to `score_ip_encoded` with the same LUT do not allocate heap memory (verified by benchmarking).
 
 ### FR-015-AC-8: Backend-local cache reuse
-Repeated construction requests for the same `(original_dim, bits, seed)` within a backend SHALL reuse cached immutable quantizer state.
+Repeated construction requests for the same `(original_dim, bits, seed)` within a backend reuse cached immutable quantizer state.
 
 ### FR-015-AC-9: Code-to-code scorer ignores QJL in v0.1
-Altering only `gamma` and QJL bits while keeping MSE indices fixed SHALL NOT change `score_ip_encoded_lite`.
+Altering only `gamma` and QJL bits while keeping MSE indices fixed does not change `score_ip_encoded_lite`.
 
 ### FR-015-AC-10: QuantCodec adapter boundary
-Index-local TurboQuant adapters SHALL preserve deterministic scalar scoring,
+Index-local TurboQuant adapters preserve deterministic scalar scoring,
 route scan-time candidate batches through `QuantCodec`, and keep AM code from
 calling ISA-specific TurboQuant kernel functions directly.
 

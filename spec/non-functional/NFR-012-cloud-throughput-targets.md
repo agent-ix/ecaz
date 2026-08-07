@@ -111,11 +111,11 @@ recording `single_row_per_sec`, `copy_rows_per_sec`, `wal_bytes_per_sec`.
 ### NFR-012-AC-3
 
 When more than one profile run's artifacts exist in S3, the harness
-SHALL emit a `comparison.md` cross-tabulating QPS and write
+emits a `comparison.md` cross-tabulating QPS and write
 throughput against targets above.
 
 ### NFR-012-AC-4
 
-Distributed runs SHALL emit `coordinator_overhead_ms` (libpq
+Distributed runs emit `coordinator_overhead_ms` (libpq
 round-trip + merge) as a separate field in `read_qps.json` so the
 "sharding wins?" question is answerable from artifacts alone.

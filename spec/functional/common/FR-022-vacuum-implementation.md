@@ -224,22 +224,22 @@ flowchart TD
 | FR-022-AC-6 | After amvacuumcleanup, `pg_class.reltuples` reflects the live (non-deleted) element count | Test |
 
 ### FR-022-AC-1: Dead rows removed
-After `DELETE FROM t WHERE id = $x; VACUUM t;`, a search query SHALL NOT return the deleted row.
+After `DELETE FROM t WHERE id = $x; VACUUM t;`, a search query does not return the deleted row.
 
 ### FR-022-AC-2: Heap TID removal
-After vacuuming, element tuples SHALL NOT contain heap TIDs that the vacuum callback reported as dead.
+After vacuuming, element tuples do not contain heap TIDs that the vacuum callback reported as dead.
 
 ### FR-022-AC-3: Graph connectivity
-After vacuuming 10% of rows from a 10K-row index (m=8), recall@10 SHALL be ≥ 80% of pre-vacuum recall, measured using NFR-003 methodology.
+After vacuuming 10% of rows from a 10K-row index (m=8), recall@10 is ≥ 80% of pre-vacuum recall, measured using NFR-003 methodology.
 
 ### FR-022-AC-4: Concurrent safety
-Running VACUUM concurrently with INSERT and SELECT for 60 seconds SHALL NOT produce errors, panics, or corrupted results.
+Running VACUUM concurrently with INSERT and SELECT for 60 seconds produces no errors, panics, or corrupted results.
 
 ### FR-022-AC-5: GenericXLog
-Every page write in ambulkdelete SHALL be wrapped in GenericXLog.
+Every page write in ambulkdelete is wrapped in GenericXLog.
 
 ### FR-022-AC-6: Statistics reported
-After `amvacuumcleanup`, `pg_class.reltuples` SHALL reflect the count of live (non-deleted) elements.
+After `amvacuumcleanup`, `pg_class.reltuples` reflects the count of live (non-deleted) elements.
 
 ## References
 

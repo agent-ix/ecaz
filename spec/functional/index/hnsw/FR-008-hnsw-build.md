@@ -221,24 +221,24 @@ flowchart TD
 | FR-008-AC-6 | `WITH (m = 0)` raises ERROR; `WITH (m = 8, ef_construction = 64)` succeeds | Test |
 
 ### FR-008-AC-1: Bulk build populates graph
-After `CREATE INDEX ... USING ec_hnsw` on a table with 1000 rows, the index SHALL contain 1000 element tuples.
+After `CREATE INDEX ... USING ec_hnsw` on a table with 1000 rows, the index contains 1000 element tuples.
 
 ### FR-008-AC-2: Crash safety
-If the server crashes during ambuild, the partially-built index SHALL be automatically cleaned up on recovery (standard Postgres behavior for unfinished index builds).
+If the server crashes during ambuild, the partially-built index is automatically cleaned up on recovery (standard Postgres behavior for unfinished index builds).
 
 ### FR-008-AC-3: GenericXLog usage
-Every page modification in ambuild SHALL be wrapped in GenericXLogStart/GenericXLogFinish.
+Every page modification in ambuild is wrapped in GenericXLogStart/GenericXLogFinish.
 
 ### FR-008-AC-4: Two-pass TID correctness
-After ambuild, every neighbor TID in every TqNeighborTuple SHALL point to a valid TqElementTuple.
+After ambuild, every neighbor TID in every TqNeighborTuple points to a valid TqElementTuple.
 
 ### FR-008-AC-5: Build uses f32 distance
-During ambuild in the default build mode, the native graph builder SHALL use
+During ambuild in the default build mode, the native graph builder uses
 f32 inner product distance from a supplied raw-vector source, not compressed
 code distance.
 
 ### FR-008-AC-6: amoptions validation
-`WITH (m = 0)` SHALL raise ERROR. `WITH (m = 8, ef_construction = 64)` SHALL succeed.
+`WITH (m = 0)` raises ERROR. `WITH (m = 8, ef_construction = 64)` succeeds.
 
 ## Dependencies
 

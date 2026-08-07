@@ -71,13 +71,13 @@ For a 1536-dim, 4-bit datum (QJL active, `mse_bits = 3`) the packed wire size is
 | FR-001-AC-3 | Pack/unpack of `(dim, bits, seed, gamma, code_bytes)` round-trips losslessly for all valid parameter combinations | Test |
 
 ### FR-001-AC-1: Type exists after CREATE EXTENSION
-After `CREATE EXTENSION ecaz`, the type `tqvector` SHALL be visible in `pg_type`.
+After `CREATE EXTENSION ecaz`, the type `tqvector` is visible in `pg_type`.
 
 ### FR-001-AC-2: Varlena storage
-Values stored in `tqvector` columns SHALL be TOASTable. A 1536-dim, 4-bit datum SHALL occupy `2 + 4 + 576 + 192 = 774` bytes total: 6-byte datum prefix (`dim` + `gamma`), 768-byte `code_bytes` section (`mse_packed` + `qjl_packed`).
+Values stored in `tqvector` columns are TOASTable. A 1536-dim, 4-bit datum occupies `2 + 4 + 576 + 192 = 774` bytes total: 6-byte datum prefix (`dim` + `gamma`), 768-byte `code_bytes` section (`mse_packed` + `qjl_packed`).
 
 ### FR-001-AC-3: Binary layout correctness
-Pack/unpack of `(dim, bits, seed, gamma, code_bytes)` SHALL round-trip losslessly for all valid parameter combinations.
+Pack/unpack of `(dim, bits, seed, gamma, code_bytes)` round-trips losslessly for all valid parameter combinations.
 
 ## Dependencies
 

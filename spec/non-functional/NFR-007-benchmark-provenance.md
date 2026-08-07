@@ -57,7 +57,7 @@ Every benchmark row in `docs/benchmarks.md` cites a source packet under `benchma
 
 ### NFR-007-AC-2
 
-Benchmark packets used for measurement claims include `manifest.md` and packet-local raw logs under `benchmarks/<topic>/artifacts/`. Code-review packets that cite benchmark evidence SHALL link to the owning `benchmarks/<topic>/` packet.
+Benchmark packets used for measurement claims include `manifest.md` and packet-local raw logs under `benchmarks/<topic>/artifacts/`. Code-review packets that cite benchmark evidence link to the owning `benchmarks/<topic>/` packet.
 
 ### NFR-007-AC-3
 

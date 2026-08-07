@@ -68,13 +68,13 @@ tqvector_inner_product(tqvector, tqvector) RETURNS float4
 | FR-005-AC-3 | `tqvector_inner_product(a, b)` equals `tqvector_inner_product(b, a)` for all valid inputs | Test |
 
 ### FR-005-AC-1: Known-vector code-to-code accuracy
-Given two known 1536-dim vectors encoded at b=4, the code-to-code estimate SHALL be benchmarked against true fp32 inner product using the formulas defined in FR-013 and FR-015.
+Given two known 1536-dim vectors encoded at b=4, the code-to-code estimate is benchmarked against true fp32 inner product using the formulas defined in FR-013 and FR-015.
 
 ### FR-005-AC-2: Dimension mismatch error
-`tqvector_inner_product(v1536, v768)` SHALL raise ERROR containing "mismatch".
+`tqvector_inner_product(v1536, v768)` raises ERROR containing "mismatch".
 
 ### FR-005-AC-3: Symmetry
-`tqvector_inner_product(a, b)` SHALL equal `tqvector_inner_product(b, a)` for all valid inputs.
+`tqvector_inner_product(a, b)` equals `tqvector_inner_product(b, a)` for all valid inputs.
 
 ## Dependencies
 

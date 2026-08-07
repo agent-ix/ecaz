@@ -69,16 +69,16 @@ encode_to_tqvector(real[], integer, bigint) RETURNS tqvector
 | FR-004-AC-4 | Output payload length equals `4 + ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)` regardless of transform padding | Test |
 
 ### FR-004-AC-1: Encode produces valid tqvector
-`encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0]::float4[], 4, 42)` SHALL return a value that can be stored and retrieved from a `tqvector` column.
+`encode_to_tqvector(ARRAY[1.0, 2.0, 3.0, 4.0]::float4[], 4, 42)` returns a value that can be stored and retrieved from a `tqvector` column.
 
 ### FR-004-AC-2: Deterministic output
-Two calls with identical arguments SHALL produce byte-identical results.
+Two calls with identical arguments produce byte-identical results.
 
 ### FR-004-AC-3: Reject invalid bits
-`encode_to_tqvector(ARRAY[1.0]::float4[], 0, 42)` SHALL raise ERROR.
+`encode_to_tqvector(ARRAY[1.0]::float4[], 0, 42)` raises ERROR.
 
 ### FR-004-AC-4: Code length correctness
-The output quantized payload length SHALL equal `4 + ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)`. Internal transform padding SHALL NOT change the persisted payload length. The embedded `code_bytes` subsection excludes the 4-byte `gamma` field and therefore has length `ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)`.
+The output quantized payload length equals `4 + ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)`. Internal transform padding does not change the persisted payload length. The embedded `code_bytes` subsection excludes the 4-byte `gamma` field and therefore has length `ceil(original_dim * (bits-1) / 8) + ceil(original_dim / 8)`.
 
 ## Dependencies
 
