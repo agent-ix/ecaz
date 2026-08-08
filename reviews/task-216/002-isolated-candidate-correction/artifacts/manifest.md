@@ -2,6 +2,9 @@
 
 - Packet: `reviews/task-216/002-isolated-candidate-correction/`
 - Status: decision-only correction; no new measurement
+- Diagnostic audit: `artifacts/diagnostic.md` records the reproducible suite
+  arm, source GUC semantics, stage-gated instrumentation, and cited counter
+  lines
 - Source measurement: accepted Task 216 isolated 100k packet on local ref
   `task-216-mat15-isolated`, control/candidate source commits
   `e8f15ab0c68887c176a260107fe826c402c2f827` /
