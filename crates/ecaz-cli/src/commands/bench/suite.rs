@@ -638,6 +638,9 @@ struct DistannLocalMultinodeStep {
     physical_benchmark: bool,
     #[serde(default)]
     benchmark_iterations: Option<u32>,
+    /// Concurrent latency levels for the physical benchmark throughput curve.
+    #[serde(default)]
+    benchmark_concurrency_sweep: Vec<usize>,
     #[serde(default)]
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
@@ -4402,6 +4405,34 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step
+                    .benchmark_concurrency_sweep
+                    .iter()
+                    .any(|value| *value == 0)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} benchmark_concurrency_sweep values must all be at least 1",
+                        step.name
+                    )
+                }
+                if step
+                    .benchmark_concurrency_sweep
+                    .iter()
+                    .collect::<HashSet<_>>()
+                    .len()
+                    != step.benchmark_concurrency_sweep.len()
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} benchmark_concurrency_sweep values must be unique",
+                        step.name
+                    )
+                }
+                if !step.benchmark_concurrency_sweep.is_empty() && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} benchmark_concurrency_sweep requires physical_benchmark",
+                        step.name
+                    )
+                }
                 if step.metrics_mode.is_some() && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} metrics_mode requires physical_benchmark",
@@ -5562,6 +5593,13 @@ fn expand_distann_local_multinode(
         "--benchmark-iterations",
         step.benchmark_iterations.map(|v| v.to_string()).as_deref(),
     );
+    if !step.benchmark_concurrency_sweep.is_empty() {
+        push_arg(
+            &mut args,
+            "--benchmark-concurrency-sweep",
+            &join_usize(&step.benchmark_concurrency_sweep),
+        );
+    }
     push_opt_arg(
         &mut args,
         "--benchmark-warmup-iterations",

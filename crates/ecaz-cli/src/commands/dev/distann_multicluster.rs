@@ -10,7 +10,7 @@ use color_eyre::eyre::{bail, eyre, Context, Result};
 use ecaz_fault_injection::ProviderMode;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -79,6 +79,11 @@ pub struct LocalMultinodePg18Args {
     /// Query iterations per latency arm in physical benchmark mode.
     #[arg(long, default_value_t = 5)]
     pub benchmark_iterations: u32,
+    /// Concurrent latency levels for the physical benchmark throughput curve.
+    /// When set, this is passed to each distributed and single-index latency
+    /// child as `--concurrency-sweep`.
+    #[arg(long = "benchmark-concurrency-sweep", value_delimiter = ',')]
+    pub benchmark_concurrency_sweep: Vec<usize>,
     /// Untimed queries on each latency worker before physical benchmark
     /// measurement. This warms backend-local head and transport caches.
     #[arg(long, default_value_t = 0)]
@@ -558,6 +563,21 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.benchmark_iterations == 0 {
         bail!("--benchmark-iterations must be at least 1");
+    }
+    if !args.benchmark_concurrency_sweep.is_empty() {
+        if !args.physical_benchmark {
+            bail!("--benchmark-concurrency-sweep requires --physical-benchmark");
+        }
+        if args.benchmark_concurrency_sweep.iter().any(|value| *value == 0) {
+            bail!("--benchmark-concurrency-sweep values must all be at least 1");
+        }
+        let unique = args
+            .benchmark_concurrency_sweep
+            .iter()
+            .collect::<HashSet<_>>();
+        if unique.len() != args.benchmark_concurrency_sweep.len() {
+            bail!("--benchmark-concurrency-sweep values must be unique");
+        }
     }
     if args.benchmark_hold_transaction && args.benchmark_backend_batch_size != 0 {
         bail!("--benchmark-hold-transaction requires --benchmark-backend-batch-size 0");
@@ -1453,7 +1473,7 @@ fn validate_physical_topology(
     Ok(())
 }
 
-fn benchmark_table_row(raw: &str) -> Result<Vec<String>> {
+fn benchmark_table_rows(raw: &str) -> Vec<Vec<String>> {
     raw.lines()
         .filter(|line| line.contains('┆'))
         .map(|line| {
@@ -1463,11 +1483,18 @@ fn benchmark_table_row(raw: &str) -> Result<Vec<String>> {
                 .map(ToOwned::to_owned)
                 .collect::<Vec<_>>()
         })
-        .find(|cells| {
+        .filter(|cells| {
             cells
                 .first()
                 .is_some_and(|cell| cell.parse::<u32>().is_ok())
         })
+        .collect()
+}
+
+fn benchmark_table_row(raw: &str) -> Result<Vec<String>> {
+    benchmark_table_rows(raw)
+        .into_iter()
+        .next()
         .ok_or_else(|| color_eyre::eyre::eyre!("benchmark output has no data row"))
 }
 
@@ -5834,6 +5861,16 @@ async fn run_physical_benchmarks(
             "--session-guc".into(),
             format!("ec_distann.candidate_heap_limit={candidate_heap_limit}"),
         ]);
+        if !args.benchmark_concurrency_sweep.is_empty() {
+            latency_args.extend([
+                "--concurrency-sweep".into(),
+                args.benchmark_concurrency_sweep
+                    .iter()
+                    .map(usize::to_string)
+                    .collect::<Vec<_>>()
+                    .join(","),
+            ]);
+        }
         if arm == "physical" {
             for guc in &args.bench_session_gucs {
                 latency_args.extend(["--session-guc".into(), guc.clone()]);
@@ -5966,27 +6003,64 @@ async fn run_physical_benchmarks(
                 ),
             );
         }
-        let row = benchmark_table_row(&latency)?;
-        lines.push(format!(
-            "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency=1 cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
-            args.head_index_cap,
-            args.head_sampling_rate,
-            args.head_cap_floor,
-            args.head_cap_ceiling,
-            args.crown_capacity,
-            args.crown_width_pruning,
-            args.fused_head_hop,
-            args.fused_head_hop || args.crown_width_pruning,
-            row[1],
-            benchmark_ms(&row[2])?,
-            benchmark_ms(&row[5])?,
-            benchmark_ms(&row[6])?,
-            benchmark_ms(&row[7])?,
-            benchmark_ms(&row[8])?,
-            args.benchmark_warmup_iterations,
-            args.benchmark_backend_batch_size,
-            args.benchmark_hold_transaction && arm == "physical",
-        ));
+        let rows = benchmark_table_rows(&latency);
+        let expected_rows = args.benchmark_concurrency_sweep.len().max(1);
+        if rows.len() != expected_rows {
+            bail!(
+                "physical latency returned {} rows for arm {arm:?}, expected {expected_rows}",
+                rows.len()
+            );
+        }
+        for row in rows {
+            let concurrency = row
+                .get(11)
+                .map(|value| value.parse::<usize>())
+                .transpose()
+                .wrap_err("decoding physical latency concurrency")?
+                .unwrap_or(1);
+            let wall_ms = row
+                .get(12)
+                .map(|value| benchmark_ms(value))
+                .transpose()?;
+            let qps = row
+                .get(13)
+                .map(|value| value.parse::<f64>())
+                .transpose()
+                .wrap_err("decoding physical latency qps")?;
+            if !args.benchmark_concurrency_sweep.is_empty()
+                && (wall_ms.is_none() || qps.is_none())
+            {
+                bail!(
+                    "physical latency concurrency sweep row lacks wall_ms/qps for arm {arm:?}"
+                );
+            }
+            let wall_ms_label = wall_ms
+                .map(|value| format!("{value:.2}"))
+                .unwrap_or_else(|| "NA".to_owned());
+            let qps_label = qps
+                .map(|value| format!("{value:.3}"))
+                .unwrap_or_else(|| "NA".to_owned());
+            lines.push(format!(
+                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+                args.head_index_cap,
+                args.head_sampling_rate,
+                args.head_cap_floor,
+                args.head_cap_ceiling,
+                args.crown_capacity,
+                args.crown_width_pruning,
+                args.fused_head_hop,
+                args.fused_head_hop || args.crown_width_pruning,
+                row[1],
+                benchmark_ms(&row[2])?,
+                benchmark_ms(&row[5])?,
+                benchmark_ms(&row[6])?,
+                benchmark_ms(&row[7])?,
+                benchmark_ms(&row[8])?,
+                args.benchmark_warmup_iterations,
+                args.benchmark_backend_batch_size,
+                args.benchmark_hold_transaction && arm == "physical",
+            ));
+        }
         if arm == "physical" && args.distann_stage_counters {
             let stage_rows = latency
                 .lines()
