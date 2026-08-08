@@ -48,4 +48,3 @@ materialize_owner_payload_sql_work mean_ms=39.380697
 The accepted isolated control uses the rounded 0.076 ms / 40.60 ms values for
 the maximum-win screen: `0.076 / 40.60 = 0.19%`. The owner-side SQL region is
 not a coordinator decode ceiling and remains a separate candidate surface.
-
