@@ -67,6 +67,10 @@ Packet directories inside a task bucket must sort in chronological order.
 - Frontmatter is required: `agent`, `role`, `model`, `date`, `seq`.
 - Any agent can leave feedback on any topic.
 - Commit and push every review request (`request.md`) and feedback file immediately after creating it; uncommitted files are invisible to the other role.
+- A new review request, feedback file, or packet metadata is not complete until
+  it is committed and pushed. Before ending a turn, check `git status` for
+  untracked or modified files under `reviews/`; never leave a new review
+  packet, request, or feedback file dangling in the working tree.
 
 ### Review, Test, Benchmark, and Artifact Logs
 
