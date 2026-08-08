@@ -103,8 +103,22 @@ validity requirements.
 | 195 | Owner schema cache productionization | complete — outside-reviewed ACCEPT; PROMOTE | exact recall; warm mean -8.33%/-13.28%/-18.11%; selector removed |
 | 196 | Lazy10 stable-prefix duplicate | complete — outside-reviewed ACCEPT; PROMOTE | exact-distance rank shift attributed; identity-keyed reuse passes nine semantic cases and exact-recall/work 10k/50k/100k A/B |
 | 197 | Multinode release-profile preflight | complete — outside-reviewed ACCEPT; PROMOTE | pre-setup unanimous release/SHA gate, explicit suite diagnostic override, structured evidence |
-| 201 | Post-replica latency residual | proposed — executable after Task 199 | fresh 100k attribution, at most one isolated latency candidate, then 10k/50k/100k release A/B if useful |
-| 202 | Cross-ISA ordered identity | proposed — portability gate | canonical-generation x86_64/aarch64 result identity and release/upgrade verdict |
+| 201 | Post-replica latency residual | **SUPERSEDED by Tasks 205/206** (2026-07-29) — its frozen control was the inadmissible coordinator replica | no result; its Phase 1 attribution decomposition is reused by 205/206/216 |
+| 202 | Cross-ISA ordered identity | proposed — portability gate; **not started** | canonical-generation x86_64/aarch64 result identity and release/upgrade verdict |
+| 203 | Decision re-audit / paper conformance | **complete — review-closed** (2026-07-30) | four-drift audit of Tasks 161–202; NFR-021/NFR-022/NFR-018/StR-008 spec slice; follow-on program created as Tasks 204–210 |
+| 204 | Storage-step arm fidelity | **complete — review-closed ACCEPT** (2026-07-30) | per-arm/per-node storage in `results.jsonl`; arms now differ (830 MB / 1.351 vs 2.490 GB / 4.052); growth row + held `≤2.0` gate carried |
+| 205 | Expansion pushdown (Algorithm 1) | **complete — review-closed ACCEPT** (2026-08-06) | pushdown live and recall-neutral; response bytes −52.1/−60.8/−64.8%; request bytes unchanged; threshold-vs-limit split withdrawn, needs a separate instrumentation task |
+| 206 | Traversal regime (wide beam) | **complete — review-closed 2026-08-05; recommendation REJECTED by Task 215** | BW64/H8 + 128 seeds recommended, then rejected on the normal release build; absolute rows are workload-specific (`top_k=200`/L200) and are not a release forecast |
+| 207 | Head reconstruction (§2.2/§3) | **complete — review-closed, no promotion** (2026-08-05) | partition-union raises head membership (+5.3 pts @32) but end-to-end recall does not move (0.9486 → 0.9468); **membership is not the binding recall constraint** |
+| 208 | NFR-021/NFR-022 conformance gates | **implementation complete; packet 001 ACCEPTed, packet 002 review-open** | normalized per-owned-record metric with 100k/10k ratio ≤ 2.0, `unavailable` ≠ pass, pre-registration validated; open P2 on the NFR-021 head clause |
+| 209 | Bounded degraded completion (§4.2) | proposed — entry gate now satisfied by 205/206; **not started** | opt-in labeled straggler/hedge mode under NFR-020-AC-6 plus the degradation-curve reproduction |
+| 210 | Distribution restoration | **implementation merged to `main`; packet 006 review-open** — P0 | sharded head is the shipped default; zero-byte membership head (`coordinator_resident_unsharded_bytes=0`, `gap=none`); TRAV-30 owner |
+| 211 | Head scaling law | **complete** (2026-08-03) | 0.02 law measured at 10k/50k/100k and selected as the implementation candidate; shipped default stays the fixed 4096 cap (no consistent all-scale win) |
+| 212 | Crown cache | **complete** (2026-08-02) | pruning A/B activated but pruned zero shards and showed no latency win; 2048 entries selected as the opt-in capacity; defaults unchanged |
+| 213 | Fused head hop | **complete** (2026-08-02) | fused consumer + activation counters + recall at 10k/50k/100k; defaults stay opt-in because every measured arm is `seed_set_change=true` |
+| 214 | Spec remediation | **complete** (2026-08-01) | P0–P5 done: 78-finding drift inventory, elevation to `spec/functional/distann/`, FR-085–087 + ADR-087, six flow diagrams, clean review round |
+| 215 | Wide-beam productionization | **complete — review-closed STOP** (2026-08-06) | normal-release A/B rejected BW64/H8: mean +20.2/+39.4/+47.7%, recall not equivalent (rose to 0.9815 at 100k); defaults restored by `01384502f`; **authoritative for the shipped top-k-10 default** |
+| 216 | Owner expansion/serialization latency | **complete — review-closed negative STOP** (2026-08-07) | coordinator decode 0.076 ms of a 40.60 ms scan = 0.19% ceiling closes MAT-12/13/14/15; MAT-16/21/22 remain owner-side and are **not** retired; MAT-21 blocked on a same-generation lane |
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -162,15 +176,37 @@ retention; it did not alter the production read path and is unaffected.
 
 The remaining work is split deliberately:
 
-- Task 201 owns fresh latency attribution and one isolated payload/executor or
-  local-traversal optimization. **Its frozen control must be re-pinned to the
-  owner-traversal arm**; as written it places the Task 199 replica inside the
-  control and forbids replica questions from entering the screen, so it cannot
-  surface this defect. Its candidate must carry an NFR-021 admissibility verdict
-  at pre-registration.
+- ~~Task 201 owns fresh latency attribution and one isolated payload/executor or
+  local-traversal optimization.~~ **Superseded 2026-07-29.** Its frozen control
+  placed the Task 199 replica inside the control and forbade replica questions
+  from entering the screen, so it could not surface this defect. The latency
+  lane became Task 205 (pushdown) then Task 206 (regime), and the owner-side
+  residual lane became **Task 216**, all controlled against the sharded
+  owner-traversal arm.
 - Task 202 owns the cross-ISA ordered-identity portability gate explicitly
   waived by Task 199. It is a correctness/release gate, not a latency tuning
-  task, and it changes no production behavior by itself.
+  task, and it changes no production behavior by itself. **Not started.**
+
+**State as of 2026-08-08** (see the program-shape table above for per-task
+detail). Tasks 203--208 and 210--216 have all reported. The measured position:
+
+- **Shipped default** is BW4/H100, L32, 32 seeds, with the sharded zero-byte
+  membership head as the default (Task 210, merged). Task 215's normal-release
+  A/B at `top_k=10` measures 100k at **0.9280 recall / 21.40 ms mean**.
+- **Latency.** The coordinator-side family is closed on Task 216's 0.19%
+  addressable ceiling, and traversal transport is a minority of the scan
+  (~4.1 ms wait, 0.002 ms response encode). The dominant stage is **owner-side
+  payload SQL/endpoint work** (`remote_materialize` 25.96 ms of a 37.21 ms
+  `custom_scan_total` at 100k). MAT-16/MAT-21/MAT-22 are the surviving
+  candidates, and MAT-21 is blocked on a same-generation
+  build-once/swap-extension lane that does not yet exist.
+- **Recall.** Head construction (207) and head selection (185) are both closed
+  without a candidate, and 207 showed membership is not the binding constraint.
+  The one lever measured to move recall is search budget: Task 215's BW64/H8 arm
+  reached **0.9815 at 100k** but cost +47.7% mean latency and was rejected under
+  the recall-equivalence clause — a Pareto trade no task currently owns.
+- **Open review requests:** `reviews/task-210/006-zero-byte-head/` (P0) and
+  `reviews/task-208/002-retrospective-sweep/`, both with no feedback file.
 
 Task 188's BW8 result remains a research candidate only: it was paired with an
 experimental 16,384-landmark head, so it is not imported into Task 201 without

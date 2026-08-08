@@ -285,6 +285,38 @@ When resource-constrained (e.g. a 1m run on a local desktop), subset with
 `--only-tag ec_real_100k` / `--only-tag hnsw` rather than editing the config —
 the canonical config always carries the full 10k/50k/100k/1m × 4-profile matrix.
 
+### Status Bookkeeping Is Part of the Work, Not a Follow-Up
+
+**A task is not finished until its `Status:` header and its
+`plan/tasks/README.md` row state the real, current outcome.** Landing code,
+running the benchmark, and writing the packet do not finish a task; a stale
+header makes all of that invisible and forces the next agent to re-derive the
+program state from packets and feedback files. That re-derivation has cost
+real hours more than once.
+
+Rules:
+
+- **Update both places in the same turn** as the disposition. The task file
+  `Status:` line and the matching numbered row in `plan/tasks/README.md` are
+  the tracking surface. Never update one and not the other.
+- **The header must reflect the reviewer's verdict, not the coder's intent.**
+  When a packet is ACCEPTed, review-closed, STOPped, superseded, or rejected
+  downstream, the header changes that turn — with the packet path and feedback
+  file cited so the claim is checkable.
+- **State the outcome, not just the phase.** "complete — review-closed ACCEPT",
+  "complete — STOP, no candidate", "superseded by Task N",
+  "implementation complete; packet 00X review-open". A bare "ready" or
+  "in progress" left on finished work is a defect.
+- **Carried follow-ups belong in the header**, itemised. If a task closes with
+  open items, say which, so nobody re-opens the whole task to find them.
+- **Downstream reversals propagate backwards.** If Task B's evidence rejects
+  Task A's recommendation, Task A's header and README row say so, with the
+  reconciliation path. A reader arriving at A must not walk away with a
+  conclusion B already killed.
+- **Commit and push the bookkeeping** with the same rules as review packets:
+  uncommitted status edits are invisible. Before ending a turn, `git status`
+  must show no dangling `plan/tasks/**` edits.
+
 ### Push and Visibility
 
 - Push committed checkpoints, packet updates, and feedback files to the remote

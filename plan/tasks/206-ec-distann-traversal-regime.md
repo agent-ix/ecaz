@@ -1,9 +1,27 @@
 # Task 206: ec_distann Traversal Regime (Wide Beam, Few Rounds)
 
-Status: **blocked on Task 205** (2026-07-29). Priority: P0 latency.
+Status: **complete — review-closed 2026-08-05; recommendation subsequently
+REJECTED by the Task 215 release A/B 2026-08-06.** Priority: P0 latency.
 
-Entry gate: Task 205's pushdown landed and its A/B dispositioned. Widening the
-beam without pushdown reproduces Task 194's result by construction.
+Entry gate (satisfied): Task 205's pushdown landed and its A/B dispositioned.
+Widening the beam without pushdown reproduces Task 194's result by construction.
+
+Outcome. The corrected conforming matrix measured the wide-beam/few-round
+regime and requalified effective seed count; **BW64/H8 with 128 effective seeds
+was the measured recommendation** and the shipped default was left at BW4/H100.
+Scan-round capture was fixed and review-closed
+(`reviews/task-206/007-scan-round-capture/feedback/2026-08-05-01-claude-reviewer.md`),
+with transport only ~10--20 ms across eight rounds against a much larger
+physical scan time.
+
+**The recommendation did not survive productionization.** Task 215's normal
+release A/B measured the same BW64/H8 configuration at 22.6--31.6 ms mean
+against this task's accepted 194--231 ms rows. The reconciliation
+(`reviews/task-215/003-release-matrix-and-decision/artifacts/reconciliation-206.md`)
+attributes the ~8x gap to a work-surface difference — `top_k=200`/L200 here
+versus `top_k=10`/effective L64 there — with matching per-scale query hashes and
+warm-cache protocol. **Task 206's absolute latency rows must not be reused as a
+normal-release forecast.** Task 215 is authoritative for the shipped default.
 
 ## Why
 

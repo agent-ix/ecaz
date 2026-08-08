@@ -1,6 +1,15 @@
 # Task 203: ec_distann Decision Re-Audit and Paper Conformance
 
-Status: **in progress** (2026-07-29). Priority: P0 program-integrity audit.
+Status: **complete — review-closed** (2026-08-08 bookkeeping sync; audit
+delivered 2026-07-30). Priority: P0 program-integrity audit.
+
+All three deliverables landed: the 161--202 decision matrix in
+`reviews/task-203/001-decision-reaudit/`, the cross-linked feedback, and the
+`NFR-021`/`NFR-022`/`NFR-018`/`StR-008` spec slice. Reviewer feedback
+`2026-07-30-01-reviewer.md` confirmed the founding finding survived into the
+requirements and raised one P1 — `TRAV-30` reinstated with no owning task —
+which is now owned by **Task 210**. The follow-on program the audit proposed
+was created as Tasks 204--210. No further work is open under this task.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 Governing requirements: `NFR-021`, `NFR-022` (landed by this task's spec slice),

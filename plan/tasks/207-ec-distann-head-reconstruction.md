@@ -1,6 +1,20 @@
 # Task 207: ec_distann Head Reconstruction (Paper §2.2/§3)
 
-Status: **ready** (2026-07-29). Priority: P0 recall.
+Status: **complete — review-closed, no promotion** (2026-08-05). Priority: P0
+recall.
+
+The corrected construction/search matrix and the membership diagnostic did not
+justify promoting the partition-union construction. Union raises head
+membership materially (+5.3 pts @32, +8.9 pts @200; head-set overlap with the
+stitched arm only 2004/4096 = 0.4893) while **end-to-end recall does not move**
+(0.9486 -> 0.9468). The diagnostic therefore dispositions the pre-registered
+hypothesis on both halves: union changes head composition and improves
+membership, and **membership is not the binding recall constraint at this
+operating point.** Head sharding moved to Task 210; the selection objective
+remains Task 185's lever (itself closed STOP). Do not repeat the rejected
+construction unchanged. Evidence:
+`reviews/task-207/006-re-review-corrections/` and
+`reviews/task-207/007-membership-diagnostic/`.
 
 Entry gate: none. Independent of Tasks 204--206 and may run in parallel, but
 `k_head` widening is only meaningful once Task 206 establishes a wide beam.

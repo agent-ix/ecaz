@@ -1,6 +1,21 @@
 # Task 204: ec_distann Storage-Step Arm Fidelity
 
-Status: **ready** (2026-07-29). Priority: P0 measurement integrity.
+Status: **complete — review-closed ACCEPT, two follow-ups carried**
+(2026-08-08 bookkeeping sync; accepted 2026-07-30). Priority: P0 measurement
+integrity.
+
+`reviews/task-204/001-arm-fidelity/feedback/2026-07-30-01-reviewer.md` ACCEPTs
+the measurement change: the arms now differ (owner-control
+`cluster_graph_side_bytes=830,144,512` / amplification 1.351147 versus
+coordinator-replica 2,489,663,488 / 4.052187), and the coordinator relation
+lands on the coordinator node row (`derived_relation_bytes=1,659,518,976`).
+
+Two carried follow-ups, neither invalidating the accepted checkpoint:
+
+1. Emit the cross-scale normalized growth row as an **unjudged measurement**.
+2. The NFR-021 `<= 2.0` hard gate is **deliberately withheld** per
+   `feedback/2026-07-30-02-reviewer.md`; Task 208 packet 001 subsequently
+   resolved this by normalizing the metric (bytes per owned graph record).
 
 Entry gate: none. This is the first slice; everything downstream reports storage.
 

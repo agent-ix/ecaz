@@ -1,10 +1,18 @@
 # Task 208: ec_distann NFR-021/NFR-022 Conformance Gates
 
-Status: **IN REVIEW** (2026-07-30). The NFR-021 measurement contradiction is
-reconciled, phases 1-3 are implemented in `reviews/task-208/001-gates/`, and
-the phase-4 retrospective sweep is recorded in
-`reviews/task-208/002-retrospective-sweep/`. Both requests remain open for
-outside review. Priority: P1 program integrity.
+Status: **implementation complete; packet 001 ACCEPTed, packet 002 review-open**
+(2026-08-08 bookkeeping sync). Priority: P1 program integrity.
+
+- Phases 1--3 implemented in `reviews/task-208/001-gates/` and **ACCEPTed**
+  (`feedback/2026-07-30-01-reviewer.md`): the NFR-021 metric is normalized to
+  bytes per owned graph record with a 100k/10k ratio `<= 2.0`, raw fixed-roster
+  growth is emitted but no longer judged, missing evidence is `unavailable`
+  rather than a pass, and pre-registration is validated before measurement.
+  One open P2 from that feedback: the NFR-021 head clause still admits two
+  opposite architectures and needs tightening by its owner.
+- Phase 4, the arm-blind storage retrospective, is recorded in
+  `reviews/task-208/002-retrospective-sweep/` and **has no reviewer feedback
+  yet — this request is open.**
 
 Entry gate: Task 204's per-node storage emission, which this task consumes.
 

@@ -1,6 +1,19 @@
 # Task 205: ec_distann Expansion Pushdown (Paper Algorithm 1)
 
-Status: **ready** (2026-07-29). Priority: P0 latency prerequisite.
+Status: **complete — review-closed ACCEPT** (2026-08-06). Priority: P0 latency
+prerequisite.
+
+Algorithm 1 threshold/limit pushdown is live and recall-neutral in the
+corrected bounded-L rerun: L32 reduced traversal response bytes by
+52.1% / 60.8% / 64.8% at 10k / 50k / 100k with byte-identical recall, request
+bytes unchanged, and only modest end-to-end movement. The threshold-versus-limit
+split was **withdrawn rather than fabricated** — the remote decode path zeroes
+`neighbors_pruned` per response and both mechanisms derive from
+`candidate_heap_limit`, so no config-only arm can decouple them; an exact split
+requires a separately scoped instrumentation task. Not a default-promotion
+decision. Evidence: `reviews/task-205/004-l-bounded-rerun/` and the accepted
+disposition `reviews/task-205/005-attribution-closeout/`
+(`feedback/2026-08-06-01-reviewer.md`).
 
 Entry gate: none technically, but land Task 204 first if both are in flight so
 the A/B's storage rows are trustworthy.

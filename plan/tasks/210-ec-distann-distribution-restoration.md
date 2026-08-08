@@ -12,6 +12,12 @@ Implementation and measurement evidence is present in review packets
 zero-byte membership-head gate and remains open for external review; this task
 is not marked review-closed here.
 
+Merge state (verified 2026-08-08): the implementation commits — including
+`35c7f3c3b` (membership-only head as a bounded state-row blob) and `4070ff6cb`
+(shard ordinal derived from members) — are **on `origin/main`**. The sharded
+head is the shipped default. **The only outstanding item is external review of
+packet 006**, which has no feedback file yet.
+
 **No phase in this task is conditional, optional, or gated on a measured win.
 Sharding is a property this task delivers, not a candidate it screens.** A phase
 closes when the property holds in the shipped default configuration and the
