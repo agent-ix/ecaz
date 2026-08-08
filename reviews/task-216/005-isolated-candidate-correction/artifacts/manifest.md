@@ -1,6 +1,6 @@
-# Task 216 packet 002 correction manifest
+# Task 216 packet 005 correction manifest
 
-- Packet: `reviews/task-216/002-isolated-candidate-correction/`
+- Packet: `reviews/task-216/005-isolated-candidate-correction/`
 - Status: decision-only correction; no new measurement
 - Diagnostic audit: `artifacts/diagnostic.md` records the reproducible suite
   arm, source GUC semantics, stage-gated instrumentation, and cited counter

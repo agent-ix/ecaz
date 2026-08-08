@@ -254,13 +254,13 @@ remain controls rather than new candidates.
 | MAT-13 | Preserve request order and eliminate result-map lookup | **STOP by coordinator ceiling screen — Task 216 isolated control**: coordinator map/association work is within the same sub-millisecond addressable region; no separate A/B is justified |
 | MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | **STOP by coordinator ceiling screen — Task 216 isolated control**: coordinator-side copy/decode cannot exceed the measured 0.19% ceiling |
 | MAT-15 | Packed payload buffer with offsets and null bitmap | **STOP — Task 216 isolated candidate**: coordinator decode is 0.076/40.60 ms (0.19%) and returned payload bytes are flat; the candidate's slower owner SQL is secondary implementation evidence, not the family-closing rationale |
-| MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on owner payload SQL attribution; **not covered by the coordinator 0.19% ceiling** |
+| MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on **production lazy-10 owner payload SQL attribution**; the eager-arm denominator is unmeasured and does not screen this candidate |
 | MAT-17 | Cache resolved row schema per published generation | **production behavior via accepted Task 195; exact-recall release A/B passed** |
 | MAT-18 | Cache attnum-to-send-function resolution | production behavior via accepted Task 195 |
 | MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
-| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **secondary carry-in after MAT-15 STOP**: owner-side locator formatting is in the dominant materialization region, not the coordinator ceiling; requires a corrected same-generation isolated A/B before any advance |
-| MAT-22 | Return row-tier locator with expanded candidates | conditional on owner expansion/wire attribution; **not covered by the coordinator 0.19% ceiling** |
+| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **secondary carry-in after MAT-15 STOP**: owner-side locator formatting is in the dominant materialization region, not the coordinator ceiling; requires a corrected same-generation **production lazy-10** isolated A/B before any advance; its addressable budget is currently unmeasured |
+| MAT-22 | Return row-tier locator with expanded candidates | conditional on **production lazy-10** owner expansion/wire attribution; not covered by the coordinator 0.19% ceiling |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |

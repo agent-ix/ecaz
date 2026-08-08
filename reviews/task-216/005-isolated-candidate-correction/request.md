@@ -1,6 +1,6 @@
 ---
 task: 216
-packet: 002-isolated-candidate-correction
+packet: 005-isolated-candidate-correction
 agent: Codex
 role: coder
 model: gpt-5
