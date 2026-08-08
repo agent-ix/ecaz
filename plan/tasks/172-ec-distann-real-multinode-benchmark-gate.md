@@ -1,14 +1,14 @@
 # Task 172: ec_distann Real Multi-Instance Benchmark Gate
 
-Status: **IN PROGRESS** (2026-07-29). Unshelved after Task 179's physically
-sharded lane and fail-closed TC-040/TC-042/TC-050 topology evidence were
-accepted; see `reviews/task-172/004-unshelve-readiness/`. Task 166 remains the
-single-instance control and Task 165 remains replicated-control evidence only.
-Runner capability work is active in packets 005-007 and 010. Task 204's
-measurement proof and Task 208's mechanical NFR-021/NFR-022 gates are now
-implemented for outside review. The final decision-bearing matrix remains open
-pending Task 205's corrected bounded-L pushdown A/B and Task 206's
-traversal-regime disposition.
+Status: **IN PROGRESS** (2026-08-08). Packets 008–010 are review-closed ACCEPT
+(`reviews/task-172/008-status-activation/feedback/2026-08-08-01-reviewer.md`,
+`reviews/task-172/009-nfr021-prerequisite-integrity/feedback/2026-08-08-01-reviewer.md`,
+and `reviews/task-172/010-macos-release-cli/feedback/2026-08-08-01-reviewer.md`).
+Task 204's
+measurement proof, Task 205's corrected bounded-L A/B, Task 206's traversal
+regime disposition, and Task 208's mechanical NFR-021/NFR-022 gates are now
+review-closed prerequisites. The final decision-bearing 10k/50k/100k matrix
+and Task 172 disposition remain open.
 Owner: coder. One branch off the current ec_distann line.
 Priority: P0 corrective benchmark gate.
 

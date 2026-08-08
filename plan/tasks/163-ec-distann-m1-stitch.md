@@ -1,11 +1,10 @@
 # Task 163: ec_distann M1 — Sharded Build + Stitch Correctness
 
-Status: partial / D8 implementation review requested (2026-07-10). Checkpoint
-`079a235f9` replaces all-resident shard outputs with PostgreSQL `BufFile` spills
-and bounded k-way cursors; packet 003 carries the focused proof. D8 remains
-open until an outside reviewer accepts that checkpoint. Depends on: Task 161;
-Task 162 (record format). The D8 closeout is a hard prerequisite of Task 179's
-physical owner handoff.
+Status: **complete — review-closed ACCEPT** (2026-08-08). Packet 005's exact-SHA
+10k/50k/100k scale-memory and recall A/B evidence is accepted in
+`reviews/task-163/005-d8-scale-memory-quality/feedback/2026-08-08-01-reviewer.md`.
+The D8 closeout is complete and Task 179 AC-1 may cite packets 003–005.
+Depends on: Task 161; Task 162 (record format).
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 — the paper's least-proven step and the program's highest
 technical risk (spec-review SR-006 FND-001).
