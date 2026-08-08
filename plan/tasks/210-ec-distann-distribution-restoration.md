@@ -1,9 +1,16 @@
 # Task 210: ec_distann Distribution Restoration
 
-Status: **ready** (2026-07-30). Priority: **P0 — top priority.**
+Status: **review pending — implementation and zero-byte gate evidence complete**
+(2026-08-07). Priority: **P0 — top priority.**
 
 Entry gate: none. This task does not wait on Tasks 205, 206, or 207, and they do
 not wait on it.
+
+Implementation and measurement evidence is present in review packets
+`reviews/task-210/001-conformance-emitter/` through
+`reviews/task-210/006-zero-byte-head/`. Packet 006 establishes the round-2
+zero-byte membership-head gate and remains open for external review; this task
+is not marked review-closed here.
 
 **No phase in this task is conditional, optional, or gated on a measured win.
 Sharding is a property this task delivers, not a candidate it screens.** A phase
