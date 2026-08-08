@@ -1,0 +1,33 @@
+2026-08-08 12:13:34.299 PDT [3063663] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-08 12:13:34.312 PDT [3063663] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-08 12:13:34.312 PDT [3063663] LOG:  listening on IPv4 address "127.0.0.1", port 43110
+2026-08-08 12:13:34.323 PDT [3063669] LOG:  database system was shut down at 2026-08-08 12:13:30 PDT
+2026-08-08 12:13:34.330 PDT [3063663] LOG:  database system is ready to accept connections
+2026-08-08 12:15:47.157 PDT [3063667] LOG:  checkpoint starting: wal
+2026-08-08 12:17:32.810 PDT [3063663] LOG:  received immediate shutdown request
+2026-08-08 12:17:32.932 PDT [3063663] LOG:  database system is shut down
+2026-08-08 12:17:37.172 PDT [3064935] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-08 12:17:37.183 PDT [3064935] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-08 12:17:37.183 PDT [3064935] LOG:  listening on IPv4 address "127.0.0.1", port 43110
+2026-08-08 12:17:37.192 PDT [3064941] LOG:  database system was shut down at 2026-08-08 12:17:34 PDT
+2026-08-08 12:17:37.198 PDT [3064935] LOG:  database system is ready to accept connections
+2026-08-08 12:19:45.671 PDT [3064939] LOG:  checkpoint starting: wal
+2026-08-08 12:24:15.538 PDT [3064939] LOG:  checkpoint complete: wrote 93 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.321 s, sync=0.196 s, total=269.867 s; sync files=283, longest=0.025 s, average=0.001 s; distance=535682 kB, estimate=535682 kB; lsn=0/31153048, redo lsn=0/22274E10
+2026-08-08 12:24:45.545 PDT [3064939] LOG:  checkpoint starting: time
+2026-08-08 12:25:21.563 PDT [3066849] FATAL:  role "peter" does not exist
+2026-08-08 12:29:01.280 PDT [3064939] LOG:  checkpoint complete: wrote 81 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 20 recycled; write=255.368 s, sync=0.123 s, total=255.735 s; sync files=88, longest=0.062 s, average=0.002 s; distance=340731 kB, estimate=516187 kB; lsn=0/5522F220, redo lsn=0/36F33D78
+2026-08-08 12:29:01.685 PDT [3064939] LOG:  checkpoint starting: wal
+2026-08-08 12:29:51.638 PDT [3064939] LOG:  checkpoint complete: wrote 49 buffers (0.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=49.757 s, sync=0.034 s, total=49.953 s; sync files=25, longest=0.006 s, average=0.002 s; distance=529202 kB, estimate=529202 kB; lsn=0/73FC0C88, redo lsn=0/574006C0
+2026-08-08 12:31:37.499 PDT [3064939] LOG:  checkpoint starting: wal
+2026-08-08 12:33:17.630 PDT [3064939] LOG:  checkpoint complete: wrote 742 buffers (4.5%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=99.602 s, sync=0.202 s, total=100.132 s; sync files=10, longest=0.187 s, average=0.021 s; distance=537618 kB, estimate=537618 kB; lsn=0/95FC2D50, redo lsn=0/78105170
+2026-08-08 12:33:19.612 PDT [3064939] LOG:  checkpoint starting: wal
+2026-08-08 12:33:39.840 PDT [3064939] LOG:  checkpoint complete: wrote 24 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=19.621 s, sync=0.407 s, total=20.229 s; sync files=13, longest=0.392 s, average=0.032 s; distance=540666 kB, estimate=540666 kB; lsn=0/B207B528, redo lsn=0/99103B60
+2026-08-08 12:37:21.771 PDT [3065552] LOG:  could not send data to client: Connection reset by peer
+2026-08-08 12:37:21.771 PDT [3065552] FATAL:  connection to client lost
+2026-08-08 12:37:21.772 PDT [3064935] LOG:  received fast shutdown request
+2026-08-08 12:37:21.783 PDT [3064935] LOG:  aborting any active transactions
+2026-08-08 12:37:21.784 PDT [3064935] LOG:  background worker "logical replication launcher" (PID 3064944) exited with exit code 1
+2026-08-08 12:37:21.826 PDT [3064939] LOG:  shutting down
+2026-08-08 12:37:21.832 PDT [3064939] LOG:  checkpoint starting: shutdown immediate
+2026-08-08 12:37:22.037 PDT [3064939] LOG:  checkpoint complete: wrote 4287 buffers (26.2%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 25 recycled; write=0.047 s, sync=0.021 s, total=0.211 s; sync files=5, longest=0.020 s, average=0.005 s; distance=410211 kB, estimate=527620 kB; lsn=0/B219C8C0, redo lsn=0/B219C8C0
+2026-08-08 12:37:22.071 PDT [3064935] LOG:  database system is shut down

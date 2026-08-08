@@ -638,6 +638,9 @@ struct DistannLocalMultinodeStep {
     physical_benchmark: bool,
     #[serde(default)]
     benchmark_iterations: Option<u32>,
+    /// Concurrent latency levels for the physical benchmark throughput curve.
+    #[serde(default)]
+    benchmark_concurrency_sweep: Vec<usize>,
     #[serde(default)]
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
@@ -2446,6 +2449,22 @@ fn distann_nfr_021_result_row(
 }
 
 fn assert_distann_nfr_021_registrations(rows: &[ResultRow]) -> Result<()> {
+    // The conformance row is a cross-scale assertion.  A resumed or
+    // step-scoped suite run may intentionally contain only one or two scales;
+    // defer the assertion until the result row covers the complete matrix so
+    // that `--only`/`--resume-from` can make progress without weakening the
+    // final-gate check.
+    let complete_matrix_present = rows.iter().any(|row| {
+        row.metric == "physical_benchmark_nfr_021_conformance"
+            && row.values.get("scales").is_some_and(|scales| {
+                ["10k", "50k", "100k"]
+                    .iter()
+                    .all(|scale| scales.split(',').any(|value| value == *scale))
+            })
+    });
+    if !complete_matrix_present {
+        return Ok(());
+    }
     let failures = rows
         .iter()
         .filter(|row| row.metric == "physical_benchmark_nfr_021_conformance")
@@ -4402,6 +4421,34 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step
+                    .benchmark_concurrency_sweep
+                    .iter()
+                    .any(|value| *value == 0)
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} benchmark_concurrency_sweep values must all be at least 1",
+                        step.name
+                    )
+                }
+                if step
+                    .benchmark_concurrency_sweep
+                    .iter()
+                    .collect::<HashSet<_>>()
+                    .len()
+                    != step.benchmark_concurrency_sweep.len()
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} benchmark_concurrency_sweep values must be unique",
+                        step.name
+                    )
+                }
+                if !step.benchmark_concurrency_sweep.is_empty() && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} benchmark_concurrency_sweep requires physical_benchmark",
+                        step.name
+                    )
+                }
                 if step.metrics_mode.is_some() && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} metrics_mode requires physical_benchmark",
@@ -5562,6 +5609,13 @@ fn expand_distann_local_multinode(
         "--benchmark-iterations",
         step.benchmark_iterations.map(|v| v.to_string()).as_deref(),
     );
+    if !step.benchmark_concurrency_sweep.is_empty() {
+        push_arg(
+            &mut args,
+            "--benchmark-concurrency-sweep",
+            &join_usize(&step.benchmark_concurrency_sweep),
+        );
+    }
     push_opt_arg(
         &mut args,
         "--benchmark-warmup-iterations",
