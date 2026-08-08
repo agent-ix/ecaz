@@ -1,14 +1,20 @@
 # Task 172: ec_distann Real Multi-Instance Benchmark Gate
 
-Status: **IN PROGRESS** (2026-08-08). Packets 008–010 are review-closed ACCEPT
+Status: **COMPLETE — final gate merged by admin via PR #72** (2026-08-08;
+merge commit `97b17e77f0c611464d5cfbfaa6c219ba0c2a4200`). Packet
+`reviews/task-172/011-final-gate/` records the decision-bearing 10k/50k/100k
+matrix and final verdict. Packets 008–010 are review-closed ACCEPT
 (`reviews/task-172/008-status-activation/feedback/2026-08-08-01-reviewer.md`,
 `reviews/task-172/009-nfr021-prerequisite-integrity/feedback/2026-08-08-01-reviewer.md`,
 and `reviews/task-172/010-macos-release-cli/feedback/2026-08-08-01-reviewer.md`).
 Task 204's
 measurement proof, Task 205's corrected bounded-L A/B, Task 206's traversal
 regime disposition, and Task 208's mechanical NFR-021/NFR-022 gates are now
-review-closed prerequisites. The final decision-bearing 10k/50k/100k matrix
-and Task 172 disposition remain open.
+review-closed prerequisites. The final matrix passed the cross-scale NFR-021
+check and showed no recall collapse; the local distributed fixture did not
+demonstrate a performance win over the single-instance control. Task 219 owns
+the separate Pareto-recall decision. Outside review was bypassed by the
+explicit admin-merge request for PR #72.
 Owner: coder. One branch off the current ec_distann line.
 Priority: P0 corrective benchmark gate.
 
