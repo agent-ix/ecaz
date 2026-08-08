@@ -1,7 +1,10 @@
 # Task 161: ec_distann Spec Authoring (StR-008, FR-075..083, NFR-017..020, ADR-085)
 
-Status: in progress (2026-07-06; spec batch + test matrix + full spec-review
-committed on `task-161-ec-distann-specs`; closes when the batch merges).
+Status: **complete — authored and merged** (spec batch reached `main` via the
+Task 162 merge, 2026-07-07). StR-008, FR-075..083, NFR-017..020, ADR-085, and
+test matrix TC-037..044 are on `main`. Task 214 subsequently remediated and
+elevated the set to `spec/functional/distann/`, so this task's output is
+superseded in structure but not in authorship.
 Owner: Agent IX. One branch: `task-161-ec-distann-specs` (worktree
 `~/dev/ecaz-task161`, off origin/main).
 Priority: P0 — program gate zero; Tasks 162–167 implement against these

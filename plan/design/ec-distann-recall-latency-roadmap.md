@@ -119,6 +119,9 @@ validity requirements.
 | 214 | Spec remediation | **complete** (2026-08-01) | P0–P5 done: 78-finding drift inventory, elevation to `spec/functional/distann/`, FR-085–087 + ADR-087, six flow diagrams, clean review round |
 | 215 | Wide-beam productionization | **complete — review-closed STOP** (2026-08-06) | normal-release A/B rejected BW64/H8: mean +20.2/+39.4/+47.7%, recall not equivalent (rose to 0.9815 at 100k); defaults restored by `01384502f`; **authoritative for the shipped top-k-10 default** |
 | 216 | Owner expansion/serialization latency | **complete — review-closed negative STOP** (2026-08-07) | coordinator decode 0.076 ms of a 40.60 ms scan = 0.19% ceiling closes MAT-12/13/14/15; MAT-16/21/22 remain owner-side and are **not** retired; MAT-21 blocked on a same-generation lane |
+| 217 | Same-generation A/B lane | proposed — **P0 blocking infrastructure** (2026-08-08) | build-once/swap-extension lane with attested equal generation identity per arm; A/A reproduction is the acceptance bar |
+| 218 | Owner-side materialization latency | proposed — entry gated on Task 217 (2026-08-08) | production-lazy-10 attribution first, then at most one of MAT-16/MAT-21/MAT-22 |
+| 219 | Recall/latency Pareto default | proposed (2026-08-08) | decide the shipped operating point and whether recall-equivalence stays the acceptance clause for default changes |
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held

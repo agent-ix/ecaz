@@ -1,7 +1,27 @@
 # Task 215: ec_distann Wide-Beam Traversal Productionization
 
-Status: **proposed — entry gated on Task 205 closeout** (2026-08-06).
+Status: **complete — review-closed STOP** (2026-08-06; two reviewer rounds, all
+four seq-01 findings resolved, ACCEPT at
+`reviews/task-215/003-release-matrix-and-decision/feedback/2026-08-06-02-reviewer.md`).
 Priority: P1 latency/default productionization.
+
+Outcome. The normal PG18 release A/B at 10k/50k/100k **rejected BW64/H8**
+(effective L=64, 128 seeds): candidate mean latency +20.2% / +39.4% / +47.7%
+versus BW4/H100/L32, and recall was not equivalent — it *rose* to 0.9900 /
+0.9815 at 50k/100k. The higher-recall/slower-latency trade was explicitly
+rejected under this task's recall-equivalence clause, and `01384502f` restored
+the shipped BW4/H100 defaults. Provenance was clean on every arm
+(`extension_build_profile=release`, `unanimous=true`), with fresh
+byte-identified generations, three sharded owners, and no replica.
+
+**This task is authoritative for the shipped `top_k=10` default.** Task 206's
+absolute latency rows ran `top_k=200`/L200 and must never be reused as a
+normal-release forecast; see
+`reviews/task-215/003-release-matrix-and-decision/artifacts/reconciliation-206.md`.
+
+Carried, not open here: the reviewer's Pareto observation — recall rose while
+latency rose — is a default-policy question this task's contract could not
+decide. It is owned by **Task 219**.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 

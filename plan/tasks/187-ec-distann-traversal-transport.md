@@ -1,8 +1,23 @@
 # Task 187: ec_distann Traversal Transport Optimization
 
-Status: **proposed, unblocked by Task 191** (2026-07-20). Priority: P2 latency
-follow-up. Task 191 promoted and release-validated lazy10 as the retained
-production baseline.
+Status: **complete — STOP, no candidate** (2026-07-21). Priority: P2 latency
+follow-up.
+
+The fresh post-Task-191 100k attribution measured traversal at 7.468 ms of a
+22.40 ms warm mean — remote owner expansion 6.174 ms (82.7% of traversal),
+local expansion 1.230 ms, derived coordinator/frontier remainder 0.065 ms. No
+bounded candidate was advanced, because the remote transport path lacked
+per-owner encode/wait/decode/straggler attribution. Reviewer re-reading of the
+same run's materialization counters attributed ~90% of the 10.018 ms
+materialization stage to owner-side endpoint work, which spawned Tasks 192--194.
+
+**Evidence-location defect (recorded 2026-08-08).** Packets `001`--`004` and
+their ACCEPT feedback exist only on `origin/task-187-ec-distann-traversal-transport`
+(9 commits, 630 behind `main`); `reviews/task-187/` **does not exist on
+`main`**. The README and roadmap cite that bucket as accepted evidence, so the
+citation is currently unresolvable for anyone working from `main`. The branch
+must be merged, or the packets cherry-picked onto `main`, before this task's
+disposition can be independently re-verified.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`. This task
 owns `TRAV-01` through `TRAV-15` and `TRAV-20` through `TRAV-27`.
