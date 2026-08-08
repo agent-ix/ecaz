@@ -1,0 +1,30 @@
+2026-08-08 12:59:28.369 PDT [3082303] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-08 12:59:28.382 PDT [3082303] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-08 12:59:28.382 PDT [3082303] LOG:  listening on IPv4 address "127.0.0.1", port 43122
+2026-08-08 12:59:28.389 PDT [3082309] LOG:  database system was shut down at 2026-08-08 12:59:27 PDT
+2026-08-08 12:59:28.393 PDT [3082303] LOG:  database system is ready to accept connections
+2026-08-08 13:04:28.127 PDT [3082307] LOG:  checkpoint starting: time
+2026-08-08 13:05:17.243 PDT [3082307] LOG:  checkpoint complete: wrote 487 buffers (3.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=48.973 s, sync=0.089 s, total=49.117 s; sync files=261, longest=0.011 s, average=0.001 s; distance=4042 kB, estimate=4042 kB; lsn=0/1B48DC0, redo lsn=0/1B46FE0
+2026-08-08 13:13:00.037 PDT [3088897] LOG:  skipping analyze of "_ecdz_graph_17756_71717171717141718171717171717171" --- lock not available
+2026-08-08 13:14:02.780 PDT [3089154] ERROR:  canceling autovacuum task
+2026-08-08 13:14:02.780 PDT [3089154] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17756_71717171717141718171717171717171"
+2026-08-08 13:14:02.781 PDT [3089154] LOG:  skipping vacuum of "_ecdz_graph_17756_71717171717141718171717171717171" --- lock not available
+2026-08-08 13:14:28.964 PDT [3082307] LOG:  checkpoint starting: time
+2026-08-08 13:15:00.810 PDT [3089427] ERROR:  canceling autovacuum task
+2026-08-08 13:15:00.810 PDT [3089427] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17756_71717171717141718171717171717171"
+2026-08-08 13:15:00.813 PDT [3089427] LOG:  skipping vacuum of "_ecdz_graph_17756_71717171717141718171717171717171" --- lock not available
+2026-08-08 13:16:03.408 PDT [3090123] ERROR:  canceling autovacuum task
+2026-08-08 13:16:03.408 PDT [3090123] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17756_71717171717141718171717171717171"
+2026-08-08 13:16:03.411 PDT [3090123] LOG:  skipping vacuum of "_ecdz_graph_17756_71717171717141718171717171717171" --- lock not available
+2026-08-08 13:17:24.955 PDT [3082307] LOG:  checkpoint complete: wrote 86 buffers (0.5%), wrote 1 SLRU buffers; 0 WAL file(s) added, 7 removed, 12 recycled; write=175.782 s, sync=0.075 s, total=175.991 s; sync files=61, longest=0.040 s, average=0.002 s; distance=310649 kB, estimate=310649 kB; lsn=0/314886A0, redo lsn=0/14AA5608
+2026-08-08 13:19:28.825 PDT [3082307] LOG:  checkpoint starting: time
+2026-08-08 13:19:29.321 PDT [3082307] LOG:  checkpoint complete: wrote 2 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 29 recycled; write=0.217 s, sync=0.017 s, total=0.496 s; sync files=15, longest=0.005 s, average=0.002 s; distance=468898 kB, estimate=468898 kB; lsn=0/3148E1F0, redo lsn=0/3148E160
+2026-08-08 13:24:28.047 PDT [3082307] LOG:  checkpoint starting: time
+2026-08-08 13:24:28.192 PDT [3082307] LOG:  checkpoint complete: wrote 1 buffers (0.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.105 s, sync=0.019 s, total=0.145 s; sync files=15, longest=0.008 s, average=0.002 s; distance=96 kB, estimate=422018 kB; lsn=0/314A6200, redo lsn=0/314A61A8
+2026-08-08 13:37:55.164 PDT [3082303] LOG:  received fast shutdown request
+2026-08-08 13:37:55.170 PDT [3082303] LOG:  aborting any active transactions
+2026-08-08 13:37:55.171 PDT [3082303] LOG:  background worker "logical replication launcher" (PID 3082312) exited with exit code 1
+2026-08-08 13:37:55.175 PDT [3082307] LOG:  shutting down
+2026-08-08 13:37:55.181 PDT [3082307] LOG:  checkpoint starting: shutdown immediate
+2026-08-08 13:37:55.201 PDT [3082307] LOG:  checkpoint complete: wrote 0 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.001 s, sync=0.001 s, total=0.026 s; sync files=0, longest=0.000 s, average=0.000 s; distance=0 kB, estimate=379816 kB; lsn=0/314A62B0, redo lsn=0/314A62B0
+2026-08-08 13:37:55.228 PDT [3082303] LOG:  database system is shut down
