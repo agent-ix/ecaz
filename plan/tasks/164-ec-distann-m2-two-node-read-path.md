@@ -1,10 +1,13 @@
 # Task 164: ec_distann M2 — Hash Placement, Remote Expansion, Two-Node Read Path
 
-Status: partial / replicated-serving control only (2026-07-10). Depends on:
-Tasks 162, 163. The remote expansion/orchestration substrate landed, but the
-fixture built a complete graph on every node and filtered serving ownership.
-It therefore does not satisfy the revised physical FR-078/FR-079 contracts;
-Task 179 owns the corrective generation handoff and frozen row-tier read path.
+Status: **complete — superseded by the accepted physical Task 179 lane**
+(2026-08-08). The original two-node transport/orchestration and identity
+evidence remains a replicated-serving control in
+`reviews/task-164/002-two-node-loopback/`; the revised physical FR-078/FR-079
+read/materialization contract is accepted in Task 179 packets 059–060, with
+the final physical gate accepted in
+`reviews/task-172/011-final-gate/feedback/2026-08-08-01-claude.md`.
+No distributed performance promotion is implied. Depends on: Tasks 162, 163.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 — first distributed milestone; produces the D4 baton-passing
 reopen-trigger measurement.
@@ -23,10 +26,12 @@ read path is exactly the single-node algorithm with placement underneath.
 ## Corrective boundary (2026-07-10)
 
 The landed two-node identity, transport, dedupe, and BW×H evidence remains a
-valid replicated-control baseline. Do not mark FR-078, FR-079 materialization,
-or physical M2 complete from this task. Task 179 replaces GUC-derived epoch
-identity, caller-selected materialization functions, and live base-heap TIDs
-with manifest-selected physical generations and AM-owned frozen row tiers.
+valid replicated-control baseline. The physical FR-078/FR-079 materialization
+and read path is now accepted under Task 179; this task's packet must not be
+reused as physical-owner latency or storage evidence. Task 179 replaces
+GUC-derived epoch identity, caller-selected materialization functions, and
+live base-heap TIDs with manifest-selected physical generations and AM-owned
+frozen row tiers.
 
 ## Scope
 

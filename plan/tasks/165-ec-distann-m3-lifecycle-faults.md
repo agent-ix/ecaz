@@ -1,11 +1,12 @@
 # Task 165: ec_distann M3 — Multinode Lifecycle + Fault Drills
 
-Status: partial / replicated-serving control only (2026-07-10). Depends on:
-Task 164. The 12-drill transport/fanout matrix and single-relation lifecycle
-model remain useful evidence, but the current metadata page has only one graph
-generation and no physical owner handoff, Ready receipts, commit-only cluster
-decision, durable scan pins, or retained row-tier generations. Task 179 owns
-that corrective FR-082 implementation.
+Status: **complete — superseded by the accepted physical Task 179 lifecycle
+lane** (2026-08-08). The 12-drill transport/fanout matrix and single-relation
+prototype remain replicated-serving controls in `reviews/task-165/024–028`;
+Task 179 packets 059–060 accept the physical generations, owner handoff,
+publication/recovery, scan fencing, and three-process fault evidence. The
+physical DML adaptation remains explicitly carried by Task 167. Depends on:
+Task 164.
 Owner: coder (to be assigned). One coder, one branch.
 Priority: P0 — NFR-020's never-silently-wrong bar is proven here.
 
@@ -22,11 +23,12 @@ load provably consistent.
 
 ## Corrective boundary (2026-07-10)
 
-Do not close FR-082 or NFR-020's publication/recovery rows from the existing
-replicated fixture. Task 179 must rerun the relevant drills against distinct
-Building/Ready/Published/Retired physical generations. Existing fault names and
-result-or-classified-error assertions should be reused as controls, not copied
-as proof of a topology they never exercised.
+The existing replicated fixture remains control evidence and does not close
+FR-082 or NFR-020's physical publication/recovery rows. Task 179 reran the
+relevant drills against distinct Building/Ready/Published/Retired physical
+generations and accepted the physical lifecycle. Existing fault names and
+result-or-classified-error assertions remain useful controls. Task 167 carries
+the remaining physical FR-083 DML adaptation.
 
 ## Scope
 

@@ -1,10 +1,13 @@
 # Task 166: ec_distann M4 — Bench Gate vs Anchors (Program Gate)
 
-Status: measured / single-instance control only (2026-07-10). The
-10k/50k/100k comparator packet landed, but it did not activate a roster or
-exercise remote expansion/materialization and therefore cannot close the
-distributed NFR-017/018/019 program gate. It is the control input to Tasks 179
-and 172. Depends on: Task 165 for historical residency. Prerequisite merges:
+Status: **complete — superseded by the accepted Task 172 physical gate**
+(2026-08-08). The 10k/50k/100k comparator packet is retained as the
+single-instance control; the distributed NFR-017/018/019 gate was completed by
+the release `ecaz bench suite` matrix in
+`reviews/task-172/011-final-gate/feedback/2026-08-08-01-claude.md`. The local
+physical arm was correct and recall-neutral in that run, but materially slower;
+no performance promotion is claimed. Depends on: Task 165 for historical
+residency. Prerequisite merges:
 `task-138-spire-distinct-recall-metric` (metric emitter) and the Task 146
 anchor evidence branch (`task-146-spire-honest-pareto-confirmation`) must be
 on the measuring branch; record merge SHAs in the packet manifest.
@@ -23,10 +26,11 @@ the Task 146 host/corpus/query protocol, 10k/50k/100k, release build.
 
 ## Corrective classification (2026-07-10)
 
-The completed measurements are valid single-instance ec_distann evidence.
-Task 172 owns the distributed gate after Task 179 supplies a physical topology;
-do not relabel this packet as multinode evidence or use it for cluster storage,
-remote-path latency, or physical-owner scaling claims.
+The completed measurements are valid single-instance ec_distann control
+evidence. Task 172 packet 011 is the accepted physical distributed gate; do not
+relabel this packet as multinode evidence or use it for cluster storage,
+remote-path latency, or physical-owner scaling claims. Task 219 owns the
+separate Pareto-recall decision.
 
 ## Scope
 
