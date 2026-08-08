@@ -112,7 +112,7 @@ validity requirements.
 | 207 | Head reconstruction (§2.2/§3) | **complete — review-closed, no promotion** (2026-08-05) | partition-union raises head membership (+5.3 pts @32) but end-to-end recall does not move (0.9486 → 0.9468); **membership is not the binding recall constraint** |
 | 208 | NFR-021/NFR-022 conformance gates | **implementation complete; packet 001 ACCEPTed, packet 002 review-open** | normalized per-owned-record metric with 100k/10k ratio ≤ 2.0, `unavailable` ≠ pass, pre-registration validated; open P2 on the NFR-021 head clause |
 | 209 | Bounded degraded completion (§4.2) | proposed — entry gate now satisfied by 205/206; **not started** | opt-in labeled straggler/hedge mode under NFR-020-AC-6 plus the degradation-curve reproduction |
-| 210 | Distribution restoration | **implementation merged to `main`; packet 006 review-open** — P0 | sharded head is the shipped default; zero-byte membership head (`coordinator_resident_unsharded_bytes=0`, `gap=none`); TRAV-30 owner |
+| 210 | Distribution restoration | **complete — review-closed ACCEPT** (2026-08-08; feedback `reviews/task-210/006-zero-byte-head/feedback/2026-08-08-01-reviewer.md`) — P0 | sharded head is the shipped default; zero-byte membership head (`coordinator_resident_unsharded_bytes=0`, `gap=none`); TRAV-30 owner |
 | 211 | Head scaling law | **complete** (2026-08-03) | 0.02 law measured at 10k/50k/100k and selected as the implementation candidate; shipped default stays the fixed 4096 cap (no consistent all-scale win) |
 | 212 | Crown cache | **complete** (2026-08-02) | pruning A/B activated but pruned zero shards and showed no latency win; 2048 entries selected as the opt-in capacity; defaults unchanged |
 | 213 | Fused head hop | **complete** (2026-08-02) | fused consumer + activation counters + recall at 10k/50k/100k; defaults stay opt-in because every measured arm is `seed_set_change=true` |
@@ -396,7 +396,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-27 | Straggler-aware owner scheduling and tail accounting | active diagnostic |
 | TRAV-28 | Replicated coordinator top-layer graph | **SCOPE DRIFT — entry not delivered as written.** Selected by Task 190, but Tasks 198/199 shipped a **full-graph** replica (every vec_id's graph record + full-precision vector, 1.660 GB at 100k, linear in N on one node), not the bounded top-layer structure this row describes. The delivered artifact violates NFR-021, NFR-018's per-node bound, NFR-017:38, and FR-078:492. A bounded top-layer candidate remains unbuilt and unmeasured. |
 | TRAV-29 | Replicated frequently traversed bridge nodes | deferred Task 190 architecture |
-| TRAV-30 | Routing-only gateway copies without full graph replication | **implementation complete; review pending in Task 210 packet 006** (2026-08-07). The NFR-021-conforming direction is shipped as part of the distribution-restoration task; the zero-byte membership-head gate is captured, and no latency win is required for this conformance work. |
+| TRAV-30 | Routing-only gateway copies without full graph replication | **complete — review-closed ACCEPT in Task 210 packet 006** (2026-08-08). The NFR-021-conforming direction is shipped as part of the distribution-restoration task; the zero-byte membership-head gate is accepted, and no latency win is required for this conformance work. |
 
 ## Candidate ledger: graph construction and adaptive search
 

@@ -1,22 +1,23 @@
 # Task 210: ec_distann Distribution Restoration
 
-Status: **review pending — implementation and zero-byte gate evidence complete**
-(2026-08-07). Priority: **P0 — top priority.**
+Status: **complete — review-closed ACCEPT** (2026-08-08). Priority: **P0 —
+top priority.**
 
 Entry gate: none. This task does not wait on Tasks 205, 206, or 207, and they do
 not wait on it.
 
 Implementation and measurement evidence is present in review packets
-`reviews/task-210/001-conformance-emitter/` through
-`reviews/task-210/006-zero-byte-head/`. Packet 006 establishes the round-2
-zero-byte membership-head gate and remains open for external review; this task
-is not marked review-closed here.
+`reviews/task-210/001-conformance-emitter/`, `002-default-path/`,
+`003a-head-sharding/`, `004-gateway-copies/`, `005-default-gate/`, and
+`006-zero-byte-head/`. Packet 006 establishes the round-2
+zero-byte membership-head gate and was accepted in
+`reviews/task-210/006-zero-byte-head/feedback/2026-08-08-01-reviewer.md`.
 
 Merge state (verified 2026-08-08): the implementation commits — including
 `35c7f3c3b` (membership-only head as a bounded state-row blob) and `4070ff6cb`
 (shard ordinal derived from members) — are **on `origin/main`**. The sharded
-head is the shipped default. **The only outstanding item is external review of
-packet 006**, which has no feedback file yet.
+head is the shipped default. The implementation is review-closed ACCEPT; no
+carried follow-ups remain.
 
 **No phase in this task is conditional, optional, or gated on a measured win.
 Sharding is a property this task delivers, not a candidate it screens.** A phase
@@ -266,8 +267,10 @@ optimization (P3 is the first one), never a return to the non-conforming path.
 1. `reviews/task-210/001-conformance-emitter/`
 2. `reviews/task-210/002-default-path/`
 3. `reviews/task-210/003a-head-sharding/`
-4. `reviews/task-210/003b-head-replication/`
-5. `reviews/task-210/004-gateway-copies/`
+4. `reviews/task-210/004-gateway-copies/`
+5. `reviews/task-210/005-default-gate/`
+6. `reviews/task-210/006-zero-byte-head/` (round-2 head-sharding and
+   replication closeout)
 
 Each carries `artifacts/manifest.md`, the `ecaz bench suite` config,
 `results.jsonl`, and the NFR-021 conformance row for every arm.
