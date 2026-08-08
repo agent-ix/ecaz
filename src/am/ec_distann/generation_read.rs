@@ -2896,6 +2896,117 @@ fn ec_distann_physical_seed_isolated_gateway_trace_benchmark(
     ))
 }
 
+/// Task 185 arbitrary-head candidate attribution. This exact-scores the
+/// persisted head membership, selects one ranked head member, and reruns the
+/// physical scan with only that candidate. It is benchmark-only: it does not
+/// alter the production seed selector or persist a policy.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+#[allow(clippy::type_complexity)]
+fn ec_distann_physical_head_candidate_trace_benchmark(
+    index_regclass: PgRelation,
+    query: Vec<f32>,
+    top_k: i32,
+    candidate_position: i32,
+) -> TableIterator<
+    'static,
+    (
+        name!(seed_ids, Vec<i64>),
+        name!(seed_expanded_counts, Vec<i32>),
+        name!(seed_hit_counts, Vec<i32>),
+        name!(hit_ids, Vec<i64>),
+        name!(hit_origin_masks, Vec<i64>),
+        name!(expanded_unique, i64),
+        name!(expanded_overlap, i64),
+        name!(records_expanded, i32),
+        name!(rounds_executed, i32),
+    ),
+> {
+    let top_k = usize::try_from(top_k)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("head candidate trace top_k must be in 1..=4096"));
+    let candidate_position = usize::try_from(candidate_position)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| {
+            pgrx::error!("head candidate trace candidate_position must be in 1..=4096")
+        });
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    let index_guard = IndexRelationGuard::try_access_share(index_oid)
+        .unwrap_or_else(|| pgrx::error!("head candidate trace could not open index relation"));
+    let source_attnum = super::routine::indexed_ecvector_attnum(index_guard.as_ptr())
+        .unwrap_or_else(|error| {
+            pgrx::error!("head candidate trace source column resolution failed: {error}")
+        });
+    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if snapshot.is_null() {
+        pgrx::error!("head candidate trace has no active snapshot");
+    }
+    let scan = PhysicalGenerationScan::open(index_oid)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let candidates = scan
+        .benchmark_head_candidates(&query)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let candidate = candidates
+        .get(candidate_position - 1)
+        .copied()
+        .unwrap_or_else(|| {
+            pgrx::error!(
+                "head candidate trace candidate_position {} exceeds head candidate count {}",
+                candidate_position,
+                candidates.len()
+            )
+        });
+    let (result, trace) = super::stage_counters::with_seed_trace(|| {
+        scan.search_with_seed_candidates(
+            snapshot,
+            source_attnum,
+            &query,
+            top_k,
+            Some(std::slice::from_ref(&candidate)),
+        )
+    });
+    let collection = result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    let seed_ids = trace
+        .seed_ids
+        .into_iter()
+        .map(|value| i64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let seed_expanded_counts = trace
+        .seed_expanded_counts
+        .into_iter()
+        .map(|value| i32::try_from(value).unwrap_or(i32::MAX))
+        .collect::<Vec<_>>();
+    let seed_hit_counts = trace
+        .seed_hit_counts
+        .into_iter()
+        .map(|value| i32::try_from(value).unwrap_or(i32::MAX))
+        .collect::<Vec<_>>();
+    let hit_ids = trace
+        .hit_ids
+        .into_iter()
+        .map(|value| i64::from_le_bytes(value.to_le_bytes()))
+        .collect::<Vec<_>>();
+    let hit_origin_masks = trace
+        .hit_origin_masks
+        .into_iter()
+        .map(i64::from)
+        .collect::<Vec<_>>();
+    TableIterator::once((
+        seed_ids,
+        seed_expanded_counts,
+        seed_hit_counts,
+        hit_ids,
+        hit_origin_masks,
+        i64::try_from(trace.expanded_unique).unwrap_or(i64::MAX),
+        i64::try_from(trace.expanded_overlap).unwrap_or(i64::MAX),
+        i32::try_from(collection.counters.records_expanded).unwrap_or(i32::MAX),
+        i32::try_from(collection.counters.rounds_executed).unwrap_or(i32::MAX),
+    ))
+}
+
 /// Task 200 attribution endpoint.  This intentionally repeats only the
 /// coordinator-side `PhysicalGenerationScan::open` call and drops each scan;
 /// it excludes owner seed scanning and head searches from the measurement.
@@ -4145,6 +4256,36 @@ impl PhysicalGenerationScan {
             per_owner.push(response.map_err(|error| error.to_string())?);
         }
         Ok(super::head_sample::merge_head_seeds(per_owner, seed_count))
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    fn benchmark_head_candidates(
+        &self,
+        query: &[f32],
+    ) -> Result<Vec<DistannSeedCandidate>, String> {
+        let Some(head) = self.head_index.as_ref() else {
+            return Err("EC_HEAD_SAMPLE: no persisted head is available".to_owned());
+        };
+        let members = head.members();
+        if members.is_empty() {
+            return Ok(Vec::new());
+        }
+        // The selector screen is defined over exact scoring of the persisted
+        // 4,096-member head. Force that policy for the diagnostic even when a
+        // legacy/current-sample fixture is used; this does not affect the
+        // normal scan selector.
+        let exact_policy =
+            super::generation_descriptor::DistannHeadPolicy::TrainingLandmarksExact;
+        if self.routes.len() > 1 || head.is_membership_only() {
+            return self.sharded_head_seeds(
+                query,
+                members,
+                members.len(),
+                members.len(),
+                exact_policy,
+            );
+        }
+        Ok(head.search_exact(query, members.len()))
     }
 
     fn select_seed_candidates(&self, query: &[f32]) -> Result<Vec<DistannSeedCandidate>, String> {
