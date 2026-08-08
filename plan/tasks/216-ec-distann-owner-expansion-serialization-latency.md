@@ -1,6 +1,7 @@
 # Task 216: ec_distann Owner Expansion and Serialization Latency
 
-Status: **proposed — latency residual investigation** (2026-08-06).
+Status: **review pending — MAT-15 negative STOP; follow-up candidates blocked**
+(2026-08-07).
 Priority: P1 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
@@ -33,7 +34,10 @@ latency lane, with a conforming sharded owner control.
 
 This task may begin with diagnostic attribution after the entry evidence is
 available. It must not stack its candidate with the Task 215 BW/H default
-change in a decision cell.
+change in a decision cell. The MAT-15 isolated screen is STOPped: its
+coordinator-side addressable ceiling is 0.19%, and its owner-SQL regression is
+not a valid reason to reopen the family. MAT-21 remains blocked until the
+generation identity and feature-build provenance issues are corrected.
 
 ## Goal
 

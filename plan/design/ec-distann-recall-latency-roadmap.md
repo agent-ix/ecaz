@@ -227,6 +227,11 @@ the pushdown in place.
 
 ## Candidate ledger: remote payload materialization
 
+Task 216's 0.19% ceiling is a coordinator-side screen: it retires only
+MAT-12/13/14 and MAT-15's packed coordinator decode path. It must not be
+applied to owner-side payload SQL or locator work (MAT-16/MAT-21), or to the
+owner expansion wire path (MAT-22), without stage-specific evidence.
+
 Task 184 completed attribution and selected one isolated family. The measured
 control already grouped by owner, drove owners concurrently, pooled
 connections, prepared the outer statement, and sent projection attnums; those
@@ -245,17 +250,17 @@ remain controls rather than new candidates.
 | MAT-09 | Speculative payload prefetch for likely final candidates | deferred; account for wasted work |
 | MAT-10 | Cancel speculative work when global ranking changes | conditional on MAT-09 |
 | MAT-11 | Move decoded payloads into output rows instead of cloning | deferred after fixed-10 winner |
-| MAT-12 | Rank-indexed payload storage instead of `HashMap<vec_id, payload>` | deferred after fixed-10 winner |
-| MAT-13 | Preserve request order and eliminate result-map lookup | deferred after fixed-10 winner |
-| MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | deferred after fixed-10 winner |
-| MAT-15 | Packed payload buffer with offsets and null bitmap | **selected — Task 216 packet 001 screen (2026-08-06)**: owner payload SQL/endpoint materialization is the measured dominant stage (~39 ms/scan owner-side vs 37 ms scan total at 100k); strongest isolated hypothesis, next is the packet-002 isolated 100k A/B |
-| MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on wire/decode share |
+| MAT-12 | Rank-indexed payload storage instead of `HashMap<vec_id, payload>` | **STOP by coordinator ceiling screen — Task 216 isolated control**: coordinator decode is 0.076 ms against a 40.60 ms scan (0.19% maximum); no separate A/B is justified |
+| MAT-13 | Preserve request order and eliminate result-map lookup | **STOP by coordinator ceiling screen — Task 216 isolated control**: coordinator map/association work is within the same sub-millisecond addressable region; no separate A/B is justified |
+| MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | **STOP by coordinator ceiling screen — Task 216 isolated control**: coordinator-side copy/decode cannot exceed the measured 0.19% ceiling |
+| MAT-15 | Packed payload buffer with offsets and null bitmap | **STOP — Task 216 isolated candidate**: coordinator decode is 0.076/40.60 ms (0.19%) and returned payload bytes are flat; the candidate's slower owner SQL is secondary implementation evidence, not the family-closing rationale |
+| MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on owner payload SQL attribution; **not covered by the coordinator 0.19% ceiling** |
 | MAT-17 | Cache resolved row schema per published generation | **production behavior via accepted Task 195; exact-recall release A/B passed** |
 | MAT-18 | Cache attnum-to-send-function resolution | production behavior via accepted Task 195 |
 | MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
-| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **secondary — Task 216 packet 001 screen (2026-08-06)**: eligible within the dominant materialization region, behind MAT-15; at most one of the two advances |
-| MAT-22 | Return row-tier locator with expanded candidates | conditional; changes expansion wire payload |
+| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **secondary carry-in after MAT-15 STOP**: owner-side locator formatting is in the dominant materialization region, not the coordinator ceiling; requires a corrected same-generation isolated A/B before any advance |
+| MAT-22 | Return row-tier locator with expanded candidates | conditional on owner expansion/wire attribution; **not covered by the coordinator 0.19% ceiling** |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
@@ -352,7 +357,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-27 | Straggler-aware owner scheduling and tail accounting | active diagnostic |
 | TRAV-28 | Replicated coordinator top-layer graph | **SCOPE DRIFT — entry not delivered as written.** Selected by Task 190, but Tasks 198/199 shipped a **full-graph** replica (every vec_id's graph record + full-precision vector, 1.660 GB at 100k, linear in N on one node), not the bounded top-layer structure this row describes. The delivered artifact violates NFR-021, NFR-018's per-node bound, NFR-017:38, and FR-078:492. A bounded top-layer candidate remains unbuilt and unmeasured. |
 | TRAV-29 | Replicated frequently traversed bridge nodes | deferred Task 190 architecture |
-| TRAV-30 | Routing-only gateway copies without full graph replication | **ACTIVE — assigned to Task 210 P3** (2026-07-30). The NFR-021-conforming direction. Listed in Task 190's family 1 but dropped at the narrowing step, which carried only `ARCH-02`/`TRAV-28` into the final comparison; the one compared candidate that preserved sharding was never evaluated. Reinstated as the successor direction to the withdrawn replica, and now owned rather than merely reinstated. |
+| TRAV-30 | Routing-only gateway copies without full graph replication | **implementation complete; review pending in Task 210 packet 006** (2026-08-07). The NFR-021-conforming direction is shipped as part of the distribution-restoration task; the zero-byte membership-head gate is captured, and no latency win is required for this conformance work. |
 
 ## Candidate ledger: graph construction and adaptive search
 
@@ -499,6 +504,10 @@ or replacing a map do not require an ADR unless they alter a durable contract.
 - Task 185 packets 003--004: fixed-cap 100k screen and accepted STOP decision;
   gateway membership Jaccard 1.0 with the control, recall 0.9625 tie, and
   basin-diversity warm-mean regression.
+- Task 216 packets 001 and 002 correction: owner-stage attribution, the
+  coordinator-only 0.19% MAT-15 ceiling, eager-control and feature-build
+  provenance correction, and the same-generation prerequisite for any
+  follow-up locator A/B.
 - NFR-007 and NFR-017 through NFR-020: evidence, comparison, storage, bounded
   work, and failure contracts.
 
@@ -525,11 +534,12 @@ higher-recall/slower-latency Pareto trade, declare the skipped Task 208/210
 entry gate, and point mechanism accounting to Task 216
 (`reviews/task-215/003-release-matrix-and-decision/`). Task 216's 100k
 attribution is accepted and selected MAT-15 (MAT-21 secondary, TRAV-05
-rejected). The remaining execution order is to run Task 186's transparent cap-8,192
-capacity control, then advance at most one bounded larger/head-routing
-candidate. Task 216's MAT-15 isolated 100k follow-up is independently
-STOPped on its accepted packet; do not restart either rejected candidate
-lane from this handoff.
+rejected). The isolated MAT-15 screen is now **STOP**: the captured arm was
+the explicit eager `materialization_batch_size=0` control and a release-profile
+feature build, while the coordinator decode ceiling was only 0.19%. The
+remaining execution order is to run Task 186's transparent cap-8,192 capacity
+control, then advance at most one bounded larger/head-routing candidate. Do
+not restart MAT-15; MAT-21 remains blocked until a same-generation lane exists.
 
 Task 216 imports the owner-side residual implication from the corrected Task
 205 and Task 206 evidence. Response-byte reduction alone is not sufficient:
