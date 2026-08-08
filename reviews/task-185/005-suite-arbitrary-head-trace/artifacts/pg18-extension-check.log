@@ -1,0 +1,4 @@
+head=9627d36c2
+command=PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo check -q -p ecaz --no-default-features --features pg18,distann-head-attribution-benchmark
+exit=0
+result=pass

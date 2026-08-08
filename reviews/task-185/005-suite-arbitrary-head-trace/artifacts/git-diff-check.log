@@ -1,0 +1,4 @@
+head=9627d36c2
+command=git diff --check
+exit=0
+result=pass
