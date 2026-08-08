@@ -1,0 +1,38 @@
+{
+  "schema": "task185-arbitrary-head-candidate-analysis-v1",
+  "scope": "100k physical sharded Phase 1 attribution; benchmark-only",
+  "extension_git_sha": "22ed70bb9d5a39685f0c06db40a4491489516da6",
+  "extension_build_profile": "release",
+  "corpus_prefix": "ec_real_100k",
+  "corpus_rows": 100000,
+  "evaluation_queries": 200,
+  "training_rows": "201-400",
+  "training_query_sha256": "a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782",
+  "training_slice_sha256": "30f11df03f6e988adfe531e2bf54b75b8515fa207fee1212dd0774acffec7471",
+  "truth_k": 10,
+  "truth_join": "exact inner-product top-10; vec_id reconstructed from source_identity md5(id) with UUID v4/v8 fixture nibbles",
+  "truth_join_validation": {
+    "head_membership_entries": 4096,
+    "head_membership_generic_mapping_matches": 4096,
+    "trace_hit_ids_unmapped": 0,
+    "retained_cache_first_query_matches": true
+  },
+  "candidate_positions": [1, 64, 512, 2048, 4096],
+  "trace_count": 1000,
+  "candidate_pool_count": 4096,
+  "per_position": [
+    {"position": 1, "queries": 200, "expanded_total": 3920, "expanded_mean": 19.6, "truth_hits_total": 48, "queries_with_truth": 27},
+    {"position": 64, "queries": 200, "expanded_total": 5196, "expanded_mean": 25.98, "truth_hits_total": 76, "queries_with_truth": 42},
+    {"position": 512, "queries": 200, "expanded_total": 6300, "expanded_mean": 31.5, "truth_hits_total": 95, "queries_with_truth": 47},
+    {"position": 2048, "queries": 200, "expanded_total": 7260, "expanded_mean": 36.3, "truth_hits_total": 69, "queries_with_truth": 39},
+    {"position": 4096, "queries": 200, "expanded_total": 8352, "expanded_mean": 41.76, "truth_hits_total": 59, "queries_with_truth": 33}
+  ],
+  "ordered_union": [
+    {"position": 1, "new_expanded_total": 3920, "cumulative_expanded_total": 3920, "new_truth_hits": 48, "cumulative_truth_hits": 48, "cumulative_truth_queries": 27},
+    {"position": 64, "new_expanded_total": 2329, "cumulative_expanded_total": 6249, "new_truth_hits": 35, "cumulative_truth_hits": 83, "cumulative_truth_queries": 44},
+    {"position": 512, "new_expanded_total": 2914, "cumulative_expanded_total": 9163, "new_truth_hits": 43, "cumulative_truth_hits": 126, "cumulative_truth_queries": 61},
+    {"position": 2048, "new_expanded_total": 3567, "cumulative_expanded_total": 12730, "new_truth_hits": 13, "cumulative_truth_hits": 139, "cumulative_truth_queries": 67},
+    {"position": 4096, "new_expanded_total": 4270, "cumulative_expanded_total": 17000, "new_truth_hits": 8, "cumulative_truth_hits": 147, "cumulative_truth_queries": 69}
+  ],
+  "scope_note": "Each trace reruns normal BW4/H100/RaBitQ traversal from exactly one persisted head member. These sparse probes establish arbitrary-head coverage and tail behavior; they are not the fixed-cap selector A/B and do not use held-out evaluation outcomes for policy selection."
+}

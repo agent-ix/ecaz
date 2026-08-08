@@ -1,0 +1,4 @@
+head=22ed70bb9d5a39685f0c06db40a4491489516da6
+command=PGRX_PG_CONFIG_PATH=/home/peter/.pgrx/18.3/pgrx-install/bin/pg_config cargo check -q -p ecaz --no-default-features --features pg18
+exit=0
+result=pass
