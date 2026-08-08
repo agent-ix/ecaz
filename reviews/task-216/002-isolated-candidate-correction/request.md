@@ -43,4 +43,3 @@ is not treated as complete protocol coverage by this correction packet.
 **STOP MAT-15.** No full-scale matrix or productionization is authorized.
 MAT-16 and MAT-21 remain owner-side stage candidates and are not retired by
 the coordinator ceiling; MAT-22 remains an owner expansion/wire candidate.
-

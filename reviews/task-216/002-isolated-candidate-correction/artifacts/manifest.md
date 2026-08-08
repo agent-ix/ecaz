@@ -27,4 +27,3 @@
 - Fault coverage: explicitly skipped in the registered diagnostic
 - Decision: `STOP`; no packet-003 full-scale matrix and no MAT-21 A/B until the
   same-generation lane is corrected
-
