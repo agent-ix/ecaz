@@ -540,6 +540,16 @@ feature build, while the coordinator decode ceiling was only 0.19%. The
 remaining execution order is to run Task 186's transparent cap-8,192 capacity
 control, then advance at most one bounded larger/head-routing candidate. Do
 not restart MAT-15; MAT-21 remains blocked until a same-generation lane exists.
+attribution is accepted and selected MAT-15 (MAT-21 secondary, TRAV-05
+rejected). The isolated MAT-15 screen is now **STOP**: the captured arm was
+the explicit eager `materialization_batch_size=0` control and a release-profile
+feature build, while the coordinator decode ceiling was only 0.19%. The two
+arms were rebuilt independently, so future MAT-21 work carries a
+generation-swap/pinned-input requirement and a maximum-win screen. Task 216's
+closeout is review-closed. The remaining execution order is to run Task 186's
+transparent cap-8,192 capacity control, then advance at most one bounded
+larger/head-routing candidate. Do not restart MAT-15; MAT-21 remains blocked
+until a same-generation production lazy-10 attribution lane exists.
 
 Task 216 imports the owner-side residual implication from the corrected Task
 205 and Task 206 evidence. Response-byte reduction alone is not sufficient:
