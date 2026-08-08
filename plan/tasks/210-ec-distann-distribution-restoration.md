@@ -1,7 +1,8 @@
 # Task 210: ec_distann Distribution Restoration
 
-Status: **review pending — implementation and zero-byte gate evidence complete**
-(2026-08-08). Priority: **P0 — top priority.**
+Status: **complete — review-closed ACCEPT** (2026-08-08). Priority: **P0 —
+top priority.** Carry: future hardening may bound `nfr_021_class=control`
+relation bytes; the independent reviewer marked this non-blocking.
 
 Entry gate: none. This task does not wait on Tasks 205, 206, or 207, and they do
 not wait on it.
@@ -10,15 +11,15 @@ Implementation and measurement evidence is present in review packets
 `reviews/task-210/001-conformance-emitter/`, `002-default-path/`,
 `003a-head-sharding/`, `004-gateway-copies/`, `005-default-gate/`, and
 `006-zero-byte-head/`. Packet 006 establishes the round-2
-zero-byte membership-head gate and has a Codex review recorded in
-`reviews/task-210/006-zero-byte-head/feedback/2026-08-08-01-reviewer.md`;
-independent external review remains outstanding.
+zero-byte membership-head gate and has accepted reviews recorded in
+`reviews/task-210/006-zero-byte-head/feedback/2026-08-08-01-reviewer.md` and
+`reviews/task-210/006-zero-byte-head/feedback/2026-08-08-02-fable.md`.
 
 Merge state (verified 2026-08-08): the implementation commits — including
 `35c7f3c3b` (membership-only head as a bounded state-row blob) and `4070ff6cb`
 (shard ordinal derived from members) — are **on `origin/main`**. The sharded
-head is the shipped default. The implementation and evidence are complete, but
-the packet remains review-open pending an independent external reviewer.
+head is the shipped default. The implementation and evidence are complete, and
+packet 006 is review-closed ACCEPT.
 
 **No phase in this task is conditional, optional, or gated on a measured win.
 Sharding is a property this task delivers, not a candidate it screens.** A phase
