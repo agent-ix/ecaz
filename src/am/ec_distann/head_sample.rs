@@ -1421,7 +1421,12 @@ impl DistannPhysicalHeadIndex {
                 self.search(query, search_width, seed_count)
             }
             super::generation_descriptor::DistannHeadPolicy::TrainingLandmarksExact => {
-                self.search_exact(query, TRAINED_HEAD_SEED_COUNT.min(seed_count))
+                // Callers that want the production bounded prefix pass
+                // TRAINED_HEAD_SEED_COUNT. The benchmark attribution surface
+                // intentionally passes the persisted head size so it can
+                // score arbitrary head members without changing production
+                // selection.
+                self.search_exact(query, seed_count)
             }
         }
     }
