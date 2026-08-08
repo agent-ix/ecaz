@@ -90,7 +90,7 @@ validity requirements.
 | Task | Workstream | Entry condition | Output |
 | --- | --- | --- | --- |
 | 184 | Remote payload materialization | complete — PROMOTE | fixed batch-10 winner; productionization in Task 191 |
-| 185 | Fixed-cap gateway landmarks | executable now, independent of 184 | at most one fixed-cap recall candidate |
+| 185 | Fixed-cap gateway landmarks | **complete — STOP** (accepted fixed-cap screen; reconciled 2026-08-07) | no production candidate; Task 186 capacity handoff |
 | 186 | Larger compressed/hierarchical head | after Task 185 disposition | at most one bounded routing/capacity candidate |
 | 187 | Traversal transport | complete — STOP, no candidate | fresh 100k attribution; nine-way contract inherited by Task 194 |
 | 188 | Graph/search residual recall | after Tasks 185/186 establish the remaining entry gap | at most one graph or adaptive-work candidate |
@@ -294,14 +294,14 @@ heads. Candidate training never uses evaluation queries.
 | HEAD-10 | Score all representatives, open only the best groups | conditional Task 186 |
 | HEAD-11 | Bounded per-owner heads merged at coordinator | unmeasured; owner is load balance, not semantic region |
 | HEAD-12 | Coordinator-resident compact summary of every owner head | deferred format/cache candidate |
-| HEAD-13 | Diversity-aware selection instead of nearest 32 landmarks | active Task 185 |
-| HEAD-14 | Penalize seeds sharing the same traversal basin | active Task 185 |
-| HEAD-15 | Maximal-marginal-relevance distance/graph seed selection | active Task 185 diagnostic |
+| HEAD-13 | Diversity-aware selection instead of nearest 32 landmarks | measured STOP in Task 185 packet 003: recall-flat and materially slower basin-diversity candidate |
+| HEAD-14 | Penalize seeds sharing the same traversal basin | measured STOP in Task 185 packet 003: recall-flat and materially slower basin-diversity candidate |
+| HEAD-15 | Maximal-marginal-relevance distance/graph seed selection | measured STOP in Task 185 packet 003: no useful fixed-cap candidate |
 | HEAD-16 | Force seed coverage across disjoint training-query regions | unmeasured |
-| HEAD-17 | Select landmarks by marginal bounded-traversal recall gain | active Task 185 primary candidate |
-| HEAD-18 | Train gateway nodes that lead traversal to truth neighbors | active Task 185 primary candidate |
-| HEAD-19 | Submodular cover over successful seed-to-result basins | active Task 185 alternative |
-| HEAD-20 | Hard-query mining on a separate validation slice | active Task 185 input discipline |
+| HEAD-17 | Select landmarks by marginal bounded-traversal recall gain | measured STOP in Task 185 packet 003: gateway membership was set-identical to control and recall-flat |
+| HEAD-18 | Train gateway nodes that lead traversal to truth neighbors | measured STOP in Task 185 packet 003: isolated reachability did not transfer to the joint beam |
+| HEAD-19 | Submodular cover over successful seed-to-result basins | measured STOP in Task 185 packet 003: no held-out recall improvement |
+| HEAD-20 | Hard-query mining on a separate validation slice | measured STOP in Task 185 packet 003: input discipline retained; no candidate advanced |
 | HEAD-21 | Allocate capacity to low-recall training-query clusters | unmeasured |
 | HEAD-22 | Lightweight query-to-region classifier | conditional Task 186 |
 | HEAD-23 | LSH/binary-code landmark-group routing | conditional Task 186 |
@@ -313,8 +313,8 @@ heads. Candidate training never uses evaluation queries.
 | HEAD-29 | Disjoint bounded multi-start seed groups | conditional Task 186 |
 | HEAD-30 | Second seed group only for low-confidence traversals | conditional Task 186/188 |
 | HEAD-31 | Adaptive 16/32/64 seeds from score gaps | low priority; unchanged-head seed widening was flat |
-| HEAD-32 | Reachability-aware rather than nearest-distance seed ranking | active Task 185 |
-| HEAD-33 | End-to-end traversal-success objective instead of oracle overlap | active Task 185 governing hypothesis |
+| HEAD-32 | Reachability-aware rather than nearest-distance seed ranking | measured STOP in Task 185 packet 003: recall-flat at fixed cap 4,096 |
+| HEAD-33 | End-to-end traversal-success objective instead of oracle overlap | measured STOP in Task 185 packet 003: isolated-budget signal did not transfer to the joint beam |
 | HEAD-34 | Repeated/near-query result cache | deferred workload optimization, not corpus recall |
 
 ## Candidate ledger: traversal and remote transport
@@ -372,10 +372,10 @@ Task 188 owns this family only after bounded entry work quantifies the residual.
 | GRAPH-10 | Connectivity and reachability audit | active Task 188 prerequisite |
 | GRAPH-11 | Reverse-edge repair for low-indegree nodes | conditional on GRAPH-10 |
 | GRAPH-12 | Bridge edges between weak regions | conditional on GRAPH-10 |
-| GRAPH-13 | Seed-aware landmark-to-region shortcuts | conditional on Task 185 gateway evidence |
+| GRAPH-13 | Seed-aware landmark-to-region shortcuts | conditional on Task 186 capacity evidence; Task 185 fixed-cap gateway result was negative |
 | GRAPH-14 | Alternate deterministic graph-build seeds | unmeasured stability diagnostic |
 | GRAPH-15 | Bounded second-graph ensemble | deferred storage/build candidate |
-| GRAPH-16 | Training-query-aware gateway augmentation | conditional on Task 185 |
+| GRAPH-16 | Training-query-aware gateway augmentation | conditional on Task 186 capacity evidence; Task 185 fixed-cap gateway result was negative |
 | GRAPH-17 | Query-difficulty adaptive search budget | conditional after confidence diagnostics |
 | GRAPH-18 | Attribute owner-oracle residual to graph, BW/H, or rerank | active Task 188 decision requirement |
 
@@ -496,6 +496,9 @@ or replacing a map do not require an ADR unless they alter a durable contract.
   profile, and STOP.
 - Task 184 packets 001--004: materialization attribution, fixed-window
   candidate, adversarial semantics/failure matrix, full-scale PROMOTE.
+- Task 185 packets 003--004: fixed-cap 100k screen and accepted STOP decision;
+  gateway membership Jaccard 1.0 with the control, recall 0.9625 tie, and
+  basin-diversity warm-mean regression.
 - NFR-007 and NFR-017 through NFR-020: evidence, comparison, storage, bounded
   work, and failure contracts.
 
@@ -509,8 +512,11 @@ withdrawn as unsupported by the available counters. Task 207 is review-closed
 with no promotion; its union-construction result does not justify repeating
 that lane unchanged.
 
-Status update (2026-08-06, end of day): items 1, 2, and the attribution half
-of item 4 are done. Task 205 is review-closed (accepted disposition in
+Status update (2026-08-07): items 1, 2, and the attribution half
+of item 4 are done. Task 185's fixed-cap screen is now **STOP**: gateway
+set-cover tied the frequency control at 0.9625 with Jaccard-1.0 membership,
+while basin diversification was materially slower; Task 186 is the next
+capacity handoff. Task 205 is review-closed (accepted disposition in
 `reviews/task-205/005-attribution-closeout/`). Task 215's release A/B ran and
 recorded **STOP** — BW64/H8 was 20–48% slower on the normal release build and
 not recall-equivalent; defaults remain BW4/H100. Its decision-account
@@ -519,12 +525,11 @@ higher-recall/slower-latency Pareto trade, declare the skipped Task 208/210
 entry gate, and point mechanism accounting to Task 216
 (`reviews/task-215/003-release-matrix-and-decision/`). Task 216's 100k
 attribution is accepted and selected MAT-15 (MAT-21 secondary, TRAV-05
-rejected). The remaining execution order is:
-
-1. start the now-unblocked Task 185 selection-objective lane; and
-2. run Task 216's MAT-15 isolated 100k A/B under
-   `reviews/task-216/002-isolated-candidate/`, without stacking any
-   Task 215 regime change.
+rejected). The remaining execution order is to run Task 186's transparent cap-8,192
+capacity control, then advance at most one bounded larger/head-routing
+candidate. Task 216's MAT-15 isolated 100k follow-up is independently
+STOPped on its accepted packet; do not restart either rejected candidate
+lane from this handoff.
 
 Task 216 imports the owner-side residual implication from the corrected Task
 205 and Task 206 evidence. Response-byte reduction alone is not sufficient:

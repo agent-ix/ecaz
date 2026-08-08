@@ -1,8 +1,8 @@
 # Task 185: ec_distann Gateway Landmark Selection
 
-Status: **in progress — Phase 1 100k control and truth join captured; selector pending**
-(2026-08-07; entry gate added 2026-07-29). Priority: P1 bounded-recall
-follow-up, independent of Task 184.
+Status: **complete — STOP** (2026-08-07 reconciliation of the accepted
+2026-07-23 decision). Priority: P1 bounded-recall follow-up, independent of
+Task 184.
 
 > **Entry gate and boundary (Task 203 audit, correction 2026-07-29-02).**
 >
@@ -131,7 +131,26 @@ task accepts its format, lifecycle, and full production-path evidence.
    gateway/basin diagnostics, and frozen policies;
 3. `reviews/task-185/003-fixed-cap-screen/`: isolated cap-4,096 A/B evidence;
 4. `reviews/task-185/004-full-scale-decision/`: conditional 10k/50k/100k and
-   advance/stop decision.
+   advance/stop decision on the accepted Task 185 branch.
+5. `reviews/task-185/005-suite-arbitrary-head-trace/`: later benchmark-only
+   full-head diagnostic; it does not reopen the fixed-cap decision.
+6. `reviews/task-185/006-closeout-reconciliation/`: current-branch ledger
+   reconciliation and packet-local decision summary.
+
+## Decision and handoff
+
+The fixed-cap screen is **STOP**. Gateway set-cover selected the same 4,096
+member set as the frequency control (Jaccard 1.0) and tied its 0.9625 held-out
+recall. Basin diversification also tied recall but raised warm mean latency
+from about 20 ms to 66--67 ms. Neither candidate is useful under the
+pre-registered rule, so the conditional 10k/50k/100k confirmation was not run.
+
+No Task 185 policy becomes a production default. Task 186 owns the next
+capacity question: retain the Task 182 cap-4,096 frequency control, test the
+transparent cap-8,192 exact-scoring control first, and gate any larger or
+hierarchical candidate on a useful monotonic signal. GRAPH-13 and GRAPH-16
+remain conditional on that capacity evidence rather than being silently
+reopened inside Task 185.
 
 ## Non-goals
 
