@@ -17,6 +17,7 @@ infra/spire-aws/terraform.tfvars
 
 # Local agent/session state and downloaded paper copies.
 .claude/
+.worktrees/
 CLAUDE.md
 handoff.md
 *.pdf
