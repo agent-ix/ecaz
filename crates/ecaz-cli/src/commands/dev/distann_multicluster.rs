@@ -111,6 +111,15 @@ pub struct LocalMultinodePg18Args {
     /// isolate the complete configured seed list.
     #[arg(long)]
     pub gateway_isolated_seed_limit: Option<u32>,
+    /// Task 185 benchmark-only arbitrary persisted-head candidate attribution.
+    /// The positions are 1-based and comma-separated; each selected head
+    /// member is traced independently on the disjoint training slice.
+    #[arg(long, default_value_t = false)]
+    pub gateway_head_candidate_trace: bool,
+    /// Persisted-head positions to trace when gateway_head_candidate_trace is
+    /// enabled. This is explicit to keep the diagnostic bounded.
+    #[arg(long, value_delimiter = ',')]
+    pub gateway_head_candidate_positions: Vec<u32>,
     /// Maximum allowed RSS slope for the Task 200 coverage regression gate.
     #[arg(long, default_value_t = 100.0)]
     pub coverage_memory_regression_max_slope_kb_per_s: f64,
@@ -496,6 +505,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.gateway_isolated_trace && !args.physical_benchmark {
         bail!("--gateway-isolated-trace requires --physical-benchmark");
     }
+    if args.gateway_head_candidate_trace && !args.physical_benchmark {
+        bail!("--gateway-head-candidate-trace requires --physical-benchmark");
+    }
     if args.gateway_trace && args.training_query_path.is_none() {
         bail!(
             "--gateway-trace requires --training-query-path so attribution uses the disjoint training slice"
@@ -504,6 +516,24 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.gateway_isolated_trace && args.training_query_path.is_none() {
         bail!(
             "--gateway-isolated-trace requires --training-query-path so attribution uses the disjoint training slice"
+        );
+    }
+    if args.gateway_head_candidate_trace && args.training_query_path.is_none() {
+        bail!(
+            "--gateway-head-candidate-trace requires --training-query-path so attribution uses the disjoint training slice"
+        );
+    }
+    if args.gateway_head_candidate_trace && args.gateway_head_candidate_positions.is_empty() {
+        bail!(
+            "--gateway-head-candidate-trace requires --gateway-head-candidate-positions"
+        );
+    }
+    if args.gateway_head_candidate_positions.iter().any(|position| !(1..=4096).contains(position)) {
+        bail!("--gateway-head-candidate-positions values must be in 1..=4096");
+    }
+    if !args.gateway_head_candidate_trace && !args.gateway_head_candidate_positions.is_empty() {
+        bail!(
+            "--gateway-head-candidate-positions requires --gateway-head-candidate-trace"
         );
     }
     if let Some(limit) = args.gateway_isolated_seed_limit {
@@ -4772,10 +4802,10 @@ async fn run_physical_benchmarks(
         )
         .await?
         .get::<_, bool>(0);
-    if (args.gateway_trace || args.gateway_isolated_trace)
+    if (args.gateway_trace || args.gateway_isolated_trace || args.gateway_head_candidate_trace)
         && !coordinator
             .query_one(
-                "SELECT to_regprocedure('ec_distann_physical_seed_gateway_trace_benchmark(regclass,real[],integer)') IS NOT NULL AND to_regprocedure('ec_distann_physical_seed_isolated_gateway_trace_benchmark(regclass,real[],integer,integer)') IS NOT NULL",
+                "SELECT to_regprocedure('ec_distann_physical_seed_gateway_trace_benchmark(regclass,real[],integer)') IS NOT NULL AND to_regprocedure('ec_distann_physical_seed_isolated_gateway_trace_benchmark(regclass,real[],integer,integer)') IS NOT NULL AND to_regprocedure('ec_distann_physical_head_candidate_trace_benchmark(regclass,real[],integer,integer)') IS NOT NULL",
                 &[],
             )
             .await?
@@ -4939,7 +4969,10 @@ async fn run_physical_benchmarks(
         args.queries,
         args.head_index_cap,
     ));
-    let gateway_trace_queries = if args.gateway_trace || args.gateway_isolated_trace {
+    let gateway_trace_queries = if args.gateway_trace
+        || args.gateway_isolated_trace
+        || args.gateway_head_candidate_trace
+    {
         let training_path = std::fs::canonicalize(
             args.training_query_path
                 .as_deref()
@@ -5669,6 +5702,95 @@ async fn run_physical_benchmarks(
                     "physical_benchmark_gateway_isolated_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_201_400 queries={} seed_positions={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
                     args.queries,
                     args.queries.saturating_mul(isolated_seed_count),
+                    args.top_k,
+                    trace_path.display()
+                ));
+            }
+            if arm == "physical" && args.gateway_head_candidate_trace {
+                let candidate_positions = args
+                    .gateway_head_candidate_positions
+                    .iter()
+                    .map(u32::to_string)
+                    .collect::<Vec<_>>()
+                    .join(",");
+                coordinator
+                    .batch_execute(&format!(
+                        "SET ec_distann.beam_width = {arm_beam_width};\n\
+                         SET ec_distann.hop_rounds = {arm_hop_rounds};\n\
+                         SET ec_distann.candidate_heap_limit = {candidate_heap_limit};\n\
+                         SET ec_distann.benchmark_seed_mode = '{}';\n\
+                         SET ec_distann.benchmark_head_search_width = {head_search_width};\n\
+                         SET ec_distann.benchmark_head_seed_count = {head_seed_count};\n\
+                         SET ec_distann.benchmark_exact_neighbor = {};\n\
+                         SET ec_distann.sharded_head_search = {};",
+                        seed_strategy.replace('\'', "''"),
+                        if neighbor_score_mode == "exact_neighbor" {
+                            "on"
+                        } else {
+                            "off"
+                        },
+                        if args.sharded_head { "on" } else { "off" },
+                    ))
+                    .await
+                    .wrap_err("configuring coordinator for Task 185 arbitrary-head trace")?;
+                let trace_json = coordinator
+                    .query_one(
+                        &format!(
+                            "WITH traces AS (
+                                 SELECT q.id::bigint AS query_id,
+                                        positions.position::integer AS candidate_position,
+                                        t.*
+                                   FROM {} q
+                                  CROSS JOIN LATERAL unnest(ARRAY[{}]::integer[]) AS positions(position)
+                                  CROSS JOIN LATERAL ec_distann_physical_head_candidate_trace_benchmark(
+                                      'dm_idx'::regclass, q.source, {}, positions.position::integer) t
+                                  ORDER BY q.id, positions.position
+                                  LIMIT {}
+                             )
+                             SELECT jsonb_build_object(
+                                 'queries', count(DISTINCT query_id),
+                                 'candidate_positions', count(*),
+                                 'traces', COALESCE(jsonb_agg(
+                                     jsonb_build_object(
+                                         'query_id', query_id,
+                                         'candidate_position', candidate_position,
+                                         'seed_ids', seed_ids,
+                                         'seed_expanded_counts', seed_expanded_counts,
+                                         'seed_hit_counts', seed_hit_counts,
+                                         'hit_ids', hit_ids,
+                                         'hit_origin_masks', hit_origin_masks,
+                                         'expanded_unique', expanded_unique,
+                                         'expanded_overlap', expanded_overlap,
+                                         'records_expanded', records_expanded,
+                                         'rounds_executed', rounds_executed
+                                     ) ORDER BY query_id, candidate_position
+                                 ), '[]'::jsonb)
+                             )::text
+                               FROM traces",
+                            gateway_trace_queries
+                                .as_deref()
+                                .expect("arbitrary-head trace training relation"),
+                            candidate_positions,
+                            args.top_k,
+                            args.queries
+                                .saturating_mul(args.gateway_head_candidate_positions.len() as u32),
+                        ),
+                        &[],
+                    )
+                    .await
+                    .wrap_err("collecting Task 185 arbitrary-head traces")?
+                    .get::<_, String>(0);
+                let trace_path =
+                    log_dir.join(format!("{arm}-{variant}-gateway-head-candidate-trace.json"));
+                fs::write(&trace_path, &trace_json).wrap_err_with(|| {
+                    format!(
+                        "writing Task 185 arbitrary-head trace {}",
+                        trace_path.display()
+                    )
+                })?;
+                lines.push(format!(
+                    "physical_benchmark_gateway_head_candidate_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_201_400 queries={} candidate_positions={candidate_positions} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
+                    args.queries,
                     args.top_k,
                     trace_path.display()
                 ));

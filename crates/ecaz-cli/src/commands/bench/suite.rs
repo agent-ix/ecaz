@@ -656,6 +656,12 @@ struct DistannLocalMultinodeStep {
     /// Maximum returned seed positions to isolate per training query.
     #[serde(default)]
     gateway_isolated_seed_limit: Option<u32>,
+    /// Task 185 bounded arbitrary persisted-head candidate attribution.
+    #[serde(default)]
+    gateway_head_candidate_trace: bool,
+    /// 1-based persisted-head positions to trace when enabled.
+    #[serde(default)]
+    gateway_head_candidate_positions: Vec<u32>,
     #[serde(default)]
     coverage_memory_regression_max_slope_kb_per_s: Option<f64>,
     #[serde(default)]
@@ -4439,6 +4445,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.gateway_head_candidate_trace && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} gateway_head_candidate_trace requires physical_benchmark",
+                        step.name
+                    )
+                }
                 if step.gateway_trace && step.training_query_path.is_none() {
                     bail!(
                         "distann-local-multinode step {:?} gateway_trace requires training_query_path for disjoint attribution",
@@ -4448,6 +4460,38 @@ impl SuiteStep {
                 if step.gateway_isolated_trace && step.training_query_path.is_none() {
                     bail!(
                         "distann-local-multinode step {:?} gateway_isolated_trace requires training_query_path for disjoint attribution",
+                        step.name
+                    )
+                }
+                if step.gateway_head_candidate_trace && step.training_query_path.is_none() {
+                    bail!(
+                        "distann-local-multinode step {:?} gateway_head_candidate_trace requires training_query_path for disjoint attribution",
+                        step.name
+                    )
+                }
+                if step.gateway_head_candidate_trace
+                    && step.gateway_head_candidate_positions.is_empty()
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} gateway_head_candidate_trace requires gateway_head_candidate_positions",
+                        step.name
+                    )
+                }
+                if step
+                    .gateway_head_candidate_positions
+                    .iter()
+                    .any(|position| !(1..=4096).contains(position))
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} gateway_head_candidate_positions must be in 1..=4096",
+                        step.name
+                    )
+                }
+                if !step.gateway_head_candidate_trace
+                    && !step.gateway_head_candidate_positions.is_empty()
+                {
+                    bail!(
+                        "distann-local-multinode step {:?} gateway_head_candidate_positions requires gateway_head_candidate_trace",
                         step.name
                     )
                 }
@@ -4754,6 +4798,21 @@ impl SuiteStep {
                                     ))
                                 }));
                             }
+                            if step.gateway_head_candidate_trace {
+                                let variants = if step.benchmark_seed_variants.is_empty() {
+                                    vec!["production".to_owned()]
+                                } else {
+                                    step.benchmark_seed_variants
+                                        .iter()
+                                        .map(|variant| variant.name.clone())
+                                        .collect::<Vec<_>>()
+                                };
+                                artifacts.extend(variants.into_iter().map(|variant| {
+                                    dir.join(format!(
+                                        "physical-{variant}-gateway-head-candidate-trace.json"
+                                    ))
+                                }));
+                            }
                             artifacts
                         })
                         .collect();
@@ -4793,6 +4852,21 @@ impl SuiteStep {
                     };
                     artifacts.extend(variants.into_iter().map(|variant| {
                         dir.join(format!("physical-{variant}-gateway-isolated-trace.json"))
+                    }));
+                }
+                if step.gateway_head_candidate_trace {
+                    let variants = if step.benchmark_seed_variants.is_empty() {
+                        vec!["production".to_owned()]
+                    } else {
+                        step.benchmark_seed_variants
+                            .iter()
+                            .map(|variant| variant.name.clone())
+                            .collect::<Vec<_>>()
+                    };
+                    artifacts.extend(variants.into_iter().map(|variant| {
+                        dir.join(format!(
+                            "physical-{variant}-gateway-head-candidate-trace.json"
+                        ))
                     }));
                 }
                 }
@@ -5444,6 +5518,19 @@ fn expand_distann_local_multinode(
     }
     if step.gateway_isolated_trace {
         args.push("--gateway-isolated-trace".into());
+    }
+    if step.gateway_head_candidate_trace {
+        args.push("--gateway-head-candidate-trace".into());
+    }
+    if !step.gateway_head_candidate_positions.is_empty() {
+        args.push("--gateway-head-candidate-positions".into());
+        args.push(
+            step.gateway_head_candidate_positions
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join(","),
+        );
     }
     push_opt_arg(
         &mut args,
