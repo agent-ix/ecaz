@@ -122,6 +122,8 @@ validity requirements.
 | 217 | Same-generation A/B lane | **complete — review-closed ACCEPT** (2026-08-08) — P0 | epoch-fingerprint attestation per physical arm, fail-closed on generation change; 100k A/A byte-identical + runtime-switch A/B proof; extension-*binary*-swap arm still unexercised |
 | 218 | Owner-side materialization latency | **complete — review-closed ACCEPT, MAT-21 STOP** (2026-08-08) | production lazy-10 denominator: owner endpoint 9.10 ms/scan of an 18.83 ms scan; typed `tid[]` locators neutral (payload SQL 8.555→8.455 ms/scan, byte-identical predictions); MAT-21 is retired by the negative, while MAT-16/MAT-22 remain open and are carried to a future owner-side task |
 | 219 | Recall/latency Pareto default | proposed (2026-08-08) | decide the shipped operating point and whether recall-equivalence stays the acceptance clause for default changes |
+| 220 | Owner array materialization (MAT-16) | proposed (2026-08-09) | production lazy-10 100k candidate screen; standard 10k/50k/100k A/B only if the isolated candidate is useful |
+| 221 | Owner expanded locator (MAT-22) | proposed (2026-08-09) | production lazy-10 100k candidate screen; standard 10k/50k/100k A/B only if the isolated candidate is useful |
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -293,13 +295,13 @@ remain controls rather than new candidates.
 | MAT-13 | Preserve request order and eliminate result-map lookup | **STOP by coordinator ceiling screen — Task 216 isolated control**: coordinator map/association work is within the same sub-millisecond addressable region; no separate A/B is justified |
 | MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | **STOP by coordinator ceiling screen — Task 216 isolated control**: coordinator-side copy/decode cannot exceed the measured 0.19% ceiling |
 | MAT-15 | Packed payload buffer with offsets and null bitmap | **STOP — Task 216 isolated candidate**: coordinator decode is 0.076/40.60 ms (0.19%) and returned payload bytes are flat; the candidate's slower owner SQL is secondary implementation evidence, not the family-closing rationale |
-| MAT-16 | Avoid PostgreSQL array construction for each payload row | **carried open to a future owner-side task** — Task 218 measured the production lazy-10 budget but advanced MAT-21 only; MAT-16 was not tested or retired |
+| MAT-16 | Avoid PostgreSQL array construction for each payload row | **owned by proposed Task 220** — production lazy-10 owner-side candidate screen; Task 218 measured the budget but did not test MAT-16 |
 | MAT-17 | Cache resolved row schema per published generation | **production behavior via accepted Task 195; exact-recall release A/B passed** |
 | MAT-18 | Cache attnum-to-send-function resolution | production behavior via accepted Task 195 |
 | MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
 | MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **STOP — Task 218 packet 002 review-closed ACCEPT**: same-generation production lazy-10 A/B was recall-identical and neutral end-to-end (payload SQL 8.555→8.455 ms/scan); the locator-representation hypothesis is retired, shipped defaults unchanged |
-| MAT-22 | Return row-tier locator with expanded candidates | **carried open to a future owner-side task** — Task 218 measured the production lazy-10 budget but did not test the owner-expansion/wire candidate; not retired by MAT-21's negative |
+| MAT-22 | Return row-tier locator with expanded candidates | **owned by proposed Task 221** — production lazy-10 owner-expansion/wire candidate screen; Task 218 measured the budget but did not test MAT-22 |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
