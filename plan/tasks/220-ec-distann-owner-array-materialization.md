@@ -1,6 +1,9 @@
 # Task 220: ec_distann Owner Array Materialization (MAT-16)
 
-Status: **proposed** (2026-08-09). Priority: P1 latency.
+Status: **implementation complete; review-open** (2026-08-09, packet
+`reviews/task-220/002-isolated-candidate/`). The pre-registered MAT-16 screen
+STOPped on a 33.2% end-to-end regression; outside reviewer disposition is
+pending. Priority: P1 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 Origin: Task 218 carry-in; new task, not a reopening of Task 218.
