@@ -1665,6 +1665,7 @@ impl RetainedGenerationScan {
         expected_schema_fingerprint: &[u8],
         use_cached_payload_plan: bool,
         use_typed_locator: bool,
+        use_packed_payload: bool,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_started = Instant::now();
@@ -1741,12 +1742,15 @@ impl RetainedGenerationScan {
         let payload_sql_started = Instant::now();
         let row_name = super::handoff::qualified_relation_name(self.generation.row_tier_relid)
             .map_err(DistannExpandError::GenerationMissing)?;
-        let sql = super::remote_endpoint::build_payload_sql(
-            &row_name,
-            &columns,
-            &sends,
-            use_typed_locator,
-        )
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let sql_builder = if use_packed_payload {
+            super::remote_endpoint::build_packed_payload_sql
+        } else {
+            super::remote_endpoint::build_payload_sql
+        };
+        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+        let sql_builder = super::remote_endpoint::build_packed_payload_sql;
+        let sql = sql_builder(&row_name, &columns, &sends, use_typed_locator)
             .map_err(DistannExpandError::BadInput)?;
         let typed_tids = nodes
             .iter()
@@ -1871,7 +1875,40 @@ impl RetainedGenerationScan {
                         ))
                     })?
                     .unwrap_or_default();
-                let values = row["payload_values"]
+                if use_packed_payload {
+                    let offsets = row["payload_offsets"]
+                        .value::<Vec<i64>>()
+                        .map_err(|error| {
+                            DistannExpandError::Internal(format!(
+                                "physical packed payload offsets decode failed: {error}"
+                            ))
+                        })?
+                        .unwrap_or_default();
+                    let values = row["payload_values"]
+                        .value::<Vec<u8>>()
+                        .map_err(|error| {
+                            DistannExpandError::Internal(format!(
+                                "physical packed payload values decode failed: {error}"
+                            ))
+                        })?
+                        .unwrap_or_default();
+                    let final_offset = offsets.last().copied().unwrap_or(0);
+                    let offsets_valid = offsets.windows(2).all(|window| window[0] <= window[1])
+                        && final_offset >= 0
+                        && usize::try_from(final_offset)
+                            .ok()
+                            .is_some_and(|end| end == values.len());
+                    if nulls.len() != column_count
+                        || offsets.len() != column_count
+                        || !offsets_valid
+                    {
+                        return Err(DistannExpandError::Internal(
+                            "physical packed payload shape mismatch".to_owned(),
+                        ));
+                    }
+                    return Ok((missing, nulls, offsets, values));
+                }
+                let arrays = row["payload_values"]
                     .value::<pgrx::datum::Array<&[u8]>>()
                     .map_err(|error| {
                         DistannExpandError::Internal(format!(
@@ -1885,12 +1922,20 @@ impl RetainedGenerationScan {
                             .collect::<Vec<_>>()
                     })
                     .unwrap_or_default();
-                if nulls.len() != column_count || values.len() != column_count {
+                if nulls.len() != column_count || arrays.len() != column_count {
                     return Err(DistannExpandError::Internal(
                         "physical payload column count mismatch".to_owned(),
                     ));
                 }
-                Ok((missing, nulls, values))
+                {
+                    let mut offsets = Vec::with_capacity(arrays.len());
+                    let mut values = Vec::new();
+                    for value in arrays {
+                        values.extend_from_slice(&value);
+                        offsets.push(i64::try_from(values.len()).unwrap_or(i64::MAX));
+                    }
+                    Ok((missing, nulls, offsets, values))
+                }
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()
         })?;
@@ -1902,12 +1947,14 @@ impl RetainedGenerationScan {
         let rows = nodes
             .into_iter()
             .zip(payloads)
-            .map(|(node, (missing, nulls, values))| {
+            .map(|(node, payload)| {
+                let (missing, nulls, offsets, values) = payload;
                 (
                     i64::from_le_bytes(node.vec_id.to_le_bytes()),
                     node.tombstoned,
                     missing,
                     nulls,
+                    offsets,
                     values,
                 )
             })
@@ -1943,7 +1990,7 @@ fn ec_distann_debug_validate_cached_row_schema(
         .fingerprint()
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     store
-        .materialize_payloads(&[], &[], &expected, false, false)
+        .materialize_payloads(&[], &[], &expected, false, false, true)
         .unwrap_or_else(|error| error.raise());
     true
 }
@@ -1965,7 +2012,7 @@ fn ec_distann_debug_retained_epoch_cache_contains(
 }
 
 type PhysicalExpandRow = (i64, Option<f32>, bool, Vec<i64>, Vec<f32>);
-type PhysicalPayloadRow = (i64, bool, bool, Vec<bool>, Vec<Vec<u8>>);
+type PhysicalPayloadRow = (i64, bool, bool, Vec<bool>, Vec<i64>, Vec<u8>);
 
 struct PhysicalPayloadBatch {
     rows: Vec<PhysicalPayloadRow>,
@@ -3361,7 +3408,8 @@ fn ec_distann_materialize_physical_row_payloads(
         name!(is_tombstone, bool),
         name!(tuple_payload_missing, bool),
         name!(payload_nulls, Vec<bool>),
-        name!(payload_values, Vec<Vec<u8>>),
+        name!(payload_offsets, Vec<i64>),
+        name!(payload_values, Vec<u8>),
     ),
 > {
     let ids = vec_ids
@@ -3376,6 +3424,7 @@ fn ec_distann_materialize_physical_row_payloads(
                 &expected_schema_fingerprint,
                 false,
                 false,
+                true,
             )
         })
         .map(|batch| batch.rows)
@@ -3398,6 +3447,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     expected_schema_fingerprint: Vec<u8>,
     use_cached_payload_plan: bool,
     use_typed_locator: bool,
+    use_packed_payload: bool,
 ) -> TableIterator<
     'static,
     (
@@ -3405,7 +3455,8 @@ fn ec_distann_materialize_physical_row_payloads_profile(
         name!(is_tombstone, bool),
         name!(tuple_payload_missing, bool),
         name!(payload_nulls, Vec<bool>),
-        name!(payload_values, Vec<Vec<u8>>),
+        name!(payload_offsets, Vec<i64>),
+        name!(payload_values, Vec<u8>),
         name!(owner_total_ns, i64),
         name!(owner_open_validate_ns, i64),
         name!(owner_node_lookup_ns, i64),
@@ -3429,6 +3480,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             &expected_schema_fingerprint,
             use_cached_payload_plan,
             use_typed_locator,
+            use_packed_payload,
         )
         .unwrap_or_else(|error| error.raise());
     let owner_total_ns = duration_ns(total_started.elapsed());
@@ -3438,10 +3490,10 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     let payload_bytes = batch
         .rows
         .iter()
-        .map(|(_, _, _, nulls, values)| {
-            nulls
-                .len()
-                .saturating_add(values.iter().map(Vec::len).sum::<usize>())
+        .map(|(_, _, _, nulls, offsets, values)| {
+            nulls.len()
+                .saturating_add(offsets.len())
+                .saturating_add(values.len())
         })
         .sum::<usize>();
     let owner_total_ns = i64::try_from(owner_total_ns).unwrap_or(i64::MAX);
@@ -3456,6 +3508,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             row.2,
             row.3,
             row.4,
+            row.5,
             owner_total_ns,
             owner_open_validate_ns,
             owner_node_lookup_ns,
@@ -3486,7 +3539,8 @@ pub(crate) struct PhysicalGenerationScan {
 
 pub(crate) struct PhysicalRemotePayload {
     pub(crate) payload_nulls: Vec<bool>,
-    pub(crate) payload_values: Vec<Vec<u8>>,
+    pub(crate) payload_offsets: Vec<i64>,
+    pub(crate) payload_values: Vec<u8>,
 }
 
 fn bounded_replica_failure_reason(kind: &str, error: &str) -> String {
@@ -4634,6 +4688,8 @@ impl PhysicalGenerationScan {
                         super::options::benchmark_owner_payload_plan_cache(),
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     use_typed_locator: super::options::benchmark_typed_locator(),
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    use_packed_payload: super::options::benchmark_packed_payload(),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -4702,6 +4758,7 @@ impl PhysicalGenerationScan {
                     requested,
                     PhysicalRemotePayload {
                         payload_nulls: payload.payload_nulls,
+                        payload_offsets: payload.payload_offsets,
                         payload_values: payload.payload_values,
                     },
                 );

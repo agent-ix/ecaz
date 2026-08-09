@@ -520,6 +520,9 @@ struct DistannBenchmarkSeedVariant {
     /// Task 218 MAT-21 benchmark-only typed/binary row locator arm.
     #[serde(default)]
     typed_locator: bool,
+    /// Task 220 MAT-16 benchmark-only packed owner payload arm.
+    #[serde(default)]
+    packed_payload: bool,
     /// NFR-022 pre-registration for a decision-bearing arm. Repeated
     /// registrations use the same id across the 10k/50k/100k steps.
     #[serde(default)]
@@ -4683,7 +4686,26 @@ impl SuiteStep {
                                         == effective_hop_rounds(control)
                             })
                     });
-                    if !has_plan_pair && !has_batch_pair && !has_traversal_pair {
+                    let has_packed_payload_pair =
+                        step.benchmark_seed_variants.iter().any(|control| {
+                            !control.packed_payload
+                                && step.benchmark_seed_variants.iter().any(|candidate| {
+                                    candidate.packed_payload
+                                        && candidate.materialization_batch_size
+                                            == control.materialization_batch_size
+                                        && candidate.owner_payload_plan_cache
+                                            == control.owner_payload_plan_cache
+                                        && candidate.typed_locator == control.typed_locator
+                                        && candidate.traversal_replica
+                                            == control.traversal_replica
+                                        && same_search(control, candidate)
+                                })
+                        });
+                    if !has_plan_pair
+                        && !has_batch_pair
+                        && !has_traversal_pair
+                        && !has_packed_payload_pair
+                    {
                         bail!(
                             "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan off/on, eager/lazy10, or owner/replica pair",
                             step.name
@@ -5832,7 +5854,7 @@ fn expand_distann_local_multinode(
     }
     for variant in &step.benchmark_seed_variants {
         let encoded = format!(
-            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}{}",
             variant.name,
             variant.seed_strategy,
             variant.head_search_width,
@@ -5852,6 +5874,11 @@ fn expand_distann_local_multinode(
                 "off"
             },
             if variant.typed_locator { "on" } else { "off" },
+            if variant.packed_payload {
+                format!(":{}", if variant.packed_payload { "on" } else { "off" })
+            } else {
+                String::new()
+            },
         );
         push_arg(&mut args, "--benchmark-seed-variant", &encoded);
     }

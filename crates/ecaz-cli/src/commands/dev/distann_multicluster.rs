@@ -1617,6 +1617,15 @@ fn append_typed_locator_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
     }
 }
 
+fn append_packed_payload_guc(args: &mut Vec<String>, arm: &str, enabled: bool) {
+    if arm == "physical" && enabled {
+        args.extend([
+            "--session-guc".into(),
+            "ec_distann.benchmark_packed_payload=on".into(),
+        ]);
+    }
+}
+
 /// NFR-021 clause 4 (Task 210 P1): the FR-084 traversal replica is off by
 /// default in the extension. A replica arm must opt in explicitly, which is
 /// also what marks it as a non-conforming accelerator in the emitted rows.
@@ -1762,6 +1771,7 @@ struct BenchmarkSeedVariant {
     hop_rounds: Option<u32>,
     traversal_replica: bool,
     typed_locator: bool,
+    packed_payload: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1891,9 +1901,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
         .iter()
         .map(|value| {
             let fields = value.split(':').collect::<Vec<_>>();
-            if !(5..=11).contains(&fields.len()) {
+            if !(5..=12).contains(&fields.len()) {
                 bail!(
-                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_PAYLOAD_PLAN_CACHE[:BEAM_WIDTH[:HOP_ROUNDS[:TRAVERSAL_REPLICA[:TYPED_LOCATOR]]]]]], got {value:?}"
+                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_PAYLOAD_PLAN_CACHE[:BEAM_WIDTH[:HOP_ROUNDS[:TRAVERSAL_REPLICA[:TYPED_LOCATOR[:PACKED_PAYLOAD]]]]]]], got {value:?}"
                 );
             }
             let name = fields[0];
@@ -2018,6 +2028,17 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                 })
                 .transpose()?
                 .unwrap_or(false);
+            let packed_payload = fields
+                .get(11)
+                .map(|field| match *field {
+                    "on" => Ok(true),
+                    "off" => Ok(false),
+                    _ => bail!(
+                        "benchmark seed variant packed payload must be on or off, got {value:?}"
+                    ),
+                })
+                .transpose()?
+                .unwrap_or(false);
             Ok(BenchmarkSeedVariant {
                 name: name.to_owned(),
                 strategy: strategy.to_owned(),
@@ -2030,6 +2051,7 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
                 hop_rounds,
                 traversal_replica,
                 typed_locator,
+                packed_payload,
             })
         })
         .collect()
@@ -4788,6 +4810,7 @@ async fn run_physical_benchmarks(
             hop_rounds: None,
             traversal_replica: false,
             typed_locator: false,
+            packed_payload: false,
         }]
     } else {
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
@@ -5369,11 +5392,12 @@ async fn run_physical_benchmarks(
             variant.owner_payload_plan_cache,
             variant.traversal_replica,
             variant.typed_locator,
+            variant.packed_payload,
             variant_beam_width,
             variant_hop_rounds,
         ));
         lines.push(format!(
-            "physical_benchmark_build scale={scale} variant={} seed_strategy={} seed_set_change={} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} head_search_width={} head_seed_count={} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} typed_locator={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
+            "physical_benchmark_build scale={scale} variant={} seed_strategy={} seed_set_change={} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} head_search_width={} head_seed_count={} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} beam_width={variant_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={variant_hop_rounds} neighbor_score_mode={} materialization_batch_size={} owner_payload_plan_cache={} traversal_replica={} typed_locator={} packed_payload={} stored_neighbor_code_format=rabitq build_shared=true physical_ms={build_ms} publish_ms={publish_ms} single_ms={single_build_ms}",
             variant.name,
             seed_label,
             args.fused_head_hop || args.crown_width_pruning,
@@ -5391,6 +5415,7 @@ async fn run_physical_benchmarks(
             variant.owner_payload_plan_cache,
             variant.traversal_replica,
             variant.typed_locator,
+            variant.packed_payload,
         ));
     }
     if !args.stage_counter_only && !args.skip_single_control {
@@ -5403,6 +5428,7 @@ async fn run_physical_benchmarks(
             production_head_width,
             "rabitq".to_owned(),
             0,
+            false,
             false,
             false,
             false,
@@ -5430,6 +5456,7 @@ async fn run_physical_benchmarks(
         owner_payload_plan_cache,
         traversal_replica,
         typed_locator,
+        packed_payload,
         arm_beam_width,
         arm_hop_rounds,
     ) in benchmark_arms
@@ -5558,6 +5585,7 @@ async fn run_physical_benchmarks(
                     owner_payload_plan_cache,
                 );
                 append_typed_locator_guc(&mut recall_args, arm, typed_locator);
+                append_packed_payload_guc(&mut recall_args, arm, packed_payload);
                 append_nonconforming_replica_guc(&mut recall_args, arm, traversal_replica);
                 append_sharded_head_guc(
                     &mut recall_args,
@@ -5905,7 +5933,7 @@ async fn run_physical_benchmarks(
                 ));
             }
             lines.push(format!(
-                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} arm={arm} seed_strategy={seed_label} seed_set_change={} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
+                "physical_benchmark_recall scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} arm={arm} seed_strategy={seed_label} seed_set_change={} queries={} trials={} recall={membership_recall:.4} membership_recall={membership_recall:.4} distinct_recall={distinct_recall:.4} distinct_recall_ci95_low={distinct_recall_ci95_low:.4} distinct_recall_ci95_high={distinct_recall_ci95_high:.4} mean_ms={mean_ms:.2}",
                 args.head_index_cap, args.head_sampling_rate, args.head_cap_floor,
                 args.head_cap_ceiling, args.crown_capacity, args.crown_width_pruning,
                 args.fused_head_hop, args.fused_head_hop || args.crown_width_pruning, row[1], row[2]
@@ -6004,6 +6032,7 @@ async fn run_physical_benchmarks(
         append_materialization_benchmark_guc(&mut latency_args, arm, materialization_batch_size);
         append_owner_payload_plan_cache_guc(&mut latency_args, arm, owner_payload_plan_cache);
         append_typed_locator_guc(&mut latency_args, arm, typed_locator);
+        append_packed_payload_guc(&mut latency_args, arm, packed_payload);
         append_nonconforming_replica_guc(&mut latency_args, arm, traversal_replica);
         append_sharded_head_guc(
             &mut latency_args,
@@ -6124,7 +6153,7 @@ async fn run_physical_benchmarks(
                 .map(|value| format!("{value:.3}"))
                 .unwrap_or_else(|| "NA".to_owned());
             lines.push(format!(
-                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
+                "physical_benchmark_latency scale={scale} variant={variant} head_index_cap={} head_sampling_rate={:?} head_cap_floor={:?} head_cap_ceiling={:?} crown_capacity={:?} crown_width_pruning={} fused_head_hop={} head_search_width={head_search_width} head_seed_count={head_seed_count} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} neighbor_score_mode={neighbor_score_mode} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} typed_locator={typed_locator} packed_payload={packed_payload} arm={arm} seed_strategy={seed_label} seed_set_change={} count={} mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} p99_ms={:.2} max_ms={:.2} concurrency={concurrency} wall_ms={wall_ms_label} qps={qps_label} cache=warm warmup_iterations={} worker_batch_size={} hold_transaction={}",
                 args.head_index_cap,
                 args.head_sampling_rate,
                 args.head_cap_floor,
@@ -9528,6 +9557,7 @@ mod tests {
             hop_rounds: None,
             traversal_replica: false,
             typed_locator: false,
+            packed_payload: false,
         }
     }
 

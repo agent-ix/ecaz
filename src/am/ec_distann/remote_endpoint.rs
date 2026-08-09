@@ -442,7 +442,7 @@ fn materialize_rows_impl(
 
 /// One row-payload wire response row: the owning node's identity + tombstone plus
 /// the requested projection columns as PostgreSQL binary (`typsend`) values.
-type PayloadRow = (i64, bool, bool, Vec<bool>, Vec<Vec<u8>>);
+type PayloadRow = (i64, bool, bool, Vec<bool>, Vec<i64>, Vec<u8>);
 
 /// FR-079/005-P1 row-payload shipping endpoint (the CustomScan data path). Where
 /// `ec_distann_materialize_rows` ships only the ctid — unusable off the loopback
@@ -473,7 +473,8 @@ fn ec_distann_materialize_row_payloads(
         name!(is_tombstone, bool),
         name!(tuple_payload_missing, bool),
         name!(payload_nulls, Vec<bool>),
-        name!(payload_values, Vec<Vec<u8>>),
+        name!(payload_offsets, Vec<i64>),
+        name!(payload_values, Vec<u8>),
     ),
 > {
     let rows = materialize_row_payloads_impl(
@@ -511,7 +512,7 @@ fn materialize_row_payloads_impl(
     // The heap relation name (schema-qualified, quoted) — a regclass value cannot
     // be a FROM-clause target, so the LATERAL join needs the resolved name.
     let heap_name = unsafe { heap_relation_qualified_name(heap_oid) }?;
-    let sql = build_payload_sql(&heap_name, payload_columns, payload_send_functions, false)
+    let sql = build_packed_payload_sql(&heap_name, payload_columns, payload_send_functions, false)
         .map_err(DistannExpandError::BadInput)?;
     // Candidate ctids in resolved (request) order; the SQL preserves that order
     // via WITH ORDINALITY so responses zip 1:1 back onto `resolved`.
@@ -522,7 +523,7 @@ fn materialize_row_payloads_impl(
     let column_count = payload_columns.len();
     let ctid_refs: Vec<&str> = ctid_texts.iter().map(String::as_str).collect();
 
-    let payloads: Vec<(bool, Vec<bool>, Vec<Vec<u8>>)> = Spi::connect(|client| {
+    let payloads: Vec<(bool, Vec<bool>, Vec<i64>, Vec<u8>)> = Spi::connect(|client| {
         let rows = client
             .select(sql.as_str(), None, &[ctid_refs.as_slice().into()])
             .map_err(|e| format!("ec_distann materialize row payload heap fetch failed: {e}"))?;
@@ -536,25 +537,37 @@ fn materialize_row_payloads_impl(
                 .value::<Vec<bool>>()
                 .map_err(|e| format!("ec_distann row payload nulls decode failed: {e}"))?
                 .unwrap_or_default();
-            let payload_values = row["payload_values"]
-                .value::<pgrx::datum::Array<&[u8]>>()
-                .map_err(|e| format!("ec_distann row payload values decode failed: {e}"))?
-                .map(|array| {
-                    array
-                        .iter_deny_null()
-                        .map(<[u8]>::to_vec)
-                        .collect::<Vec<_>>()
-                })
+            let payload_offsets = row["payload_offsets"]
+                .value::<Vec<i64>>()
+                .map_err(|e| format!("ec_distann row payload offsets decode failed: {e}"))?
                 .unwrap_or_default();
-            if payload_nulls.len() != column_count || payload_values.len() != column_count {
+            let payload_values = row["payload_values"]
+                .value::<Vec<u8>>()
+                .map_err(|e| format!("ec_distann row payload values decode failed: {e}"))?
+                .unwrap_or_default();
+            let final_offset = payload_offsets.last().copied().unwrap_or(0);
+            let offsets_valid = payload_offsets.windows(2).all(|window| window[0] <= window[1])
+                && final_offset >= 0
+                && usize::try_from(final_offset)
+                    .ok()
+                    .is_some_and(|end| end == payload_values.len());
+            if payload_nulls.len() != column_count
+                || payload_offsets.len() != column_count
+                || !offsets_valid
+            {
                 return Err(format!(
-                    "ec_distann row payload returned {} null flags and {} values for {} columns",
+                    "ec_distann row payload returned {} null flags and {} offsets for {} columns",
                     payload_nulls.len(),
-                    payload_values.len(),
+                    payload_offsets.len(),
                     column_count
                 ));
             }
-            out.push((tuple_payload_missing, payload_nulls, payload_values));
+            out.push((
+                tuple_payload_missing,
+                payload_nulls,
+                payload_offsets,
+                payload_values,
+            ));
         }
         Ok(out)
     })
@@ -571,8 +584,8 @@ fn materialize_row_payloads_impl(
     Ok(resolved
         .into_iter()
         .zip(payloads)
-        .map(|((vec_id, _tid, is_tombstone), (missing, nulls, values))| {
-            (vec_id, is_tombstone, missing, nulls, values)
+        .map(|((vec_id, _tid, is_tombstone), (missing, nulls, offsets, values))| {
+            (vec_id, is_tombstone, missing, nulls, offsets, values)
         })
         .collect())
 }
@@ -671,6 +684,130 @@ pub(crate) fn build_payload_sql(
         locator_type = if typed_locator { "tid" } else { "text" },
         locator_match = locator_match,
     ))
+}
+
+/// Build the MAT-16 benchmark candidate SQL. The projection still emits one
+/// null flag per requested column, but payload bytes are concatenated into one
+/// flat `bytea` with cumulative byte-end offsets instead of a `bytea[]`.
+pub(crate) fn build_packed_payload_sql(
+    heap_relation: &str,
+    payload_columns: &[String],
+    payload_send_functions: &[String],
+    typed_locator: bool,
+) -> Result<String, String> {
+    let mut null_exprs = Vec::with_capacity(payload_columns.len());
+    let mut value_exprs = Vec::with_capacity(payload_columns.len());
+    let mut projected = Vec::with_capacity(payload_columns.len());
+    for (column, send_function) in payload_columns.iter().zip(payload_send_functions) {
+        let ident = quote_ident(column);
+        let send = validate_send_function(send_function)?;
+        projected.push(format!("heap_row.{ident} AS {ident}"));
+        null_exprs.push(format!(
+            "(heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL)"
+        ));
+        let alias = format!("payload_value_{}", value_exprs.len());
+        value_exprs.push(format!(
+            "CASE WHEN heap.__ec_distann_found IS NULL OR heap.{ident} IS NULL \
+                  THEN ''::bytea ELSE {send}(heap.{ident}) END AS {alias}"
+        ));
+    }
+    let found_projection = if projected.is_empty() {
+        "true AS __ec_distann_found".to_owned()
+    } else {
+        format!("true AS __ec_distann_found, {}", projected.join(", "))
+    };
+    let null_array = if null_exprs.is_empty() {
+        "ARRAY[]::boolean[]".to_owned()
+    } else {
+        format!("ARRAY[{}]::boolean[]", null_exprs.join(", "))
+    };
+    let offsets = if value_exprs.is_empty() {
+        "ARRAY[]::bigint[]".to_owned()
+    } else {
+        let cumulative = (0..value_exprs.len())
+            .map(|index| {
+                (0..=index)
+                    .map(|offset| {
+                        format!("octet_length(payload.payload_value_{offset})::bigint")
+                    })
+                    .collect::<Vec<_>>()
+                    .join(" + ")
+            })
+            .collect::<Vec<_>>();
+        format!("ARRAY[{}]::bigint[]", cumulative.join(", "))
+    };
+    let values = if value_exprs.is_empty() {
+        "''::bytea".to_owned()
+    } else {
+        (0..value_exprs.len())
+            .map(|index| format!("payload.payload_value_{index}"))
+            .collect::<Vec<_>>()
+            .join(" || ")
+    };
+    let value_projection = if value_exprs.is_empty() {
+        "''::bytea AS unused_payload_value".to_owned()
+    } else {
+        value_exprs.join(", ")
+    };
+    let locator_match = if typed_locator {
+        "candidate.ctid_value"
+    } else {
+        "candidate.ctid_value::tid"
+    };
+    Ok(format!(
+        "SELECT heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
+                {null_array} AS payload_nulls, \
+                {offsets} AS payload_offsets, \
+                {values} AS payload_values \
+           FROM unnest($1::{locator_type}[]) WITH ORDINALITY AS candidate(ctid_value, ordinality) \
+           LEFT JOIN LATERAL ( \
+             SELECT {found_projection} \
+               FROM {heap_relation} AS heap_row \
+              WHERE heap_row.ctid = {locator_match} \
+           ) AS heap ON true \
+          LEFT JOIN LATERAL ( \
+             SELECT {value_projection} \
+          ) AS payload ON true \
+          ORDER BY candidate.ordinality",
+        locator_type = if typed_locator { "tid" } else { "text" },
+        locator_match = locator_match,
+    ))
+}
+
+#[cfg(test)]
+mod packed_payload_sql_tests {
+    use super::build_packed_payload_sql;
+
+    #[test]
+    fn packed_projection_uses_offsets_and_one_bytea() {
+        let sql = build_packed_payload_sql(
+            "\"bench\".\"items\"",
+            &["id".to_owned(), "description".to_owned()],
+            &["pg_catalog.int8send".to_owned(), "textsend".to_owned()],
+            true,
+        )
+        .expect("valid projection inputs");
+
+        assert!(sql.contains("payload_offsets"));
+        assert!(sql.contains("octet_length(payload.payload_value_0)"));
+        assert!(sql.contains("payload.payload_value_0 || payload.payload_value_1"));
+        assert!(sql.contains("unnest($1::tid[])"));
+        assert!(!sql.contains("ARRAY[CASE"));
+        assert!(!sql.contains("::bytea[]"));
+    }
+
+    #[test]
+    fn packed_projection_rejects_untrusted_send_functions() {
+        let error = build_packed_payload_sql(
+            "\"bench\".\"items\"",
+            &["id".to_owned()],
+            &["pg_catalog.int8send); DROP TABLE items; --".to_owned()],
+            false,
+        )
+        .expect_err("injected send function must be rejected");
+
+        assert!(error.contains("invalid send function name"));
+    }
 }
 
 /// Double-quote-escape a heap column identifier for safe interpolation.

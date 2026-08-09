@@ -580,18 +580,18 @@ const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
 
 #[cfg(not(feature = "distann-head-attribution-benchmark"))]
 const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
-        payload_nulls, payload_values
+        payload_nulls, payload_offsets, payload_values
    FROM ec_distann_materialize_row_payloads(
        $1::text::regclass, $2::bytea, $3::bigint[],
        $4::smallint[], $5::bytea)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
-        payload_nulls, payload_values, owner_total_ns, owner_open_validate_ns,
+        payload_nulls, payload_offsets, payload_values, owner_total_ns, owner_open_validate_ns,
         owner_node_lookup_ns, owner_payload_sql_ns, payload_bytes
    FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
-       $4::smallint[], $5::bytea, $6::boolean, $7::boolean)";
+       $4::smallint[], $5::bytea, $6::boolean, $7::boolean, $8::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
@@ -1444,6 +1444,8 @@ pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
     pub(crate) use_cached_payload_plan: bool,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     pub(crate) use_typed_locator: bool,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) use_packed_payload: bool,
 }
 
 pub(crate) fn remote_physical_materialize_batch(
@@ -1592,6 +1594,7 @@ async fn run_one_physical_materialize_raw(
             &request.expected_schema_fingerprint,
             &request.use_cached_payload_plan,
             &request.use_typed_locator,
+            &request.use_packed_payload,
         ],
     )
     .await?;
@@ -1610,13 +1613,13 @@ fn decode_physical_materialize_rows(
             #[cfg(feature = "distann-head-attribution-benchmark")]
             {
                 let row_telemetry = DistannOwnerMaterializeTelemetry {
-                    owner_total_ns: nonnegative_i64_to_u64(row.try_get(5).map_err(row_err)?)?,
+                    owner_total_ns: nonnegative_i64_to_u64(row.try_get(6).map_err(row_err)?)?,
                     owner_open_validate_ns: nonnegative_i64_to_u64(
-                        row.try_get(6).map_err(row_err)?,
+                        row.try_get(7).map_err(row_err)?,
                     )?,
-                    owner_node_lookup_ns: nonnegative_i64_to_u64(row.try_get(7).map_err(row_err)?)?,
-                    owner_payload_sql_ns: nonnegative_i64_to_u64(row.try_get(8).map_err(row_err)?)?,
-                    payload_bytes: nonnegative_i64_to_u64(row.try_get(9).map_err(row_err)?)?,
+                    owner_node_lookup_ns: nonnegative_i64_to_u64(row.try_get(8).map_err(row_err)?)?,
+                    owner_payload_sql_ns: nonnegative_i64_to_u64(row.try_get(9).map_err(row_err)?)?,
+                    payload_bytes: nonnegative_i64_to_u64(row.try_get(10).map_err(row_err)?)?,
                 };
                 if telemetry.is_some_and(|existing| existing != row_telemetry) {
                     return Err(DistannExpandError::Internal(
@@ -1630,7 +1633,8 @@ fn decode_physical_materialize_rows(
                 is_tombstone: row.try_get(1).map_err(row_err)?,
                 tuple_payload_missing: row.try_get(2).map_err(row_err)?,
                 payload_nulls: row.try_get(3).map_err(row_err)?,
-                payload_values: row.try_get(4).map_err(row_err)?,
+                payload_offsets: row.try_get(4).map_err(row_err)?,
+                payload_values: row.try_get(5).map_err(row_err)?,
             })
         })
         .collect::<Result<Vec<_>, DistannExpandError>>()?;
@@ -2233,7 +2237,7 @@ fn row_err(error: tokio_postgres::Error) -> DistannExpandError {
 // ships the index NAME and the requested projection columns + their typsend
 // functions; the owner returns each owned row's projection as PG binary.
 const MATERIALIZE_ROW_PAYLOADS_SQL: &str =
-    "SELECT vec_id, is_tombstone, tuple_payload_missing, payload_nulls, payload_values \
+    "SELECT vec_id, is_tombstone, tuple_payload_missing, payload_nulls, payload_offsets, payload_values \
      FROM ec_distann_materialize_row_payloads($1::text::regclass::oid, $2, $3::bigint[], \
      $4::text[], $5::text[])";
 
@@ -2259,7 +2263,8 @@ pub(super) struct DistannMaterializedRow {
     pub(super) is_tombstone: bool,
     pub(super) tuple_payload_missing: bool,
     pub(super) payload_nulls: Vec<bool>,
-    pub(super) payload_values: Vec<Vec<u8>>,
+    pub(super) payload_offsets: Vec<i64>,
+    pub(super) payload_values: Vec<u8>,
 }
 
 pub(crate) struct DistannPhysicalMaterializeBatch {
@@ -2378,12 +2383,14 @@ async fn run_one_materialize(
             let is_tombstone: bool = row.try_get(1).map_err(row_err)?;
             let tuple_payload_missing: bool = row.try_get(2).map_err(row_err)?;
             let payload_nulls: Vec<bool> = row.try_get(3).map_err(row_err)?;
-            let payload_values: Vec<Vec<u8>> = row.try_get(4).map_err(row_err)?;
+            let payload_offsets: Vec<i64> = row.try_get(4).map_err(row_err)?;
+            let payload_values: Vec<u8> = row.try_get(5).map_err(row_err)?;
             Ok(DistannMaterializedRow {
                 vec_id: vec_id as u64,
                 is_tombstone,
                 tuple_payload_missing,
                 payload_nulls,
+                payload_offsets,
                 payload_values,
             })
         })

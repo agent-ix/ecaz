@@ -557,7 +557,8 @@ enum CustomScanOutputRow {
     Remote {
         vec_id: u64,
         payload_nulls: Vec<bool>,
-        payload_values: Vec<Vec<u8>>,
+        payload_offsets: Vec<i64>,
+        payload_values: Vec<u8>,
     },
     /// Identity and ranked position are retained without copying a row payload
     /// until the executor reaches this deterministic ranked window.
@@ -1062,13 +1063,15 @@ unsafe extern "C-unwind" fn custom_scan_access(
             CustomScanOutputRow::Remote {
                 vec_id: _,
                 payload_nulls,
+                payload_offsets,
                 payload_values,
             } => {
                 let nulls = payload_nulls.clone();
+                let offsets = payload_offsets.clone();
                 let values = payload_values.clone();
                 #[cfg(feature = "distann-head-attribution-benchmark")]
                 record_executor_consumption(true);
-                return store_remote_payload(state, scan_slot, &nulls, &values);
+                return store_remote_payload(state, scan_slot, &nulls, &offsets, &values);
             }
             CustomScanOutputRow::RemotePending { .. } => {
                 pgrx::error!("EC_INTERNAL: pending remote payload was not materialized")
@@ -1161,6 +1164,7 @@ fn materialize_pending_physical_window(
             Some(payload) => CustomScanOutputRow::Remote {
                 vec_id,
                 payload_nulls: payload.payload_nulls.clone(),
+                payload_offsets: payload.payload_offsets.clone(),
                 payload_values: payload.payload_values.clone(),
             },
             None => CustomScanOutputRow::RemoteSkipped { vec_id },
@@ -1359,10 +1363,11 @@ unsafe fn run_search_and_build_outputs(
             Some(CustomScanOutputRow::Local(hit.heap_tid))
         } else {
             match payloads.get(&hit.vec_id) {
-                Some(payload) if !payload.tuple_payload_missing => {
+                    Some(payload) if !payload.tuple_payload_missing => {
                     Some(CustomScanOutputRow::Remote {
                         vec_id: hit.vec_id,
                         payload_nulls: payload.payload_nulls.clone(),
+                        payload_offsets: payload.payload_offsets.clone(),
                         payload_values: payload.payload_values.clone(),
                     })
                 }
@@ -1545,6 +1550,7 @@ unsafe fn run_physical_generation_search(
                     .map(|payload| CustomScanOutputRow::Remote {
                         vec_id: hit.vec_id,
                         payload_nulls: payload.payload_nulls.clone(),
+                        payload_offsets: payload.payload_offsets.clone(),
                         payload_values: payload.payload_values.clone(),
                     })
             };
@@ -1577,7 +1583,8 @@ unsafe fn run_physical_generation_search(
 struct RemotePayload {
     tuple_payload_missing: bool,
     payload_nulls: Vec<bool>,
-    payload_values: Vec<Vec<u8>>,
+    payload_offsets: Vec<i64>,
+    payload_values: Vec<u8>,
 }
 
 /// Group INVALID-ctid (remote-owned) hits by owning node, then issue one
@@ -1664,6 +1671,7 @@ unsafe fn fetch_remote_payloads(
                 RemotePayload {
                     tuple_payload_missing: row.tuple_payload_missing,
                     payload_nulls: row.payload_nulls,
+                    payload_offsets: row.payload_offsets,
                     payload_values: row.payload_values,
                 },
             );
@@ -1679,7 +1687,8 @@ unsafe fn store_remote_payload(
     state: &mut DistannCustomScanExecState,
     slot: *mut pg_sys::TupleTableSlot,
     payload_nulls: &[bool],
-    payload_values: &[Vec<u8>],
+    payload_offsets: &[i64],
+    payload_values: &[u8],
 ) -> *mut pg_sys::TupleTableSlot {
     let mut writer = TupleSlotWriter::from_raw_slot(slot, "EcDistannDistributedScan")
         .unwrap_or_else(|e| pgrx::error!("{e}"));
@@ -1701,9 +1710,26 @@ unsafe fn store_remote_payload(
             writer.set_null(attr_index);
             continue;
         }
-        let value = payload_values
-            .get(pos)
-            .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan payload value missing"));
+        let value = {
+            let end = *payload_offsets
+                .get(pos)
+                .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan payload offset missing"));
+            let start = if pos == 0 {
+                0
+            } else {
+                *payload_offsets.get(pos - 1).unwrap_or_else(|| {
+                    pgrx::error!("EcDistannDistributedScan previous payload offset missing")
+                })
+            };
+            let start = usize::try_from(start)
+                .unwrap_or_else(|_| pgrx::error!("EcDistannDistributedScan payload offset is negative"));
+            let end = usize::try_from(end)
+                .unwrap_or_else(|_| pgrx::error!("EcDistannDistributedScan payload offset is negative"));
+            if start > end || end > payload_values.len() {
+                pgrx::error!("EcDistannDistributedScan packed payload offsets are invalid");
+            }
+            &payload_values[start..end]
+        };
         let datum = binary_value_to_datum(value, &mut state.payload_inputs[pos], &attr.name);
         writer.set_datum(attr_index, datum);
     }
@@ -1804,7 +1830,8 @@ mod materialization_candidate_tests {
             Some(CustomScanOutputRow::Remote {
                 vec_id: 11,
                 payload_nulls: vec![false],
-                payload_values: vec![vec![1, 2, 3]],
+                payload_offsets: vec![3],
+                payload_values: vec![1, 2, 3],
             }),
             Some(CustomScanOutputRow::RemoteSkipped { vec_id: 13 }),
             Some(CustomScanOutputRow::RemotePending { vec_id: 7 }),
