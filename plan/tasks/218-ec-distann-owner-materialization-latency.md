@@ -1,7 +1,13 @@
 # Task 218: ec_distann Owner-Side Materialization Latency (MAT-16 / MAT-21 / MAT-22)
 
-Status: **implementation complete; packet 002 review-open — MAT-21 STOP, no full matrix** (2026-08-08). Priority: P1
-latency.
+Status: **complete — review-closed ACCEPT, MAT-21 STOP** (2026-08-08; packets
+001+002, `reviews/task-218/002-isolated-candidate/feedback/2026-08-08-01-reviewer.md`).
+P1 measured the production lazy-10 denominator (owner endpoint 9.10 ms/scan of
+an 18.83 ms scan); P2's typed `tid[]` locator was neutral end-to-end, so no
+release matrix. Carried: state the MAT-16/MAT-22 disposition (retired / carried
+/ open) and reconcile the roadmap MAT-16/21/22 candidate rows — this STOP
+retires the locator hypothesis, not the ~8.5 ms/scan owner payload SQL stage.
+Priority: P1 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 Origin: Task 216 carry-in.

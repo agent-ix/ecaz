@@ -1,6 +1,11 @@
 # Task 217: ec_distann Same-Generation A/B Lane
 
-Status: **implementation complete; packet 002 review-open** (2026-08-08). Priority: **P0 — blocking infrastructure.**
+Status: **complete — review-closed ACCEPT** (2026-08-08; packets 001+002,
+`reviews/task-217/002-lane-implementation/feedback/2026-08-08-01-reviewer.md`).
+Carried: the extension-*binary*-swap arm remains unexercised — the proof A/B
+used a runtime switch on one binary; the first real binary-swap consumer must
+show `extension_git_sha` differing across arms while the generation identity
+holds. Priority: **P0 — blocking infrastructure.**
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 Origin: Task 216 carry-in (`reviews/task-216/005-isolated-candidate-correction/`).
