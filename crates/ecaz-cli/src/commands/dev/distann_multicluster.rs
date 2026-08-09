@@ -265,6 +265,11 @@ pub struct LocalMultinodePg18Args {
     /// and optional OWNER_VALIDATION_CACHE on/off field for Task 192.
     #[arg(long = "benchmark-seed-variant")]
     pub benchmark_seed_variants: Vec<String>,
+    /// Assert byte-identical per-query predictions for two physical runtime
+    /// arms that share one immutable generation. The value is
+    /// CONTROL_VARIANT,CANDIDATE_VARIANT.
+    #[arg(long)]
+    pub same_generation_recall_pair: Option<String>,
     /// Query count for the recall comparison.
     #[arg(long, default_value_t = 50)]
     pub queries: u32,
@@ -776,6 +781,24 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             );
         }
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?;
+    }
+    if let Some(pair) = args.same_generation_recall_pair.as_deref() {
+        let (control, candidate) = pair
+            .split_once(',')
+            .ok_or_else(|| eyre!("--same-generation-recall-pair must be CONTROL,CANDIDATE"))?;
+        if control.is_empty() || candidate.is_empty() || control == candidate {
+            bail!("--same-generation-recall-pair must name two distinct variants");
+        }
+        let names = args
+            .benchmark_seed_variants
+            .iter()
+            .filter_map(|variant| variant.split(':').next())
+            .collect::<HashSet<_>>();
+        if !names.contains(control) || !names.contains(candidate) {
+            bail!(
+                "--same-generation-recall-pair variants must be present in --benchmark-seed-variant: {pair}"
+            );
+        }
     }
     let instance_count = args.nodes + u32::from(args.coordinator_outside_roster);
     let repo_root = repo_root()?;
@@ -5367,6 +5390,7 @@ async fn run_physical_benchmarks(
     // not a scan-path selector GUC, the A/B boundary.
     benchmark_arms.sort_by_key(|arm| arm.9);
     let mut prediction_paths = std::collections::BTreeMap::<String, PathBuf>::new();
+    let mut same_generation_identity: Option<String> = None;
 
     for (
         arm,
@@ -5390,6 +5414,36 @@ async fn run_physical_benchmarks(
         } else {
             seed_strategy.clone()
         };
+        if arm == "physical" {
+            // The active epoch is immutable for the duration of this lane.
+            // Read it for every arm anyway: this makes a fixture replacement,
+            // accidental rebuild, or candidate-induced publication fail closed
+            // instead of silently invalidating the A/B comparison.
+            let generation_identity = coordinator
+                .query_one(
+                    "SELECT encode(epoch_fingerprint, 'hex')
+                       FROM ec_distann_active_epoch
+                      WHERE index_oid = 'public.dm_idx'::regclass::oid",
+                    &[],
+                )
+                .await
+                .wrap_err("attesting same-generation epoch identity")?
+                .get::<_, String>(0);
+            let same_generation = same_generation_identity
+                .as_deref()
+                .is_none_or(|identity| identity == generation_identity);
+            if !same_generation {
+                bail!(
+                    "same-generation lane observed epoch identity change for arm {variant}: expected {}, got {}",
+                    same_generation_identity.as_deref().unwrap_or("none"),
+                    generation_identity
+                );
+            }
+            same_generation_identity = Some(generation_identity.clone());
+            lines.push(format!(
+                "physical_benchmark_generation scale={scale} variant={variant} arm=physical generation_identity={generation_identity} generation_identity_kind=epoch_fingerprint build_shared=true same_generation={same_generation}"
+            ));
+        }
         if traversal_replica && traversal_replica_digest.is_none() {
             traversal_owner_baseline = Some(
                 task198_replica_semantic_result(
@@ -6142,6 +6196,33 @@ async fn run_physical_benchmarks(
                     "physical_benchmark_materialization_work scale={scale} variant={variant} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} materialization_batch_size={materialization_batch_size} owner_payload_plan_cache={owner_payload_plan_cache} traversal_replica={traversal_replica} arm={arm} seed_strategy={seed_strategy} {work}"
                 ));
             }
+        }
+    }
+
+    if let Some(pair) = args.same_generation_recall_pair.as_deref() {
+        let (control, candidate) = pair
+            .split_once(',')
+            .ok_or_else(|| eyre!("same-generation recall pair must be CONTROL,CANDIDATE"))?;
+        let control_path = prediction_paths.get(control).ok_or_else(|| {
+            eyre!("same-generation recall control variant {control:?} produced no predictions")
+        })?;
+        let candidate_path = prediction_paths.get(candidate).ok_or_else(|| {
+            eyre!("same-generation recall candidate variant {candidate:?} produced no predictions")
+        })?;
+        let control_bytes = std::fs::read(control_path)
+            .wrap_err("reading same-generation control predictions")?;
+        let candidate_bytes = std::fs::read(candidate_path)
+            .wrap_err("reading same-generation candidate predictions")?;
+        let byte_identical = control_bytes == candidate_bytes;
+        lines.push(format!(
+            "physical_benchmark_same_generation_recall scale={scale} control={control} candidate={candidate} control_predictions={} candidate_predictions={} byte_identical={byte_identical}",
+            control_path.display(),
+            candidate_path.display(),
+        ));
+        if !byte_identical {
+            bail!(
+                "same-generation recall identity failed for {control} vs {candidate}: prediction files differ"
+            );
         }
     }
 

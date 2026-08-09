@@ -5,7 +5,7 @@
 //! selected step in sequence.
 
 use clap::{Args, Subcommand};
-use color_eyre::eyre::{bail, Context, ContextCompat, Result};
+use color_eyre::eyre::{bail, eyre, Context, ContextCompat, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -758,6 +758,10 @@ struct DistannLocalMultinodeStep {
     /// matrices register each arm on DistannBenchmarkSeedVariant instead.
     #[serde(default)]
     nfr_021: Option<DistannNfr021Registration>,
+    /// Task 217 same-generation proof pair. The two named runtime arms must
+    /// emit byte-identical prediction files while sharing one epoch.
+    #[serde(default)]
+    same_generation_recall_pair: Option<String>,
     #[serde(default)]
     queries: Option<u32>,
     #[serde(default)]
@@ -3212,6 +3216,21 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
                 }
                 rows.push(("physical_benchmark_provenance".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_generation ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_generation".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_same_generation_recall ") {
+            if let Some(mut values) = parse_space_key_values(rest.trim()) {
+                let identical = values
+                    .get("byte_identical")
+                    .is_some_and(|value| value == "true");
+                values.insert(
+                    "byte_identical_numeric".into(),
+                    if identical { "1" } else { "0" }.into(),
+                );
+                rows.push(("physical_benchmark_same_generation_recall".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_latency ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_latency".into(), values));
@@ -4390,6 +4409,37 @@ impl SuiteStep {
                     {
                         bail!(
                             "distann-local-multinode step {:?} must NFR-021-register every benchmark_seed_variant when any variant is registered",
+                            step.name
+                        )
+                    }
+                }
+                if let Some(pair) = step.same_generation_recall_pair.as_deref() {
+                    if !step.physical_benchmark || step.benchmark_seed_variants.is_empty() {
+                        bail!(
+                            "distann-local-multinode step {:?} same_generation_recall_pair requires physical_benchmark and benchmark_seed_variants",
+                            step.name
+                        )
+                    }
+                    let (control, candidate) = pair.split_once(',').ok_or_else(|| {
+                        eyre!(
+                            "distann-local-multinode step {:?} same_generation_recall_pair must be CONTROL,CANDIDATE",
+                            step.name
+                        )
+                    })?;
+                    if control.is_empty() || candidate.is_empty() || control == candidate {
+                        bail!(
+                            "distann-local-multinode step {:?} same_generation_recall_pair must name two distinct variants",
+                            step.name
+                        )
+                    }
+                    let names = step
+                        .benchmark_seed_variants
+                        .iter()
+                        .map(|variant| variant.name.as_str())
+                        .collect::<HashSet<_>>();
+                    if !names.contains(control) || !names.contains(candidate) {
+                        bail!(
+                            "distann-local-multinode step {:?} same_generation_recall_pair names variants not present in benchmark_seed_variants",
                             step.name
                         )
                     }
@@ -5803,6 +5853,11 @@ fn expand_distann_local_multinode(
     }
     push_opt_arg(
         &mut args,
+        "--same-generation-recall-pair",
+        step.same_generation_recall_pair.as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
         "--queries",
         step.queries.map(|v| v.to_string()).as_deref(),
     );
@@ -6720,6 +6775,22 @@ psql header noise\n\
             identity.1.get("identity_ok").map(String::as_str),
             Some("false"),
             "a nonzero mismatch fails the identity threshold"
+        );
+    }
+
+    #[test]
+    fn distann_same_generation_attestations_are_structured() {
+        let raw = "[distann-multicluster] physical_benchmark_generation scale=100k variant=control arm=physical generation_identity=abcd generation_identity_kind=epoch_fingerprint build_shared=true same_generation=true\n[distann-multicluster] physical_benchmark_same_generation_recall scale=100k control=control candidate=candidate byte_identical=true\n";
+        let rows = parse_distann_multinode_rows(raw);
+        assert_eq!(rows[0].0, "physical_benchmark_generation");
+        assert_eq!(
+            rows[0].1.get("generation_identity").map(String::as_str),
+            Some("abcd")
+        );
+        assert_eq!(rows[1].0, "physical_benchmark_same_generation_recall");
+        assert_eq!(
+            rows[1].1.get("byte_identical_numeric").map(String::as_str),
+            Some("1")
         );
     }
 
