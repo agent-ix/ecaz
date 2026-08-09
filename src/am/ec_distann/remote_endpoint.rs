@@ -609,11 +609,6 @@ unsafe fn heap_relation_qualified_name(
     let nspname = std::ffi::CStr::from_ptr(nsp_ptr)
         .to_string_lossy()
         .into_owned();
-    let locator_match = if typed_locator {
-        "candidate.ctid_value"
-    } else {
-        "candidate.ctid_value::tid"
-    };
     Ok(format!(
         "{}.{}",
         quote_ident(&nspname),
@@ -657,6 +652,11 @@ pub(crate) fn build_payload_sql(
     } else {
         format!("ARRAY[{}]::bytea[]", value_exprs.join(", "))
     };
+    let locator_match = if typed_locator {
+        "candidate.ctid_value"
+    } else {
+        "candidate.ctid_value::tid"
+    };
     Ok(format!(
         "SELECT heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
                 {null_array} AS payload_nulls, \
@@ -669,7 +669,7 @@ pub(crate) fn build_payload_sql(
            ) AS heap ON true \
           ORDER BY candidate.ordinality",
         locator_type = if typed_locator { "tid" } else { "text" },
-        locator_match,
+        locator_match = locator_match,
     ))
 }
 
