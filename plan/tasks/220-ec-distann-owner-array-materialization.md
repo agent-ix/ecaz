@@ -1,9 +1,13 @@
 # Task 220: ec_distann Owner Array Materialization (MAT-16)
 
-Status: **implementation complete; review-open** (2026-08-09, packet
-`reviews/task-220/002-isolated-candidate/`). The pre-registered MAT-16 screen
-STOPped on a 33.2% end-to-end regression; outside reviewer disposition is
-pending. Priority: P1 latency.
+Status: **review round 1: STOP ACCEPTED, CHANGES REQUESTED — open** (2026-08-09,
+`reviews/task-220/002-isolated-candidate/feedback/2026-08-09-01-reviewer.md`).
+The pre-registered MAT-16 screen's STOP is accepted (payload SQL 9.36→32.06
+ms/scan, ~3.4×; predictions byte-identical). **P0 blocker:** commit `9bc0b05eb`
+left the featureless production build and the FR-079 endpoint hard-coded to the
+regressed packed SQL (`generation_read.rs:1752`, `remote_endpoint.rs:515`);
+production must be restored to `build_payload_sql` before this task closes.
+Priority: P1 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 Origin: Task 218 carry-in; new task, not a reopening of Task 218.

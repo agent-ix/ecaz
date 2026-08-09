@@ -1,9 +1,12 @@
 # Task 219: ec_distann Recall/Latency Pareto Default Decision
 
-Status: **implementation complete; review-open** (2026-08-09, packet
-`reviews/task-219/002-decision/`). The measured decision retains the shipped
-BW4/H100/L32 default; outside reviewer disposition is pending. Priority: P1
-default policy.
+Status: **complete — review-closed ACCEPT** (2026-08-09; packets 001+002,
+`reviews/task-219/002-decision/feedback/2026-08-09-01-reviewer.md`). The
+shipped BW4/H100/L32 default and the recall-equivalence clause are retained;
+frontier verified cell-by-cell against Task 215 run-r2 `results.jsonl`.
+Reopening trigger: an explicit product ruling selecting a recall-sensitive
+operating regime — no new measurement needed, the frontier already contains
+the BW64/H8 point. Priority: P1 default policy.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 Origin: Task 215 carry-in (reviewer seq-01/seq-02 Pareto observation).
