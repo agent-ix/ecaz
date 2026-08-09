@@ -609,6 +609,11 @@ unsafe fn heap_relation_qualified_name(
     let nspname = std::ffi::CStr::from_ptr(nsp_ptr)
         .to_string_lossy()
         .into_owned();
+    let locator_match = if typed_locator {
+        "candidate.ctid_value"
+    } else {
+        "candidate.ctid_value::tid"
+    };
     Ok(format!(
         "{}.{}",
         quote_ident(&nspname),
@@ -660,11 +665,11 @@ pub(crate) fn build_payload_sql(
            LEFT JOIN LATERAL ( \
              SELECT {found_projection} \
                FROM {heap_relation} AS heap_row \
-              WHERE heap_row.ctid = CASE WHEN {typed_locator} THEN candidate.ctid_value ELSE candidate.ctid_value::tid END \
+              WHERE heap_row.ctid = {locator_match} \
            ) AS heap ON true \
           ORDER BY candidate.ordinality",
         locator_type = if typed_locator { "tid" } else { "text" },
-        typed_locator = if typed_locator { "true" } else { "false" },
+        locator_match,
     ))
 }
 
