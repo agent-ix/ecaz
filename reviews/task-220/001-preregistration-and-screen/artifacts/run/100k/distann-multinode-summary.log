@@ -1,0 +1,10 @@
+Task 220 MAT-16 isolated screen — compact result lines
+source_sha=b043d06be04d628cd1f6a723f2d35f2d4c66342
+profile=release benchmark_feature=distann-head-attribution-benchmark nodes=3
+corpus=ec_real_100k queries=200 top_k=10 batch=10
+generation_identity=02008577c5bff58f2044a797b5c08d0ccf8c7a5131f5d0403d630d335b2454ad9a03 same_generation=true
+topology=pass owners=3 remote_verified=2 source_rows=100000
+control recall=0.9285 warm_mean_ms=58.28 endpoint_work_ms=6.193412 payload_sql_ms=9.362508 physical_generation_bytes=3188072448 nfr=conforming
+candidate recall=0.9285 warm_mean_ms=77.65 endpoint_work_ms=20.961249 payload_sql_ms=32.060794 physical_generation_bytes=3188072448 nfr=conforming
+decision=STOP candidate_end_to_end_regression_pct=33.2 no_release_matrix=true
+correctness=fewer_than_window,exactly_one_window,more_than_window,reject_first_window,reject_multiple_windows,null_payload,toasted_projection_qual,mixed_local_remote,post_first_batch_remote_failure all_pass=true

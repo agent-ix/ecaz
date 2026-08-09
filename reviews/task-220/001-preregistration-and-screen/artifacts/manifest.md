@@ -1,6 +1,6 @@
 # Task 220 packet 001 manifest
 
-- head SHA: `9bc0b05eb`
+- head SHA: `b043d06be04d628cd1f6a723f2d35f2d4c66342`
 - task bucket: `reviews/task-220/`
 - packet: `001-preregistration-and-screen/`
 - lane: ec_distann owner-side payload materialization
@@ -16,9 +16,10 @@
 - SuiteConfig: `artifacts/task220-mat16-100k.json`
 - runner: `ecaz bench suite`
 - planned command: `ecaz bench suite run --config reviews/task-220/001-preregistration-and-screen/artifacts/task220-mat16-100k.json --artifact-dir reviews/task-220/001-preregistration-and-screen/artifacts/run --manifest-output reviews/task-220/001-preregistration-and-screen/artifacts/run/suite-manifest.json --results-output reviews/task-220/001-preregistration-and-screen/artifacts/run/results.jsonl`
-- timestamp: preregistered 2026-08-09 before result inspection
-- evidence status: retry pending after validator fix `4d5e2bbfa`; the retry
-  rebuilds the immutable fixture because reuse requires an exact extension SHA
+- timestamp: preregistered and screened 2026-08-09
+- evidence status: final screen completed; decision and clean cited evidence
+  are in `reviews/task-220/002-isolated-candidate/`; preregistered STOP, so no
+  packet 003 release matrix was run
 
 No corpus, cluster directory, polling snapshots, or raw operational output is
 part of this packet. The eventual `results.jsonl` and cited compact logs will
