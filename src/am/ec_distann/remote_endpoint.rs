@@ -511,7 +511,7 @@ fn materialize_row_payloads_impl(
     // The heap relation name (schema-qualified, quoted) — a regclass value cannot
     // be a FROM-clause target, so the LATERAL join needs the resolved name.
     let heap_name = unsafe { heap_relation_qualified_name(heap_oid) }?;
-    let sql = build_payload_sql(&heap_name, payload_columns, payload_send_functions)
+    let sql = build_payload_sql(&heap_name, payload_columns, payload_send_functions, false)
         .map_err(DistannExpandError::BadInput)?;
     // Candidate ctids in resolved (request) order; the SQL preserves that order
     // via WITH ORDINALITY so responses zip 1:1 back onto `resolved`.
@@ -620,6 +620,7 @@ pub(crate) fn build_payload_sql(
     heap_relation: &str,
     payload_columns: &[String],
     payload_send_functions: &[String],
+    typed_locator: bool,
 ) -> Result<String, String> {
     let mut null_exprs = Vec::with_capacity(payload_columns.len());
     let mut value_exprs = Vec::with_capacity(payload_columns.len());
@@ -655,13 +656,15 @@ pub(crate) fn build_payload_sql(
         "SELECT heap.__ec_distann_found IS NULL AS tuple_payload_missing, \
                 {null_array} AS payload_nulls, \
                 {value_array} AS payload_values \
-           FROM unnest($1::text[]) WITH ORDINALITY AS candidate(ctid_text, ordinality) \
+           FROM unnest($1::{locator_type}[]) WITH ORDINALITY AS candidate(ctid_value, ordinality) \
            LEFT JOIN LATERAL ( \
              SELECT {found_projection} \
                FROM {heap_relation} AS heap_row \
-              WHERE heap_row.ctid = candidate.ctid_text::tid \
+              WHERE heap_row.ctid = CASE WHEN {typed_locator} THEN candidate.ctid_value ELSE candidate.ctid_value::tid END \
            ) AS heap ON true \
-          ORDER BY candidate.ordinality"
+          ORDER BY candidate.ordinality",
+        locator_type = if typed_locator { "tid" } else { "text" },
+        typed_locator = if typed_locator { "true" } else { "false" },
     ))
 }
 

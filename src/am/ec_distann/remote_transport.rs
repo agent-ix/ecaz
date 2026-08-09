@@ -591,7 +591,7 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
         owner_node_lookup_ns, owner_payload_sql_ns, payload_bytes
    FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
-       $4::smallint[], $5::bytea, $6::boolean)";
+       $4::smallint[], $5::bytea, $6::boolean, $7::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
@@ -1442,6 +1442,8 @@ pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
     pub(crate) expected_schema_fingerprint: &'a [u8],
     #[cfg(feature = "distann-head-attribution-benchmark")]
     pub(crate) use_cached_payload_plan: bool,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) use_typed_locator: bool,
 }
 
 pub(crate) fn remote_physical_materialize_batch(
@@ -1589,6 +1591,7 @@ async fn run_one_physical_materialize_raw(
             &request.projection_attnums,
             &request.expected_schema_fingerprint,
             &request.use_cached_payload_plan,
+            &request.use_typed_locator,
         ],
     )
     .await?;

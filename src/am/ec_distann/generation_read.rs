@@ -1664,6 +1664,7 @@ impl RetainedGenerationScan {
         projection_attnums: &[i16],
         expected_schema_fingerprint: &[u8],
         use_cached_payload_plan: bool,
+        use_typed_locator: bool,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_started = Instant::now();
@@ -1740,15 +1741,30 @@ impl RetainedGenerationScan {
         let payload_sql_started = Instant::now();
         let row_name = super::handoff::qualified_relation_name(self.generation.row_tier_relid)
             .map_err(DistannExpandError::GenerationMissing)?;
-        let sql = super::remote_endpoint::build_payload_sql(&row_name, &columns, &sends)
+        let sql = super::remote_endpoint::build_payload_sql(
+            &row_name,
+            &columns,
+            &sends,
+            use_typed_locator,
+        )
             .map_err(DistannExpandError::BadInput)?;
-        let ctid_texts = nodes
+        let typed_tids = nodes
             .iter()
             .map(|node| {
-                format!(
-                    "({},{})",
-                    node.heap_tid.block_number, node.heap_tid.offset_number
-                )
+                let mut tid = pg_sys::ItemPointerData::default();
+                pgrx::itemptr::item_pointer_set_all(
+                    &mut tid,
+                    node.heap_tid.block_number,
+                    node.heap_tid.offset_number,
+                );
+                tid
+            })
+            .collect::<Vec<_>>();
+        let ctid_texts = typed_tids
+            .iter()
+            .map(|tid| {
+                let (block, offset) = pgrx::itemptr::item_pointer_get_both(*tid);
+                format!("({block},{offset})")
             })
             .collect::<Vec<_>>();
         let ctid_refs = ctid_texts.iter().map(String::as_str).collect::<Vec<_>>();
@@ -1782,8 +1798,11 @@ impl RetainedGenerationScan {
                     let entry = plans
                         .remove(position)
                         .expect("owner payload plan position disappeared");
-                    let rows =
-                        client.select(&entry.statement, None, &[ctid_refs.as_slice().into()]);
+                    let rows = if use_typed_locator {
+                        client.select(&entry.statement, None, &[typed_tids.clone().into()])
+                    } else {
+                        client.select(&entry.statement, None, &[ctid_refs.as_slice().into()])
+                    };
                     plans.push_back(entry);
                     rows
                 } else {
@@ -1795,7 +1814,11 @@ impl RetainedGenerationScan {
                             ))
                         })?
                         .keep();
-                    let rows = client.select(&statement, None, &[ctid_refs.as_slice().into()]);
+                    let rows = if use_typed_locator {
+                        client.select(&statement, None, &[typed_tids.clone().into()])
+                    } else {
+                        client.select(&statement, None, &[ctid_refs.as_slice().into()])
+                    };
                     while plans.len() >= OWNER_PAYLOAD_PLAN_CACHE_CAPACITY {
                         plans.pop_front();
                     }
@@ -1807,12 +1830,20 @@ impl RetainedGenerationScan {
                     rows
                 }
             } else {
-                client.select(&sql, None, &[ctid_refs.as_slice().into()])
+                if use_typed_locator {
+                    client.select(&sql, None, &[typed_tids.into()])
+                } else {
+                    client.select(&sql, None, &[ctid_refs.as_slice().into()])
+                }
             };
             #[cfg(not(feature = "distann-head-attribution-benchmark"))]
             let rows = {
                 let _ = use_cached_payload_plan;
-                client.select(&sql, None, &[ctid_refs.as_slice().into()])
+                if use_typed_locator {
+                    client.select(&sql, None, &[typed_tids.into()])
+                } else {
+                    client.select(&sql, None, &[ctid_refs.as_slice().into()])
+                }
             };
             rows.map_err(|error| {
                 DistannExpandError::VectorMissing(format!(
@@ -1912,7 +1943,7 @@ fn ec_distann_debug_validate_cached_row_schema(
         .fingerprint()
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     store
-        .materialize_payloads(&[], &[], &expected, false)
+        .materialize_payloads(&[], &[], &expected, false, false)
         .unwrap_or_else(|error| error.raise());
     true
 }
@@ -3344,6 +3375,7 @@ fn ec_distann_materialize_physical_row_payloads(
                 &projection_attnums,
                 &expected_schema_fingerprint,
                 false,
+                false,
             )
         })
         .map(|batch| batch.rows)
@@ -3365,6 +3397,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     projection_attnums: Vec<i16>,
     expected_schema_fingerprint: Vec<u8>,
     use_cached_payload_plan: bool,
+    use_typed_locator: bool,
 ) -> TableIterator<
     'static,
     (
@@ -3395,6 +3428,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             &projection_attnums,
             &expected_schema_fingerprint,
             use_cached_payload_plan,
+            use_typed_locator,
         )
         .unwrap_or_else(|error| error.raise());
     let owner_total_ns = duration_ns(total_started.elapsed());
@@ -4598,6 +4632,8 @@ impl PhysicalGenerationScan {
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     use_cached_payload_plan:
                         super::options::benchmark_owner_payload_plan_cache(),
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    use_typed_locator: super::options::benchmark_typed_locator(),
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;

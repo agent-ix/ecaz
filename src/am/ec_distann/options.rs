@@ -100,6 +100,9 @@ static ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC: GucSetting<i32> =
 static ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(false);
 #[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_TYPED_LOCATOR_GUC: GucSetting<bool> =
+    GucSetting::<bool>::new(false);
+#[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(-1);
 /// ADR-085 D12 production policy. This is deliberately not a GUC or reloption.
@@ -479,6 +482,15 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_typed_locator",
+        c"Task 218 benchmark-only typed row locator arm.",
+        c"Bind tid[] instead of formatting ctids as text for owner payload SQL.",
+        &ECDISTANN_BENCHMARK_TYPED_LOCATOR_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     GucRegistry::define_int_guc(
         c"ec_distann.gateway_copy_capacity",
         c"TRAV-30 bounded gateway copy capacity (Task 210 P3).",
@@ -760,6 +772,15 @@ pub(super) fn benchmark_owner_payload_plan_cache() -> bool {
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
         return ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    false
+}
+
+pub(super) fn benchmark_typed_locator() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_TYPED_LOCATOR_GUC.get();
     }
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     false

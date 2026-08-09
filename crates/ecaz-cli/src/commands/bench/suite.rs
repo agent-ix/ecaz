@@ -517,6 +517,9 @@ struct DistannBenchmarkSeedVariant {
     /// Task 198 benchmark-only coordinator traversal replica arm.
     #[serde(default)]
     traversal_replica: bool,
+    /// Task 218 MAT-21 benchmark-only typed/binary row locator arm.
+    #[serde(default)]
+    typed_locator: bool,
     /// NFR-022 pre-registration for a decision-bearing arm. Repeated
     /// registrations use the same id across the 10k/50k/100k steps.
     #[serde(default)]
@@ -5829,7 +5832,7 @@ fn expand_distann_local_multinode(
     }
     for variant in &step.benchmark_seed_variants {
         let encoded = format!(
-            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
+            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             variant.name,
             variant.seed_strategy,
             variant.head_search_width,
@@ -5848,6 +5851,7 @@ fn expand_distann_local_multinode(
             } else {
                 "off"
             },
+            if variant.typed_locator { "on" } else { "off" },
         );
         push_arg(&mut args, "--benchmark-seed-variant", &encoded);
     }
