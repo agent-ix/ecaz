@@ -1,7 +1,7 @@
 # Task 218 packet 002 artifact manifest
 
-Isolated 100k MAT-21 run completed with STOP disposition; outside review is
-still pending.
+Isolated 100k MAT-21 run completed with STOP disposition; review is closed
+ACCEPT per `feedback/2026-08-08-01-reviewer.md`.
 
 - Task bucket: `reviews/task-218/002-isolated-candidate/`
 - Config: `artifacts/task218-mat21-100k.json`

@@ -4,9 +4,9 @@ Status: **complete — review-closed ACCEPT, MAT-21 STOP** (2026-08-08; packets
 001+002, `reviews/task-218/002-isolated-candidate/feedback/2026-08-08-01-reviewer.md`).
 P1 measured the production lazy-10 denominator (owner endpoint 9.10 ms/scan of
 an 18.83 ms scan); P2's typed `tid[]` locator was neutral end-to-end, so no
-release matrix. Carried: state the MAT-16/MAT-22 disposition (retired / carried
-/ open) and reconcile the roadmap MAT-16/21/22 candidate rows — this STOP
-retires the locator hypothesis, not the ~8.5 ms/scan owner payload SQL stage.
+release matrix. MAT-21 is retired by this negative; MAT-16 and MAT-22 are
+carried as open candidates for a future owner-side task because the remaining
+~8.5 ms/scan owner payload SQL stage was not tested by this task.
 Priority: P1 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.

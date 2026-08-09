@@ -1,6 +1,6 @@
 # Task 217 — lane implementation and proof run
 
-Implementation commit: `15834e2e4`; evidence run head: `15834e2e4`.
+Implementation commit: `15834e2e4`; evidence run head: `116b23c5c`.
 
 This packet adds the structured same-generation attestation to
 `ecaz bench suite`/`ec_distann` and provides the committed SuiteConfig for the
@@ -25,8 +25,9 @@ Validation and evidence completed:
   38.20 ms candidate. Storage was 2,496,659,456 bytes with amplification
   1.351173.
 
-The packet remains review-open pending outside review. The packet-local 100k
-run proves one generation identity for every arm, byte-identical A/A
+The packet is review-closed ACCEPT per
+`feedback/2026-08-08-01-reviewer.md`. The packet-local 100k run proves one
+generation identity for every arm, byte-identical A/A
 predictions, a matching identity for the deliberately different A/B arm, and
 NFR-021 conformance in `results.jsonl`. The compact cited lines are in
 `artifacts/run3/100k/attestation-evidence.log`; the complete structured output

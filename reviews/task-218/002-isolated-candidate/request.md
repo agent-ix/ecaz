@@ -24,5 +24,6 @@ The committed SuiteConfig is [task218-mat21-100k.json](artifacts/task218-mat21-1
 The suite completed one step with zero failures, skipped steps, missing
 artifacts, or stale artifacts. Compact cited lines are in
 `artifacts/run/100k/mat21-evidence.log`; structured source is
-`artifacts/run/results.jsonl`. The packet remains review-open pending outside
-review of the STOP disposition.
+`artifacts/run/results.jsonl`. The packet is review-closed ACCEPT per
+`feedback/2026-08-08-01-reviewer.md`. MAT-21 is retired by this negative;
+MAT-16 and MAT-22 remain open and are carried to a future owner-side task.

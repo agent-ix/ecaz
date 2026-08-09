@@ -1,6 +1,6 @@
 # Task 217 packet manifest
 
-- head SHA: `15834e2e4` for the evidence run; packet bookkeeping is updated at
+- head SHA: `116b23c5c` for the evidence run; packet bookkeeping is updated at
   the current branch head
 - task bucket: `reviews/task-217/002-lane-implementation/`
 - lane: ec_distann same-generation A/A plus runtime-switch A/B

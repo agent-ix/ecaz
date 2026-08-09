@@ -120,7 +120,7 @@ validity requirements.
 | 215 | Wide-beam productionization | **complete — review-closed STOP** (2026-08-06) | normal-release A/B rejected BW64/H8: mean +20.2/+39.4/+47.7%, recall not equivalent (rose to 0.9815 at 100k); defaults restored by `01384502f`; **authoritative for the shipped top-k-10 default** |
 | 216 | Owner expansion/serialization latency | **complete — review-closed negative STOP** (2026-08-07) | coordinator decode 0.076 ms of a 40.60 ms scan = 0.19% ceiling closes MAT-12/13/14/15; MAT-16/21/22 remain owner-side and are **not** retired; MAT-21 blocked on a same-generation lane |
 | 217 | Same-generation A/B lane | **complete — review-closed ACCEPT** (2026-08-08) — P0 | epoch-fingerprint attestation per physical arm, fail-closed on generation change; 100k A/A byte-identical + runtime-switch A/B proof; extension-*binary*-swap arm still unexercised |
-| 218 | Owner-side materialization latency | **complete — review-closed ACCEPT, MAT-21 STOP** (2026-08-08) | production lazy-10 denominator: owner endpoint 9.10 ms/scan of an 18.83 ms scan; typed `tid[]` locators neutral (payload SQL 8.555→8.455 ms/scan, byte-identical predictions); MAT-16/MAT-22 disposition carried — the stage is not retired |
+| 218 | Owner-side materialization latency | **complete — review-closed ACCEPT, MAT-21 STOP** (2026-08-08) | production lazy-10 denominator: owner endpoint 9.10 ms/scan of an 18.83 ms scan; typed `tid[]` locators neutral (payload SQL 8.555→8.455 ms/scan, byte-identical predictions); MAT-21 is retired by the negative, while MAT-16/MAT-22 remain open and are carried to a future owner-side task |
 | 219 | Recall/latency Pareto default | proposed (2026-08-08) | decide the shipped operating point and whether recall-equivalence stays the acceptance clause for default changes |
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
@@ -190,19 +190,19 @@ The remaining work is split deliberately:
   waived by Task 199. It is a correctness/release gate, not a latency tuning
   task, and it changes no production behavior by itself. **Not started.**
 
-**State as of 2026-08-08** (see the program-shape table above for per-task
-detail). Tasks 203--208 and 210--216 have all reported. The measured position:
+**State as of 2026-08-09** (see the program-shape table above for per-task
+detail). Tasks 203--208 and 210--218 have all reported. The measured position:
 
 - **Shipped default** is BW4/H100, L32, 32 seeds, with the sharded zero-byte
   membership head as the default (Task 210, merged). Task 215's normal-release
   A/B at `top_k=10` measures 100k at **0.9280 recall / 21.40 ms mean**.
 - **Latency.** The coordinator-side family is closed on Task 216's 0.19%
   addressable ceiling, and traversal transport is a minority of the scan
-  (~4.1 ms wait, 0.002 ms response encode). The dominant stage is **owner-side
-  payload SQL/endpoint work** (`remote_materialize` 25.96 ms of a 37.21 ms
-  `custom_scan_total` at 100k). MAT-16/MAT-21/MAT-22 are the surviving
-  candidates, and MAT-21 is blocked on a same-generation
-  build-once/swap-extension lane that does not yet exist.
+  (~4.1 ms wait, 0.002 ms response encode). Task 218's production lazy-10
+  attribution measured the owner endpoint at 9.10 ms/scan and the typed
+  `tid[]` locator A/B was neutral end-to-end, so MAT-21 is retired. The
+  remaining owner-side payload SQL stage is still open to MAT-16 and MAT-22,
+  which are carried to a future owner-side task.
 - **Recall.** Head construction (207) and head selection (185) are both closed
   without a candidate, and 207 showed membership is not the binding constraint.
   The one lever measured to move recall is search budget: Task 215's BW64/H8 arm
@@ -293,13 +293,13 @@ remain controls rather than new candidates.
 | MAT-13 | Preserve request order and eliminate result-map lookup | **STOP by coordinator ceiling screen — Task 216 isolated control**: coordinator map/association work is within the same sub-millisecond addressable region; no separate A/B is justified |
 | MAT-14 | Remove the second nested `Vec<Vec<u8>>` copy | **STOP by coordinator ceiling screen — Task 216 isolated control**: coordinator-side copy/decode cannot exceed the measured 0.19% ceiling |
 | MAT-15 | Packed payload buffer with offsets and null bitmap | **STOP — Task 216 isolated candidate**: coordinator decode is 0.076/40.60 ms (0.19%) and returned payload bytes are flat; the candidate's slower owner SQL is secondary implementation evidence, not the family-closing rationale |
-| MAT-16 | Avoid PostgreSQL array construction for each payload row | conditional on **production lazy-10 owner payload SQL attribution**; the eager-arm denominator is unmeasured and does not screen this candidate |
+| MAT-16 | Avoid PostgreSQL array construction for each payload row | **carried open to a future owner-side task** — Task 218 measured the production lazy-10 budget but advanced MAT-21 only; MAT-16 was not tested or retired |
 | MAT-17 | Cache resolved row schema per published generation | **production behavior via accepted Task 195; exact-recall release A/B passed** |
 | MAT-18 | Cache attnum-to-send-function resolution | production behavior via accepted Task 195 |
 | MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
-| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **secondary carry-in after MAT-15 STOP**: owner-side locator formatting is in the dominant materialization region, not the coordinator ceiling; requires a corrected same-generation **production lazy-10** isolated A/B before any advance; its addressable budget is currently unmeasured |
-| MAT-22 | Return row-tier locator with expanded candidates | conditional on **production lazy-10** owner expansion/wire attribution; not covered by the coordinator 0.19% ceiling |
+| MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **STOP — Task 218 packet 002 review-closed ACCEPT**: same-generation production lazy-10 A/B was recall-identical and neutral end-to-end (payload SQL 8.555→8.455 ms/scan); the locator-representation hypothesis is retired, shipped defaults unchanged |
+| MAT-22 | Return row-tier locator with expanded candidates | **carried open to a future owner-side task** — Task 218 measured the production lazy-10 budget but did not test the owner-expansion/wire candidate; not retired by MAT-21's negative |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
