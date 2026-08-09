@@ -1,0 +1,78 @@
+{
+  "name": "task220-mat16-packed-payload-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-220/001-preregistration-and-screen/artifacts/run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "mat16-packed-payload-ab-100k",
+      "tags": ["task220", "mat16", "isolated_ab", "100k", "nfr022"],
+      "artifact_dir": "${artifact_dir}/100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task220-mat16-packed-payload-100k",
+      "nodes": 3,
+      "base_port": 42850,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "metrics_mode": "full_metrics",
+      "distann_stage_counters": true,
+      "materialization_correctness": true,
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "skip_single_control": true,
+      "compact_artifacts": true,
+      "same_generation_recall_pair": "mat16-control,mat16-candidate",
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "mat16-control",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "typed_locator": false,
+          "packed_payload": false,
+          "nfr_021": {
+            "id": "task220-mat16-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Production lazy-10 owner payload control on one immutable generation."
+          }
+        },
+        {
+          "name": "mat16-candidate",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "materialization_batch_size": 10,
+          "owner_payload_plan_cache": false,
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "typed_locator": false,
+          "packed_payload": true,
+          "nfr_021": {
+            "id": "task220-mat16-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "MAT-16 owner payload arm; only bytea[] construction changes to flat bytes plus offsets."
+          }
+        }
+      ]
+    }
+  ]
+}
