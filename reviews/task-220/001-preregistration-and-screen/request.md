@@ -33,6 +33,7 @@ screen is run.
 
 The first operational attempt built the immutable fixture and completed the
 control/candidate child commands, but stopped at an unrecognized MAT-16
-correctness-pair validator. That validator is fixed in `4d5e2bbfa`; the
-preregistered retry reuses the stopped fixture and reruns the full decision
-steps with the current extension provenance.
+correctness-pair validator. That validator is fixed in `4d5e2bbfa`; because
+fixture reuse requires an exact extension SHA, the next run will rebuild the
+same preregistered fixture from the current head and rerun the full decision
+steps.
