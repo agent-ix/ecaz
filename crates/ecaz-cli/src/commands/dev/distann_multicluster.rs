@@ -4344,11 +4344,33 @@ async fn run_materialization_correctness(
                 })
                 .map(|candidate| (control, candidate))
         });
-    let (control, candidate) = plan_pair.or(batch_pair).or(traversal_pair).ok_or_else(|| {
-        color_eyre::eyre::eyre!(
-            "materialization correctness requires an isolated owner-plan, eager/lazy10, or owner/replica pair"
-        )
-    })?;
+    let packed_pair = seed_variants
+        .iter()
+        .filter(|variant| !variant.packed_payload)
+        .find_map(|control| {
+            seed_variants
+                .iter()
+                .find(|candidate| {
+                    candidate.packed_payload
+                        && candidate.materialization_batch_size
+                            == control.materialization_batch_size
+                        && candidate.owner_payload_plan_cache
+                            == control.owner_payload_plan_cache
+                        && candidate.traversal_replica == control.traversal_replica
+                        && candidate.typed_locator == control.typed_locator
+                        && same_search(control, candidate)
+                })
+                .map(|candidate| (control, candidate))
+        });
+    let (control, candidate) = plan_pair
+        .or(batch_pair)
+        .or(traversal_pair)
+        .or(packed_pair)
+        .ok_or_else(|| {
+            color_eyre::eyre::eyre!(
+                "materialization correctness requires an isolated owner-plan, eager/lazy10, owner/replica, or packed-payload pair"
+            )
+        })?;
 
     coordinator
         .batch_execute(&format!(
