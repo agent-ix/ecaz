@@ -1,6 +1,6 @@
 # Task 217: ec_distann Same-Generation A/B Lane
 
-Status: **proposed** (2026-08-08). Priority: **P0 — blocking infrastructure.**
+Status: **implementation complete; packet 002 review-open** (2026-08-08). Priority: **P0 — blocking infrastructure.**
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 Origin: Task 216 carry-in (`reviews/task-216/005-isolated-candidate-correction/`).
