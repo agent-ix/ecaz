@@ -1,0 +1,6 @@
+Task 217 compact summary; complete structured source is ../results.jsonl.
+physical_benchmark_generation: all aa/ab arms shared generation_identity 02000f982b994e97c466ea3b9b1b8f927cdc710306e4ebfb46f2af3cad7760c2a8e5.
+physical_benchmark_same_generation_recall: aa-control vs aa-candidate byte_identical=true.
+physical_benchmark_recall: aa-control=0.9275, aa-candidate=0.9275, ab-control=0.9275, ab-candidate=0.9250.
+physical_benchmark_latency: aa-control=37.70ms, aa-candidate=38.20ms, ab-control=41.20ms, ab-candidate=66.60ms.
+physical_benchmark_storage: physical_generation_bytes=2496659456, cluster_index_space_amplification=1.351173.

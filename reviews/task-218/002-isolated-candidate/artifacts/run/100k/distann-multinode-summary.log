@@ -1,0 +1,8 @@
+Task 218 MAT-21 compact summary; complete structured source is ../results.jsonl.
+physical_benchmark_generation: control and candidate shared generation_identity 02007a9e813ebb35aa679d31e9e3ba754b97f7c5a1898b21941e7e9ec60b48ec5da8.
+physical_benchmark_same_generation_recall: mat21-control vs mat21-candidate byte_identical=true.
+physical_benchmark_recall: control=0.9280, candidate=0.9280.
+physical_benchmark_latency: control=19.60ms, candidate=19.50ms.
+physical_benchmark_stage: custom_scan_total control=17.578195ms, candidate=17.423344ms; owner_payload_sql control=8.555023ms, candidate=8.455005ms.
+physical_benchmark_materialization_work: executor_remote_rows_consumed_mean_per_scan=6.66 for both arms.
+physical_benchmark_storage: physical_generation_bytes=2496626688, cluster_index_space_amplification=1.351147 for both arms.

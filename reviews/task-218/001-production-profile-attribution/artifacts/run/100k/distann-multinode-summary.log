@@ -1,0 +1,5 @@
+Task 218 packet 001 compact summary; complete structured source is ../results.jsonl.
+physical_benchmark_recall: production-lazy10 recall=0.9275, mean_ms=60.21.
+physical_benchmark_latency: production-lazy10 mean_ms=21.00, p95_ms=24.10.
+physical_benchmark_stage: custom_scan_total mean_ms=18.826614; materialize_owner_endpoint_work mean_ms=9.100528; materialize_owner_payload_sql_work mean_ms=8.751874.
+physical_benchmark_materialization_work: executor_remote_rows_consumed_mean_per_scan=6.66.
