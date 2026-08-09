@@ -1,0 +1,113 @@
+{
+  "suite": "task218-mat21-typed-locator-100k",
+  "schema_version": 1,
+  "config": "reviews/task-218/002-isolated-candidate/artifacts/task218-mat21-100k.json",
+  "config_sha256": "40ff2dad68054c6074e348d48443cad03d2f13f7ae71d2ad53defad059131d83",
+  "dry_run": false,
+  "generated_at_unix_ms": 1786244945944,
+  "runner_git_commit": "877cebdbe1694260b15de1d0f6182c7ceb17cb0e-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "mat21-typed-locator-aa-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-218/002-isolated-candidate/artifacts/run/100k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task218-mat21-typed-locator-100k",
+        "--log-file",
+        "reviews/task-218/002-isolated-candidate/artifacts/run/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--skip-single-control",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--base-port",
+        "42840",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "mat21-control:persisted_head:32:32:rabitq:10:off:4:100:off:off",
+        "--benchmark-seed-variant",
+        "mat21-candidate:persisted_head:32:32:rabitq:10:off:4:100:off:on",
+        "--same-generation-recall-pair",
+        "mat21-control,mat21-candidate",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task218",
+        "mat21",
+        "typed-locator",
+        "isolated-ab",
+        "100k",
+        "nfr022",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "mat21-control",
+          "id": "task218-mat21-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Production lazy-10 owner materialization control on one immutable generation."
+        },
+        {
+          "variant": "mat21-candidate",
+          "id": "task218-mat21-candidate",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "MAT-21 typed/binary tid[] locator arm; only owner payload locator representation changes."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-218/002-isolated-candidate/artifacts/run/100k/distann-multinode-summary.log",
+        "reviews/task-218/002-isolated-candidate/artifacts/run/100k/physical-head-membership.json"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1786244945966,
+      "finished_at_unix_ms": 1786246435496,
+      "duration_ms": 1493106,
+      "exit_code": 0
+    }
+  ]
+}

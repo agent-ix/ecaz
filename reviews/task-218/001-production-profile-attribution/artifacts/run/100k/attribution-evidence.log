@@ -1,0 +1,11 @@
+Task 218 production lazy10 attribution evidence (head 68ea4a542; pre-candidate extension)
+
+[distann-multicluster] physical_benchmark_generation scale=100k variant=production-lazy10 arm=physical generation_identity=0200fdbb79d1c83579780eb15f75cefc82291a29534d69bfd927e75885b04c748644 generation_identity_kind=epoch_fingerprint build_shared=true same_generation=true corpus_prefix=ec_real_100k query_sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782 extension_git_sha=22ed70bb9d5a39685f0c06db40a4491489516da6 extension_build_profile=release
+[distann-multicluster] physical_benchmark_recall scale=100k variant=production-lazy10 ... materialization_batch_size=10 ... recall=0.9275 ... mean_ms=60.21
+[distann-multicluster] physical_benchmark_latency scale=100k variant=production-lazy10 ... materialization_batch_size=10 ... count=50 mean_ms=21.00 p50_ms=20.80 p95_ms=24.10 p99_ms=25.10 max_ms=25.70
+[distann-multicluster] physical_benchmark_stage scale=100k variant=production-lazy10 ... stage=custom_scan_total ... elapsed_ms=941.330687 mean_ms=18.826614
+[distann-multicluster] physical_benchmark_stage scale=100k variant=production-lazy10 ... stage=materialize_owner_endpoint_work ... elapsed_ms=455.026403 mean_ms=9.100528
+[distann-multicluster] physical_benchmark_stage scale=100k variant=production-lazy10 ... stage=materialize_owner_node_lookup_work ... elapsed_ms=15.497234 mean_ms=0.309945
+[distann-multicluster] physical_benchmark_stage scale=100k variant=production-lazy10 ... stage=materialize_owner_open_validate_work ... elapsed_ms=1.566050 mean_ms=0.031321
+[distann-multicluster] physical_benchmark_stage scale=100k variant=production-lazy10 ... stage=materialize_owner_payload_sql_work ... elapsed_ms=437.593717 mean_ms=8.751874
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=production-lazy10 ... executor_remote_rows_consumed=333 executor_remote_rows_consumed_mean_per_scan=6.66

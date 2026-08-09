@@ -1,6 +1,6 @@
 # Task 218: ec_distann Owner-Side Materialization Latency (MAT-16 / MAT-21 / MAT-22)
 
-Status: **P1 packet 001 review-open; entry gate implementation landed in Task 217** (2026-08-08). Priority: P1
+Status: **implementation complete; packet 002 review-open — MAT-21 STOP, no full matrix** (2026-08-08). Priority: P1
 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.

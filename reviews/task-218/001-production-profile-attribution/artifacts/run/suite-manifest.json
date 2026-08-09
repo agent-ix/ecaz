@@ -1,0 +1,102 @@
+{
+  "suite": "task218-production-lazy10-attribution-100k",
+  "schema_version": 1,
+  "config": "reviews/task-218/001-production-profile-attribution/artifacts/task218-lazy10-attribution.json",
+  "config_sha256": "8bfe51e87f5bd2c1f05e1e643ef59777ae79c304e081a7ac0cd0ed3e95fe8584",
+  "dry_run": false,
+  "generated_at_unix_ms": 1786238376419,
+  "runner_git_commit": "2b0709f2f1e5eecb81a4faee3f398e7d4e6af125-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "production-lazy10-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-218/001-production-profile-attribution/artifacts/run/100k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task218-production-lazy10-100k",
+        "--log-file",
+        "reviews/task-218/001-production-profile-attribution/artifacts/run/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--skip-single-control",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--base-port",
+        "42840",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "production-lazy10:persisted_head:32:32:rabitq:10:off:4:100:off",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task218",
+        "p1",
+        "production-lazy10",
+        "attribution",
+        "100k",
+        "nfr022",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "production-lazy10",
+          "id": "task218-production-lazy10-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Production fixed lazy-10 owner materialization on the sharded-owner control; P1 attribution only, no candidate decision."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-218/001-production-profile-attribution/artifacts/run/100k/distann-multinode-summary.log",
+        "reviews/task-218/001-production-profile-attribution/artifacts/run/100k/physical-head-membership.json"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1786238376443,
+      "finished_at_unix_ms": 1786239815254,
+      "duration_ms": 1441784,
+      "exit_code": 0
+    }
+  ]
+}

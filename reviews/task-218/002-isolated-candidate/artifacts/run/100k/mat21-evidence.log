@@ -1,0 +1,17 @@
+Task 218 MAT-21 isolated 100k A/B evidence (head 877cebdbe)
+
+[distann-multicluster] physical_benchmark_generation scale=100k variant=mat21-control arm=physical generation_identity=02007a9e813ebb35aa679d31e9e3ba754b97f7c5a1898b21941e7e9ec60b48ec5da8 generation_identity_kind=epoch_fingerprint build_shared=true same_generation=true corpus_prefix=ec_real_100k query_sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782 extension_git_sha=877cebdbe1694260b15de1d0f6182c7ceb17cb0e-dirty extension_build_profile=release
+[distann-multicluster] physical_benchmark_generation scale=100k variant=mat21-candidate arm=physical generation_identity=02007a9e813ebb35aa679d31e9e3ba754b97f7c5a1898b21941e7e9ec60b48ec5da8 generation_identity_kind=epoch_fingerprint build_shared=true same_generation=true corpus_prefix=ec_real_100k query_sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782 extension_git_sha=877cebdbe1694260b15de1d0f6182c7ceb17cb0e-dirty extension_build_profile=release
+[distann-multicluster] physical_benchmark_recall scale=100k variant=mat21-control ... typed_locator=false ... recall=0.9280 ... mean_ms=57.05
+[distann-multicluster] physical_benchmark_recall scale=100k variant=mat21-candidate ... typed_locator=true ... recall=0.9280 ... mean_ms=55.18
+[distann-multicluster] physical_benchmark_latency scale=100k variant=mat21-control ... typed_locator=false ... count=50 mean_ms=19.60 ... p95_ms=23.60 ...
+[distann-multicluster] physical_benchmark_latency scale=100k variant=mat21-candidate ... typed_locator=true ... count=50 mean_ms=19.50 ... p95_ms=22.60 ...
+[distann-multicluster] physical_benchmark_same_generation_recall scale=100k control=mat21-control candidate=mat21-candidate ... byte_identical=true ...
+[distann-multicluster] physical_benchmark_stage scale=100k variant=mat21-control ... stage=custom_scan_total ... mean_ms=17.578195
+[distann-multicluster] physical_benchmark_stage scale=100k variant=mat21-candidate ... stage=custom_scan_total ... mean_ms=17.423344
+[distann-multicluster] physical_benchmark_stage scale=100k variant=mat21-control ... stage=materialize_owner_payload_sql_work ... mean_ms=8.555023
+[distann-multicluster] physical_benchmark_stage scale=100k variant=mat21-candidate ... stage=materialize_owner_payload_sql_work ... mean_ms=8.455005
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=mat21-control ... metric=executor_remote_rows_consumed ... mean_per_scan=6.660000
+[distann-multicluster] physical_benchmark_materialization_work scale=100k variant=mat21-candidate ... metric=executor_remote_rows_consumed ... mean_per_scan=6.660000
+[distann-multicluster] physical_benchmark_storage scale=100k variant=mat21-control ... physical_generation_bytes=2496626688 ... cluster_index_space_amplification=1.351147
+[distann-multicluster] physical_benchmark_storage scale=100k variant=mat21-candidate ... physical_generation_bytes=2496626688 ... cluster_index_space_amplification=1.351147
