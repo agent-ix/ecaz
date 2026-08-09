@@ -1,0 +1,98 @@
+{
+  "name": "task217-same-generation-100k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-217/002-lane-implementation/artifacts/run",
+  "defaults": { "pg": 18, "socket_dir": "/home/peter/.pgrx" },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "same-generation-aa-ab-100k",
+      "tags": ["task217", "same-generation", "aa", "ab", "100k", "nfr022"],
+      "artifact_dir": "${artifact_dir}/100k",
+      "run_dir": "/home/peter/.ecaz/clusters/task217-same-generation-100k",
+      "nodes": 3,
+      "base_port": 42820,
+      "graph_degree": 32,
+      "build_shards": 1,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "metrics_mode": "benchmark",
+      "benchmark_iterations": 50,
+      "benchmark_warmup_iterations": 10,
+      "skip_fault_drills": true,
+      "skip_single_control": true,
+      "compact_artifacts": true,
+      "same_generation_recall_pair": "aa-control,aa-candidate",
+      "corpus_prefix": "ec_real_100k",
+      "staged_dir": "/home/peter/dev/ecaz/data/staged-current",
+      "benchmark_seed_variants": [
+        {
+          "name": "aa-control",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task217-aa-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Same-generation A/A control; sharded owner traversal with no coordinator-resident replica."
+          }
+        },
+        {
+          "name": "aa-candidate",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task217-aa-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Identical runtime switch and query protocol as control; proves A/A byte identity on one generation."
+          }
+        },
+        {
+          "name": "ab-control",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "rabitq",
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task217-ab-control",
+            "role": "control",
+            "admissibility": "conforming",
+            "rationale": "Same-generation runtime-switch control for the deliberately different scoring arm."
+          }
+        },
+        {
+          "name": "ab-candidate",
+          "seed_strategy": "persisted_head",
+          "head_search_width": 32,
+          "head_seed_count": 32,
+          "neighbor_score_mode": "exact_neighbor",
+          "beam_width": 4,
+          "hop_rounds": 100,
+          "nfr_021": {
+            "id": "task217-ab-candidate",
+            "role": "candidate",
+            "admissibility": "conforming",
+            "rationale": "Deliberately different benchmark runtime switch; exact-neighbor scoring changes only the read arm while the persisted generation remains fixed."
+          }
+        }
+      ]
+    }
+  ]
+}
