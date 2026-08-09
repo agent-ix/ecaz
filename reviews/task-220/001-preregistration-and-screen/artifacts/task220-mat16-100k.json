@@ -11,6 +11,7 @@
       "tags": ["task220", "mat16", "isolated_ab", "100k", "nfr022"],
       "artifact_dir": "${artifact_dir}/100k",
       "run_dir": "/home/peter/.ecaz/clusters/task220-mat16-packed-payload-100k",
+      "reuse_fixture": true,
       "nodes": 3,
       "base_port": 42850,
       "graph_degree": 32,

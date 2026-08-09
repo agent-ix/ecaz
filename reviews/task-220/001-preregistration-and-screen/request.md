@@ -8,7 +8,8 @@ seq: 1
 
 # Task 220 — MAT-16 preregistration and isolated screen
 
-The implementation checkpoint is `9bc0b05eb`. This packet preregisters one
+The implementation checkpoints are `9bc0b05eb` and validator fix
+`4d5e2bbfa`. This packet preregisters one
 100k production lazy-10 control/candidate screen before inspecting results.
 The immutable generation, query surface, graph/search settings, locator mode,
 owner-plan cache setting, and materialization batch size are shared. The only
@@ -29,3 +30,9 @@ otherwise continue to packet 003 for the standard matrix.
 
 Please review the preregistration and implementation checkpoint before the
 screen is run.
+
+The first operational attempt built the immutable fixture and completed the
+control/candidate child commands, but stopped at an unrecognized MAT-16
+correctness-pair validator. That validator is fixed in `4d5e2bbfa`; the
+preregistered retry reuses the stopped fixture and reruns the full decision
+steps with the current extension provenance.

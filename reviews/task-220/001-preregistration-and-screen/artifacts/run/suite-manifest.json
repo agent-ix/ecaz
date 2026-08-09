@@ -1,0 +1,113 @@
+{
+  "suite": "task220-mat16-packed-payload-100k",
+  "schema_version": 1,
+  "config": "reviews/task-220/001-preregistration-and-screen/artifacts/task220-mat16-100k.json",
+  "config_sha256": "5603e0a19832ef6aa6493bcb751e927ce800123bfddef4c965487de99ad5c679",
+  "dry_run": false,
+  "generated_at_unix_ms": 1786296770669,
+  "runner_git_commit": "6a9a61a40ce20a6c589b447e9f374e0a77fb1e7c",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "mat16-packed-payload-ab-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-220/001-preregistration-and-screen/artifacts/run/100k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task220-mat16-packed-payload-100k",
+        "--log-file",
+        "reviews/task-220/001-preregistration-and-screen/artifacts/run/100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--distann-stage-counters",
+        "--skip-single-control",
+        "--materialization-correctness",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--sample-backend-memory",
+        "--memory-sample-interval-ms",
+        "25",
+        "--base-port",
+        "42850",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "mat16-control:persisted_head:32:32:rabitq:10:off:4:100:off:off",
+        "--benchmark-seed-variant",
+        "mat16-candidate:persisted_head:32:32:rabitq:10:off:4:100:off:off:on",
+        "--same-generation-recall-pair",
+        "mat16-control,mat16-candidate",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task220",
+        "mat16",
+        "isolated_ab",
+        "100k",
+        "nfr022",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "mat16-control",
+          "id": "task220-mat16-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Production lazy-10 owner payload control on one immutable generation."
+        },
+        {
+          "variant": "mat16-candidate",
+          "id": "task220-mat16-candidate",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "MAT-16 owner payload arm; only bytea[] construction changes to flat bytes plus offsets."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-220/001-preregistration-and-screen/artifacts/run/100k/distann-multinode-summary.log",
+        "reviews/task-220/001-preregistration-and-screen/artifacts/run/100k/physical-head-membership.json"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1786296770690,
+      "finished_at_unix_ms": 1786298504050,
+      "duration_ms": 1741473,
+      "exit_code": 1
+    }
+  ]
+}

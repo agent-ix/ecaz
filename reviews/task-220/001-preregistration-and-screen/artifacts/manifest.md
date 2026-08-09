@@ -17,7 +17,8 @@
 - runner: `ecaz bench suite`
 - planned command: `ecaz bench suite run --config reviews/task-220/001-preregistration-and-screen/artifacts/task220-mat16-100k.json --artifact-dir reviews/task-220/001-preregistration-and-screen/artifacts/run --manifest-output reviews/task-220/001-preregistration-and-screen/artifacts/run/suite-manifest.json --results-output reviews/task-220/001-preregistration-and-screen/artifacts/run/results.jsonl`
 - timestamp: preregistered 2026-08-09 before result inspection
-- evidence status: pending isolated 100k screen
+- evidence status: retry pending after validator fix `4d5e2bbfa`; the retry
+  reuses the immutable fixture built by the first operational attempt
 
 No corpus, cluster directory, polling snapshots, or raw operational output is
 part of this packet. The eventual `results.jsonl` and cited compact logs will
