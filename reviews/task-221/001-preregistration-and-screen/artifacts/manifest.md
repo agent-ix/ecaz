@@ -24,6 +24,9 @@
 - recovery config: `artifacts/task221-mat22-100k-recovery.json`; setup completed
   during the initial invocation, which exited before measurements, so the
   exact immutable fixture is reused for the suite measurement rerun
+- retry config: `artifacts/task221-mat22-100k-retry.json`; the reuse path was
+  rejected because `materialization_correctness` is fixture-mutating, so the
+  full gate remains enabled on a fresh fixture
 
 No corpus, cluster directory, polling snapshots, or PostgreSQL operational
 logs belong in this packet.
