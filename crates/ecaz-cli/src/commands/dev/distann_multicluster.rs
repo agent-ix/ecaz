@@ -1911,9 +1911,9 @@ fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedV
         .iter()
         .map(|value| {
             let fields = value.split(':').collect::<Vec<_>>();
-            if !(5..=12).contains(&fields.len()) {
+            if !(5..=13).contains(&fields.len()) {
                 bail!(
-                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_PAYLOAD_PLAN_CACHE[:BEAM_WIDTH[:HOP_ROUNDS[:TRAVERSAL_REPLICA[:TYPED_LOCATOR[:PACKED_PAYLOAD]]]]]]], got {value:?}"
+                    "benchmark seed variant must be NAME:MODE:SEARCH_WIDTH:SEED_COUNT:NEIGHBOR_SCORE_MODE[:MATERIALIZATION_BATCH_SIZE[:OWNER_PAYLOAD_PLAN_CACHE[:BEAM_WIDTH[:HOP_ROUNDS[:TRAVERSAL_REPLICA[:TYPED_LOCATOR[:PACKED_PAYLOAD[:EXPANDED_LOCATOR]]]]]]]], got {value:?}"
                 );
             }
             let name = fields[0];
