@@ -1,14 +1,13 @@
 # Task 220: ec_distann Owner Array Materialization (MAT-16)
 
-Status: **correction implemented; review round 2 open** (2026-08-10,
-`reviews/task-220/002-isolated-candidate/`).
-The pre-registered MAT-16 screen's STOP was accepted (payload SQL 9.36→32.06
-ms/scan, ~3.4×; predictions byte-identical). The requested P0 correction is
-landed in `c8b5fd9ee`: featureless production and FR-079 use
-`build_payload_sql`, while the packed representation remains benchmark-only.
-The negative is rejected-as-implemented for the chained-concat/
-`octet_length` SQL form; any revised representation needs a new task. Outside
-re-review of the correction is pending.
+Status: **complete — review-closed ACCEPT, STOP** (2026-08-10; round-2
+feedback `reviews/task-220/002-isolated-candidate/feedback/2026-08-10-01-reviewer.md`).
+The pre-registered MAT-16 screen's STOP is accepted (payload SQL 9.36→32.06
+ms/scan, ~3.4×; predictions byte-identical). The P0 correction `c8b5fd9ee` is
+verified: featureless production and FR-079 use `build_payload_sql`, the
+packed representation is benchmark-only, and the production SQL shape is
+test-pinned. MAT-16 is rejected as implemented (chained-concat/`octet_length`
+SQL form); any revised packed representation needs a new numbered task.
 Priority: P1 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.

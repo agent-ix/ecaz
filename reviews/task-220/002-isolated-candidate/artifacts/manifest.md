@@ -1,6 +1,6 @@
 # Task 220 packet 002 manifest
 
-- head SHA: `b043d06be04d628cd1f6a723f2d35f2d4c66342`
+- head SHA: `b043d06bee04d628cd1f6a723f2d35f2d4c66342`
 - task bucket: `reviews/task-220/`
 - packet: `002-isolated-candidate/`
 - source preregistration: `reviews/task-220/001-preregistration-and-screen/`
