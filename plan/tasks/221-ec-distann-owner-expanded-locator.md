@@ -1,6 +1,6 @@
 # Task 221: ec_distann Owner Expanded Locator (MAT-22)
 
-Status: **proposed** (2026-08-09). Priority: P1 latency.
+Status: **implementation complete; packet 002 review-open; measured STOP pending reviewer disposition** (2026-08-10). Priority: P1 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 Origin: Task 218 carry-in; new task, not a reopening of Task 218.

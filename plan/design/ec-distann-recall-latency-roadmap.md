@@ -123,7 +123,7 @@ validity requirements.
 | 218 | Owner-side materialization latency | **complete — review-closed ACCEPT, MAT-21 STOP** (2026-08-08) | production lazy-10 denominator: owner endpoint 9.10 ms/scan of an 18.83 ms scan; typed `tid[]` locators neutral (payload SQL 8.555→8.455 ms/scan, byte-identical predictions); MAT-21 is retired by the negative, while MAT-16/MAT-22 remain open and are carried to a future owner-side task |
 | 219 | Recall/latency Pareto default | **complete — review-closed ACCEPT** (2026-08-09) | retains BW4/H100/L32 and recall-equivalence; frontier verified against Task 215 run-r2; reopening trigger is a product ruling for a recall-sensitive regime, not new benchmarks |
 | 220 | Owner array materialization (MAT-16) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | packed SQL arm regressed payload SQL 9.36→32.06 ms/scan (~3.4×) and warm physical latency 23.00→36.00 ms; correction `c8b5fd9ee` restored featureless production and FR-079 to `build_payload_sql` (verified round 2, production SQL now test-pinned); MAT-16 rejected as implemented |
-| 221 | Owner expanded locator (MAT-22) | proposed (2026-08-09) | production lazy-10 100k candidate screen; standard 10k/50k/100k A/B only if the isolated candidate is useful |
+| 221 | Owner expanded locator (MAT-22) | implementation complete; packet 002 review-open; measured STOP pending reviewer disposition (2026-08-10) | recall/prediction identity and correctness passed, but warm latency and `custom_scan_total` slightly regressed at 100k; no release matrix authorized |
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -301,7 +301,7 @@ remain controls rather than new candidates.
 | MAT-19 | Cache the owner-side inner SPI plan | measured STOP in Task 193 packet 005: 100k warm mean 23.60→23.50 ms; payload SQL 8.747→8.600 ms/scan |
 | MAT-20 | Cache projection-specific SQL by generation/projection fingerprint | measured as the bounded MAT-19 refinement; same STOP result in Task 193 packet 005 |
 | MAT-21 | Replace textual `ctid` formatting with typed/binary locators | **STOP — Task 218 packet 002 review-closed ACCEPT**: same-generation production lazy-10 A/B was recall-identical and neutral end-to-end (payload SQL 8.555→8.455 ms/scan); the locator-representation hypothesis is retired, shipped defaults unchanged |
-| MAT-22 | Return row-tier locator with expanded candidates | **owned by proposed Task 221** — production lazy-10 owner-expansion/wire candidate screen; Task 218 measured the budget but did not test MAT-22 |
+| MAT-22 | Return row-tier locator with expanded candidates | **Task 221 packet 002 review-open; measured STOP pending reviewer disposition** — 100k preserved recall/prediction identity and removed owner lookup work, but slightly regressed end-to-end/custom-scan latency; no release matrix authorized |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
