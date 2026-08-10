@@ -1,6 +1,12 @@
 # Task 221: ec_distann Owner Expanded Locator (MAT-22)
 
-Status: **implementation complete; packet 002 review-open; measured STOP pending reviewer disposition** (2026-08-10). Priority: P1 latency.
+Status: **complete — review-closed ACCEPT, STOP** (2026-08-10; feedback
+`reviews/task-221/002-isolated-candidate/feedback/2026-08-10-01-reviewer.md`).
+The candidate removed the owner node lookup (0.311→0 ms/scan) but regressed
+end to end +1.2–1.6% at 100k with byte-identical predictions, so the
+preregistered STOP applies; MAT-22 is rejected and no matrix was run.
+Carried for any revisit: the expanded-locator payload must carry tombstone
+state (reviewer P3). Priority: P1 latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`.
 Origin: Task 218 carry-in; new task, not a reopening of Task 218.
