@@ -553,6 +553,7 @@ pub(crate) unsafe fn collect_distann_hits(
                 hits.push(DistannScanHit {
                     vec_id: entry.vec_id,
                     heap_tid: entry.heap_tid,
+                    owner_heap_tid: crate::storage::page::ItemPointer::INVALID,
                     exact_dist,
                 });
             }

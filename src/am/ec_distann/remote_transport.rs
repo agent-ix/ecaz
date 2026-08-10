@@ -572,11 +572,11 @@ const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 const PHYSICAL_EXPAND_SQL: &str = "SELECT vec_id, exact_dist, is_tombstone,
-        neighbor_vec_ids, neighbor_code_dists, owner_total_ns, owner_open_validate_ns,
+        neighbor_vec_ids, neighbor_code_dists, heap_block, heap_offset, owner_total_ns, owner_open_validate_ns,
         owner_graph_read_ns, owner_score_ns, owner_response_encode_ns, owner_response_bytes
    FROM ec_distann_expand_physical_nodes_profile(
        $1::text::regclass, $2::bytea, $3::real[],
-       $4::bytea, $5::bigint[], $6::real, $7::integer, $8::bigint[])";
+       $4::bytea, $5::bigint[], $6::real, $7::integer, $8::bigint[], $9::boolean)";
 
 #[cfg(not(feature = "distann-head-attribution-benchmark"))]
 const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_payload_missing,
@@ -591,7 +591,8 @@ const PHYSICAL_MATERIALIZE_SQL: &str = "SELECT vec_id, is_tombstone, tuple_paylo
         owner_node_lookup_ns, owner_payload_sql_ns, payload_bytes
    FROM ec_distann_materialize_physical_row_payloads_profile(
        $1::text::regclass, $2::bytea, $3::bigint[],
-       $4::smallint[], $5::bytea, $6::boolean, $7::boolean, $8::boolean)";
+       $4::smallint[], $5::bytea, $6::boolean, $7::boolean, $8::boolean,
+       $9::bigint[], $10::integer[], $11::boolean)";
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
 pub(crate) fn remote_physical_seed_batch(
@@ -739,6 +740,8 @@ pub(crate) struct DistannPhysicalExpandRequest<'a> {
     /// TRAV-30 (Task 210 P3): requested ids whose neighbour payload the owner
     /// should omit because the coordinator holds their gateway routing copy.
     pub(crate) skip_neighbor_vec_ids: &'a [u64],
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) expanded_locator: bool,
 }
 
 /// Owner-side FR-080 head-shard search request (Task 210 P2a).
@@ -1352,6 +1355,8 @@ async fn run_one_physical_expand(
             &request.code_threshold,
             &request.candidate_limit,
             &wire_skip_ids,
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            &request.expanded_locator,
         ],
     )
     .await?;
@@ -1366,22 +1371,50 @@ async fn run_one_physical_expand(
             let neighbor_vec_ids: Vec<i64> = row.try_get(3).map_err(row_err)?;
             let neighbor_code_dists: Vec<f32> = row.try_get(4).map_err(row_err)?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
-            let owner_total_ns: i64 = row.try_get(5).map_err(row_err)?;
+            let heap_block: i64 = row.try_get(5).map_err(row_err)?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
-            let owner_open_validate_ns: i64 = row.try_get(6).map_err(row_err)?;
+            let heap_offset: i32 = row.try_get(6).map_err(row_err)?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
-            let owner_graph_read_ns: i64 = row.try_get(7).map_err(row_err)?;
+            let owner_total_ns: i64 = row.try_get(7).map_err(row_err)?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
-            let owner_score_ns: i64 = row.try_get(8).map_err(row_err)?;
+            let owner_open_validate_ns: i64 = row.try_get(8).map_err(row_err)?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
-            let owner_response_encode_ns: i64 = row.try_get(9).map_err(row_err)?;
+            let owner_graph_read_ns: i64 = row.try_get(9).map_err(row_err)?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
-            let owner_response_bytes: i64 = row.try_get(10).map_err(row_err)?;
+            let owner_score_ns: i64 = row.try_get(10).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let owner_response_encode_ns: i64 = row.try_get(11).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let owner_response_bytes: i64 = row.try_get(12).map_err(row_err)?;
+            #[cfg(feature = "distann-head-attribution-benchmark")]
+            let owner_heap_tid = if request.expanded_locator {
+                let block = u32::try_from(heap_block).map_err(|_| {
+                    DistannExpandError::Internal("expanded owner heap block is out of range".to_owned())
+                })?;
+                let offset = u16::try_from(heap_offset).map_err(|_| {
+                    DistannExpandError::Internal("expanded owner heap offset is out of range".to_owned())
+                })?;
+                let tid = ItemPointer { block_number: block, offset_number: offset };
+                if tid == ItemPointer::INVALID {
+                    return Err(DistannExpandError::Internal(
+                        "expanded owner heap locator is invalid".to_owned(),
+                    ));
+                }
+                tid
+            } else {
+                ItemPointer::INVALID
+            };
             Ok(DistannExpandedNode {
                 vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
                 exact_dist,
                 is_tombstone,
                 heap_tid: ItemPointer::INVALID,
+                owner_heap_tid: {
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    { owner_heap_tid }
+                    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+                    { ItemPointer::INVALID }
+                },
                 neighbor_vec_ids: neighbor_vec_ids
                     .into_iter()
                     .map(|id| u64::from_le_bytes(id.to_le_bytes()))
@@ -1446,6 +1479,10 @@ pub(crate) struct DistannPhysicalMaterializeRequest<'a> {
     pub(crate) use_typed_locator: bool,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     pub(crate) use_packed_payload: bool,
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) owner_heap_tids: &'a [ItemPointer],
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    pub(crate) use_expanded_locator: bool,
 }
 
 pub(crate) fn remote_physical_materialize_batch(
@@ -1463,6 +1500,16 @@ pub(crate) fn remote_physical_materialize_batch(
                 .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()))
                 .collect::<Vec<_>>()
         })
+        .collect::<Vec<_>>();
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let wire_owner_blocks = requests
+        .iter()
+        .map(|request| request.owner_heap_tids.iter().map(|tid| i64::from(tid.block_number)).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    let wire_owner_offsets = requests
+        .iter()
+        .map(|request| request.owner_heap_tids.iter().map(|tid| i32::from(tid.offset_number)).collect::<Vec<_>>())
         .collect::<Vec<_>>();
     let conn_keys = requests
         .iter()
@@ -1497,6 +1544,10 @@ pub(crate) fn remote_physical_materialize_batch(
                     &pooled.prepared_statements[PHYSICAL_MATERIALIZE_SQL],
                     request,
                     &wire_ids[index],
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    &wire_owner_blocks[index],
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    &wire_owner_offsets[index],
                 )
             });
             #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -1567,6 +1618,10 @@ async fn run_one_physical_materialize_raw(
     statement: &Statement,
     request: &DistannPhysicalMaterializeRequest<'_>,
     wire_ids: &[i64],
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    wire_owner_blocks: &[i64],
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    wire_owner_offsets: &[i32],
 ) -> Result<(Vec<Row>, Duration), DistannExpandError> {
     let started = std::time::Instant::now();
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
@@ -1595,6 +1650,9 @@ async fn run_one_physical_materialize_raw(
             &request.use_cached_payload_plan,
             &request.use_typed_locator,
             &request.use_packed_payload,
+            &wire_owner_blocks,
+            &wire_owner_offsets,
+            &request.use_expanded_locator,
         ],
     )
     .await?;
@@ -2211,6 +2269,7 @@ async fn run_one_remote(
                 exact_dist,
                 is_tombstone,
                 heap_tid: ItemPointer::INVALID,
+                owner_heap_tid: ItemPointer::INVALID,
                 neighbor_vec_ids: neighbor_vec_ids.into_iter().map(|v| v as u64).collect(),
                 neighbor_code_dists,
                 neighbors_pruned: 0,
@@ -2782,6 +2841,7 @@ mod tests {
             exact_dist: Some(-(vec_id as f32)),
             is_tombstone: false,
             heap_tid: ItemPointer::INVALID,
+            owner_heap_tid: ItemPointer::INVALID,
             neighbor_vec_ids: vec![vec_id.wrapping_add(1)],
             neighbor_code_dists: vec![0.5],
             neighbors_pruned: 0,

@@ -31,7 +31,7 @@ use crate::storage::page::ItemPointer;
 use super::expand_error::DistannExpandError;
 
 /// One expanded record, mirroring an `ec_distann_expand_nodes` response row
-/// (plus the local-only `heap_tid`; see the module docs).
+/// (plus local and benchmark-only materialization handles).
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct DistannExpandedNode {
     pub(crate) vec_id: u64,
@@ -41,6 +41,9 @@ pub(crate) struct DistannExpandedNode {
     pub(crate) is_tombstone: bool,
     /// Local-only materialization handle; NOT in the FR-079 wire contract.
     pub(crate) heap_tid: ItemPointer,
+    /// MAT-22 owner-side locator. This is kept separate from `heap_tid` so a
+    /// remote owner's TID is never mistaken for a coordinator-local fetch.
+    pub(crate) owner_heap_tid: ItemPointer,
     pub(crate) neighbor_vec_ids: Vec<u64>,
     /// Code-approximated `-ip` per neighbor, index-aligned with
     /// `neighbor_vec_ids` (embedded-code scoring, FR-076).
@@ -125,6 +128,7 @@ pub(crate) struct DistannScanCounters {
 pub(crate) struct DistannScanHit {
     pub(crate) vec_id: u64,
     pub(crate) heap_tid: ItemPointer,
+    pub(crate) owner_heap_tid: ItemPointer,
     pub(crate) exact_dist: f32,
 }
 
@@ -577,6 +581,7 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                 hits.push(DistannScanHit {
                     vec_id: response.vec_id,
                     heap_tid: response.heap_tid,
+                    owner_heap_tid: response.owner_heap_tid,
                     exact_dist,
                 });
                 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -784,6 +789,7 @@ mod tests {
                         exact_dist: (!tombstone).then_some(*exact),
                         is_tombstone: *tombstone,
                         heap_tid: tid(*vec_id as u16),
+                        owner_heap_tid: ItemPointer::INVALID,
                         neighbor_vec_ids,
                         neighbor_code_dists,
                         neighbors_pruned: 0,

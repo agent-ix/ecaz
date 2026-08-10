@@ -562,7 +562,10 @@ enum CustomScanOutputRow {
     },
     /// Identity and ranked position are retained without copying a row payload
     /// until the executor reaches this deterministic ranked window.
-    RemotePending { vec_id: u64 },
+    RemotePending {
+        vec_id: u64,
+        owner_heap_tid: crate::storage::page::ItemPointer,
+    },
     /// A pending row that materialized as a tombstone. It occupies its ranked
     /// position so proven-prefix/deepening boundaries remain based on raw rank,
     /// but the access callback never emits it.
@@ -1095,21 +1098,23 @@ fn materialize_pending_physical_window(
     }
     let (window_start, window_end) =
         pending_materialization_window(output_index, batch_size, proven_prefix_len(state));
-    let remote_ids = state.outputs[window_start..window_end]
+    let remote_pairs = state.outputs[window_start..window_end]
         .iter()
         .filter_map(|output| match output {
-            CustomScanOutputRow::RemotePending { vec_id } => Some(*vec_id),
+            CustomScanOutputRow::RemotePending { vec_id, owner_heap_tid } => {
+                Some((*vec_id, *owner_heap_tid))
+            }
             _ => None,
         })
         .collect::<Vec<_>>();
-    if remote_ids.is_empty() {
+    if remote_pairs.is_empty() {
         pgrx::error!("EC_INTERNAL: pending materialization window contains no pending rows");
     }
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
-        let duplicate_requests = remote_ids
+        let duplicate_requests = remote_pairs
             .iter()
-            .filter(|vec_id| !state.materialized_remote_ids.insert(**vec_id))
+            .filter(|(vec_id, _)| !state.materialized_remote_ids.insert(*vec_id))
             .count();
         super::stage_counters::record_work(
             super::stage_counters::DistannMaterializationWork::DuplicateRemoteCandidatesRequested,
@@ -1121,7 +1126,7 @@ fn materialize_pending_physical_window(
                  (window_start={window_start} window_end={window_end} \
                  window_remote_ids={} prefix_remote_rank_shifts={} \
                  prefix_duplicate_ranked_ids={})",
-                remote_ids.len(),
+                remote_pairs.len(),
                 state.last_prefix_remote_rank_shifts,
                 state.last_prefix_duplicate_ranked_ids,
             );
@@ -1135,7 +1140,7 @@ fn materialize_pending_physical_window(
         .unwrap_or_else(|| {
             pgrx::error!("EcDistannDistributedScan lost its physical generation context")
         })
-        .materialize_remote_payload_ids(&remote_ids, &state.payload_attnums)
+        .materialize_remote_payload_pairs(&remote_pairs, &state.payload_attnums)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     #[cfg(feature = "distann-head-attribution-benchmark")]
     {
@@ -1157,7 +1162,7 @@ fn materialize_pending_physical_window(
     let association_started = Instant::now();
     for index in window_start..window_end {
         let vec_id = match &state.outputs[index] {
-            CustomScanOutputRow::RemotePending { vec_id } => *vec_id,
+            CustomScanOutputRow::RemotePending { vec_id, .. } => *vec_id,
             _ => continue,
         };
         state.outputs[index] = match payloads.get(&vec_id) {
@@ -1503,7 +1508,10 @@ unsafe fn run_physical_generation_search(
                         previous_proven,
                         hit.vec_id,
                     )
-                    .unwrap_or(CustomScanOutputRow::RemotePending { vec_id: hit.vec_id })
+                    .unwrap_or(CustomScanOutputRow::RemotePending {
+                        vec_id: hit.vec_id,
+                        owner_heap_tid: hit.owner_heap_tid,
+                    })
                 }
             })
             .collect();
@@ -1834,7 +1842,10 @@ mod materialization_candidate_tests {
                 payload_values: vec![1, 2, 3],
             }),
             Some(CustomScanOutputRow::RemoteSkipped { vec_id: 13 }),
-            Some(CustomScanOutputRow::RemotePending { vec_id: 7 }),
+            Some(CustomScanOutputRow::RemotePending {
+                vec_id: 7,
+                owner_heap_tid: crate::storage::page::ItemPointer::INVALID,
+            }),
         ];
 
         // A deeper distance-only sort moves vec_id 13 from rank 1 to rank 0.

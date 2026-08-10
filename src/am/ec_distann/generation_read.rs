@@ -1666,7 +1666,10 @@ impl RetainedGenerationScan {
         use_cached_payload_plan: bool,
         use_typed_locator: bool,
         use_packed_payload: bool,
+        owner_heap_tids: Option<&[ItemPointer]>,
     ) -> Result<PhysicalPayloadBatch, DistannExpandError> {
+        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+        let _ = owner_heap_tids;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let validate_started = Instant::now();
         let expected: [u8; 32] = expected_schema_fingerprint.try_into().map_err(|_| {
@@ -1724,9 +1727,41 @@ impl RetainedGenerationScan {
         let validate_ns = duration_ns(validate_started.elapsed());
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let lookup_started = Instant::now();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let nodes = if let Some(owner_heap_tids) = owner_heap_tids {
+            if owner_heap_tids.len() != vec_ids.len() {
+                return Err(DistannExpandError::BadInput(
+                    "expanded owner locator count does not match vec_id count".to_owned(),
+                ));
+            }
+            self.validate_ownership(vec_ids)?;
+            vec_ids
+                .iter()
+                .copied()
+                .zip(owner_heap_tids.iter().copied())
+                .map(|(vec_id, heap_tid)| {
+                    if heap_tid == ItemPointer::INVALID {
+                        return Err(DistannExpandError::BadInput(
+                            "expanded owner locator contains an invalid TID".to_owned(),
+                        ));
+                    }
+                    let mut node = DistannNodeTuple::empty();
+                    node.vec_id = vec_id;
+                    node.heap_tid = heap_tid;
+                    Ok(node)
+                })
+                .collect::<Result<Vec<_>, DistannExpandError>>()?
+        } else {
+            self.resolve_nodes(vec_ids)?
+        };
+        #[cfg(not(feature = "distann-head-attribution-benchmark"))]
         let nodes = self.resolve_nodes(vec_ids)?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
-        let node_lookup_ns = duration_ns(lookup_started.elapsed());
+        let node_lookup_ns = if owner_heap_tids.is_some() {
+            0
+        } else {
+            duration_ns(lookup_started.elapsed())
+        };
         if nodes.is_empty() {
             return Ok(PhysicalPayloadBatch {
                 rows: Vec::new(),
@@ -1990,7 +2025,7 @@ fn ec_distann_debug_validate_cached_row_schema(
         .fingerprint()
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     store
-        .materialize_payloads(&[], &[], &expected, false, false, false)
+        .materialize_payloads(&[], &[], &expected, false, false, false, None)
         .unwrap_or_else(|error| error.raise());
     true
 }
@@ -2570,6 +2605,7 @@ fn ec_distann_expand_physical_nodes_profile(
     code_threshold: default!(Option<f32>, "NULL"),
     candidate_limit: default!(Option<i32>, "NULL"),
     skip_neighbor_vec_ids: default!(Option<Vec<i64>>, "NULL"),
+    expanded_locator: default!(bool, "false"),
 ) -> TableIterator<
     'static,
     (
@@ -2578,6 +2614,8 @@ fn ec_distann_expand_physical_nodes_profile(
         name!(is_tombstone, bool),
         name!(neighbor_vec_ids, Vec<i64>),
         name!(neighbor_code_dists, Vec<f32>),
+        name!(heap_block, i64),
+        name!(heap_offset, i32),
         name!(owner_total_ns, i64),
         name!(owner_open_validate_ns, i64),
         name!(owner_graph_read_ns, i64),
@@ -2639,6 +2677,8 @@ fn ec_distann_expand_physical_nodes_profile(
                     .map(|id| i64::from_le_bytes(id.to_le_bytes()))
                     .collect(),
                 node.neighbor_code_dists,
+                if expanded_locator { i64::from(node.heap_tid.block_number) } else { -1 },
+                if expanded_locator { i32::from(node.heap_tid.offset_number) } else { -1 },
             )
         })
         .collect::<Vec<_>>();
@@ -2653,6 +2693,8 @@ fn ec_distann_expand_physical_nodes_profile(
             row.2,
             row.3,
             row.4,
+            row.5,
+            row.6,
             owner_total_ns,
             owner_open_validate_ns,
             owner_graph_read_ns,
@@ -3425,6 +3467,7 @@ fn ec_distann_materialize_physical_row_payloads(
                 false,
                 false,
                 false,
+                None,
             )
         })
         .map(|batch| batch.rows)
@@ -3448,6 +3491,9 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     use_cached_payload_plan: bool,
     use_typed_locator: bool,
     use_packed_payload: bool,
+    owner_heap_blocks: Vec<i64>,
+    owner_heap_offsets: Vec<i32>,
+    use_expanded_locator: bool,
 ) -> TableIterator<
     'static,
     (
@@ -3473,6 +3519,30 @@ fn ec_distann_materialize_physical_row_payloads_profile(
     let store = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
         .unwrap_or_else(|error| error.raise());
     let open_ns = duration_ns(open_started.elapsed());
+    let owner_heap_tids = if use_expanded_locator {
+        if owner_heap_blocks.len() != ids.len() || owner_heap_offsets.len() != ids.len() {
+            pgrx::error!("expanded owner locator arrays must match vec_ids");
+        }
+        Some(
+            owner_heap_blocks
+                .into_iter()
+                .zip(owner_heap_offsets)
+                .map(|(block, offset)| {
+                    let block = u32::try_from(block)
+                        .unwrap_or_else(|_| pgrx::error!("expanded owner heap block is out of range"));
+                    let offset = u16::try_from(offset)
+                        .unwrap_or_else(|_| pgrx::error!("expanded owner heap offset is out of range"));
+                    let tid = ItemPointer { block_number: block, offset_number: offset };
+                    if tid == ItemPointer::INVALID {
+                        pgrx::error!("expanded owner heap locator is invalid");
+                    }
+                    tid
+                })
+                .collect::<Vec<_>>(),
+        )
+    } else {
+        None
+    };
     let batch = store
         .materialize_payloads(
             &ids,
@@ -3481,6 +3551,7 @@ fn ec_distann_materialize_physical_row_payloads_profile(
             use_cached_payload_plan,
             use_typed_locator,
             use_packed_payload,
+            owner_heap_tids.as_deref(),
         )
         .unwrap_or_else(|error| error.raise());
     let owner_total_ns = duration_ns(total_started.elapsed());
@@ -4614,17 +4685,17 @@ impl PhysicalGenerationScan {
         Ok(seeds)
     }
 
-    pub(crate) fn materialize_remote_payloads(
+pub(crate) fn materialize_remote_payloads(
         &self,
         hits: &[DistannScanHit],
         projection_attnums: &[pg_sys::AttrNumber],
     ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
-        let remote_ids = hits
+        let remote_pairs = hits
             .iter()
             .filter(|hit| hit.heap_tid == ItemPointer::INVALID)
-            .map(|hit| hit.vec_id)
+            .map(|hit| (hit.vec_id, hit.owner_heap_tid))
             .collect::<Vec<_>>();
-        self.materialize_remote_payload_ids(&remote_ids, projection_attnums)
+        self.materialize_remote_payload_pairs(&remote_pairs, projection_attnums)
     }
 
     /// Materialize an already-ranked subset of remote physical identities.
@@ -4636,6 +4707,25 @@ impl PhysicalGenerationScan {
         remote_ids: &[u64],
         projection_attnums: &[pg_sys::AttrNumber],
     ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
+        let remote_pairs = remote_ids
+            .iter()
+            .copied()
+            .map(|vec_id| (vec_id, ItemPointer::INVALID))
+            .collect::<Vec<_>>();
+        self.materialize_remote_payload_pairs(&remote_pairs, projection_attnums)
+    }
+
+    pub(crate) fn materialize_remote_payload_pairs(
+        &self,
+        remote_pairs: &[(u64, ItemPointer)],
+        projection_attnums: &[pg_sys::AttrNumber],
+    ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
+        let remote_ids = remote_pairs.iter().map(|(vec_id, _)| *vec_id).collect::<Vec<_>>();
+        let candidate = super::options::benchmark_expanded_locator();
+        let remote_locators = remote_pairs.iter().map(|(_, tid)| *tid).collect::<Vec<_>>();
+        if candidate && remote_locators.iter().any(|tid| *tid == ItemPointer::INVALID) {
+            return Err("EC_INTERNAL: expanded locator arm received a remote hit without owner TID".to_owned());
+        }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let prepare_started = Instant::now();
         let schema_fingerprint = self.descriptor.row_schema.fingerprint()?;
@@ -4645,7 +4735,7 @@ impl PhysicalGenerationScan {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|_| "EC_SCHEMA_MISMATCH: projection attnum exceeds smallint".to_owned())?;
         let buckets = super::placement::group_by_owning_node(
-            remote_ids,
+            &remote_ids,
             self.routes.len(),
             self.descriptor.placement_hash_version,
         );
@@ -4665,11 +4755,21 @@ impl PhysicalGenerationScan {
                 );
             }
             let ids = bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
-            remote_work.push((ordinal, ids));
+            let locators = ids
+                .iter()
+                .map(|vec_id| {
+                    remote_pairs
+                        .iter()
+                        .find(|(candidate, _)| candidate == vec_id)
+                        .map(|(_, tid)| *tid)
+                        .unwrap_or(ItemPointer::INVALID)
+                })
+                .collect::<Vec<_>>();
+            remote_work.push((ordinal, ids, locators));
         }
         let requests = remote_work
             .iter()
-            .map(|(ordinal, ids)| {
+            .map(|(ordinal, ids, _locators)| {
                 let route = &self.routes[*ordinal];
                 let conninfo = route.conninfo.as_deref().ok_or_else(|| {
                     format!(
@@ -4690,6 +4790,10 @@ impl PhysicalGenerationScan {
                     use_typed_locator: super::options::benchmark_typed_locator(),
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     use_packed_payload: super::options::benchmark_packed_payload(),
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    owner_heap_tids: _locators,
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    use_expanded_locator: candidate,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
@@ -4715,7 +4819,7 @@ impl PhysicalGenerationScan {
         let responses = super::remote_transport::remote_physical_materialize_batch(&requests);
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let map_started = Instant::now();
-        for ((ordinal, ids), response) in remote_work.into_iter().zip(responses) {
+        for ((ordinal, ids, _), response) in remote_work.into_iter().zip(responses) {
             let response = response.map_err(|error| error.to_string())?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
             {
@@ -5079,6 +5183,8 @@ impl PhysicalMultiOwnerExpander<'_> {
                         i32::try_from(limit).unwrap_or(i32::MAX)
                     }),
                     skip_neighbor_vec_ids: skip_ids,
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    expanded_locator: super::options::benchmark_expanded_locator(),
                 })
             })
             .collect::<Result<Vec<_>, DistannExpandError>>()?;
@@ -5411,6 +5517,7 @@ impl GenerationExpander<'_> {
                         .transpose()?,
                     is_tombstone: node.tombstoned,
                     heap_tid: node.heap_tid,
+                    owner_heap_tid: ItemPointer::INVALID,
                     neighbor_vec_ids,
                     neighbor_code_dists,
                     neighbors_pruned: 0,

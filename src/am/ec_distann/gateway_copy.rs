@@ -285,6 +285,7 @@ mod tests {
             exact_dist: Some(0.0),
             is_tombstone: false,
             heap_tid: crate::storage::page::ItemPointer::INVALID,
+            owner_heap_tid: crate::storage::page::ItemPointer::INVALID,
             neighbor_vec_ids: neighbors.iter().map(|(id, _)| *id).collect(),
             neighbor_code_dists: neighbors.iter().map(|(_, dist)| *dist).collect(),
             neighbors_pruned: 0,

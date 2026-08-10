@@ -2512,6 +2512,7 @@ impl DistannNodeExpander for ReadyTraversalReplica<'_> {
                     } else {
                         ItemPointer::INVALID
                     },
+                    owner_heap_tid: ItemPointer::INVALID,
                     neighbor_vec_ids,
                     neighbor_code_dists,
                     neighbors_pruned: 0,

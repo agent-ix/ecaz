@@ -135,6 +135,7 @@ impl DistannNodeExpander for LocalNodeExpander<'_> {
                 exact_dist: None,
                 is_tombstone,
                 heap_tid,
+                owner_heap_tid: ItemPointer::INVALID,
                 neighbor_vec_ids,
                 neighbor_code_dists,
                 neighbors_pruned: 0,
