@@ -11,6 +11,10 @@
 - rerank mode: production lazy-10 (`materialization_batch_size=10`)
 - shared surface: one physical generation and one query surface across the
   control/candidate pair
+- comparability note: this full-metrics correctness screen is not comparable
+  to Task 218 packet 002's 19.60 ms / 2,496,626,688-byte baseline; it uses a
+  wider 33.3-payload-columns-per-scan fixture and includes correctness and
+  full stage/storage instrumentation
 - arm delta: control `packed_payload=false`; candidate
   `packed_payload=true`; all other seed/search/materialization settings equal
 - SuiteConfig: `artifacts/task220-mat16-100k.json`

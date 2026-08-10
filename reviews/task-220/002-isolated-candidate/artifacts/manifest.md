@@ -18,6 +18,10 @@
 - command: `ecaz bench suite run --config reviews/task-220/001-preregistration-and-screen/artifacts/task220-mat16-100k.json --artifact-dir reviews/task-220/001-preregistration-and-screen/artifacts/run --manifest-output reviews/task-220/001-preregistration-and-screen/artifacts/run/suite-manifest.json --results-output reviews/task-220/001-preregistration-and-screen/artifacts/run/results.jsonl --continue-on-error`
 - extension provenance: release profile, benchmark feature, SHA
   `b043d06be04d628cd1f6a723f2d35f2d4c66342`, unanimous across three nodes
+- post-screen correction: code checkpoint `c8b5fd9ee` restores the featureless
+  production SQL to `build_payload_sql`; the packed builder remains benchmark
+  feature/GUC gated, and the FR-079 endpoint flattens legacy `bytea[]` results
+  into the existing packed wire ABI
 - structured source: `artifacts/run/results.jsonl`
 - cited correctness source: `artifacts/correctness.md`
 - decision source: `artifacts/decision.md`
