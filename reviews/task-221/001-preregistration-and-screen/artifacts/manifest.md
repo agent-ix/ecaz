@@ -21,6 +21,9 @@
   isolated win may authorize packet 003's 10k/50k/100k matrix
 - code checkpoint: `0b6a4bbbf`
 - run artifacts: pending
+- recovery config: `artifacts/task221-mat22-100k-recovery.json`; setup completed
+  during the initial invocation, which exited before measurements, so the
+  exact immutable fixture is reused for the suite measurement rerun
 
 No corpus, cluster directory, polling snapshots, or PostgreSQL operational
 logs belong in this packet.
