@@ -512,7 +512,10 @@ fn materialize_row_payloads_impl(
     // The heap relation name (schema-qualified, quoted) — a regclass value cannot
     // be a FROM-clause target, so the LATERAL join needs the resolved name.
     let heap_name = unsafe { heap_relation_qualified_name(heap_oid) }?;
-    let sql = build_packed_payload_sql(&heap_name, payload_columns, payload_send_functions, false)
+    // Keep the featureless FR-079 owner SQL on the shipped bytea[] control
+    // path. The endpoint's wire ABI is packed, so flatten the decoded array
+    // below before returning offsets plus one byte buffer to the coordinator.
+    let sql = build_payload_sql(&heap_name, payload_columns, payload_send_functions, false)
         .map_err(DistannExpandError::BadInput)?;
     // Candidate ctids in resolved (request) order; the SQL preserves that order
     // via WITH ORDINALITY so responses zip 1:1 back onto `resolved`.
@@ -537,36 +540,38 @@ fn materialize_row_payloads_impl(
                 .value::<Vec<bool>>()
                 .map_err(|e| format!("ec_distann row payload nulls decode failed: {e}"))?
                 .unwrap_or_default();
-            let payload_offsets = row["payload_offsets"]
-                .value::<Vec<i64>>()
-                .map_err(|e| format!("ec_distann row payload offsets decode failed: {e}"))?
-                .unwrap_or_default();
             let payload_values = row["payload_values"]
-                .value::<Vec<u8>>()
+                .value::<pgrx::datum::Array<&[u8]>>()
                 .map_err(|e| format!("ec_distann row payload values decode failed: {e}"))?
+                .map(|array| {
+                    array
+                        .iter_deny_null()
+                        .map(<[u8]>::to_vec)
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
-            let final_offset = payload_offsets.last().copied().unwrap_or(0);
-            let offsets_valid = payload_offsets.windows(2).all(|window| window[0] <= window[1])
-                && final_offset >= 0
-                && usize::try_from(final_offset)
-                    .ok()
-                    .is_some_and(|end| end == payload_values.len());
-            if payload_nulls.len() != column_count
-                || payload_offsets.len() != column_count
-                || !offsets_valid
-            {
+            if payload_nulls.len() != column_count || payload_values.len() != column_count {
                 return Err(format!(
-                    "ec_distann row payload returned {} null flags and {} offsets for {} columns",
+                    "ec_distann row payload returned {} null flags and {} values for {} columns",
                     payload_nulls.len(),
-                    payload_offsets.len(),
+                    payload_values.len(),
                     column_count
                 ));
+            }
+            let mut payload_offsets = Vec::with_capacity(payload_values.len());
+            let mut payload_buffer = Vec::new();
+            for value in payload_values {
+                payload_buffer.extend_from_slice(&value);
+                payload_offsets.push(
+                    i64::try_from(payload_buffer.len())
+                        .map_err(|_| "ec_distann row payload exceeds int64 length".to_owned())?,
+                );
             }
             out.push((
                 tuple_payload_missing,
                 payload_nulls,
                 payload_offsets,
-                payload_values,
+                payload_buffer,
             ));
         }
         Ok(out)
@@ -776,7 +781,24 @@ pub(crate) fn build_packed_payload_sql(
 
 #[cfg(test)]
 mod packed_payload_sql_tests {
-    use super::build_packed_payload_sql;
+    use super::{build_packed_payload_sql, build_payload_sql};
+
+    #[test]
+    fn production_projection_uses_bytea_array_control_sql() {
+        let sql = build_payload_sql(
+            "\"bench\".\"items\"",
+            &["id".to_owned(), "description".to_owned()],
+            &["pg_catalog.int8send".to_owned(), "textsend".to_owned()],
+            true,
+        )
+        .expect("valid projection inputs");
+
+        assert!(sql.contains("ARRAY[CASE"));
+        assert!(sql.contains("::bytea[]"));
+        assert!(!sql.contains("payload_offsets"));
+        assert!(!sql.contains("payload.payload_value_0 ||"));
+        assert!(sql.contains("unnest($1::tid[])"));
+    }
 
     #[test]
     fn packed_projection_uses_offsets_and_one_bytea() {

@@ -1749,7 +1749,7 @@ impl RetainedGenerationScan {
             super::remote_endpoint::build_payload_sql
         };
         #[cfg(not(feature = "distann-head-attribution-benchmark"))]
-        let sql_builder = super::remote_endpoint::build_packed_payload_sql;
+        let sql_builder = super::remote_endpoint::build_payload_sql;
         let sql = sql_builder(&row_name, &columns, &sends, use_typed_locator)
             .map_err(DistannExpandError::BadInput)?;
         let typed_tids = nodes
@@ -1990,7 +1990,7 @@ fn ec_distann_debug_validate_cached_row_schema(
         .fingerprint()
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     store
-        .materialize_payloads(&[], &[], &expected, false, false, true)
+        .materialize_payloads(&[], &[], &expected, false, false, false)
         .unwrap_or_else(|error| error.raise());
     true
 }
@@ -3424,7 +3424,7 @@ fn ec_distann_materialize_physical_row_payloads(
                 &expected_schema_fingerprint,
                 false,
                 false,
-                true,
+                false,
             )
         })
         .map(|batch| batch.rows)
