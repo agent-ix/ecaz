@@ -521,6 +521,112 @@ fn update_source_mapping(
     })
 }
 
+/// Rebuild the source-TID directory after a physical generation becomes
+/// active. Published generations are immutable, while VACUUM's callback still
+/// enumerates current source-table TIDs; refreshing this directory on publish
+/// keeps delete routing correct for rows that predate incremental DML.
+pub(crate) fn refresh_source_mapping(index_oid: pg_sys::Oid) -> Result<(), String> {
+    let source_oid = Spi::get_one::<pg_sys::Oid>(&format!(
+        "SELECT indrelid FROM pg_catalog.pg_index WHERE indexrelid = {index_oid}::oid"
+    ))
+    .map_err(|error| format!("EC_SCHEMA_MISMATCH: source relation lookup failed: {error}"))?
+    .ok_or_else(|| "EC_SCHEMA_MISMATCH: source relation is absent".to_owned())?;
+    let (identity_attnum, identity_name, identity_type) = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT i.indkey[2]::int4 AS attnum, a.attname, t.typname
+                   FROM pg_catalog.pg_index i
+                   JOIN pg_catalog.pg_attribute a
+                     ON a.attrelid = i.indrelid AND a.attnum = i.indkey[2]
+                   JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+                  WHERE i.indexrelid = $1::oid AND i.indnatts = 2",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|error| format!("EC_SCHEMA_MISMATCH: source identity lookup failed: {error}"))?
+            .map(|row| {
+                let attnum = row["attnum"]
+                    .value::<i32>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "identity attnum is NULL".to_owned())?;
+                let name = row["attname"]
+                    .value::<String>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "identity name is NULL".to_owned())?;
+                let typname = row["typname"]
+                    .value::<String>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "identity type is NULL".to_owned())?;
+                Ok::<_, String>((attnum, name, typname))
+            })
+            .next()
+            .transpose()
+    })?
+    .ok_or_else(|| "EC_SCHEMA_MISMATCH: source identity INCLUDE column is absent".to_owned())?;
+    if identity_attnum <= 0 || !matches!(identity_type.as_str(), "uuid" | "bytea") {
+        return Err("EC_SCHEMA_MISMATCH: source identity must be uuid or bytea".to_owned());
+    }
+    let source_relation = qualified_relation_name(source_oid)?;
+    let identity_expr = if identity_type == "uuid" {
+        format!("uuid_send({})", super::quote_ident(&identity_name))
+    } else {
+        super::quote_ident(&identity_name)
+    };
+    let rows = Spi::connect(|client| {
+        client
+            .select(
+                &format!("SELECT ctid, {identity_expr} AS identity_payload FROM {source_relation}"),
+                None,
+                &[],
+            )
+            .map_err(|error| format!("EC_DELETE_ROUTE: source mapping refresh scan failed: {error}"))?
+            .map(|row| {
+                let tid = row["ctid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "source ctid is NULL".to_owned())?;
+                let payload = row["identity_payload"]
+                    .value::<Vec<u8>>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "source identity is NULL".to_owned())?;
+                let identity: [u8; 16] = payload
+                    .try_into()
+                    .map_err(|_| "EC_SOURCE_IDENTITY: source identity is not 16 bytes".to_owned())?;
+                Ok::<_, String>((tid, i64::from_le_bytes(super::identity::vec_id_from_source_identity(&identity).to_le_bytes())))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    })?;
+    let table = super::generation_catalog::extension_relation_name("ec_distann_physical_source_map")?;
+    let tids = rows.iter().map(|(tid, _)| *tid).collect::<Vec<_>>();
+    let vec_ids = rows.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!("DELETE FROM {table} WHERE index_oid = $1::oid"),
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|error| format!("EC_DELETE_ROUTE: source mapping refresh cleanup failed: {error}"))?;
+        if tids.is_empty() {
+            return Ok::<(), String>(());
+        }
+        client
+            .update(
+                &format!(
+                    "INSERT INTO {table} (index_oid, source_tid, vec_id) \
+                     SELECT $1::oid, source_tid, vec_id \
+                       FROM unnest($2::tid[], $3::bigint[]) AS rows(source_tid, vec_id) \
+                     ON CONFLICT (index_oid, source_tid) DO UPDATE SET vec_id = EXCLUDED.vec_id, \
+                         created_at = clock_timestamp()"
+                ),
+                None,
+                &[index_oid.into(), tids.into(), vec_ids.into()],
+            )
+            .map_err(|error| format!("EC_DELETE_ROUTE: source mapping refresh append failed: {error}"))?;
+        Ok::<(), String>(())
+    })
+}
+
 /// Tombstone one current owner-local graph record. This is idempotent: a retry
 /// after a lost routed response observes the already-set flag and succeeds.
 pub(crate) unsafe fn tombstone_owner_record(

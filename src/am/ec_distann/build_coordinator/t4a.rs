@@ -28,7 +28,7 @@ pub(super) fn recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
             preflight_uuid,
             build_id,
         )?;
-        let (mut control, handle, _metadata, logical_index_uuid) = open_control_index(
+        let (mut control, handle, metadata, logical_index_uuid) = open_control_index(
             index_oid,
             pg_sys::ShareRowExclusiveLock as pg_sys::LOCKMODE,
             "ec_distann_recover_epoch_publish",
@@ -241,6 +241,9 @@ pub(super) fn recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
                     logical_index_uuid,
                     build_id,
                 )?;
+                if metadata.is_distributed_control() {
+                    super::super::physical_dml::refresh_source_mapping(index_oid)?;
+                }
                 source_lock.release_after_commit();
                 return Ok(epoch_fingerprint);
             }
@@ -531,6 +534,9 @@ pub(super) fn recover_epoch_publish(index_regclass: PgRelation, build_id: Uuid) 
             logical_index_uuid,
             build_id,
         )?;
+        if metadata.is_distributed_control() {
+            super::super::physical_dml::refresh_source_mapping(index_oid)?;
+        }
 
         // Release the coordinator session locks after this swap commits.
         schedule_session_lock_release_for_control(index_oid);
