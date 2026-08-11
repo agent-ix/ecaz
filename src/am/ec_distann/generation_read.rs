@@ -3674,6 +3674,28 @@ pub(crate) fn active_generation_identity(
     })
 }
 
+fn published_generation_identity(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+    fingerprint: &[u8; 34],
+) -> Result<Option<ActiveGenerationIdentity>, String> {
+    let Some(retained) = generation_catalog::lookup_retained_generation_by_fingerprint(
+        index_oid,
+        logical_index_uuid,
+        fingerprint,
+    )?
+    else {
+        return Ok(None);
+    };
+    if retained.generation.state != super::lifecycle_state::GenerationState::Published {
+        return Ok(None);
+    }
+    Ok(Some(ActiveGenerationIdentity {
+        build_id: retained.build_id,
+        fingerprint: *fingerprint,
+    }))
+}
+
 impl PhysicalGenerationScan {
     /// ResourceOwner and xact callbacks run before the executor query context
     /// reset on ERROR. PostgreSQL already closed these relations and released
@@ -3693,13 +3715,28 @@ impl PhysicalGenerationScan {
     }
 
     pub(crate) fn open(index_oid: pg_sys::Oid) -> Result<Self, String> {
-        match Self::open_once(index_oid) {
-            Err(error) if error.starts_with("EC_EPOCH_MISMATCH:") => Self::open_once(index_oid),
+        match Self::open_once_with_fingerprint(index_oid, None) {
+            Err(error) if error.starts_with("EC_EPOCH_MISMATCH:") => {
+                Self::open_once_with_fingerprint(index_oid, None)
+            }
             result => result,
         }
     }
 
-    fn open_once(index_oid: pg_sys::Oid) -> Result<Self, String> {
+    /// Open a participant generation named by the coordinator's immutable
+    /// fingerprint. Participant catalogs retain a Published generation but do
+    /// not install a local active pointer for the coordinator-owned epoch.
+    pub(crate) fn open_at_fingerprint(
+        index_oid: pg_sys::Oid,
+        fingerprint: [u8; 34],
+    ) -> Result<Self, String> {
+        Self::open_once_with_fingerprint(index_oid, Some(fingerprint))
+    }
+
+    fn open_once_with_fingerprint(
+        index_oid: pg_sys::Oid,
+        requested_fingerprint: Option<[u8; 34]>,
+    ) -> Result<Self, String> {
         let (control, _handle, _metadata, logical_index_uuid) =
             super::generation_store::open_control_index(
                 index_oid,
@@ -3712,8 +3749,16 @@ impl PhysicalGenerationScan {
         // first read and registration, the exact old fingerprint is pinned
         // before its relations can retire; the second read rejects the stale
         // attempt and the bounded open() retry above resolves the successor.
-        let first = active_generation_identity(index_oid, logical_index_uuid)?
-            .ok_or_else(|| "EC_GENERATION_MISSING: logical index has no active epoch".to_owned())?;
+        let first = match requested_fingerprint {
+            Some(fingerprint) => published_generation_identity(
+                index_oid,
+                logical_index_uuid,
+                &fingerprint,
+            )?
+            .ok_or_else(|| "EC_GENERATION_MISSING: logical index has no published epoch".to_owned())?,
+            None => active_generation_identity(index_oid, logical_index_uuid)?
+                .ok_or_else(|| "EC_GENERATION_MISSING: logical index has no active epoch".to_owned())?,
+        };
         let scan_token =
             ScanTokenGuard::register_checked(logical_index_uuid, first.fingerprint, || {
                 super::coordinator_retirement::ensure_fingerprint_not_retiring(
@@ -3725,10 +3770,17 @@ impl PhysicalGenerationScan {
             .map_err(|(error, detail)| {
                 detail.unwrap_or_else(|| error.stable_message().to_owned())
             })?;
-        let active =
-            active_generation_identity(index_oid, logical_index_uuid)?.ok_or_else(|| {
+        let active = match requested_fingerprint {
+            Some(fingerprint) => published_generation_identity(
+                index_oid,
+                logical_index_uuid,
+                &fingerprint,
+            )?
+            .ok_or_else(|| "EC_GENERATION_MISSING: published epoch disappeared during registration".to_owned())?,
+            None => active_generation_identity(index_oid, logical_index_uuid)?.ok_or_else(|| {
                 "EC_GENERATION_MISSING: active epoch disappeared during registration".to_owned()
-            })?;
+            })?,
+        };
         if active.build_id != first.build_id || active.fingerprint != first.fingerprint {
             return Err(
                 "EC_EPOCH_MISMATCH: active epoch changed during scan registration".to_owned(),

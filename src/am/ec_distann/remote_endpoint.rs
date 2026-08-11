@@ -380,6 +380,7 @@ fn ec_distann_apply_physical_insert(
         unsafe {
             super::physical_dml::insert_from_owner_payload(
                 index_regclass,
+                fingerprint,
                 vec_id as u64,
                 source_vector,
                 &source_identity,

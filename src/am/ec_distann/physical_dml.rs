@@ -95,6 +95,7 @@ pub(crate) unsafe fn insert_from_callback(
         identity,
         source_slot.as_ptr(),
         source_tid,
+        None,
     )
 }
 
@@ -107,6 +108,7 @@ unsafe fn insert_from_prepared_slot(
     identity: ambuild::DistannIdentityAttribute,
     source_slot: *mut pg_sys::TupleTableSlot,
     source_tid: ItemPointer,
+    scan_fingerprint: Option<[u8; 34]>,
 ) -> Result<(), String> {
     if index_relation.is_null() || source_slot.is_null() {
         return Err(
@@ -117,7 +119,10 @@ unsafe fn insert_from_prepared_slot(
     let options = options::relation_options(index_relation);
 
     let index_oid = (*index_relation).rd_id;
-    let scan = PhysicalGenerationScan::open(index_oid)?;
+    let scan = match scan_fingerprint {
+        Some(fingerprint) => PhysicalGenerationScan::open_at_fingerprint(index_oid, fingerprint)?,
+        None => PhysicalGenerationScan::open(index_oid)?,
+    };
     let (_logical_uuid, _build_id, fingerprint, routed_descriptor, routes) =
         scan.traversal_replica_source();
     let routes = routes.to_owned();
@@ -964,6 +969,7 @@ pub(crate) unsafe fn insert_from_owner_source(
 /// closed.
 pub(crate) unsafe fn insert_from_owner_payload(
     index_oid: pg_sys::Oid,
+    epoch_fingerprint: [u8; 34],
     expected_vec_id: u64,
     source_vector: Vec<f32>,
     source_identity: &[u8],
@@ -984,7 +990,7 @@ pub(crate) unsafe fn insert_from_owner_payload(
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         "ec_distann physical owner payload insert",
     );
-    let scan = PhysicalGenerationScan::open(index_oid)?;
+    let scan = PhysicalGenerationScan::open_at_fingerprint(index_oid, epoch_fingerprint)?;
     let (generation, _descriptor) = scan.local_write_identity()?;
     drop(scan);
     let row_relation = HeapRelationGuard::try_open(
@@ -1036,6 +1042,7 @@ pub(crate) unsafe fn insert_from_owner_payload(
         identity_attribute,
         slot.as_ptr(),
         ItemPointer::INVALID,
+        Some(epoch_fingerprint),
     )
 }
 
