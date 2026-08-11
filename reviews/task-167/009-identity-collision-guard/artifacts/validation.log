@@ -1,0 +1,9 @@
+Task 167 packet 009 validation
+Head: cd12cd0e3
+Timestamp: 2026-08-11 America/Los_Angeles
+
+$ cargo check --no-default-features --features pg18
+Finished `dev` profile; exit 0.
+
+The check covers the callback update-hint propagation, the owner payload
+endpoint's new boolean argument, and the duplicate-current-vec_id guard.
