@@ -3824,9 +3824,28 @@ impl PhysicalGenerationScan {
                 &generation_descriptor,
             )?);
             let descriptor_digest = descriptor.digest()?;
-            if descriptor_digest != generation_descriptor_digest
-                || descriptor.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes()
-            {
+            let identity_matches = if requested_fingerprint.is_some() {
+                let generation = generation_catalog::lookup_generation(
+                    index_oid,
+                    logical_index_uuid,
+                    active.build_id,
+                )?
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: published generation disappeared".to_owned()
+                })?;
+                let roster_entry = descriptor
+                    .roster
+                    .get(generation.owner_ordinal as usize)
+                    .ok_or_else(|| {
+                        "EC_NODE_DESCRIPTOR: participant owner ordinal is outside the roster"
+                            .to_owned()
+                    })?;
+                roster_entry.logical_index_uuid == *logical_index_uuid.as_bytes()
+                    && roster_entry.node_id == generation.node_id
+            } else {
+                descriptor.coordinator_logical_index_uuid == *logical_index_uuid.as_bytes()
+            };
+            if descriptor_digest != generation_descriptor_digest || !identity_matches {
                 return Err(
                     "EC_GENERATION_DESCRIPTOR: active generation descriptor identity mismatch"
                         .to_owned(),
