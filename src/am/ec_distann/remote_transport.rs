@@ -537,12 +537,12 @@ pub(crate) struct DistannRemotePhysicalInsertRequest<'a> {
     pub(crate) payload_nulls: &'a [bool],
     pub(crate) payload_offsets: &'a [i64],
     pub(crate) payload_values: &'a [u8],
+    pub(crate) allow_replacement: bool,
 }
 
-const PHYSICAL_INSERT_SQL: &str =
-    "SELECT ec_distann_apply_physical_insert(\
+const PHYSICAL_INSERT_SQL: &str = "SELECT ec_distann_apply_physical_insert(\
         $1::text::regclass::oid, $2::bytea, $3::bigint, $4::real[], $5::bytea,\
-        $6::boolean[], $7::bigint[], $8::bytea)";
+        $6::boolean[], $7::bigint[], $8::bytea, $9::boolean)";
 
 pub(crate) fn remote_physical_insert(
     request: &DistannRemotePhysicalInsertRequest<'_>,
@@ -575,6 +575,7 @@ pub(crate) fn remote_physical_insert(
                         &request.payload_nulls,
                         &request.payload_offsets,
                         &request.payload_values,
+                        &request.allow_replacement,
                     ],
                 ),
             )
@@ -967,7 +968,10 @@ pub(crate) fn remote_crown_code_batch(
         .map(|request| lifecycle_connection_key(request.conninfo))
         .collect::<Vec<_>>();
     let outcome = with_transport_state::<_, DistannExpandError>(|state| {
-        let DistannTransportState { runtime, connections } = state;
+        let DistannTransportState {
+            runtime,
+            connections,
+        } = state;
         runtime.block_on(async {
             let specs = requests
                 .iter()
@@ -1008,7 +1012,9 @@ async fn run_one_crown_code(
     rows.into_iter()
         .map(|row| {
             Ok(super::crown_cache::DistannCrownEntry {
-                vec_id: u64::from_le_bytes(row.try_get::<_, i64>(0).map_err(row_err)?.to_le_bytes()),
+                vec_id: u64::from_le_bytes(
+                    row.try_get::<_, i64>(0).map_err(row_err)?.to_le_bytes(),
+                ),
                 search_code: row.try_get(1).map_err(row_err)?,
             })
         })
@@ -1085,7 +1091,11 @@ async fn run_one_gateway_routing(
     let rows = client
         .query(
             statement,
-            &[&request.index_regclass, &request.epoch_fingerprint, &wire_ids],
+            &[
+                &request.index_regclass,
+                &request.epoch_fingerprint,
+                &wire_ids,
+            ],
         )
         .await
         .map_err(|error| {
@@ -1130,9 +1140,13 @@ pub(crate) fn remote_head_shard_export(
             connections,
         } = state;
         runtime.block_on(async {
-            ensure_pooled_connections(connections, &[(key.clone(), conninfo)], "EC_BUILD_INCOMPLETE")
-                .await
-                .map_err(DistannExpandError::Internal)?;
+            ensure_pooled_connections(
+                connections,
+                &[(key.clone(), conninfo)],
+                "EC_BUILD_INCOMPLETE",
+            )
+            .await
+            .map_err(DistannExpandError::Internal)?;
             let rows = connections[&key]
                 .client
                 .query(
@@ -1181,9 +1195,13 @@ pub(crate) fn remote_head_shard_import(
             connections,
         } = state;
         runtime.block_on(async {
-            ensure_pooled_connections(connections, &[(key.clone(), conninfo)], "EC_BUILD_INCOMPLETE")
-                .await
-                .map_err(DistannExpandError::Internal)?;
+            ensure_pooled_connections(
+                connections,
+                &[(key.clone(), conninfo)],
+                "EC_BUILD_INCOMPLETE",
+            )
+            .await
+            .map_err(DistannExpandError::Internal)?;
             let row = connections[&key]
                 .client
                 .query_one(
@@ -1465,12 +1483,19 @@ async fn run_one_physical_expand(
             #[cfg(feature = "distann-head-attribution-benchmark")]
             let owner_heap_tid = if request.expanded_locator {
                 let block = u32::try_from(heap_block).map_err(|_| {
-                    DistannExpandError::Internal("expanded owner heap block is out of range".to_owned())
+                    DistannExpandError::Internal(
+                        "expanded owner heap block is out of range".to_owned(),
+                    )
                 })?;
                 let offset = u16::try_from(heap_offset).map_err(|_| {
-                    DistannExpandError::Internal("expanded owner heap offset is out of range".to_owned())
+                    DistannExpandError::Internal(
+                        "expanded owner heap offset is out of range".to_owned(),
+                    )
                 })?;
-                let tid = ItemPointer { block_number: block, offset_number: offset };
+                let tid = ItemPointer {
+                    block_number: block,
+                    offset_number: offset,
+                };
                 if tid == ItemPointer::INVALID {
                     return Err(DistannExpandError::Internal(
                         "expanded owner heap locator is invalid".to_owned(),
@@ -1487,9 +1512,13 @@ async fn run_one_physical_expand(
                 heap_tid: ItemPointer::INVALID,
                 owner_heap_tid: {
                     #[cfg(feature = "distann-head-attribution-benchmark")]
-                    { owner_heap_tid }
+                    {
+                        owner_heap_tid
+                    }
                     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
-                    { ItemPointer::INVALID }
+                    {
+                        ItemPointer::INVALID
+                    }
                 },
                 neighbor_vec_ids: neighbor_vec_ids
                     .into_iter()
@@ -1580,12 +1609,24 @@ pub(crate) fn remote_physical_materialize_batch(
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let wire_owner_blocks = requests
         .iter()
-        .map(|request| request.owner_heap_tids.iter().map(|tid| i64::from(tid.block_number)).collect::<Vec<_>>())
+        .map(|request| {
+            request
+                .owner_heap_tids
+                .iter()
+                .map(|tid| i64::from(tid.block_number))
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let wire_owner_offsets = requests
         .iter()
-        .map(|request| request.owner_heap_tids.iter().map(|tid| i32::from(tid.offset_number)).collect::<Vec<_>>())
+        .map(|request| {
+            request
+                .owner_heap_tids
+                .iter()
+                .map(|tid| i32::from(tid.offset_number))
+                .collect::<Vec<_>>()
+        })
         .collect::<Vec<_>>();
     let conn_keys = requests
         .iter()
@@ -1694,10 +1735,8 @@ async fn run_one_physical_materialize_raw(
     statement: &Statement,
     request: &DistannPhysicalMaterializeRequest<'_>,
     wire_ids: &[i64],
-    #[cfg(feature = "distann-head-attribution-benchmark")]
-    wire_owner_blocks: &[i64],
-    #[cfg(feature = "distann-head-attribution-benchmark")]
-    wire_owner_offsets: &[i32],
+    #[cfg(feature = "distann-head-attribution-benchmark")] wire_owner_blocks: &[i64],
+    #[cfg(feature = "distann-head-attribution-benchmark")] wire_owner_offsets: &[i32],
 ) -> Result<(Vec<Row>, Duration), DistannExpandError> {
     let started = std::time::Instant::now();
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]

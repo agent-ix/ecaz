@@ -38,6 +38,7 @@ pub(crate) unsafe fn insert_from_callback(
     isnull: *mut bool,
     heap_tid: pg_sys::ItemPointer,
     index_info: *mut pg_sys::IndexInfo,
+    allow_replacement: bool,
 ) -> Result<(), String> {
     if index_relation.is_null() || heap_relation.is_null() || index_info.is_null() {
         return Err(
@@ -76,6 +77,7 @@ pub(crate) unsafe fn insert_from_callback(
         vector,
         vec_id,
         identity_payload,
+        allow_replacement,
         source_slot.as_ptr(),
     )
 }
@@ -85,6 +87,7 @@ unsafe fn insert_from_prepared_slot(
     vector: Vec<f32>,
     vec_id: u64,
     identity_payload: [u8; 16],
+    allow_replacement: bool,
     source_slot: *mut pg_sys::TupleTableSlot,
 ) -> Result<(), String> {
     if index_relation.is_null() || source_slot.is_null() {
@@ -129,6 +132,7 @@ unsafe fn insert_from_prepared_slot(
                 payload_nulls: &payload_nulls,
                 payload_offsets: &payload_offsets,
                 payload_values: &payload_values,
+                allow_replacement,
             },
         )?;
         return Ok(());
@@ -172,6 +176,12 @@ unsafe fn insert_from_prepared_slot(
     drop(scan);
 
     let graph_name = qualified_relation_name(generation.graph_store_relid)?;
+    let previous_version = current_record_version(&graph_name, vec_id)?;
+    if previous_version.is_some() && !allow_replacement {
+        return Err(format!(
+            "EC_DUPLICATE_VEC_ID: vec_id {vec_id:#018x} already has a current physical record"
+        ));
+    }
     let row_relation = HeapRelationGuard::try_open(
         generation.row_tier_relid,
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
@@ -274,7 +284,6 @@ unsafe fn insert_from_prepared_slot(
 
     // Same vec_id means the stable identity survived an UPDATE.  Retain the
     // old graph tuple and redirect the partial unique directory atomically.
-    let previous_version = current_record_version(&graph_name, vec_id)?;
     if previous_version.is_some() {
         Spi::connect_mut(|client| {
             client.update(
@@ -463,6 +472,7 @@ pub(crate) unsafe fn insert_from_owner_source(
         nulls.as_mut_ptr(),
         &mut callback_tid,
         index_info,
+        false,
     );
     pg_sys::pfree(index_info.cast());
     result
@@ -480,6 +490,7 @@ pub(crate) unsafe fn insert_from_owner_payload(
     payload_nulls: &[bool],
     payload_offsets: &[i64],
     payload_values: &[u8],
+    allow_replacement: bool,
 ) -> Result<(), String> {
     let identity: [u8; 16] = source_identity
         .try_into()
@@ -522,6 +533,7 @@ pub(crate) unsafe fn insert_from_owner_payload(
         source_vector,
         expected_vec_id,
         identity,
+        allow_replacement,
         slot.as_ptr(),
     )
 }

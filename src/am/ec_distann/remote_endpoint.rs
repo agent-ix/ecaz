@@ -323,31 +323,31 @@ fn ec_distann_apply_physical_insert(
     payload_nulls: Vec<bool>,
     payload_offsets: Vec<i64>,
     payload_values: Vec<u8>,
+    allow_replacement: bool,
 ) -> bool {
     super::lifecycle_guard::require_read_committed("ec_distann_apply_physical_insert")
         .unwrap_or_else(|error| pgrx::error!("{error}"));
     super::traversal_replica::guard_traversal_replica_mutation(index_regclass);
     let result = (|| -> Result<(), String> {
-        let fingerprint: [u8; 34] = epoch_fingerprint
-            .try_into()
-            .map_err(|_| "EC_EPOCH_MISMATCH: physical insert fingerprint must be 34 bytes".to_owned())?;
+        let fingerprint: [u8; 34] = epoch_fingerprint.try_into().map_err(|_| {
+            "EC_EPOCH_MISMATCH: physical insert fingerprint must be 34 bytes".to_owned()
+        })?;
         let (control, _handle, metadata, logical_index_uuid) =
             super::generation_store::open_control_index(
                 index_regclass,
                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
                 "ec_distann_apply_physical_insert",
             )?;
-        let active = super::generation_read::active_generation_identity(
-            index_regclass,
-            logical_index_uuid,
-        )?
-        .ok_or_else(|| "EC_GENERATION_MISSING: physical insert has no active epoch".to_owned())?;
+        let active =
+            super::generation_read::active_generation_identity(index_regclass, logical_index_uuid)?
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: physical insert has no active epoch".to_owned()
+                })?;
         if active.fingerprint != fingerprint {
             return Err("EC_EPOCH_MISMATCH: physical insert epoch fingerprint mismatch".to_owned());
         }
-        let placement = super::roster::placement_directory_for_epoch(
-            super::roster::scan_epoch(&metadata),
-        )?;
+        let placement =
+            super::roster::placement_directory_for_epoch(super::roster::scan_epoch(&metadata))?;
         let local_index = placement
             .nodes
             .iter()
@@ -373,6 +373,7 @@ fn ec_distann_apply_physical_insert(
                 &payload_nulls,
                 &payload_offsets,
                 &payload_values,
+                allow_replacement,
             )
         }
     })();
@@ -660,9 +661,11 @@ fn materialize_row_payloads_impl(
     Ok(resolved
         .into_iter()
         .zip(payloads)
-        .map(|((vec_id, _tid, is_tombstone), (missing, nulls, offsets, values))| {
-            (vec_id, is_tombstone, missing, nulls, offsets, values)
-        })
+        .map(
+            |((vec_id, _tid, is_tombstone), (missing, nulls, offsets, values))| {
+                (vec_id, is_tombstone, missing, nulls, offsets, values)
+            },
+        )
         .collect())
 }
 
@@ -803,9 +806,7 @@ pub(crate) fn build_packed_payload_sql(
         let cumulative = (0..value_exprs.len())
             .map(|index| {
                 (0..=index)
-                    .map(|offset| {
-                        format!("octet_length(payload.payload_value_{offset})::bigint")
-                    })
+                    .map(|offset| format!("octet_length(payload.payload_value_{offset})::bigint"))
                     .collect::<Vec<_>>()
                     .join(" + ")
             })

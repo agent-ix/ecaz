@@ -87,7 +87,7 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
     heap_tid: pg_sys::ItemPointer,
     heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
-    _index_unchanged: bool,
+    index_unchanged: bool,
     index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
     pg_am_callback!({
@@ -116,6 +116,7 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
                 isnull,
                 heap_tid,
                 index_info,
+                index_unchanged,
             )
             .unwrap_or_else(|e| pgrx::error!("ec_distann physical aminsert failed: {e}"));
             return false;
