@@ -545,7 +545,9 @@ pub(crate) fn refresh_source_mapping(index_oid: pg_sys::Oid) -> Result<(), Strin
     let (identity_attnum, identity_name, identity_type) = Spi::connect(|client| {
         client
             .select(
-                "SELECT i.indkey[1]::int4 AS attnum, a.attname, t.typname
+                "SELECT i.indkey[1]::int4 AS attnum,
+                        a.attname::text AS attname,
+                        t.typname::text AS typname
                    FROM pg_catalog.pg_index i
                      JOIN pg_catalog.pg_attribute a
                      ON a.attrelid = i.indrelid AND a.attnum = i.indkey[1]
