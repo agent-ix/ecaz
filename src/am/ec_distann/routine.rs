@@ -147,11 +147,21 @@ unsafe extern "C-unwind" fn ec_distann_ambulkdelete(
         let metadata = ambuild::read_metadata_from_index((*info).index)
             .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete metadata read failed: {e}"));
         if metadata.is_distributed_control() {
-            // The logical control root indexes zero heap tuples. DELETE/HOT-miss
-            // UPDATE may still make source tuples dead, so VACUUM must be able to
-            // maintain the heap instead of failing forever on this empty index.
-            return ec_distann_noop_vacuum_stats((*info).index, stats)
+            // The logical control root indexes zero graph tuples. Enumerate
+            // source TIDs through the durable physical source map, then route
+            // each stable vec_id to its owner for an idempotent tombstone.
+            let tombstoned = super::physical_dml::tombstone_dead_records(
+                (*info).index,
+                callback,
+                callback_state,
+            )
                 .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
+            let stats = ec_distann_noop_vacuum_stats((*info).index, stats)
+                .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
+            if !stats.is_null() {
+                (*stats).tuples_removed += tombstoned as f64;
+            }
+            return stats;
         }
         // FR-083 D10 tombstone delete: flag records whose heap row is dead;
         // nothing is physically reclaimed within a Published epoch (next epoch

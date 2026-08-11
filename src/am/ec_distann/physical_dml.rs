@@ -78,6 +78,7 @@ pub(crate) unsafe fn insert_from_callback(
     // the unchanged-key UPDATE case without turning a normal INSERT into a
     // replacement.
     let allow_replacement = index_unchanged || source_slot_is_updated(source_slot.as_ptr());
+    let source_tid = decode_heap_tid(heap_tid);
     insert_from_prepared_slot(
         index_relation,
         vector,
@@ -86,6 +87,7 @@ pub(crate) unsafe fn insert_from_callback(
         allow_replacement,
         identity,
         source_slot.as_ptr(),
+        source_tid,
     )
 }
 
@@ -97,6 +99,7 @@ unsafe fn insert_from_prepared_slot(
     allow_replacement: bool,
     identity: ambuild::DistannIdentityAttribute,
     source_slot: *mut pg_sys::TupleTableSlot,
+    source_tid: ItemPointer,
 ) -> Result<(), String> {
     if index_relation.is_null() || source_slot.is_null() {
         return Err(
@@ -356,6 +359,7 @@ unsafe fn insert_from_prepared_slot(
                 },
             )?;
         }
+        update_source_mapping(index_oid, source_tid, vec_id)?;
         return Ok(());
     }
 
@@ -463,9 +467,204 @@ unsafe fn insert_from_prepared_slot(
             &remote_vectors,
         )?;
     }
+    if source_tid != ItemPointer::INVALID {
+        update_source_mapping(index_oid, source_tid, vec_id)?;
+    }
     drop(graph_relation);
     drop(row_relation);
     Ok(())
+}
+
+fn update_source_mapping(
+    index_oid: pg_sys::Oid,
+    source_tid: ItemPointer,
+    vec_id: u64,
+) -> Result<(), String> {
+    let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    let mut tid = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(
+        &mut tid,
+        source_tid.block_number,
+        source_tid.offset_number,
+    );
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                "DELETE FROM ec_distann_physical_source_map WHERE index_oid = $1::oid AND vec_id = $2",
+                None,
+                &[index_oid.into(), signed_id.into()],
+            )
+            .map_err(|error| format!("EC_INSERT_PUBLISH: source mapping cleanup failed: {error}"))?;
+        client
+            .update(
+                "INSERT INTO ec_distann_physical_source_map (index_oid, source_tid, vec_id) \
+                 VALUES ($1::oid, $2::tid, $3) \
+                 ON CONFLICT (index_oid, source_tid) DO UPDATE SET vec_id = EXCLUDED.vec_id, \
+                     created_at = clock_timestamp()",
+                None,
+                &[index_oid.into(), tid.into(), signed_id.into()],
+            )
+            .map_err(|error| format!("EC_INSERT_PUBLISH: source mapping append failed: {error}"))?;
+        Ok::<(), String>(())
+    })
+}
+
+/// Tombstone one current owner-local graph record. This is idempotent: a retry
+/// after a lost routed response observes the already-set flag and succeeds.
+pub(crate) unsafe fn tombstone_owner_record(
+    index_oid: pg_sys::Oid,
+    vec_id: u64,
+) -> Result<bool, String> {
+    let scan = PhysicalGenerationScan::open(index_oid)?;
+    let (generation, descriptor) = scan.local_write_identity()?;
+    let graph_name = qualified_relation_name(generation.graph_store_relid)?;
+    let code_binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
+    let code_len = code_binding.code_len(usize::from(descriptor.dimensions))?;
+    let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    let row = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT graph_record, ctid FROM {graph_name} \
+                     WHERE vec_id = $1 AND is_current"
+                ),
+                None,
+                &[signed_id.into()],
+            )
+            .map_err(|error| format!("EC_DELETE_ROUTE: owner tombstone lookup failed: {error}"))?
+            .map(|row| {
+                let record = row["graph_record"]
+                    .value::<Vec<u8>>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "graph_record is NULL".to_owned())?;
+                let graph_tid = row["ctid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "ctid is NULL".to_owned())?;
+                Ok::<_, String>((record, graph_tid))
+            })
+            .next()
+            .transpose()
+    })?;
+    let Some((record, graph_tid)) = row else {
+        return Err(format!(
+            "EC_RECORD_MISSING: physical owner has no current vec_id {vec_id:#018x}"
+        ));
+    };
+    let mut node = DistannNodeTuple::decode_physical_v1(&record, descriptor.graph_degree, code_len)?;
+    if node.tombstoned {
+        return Ok(false);
+    }
+    node.tombstoned = true;
+    let encoded = node.encode_physical_v1(descriptor.graph_degree, code_len)?;
+    let (block, offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
+    let updated = Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!(
+                    "UPDATE {graph_name} SET graph_record = $1 \
+                     WHERE ctid = '({block},{offset})'::tid AND is_current"
+                ),
+                None,
+                &[encoded.into()],
+            )
+            .map_err(|error| format!("EC_DELETE_ROUTE: owner tombstone update failed: {error}"))
+            .map(|table| table.len())
+    })?;
+    if updated != 1 {
+        return Err(format!(
+            "EC_DELETE_ROUTE: owner tombstone affected {updated} rows, expected one"
+        ));
+    }
+    Ok(true)
+}
+
+/// Resolve VACUUM's callback TIDs through the coordinator-side physical source
+/// map and route each dead stable vec_id to its hash owner. The control index
+/// itself intentionally contains no graph tuples, so this directory is the
+/// durable enumeration surface for distributed-control maintenance.
+pub(crate) unsafe fn tombstone_dead_records(
+    index_relation: pg_sys::Relation,
+    callback: pg_sys::IndexBulkDeleteCallback,
+    callback_state: *mut std::ffi::c_void,
+) -> Result<u64, String> {
+    let Some(callback) = callback else {
+        return Ok(0);
+    };
+    let index_oid = (*index_relation).rd_id;
+    let scan = PhysicalGenerationScan::open(index_oid)?;
+    let (_logical_uuid, _build_id, fingerprint_ref, routed_descriptor, routes_ref) =
+        scan.traversal_replica_source();
+    let fingerprint = fingerprint_ref;
+    let placement_hash_version = routed_descriptor.placement_hash_version;
+    let routes = routes_ref.to_owned();
+    let metadata = ambuild::read_metadata_from_index(index_relation)?;
+    let epoch = super::roster::scan_epoch(&metadata);
+    let local_owner = routes
+        .iter()
+        .position(|route| route.is_local)
+        .ok_or_else(|| "EC_NODE_DESCRIPTOR: local owner is absent from roster".to_owned())?;
+    let mappings = Spi::connect(|client| {
+        client
+            .select(
+                "SELECT source_tid, vec_id FROM ec_distann_physical_source_map \
+                 WHERE index_oid = $1::oid ORDER BY source_tid",
+                None,
+                &[index_oid.into()],
+            )
+            .map_err(|error| format!("EC_DELETE_ROUTE: source map scan failed: {error}"))?
+            .map(|row| {
+                let source_tid = row["source_tid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "source_tid is NULL".to_owned())?;
+                let vec_id = row["vec_id"]
+                    .value::<i64>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "vec_id is NULL".to_owned())?;
+                Ok::<_, String>((source_tid, u64::from_le_bytes(vec_id.to_le_bytes())))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    })?;
+    drop(scan);
+    let mut removed = 0_u64;
+    for (source_tid, vec_id) in mappings {
+        let mut raw_tid = source_tid;
+        if !callback(&mut raw_tid, callback_state) {
+            continue;
+        }
+        let owner = super::placement::owning_node(
+            vec_id,
+            routes.len(),
+            placement_hash_version,
+        );
+        let route = routes
+            .get(owner)
+            .ok_or_else(|| "EC_NODE_DESCRIPTOR: delete owner is outside roster".to_owned())?;
+        if owner == local_owner {
+            if tombstone_owner_record(index_oid, vec_id)? {
+                removed += 1;
+            }
+        } else {
+            let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                "EC_NODE_DESCRIPTOR: remote delete route has no conninfo".to_owned()
+            })?;
+            let index_name = super::routine::distann_index_relname(index_relation);
+            super::remote_transport::remote_physical_tombstone(
+                &super::remote_transport::DistannRemotePhysicalTombstoneRequest {
+                    conninfo,
+                    roster_spec: &super::roster::current_roster_spec(),
+                    target_node_id: route.node_id,
+                    epoch,
+                    index_regclass: &index_name,
+                    epoch_fingerprint: &fingerprint,
+                    vec_id,
+                },
+            )?;
+            removed += 1;
+        }
+    }
+    Ok(removed)
 }
 
 /// The payload decoder needs a row-tier descriptor. This helper is kept
@@ -699,6 +898,7 @@ pub(crate) unsafe fn insert_from_owner_payload(
         allow_replacement,
         identity_attribute,
         slot.as_ptr(),
+        ItemPointer::INVALID,
     )
 }
 

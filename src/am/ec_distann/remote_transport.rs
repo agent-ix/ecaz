@@ -804,8 +804,79 @@ pub(crate) struct DistannRemotePhysicalBacklinkRequest<'a> {
     pub(crate) new_code: &'a [u8],
 }
 
+pub(crate) struct DistannRemotePhysicalTombstoneRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) roster_spec: &'a str,
+    pub(crate) target_node_id: u32,
+    pub(crate) epoch: u64,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) vec_id: u64,
+}
+
 const PHYSICAL_BACKLINK_SQL: &str = "SELECT ec_distann_apply_physical_backlink(\
         $1::text::regclass::oid, $2::bytea, $3::bigint, $4::bigint, $5::real[], $6::bytea)";
+
+const PHYSICAL_TOMBSTONE_SQL: &str = "SELECT ec_distann_apply_physical_tombstone(\
+        $1::text::regclass::oid, $2::bytea, $3::bigint)";
+
+pub(crate) fn remote_physical_tombstone(
+    request: &DistannRemotePhysicalTombstoneRequest<'_>,
+) -> Result<(), String> {
+    let key = format!("{}\u{1}{}", request.conninfo, request.target_node_id);
+    let identity = (
+        request.roster_spec.to_owned(),
+        request.target_node_id.to_string(),
+        request.epoch.to_string(),
+    );
+    with_transport_state(|state| {
+        state.runtime.block_on(async {
+            ensure_scan_sessions(
+                &mut state.connections,
+                &[(key.clone(), request.conninfo, identity)],
+            )
+            .await?;
+            let client = &state.connections[&key].client;
+            client
+                .batch_execute("BEGIN")
+                .await
+                .map_err(|error| format!("EC_DELETE_ROUTE: remote tombstone begin failed: {error}"))?;
+            let result = await_remote(
+                call_timeout(),
+                Some(client.cancel_token()),
+                client.query_one(
+                    PHYSICAL_TOMBSTONE_SQL,
+                    &[
+                        &request.index_regclass,
+                        &request.epoch_fingerprint,
+                        &(request.vec_id as i64),
+                    ],
+                ),
+            )
+            .await;
+            match result {
+                Ok(_) => client
+                    .batch_execute("COMMIT")
+                    .await
+                    .map_err(|error| {
+                        format!("EC_DELETE_ROUTE: remote tombstone commit failed: {error}")
+                    }),
+                Err(RemoteAwaitError::Remote(error)) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
+                    Err(format!("EC_DELETE_ROUTE: remote tombstone failed: {error}"))
+                }
+                Err(RemoteAwaitError::TimedOut) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
+                    Err("EC_DELETE_ROUTE: remote tombstone timed out".to_owned())
+                }
+                Err(RemoteAwaitError::Interrupted) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
+                    Err("EC_DELETE_ROUTE: remote tombstone interrupted".to_owned())
+                }
+            }
+        })
+    })
+}
 
 pub(crate) fn remote_physical_backlink(
     request: &DistannRemotePhysicalBacklinkRequest<'_>,

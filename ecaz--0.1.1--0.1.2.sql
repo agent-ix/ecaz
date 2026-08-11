@@ -49,6 +49,20 @@ CREATE INDEX IF NOT EXISTS ec_distann_remote_prepared_xact_intent_by_index
 
 REVOKE ALL ON TABLE ec_distann_remote_prepared_xact_intent FROM PUBLIC;
 
+CREATE TABLE IF NOT EXISTS ec_distann_physical_source_map (
+    index_oid oid NOT NULL,
+    source_tid tid NOT NULL,
+    vec_id bigint NOT NULL,
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (index_oid, source_tid),
+    UNIQUE (index_oid, vec_id)
+);
+
+CREATE INDEX IF NOT EXISTS ec_distann_physical_source_map_by_index
+    ON ec_distann_physical_source_map (index_oid, source_tid);
+
+REVOKE ALL ON TABLE ec_distann_physical_source_map FROM PUBLIC;
+
 -- Bind coordinator-routed INSERT descriptors to the coordinator heap column
 -- shape observed when the descriptor is registered or refreshed, and bind
 -- them to the remote heap column shape echoed by the remote index. Coordinator-

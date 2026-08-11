@@ -448,6 +448,60 @@ fn ec_distann_apply_physical_backlink(
     true
 }
 
+/// Task 167 owner tombstone endpoint. The operation is monotonic and
+/// idempotent so a coordinator can safely retry after losing the response.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_apply_physical_tombstone(
+    index_regclass: pg_sys::Oid,
+    epoch_fingerprint: Vec<u8>,
+    vec_id: i64,
+) -> bool {
+    super::lifecycle_guard::require_read_committed("ec_distann_apply_physical_tombstone")
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    super::traversal_replica::guard_traversal_replica_mutation(index_regclass);
+    let result = (|| -> Result<(), String> {
+        let fingerprint: [u8; 34] = epoch_fingerprint.try_into().map_err(|_| {
+            "EC_EPOCH_MISMATCH: physical tombstone fingerprint must be 34 bytes".to_owned()
+        })?;
+        let (control, _handle, metadata, logical_index_uuid) =
+            super::generation_store::open_control_index(
+                index_regclass,
+                pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+                "ec_distann_apply_physical_tombstone",
+            )?;
+        let active =
+            super::generation_read::active_generation_identity(index_regclass, logical_index_uuid)?
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: physical tombstone has no active epoch".to_owned()
+                })?;
+        if active.fingerprint != fingerprint {
+            return Err("EC_EPOCH_MISMATCH: physical tombstone epoch fingerprint mismatch".to_owned());
+        }
+        let placement =
+            super::roster::placement_directory_for_epoch(super::roster::scan_epoch(&metadata))?;
+        let local_index = placement
+            .nodes
+            .iter()
+            .position(|node| node.is_local)
+            .ok_or_else(|| "EC_NODE_DESCRIPTOR: local owner is absent from roster".to_owned())?;
+        let owner = super::placement::owning_node(
+            vec_id as u64,
+            placement.node_count(),
+            placement.hash_version,
+        );
+        if owner != local_index {
+            return Err(format!(
+                "EC_PLACEMENT: physical tombstone vec_id {vec_id:#018x} belongs to owner {owner}, local owner is {local_index}"
+            ));
+        }
+        drop(control);
+        unsafe { super::physical_dml::tombstone_owner_record(index_regclass, vec_id as u64)?; }
+        Ok(())
+    })();
+    result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    true
+}
+
 /// Reconcile abandoned Task 167 prepared transactions on one owner. This is
 /// an explicit operator/recovery surface: it never guesses while the
 /// coordinator xid is live, and its action is driven by the durable local
