@@ -118,7 +118,8 @@ separation, and unanimous release provenance through checked-in
 Advance only a deterministic fixed-cap candidate that improves deficient-scale
 recall without regressing another measured scale or hiding a material latency,
 storage, cache, or construction cost. Otherwise close with STOP and pass the
-measured limitation to conditional Task 186.
+measured limitation to a separately authorized follow-up; the former Task 186
+capacity/hierarchy handoff is now superseded by Tasks 207 and 211–213.
 
 The candidate remains benchmark-only until a separately numbered production
 task accepts its format, lifecycle, and full production-path evidence.
@@ -145,11 +146,10 @@ recall. Basin diversification also tied recall but raised warm mean latency
 from about 20 ms to 66--67 ms. Neither candidate is useful under the
 pre-registered rule, so the conditional 10k/50k/100k confirmation was not run.
 
-No Task 185 policy becomes a production default. Task 186 owns the next
-capacity question: retain the Task 182 cap-4,096 frequency control, test the
-transparent cap-8,192 exact-scoring control first, and gate any larger or
-hierarchical candidate on a useful monotonic signal. GRAPH-13 and GRAPH-16
-remain conditional on that capacity evidence rather than being silently
+No Task 185 policy becomes a production default. The former Task 186
+capacity/hierarchy handoff is superseded by the accepted Task 207
+construction/search and membership disposition and the later Tasks 211–213
+head-sizing/navigation lanes. GRAPH-13 and GRAPH-16 are not silently
 reopened inside Task 185.
 
 ## Non-goals

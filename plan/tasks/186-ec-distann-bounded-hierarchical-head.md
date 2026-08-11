@@ -1,7 +1,17 @@
 # Task 186: ec_distann Bounded Hierarchical Head
 
-Status: **proposed, conditional on Task 185** (2026-07-19). Priority: P2 recall
-capacity/routing follow-up.
+Status: **complete — superseded by Tasks 207 and 211–213** (2026-08-11;
+operator disposition). Priority: P2 recall capacity/routing follow-up.
+
+Task 207's accepted construction/search and membership evidence showed that
+partition-union changes head membership without moving end-to-end recall, so
+head capacity is not the binding constraint at the reviewed operating point.
+Task 211 then measured the bounded head-size law at 10k/50k/100k and retained
+the fixed 4,096 default; Tasks 212–213 own the later bounded crown/fused-hop
+navigation work. The planned Task 186 cap-8,192, compressed-head, and
+two-level-hierarchy screen is therefore retired without a separate benchmark
+or production change. Evidence and disposition packet:
+`reviews/task-186/001-supersession-disposition/`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`. This task
 owns `HEAD-01` through `HEAD-10`, `HEAD-22` through `HEAD-24`, `HEAD-29`,
@@ -77,7 +87,11 @@ A winner requires a separate production task and an ADR or ADR-085 amendment
 when it changes persisted head format, fingerprinting, lifecycle, or upgrade
 semantics.
 
-## Required review packets
+## Planned review packets (retired by supersession)
+
+The four execution packets below were not opened. The supersession disposition
+packet replaces them because the accepted Tasks 207 and 211–213 evidence
+removed the Task 186 entry condition and assigned the surviving head work.
 
 1. `reviews/task-186/001-entry-and-head-design/`;
 2. `reviews/task-186/002-capacity-control/`;

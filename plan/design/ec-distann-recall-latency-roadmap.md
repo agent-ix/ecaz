@@ -90,8 +90,8 @@ validity requirements.
 | Task | Workstream | Entry condition | Output |
 | --- | --- | --- | --- |
 | 184 | Remote payload materialization | complete — PROMOTE | fixed batch-10 winner; productionization in Task 191 |
-| 185 | Fixed-cap gateway landmarks | **complete — STOP** (accepted fixed-cap screen; reconciled 2026-08-07) | no production candidate; Task 186 capacity handoff |
-| 186 | Larger compressed/hierarchical head | after Task 185 disposition | at most one bounded routing/capacity candidate |
+| 185 | Fixed-cap gateway landmarks | **complete — STOP** (accepted fixed-cap screen; reconciled 2026-08-07) | no production candidate; former Task 186 handoff superseded |
+| 186 | Larger compressed/hierarchical head | **complete — superseded 2026-08-11** | no separate screen or production change; see Tasks 207 and 211–213 |
 | 187 | Traversal transport | complete — STOP, no candidate | fresh 100k attribution; nine-way contract inherited by Task 194 |
 | 188 | Graph/search residual recall | after Tasks 185/186 establish the remaining entry gap | at most one graph or adaptive-work candidate |
 | 189 | Hybrid codec/distance | only after same-seed evidence identifies a codec opportunity | at most one codec candidate |
@@ -323,21 +323,23 @@ remain controls rather than new candidates.
 
 ## Candidate ledger: bounded entry coverage
 
-Task 185 owns fixed-cap gateway objectives. Task 186 owns larger or hierarchical
-heads. Candidate training never uses evaluation queries.
+Task 185 owns fixed-cap gateway objectives. The former Task 186 larger or
+hierarchical-head lane is retired; Tasks 207 and 211–213 own the accepted
+construction, sizing, and bounded-navigation follow-ups. Candidate training
+never uses evaluation queries.
 
 | ID | Candidate | Status / trigger |
 | --- | --- | --- |
-| HEAD-01 | Trained cap 8,192 exact scan | conditional Task 186 capacity control |
-| HEAD-02 | Trained cap 16,384 exact scan | conditional after HEAD-01 signal |
-| HEAD-03 | Larger compressed head plus bounded exact shortlist rerank | conditional Task 186 |
-| HEAD-04 | Two-level trained representatives and landmark groups | conditional Task 186 |
-| HEAD-05 | IVF-style centroid routing over trained landmarks | conditional Task 186 |
-| HEAD-06 | HNSW/Vamana navigation over a larger trained landmark set | conditional Task 186 |
-| HEAD-07 | Query-conditioned bounded trained-region routing | conditional Task 186 |
-| HEAD-08 | Multiple complementary heads under one total scoring cap | conditional Task 186 |
+| HEAD-01 | Trained cap 8,192 exact scan | superseded with Task 186; no separate screen |
+| HEAD-02 | Trained cap 16,384 exact scan | superseded with Task 186; no separate screen |
+| HEAD-03 | Larger compressed head plus bounded exact shortlist rerank | superseded with Task 186; no separate screen |
+| HEAD-04 | Two-level trained representatives and landmark groups | superseded with Task 186; no separate screen |
+| HEAD-05 | IVF-style centroid routing over trained landmarks | superseded with Task 186; no separate screen |
+| HEAD-06 | HNSW/Vamana navigation over a larger trained landmark set | superseded with Task 186; no separate screen |
+| HEAD-07 | Query-conditioned bounded trained-region routing | superseded with Task 186; no separate screen |
+| HEAD-08 | Multiple complementary heads under one total scoring cap | superseded with Task 186; no separate screen |
 | HEAD-09 | Query-selected head ensemble | conditional after HEAD-08 diagnostic |
-| HEAD-10 | Score all representatives, open only the best groups | conditional Task 186 |
+| HEAD-10 | Score all representatives, open only the best groups | superseded with Task 186; no separate screen |
 | HEAD-11 | Bounded per-owner heads merged at coordinator | unmeasured; owner is load balance, not semantic region |
 | HEAD-12 | Coordinator-resident compact summary of every owner head | deferred format/cache candidate |
 | HEAD-13 | Diversity-aware selection instead of nearest 32 landmarks | measured STOP in Task 185 packet 003: recall-flat and materially slower basin-diversity candidate |
@@ -349,15 +351,15 @@ heads. Candidate training never uses evaluation queries.
 | HEAD-19 | Submodular cover over successful seed-to-result basins | measured STOP in Task 185 packet 003: no held-out recall improvement |
 | HEAD-20 | Hard-query mining on a separate validation slice | measured STOP in Task 185 packet 003: input discipline retained; no candidate advanced |
 | HEAD-21 | Allocate capacity to low-recall training-query clusters | unmeasured |
-| HEAD-22 | Lightweight query-to-region classifier | conditional Task 186 |
-| HEAD-23 | LSH/binary-code landmark-group routing | conditional Task 186 |
-| HEAD-24 | Query-residual routing against coarse centroids | conditional Task 186 |
+| HEAD-22 | Lightweight query-to-region classifier | superseded with Task 186; no separate screen |
+| HEAD-23 | LSH/binary-code landmark-group routing | superseded with Task 186; no separate screen |
+| HEAD-24 | Query-residual routing against coarse centroids | superseded with Task 186; no separate screen |
 | HEAD-25 | Learned query-to-seed predictor with normal graph traversal | deferred; training/runtime complexity |
 | HEAD-26 | Deterministic learned predictor plus conservative fallback | deferred; follows HEAD-25 |
 | HEAD-27 | Landmark-to-region shortcut edges | conditional Task 188 graph work |
 | HEAD-28 | Navigational overlay between landmark gateways | conditional Task 188/190 |
-| HEAD-29 | Disjoint bounded multi-start seed groups | conditional Task 186 |
-| HEAD-30 | Second seed group only for low-confidence traversals | conditional Task 186/188 |
+| HEAD-29 | Disjoint bounded multi-start seed groups | superseded with Task 186; no separate screen |
+| HEAD-30 | Second seed group only for low-confidence traversals | superseded with Task 186; no separate screen |
 | HEAD-31 | Adaptive 16/32/64 seeds from score gaps | low priority; unchanged-head seed widening was flat |
 | HEAD-32 | Reachability-aware rather than nearest-distance seed ranking | measured STOP in Task 185 packet 003: recall-flat at fixed cap 4,096 |
 | HEAD-33 | End-to-end traversal-success objective instead of oracle overlap | measured STOP in Task 185 packet 003: isolated-budget signal did not transfer to the joint beam |
@@ -418,10 +420,10 @@ Task 188 owns this family only after bounded entry work quantifies the residual.
 | GRAPH-10 | Connectivity and reachability audit | active Task 188 prerequisite |
 | GRAPH-11 | Reverse-edge repair for low-indegree nodes | conditional on GRAPH-10 |
 | GRAPH-12 | Bridge edges between weak regions | conditional on GRAPH-10 |
-| GRAPH-13 | Seed-aware landmark-to-region shortcuts | conditional on Task 186 capacity evidence; Task 185 fixed-cap gateway result was negative |
+| GRAPH-13 | Seed-aware landmark-to-region shortcuts | conditional on a future operator-approved follow-up; Task 186 superseded and Task 185 fixed-cap gateway result was negative |
 | GRAPH-14 | Alternate deterministic graph-build seeds | unmeasured stability diagnostic |
 | GRAPH-15 | Bounded second-graph ensemble | deferred storage/build candidate |
-| GRAPH-16 | Training-query-aware gateway augmentation | conditional on Task 186 capacity evidence; Task 185 fixed-cap gateway result was negative |
+| GRAPH-16 | Training-query-aware gateway augmentation | conditional on a future operator-approved follow-up; Task 186 superseded and Task 185 fixed-cap gateway result was negative |
 | GRAPH-17 | Query-difficulty adaptive search budget | conditional after confidence diagnostics |
 | GRAPH-18 | Attribute owner-oracle residual to graph, BW/H, or rerank | active Task 188 decision requirement |
 
@@ -438,7 +440,7 @@ Task 189 is conditional. The unchanged full exact-neighbor arm is rejected.
 | CODEC-05 | Two deterministic RaBitQ rotations with bounded union | conditional Task 189 |
 | CODEC-06 | Rotation-seed stability/selection audit | unmeasured diagnostic |
 | CODEC-07 | OPQ plus PQ neighbor codes | deferred; requires same-seed justification |
-| CODEC-08 | OPQ for a large compressed head only | conditional Task 186, not neighbor codec |
+| CODEC-08 | OPQ for a large compressed head only | superseded with Task 186; no separate screen |
 | CODEC-09 | TurboQuant neighbor codes | deferred |
 | CODEC-10 | F16 residual vectors for selective correction | conditional Task 189 |
 | CODEC-11 | Learned/LSQ-refined codebooks | deferred |
@@ -562,11 +564,15 @@ withdrawn as unsupported by the available counters. Task 207 is review-closed
 with no promotion; its union-construction result does not justify repeating
 that lane unchanged.
 
-Status update (2026-08-07): items 1, 2, and the attribution half
-of item 4 are done. Task 185's fixed-cap screen is now **STOP**: gateway
+Status update (2026-08-11): items 1, 2, and the attribution half
+of item 4 are done. Task 185's fixed-cap screen is **STOP**: gateway
 set-cover tied the frequency control at 0.9625 with Jaccard-1.0 membership,
-while basin diversification was materially slower; Task 186 is the next
-capacity handoff. Task 205 is review-closed (accepted disposition in
+while basin diversification was materially slower. Task 186 is now
+**complete — superseded**: Task 207's accepted construction/search and
+membership diagnostic found that improving head membership did not move
+end-to-end recall, and Tasks 211–213 provide the subsequent bounded head-size
+and navigation lanes. The planned cap-8,192/compressed/hierarchical screen
+must not be restarted. Task 205 is review-closed (accepted disposition in
 `reviews/task-205/005-attribution-closeout/`). Task 215's release A/B ran and
 recorded **STOP** — BW64/H8 was 20–48% slower on the normal release build and
 not recall-equivalent; defaults remain BW4/H100. Its decision-account
@@ -577,20 +583,18 @@ entry gate, and point mechanism accounting to Task 216
 attribution is accepted and selected MAT-15 (MAT-21 secondary, TRAV-05
 rejected). The isolated MAT-15 screen is now **STOP**: the captured arm was
 the explicit eager `materialization_batch_size=0` control and a release-profile
-feature build, while the coordinator decode ceiling was only 0.19%. The
-remaining execution order is to run Task 186's transparent cap-8,192 capacity
-control, then advance at most one bounded larger/head-routing candidate. Do
-not restart MAT-15; MAT-21 remains blocked until a same-generation lane exists.
+feature build, while the coordinator decode ceiling was only 0.19%. The Task
+186 capacity screen is retired by the disposition above. Do not restart
+MAT-15; MAT-21 remains blocked until a same-generation lane exists.
 attribution is accepted and selected MAT-15 (MAT-21 secondary, TRAV-05
 rejected). The isolated MAT-15 screen is now **STOP**: the captured arm was
 the explicit eager `materialization_batch_size=0` control and a release-profile
 feature build, while the coordinator decode ceiling was only 0.19%. The two
 arms were rebuilt independently, so future MAT-21 work carries a
 generation-swap/pinned-input requirement and a maximum-win screen. Task 216's
-closeout is review-closed. The remaining execution order is to run Task 186's
-transparent cap-8,192 capacity control, then advance at most one bounded
-larger/head-routing candidate. Do not restart MAT-15; MAT-21 remains blocked
-until a same-generation production lazy-10 attribution lane exists.
+closeout is review-closed. The Task 186 capacity screen is retired by the
+disposition above. Do not restart MAT-15; MAT-21 remains blocked until a
+same-generation production lazy-10 attribution lane exists.
 
 Task 216 imports the owner-side residual implication from the corrected Task
 205 and Task 206 evidence. Response-byte reduction alone is not sufficient:
