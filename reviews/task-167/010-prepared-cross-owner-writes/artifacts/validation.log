@@ -1,0 +1,11 @@
+Task 167 packet 010 validation
+head=c9a06c28b
+
+$ cargo check --no-default-features --features pg18
+    Checking ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 9.79s
+
+$ cargo pgrx test pg18 --no-default-features --features pg18 test_distann_generation_relations_replay_abort_and_privileges
+The test runner reached the shared CARGO_TARGET_DIR but did not produce a
+trustworthy result in this turn. A second invocation reported:
+`Blocking waiting for file lock on artifact directory`; it was interrupted.
