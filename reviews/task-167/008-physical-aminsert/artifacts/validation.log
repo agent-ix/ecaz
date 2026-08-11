@@ -1,0 +1,14 @@
+Task 167 packet 008 validation
+Head: 64d940f87
+Timestamp: 2026-08-11 America/Los_Angeles
+
+$ cargo check --no-default-features --features pg18
+Finished `dev` profile; exit 0.
+
+$ cargo pgrx test pg18 --no-default-features --features pg18 test_distann_generation_relations_replay_abort_and_privileges
+test tests::pg_test_distann_generation_relations_replay_abort_and_privileges ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2574 filtered out
+
+The PostgreSQL-backed test exercised generation creation/replay/abort and
+privilege checks after the graph-store schema changed to versioned current
+records and a partial unique directory index.
