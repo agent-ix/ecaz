@@ -8986,7 +8986,7 @@ async fn mid_insert_drill(
            INCLUDE (source_id) WITH (distributed_control = true, source_identity = 'include', graph_degree = {gd}); \
          SELECT ec_distann_configure_participant_identity('mi_idx'::regclass, 'mi/node-1'); \
          SELECT ec_distann_register_node_descriptor('mi_idx'::regclass, 0, 1, 'mi/node-1',\
-                'DISTANN_MI', 'mi_idx', true); \
+                'DISTANN_MI', 'public.mi_idx', true); \
          SELECT ec_distann_begin_epoch_build('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid); \
          SELECT ec_distann_build_epoch('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid); \
          SELECT ec_distann_decide_epoch_publish('mi_idx'::regclass, '81818181-8181-4181-8181-818181818181'::uuid); \
