@@ -9018,6 +9018,10 @@ async fn mid_insert_drill(
         .filter_map(|line| line.trim().parse::<i64>().ok())
         .collect::<Vec<_>>();
     if before_values.len() < 2 {
+        crate::ecaz_eprintln!(
+            "[distann-multicluster] mid_insert_failure DIAG before_probe_output={:?}",
+            before
+        );
         let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS mi CASCADE;").await;
         return false;
     }
