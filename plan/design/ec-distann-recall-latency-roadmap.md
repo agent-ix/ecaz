@@ -338,7 +338,7 @@ never uses evaluation queries.
 | HEAD-06 | HNSW/Vamana navigation over a larger trained landmark set | superseded with Task 186; no separate screen |
 | HEAD-07 | Query-conditioned bounded trained-region routing | superseded with Task 186; no separate screen |
 | HEAD-08 | Multiple complementary heads under one total scoring cap | superseded with Task 186; no separate screen |
-| HEAD-09 | Query-selected head ensemble | conditional after HEAD-08 diagnostic |
+| HEAD-09 | Query-selected head ensemble | superseded with Task 186; no separate screen |
 | HEAD-10 | Score all representatives, open only the best groups | superseded with Task 186; no separate screen |
 | HEAD-11 | Bounded per-owner heads merged at coordinator | unmeasured; owner is load balance, not semantic region |
 | HEAD-12 | Coordinator-resident compact summary of every owner head | deferred format/cache candidate |
