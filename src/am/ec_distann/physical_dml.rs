@@ -78,6 +78,7 @@ pub(crate) unsafe fn insert_from_callback(
         vec_id,
         identity_payload,
         allow_replacement,
+        identity,
         source_slot.as_ptr(),
     )
 }
@@ -88,6 +89,7 @@ unsafe fn insert_from_prepared_slot(
     vec_id: u64,
     identity_payload: [u8; 16],
     allow_replacement: bool,
+    identity: ambuild::DistannIdentityAttribute,
     source_slot: *mut pg_sys::TupleTableSlot,
 ) -> Result<(), String> {
     if index_relation.is_null() || source_slot.is_null() {
@@ -101,6 +103,7 @@ unsafe fn insert_from_prepared_slot(
     let scan = PhysicalGenerationScan::open(index_oid)?;
     let (_logical_uuid, _build_id, fingerprint, routed_descriptor, routes) =
         scan.traversal_replica_source();
+    let routes = routes.to_owned();
     let owner = super::placement::owning_node(
         vec_id,
         routes.len(),
@@ -109,34 +112,6 @@ unsafe fn insert_from_prepared_slot(
     let owner_route = routes.get(owner).ok_or_else(|| {
         "EC_NODE_DESCRIPTOR: physical insert owner is outside the active roster".to_owned()
     })?;
-    if !owner_route.is_local {
-        let conninfo = owner_route.conninfo.as_deref().ok_or_else(|| {
-            "EC_NODE_DESCRIPTOR: remote physical insert has no connection descriptor".to_owned()
-        })?;
-        let (payload_nulls, payload_offsets, payload_values) =
-            ambuild::freeze_source_slot_packed(source_slot)?;
-        let metadata = ambuild::read_metadata_from_index(index_relation)?;
-        let index_name = unsafe { super::routine::distann_index_relname(index_relation) };
-        let roster_spec = super::roster::current_roster_spec();
-        super::remote_transport::remote_physical_insert(
-            &super::remote_transport::DistannRemotePhysicalInsertRequest {
-                conninfo,
-                roster_spec: &roster_spec,
-                target_node_id: owner_route.node_id,
-                epoch: super::roster::scan_epoch(&metadata),
-                index_regclass: &index_name,
-                epoch_fingerprint: &fingerprint,
-                vec_id,
-                source_vector: &vector,
-                source_identity: &identity_payload,
-                payload_nulls: &payload_nulls,
-                payload_offsets: &payload_offsets,
-                payload_values: &payload_values,
-                allow_replacement,
-            },
-        )?;
-        return Ok(());
-    }
     let (generation, descriptor) = scan.local_write_identity()?;
     let source_attnum = indexed_ecvector_attnum(index_relation)?;
     if vector.len() != usize::from(descriptor.dimensions) {
@@ -167,16 +142,27 @@ unsafe fn insert_from_prepared_slot(
         .filter(|hit| hit.heap_tid == ItemPointer::INVALID && hit.vec_id != vec_id)
         .map(|hit| hit.vec_id)
         .collect::<Vec<_>>();
-    let remote_vectors = materialize_remote_vectors(
-        &scan,
-        &row_relation_for_payload(&generation)?,
-        &remote_ids,
-        source_attnum,
-    )?;
+    let row_read_relation = row_relation_for_payload(&generation)?;
+    let remote_vectors =
+        materialize_remote_vectors(&scan, &row_read_relation, &remote_ids, source_attnum)?;
     drop(scan);
 
     let graph_name = qualified_relation_name(generation.graph_store_relid)?;
     let previous_version = current_record_version(&graph_name, vec_id)?;
+    if previous_version.is_some() {
+        let current_identity =
+            current_record_identity(&graph_name, &row_read_relation, vec_id, identity, snapshot)?
+                .ok_or_else(|| {
+                format!(
+                "EC_INSERT_PUBLISH: current vec_id {vec_id:#018x} has no readable row-tier identity"
+            )
+            })?;
+        if current_identity != identity_payload {
+            return Err(format!(
+                "EC_DUPLICATE_VEC_ID: vec_id {vec_id:#018x} maps to a different source identity"
+            ));
+        }
+    }
     if previous_version.is_some() && !allow_replacement {
         return Err(format!(
             "EC_DUPLICATE_VEC_ID: vec_id {vec_id:#018x} already has a current physical record"
@@ -256,6 +242,78 @@ unsafe fn insert_from_prepared_slot(
         .filter_map(|id| candidates.iter().find(|candidate| candidate.vec_id == *id))
         .collect::<Vec<_>>();
 
+    if !owner_route.is_local {
+        let conninfo = owner_route.conninfo.as_deref().ok_or_else(|| {
+            "EC_NODE_DESCRIPTOR: remote physical insert has no connection descriptor".to_owned()
+        })?;
+        let (payload_nulls, payload_offsets, payload_values) =
+            ambuild::freeze_source_slot_packed(source_slot)?;
+        let metadata = ambuild::read_metadata_from_index(index_relation)?;
+        let index_name = unsafe { super::routine::distann_index_relname(index_relation) };
+        let roster_spec = super::roster::current_roster_spec();
+        super::remote_transport::remote_physical_insert(
+            &super::remote_transport::DistannRemotePhysicalInsertRequest {
+                conninfo,
+                roster_spec: &roster_spec,
+                target_node_id: owner_route.node_id,
+                epoch: super::roster::scan_epoch(&metadata),
+                index_regclass: &index_name,
+                epoch_fingerprint: &fingerprint,
+                vec_id,
+                source_vector: &vector,
+                source_identity: &identity_payload,
+                payload_nulls: &payload_nulls,
+                payload_offsets: &payload_offsets,
+                payload_values: &payload_values,
+                allow_replacement,
+            },
+        )?;
+        for candidate in forward {
+            if candidate.graph_tid != ItemPointer::INVALID {
+                amend_backlink(
+                    &graph_name,
+                    candidate,
+                    vec_id,
+                    &new_code,
+                    descriptor.graph_degree,
+                    code_len,
+                )?;
+                continue;
+            }
+            let target = super::placement::owning_node(
+                candidate.vec_id,
+                routes.len(),
+                routed_descriptor.placement_hash_version,
+            );
+            let target_route = routes.get(target).ok_or_else(|| {
+                "EC_NODE_DESCRIPTOR: backlink target is outside the active roster".to_owned()
+            })?;
+            if target_route.is_local {
+                return Err(
+                    "EC_INSERT_BACKLINK: remote candidate resolved to local owner without a ctid"
+                        .to_owned(),
+                );
+            }
+            let conninfo = target_route.conninfo.as_deref().ok_or_else(|| {
+                "EC_NODE_DESCRIPTOR: remote backlink has no connection descriptor".to_owned()
+            })?;
+            super::remote_transport::remote_physical_backlink(
+                &super::remote_transport::DistannRemotePhysicalBacklinkRequest {
+                    conninfo,
+                    roster_spec: &roster_spec,
+                    target_node_id: target_route.node_id,
+                    epoch: super::roster::scan_epoch(&metadata),
+                    index_regclass: &index_name,
+                    epoch_fingerprint: &fingerprint,
+                    target_vec_id: candidate.vec_id,
+                    new_vec_id: vec_id,
+                    new_code: &new_code,
+                },
+            )?;
+        }
+        return Ok(());
+    }
+
     // Append the complete row-tier tuple before publishing its graph pointer.
     // If any later graph/index operation fails, PostgreSQL aborts this same
     // transaction and the row tuple is not visible to a published scan.
@@ -302,12 +360,45 @@ unsafe fn insert_from_prepared_slot(
         previous_version.unwrap_or(-1).saturating_add(1),
     )?;
 
-    // Amend at most graph_degree owner-local forward-neighbor records. A
-    // remote ctid is never issued against this relation: cross-owner backlink
-    // publication needs the pending-edge protocol and is deliberately
-    // fail-closed rather than leaving a dangling edge on a later abort.
+    let metadata = ambuild::read_metadata_from_index(index_relation)?;
+    let index_name = unsafe { super::routine::distann_index_relname(index_relation) };
+    let roster_spec = super::roster::current_roster_spec();
+    // Amend at most graph_degree forward-neighbor records. Local mutations
+    // use their owner-local ctid; remote mutations are independently prepared
+    // and resolved by the same top-level transaction callbacks as the owner
+    // append, so an abort cannot leave a cross-owner dangling edge.
     for candidate in forward {
         if candidate.graph_tid == ItemPointer::INVALID {
+            let target = super::placement::owning_node(
+                candidate.vec_id,
+                routes.len(),
+                routed_descriptor.placement_hash_version,
+            );
+            let target_route = routes.get(target).ok_or_else(|| {
+                "EC_NODE_DESCRIPTOR: backlink target is outside the active roster".to_owned()
+            })?;
+            if target_route.is_local {
+                return Err(
+                    "EC_INSERT_BACKLINK: remote candidate resolved to local owner without a ctid"
+                        .to_owned(),
+                );
+            }
+            let conninfo = target_route.conninfo.as_deref().ok_or_else(|| {
+                "EC_NODE_DESCRIPTOR: remote backlink has no connection descriptor".to_owned()
+            })?;
+            super::remote_transport::remote_physical_backlink(
+                &super::remote_transport::DistannRemotePhysicalBacklinkRequest {
+                    conninfo,
+                    roster_spec: &roster_spec,
+                    target_node_id: target_route.node_id,
+                    epoch: super::roster::scan_epoch(&metadata),
+                    index_regclass: &index_name,
+                    epoch_fingerprint: &fingerprint,
+                    target_vec_id: candidate.vec_id,
+                    new_vec_id: vec_id,
+                    new_code: &new_code,
+                },
+            )?;
             continue;
         }
         amend_backlink(
@@ -528,12 +619,32 @@ pub(crate) unsafe fn insert_from_owner_payload(
             "EC_SCHEMA_MISMATCH: owner payload vector differs from graph insert vector".to_owned(),
         );
     }
+    let source_heap = HeapRelationGuard::try_open(
+        index_guard.heap_relation_oid(),
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )
+    .ok_or_else(|| "EC_GENERATION_MISSING: source heap could not be opened".to_owned())?;
+    let index_info = pg_sys::BuildIndexInfo(index_guard.as_ptr());
+    if index_info.is_null() {
+        return Err("EC_SCHEMA_MISMATCH: owner payload identity metadata is missing".to_owned());
+    }
+    let identity_attribute = ambuild::resolve_identity_attribute(
+        source_heap.as_ptr(),
+        index_info,
+        &options::relation_options(index_guard.as_ptr()),
+    )
+    .ok_or_else(|| {
+        pg_sys::pfree(index_info.cast());
+        "EC_SOURCE_IDENTITY: owner payload requires source_identity='include'".to_owned()
+    })?;
+    pg_sys::pfree(index_info.cast());
     insert_from_prepared_slot(
         index_guard.as_ptr(),
         source_vector,
         expected_vec_id,
         identity,
         allow_replacement,
+        identity_attribute,
         slot.as_ptr(),
     )
 }
@@ -768,6 +879,57 @@ fn current_record_version(graph_name: &str, vec_id: u64) -> Result<Option<i64>, 
     })
 }
 
+unsafe fn current_record_identity(
+    graph_name: &str,
+    row_relation: &HeapRelationGuard,
+    vec_id: u64,
+    identity: ambuild::DistannIdentityAttribute,
+    snapshot: pg_sys::Snapshot,
+) -> Result<Option<[u8; 16]>, String> {
+    let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    let row_tid = Spi::connect(|client| {
+        client
+            .select(
+                &format!("SELECT row_tid FROM {graph_name} WHERE vec_id = $1 AND is_current"),
+                None,
+                &[signed_id.into()],
+            )
+            .map_err(|error| format!("EC_INSERT_PUBLISH: identity lookup failed: {error}"))?
+            .map(|row| {
+                row["row_tid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "row_tid is NULL".to_owned())
+            })
+            .next()
+            .transpose()
+    })?;
+    let Some(row_tid) = row_tid else {
+        return Ok(None);
+    };
+    let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation).ok_or_else(|| {
+        "EC_GENERATION_MISSING: identity lookup row slot could not be allocated".to_owned()
+    })?;
+    let mut raw_tid = row_tid;
+    if !pg_sys::table_tuple_fetch_row_version(
+        row_relation.as_ptr(),
+        &mut raw_tid,
+        snapshot,
+        slot.as_ptr(),
+    ) {
+        return Ok(None);
+    }
+    let mut is_null = false;
+    let datum = pg_sys::slot_getattr(slot.as_ptr(), identity.heap_attnum, &mut is_null);
+    if is_null {
+        return Err("EC_SOURCE_IDENTITY: current row identity is NULL".to_owned());
+    }
+    Ok(Some(ambuild::identity_payload_from_datum(
+        identity.datum_kind,
+        datum,
+    )))
+}
+
 fn insert_graph_record(
     graph_name: &str,
     vec_id: u64,
@@ -831,4 +993,78 @@ fn amend_backlink(
             .map(|_| ())
     })?;
     Ok(())
+}
+
+/// Apply one owner-local backlink from a coordinator-prepared remote write.
+/// The target is looked up by stable vec_id; the caller never supplies a
+/// coordinator-local ctid for a remote relation.
+pub(crate) unsafe fn apply_owner_backlink(
+    index_oid: pg_sys::Oid,
+    target_vec_id: u64,
+    new_vec_id: u64,
+    new_code: &[u8],
+) -> Result<(), String> {
+    let _index_guard = IndexRelationGuard::open(
+        index_oid,
+        pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+        "ec_distann physical owner backlink",
+    );
+    let scan = PhysicalGenerationScan::open(index_oid)?;
+    let (generation, descriptor) = scan.local_write_identity()?;
+    drop(scan);
+    let code_binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
+    let code_len = code_binding.code_len(usize::from(descriptor.dimensions))?;
+    if new_code.len() != code_len {
+        return Err("EC_INSERT_CODEC: backlink code has the wrong length".to_owned());
+    }
+    let graph_name = qualified_relation_name(generation.graph_store_relid)?;
+    let signed_id = i64::from_le_bytes(target_vec_id.to_le_bytes());
+    let row = Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT graph_record, ctid FROM {graph_name} \
+                     WHERE vec_id = $1 AND is_current"
+                ),
+                None,
+                &[signed_id.into()],
+            )
+            .map_err(|error| format!("EC_INSERT_BACKLINK: target lookup failed: {error}"))?
+            .map(|row| {
+                let record = row["graph_record"]
+                    .value::<Vec<u8>>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "graph_record is NULL".to_owned())?;
+                let graph_tid = row["ctid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "ctid is NULL".to_owned())?;
+                Ok::<_, String>((record, graph_tid))
+            })
+            .next()
+            .transpose()
+    })?;
+    let Some((record, graph_tid)) = row else {
+        return Err(format!(
+            "EC_INSERT_BACKLINK: current target vec_id {target_vec_id:#018x} is missing"
+        ));
+    };
+    let node = DistannNodeTuple::decode_physical_v1(&record, descriptor.graph_degree, code_len)?;
+    let (graph_block, graph_offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
+    amend_backlink(
+        &graph_name,
+        &Candidate {
+            vec_id: target_vec_id,
+            source_vector: Vec::new(),
+            node,
+            graph_tid: ItemPointer {
+                block_number: graph_block,
+                offset_number: graph_offset,
+            },
+        },
+        new_vec_id,
+        new_code,
+        descriptor.graph_degree,
+        code_len,
+    )
 }

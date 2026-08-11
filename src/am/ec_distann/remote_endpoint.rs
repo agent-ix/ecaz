@@ -381,6 +381,71 @@ fn ec_distann_apply_physical_insert(
     true
 }
 
+/// Task 167 owner backlink endpoint. The write is deliberately separate from
+/// the append endpoint so the coordinator can prepare one transaction per
+/// owner and resolve every remote mutation with its top-level transaction.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_apply_physical_backlink(
+    index_regclass: pg_sys::Oid,
+    epoch_fingerprint: Vec<u8>,
+    target_vec_id: i64,
+    new_vec_id: i64,
+    new_code: Vec<u8>,
+) -> bool {
+    super::lifecycle_guard::require_read_committed("ec_distann_apply_physical_backlink")
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    super::traversal_replica::guard_traversal_replica_mutation(index_regclass);
+    let result = (|| -> Result<(), String> {
+        let fingerprint: [u8; 34] = epoch_fingerprint.try_into().map_err(|_| {
+            "EC_EPOCH_MISMATCH: physical backlink fingerprint must be 34 bytes".to_owned()
+        })?;
+        let (control, _handle, metadata, logical_index_uuid) =
+            super::generation_store::open_control_index(
+                index_regclass,
+                pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+                "ec_distann_apply_physical_backlink",
+            )?;
+        let active =
+            super::generation_read::active_generation_identity(index_regclass, logical_index_uuid)?
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: physical backlink has no active epoch".to_owned()
+                })?;
+        if active.fingerprint != fingerprint {
+            return Err(
+                "EC_EPOCH_MISMATCH: physical backlink epoch fingerprint mismatch".to_owned(),
+            );
+        }
+        let placement =
+            super::roster::placement_directory_for_epoch(super::roster::scan_epoch(&metadata))?;
+        let local_index = placement
+            .nodes
+            .iter()
+            .position(|node| node.is_local)
+            .ok_or_else(|| "EC_NODE_DESCRIPTOR: local owner is absent from roster".to_owned())?;
+        let owner = super::placement::owning_node(
+            target_vec_id as u64,
+            placement.node_count(),
+            placement.hash_version,
+        );
+        if owner != local_index {
+            return Err(format!(
+                "EC_PLACEMENT: physical backlink target {target_vec_id:#018x} belongs to owner {owner}, local owner is {local_index}"
+            ));
+        }
+        drop(control);
+        unsafe {
+            super::physical_dml::apply_owner_backlink(
+                index_regclass,
+                target_vec_id as u64,
+                new_vec_id as u64,
+                &new_code,
+            )
+        }
+    })();
+    result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    true
+}
+
 /// FR-079/005-P1 row-shipping endpoint: the owning node ships the heap identity
 /// (ctid + tombstone flag) for each vec_id it owns, so a coordinator materializes
 /// remote-owned hits from the OWNER rather than assuming it holds the full local

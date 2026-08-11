@@ -17,6 +17,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::future::Future;
 use std::ptr::NonNull;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 #[cfg(feature = "pg_test")]
@@ -544,6 +545,40 @@ const PHYSICAL_INSERT_SQL: &str = "SELECT ec_distann_apply_physical_insert(\
         $1::text::regclass::oid, $2::bytea, $3::bigint, $4::real[], $5::bytea,\
         $6::boolean[], $7::bigint[], $8::bytea, $9::boolean)";
 
+static NEXT_PHYSICAL_INSERT_GID: AtomicU64 = AtomicU64::new(1);
+
+fn physical_insert_prepared_gid(vec_id: u64, node_id: u32) -> String {
+    // The top-level xid makes the intent auditable, while the process-local
+    // suffix keeps two callbacks in one transaction distinct (for example an
+    // UPDATE that prepares both an owner append and a remote backlink).
+    let xid = unsafe { u32::from(pg_sys::GetTopTransactionId()) };
+    let serial = NEXT_PHYSICAL_INSERT_GID.fetch_add(1, Ordering::Relaxed);
+    format!("ec_distann_insert_{vec_id:016x}_{node_id}_{xid}_{serial}")
+}
+
+fn quote_sql_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+fn resolve_physical_insert_prepared(conninfo: String, node_id: u32, gid: String, commit: bool) {
+    let context = if commit {
+        "ec_distann physical insert remote prepared commit callback"
+    } else {
+        "ec_distann physical insert remote prepared rollback callback"
+    };
+    let Ok(mut client) = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+        &conninfo, node_id, context,
+    ) else {
+        return;
+    };
+    let command = if commit {
+        "COMMIT PREPARED"
+    } else {
+        "ROLLBACK PREPARED"
+    };
+    let _ = client.batch_execute(&format!("{command} {}", quote_sql_literal(&gid)));
+}
+
 pub(crate) fn remote_physical_insert(
     request: &DistannRemotePhysicalInsertRequest<'_>,
 ) -> Result<(), String> {
@@ -561,6 +596,10 @@ pub(crate) fn remote_physical_insert(
             )
             .await?;
             let client = &state.connections[&key].client;
+            let prepared_gid = physical_insert_prepared_gid(request.vec_id, request.target_node_id);
+            client.batch_execute("BEGIN").await.map_err(|error| {
+                format!("EC_REMOTE_WRITE: physical insert begin failed: {error}")
+            })?;
             let result = await_remote(
                 call_timeout(),
                 Some(client.cancel_token()),
@@ -581,15 +620,154 @@ pub(crate) fn remote_physical_insert(
             )
             .await;
             match result {
-                Ok(_) => Ok(()),
+                Ok(_) => {
+                    client
+                        .batch_execute(&format!(
+                            "PREPARE TRANSACTION {}",
+                            quote_sql_literal(&prepared_gid)
+                        ))
+                        .await
+                        .map_err(|error| {
+                            format!("EC_REMOTE_WRITE: physical insert prepare failed: {error}")
+                        })?;
+                    let commit_conninfo = request.conninfo.to_owned();
+                    let rollback_conninfo = request.conninfo.to_owned();
+                    let commit_gid = prepared_gid.clone();
+                    let rollback_gid = prepared_gid;
+                    let node_id = request.target_node_id;
+                    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
+                        resolve_physical_insert_prepared(
+                            commit_conninfo,
+                            node_id,
+                            commit_gid,
+                            true,
+                        );
+                    });
+                    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
+                        resolve_physical_insert_prepared(
+                            rollback_conninfo,
+                            node_id,
+                            rollback_gid,
+                            false,
+                        );
+                    });
+                    Ok(())
+                }
                 Err(RemoteAwaitError::Remote(error)) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
                     Err(format!("EC_REMOTE_WRITE: physical insert failed: {error}"))
                 }
                 Err(RemoteAwaitError::TimedOut) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
                     Err("EC_REMOTE_WRITE: physical insert timed out".to_owned())
                 }
                 Err(RemoteAwaitError::Interrupted) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
                     Err("EC_REMOTE_WRITE: physical insert interrupted".to_owned())
+                }
+            }
+        })
+    })
+}
+
+pub(crate) struct DistannRemotePhysicalBacklinkRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) roster_spec: &'a str,
+    pub(crate) target_node_id: u32,
+    pub(crate) epoch: u64,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) target_vec_id: u64,
+    pub(crate) new_vec_id: u64,
+    pub(crate) new_code: &'a [u8],
+}
+
+const PHYSICAL_BACKLINK_SQL: &str = "SELECT ec_distann_apply_physical_backlink(\
+        $1::text::regclass::oid, $2::bytea, $3::bigint, $4::bigint, $5::bytea)";
+
+pub(crate) fn remote_physical_backlink(
+    request: &DistannRemotePhysicalBacklinkRequest<'_>,
+) -> Result<(), String> {
+    let key = format!("{}\u{1}{}", request.conninfo, request.target_node_id);
+    let identity = (
+        request.roster_spec.to_owned(),
+        request.target_node_id.to_string(),
+        request.epoch.to_string(),
+    );
+    with_transport_state(|state| {
+        state.runtime.block_on(async {
+            ensure_scan_sessions(
+                &mut state.connections,
+                &[(key.clone(), request.conninfo, identity)],
+            )
+            .await?;
+            let client = &state.connections[&key].client;
+            let prepared_gid =
+                physical_insert_prepared_gid(request.new_vec_id, request.target_node_id);
+            client
+                .batch_execute("BEGIN")
+                .await
+                .map_err(|error| format!("EC_REMOTE_WRITE: backlink begin failed: {error}"))?;
+            let result = await_remote(
+                call_timeout(),
+                Some(client.cancel_token()),
+                client.query_one(
+                    PHYSICAL_BACKLINK_SQL,
+                    &[
+                        &request.index_regclass,
+                        &request.epoch_fingerprint,
+                        &(request.target_vec_id as i64),
+                        &(request.new_vec_id as i64),
+                        &request.new_code,
+                    ],
+                ),
+            )
+            .await;
+            match result {
+                Ok(_) => {
+                    client
+                        .batch_execute(&format!(
+                            "PREPARE TRANSACTION {}",
+                            quote_sql_literal(&prepared_gid)
+                        ))
+                        .await
+                        .map_err(|error| {
+                            format!("EC_REMOTE_WRITE: backlink prepare failed: {error}")
+                        })?;
+                    let commit_conninfo = request.conninfo.to_owned();
+                    let rollback_conninfo = request.conninfo.to_owned();
+                    let commit_gid = prepared_gid.clone();
+                    let rollback_gid = prepared_gid;
+                    let node_id = request.target_node_id;
+                    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
+                        resolve_physical_insert_prepared(
+                            commit_conninfo,
+                            node_id,
+                            commit_gid,
+                            true,
+                        );
+                    });
+                    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
+                        resolve_physical_insert_prepared(
+                            rollback_conninfo,
+                            node_id,
+                            rollback_gid,
+                            false,
+                        );
+                    });
+                    Ok(())
+                }
+                Err(RemoteAwaitError::Remote(error)) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
+                    Err(format!("EC_REMOTE_WRITE: backlink failed: {error}"))
+                }
+                Err(RemoteAwaitError::TimedOut) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
+                    Err("EC_REMOTE_WRITE: backlink timed out".to_owned())
+                }
+                Err(RemoteAwaitError::Interrupted) => {
+                    let _ = client.batch_execute("ROLLBACK").await;
+                    Err("EC_REMOTE_WRITE: backlink interrupted".to_owned())
                 }
             }
         })

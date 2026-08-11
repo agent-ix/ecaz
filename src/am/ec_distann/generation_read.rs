@@ -752,7 +752,7 @@ fn resolve_cached_physical_query(
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) struct PhysicalOwnerRoute {
     pub(crate) roster_ordinal: usize,
     pub(crate) node_id: u32,
