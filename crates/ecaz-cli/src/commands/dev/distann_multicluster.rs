@@ -2867,6 +2867,76 @@ async fn task199_no_replica_insert_throughput(
     Ok(())
 }
 
+/// Task 167 insert-throughput A/B. Measure the same single-row incremental
+/// INSERT workload against the published physical owner-routed index and the
+/// same-generation local control index. The workload uses source vectors from
+/// the physical corpus and keeps each trial's IDs disjoint so the measured
+/// append path is not contaminated by cleanup/tombstone work.
+async fn measure_task167_insert_arm(
+    coordinator: &tokio_postgres::Client,
+    table: &str,
+    physical_corpus: &str,
+    physical: bool,
+) -> Result<f64> {
+    const TRIALS: usize = 3;
+    const ROWS_PER_TRIAL: usize = 128;
+    let mut trial_rows_per_second = Vec::with_capacity(TRIALS);
+    for trial in 0..TRIALS {
+        let started = Instant::now();
+        for ordinal in 0..ROWS_PER_TRIAL {
+            let id = if physical { 2_000_000_i64 } else { 1_000_000_i64 }
+                + trial as i64 * ROWS_PER_TRIAL as i64
+                + ordinal as i64;
+            let sql = if physical {
+                format!(
+                    "INSERT INTO {table} (id, source_id, source, embedding) \
+                     SELECT {id}, (substr(md5({id}::text),1,8)||'-'||substr(md5({id}::text),9,4)||'-4'||\
+                            substr(md5({id}::text),14,3)||'-8'||substr(md5({id}::text),18,3)||'-'||\
+                            substr(md5({id}::text),21,12))::uuid, source, \
+                            encode_to_ecvector(source, 4, 42) \
+                       FROM {physical_corpus} ORDER BY id LIMIT 1"
+                )
+            } else {
+                format!(
+                    "INSERT INTO {table} (id, source, embedding) \
+                     SELECT {id}, source, encode_to_ecvector(source, 4, 42) \
+                       FROM {physical_corpus} ORDER BY id LIMIT 1"
+                )
+            };
+            let inserted = coordinator.execute(&sql, &[]).await?;
+            if inserted != 1 {
+                bail!(
+                    "Task 167 {table} trial {trial} inserted {inserted} rows for ordinal {ordinal}"
+                );
+            }
+        }
+        let elapsed_ns = started.elapsed().as_nanos().max(1) as f64;
+        trial_rows_per_second.push(ROWS_PER_TRIAL as f64 * 1_000_000_000.0 / elapsed_ns);
+    }
+    trial_rows_per_second.sort_by(f64::total_cmp);
+    Ok(trial_rows_per_second[TRIALS / 2])
+}
+
+async fn task167_insert_throughput_ab(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    physical_corpus: &str,
+    single_corpus: &str,
+    lines: &mut Vec<String>,
+) -> Result<()> {
+    const ROWS_PER_TRIAL: usize = 128;
+    const TRIALS: usize = 3;
+    let single_rows_per_second =
+        measure_task167_insert_arm(coordinator, single_corpus, physical_corpus, false).await?;
+    let physical_rows_per_second =
+        measure_task167_insert_arm(coordinator, physical_corpus, physical_corpus, true).await?;
+    let ratio = physical_rows_per_second / single_rows_per_second.max(f64::EPSILON);
+    lines.push(format!(
+        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true"
+    ));
+    Ok(())
+}
+
 async fn retire_and_reclaim_traversal_replica(
     coordinator: &tokio_postgres::Client,
 ) -> Result<(bool, bool)> {
@@ -6722,6 +6792,20 @@ async fn run_physical_benchmarks(
             "physical_benchmark_engagement scale={scale} {shared} arm=physical remote_owners={remote_owners} materialize_probes={remote_owners} pass={}",
             remote_owners > 0
         ));
+    }
+    if args.stage_counter_only || args.skip_single_control {
+        lines.push(format!(
+            "physical_benchmark_insert_throughput_ab scale={scale} pass=false reason=single_control_skipped"
+        ));
+    } else {
+        task167_insert_throughput_ab(
+            coordinator,
+            scale,
+            &physical_corpus,
+            &single_corpus,
+            &mut lines,
+        )
+        .await?;
     }
     if args.materialization_correctness {
         lines.extend(
