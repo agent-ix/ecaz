@@ -2922,18 +2922,72 @@ async fn task167_insert_throughput_ab(
     scale: &str,
     physical_corpus: &str,
     single_corpus: &str,
+    graph_degree: u32,
+    capture_work: bool,
     lines: &mut Vec<String>,
 ) -> Result<()> {
     const ROWS_PER_TRIAL: usize = 128;
     const TRIALS: usize = 3;
     let single_rows_per_second =
         measure_task167_insert_arm(coordinator, single_corpus, physical_corpus, false).await?;
+    if capture_work {
+        coordinator
+            .batch_execute("SELECT ec_distann_insert_work_reset()")
+            .await
+            .wrap_err("resetting Task 167 physical insert-work counters")?;
+    }
     let physical_rows_per_second =
         measure_task167_insert_arm(coordinator, physical_corpus, physical_corpus, true).await?;
     let ratio = physical_rows_per_second / single_rows_per_second.max(f64::EPSILON);
     lines.push(format!(
         "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true"
     ));
+    if capture_work {
+        let rows = coordinator
+            .query(
+                "SELECT metric, inserts, value, mean_per_insert
+                   FROM ec_distann_insert_work_snapshot()
+                  ORDER BY metric",
+                &[],
+            )
+            .await
+            .wrap_err("reading Task 167 physical insert-work counters")?;
+        let expected_inserts = (TRIALS * ROWS_PER_TRIAL) as i64;
+        if rows.len() != 6 {
+            bail!(
+                "Task 167 physical insert-work snapshot returned {} rows, expected 6",
+                rows.len()
+            );
+        }
+        let mut values = HashMap::new();
+        for row in rows {
+            let metric = row.get::<_, String>(0);
+            let inserts = row.get::<_, i64>(1);
+            let value = row.get::<_, i64>(2);
+            let mean = row.get::<_, f64>(3);
+            if inserts != expected_inserts {
+                bail!(
+                    "Task 167 physical insert-work metric {metric} counted {inserts} attempts, expected {expected_inserts}"
+                );
+            }
+            values.insert(metric.clone(), (value, mean));
+            lines.push(format!(
+                "physical_benchmark_insert_work scale={scale} metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} pass=true"
+            ));
+        }
+        let bound = i64::from(graph_degree) * expected_inserts;
+        for metric in ["forward_neighbors_selected", "backlink_amendments"] {
+            let (value, _) = values
+                .get(metric)
+                .copied()
+                .ok_or_else(|| eyre!("insert-work snapshot omitted {metric}"))?;
+            if value > bound {
+                bail!(
+                    "Task 167 {metric} exceeded graph-degree bound: value={value} bound={bound}"
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -6803,6 +6857,8 @@ async fn run_physical_benchmarks(
             scale,
             &physical_corpus,
             &single_corpus,
+            args.graph_degree,
+            args.distann_stage_counters,
             &mut lines,
         )
         .await?;

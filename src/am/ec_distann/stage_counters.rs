@@ -329,6 +329,56 @@ impl DistannMaterializationWork {
 const WORK_COUNT: usize = DistannMaterializationWork::ALL.len();
 static MATERIALIZATION_WORK: [AtomicU64; WORK_COUNT] = [const { AtomicU64::new(0) }; WORK_COUNT];
 
+/// Task 167 physical insert work. These counters are intentionally separate
+/// from query/materialization attribution: they are reset immediately before
+/// the insert A/B arm and make the bounded per-insert graph work inspectable.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DistannInsertWork {
+    InsertAttempts,
+    SearchCandidates,
+    ForwardNeighborsSelected,
+    BacklinkAmendments,
+    OwnerWrites,
+    GraphRecordsAppended,
+}
+
+impl DistannInsertWork {
+    pub(crate) const ALL: [Self; 6] = [
+        Self::InsertAttempts,
+        Self::SearchCandidates,
+        Self::ForwardNeighborsSelected,
+        Self::BacklinkAmendments,
+        Self::OwnerWrites,
+        Self::GraphRecordsAppended,
+    ];
+
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::InsertAttempts => "insert_attempts",
+            Self::SearchCandidates => "search_candidates",
+            Self::ForwardNeighborsSelected => "forward_neighbors_selected",
+            Self::BacklinkAmendments => "backlink_amendments",
+            Self::OwnerWrites => "owner_writes",
+            Self::GraphRecordsAppended => "graph_records_appended",
+        }
+    }
+
+    const fn index(self) -> usize {
+        match self {
+            Self::InsertAttempts => 0,
+            Self::SearchCandidates => 1,
+            Self::ForwardNeighborsSelected => 2,
+            Self::BacklinkAmendments => 3,
+            Self::OwnerWrites => 4,
+            Self::GraphRecordsAppended => 5,
+        }
+    }
+}
+
+const INSERT_WORK_COUNT: usize = DistannInsertWork::ALL.len();
+static INSERT_WORK: [AtomicU64; INSERT_WORK_COUNT] =
+    [const { AtomicU64::new(0) }; INSERT_WORK_COUNT];
+
 #[derive(Clone, Copy, Default)]
 struct BufferedStage {
     elapsed_ns: u64,
@@ -528,6 +578,12 @@ pub(crate) struct DistannMaterializationWorkSnapshotRow {
     pub(crate) value: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct DistannInsertWorkSnapshotRow {
+    pub(crate) metric: DistannInsertWork,
+    pub(crate) value: u64,
+}
+
 pub(crate) fn snapshot() -> (u64, Vec<DistannStageSnapshotRow>) {
     let scans = SCANS.load(Ordering::Relaxed);
     let rows = DistannQueryStage::ALL
@@ -553,6 +609,23 @@ pub(crate) fn materialization_work_snapshot() -> (u64, Vec<DistannMaterializatio
     (scans, rows)
 }
 
+pub(crate) fn record_insert_work(metric: DistannInsertWork, value: usize) {
+    let value = u64::try_from(value).unwrap_or(u64::MAX);
+    INSERT_WORK[metric.index()].fetch_add(value, Ordering::Relaxed);
+}
+
+pub(crate) fn insert_work_snapshot() -> (u64, Vec<DistannInsertWorkSnapshotRow>) {
+    let inserts = INSERT_WORK[DistannInsertWork::InsertAttempts.index()].load(Ordering::Relaxed);
+    let rows = DistannInsertWork::ALL
+        .iter()
+        .map(|&metric| DistannInsertWorkSnapshotRow {
+            metric,
+            value: INSERT_WORK[metric.index()].load(Ordering::Relaxed),
+        })
+        .collect();
+    (inserts, rows)
+}
+
 pub(crate) fn reset() {
     SCANS.store(0, Ordering::Relaxed);
     for index in 0..STAGE_COUNT {
@@ -560,6 +633,9 @@ pub(crate) fn reset() {
         STAGE_SAMPLES[index].store(0, Ordering::Relaxed);
     }
     for counter in &MATERIALIZATION_WORK {
+        counter.store(0, Ordering::Relaxed);
+    }
+    for counter in &INSERT_WORK {
         counter.store(0, Ordering::Relaxed);
     }
 }
@@ -575,6 +651,8 @@ mod tests {
         record(DistannQueryStage::RemoteExpand, Duration::from_nanos(5));
         record(DistannQueryStage::RemoteExpand, Duration::from_nanos(7));
         record_work(DistannMaterializationWork::RemoteCandidatesRequested, 11);
+        record_insert_work(DistannInsertWork::InsertAttempts, 2);
+        record_insert_work(DistannInsertWork::ForwardNeighborsSelected, 5);
         let (scans, rows) = snapshot();
         assert_eq!(scans, 1);
         let remote = rows
@@ -589,6 +667,13 @@ mod tests {
             .find(|row| row.metric == DistannMaterializationWork::RemoteCandidatesRequested)
             .expect("requested work counter");
         assert_eq!(requested.value, 11);
+        let (inserts, insert_work) = insert_work_snapshot();
+        assert_eq!(inserts, 2);
+        let forward = insert_work
+            .iter()
+            .find(|row| row.metric == DistannInsertWork::ForwardNeighborsSelected)
+            .expect("forward insert work counter");
+        assert_eq!(forward.value, 5);
         reset();
         let (scans, rows) = snapshot();
         assert_eq!(scans, 0);
@@ -596,6 +681,9 @@ mod tests {
             .iter()
             .all(|row| row.samples == 0 && row.elapsed_ns == 0));
         let (_, work) = materialization_work_snapshot();
+        assert!(work.iter().all(|row| row.value == 0));
+        let (inserts, work) = insert_work_snapshot();
+        assert_eq!(inserts, 0);
         assert!(work.iter().all(|row| row.value == 0));
     }
 

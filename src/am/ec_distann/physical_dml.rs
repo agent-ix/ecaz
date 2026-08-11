@@ -19,6 +19,7 @@ use crate::am::ec_distann::generation_read::PhysicalGenerationScan;
 use crate::am::ec_distann::handoff::qualified_relation_name;
 use crate::am::ec_distann::insert::{select_insert_forward_neighbors, DistannForwardCandidate};
 use crate::am::ec_distann::options;
+use crate::am::ec_distann::stage_counters::{self, DistannInsertWork};
 use crate::am::ec_distann::tuple::DistannNodeTuple;
 use crate::storage::page::ItemPointer;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
@@ -106,6 +107,7 @@ unsafe fn insert_from_prepared_slot(
             "EC_GENERATION_MISSING: physical insert received a null prepared slot".to_owned(),
         );
     }
+    stage_counters::record_insert_work(DistannInsertWork::InsertAttempts, 1);
     let options = options::relation_options(index_relation);
 
     let index_oid = (*index_relation).rd_id;
@@ -145,6 +147,7 @@ unsafe fn insert_from_prepared_slot(
     let hits = scan
         .search(snapshot, source_attnum, &vector, list_size)
         .map_err(|error| format!("EC_INSERT_SEARCH: {error}"))?;
+    stage_counters::record_insert_work(DistannInsertWork::SearchCandidates, hits.hits.len());
     let remote_ids = hits
         .hits
         .iter()
@@ -249,6 +252,11 @@ unsafe fn insert_from_prepared_slot(
         .iter()
         .filter_map(|id| candidates.iter().find(|candidate| candidate.vec_id == *id))
         .collect::<Vec<_>>();
+    stage_counters::record_insert_work(
+        DistannInsertWork::ForwardNeighborsSelected,
+        forward.len(),
+    );
+    stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, forward.len());
 
     let local_owner = routes
         .iter()
@@ -290,6 +298,7 @@ unsafe fn insert_from_prepared_slot(
         let metadata = ambuild::read_metadata_from_index(index_relation)?;
         let index_name = unsafe { super::routine::distann_index_relname(index_relation) };
         let roster_spec = super::roster::current_roster_spec();
+        stage_counters::record_insert_work(DistannInsertWork::OwnerWrites, 1);
         super::remote_transport::remote_physical_insert(
             &super::remote_transport::DistannRemotePhysicalInsertRequest {
                 index_oid,
@@ -373,6 +382,7 @@ unsafe fn insert_from_prepared_slot(
     // If any later graph/index operation fails, PostgreSQL aborts this same
     // transaction and the row tuple is not visible to a published scan.
     let row_tid = append_row_tuple(&row_relation, source_slot)?;
+    stage_counters::record_insert_work(DistannInsertWork::OwnerWrites, 1);
     let mut neighbor_vec_ids = vec![0_u64; usize::from(descriptor.graph_degree)];
     let mut neighbor_codes = vec![0_u8; usize::from(descriptor.graph_degree) * code_len];
     for (slot, candidate) in forward.iter().enumerate() {
@@ -414,6 +424,7 @@ unsafe fn insert_from_prepared_slot(
         row_tid,
         previous_version.unwrap_or(-1).saturating_add(1),
     )?;
+    stage_counters::record_insert_work(DistannInsertWork::GraphRecordsAppended, 1);
     if options::debug_fail_insert() {
         return Err(
             "EC_FAULT_INJECTED: physical insert failed after graph append before backlinks"

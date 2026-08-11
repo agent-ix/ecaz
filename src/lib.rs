@@ -1931,6 +1931,43 @@ fn ec_distann_materialization_work_snapshot() -> TableIterator<
     TableIterator::new(rows)
 }
 
+/// Task 167 benchmark-only physical insert work attribution. `inserts` is the
+/// number of insert attempts since the last reset; callers use it as the
+/// denominator for the bounded graph-work metrics.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(stable)]
+fn ec_distann_insert_work_snapshot() -> TableIterator<
+    'static,
+    (
+        name!(metric, String),
+        name!(inserts, i64),
+        name!(value, i64),
+        name!(mean_per_insert, f64),
+    ),
+> {
+    let (inserts, rows) = am::ec_distann::stage_counters::insert_work_snapshot();
+    let inserts_i64 = i64::try_from(inserts).unwrap_or(i64::MAX);
+    let rows = rows.into_iter().map(move |row| {
+        (
+            row.metric.label().to_owned(),
+            inserts_i64,
+            i64::try_from(row.value).unwrap_or(i64::MAX),
+            if inserts == 0 {
+                0.0
+            } else {
+                row.value as f64 / inserts as f64
+            },
+        )
+    });
+    TableIterator::new(rows)
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile)]
+fn ec_distann_insert_work_reset() {
+    am::ec_distann::stage_counters::reset();
+}
+
 #[cfg(feature = "distann-head-attribution-benchmark")]
 #[pg_extern(volatile)]
 fn ec_distann_stage_scoring_reset() {
