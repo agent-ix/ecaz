@@ -1,0 +1,8 @@
+head=cbd14ab66
+command=cargo check --no-default-features --features pg18
+result=Finished dev profile [unoptimized + debuginfo]
+
+command=cargo test --no-default-features --features pg18 --lib ec_distann::remote_transport
+result=completed after rebuilding ecaz; no integration/pgrx closeout claim
+
+git diff --check=passed
