@@ -7470,6 +7470,14 @@ async fn drive_physical_fixture(
     for line in &benchmark_lines {
         crate::ecaz_println!("[distann-multicluster] {line}");
     }
+    let physical_concurrency_ok =
+        physical_concurrency_drill(psql, socket_dir, nodes[0].port, args).await?;
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}"
+    );
+    if !physical_concurrency_ok {
+        bail!("physical TC-043 concurrent insert/query drill failed");
+    }
     if args.drop_extension_cleanup_drill {
         let unpublished_build_id = "72727272-7272-4272-8272-727272727272";
         coordinator
@@ -7534,6 +7542,9 @@ async fn drive_physical_fixture(
     }
     summary.push_str(&format!(
         "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}\n"
+    ));
+    summary.push_str(&format!(
+        "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}\n"
     ));
     for line in &drop_extension_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
@@ -8765,6 +8776,104 @@ async fn mid_insert_drill(
     pass
 }
 
+/// FR-083 concurrent insert/query drill (TC-043), against the published
+/// physical generation used by the real fixture. Readers must continue to
+/// return a complete top-k cardinality while coordinator-routed inserts append
+/// complete source/row-tier records and owner graph records concurrently.
+async fn physical_concurrency_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    args: &LocalMultinodePg18Args,
+) -> Result<bool> {
+    const SCANNERS: usize = 4;
+    const ITERATIONS: usize = 12;
+    let query_sql = format!(
+        "SET enable_seqscan=off; \
+         SELECT count(*) FROM (SELECT source_id FROM dm \
+          ORDER BY embedding <#> (SELECT source FROM dm ORDER BY id LIMIT 1) \
+          LIMIT {}) rows;",
+        args.top_k
+    );
+    let insert_vector = insert_vector_expr(args);
+    let source_rows = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        "SELECT count(*) FROM dm",
+    )
+    .await
+    .lines()
+    .find_map(|line| line.trim().parse::<i64>().ok())
+    .unwrap_or(0);
+    let expected_count = i64::from(args.top_k).min(source_rows);
+    if expected_count == 0 {
+        return Ok(false);
+    }
+    let base_rows = args.rows;
+
+    let mut tasks = Vec::with_capacity(SCANNERS + 1);
+    for _ in 0..SCANNERS {
+        let psql = psql.to_path_buf();
+        let socket_dir = socket_dir.to_path_buf();
+        let query_sql = query_sql.clone();
+        tasks.push(tokio::spawn(async move {
+            for _ in 0..ITERATIONS {
+                let output = run_capture(&psql, &socket_dir, coord_port, &query_sql).await;
+                if !output.status_ok {
+                    return false;
+                }
+                let count = output
+                    .stdout
+                    .lines()
+                    .find_map(|line| line.trim().parse::<i64>().ok());
+                if count != Some(expected_count) {
+                    return false;
+                }
+            }
+            true
+        }));
+    }
+
+    let psql_insert = psql.to_path_buf();
+    let socket_dir_insert = socket_dir.to_path_buf();
+    tasks.push(tokio::spawn(async move {
+        for iteration in 0..ITERATIONS {
+            let id = 900_000_i64 + base_rows as i64 + iteration as i64;
+            let insert_sql = format!(
+                "WITH row_data AS (SELECT {id}::bigint AS id, {insert_vector}::real[] AS source) \
+                 INSERT INTO dm (id, source_id, source, embedding) \
+                 SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
+                        substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
+                        substr(md5(id::text),21,12))::uuid, source, \
+                        encode_to_ecvector(source, 4, 42) FROM row_data;"
+            );
+            let output = run_capture(&psql_insert, &socket_dir_insert, coord_port, &insert_sql).await;
+            if !output.status_ok {
+                return false;
+            }
+        }
+        true
+    }));
+
+    let mut pass = true;
+    for task in tasks {
+        match task.await {
+            Ok(result) => pass &= result,
+            Err(error) => {
+                crate::ecaz_println!(
+                    "[distann-multicluster] physical concurrency task panicked: {error}"
+                );
+                pass = false;
+            }
+        }
+    }
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} iterations={ITERATIONS} expected_count={expected_count} pass={pass}"
+    );
+    Ok(pass)
+}
+
 /// One co-placement-drift case: pick a live record owned by `owner_idx`, delete
 /// its heap row on EVERY node (index record survives ⇒ cluster-wide dangling
 /// record / missing co-placed vector), and assert the NFR-020 disjunction — the
@@ -9504,6 +9613,7 @@ async fn qual_correctness_drill(
 
 struct CaptureOut {
     status_ok: bool,
+    stdout: String,
     stderr: String,
 }
 
@@ -9517,10 +9627,12 @@ async fn run_capture(psql: &Path, socket_dir: &Path, port: u16, sql: &str) -> Ca
     match command.output().await {
         Ok(output) => CaptureOut {
             status_ok: output.status.success(),
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
             stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
         },
         Err(error) => CaptureOut {
             status_ok: false,
+            stdout: String::new(),
             stderr: format!("spawn error: {error}"),
         },
     }
