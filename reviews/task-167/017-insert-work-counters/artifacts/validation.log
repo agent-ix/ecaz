@@ -1,0 +1,10 @@
+head=3b0c74358
+command=cargo check --no-default-features --features pg18
+result=passed
+command=cargo check --no-default-features --features 'pg18,distann-head-attribution-benchmark'
+result=passed
+command=cargo check -p ecaz-cli
+result=passed with pre-existing dead_code warning in crates/ecaz-cli/src/commands/corpus/load.rs
+command=jq empty reviews/task-167/016-physical-benchmark-suite/artifacts/task167-physical-suite.json
+result=passed
+runtime=not executed: no installed ecaz binary and no data/staged-current corpus on host
