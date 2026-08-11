@@ -37,6 +37,8 @@ use super::epoch::{
 use super::expand::LocalNodeExpander;
 use super::expand_error::DistannExpandError;
 use super::head_cache::cached_index_entry;
+use super::generation_catalog;
+use super::lifecycle_state::GenerationState;
 use super::placement::owning_node;
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
 use super::quote_ident;
@@ -338,13 +340,24 @@ fn ec_distann_apply_physical_insert(
                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
                 "ec_distann_apply_physical_insert",
             )?;
-        let active =
-            super::generation_read::active_generation_identity(index_regclass, logical_index_uuid)?
-                .ok_or_else(|| {
-                    "EC_GENERATION_MISSING: physical insert has no active epoch".to_owned()
-                })?;
-        if active.fingerprint != fingerprint {
-            return Err("EC_EPOCH_MISMATCH: physical insert epoch fingerprint mismatch".to_owned());
+        // Participant catalogs intentionally do not advance an active pointer
+        // for a coordinator-published epoch.  Resolve the immutable published
+        // generation by the coordinator's fingerprint instead; this is the
+        // same retained-generation contract used by remote reads and avoids
+        // accepting a stale or merely Ready owner generation.
+        let generation = generation_catalog::lookup_retained_generation_by_fingerprint(
+            index_regclass,
+            logical_index_uuid,
+            &fingerprint,
+        )?
+        .ok_or_else(|| {
+            "EC_GENERATION_MISSING: physical insert has no published epoch".to_owned()
+        })?;
+        if generation.generation.state != GenerationState::Published {
+            return Err(format!(
+                "EC_EPOCH_STATE: physical insert generation is {:?}, expected Published",
+                generation.generation.state
+            ));
         }
         let placement =
             super::roster::placement_directory_for_epoch(super::roster::scan_epoch(&metadata))?;
