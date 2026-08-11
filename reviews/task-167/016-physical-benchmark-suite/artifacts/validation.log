@@ -1,0 +1,6 @@
+head=5b9c1ea8f
+command=jq empty reviews/task-167/016-physical-benchmark-suite/artifacts/task167-physical-suite.json
+result=passed
+runtime=not executed: no installed ecaz binary and no data/staged-current corpus on host
+required_scales=10k,50k,100k
+required_outputs=recall,latency,storage,insert-throughput-ab,mid-insert,concurrent-insert-query
