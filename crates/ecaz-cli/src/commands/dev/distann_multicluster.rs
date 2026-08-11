@@ -2991,6 +2991,119 @@ async fn task167_insert_throughput_ab(
     Ok(())
 }
 
+/// Compare the post-insert physical generation with a fresh local rebuild
+/// over the same rows. The pre-insert single control is deliberately not used
+/// here: it cannot observe the rows added by the throughput arm.
+async fn task167_post_insert_fresh_rebuild_parity(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    physical_corpus: &str,
+    physical_queries: &str,
+    roster: &str,
+    graph_degree: u32,
+    head_index_cap: u32,
+    query_count: u32,
+) -> Result<String> {
+    let fresh_table = format!("task167_fresh_{scale}");
+    let fresh_index = format!("{fresh_table}_idx");
+    coordinator
+        .batch_execute(&format!(
+            "DROP TABLE IF EXISTS {fresh_table} CASCADE;
+             CREATE TABLE {fresh_table} AS
+               SELECT id, source, embedding FROM {physical_corpus};
+             CREATE INDEX {fresh_index} ON {fresh_table}
+               USING ec_distann (embedding ecvector_distann_ip_ops)
+               WITH (graph_degree = {graph_degree}, head_index_cap = {head_index_cap},
+                     neighbor_code_format = 'rabitq');
+             ANALYZE {fresh_table};"
+        ))
+        .await
+        .wrap_err("building Task 167 post-insert fresh rebuild")?;
+    let roster = roster.replace('\'', "''");
+    let epoch = coordinator
+        .query_one(
+            "SELECT epoch
+               FROM ec_distann_active_epoch
+              WHERE index_oid = 'public.dm_idx'::regclass::oid",
+            &[],
+        )
+        .await
+        .wrap_err("reading active epoch for Task 167 fresh-rebuild parity")?
+        .get::<_, i64>(0);
+    coordinator
+        .batch_execute(&format!(
+            "SET enable_seqscan = off;
+             SET ec_distann.roster = '{roster}';
+             SET ec_distann.local_node_id = 1;
+             SET ec_distann.epoch = {epoch};"
+        ))
+        .await
+        .wrap_err("configuring Task 167 fresh-rebuild parity session")?;
+    let result = coordinator
+        .query_one(
+            &format!(
+                "WITH q AS (
+                   SELECT id AS qid, source AS v
+                     FROM {physical_queries}
+                    ORDER BY id
+                    LIMIT {query_count}
+                 ), physical_hits AS (
+                   SELECT q.qid, hit.id
+                     FROM q
+                     CROSS JOIN LATERAL (
+                       SELECT id FROM {physical_corpus}
+                        ORDER BY embedding <#> q.v LIMIT 10
+                     ) hit
+                 ), fresh_hits AS (
+                   SELECT q.qid, hit.id
+                     FROM q
+                     CROSS JOIN LATERAL (
+                       SELECT id FROM {fresh_table}
+                        ORDER BY embedding <#> q.v LIMIT 10
+                     ) hit
+                 ), per_query AS (
+                   SELECT q.qid,
+                          (SELECT count(*)
+                             FROM (SELECT id FROM physical_hits WHERE qid = q.qid
+                                   INTERSECT
+                                   SELECT id FROM fresh_hits WHERE qid = q.qid) common)::double precision / 10.0 AS recall,
+                          (SELECT count(*) FROM physical_hits WHERE qid = q.qid) AS physical_rows,
+                          (SELECT count(*) FROM fresh_hits WHERE qid = q.qid) AS fresh_rows
+                     FROM q
+                 )
+                 SELECT count(*)::bigint,
+                        avg(recall), min(recall), max(recall),
+                        count(*) FILTER (WHERE physical_rows = 10 AND fresh_rows = 10)::bigint
+                   FROM per_query;"
+            ),
+            &[],
+        )
+        .await
+        .wrap_err("running Task 167 post-insert fresh-rebuild parity")?;
+    let queries = result.get::<_, i64>(0);
+    let recall = result.get::<_, Option<f64>>(1).unwrap_or(0.0);
+    let min_recall = result.get::<_, Option<f64>>(2).unwrap_or(0.0);
+    let max_recall = result.get::<_, Option<f64>>(3).unwrap_or(0.0);
+    let complete_rows = result.get::<_, i64>(4);
+    coordinator
+        .batch_execute("SET ec_distann.roster = ''")
+        .await
+        .ok();
+    coordinator
+        .batch_execute(&format!("DROP TABLE {fresh_table} CASCADE"))
+        .await
+        .wrap_err("dropping Task 167 post-insert fresh rebuild")?;
+    if queries != i64::from(query_count) || complete_rows != queries {
+        bail!(
+            "Task 167 fresh-rebuild parity returned incomplete query rows: queries={queries} expected={} complete_rows={complete_rows}",
+            query_count
+        );
+    }
+    Ok(format!(
+        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} pass=true",
+    ))
+}
+
 async fn retire_and_reclaim_traversal_replica(
     coordinator: &tokio_postgres::Client,
 ) -> Result<(bool, bool)> {
@@ -6862,6 +6975,24 @@ async fn run_physical_benchmarks(
             &mut lines,
         )
         .await?;
+        let roster = nodes
+            .iter()
+            .map(|node| format!("{}@{}", node.node_id, conninfo(socket_dir, node.port)))
+            .collect::<Vec<_>>()
+            .join(";");
+        lines.push(
+            task167_post_insert_fresh_rebuild_parity(
+                coordinator,
+                scale,
+                &physical_corpus,
+                &physical_queries,
+                &roster,
+                args.graph_degree,
+                args.head_index_cap,
+                args.queries,
+            )
+            .await?,
+        );
     }
     if args.materialization_correctness {
         lines.extend(
