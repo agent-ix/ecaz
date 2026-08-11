@@ -3798,17 +3798,33 @@ impl PhysicalGenerationScan {
                 cached.crown,
             )
         } else {
-            let candidate = super::build_coordinator::load_build_candidate(
-                index_oid,
-                logical_index_uuid,
-                active.build_id,
-            )?
-            .ok_or_else(|| "EC_GENERATION_MISSING: active build candidate is absent".to_owned())?;
+            let (generation_descriptor, generation_descriptor_digest) =
+                if requested_fingerprint.is_some() {
+                    let generation = generation_catalog::lookup_generation(
+                        index_oid,
+                        logical_index_uuid,
+                        active.build_id,
+                    )?
+                    .ok_or_else(|| {
+                        "EC_GENERATION_MISSING: published generation is absent".to_owned()
+                    })?;
+                    (generation.generation_descriptor, generation.generation_descriptor_digest)
+                } else {
+                    let candidate = super::build_coordinator::load_build_candidate(
+                        index_oid,
+                        logical_index_uuid,
+                        active.build_id,
+                    )?
+                    .ok_or_else(|| {
+                        "EC_GENERATION_MISSING: active build candidate is absent".to_owned()
+                    })?;
+                    (candidate.generation_descriptor, candidate.generation_descriptor_digest)
+                };
             let descriptor = Arc::new(DistannGenerationDescriptor::decode(
-                &candidate.generation_descriptor,
+                &generation_descriptor,
             )?);
             let descriptor_digest = descriptor.digest()?;
-            if descriptor_digest != candidate.generation_descriptor_digest
+            if descriptor_digest != generation_descriptor_digest
                 || descriptor.coordinator_logical_index_uuid != *logical_index_uuid.as_bytes()
             {
                 return Err(
