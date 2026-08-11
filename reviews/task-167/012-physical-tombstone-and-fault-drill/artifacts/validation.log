@@ -1,0 +1,11 @@
+head=57476bc2b
+command=cargo check --no-default-features --features pg18
+result=Finished dev profile [unoptimized + debuginfo]
+
+command=cargo check -p ecaz-cli
+result=Finished dev profile [unoptimized + debuginfo]; existing warning in crates/ecaz-cli/src/commands/corpus/load.rs:190
+
+command=cargo pgrx test pg18 --no-default-features --features pg18 test_distann_generation_relations_replay_abort_and_privileges
+result=invoked; normal integration test summary was not available because of the shared artifact-lock behavior
+
+git diff --check=passed
