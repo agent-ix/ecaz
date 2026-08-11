@@ -6486,13 +6486,19 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-stage-counters] "))
                 .collect::<Vec<_>>();
-            if stage_rows.len() != 37 {
+            let expected_counter_groups = args.benchmark_concurrency_sweep.len().max(1);
+            if stage_rows.len() != 37 * expected_counter_groups {
                 bail!(
-                    "physical latency attribution expected 37 ec_distann stage rows, got {}",
+                    "physical latency attribution expected {} ec_distann stage rows ({} concurrency groups), got {}",
+                    37 * expected_counter_groups,
+                    expected_counter_groups,
                     stage_rows.len()
                 );
             }
-            let remote_expand = attribution_stage_mean(&stage_rows, "remote_expand")?;
+            // Reconcile the first concurrency group; all groups are retained
+            // in the packet output below for the latency sweep evidence.
+            let attribution_stage_rows = &stage_rows[..37];
+            let remote_expand = attribution_stage_mean(attribution_stage_rows, "remote_expand")?;
             let remote_components = [
                 "traversal_connection_ready",
                 "traversal_request_encode",
@@ -6501,11 +6507,11 @@ async fn run_physical_benchmarks(
                 "traversal_coordinator_receive_decode",
             ]
             .iter()
-            .map(|stage| attribution_stage_mean(&stage_rows, stage))
+            .map(|stage| attribution_stage_mean(attribution_stage_rows, stage))
             .sum::<Result<f64>>()?;
             let remote_error =
                 (remote_components - remote_expand).abs() / remote_expand.max(f64::EPSILON);
-            let traversal_total = attribution_stage_mean(&stage_rows, "traversal_total")?;
+            let traversal_total = attribution_stage_mean(attribution_stage_rows, "traversal_total")?;
             let traversal_component_names: &[&str] = if traversal_replica {
                 &[
                     "replica_graph_vector_read",
@@ -6523,7 +6529,7 @@ async fn run_physical_benchmarks(
             };
             let traversal_components = traversal_component_names
                 .iter()
-                .map(|stage| attribution_stage_mean(&stage_rows, stage))
+                .map(|stage| attribution_stage_mean(attribution_stage_rows, stage))
                 .sum::<Result<f64>>()?;
             let traversal_error =
                 (traversal_components - traversal_total).abs() / traversal_total.max(f64::EPSILON);
@@ -6551,9 +6557,11 @@ async fn run_physical_benchmarks(
             // boundary is represented in the same stream. Keep this in step
             // with the enum: adding a counter without updating it fails every
             // physical latency step.
-            if work_rows.len() != 33 {
+            if work_rows.len() != 33 * expected_counter_groups {
                 bail!(
-                    "physical latency attribution expected 33 ec_distann attribution-work rows, got {}",
+                    "physical latency attribution expected {} ec_distann attribution-work rows ({} concurrency groups), got {}",
+                    33 * expected_counter_groups,
+                    expected_counter_groups,
                     work_rows.len()
                 );
             }
