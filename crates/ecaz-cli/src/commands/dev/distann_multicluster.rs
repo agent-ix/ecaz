@@ -8996,8 +8996,8 @@ async fn mid_insert_drill(
         return false;
     }
     for lifecycle_sql in [
-        "SELECT ec_distann_begin_epoch_build('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid);",
-        "SELECT ec_distann_build_epoch('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid);",
+        "SELECT ec_distann_begin_epoch_build('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid); \
+         SELECT ec_distann_build_epoch('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid);",
         "SELECT ec_distann_decide_epoch_publish('mi_idx'::regclass, '81818181-8181-4181-8181-818181818181'::uuid);",
         "SELECT ec_distann_recover_epoch_publish('mi_idx'::regclass, '81818181-8181-4181-8181-818181818181'::uuid);",
     ] {
