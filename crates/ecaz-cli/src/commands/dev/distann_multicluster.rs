@@ -7441,6 +7441,13 @@ async fn drive_physical_fixture(
         }
         remote_verified += 1;
     }
+    let physical_mid_insert_ok = mid_insert_drill(psql, socket_dir, nodes[0].port, args).await;
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}"
+    );
+    if !physical_mid_insert_ok {
+        bail!("physical TC-043 mid-insert drill failed");
+    }
     let benchmark_lines = if args.physical_benchmark {
         run_physical_benchmarks(
             args,
@@ -7525,6 +7532,9 @@ async fn drive_physical_fixture(
     for line in &benchmark_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
+    summary.push_str(&format!(
+        "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}\n"
+    ));
     for line in &drop_extension_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
