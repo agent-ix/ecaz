@@ -614,16 +614,22 @@ async fn record_remote_physical_intent(
             "EC_REMOTE_WRITE: prepared gid {gid} does not match physical insert intent"
         ));
     }
+    // tokio-postgres deliberately has no ToSql implementation for unsigned
+    // integers.  Keep the full OID width by sending it as text and make the
+    // bounded node id an explicit signed integer for the catalog insert.
+    let index_oid_text = u32::from(index_oid).to_string();
+    let node_id_value = i32::try_from(node_id)
+        .map_err(|_| format!("EC_REMOTE_WRITE: node id {node_id} exceeds int4"))?;
     client
         .execute(
             "INSERT INTO ec_distann_remote_prepared_xact_intent \
              (index_oid, node_id, served_epoch, xid, gid, intent_state) \
-             VALUES ($1::oid, $2, $3, $4, $5, $6) \
+             VALUES ($1::text::oid, $2::int4, $3, $4, $5, $6) \
              ON CONFLICT (gid) DO UPDATE SET intent_state = EXCLUDED.intent_state, \
                  updated_at = clock_timestamp()",
             &[
-                &u32::from(index_oid),
-                &node_id,
+                &index_oid_text,
+                &node_id_value,
                 &(served_epoch as i64),
                 &(parts.xid as i64),
                 &gid,
