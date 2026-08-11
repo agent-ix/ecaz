@@ -8986,11 +8986,7 @@ async fn mid_insert_drill(
            INCLUDE (source_id) WITH (distributed_control = true, source_identity = 'include', graph_degree = {gd}); \
          SELECT ec_distann_configure_participant_identity('mi_idx'::regclass, 'mi/node-1'); \
          SELECT ec_distann_register_node_descriptor('mi_idx'::regclass, 0, 1, 'mi/node-1',\
-                'DISTANN_NODE_1', 'public.mi_idx', true); \
-         SELECT ec_distann_begin_epoch_build('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid); \
-         SELECT ec_distann_build_epoch('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid); \
-         SELECT ec_distann_decide_epoch_publish('mi_idx'::regclass, '81818181-8181-4181-8181-818181818181'::uuid); \
-         SELECT ec_distann_recover_epoch_publish('mi_idx'::regclass, '81818181-8181-4181-8181-818181818181'::uuid);",
+                'DISTANN_NODE_1', 'public.mi_idx', true);",
         gd = args.graph_degree,
     );
     if run_psql_file(psql, socket_dir, coord_port, &setup)
@@ -8998,6 +8994,20 @@ async fn mid_insert_drill(
         .is_err()
     {
         return false;
+    }
+    for lifecycle_sql in [
+        "SELECT ec_distann_begin_epoch_build('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid);",
+        "SELECT ec_distann_build_epoch('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid);",
+        "SELECT ec_distann_decide_epoch_publish('mi_idx'::regclass, '81818181-8181-4181-8181-818181818181'::uuid);",
+        "SELECT ec_distann_recover_epoch_publish('mi_idx'::regclass, '81818181-8181-4181-8181-818181818181'::uuid);",
+    ] {
+        if run_psql_file(psql, socket_dir, coord_port, lifecycle_sql)
+            .await
+            .is_err()
+        {
+            let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS mi CASCADE;").await;
+            return false;
+        }
     }
     let topology_sql = "SELECT count(*) FROM mi; SELECT record_count FROM ec_distann_epoch_topology(\
                         'mi_idx'::regclass, (SELECT epoch_fingerprint FROM ec_distann_active_epoch\
