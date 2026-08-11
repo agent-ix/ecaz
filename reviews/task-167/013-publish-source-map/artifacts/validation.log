@@ -1,0 +1,5 @@
+head=82a17f87f
+command=cargo check --no-default-features --features pg18
+result=Finished dev profile [unoptimized + debuginfo]
+command=git diff --check
+result=passed
