@@ -8980,7 +8980,7 @@ async fn mid_insert_drill(
                     substr(md5(g::text),14,3)||'-8'||substr(md5(g::text),18,3)||'-'||\
                     substr(md5(g::text),21,12))::uuid, arr, encode_to_ecvector(arr, 4, 42) \
            FROM (SELECT g, (SELECT array_agg((sin(g * 0.017 * (d + 1)) +\
-                         cos(g * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) d) arr\
+                         cos(g * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) d) arr \
                    FROM generate_series(1, 500) g) rows; \
          CREATE INDEX mi_idx ON mi USING ec_distann (embedding ecvector_distann_ip_ops)\
            INCLUDE (source_id) WITH (distributed_control = true, source_identity = 'include', graph_degree = {gd}); \
