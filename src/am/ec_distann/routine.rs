@@ -85,10 +85,10 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
     heap_tid: pg_sys::ItemPointer,
-    _heap_relation: pg_sys::Relation,
+    heap_relation: pg_sys::Relation,
     _check_unique: pg_sys::IndexUniqueCheck::Type,
     _index_unchanged: bool,
-    _index_info: *mut pg_sys::IndexInfo,
+    index_info: *mut pg_sys::IndexInfo,
 ) -> bool {
     pg_am_callback!({
         // This is intentionally redundant with the statement-level
@@ -105,9 +105,20 @@ unsafe extern "C-unwind" fn ec_distann_aminsert(
         let metadata = ambuild::read_metadata_from_index(index_relation)
             .unwrap_or_else(|e| pgrx::error!("ec_distann aminsert metadata read failed: {e}"));
         if metadata.is_distributed_control() {
-            pgrx::error!(
-                "EC_GENERATION_MISSING: ec_distann distributed-control inserts require a Published physical generation"
-            );
+            // Task 167 physical path.  The control index is only the durable
+            // identity/epoch anchor; the append itself belongs to the active
+            // owner generation.  Keep the callback transaction boundary so a
+            // failed row/graph/back-edge write aborts as one unit.
+            super::physical_dml::insert_from_callback(
+                index_relation,
+                heap_relation,
+                values,
+                isnull,
+                heap_tid,
+                index_info,
+            )
+            .unwrap_or_else(|e| pgrx::error!("ec_distann physical aminsert failed: {e}"));
+            return false;
         }
         // FR-083 / ADR-085 D5 interim posture: spool to the bounded exact-scan
         // delta buffer with same-statement visibility; drained at the next epoch

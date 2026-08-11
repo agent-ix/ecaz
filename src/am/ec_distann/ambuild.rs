@@ -61,7 +61,7 @@ const DISTANN_UNIT_NORM_EPSILON: f32 = 0.01;
 const DISTANN_SOURCE_IDENTITY_BYTES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum DistannIdentityDatumKind {
+pub(crate) enum DistannIdentityDatumKind {
     Uuid,
     Bytea16,
 }
@@ -70,10 +70,10 @@ enum DistannIdentityDatumKind {
 /// exactly one INCLUDE column of type uuid or bytea, canonicalized to the
 /// 16-byte payload; NULL or wrong-width values reject the row).
 #[derive(Debug, Clone, Copy)]
-struct DistannIdentityAttribute {
-    index_attr_offset: usize,
-    heap_attnum: i32,
-    datum_kind: DistannIdentityDatumKind,
+pub(crate) struct DistannIdentityAttribute {
+    pub(crate) index_attr_offset: usize,
+    pub(crate) heap_attnum: i32,
+    pub(crate) datum_kind: DistannIdentityDatumKind,
 }
 
 struct SourceAttributeSender {
@@ -1257,6 +1257,43 @@ unsafe fn freeze_source_slot(
     Ok((row_null_bitmap, row_values))
 }
 
+/// Freeze one live source tuple into the packed row-payload shape used by the
+/// physical DML endpoint.  The wire carries only non-dropped attributes;
+/// offsets make NULL values unambiguous without allocating one bytea per
+/// column on the remote call.
+pub(crate) unsafe fn freeze_source_slot_packed(
+    slot: *mut pg_sys::TupleTableSlot,
+) -> Result<(Vec<bool>, Vec<i64>, Vec<u8>), String> {
+    if slot.is_null() || (*slot).tts_tupleDescriptor.is_null() {
+        return Err("EC_SOURCE_SNAPSHOT: cannot freeze a null source slot".to_owned());
+    }
+    let tuple_desc = (*slot).tts_tupleDescriptor;
+    let natts = usize::try_from((*tuple_desc).natts)
+        .map_err(|_| "EC_SCHEMA_UNSUPPORTED: source attribute count is negative".to_owned())?;
+    let non_dropped = (0..natts)
+        .filter(|index| !(*pg_sys::TupleDescAttr(tuple_desc, *index as i32)).attisdropped)
+        .count();
+    let mut senders = source_attribute_senders(tuple_desc)?;
+    let (bitmap, values) = freeze_source_slot(slot, &mut senders, non_dropped)?;
+    let mut nulls = Vec::with_capacity(non_dropped);
+    for position in 0..non_dropped {
+        nulls.push((bitmap[position / 8] & (1 << (position % 8))) != 0);
+    }
+    let mut offsets = Vec::with_capacity(non_dropped);
+    let mut packed = Vec::new();
+    let mut value_index = 0;
+    for is_null in &nulls {
+        if !*is_null {
+            packed.extend_from_slice(&values[value_index]);
+            value_index += 1;
+        }
+        offsets.push(i64::try_from(packed.len()).map_err(|_| {
+            "EC_HANDOFF_TOO_LARGE: packed source row exceeds bigint offsets".to_owned()
+        })?);
+    }
+    Ok((nulls, offsets, packed))
+}
+
 /// Canonicalize the INCLUDE-column datum into the 16-byte ADR-063 payload.
 /// NULL and wrong-width values reject the row: mixed identity namespaces
 /// inside a global-writer index would break cross-node dedupe.
@@ -1264,7 +1301,7 @@ unsafe fn freeze_source_slot(
 /// # Safety
 /// `values`/`isnull` are the live PG build/insert callback arrays and
 /// `identity` came from `resolve_identity_attribute` on the same index.
-unsafe fn extract_identity_payload(
+pub(crate) unsafe fn extract_identity_payload(
     identity: DistannIdentityAttribute,
     values: *mut pg_sys::Datum,
     isnull: *mut bool,
@@ -1281,7 +1318,7 @@ unsafe fn extract_identity_payload(
     identity_payload_from_datum(identity.datum_kind, datum)
 }
 
-unsafe fn identity_payload_from_datum(
+pub(crate) unsafe fn identity_payload_from_datum(
     datum_kind: DistannIdentityDatumKind,
     datum: pg_sys::Datum,
 ) -> [u8; DISTANN_SOURCE_IDENTITY_BYTES] {
@@ -1316,7 +1353,7 @@ unsafe fn identity_payload_from_datum(
 /// Validate the ADR-063 DDL shape and resolve the identity attribute:
 /// local mode = exactly one key column; include mode = one key column plus
 /// exactly one INCLUDE column of type uuid or bytea.
-unsafe fn resolve_identity_attribute(
+pub(crate) unsafe fn resolve_identity_attribute(
     heap_relation: pg_sys::Relation,
     index_info: *mut pg_sys::IndexInfo,
     options: &EcDistannOptions,

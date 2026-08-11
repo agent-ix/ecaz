@@ -40,9 +40,9 @@ use super::tuple::{
 /// (distann adjacency references neighbors by vec_id, never by record TID) and
 /// its full-precision co-placed source vector for exact-distance pruning.
 #[derive(Debug, Clone)]
-pub(super) struct DistannForwardCandidate {
-    pub vec_id: u64,
-    pub source_vector: Vec<f32>,
+pub(crate) struct DistannForwardCandidate {
+    pub(crate) vec_id: u64,
+    pub(crate) source_vector: Vec<f32>,
 }
 
 /// Exact `-inner_product` distance (the ec_distann rerank metric; smaller =
@@ -55,7 +55,7 @@ fn exact_distance(left: &[f32], right: &[f32]) -> f32 {
 /// Select an inserted node's forward edges: `robust_prune` the candidate set
 /// (its FR-081 search frontier) to `max_degree` on exact distance, α-diversified
 /// exactly like the batch build. Returns the kept neighbors' vec_ids. Pure.
-pub(super) fn select_insert_forward_neighbors(
+pub(crate) fn select_insert_forward_neighbors(
     source_vector: &[f32],
     candidates: &[DistannForwardCandidate],
     alpha: f32,

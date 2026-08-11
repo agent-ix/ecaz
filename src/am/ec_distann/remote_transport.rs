@@ -519,6 +519,82 @@ async fn ensure_scan_sessions(
     Ok(())
 }
 
+/// Coordinator-to-owner Task 167 append request. The coordinator sends a
+/// frozen row payload rather than a source-table ctid; the owner validates the
+/// identity hash against the payload before appending its complete row-tier
+/// tuple. Keeping this on the same pooled session/identity machinery as FR-079
+/// gives the write endpoint the same roster and epoch fencing.
+pub(crate) struct DistannRemotePhysicalInsertRequest<'a> {
+    pub(crate) conninfo: &'a str,
+    pub(crate) roster_spec: &'a str,
+    pub(crate) target_node_id: u32,
+    pub(crate) epoch: u64,
+    pub(crate) index_regclass: &'a str,
+    pub(crate) epoch_fingerprint: &'a [u8],
+    pub(crate) vec_id: u64,
+    pub(crate) source_vector: &'a [f32],
+    pub(crate) source_identity: &'a [u8],
+    pub(crate) payload_nulls: &'a [bool],
+    pub(crate) payload_offsets: &'a [i64],
+    pub(crate) payload_values: &'a [u8],
+}
+
+const PHYSICAL_INSERT_SQL: &str =
+    "SELECT ec_distann_apply_physical_insert(\
+        $1::text::regclass::oid, $2::bytea, $3::bigint, $4::real[], $5::bytea,\
+        $6::boolean[], $7::bigint[], $8::bytea)";
+
+pub(crate) fn remote_physical_insert(
+    request: &DistannRemotePhysicalInsertRequest<'_>,
+) -> Result<(), String> {
+    let key = format!("{}\u{1}{}", request.conninfo, request.target_node_id);
+    let identity = (
+        request.roster_spec.to_owned(),
+        request.target_node_id.to_string(),
+        request.epoch.to_string(),
+    );
+    with_transport_state(|state| {
+        state.runtime.block_on(async {
+            ensure_scan_sessions(
+                &mut state.connections,
+                &[(key.clone(), request.conninfo, identity)],
+            )
+            .await?;
+            let client = &state.connections[&key].client;
+            let result = await_remote(
+                call_timeout(),
+                Some(client.cancel_token()),
+                client.query_one(
+                    PHYSICAL_INSERT_SQL,
+                    &[
+                        &request.index_regclass,
+                        &request.epoch_fingerprint,
+                        &(request.vec_id as i64),
+                        &request.source_vector,
+                        &request.source_identity,
+                        &request.payload_nulls,
+                        &request.payload_offsets,
+                        &request.payload_values,
+                    ],
+                ),
+            )
+            .await;
+            match result {
+                Ok(_) => Ok(()),
+                Err(RemoteAwaitError::Remote(error)) => {
+                    Err(format!("EC_REMOTE_WRITE: physical insert failed: {error}"))
+                }
+                Err(RemoteAwaitError::TimedOut) => {
+                    Err("EC_REMOTE_WRITE: physical insert timed out".to_owned())
+                }
+                Err(RemoteAwaitError::Interrupted) => {
+                    Err("EC_REMOTE_WRITE: physical insert interrupted".to_owned())
+                }
+            }
+        })
+    })
+}
+
 async fn lifecycle_client<'a>(
     connections: &'a mut HashMap<String, PooledConnection>,
     conninfo: &str,

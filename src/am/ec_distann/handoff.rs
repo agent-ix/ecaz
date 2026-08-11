@@ -215,14 +215,16 @@ fn validate_generation_relations(
                            AND NOT relforcerowsecurity
                     )
                     AND (
-                        SELECT count(*) = 3
+                        SELECT count(*) = 5
                            AND bool_and(
-                               attnotnull AND NOT atthasdef
+                               attnotnull
                                AND attidentity = '' AND attgenerated = ''
                                AND CASE attnum
-                                     WHEN 1 THEN attname = 'vec_id' AND atttypid = 'bigint'::regtype
-                                     WHEN 2 THEN attname = 'graph_record' AND atttypid = 'bytea'::regtype
-                                     WHEN 3 THEN attname = 'row_tid' AND atttypid = 'tid'::regtype
+                                     WHEN 1 THEN NOT atthasdef AND attname = 'vec_id' AND atttypid = 'bigint'::regtype
+                                     WHEN 2 THEN NOT atthasdef AND attname = 'graph_record' AND atttypid = 'bytea'::regtype
+                                     WHEN 3 THEN NOT atthasdef AND attname = 'row_tid' AND atttypid = 'tid'::regtype
+                                     WHEN 4 THEN attname = 'record_version' AND atttypid = 'int8'::regtype
+                                     WHEN 5 THEN attname = 'is_current' AND atttypid = 'bool'::regtype
                                      ELSE false
                                    END
                            )
@@ -245,7 +247,7 @@ fn validate_generation_relations(
                            AND bool_and(indexrelid = $3::oid AND indisunique
                                         AND indisvalid AND indisready AND indislive
                                         AND indnkeyatts = 1 AND indnatts = 1
-                                        AND indkey[0] = 1)
+                                        AND indkey[0] = 1 AND indpred IS NOT NULL)
                           FROM pg_catalog.pg_index WHERE indrelid = $2::oid
                     )
                     AND EXISTS (
@@ -709,6 +711,7 @@ fn scan_physical_generation(
     let sql = format!(
         "SELECT vec_id, graph_record, row_tid, ctid AS graph_tid
            FROM {graph_relation}
+          WHERE is_current
           ORDER BY (vec_id < 0), vec_id"
     );
     Spi::connect(|client| -> Result<(), String> {
@@ -968,6 +971,7 @@ fn diagnose_physical_generation(
     let sql = format!(
         "SELECT vec_id, graph_record, row_tid, ctid AS graph_tid
            FROM {graph_relation}
+          WHERE is_current
           ORDER BY (vec_id < 0), vec_id"
     );
     Spi::connect(|client| -> Result<(), String> {

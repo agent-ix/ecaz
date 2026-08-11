@@ -64,6 +64,7 @@ mod participant_lifecycle;
 pub(crate) mod placement;
 pub(crate) mod quantizer;
 pub(crate) mod reader;
+mod physical_dml;
 mod remote_endpoint;
 mod remote_transport;
 #[cfg(any(test, feature = "pg_test"))]

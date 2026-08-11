@@ -309,6 +309,77 @@ fn apply_record_writes_impl(
     Ok(i64::try_from(removed).unwrap_or(i64::MAX))
 }
 
+/// Task 167 owner append endpoint.  This is intentionally separate from the
+/// legacy tombstone-only endpoint above: the physical generation has a 34-byte
+/// active-generation identity and writes its row tier and graph store, while
+/// the legacy endpoint remains a compatibility surface for v4 tests.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_apply_physical_insert(
+    index_regclass: pg_sys::Oid,
+    epoch_fingerprint: Vec<u8>,
+    vec_id: i64,
+    source_vector: Vec<f32>,
+    source_identity: Vec<u8>,
+    payload_nulls: Vec<bool>,
+    payload_offsets: Vec<i64>,
+    payload_values: Vec<u8>,
+) -> bool {
+    super::lifecycle_guard::require_read_committed("ec_distann_apply_physical_insert")
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    super::traversal_replica::guard_traversal_replica_mutation(index_regclass);
+    let result = (|| -> Result<(), String> {
+        let fingerprint: [u8; 34] = epoch_fingerprint
+            .try_into()
+            .map_err(|_| "EC_EPOCH_MISMATCH: physical insert fingerprint must be 34 bytes".to_owned())?;
+        let (control, _handle, metadata, logical_index_uuid) =
+            super::generation_store::open_control_index(
+                index_regclass,
+                pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
+                "ec_distann_apply_physical_insert",
+            )?;
+        let active = super::generation_read::active_generation_identity(
+            index_regclass,
+            logical_index_uuid,
+        )?
+        .ok_or_else(|| "EC_GENERATION_MISSING: physical insert has no active epoch".to_owned())?;
+        if active.fingerprint != fingerprint {
+            return Err("EC_EPOCH_MISMATCH: physical insert epoch fingerprint mismatch".to_owned());
+        }
+        let placement = super::roster::placement_directory_for_epoch(
+            super::roster::scan_epoch(&metadata),
+        )?;
+        let local_index = placement
+            .nodes
+            .iter()
+            .position(|node| node.is_local)
+            .ok_or_else(|| "EC_NODE_DESCRIPTOR: local owner is absent from roster".to_owned())?;
+        let owner = super::placement::owning_node(
+            vec_id as u64,
+            placement.node_count(),
+            placement.hash_version,
+        );
+        if owner != local_index {
+            return Err(format!(
+                "EC_PLACEMENT: physical insert vec_id {vec_id:#018x} belongs to owner {owner}, local owner is {local_index}"
+            ));
+        }
+        drop(control);
+        unsafe {
+            super::physical_dml::insert_from_owner_payload(
+                index_regclass,
+                vec_id as u64,
+                source_vector,
+                &source_identity,
+                &payload_nulls,
+                &payload_offsets,
+                &payload_values,
+            )
+        }
+    })();
+    result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    true
+}
+
 /// FR-079/005-P1 row-shipping endpoint: the owning node ships the heap identity
 /// (ctid + tombstone flag) for each vec_id it owns, so a coordinator materializes
 /// remote-owned hits from the OWNER rather than assuming it holds the full local

@@ -471,14 +471,17 @@ fn create_generation_relations(
         "CREATE TABLE {qualified_graph} (\
              vec_id bigint NOT NULL, \
              graph_record bytea NOT NULL, \
-             row_tid tid NOT NULL\
+             row_tid tid NOT NULL, \
+             record_version bigint NOT NULL DEFAULT 0, \
+             is_current boolean NOT NULL DEFAULT true\
          ){tablespace}"
     ))
     .map_err(|error| format!("ec_distann graph-store relation creation failed: {error}"))?;
     Spi::run(&format!(
         // PostgreSQL requires an unqualified index name here.  The target
         // table's namespace determines the index namespace.
-        "CREATE UNIQUE INDEX {} ON {qualified_graph} (vec_id){tablespace}",
+        "CREATE UNIQUE INDEX {} ON {qualified_graph} (vec_id){tablespace} \
+         WHERE is_current",
         quote_ident(&directory_name)
     ))
     .map_err(|error| format!("ec_distann directory creation failed: {error}"))?;

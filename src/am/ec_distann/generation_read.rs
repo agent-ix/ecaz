@@ -755,6 +755,7 @@ fn resolve_cached_physical_query(
 #[derive(Debug)]
 pub(crate) struct PhysicalOwnerRoute {
     pub(crate) roster_ordinal: usize,
+    pub(crate) node_id: u32,
     pub(crate) is_local: bool,
     pub(crate) remote_index_regclass: String,
     pub(crate) conninfo: Option<String>,
@@ -772,7 +773,7 @@ pub(crate) fn physical_owner_routes(
         client
             .select(
                 &format!(
-                    "SELECT roster_ordinal, is_local, remote_index_regclass,
+                    "SELECT roster_ordinal, node_id, is_local, remote_index_regclass,
                             conninfo_secret_name
                        FROM {bindings}
                       WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
@@ -794,6 +795,10 @@ pub(crate) fn physical_owner_routes(
                         format!("EC_NODE_DESCRIPTOR: locality decode failed: {error}")
                     })?
                     .ok_or_else(|| "EC_NODE_DESCRIPTOR: locality is NULL".to_owned())?;
+                let node_id = row["node_id"]
+                    .value::<i32>()
+                    .map_err(|error| format!("EC_NODE_DESCRIPTOR: node id decode failed: {error}"))?
+                    .ok_or_else(|| "EC_NODE_DESCRIPTOR: node id is NULL".to_owned())?;
                 let remote_index_regclass = row["remote_index_regclass"]
                     .value::<String>()
                     .map_err(|error| format!("EC_NODE_DESCRIPTOR: locator decode failed: {error}"))?
@@ -806,6 +811,8 @@ pub(crate) fn physical_owner_routes(
                     roster_ordinal: usize::try_from(ordinal).map_err(|_| {
                         "EC_NODE_DESCRIPTOR: binding ordinal is negative".to_owned()
                     })?,
+                    node_id: u32::try_from(node_id)
+                        .map_err(|_| "EC_NODE_DESCRIPTOR: node id is negative".to_owned())?,
                     is_local,
                     remote_index_regclass,
                     conninfo: if is_local {
@@ -1209,7 +1216,7 @@ impl RetainedGenerationScan {
             let mut rows = client
                 .select(
                     &format!(
-                        "SELECT graph_record FROM {} ORDER BY vec_id",
+                        "SELECT graph_record FROM {} WHERE is_current ORDER BY vec_id",
                         self.graph_relation_name
                     ),
                     None,
@@ -3967,6 +3974,36 @@ impl PhysicalGenerationScan {
 
     pub(crate) fn row_relation(&self) -> Option<pg_sys::Relation> {
         self.row_relation.as_ref().map(HeapRelationGuard::as_ptr)
+    }
+
+    /// Return the immutable descriptor and catalog row that identify the
+    /// owner-local physical relations. DML takes a fresh RowExclusive lock
+    /// after this snapshot; the catalog identity is copied so the read-side
+    /// scan guard can be dropped before the write lock is acquired.
+    pub(crate) fn local_write_identity(
+        &self,
+    ) -> Result<(GenerationCatalogRow, Arc<DistannGenerationDescriptor>), String> {
+        let generation = self
+            .generation
+            .clone()
+            .ok_or_else(|| "EC_GENERATION_MISSING: local owner has no generation".to_owned())?;
+        if generation.state != super::lifecycle_state::GenerationState::Published {
+            return Err(format!(
+                "EC_GENERATION_MISSING: local generation is {} rather than Published",
+                generation.state
+            ));
+        }
+        Ok((generation, Arc::clone(&self.descriptor)))
+    }
+
+    pub(crate) fn row_schema_attributes(&self) -> Vec<u16> {
+        self.descriptor
+            .row_schema
+            .attributes
+            .iter()
+            .filter(|attribute| !attribute.dropped)
+            .map(|attribute| attribute.attnum)
+            .collect()
     }
 
     pub(crate) fn traversal_replica_source(
