@@ -38,7 +38,7 @@ pub(crate) unsafe fn insert_from_callback(
     isnull: *mut bool,
     heap_tid: pg_sys::ItemPointer,
     index_info: *mut pg_sys::IndexInfo,
-    allow_replacement: bool,
+    index_unchanged: bool,
 ) -> Result<(), String> {
     if index_relation.is_null() || heap_relation.is_null() || index_info.is_null() {
         return Err(
@@ -72,6 +72,12 @@ pub(crate) unsafe fn insert_from_callback(
         "EC_GENERATION_MISSING: source heap slot could not be allocated".to_owned()
     })?;
     fetch_source_tuple(heap_relation, heap_tid, source_slot.as_ptr(), snapshot)?;
+    // `index_unchanged` is only an executor hint and is false for a
+    // vector-changing UPDATE. The heap header is the authoritative local
+    // discriminator available to an AM callback; retaining the hint covers
+    // the unchanged-key UPDATE case without turning a normal INSERT into a
+    // replacement.
+    let allow_replacement = index_unchanged || source_slot_is_updated(source_slot.as_ptr());
     insert_from_prepared_slot(
         index_relation,
         vector,
@@ -143,9 +149,8 @@ unsafe fn insert_from_prepared_slot(
         .map(|hit| hit.vec_id)
         .collect::<Vec<_>>();
     let row_read_relation = row_relation_for_payload(&generation)?;
-    let remote_vectors =
+    let mut remote_vectors =
         materialize_remote_vectors(&scan, &row_read_relation, &remote_ids, source_attnum)?;
-    drop(scan);
 
     let graph_name = qualified_relation_name(generation.graph_store_relid)?;
     let previous_version = current_record_version(&graph_name, vec_id)?;
@@ -242,6 +247,37 @@ unsafe fn insert_from_prepared_slot(
         .filter_map(|id| candidates.iter().find(|candidate| candidate.vec_id == *id))
         .collect::<Vec<_>>();
 
+    let local_owner = routes
+        .iter()
+        .position(|route| route.is_local)
+        .ok_or_else(|| "EC_NODE_DESCRIPTOR: active roster has no local owner".to_owned())?;
+    let extra_remote_ids = forward
+        .iter()
+        .filter(|candidate| candidate.graph_tid != ItemPointer::INVALID)
+        .flat_map(|candidate| {
+            candidate.node.neighbor_vec_ids[..usize::from(candidate.node.neighbor_count)]
+                .iter()
+                .copied()
+                .filter(|neighbor| {
+                    super::placement::owning_node(
+                        *neighbor,
+                        routes.len(),
+                        routed_descriptor.placement_hash_version,
+                    ) != local_owner
+                })
+        })
+        .filter(|neighbor| !remote_vectors.contains_key(neighbor))
+        .collect::<Vec<_>>();
+    if !extra_remote_ids.is_empty() {
+        remote_vectors.extend(materialize_remote_vectors(
+            &scan,
+            &row_read_relation,
+            &extra_remote_ids,
+            source_attnum,
+        )?);
+    }
+    drop(scan);
+
     if !owner_route.is_local {
         let conninfo = owner_route.conninfo.as_deref().ok_or_else(|| {
             "EC_NODE_DESCRIPTOR: remote physical insert has no connection descriptor".to_owned()
@@ -253,6 +289,7 @@ unsafe fn insert_from_prepared_slot(
         let roster_spec = super::roster::current_roster_spec();
         super::remote_transport::remote_physical_insert(
             &super::remote_transport::DistannRemotePhysicalInsertRequest {
+                index_oid,
                 conninfo,
                 roster_spec: &roster_spec,
                 target_node_id: owner_route.node_id,
@@ -274,9 +311,15 @@ unsafe fn insert_from_prepared_slot(
                     &graph_name,
                     candidate,
                     vec_id,
+                    &vector,
                     &new_code,
                     descriptor.graph_degree,
                     code_len,
+                    &row_relation,
+                    source_attnum,
+                    snapshot,
+                    options.alpha,
+                    &remote_vectors,
                 )?;
                 continue;
             }
@@ -299,6 +342,7 @@ unsafe fn insert_from_prepared_slot(
             })?;
             super::remote_transport::remote_physical_backlink(
                 &super::remote_transport::DistannRemotePhysicalBacklinkRequest {
+                    index_oid,
                     conninfo,
                     roster_spec: &roster_spec,
                     target_node_id: target_route.node_id,
@@ -307,6 +351,7 @@ unsafe fn insert_from_prepared_slot(
                     epoch_fingerprint: &fingerprint,
                     target_vec_id: candidate.vec_id,
                     new_vec_id: vec_id,
+                    new_source_vector: &vector,
                     new_code: &new_code,
                 },
             )?;
@@ -388,6 +433,7 @@ unsafe fn insert_from_prepared_slot(
             })?;
             super::remote_transport::remote_physical_backlink(
                 &super::remote_transport::DistannRemotePhysicalBacklinkRequest {
+                    index_oid,
                     conninfo,
                     roster_spec: &roster_spec,
                     target_node_id: target_route.node_id,
@@ -396,6 +442,7 @@ unsafe fn insert_from_prepared_slot(
                     epoch_fingerprint: &fingerprint,
                     target_vec_id: candidate.vec_id,
                     new_vec_id: vec_id,
+                    new_source_vector: &vector,
                     new_code: &new_code,
                 },
             )?;
@@ -405,9 +452,15 @@ unsafe fn insert_from_prepared_slot(
             &graph_name,
             candidate,
             vec_id,
+            &vector,
             &new_code,
             descriptor.graph_degree,
             code_len,
+            &row_relation,
+            source_attnum,
+            snapshot,
+            options.alpha,
+            &remote_vectors,
         )?;
     }
     drop(graph_relation);
@@ -754,6 +807,22 @@ unsafe fn fetch_source_tuple(
     Ok(())
 }
 
+unsafe fn source_slot_is_updated(slot: *mut pg_sys::TupleTableSlot) -> bool {
+    if slot.is_null() {
+        return false;
+    }
+    let mut should_free = false;
+    let tuple = pg_sys::ExecFetchSlotHeapTuple(slot, false, &mut should_free);
+    if tuple.is_null() || (*tuple).t_data.is_null() {
+        return false;
+    }
+    let updated = ((*(*tuple).t_data).t_infomask as u32 & pg_sys::HEAP_UPDATED) != 0;
+    if should_free {
+        pg_sys::heap_freetuple(tuple);
+    }
+    updated
+}
+
 fn read_current_candidate(
     graph_name: &str,
     row_relation: &HeapRelationGuard,
@@ -963,26 +1032,76 @@ fn insert_graph_record(
     Ok(())
 }
 
-fn amend_backlink(
+unsafe fn amend_backlink(
     graph_name: &str,
     candidate: &Candidate,
     new_vec_id: u64,
+    new_source_vector: &[f32],
     new_code: &[u8],
     graph_degree: u16,
     code_len: usize,
+    row_relation: &HeapRelationGuard,
+    source_attnum: i32,
+    snapshot: pg_sys::Snapshot,
+    alpha: f32,
+    remote_vectors: &HashMap<u64, Vec<f32>>,
 ) -> Result<(), String> {
     let mut node = candidate.node.clone();
     let count = usize::from(node.neighbor_count);
-    if node.neighbor_vec_ids[..count].contains(&new_vec_id) || count >= usize::from(graph_degree) {
+    if node.neighbor_vec_ids[..count].contains(&new_vec_id) {
         return Ok(());
     }
-    node.neighbor_vec_ids[count] = new_vec_id;
-    node.neighbor_codes[count * code_len..(count + 1) * code_len].copy_from_slice(new_code);
-    node.neighbor_count += 1;
+    let mut candidates = Vec::with_capacity(count + 1);
+    candidates.push(DistannForwardCandidate {
+        vec_id: new_vec_id,
+        source_vector: new_source_vector.to_vec(),
+    });
+    for neighbor in &node.neighbor_vec_ids[..count] {
+        let source_vector = if let Some(source_vector) = remote_vectors.get(neighbor) {
+            source_vector.clone()
+        } else {
+            read_current_vector(graph_name, row_relation, *neighbor, source_attnum, snapshot)?
+        };
+        candidates.push(DistannForwardCandidate {
+            vec_id: *neighbor,
+            source_vector,
+        });
+    }
+    // The planner is vantage-point agnostic: reorder the union from the
+    // target's source vector using the same exact robust-prune metric as
+    // insertion. This handles both free and full target degree uniformly.
+    let kept = select_insert_forward_neighbors(
+        &candidate.source_vector,
+        &candidates,
+        alpha,
+        usize::from(graph_degree),
+    )?;
+    node.neighbor_vec_ids.fill(0);
+    node.neighbor_codes.fill(0);
+    node.neighbor_count = u16::try_from(kept.len())
+        .map_err(|_| "EC_INSERT_BACKLINK: pruned degree exceeds u16".to_owned())?;
+    for (slot, vec_id) in kept.iter().enumerate() {
+        node.neighbor_vec_ids[slot] = *vec_id;
+        let code = if *vec_id == new_vec_id {
+            new_code
+        } else {
+            let old_slot = candidate.node.neighbor_vec_ids[..count]
+                .iter()
+                .position(|id| id == vec_id)
+                .ok_or_else(|| {
+                    "EC_INSERT_BACKLINK: pruned neighbor was absent from current node".to_owned()
+                })?;
+            &candidate.node.neighbor_codes[old_slot * code_len..(old_slot + 1) * code_len]
+        };
+        if code.len() != code_len {
+            return Err("EC_INSERT_CODEC: backlink code has the wrong length".to_owned());
+        }
+        node.neighbor_codes[slot * code_len..(slot + 1) * code_len].copy_from_slice(code);
+    }
     let record = node.encode_physical_v1(graph_degree, code_len)?;
     let block = candidate.graph_tid.block_number;
     let offset = candidate.graph_tid.offset_number;
-    Spi::connect_mut(|client| {
+    let updated = Spi::connect_mut(|client| {
         client
             .update(
                 &format!("UPDATE {graph_name} SET graph_record = $1 WHERE ctid = '({block},{offset})'::tid AND is_current"),
@@ -990,9 +1109,66 @@ fn amend_backlink(
                 &[record.into()],
             )
             .map_err(|error| format!("EC_INSERT_BACKLINK: graph amendment failed: {error}"))
-            .map(|_| ())
+            .map(|table| table.len())
     })?;
+    if updated != 1 {
+        return Err(format!(
+            "EC_INSERT_BACKLINK: graph amendment affected {updated} rows, expected one current target"
+        ));
+    }
     Ok(())
+}
+
+unsafe fn read_current_vector(
+    graph_name: &str,
+    row_relation: &HeapRelationGuard,
+    vec_id: u64,
+    source_attnum: i32,
+    snapshot: pg_sys::Snapshot,
+) -> Result<Vec<f32>, String> {
+    let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    let row_tid = Spi::connect(|client| {
+        client
+            .select(
+                &format!("SELECT row_tid FROM {graph_name} WHERE vec_id = $1 AND is_current"),
+                None,
+                &[signed_id.into()],
+            )
+            .map_err(|error| format!("EC_INSERT_BACKLINK: neighbor lookup failed: {error}"))?
+            .map(|row| {
+                row["row_tid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "row_tid is NULL".to_owned())
+            })
+            .next()
+            .transpose()
+    })?
+    .ok_or_else(|| {
+        format!("EC_INSERT_BACKLINK: current row for vec_id {vec_id:#018x} is missing")
+    })?;
+    let slot = TupleTableSlotGuard::create_for_heap_guard(row_relation).ok_or_else(|| {
+        "EC_GENERATION_MISSING: backlink vector slot could not be allocated".to_owned()
+    })?;
+    let mut raw_tid = row_tid;
+    if !pg_sys::table_tuple_fetch_row_version(
+        row_relation.as_ptr(),
+        &mut raw_tid,
+        snapshot,
+        slot.as_ptr(),
+    ) {
+        return Err(format!(
+            "EC_INSERT_BACKLINK: current row for vec_id {vec_id:#018x} is not visible"
+        ));
+    }
+    let mut is_null = false;
+    let datum = pg_sys::slot_getattr(slot.as_ptr(), source_attnum, &mut is_null);
+    if is_null {
+        return Err(format!(
+            "EC_INSERT_BACKLINK: source vector for vec_id {vec_id:#018x} is NULL"
+        ));
+    }
+    Ok(ecvector_datum_to_vec(datum))
 }
 
 /// Apply one owner-local backlink from a coordinator-prepared remote write.
@@ -1002,22 +1178,32 @@ pub(crate) unsafe fn apply_owner_backlink(
     index_oid: pg_sys::Oid,
     target_vec_id: u64,
     new_vec_id: u64,
+    new_source_vector: Vec<f32>,
     new_code: &[u8],
 ) -> Result<(), String> {
-    let _index_guard = IndexRelationGuard::open(
+    let index_guard = IndexRelationGuard::open(
         index_oid,
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         "ec_distann physical owner backlink",
     );
     let scan = PhysicalGenerationScan::open(index_oid)?;
     let (generation, descriptor) = scan.local_write_identity()?;
-    drop(scan);
     let code_binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
     let code_len = code_binding.code_len(usize::from(descriptor.dimensions))?;
     if new_code.len() != code_len {
         return Err("EC_INSERT_CODEC: backlink code has the wrong length".to_owned());
     }
     let graph_name = qualified_relation_name(generation.graph_store_relid)?;
+    let row_relation = HeapRelationGuard::try_open(
+        generation.row_tier_relid,
+        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+    )
+    .ok_or_else(|| "EC_GENERATION_MISSING: backlink row tier could not be opened".to_owned())?;
+    let source_attnum = indexed_ecvector_attnum(index_guard.as_ptr())?;
+    let snapshot = pg_sys::GetActiveSnapshot();
+    if snapshot.is_null() {
+        return Err("EC_BUILD_STATE: backlink has no active snapshot".to_owned());
+    }
     let signed_id = i64::from_le_bytes(target_vec_id.to_le_bytes());
     let row = Spi::connect(|client| {
         client
@@ -1050,12 +1236,38 @@ pub(crate) unsafe fn apply_owner_backlink(
         ));
     };
     let node = DistannNodeTuple::decode_physical_v1(&record, descriptor.graph_degree, code_len)?;
+    let (_, _, _, routed_descriptor, routes) = scan.traversal_replica_source();
+    let local_owner = routes
+        .iter()
+        .position(|route| route.is_local)
+        .ok_or_else(|| "EC_NODE_DESCRIPTOR: active roster has no local owner".to_owned())?;
+    let remote_ids = node.neighbor_vec_ids[..usize::from(node.neighbor_count)]
+        .iter()
+        .copied()
+        .filter(|neighbor| {
+            super::placement::owning_node(
+                *neighbor,
+                routes.len(),
+                routed_descriptor.placement_hash_version,
+            ) != local_owner
+        })
+        .collect::<Vec<_>>();
+    let remote_vectors =
+        materialize_remote_vectors(&scan, &row_relation, &remote_ids, source_attnum)?;
+    drop(scan);
+    let target_vector = read_current_vector(
+        &graph_name,
+        &row_relation,
+        target_vec_id,
+        source_attnum,
+        snapshot,
+    )?;
     let (graph_block, graph_offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
     amend_backlink(
         &graph_name,
         &Candidate {
             vec_id: target_vec_id,
-            source_vector: Vec::new(),
+            source_vector: target_vector,
             node,
             graph_tid: ItemPointer {
                 block_number: graph_block,
@@ -1063,8 +1275,14 @@ pub(crate) unsafe fn apply_owner_backlink(
             },
         },
         new_vec_id,
+        &new_source_vector,
         new_code,
         descriptor.graph_degree,
         code_len,
+        &row_relation,
+        source_attnum,
+        snapshot,
+        options::relation_options(index_guard.as_ptr()).alpha,
+        &remote_vectors,
     )
 }

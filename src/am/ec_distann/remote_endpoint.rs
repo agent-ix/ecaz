@@ -390,6 +390,7 @@ fn ec_distann_apply_physical_backlink(
     epoch_fingerprint: Vec<u8>,
     target_vec_id: i64,
     new_vec_id: i64,
+    new_source_vector: Vec<f32>,
     new_code: Vec<u8>,
 ) -> bool {
     super::lifecycle_guard::require_read_committed("ec_distann_apply_physical_backlink")
@@ -438,12 +439,53 @@ fn ec_distann_apply_physical_backlink(
                 index_regclass,
                 target_vec_id as u64,
                 new_vec_id as u64,
+                new_source_vector,
                 &new_code,
             )
         }
     })();
     result.unwrap_or_else(|error| pgrx::error!("{error}"));
     true
+}
+
+/// Reconcile abandoned Task 167 prepared transactions on one owner. This is
+/// an explicit operator/recovery surface: it never guesses while the
+/// coordinator xid is live, and its action is driven by the durable local
+/// intent row rather than by elapsed time alone.
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_reap_orphaned_remote_prepared_xacts(
+    index_regclass: pg_sys::Oid,
+    node_id: i32,
+) -> Vec<String> {
+    super::lifecycle_guard::require_read_committed(
+        "ec_distann_reap_orphaned_remote_prepared_xacts",
+    )
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    if node_id <= 0 {
+        pgrx::error!("EC_NODE_DESCRIPTOR: reaper node_id must be positive");
+    }
+    let scan = super::generation_read::PhysicalGenerationScan::open(index_regclass)
+        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let (_, _, _, _, routes) = scan.traversal_replica_source();
+    let route = routes
+        .iter()
+        .find(|route| route.node_id == node_id as u32)
+        .unwrap_or_else(|| {
+            pgrx::error!("EC_NODE_DESCRIPTOR: reaper node is not in the active roster")
+        });
+    if route.is_local {
+        pgrx::error!("EC_NODE_DESCRIPTOR: reaper target must be a remote owner");
+    }
+    let conninfo = route
+        .conninfo
+        .as_deref()
+        .unwrap_or_else(|| pgrx::error!("EC_NODE_DESCRIPTOR: reaper route has no conninfo"));
+    super::remote_transport::reap_orphaned_physical_prepared_xacts(
+        conninfo,
+        node_id as u32,
+        index_regclass,
+    )
+    .unwrap_or_else(|error| pgrx::error!("{error}"))
 }
 
 /// FR-079/005-P1 row-shipping endpoint: the owning node ships the heap identity

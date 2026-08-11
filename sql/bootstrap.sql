@@ -500,6 +500,33 @@ CREATE UNIQUE INDEX ec_distann_build_participant_one_local
     ON ec_distann_build_participant_binding (index_oid, logical_index_uuid, build_id)
     WHERE is_local;
 
+CREATE TABLE ec_distann_remote_prepared_xact_intent (
+    index_oid oid NOT NULL,
+    node_id integer NOT NULL CHECK (node_id > 0),
+    served_epoch bigint NOT NULL CHECK (served_epoch >= 0),
+    xid bigint NOT NULL CHECK (xid >= 0),
+    gid text NOT NULL CHECK (
+        length(gid) > 0 AND gid LIKE 'ec_distann_insert_%'
+    ),
+    intent_state text NOT NULL CHECK (
+        intent_state IN (
+            'prepare_requested',
+            'prepare_acked',
+            'commit_local',
+            'rollback_local'
+        )
+    ),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (gid)
+);
+
+CREATE INDEX ec_distann_remote_prepared_xact_intent_by_node
+    ON ec_distann_remote_prepared_xact_intent (node_id, intent_state);
+
+CREATE INDEX ec_distann_remote_prepared_xact_intent_by_index
+    ON ec_distann_remote_prepared_xact_intent (index_oid, node_id, served_epoch);
+
 CREATE TABLE ec_distann_build_candidate (
     index_oid oid NOT NULL,
     logical_index_uuid uuid NOT NULL,
@@ -1108,6 +1135,7 @@ REVOKE ALL ON TABLE ec_distann_generation FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_generation_batch FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_build_registration FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_build_participant_binding FROM PUBLIC;
+REVOKE ALL ON TABLE ec_distann_remote_prepared_xact_intent FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_build_candidate FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_publish_decision FROM PUBLIC;
 REVOKE ALL ON TABLE ec_distann_predecessor_disposition FROM PUBLIC;

@@ -17,6 +17,38 @@ DROP TABLE IF EXISTS ec_spire_remote_row_materialization;
 CREATE INDEX IF NOT EXISTS ec_spire_placement_by_index_oid
 ON ec_spire_placement (index_oid);
 
+-- Task 167: retain a coordinator-side intent for each prepared remote
+-- physical append/backlink so a backend crash can be reconciled instead of
+-- leaking an indefinitely prepared transaction on an owner.
+CREATE TABLE IF NOT EXISTS ec_distann_remote_prepared_xact_intent (
+    index_oid oid NOT NULL,
+    node_id integer NOT NULL CHECK (node_id > 0),
+    served_epoch bigint NOT NULL CHECK (served_epoch >= 0),
+    xid bigint NOT NULL CHECK (xid >= 0),
+    gid text NOT NULL CHECK (
+        length(gid) > 0 AND gid LIKE 'ec_distann_insert_%'
+    ),
+    intent_state text NOT NULL CHECK (
+        intent_state IN (
+            'prepare_requested',
+            'prepare_acked',
+            'commit_local',
+            'rollback_local'
+        )
+    ),
+    created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+    PRIMARY KEY (gid)
+);
+
+CREATE INDEX IF NOT EXISTS ec_distann_remote_prepared_xact_intent_by_node
+    ON ec_distann_remote_prepared_xact_intent (node_id, intent_state);
+
+CREATE INDEX IF NOT EXISTS ec_distann_remote_prepared_xact_intent_by_index
+    ON ec_distann_remote_prepared_xact_intent (index_oid, node_id, served_epoch);
+
+REVOKE ALL ON TABLE ec_distann_remote_prepared_xact_intent FROM PUBLIC;
+
 -- Bind coordinator-routed INSERT descriptors to the coordinator heap column
 -- shape observed when the descriptor is registered or refreshed, and bind
 -- them to the remote heap column shape echoed by the remote index. Coordinator-

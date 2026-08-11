@@ -22,9 +22,9 @@ use std::time::Duration;
 
 #[cfg(feature = "pg_test")]
 use pgrx::iter::TableIterator;
-use pgrx::pg_sys;
 #[cfg(feature = "pg_test")]
 use pgrx::{name, pg_extern};
+use pgrx::pg_sys;
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{Client, NoTls, Row, Statement};
 
@@ -526,6 +526,7 @@ async fn ensure_scan_sessions(
 /// tuple. Keeping this on the same pooled session/identity machinery as FR-079
 /// gives the write endpoint the same roster and epoch fencing.
 pub(crate) struct DistannRemotePhysicalInsertRequest<'a> {
+    pub(crate) index_oid: pg_sys::Oid,
     pub(crate) conninfo: &'a str,
     pub(crate) roster_spec: &'a str,
     pub(crate) target_node_id: u32,
@@ -547,13 +548,107 @@ const PHYSICAL_INSERT_SQL: &str = "SELECT ec_distann_apply_physical_insert(\
 
 static NEXT_PHYSICAL_INSERT_GID: AtomicU64 = AtomicU64::new(1);
 
-fn physical_insert_prepared_gid(vec_id: u64, node_id: u32) -> String {
+#[derive(Debug, Clone, Copy)]
+struct PhysicalPreparedGidParts {
+    index_oid: u32,
+    node_id: u32,
+    served_epoch: u64,
+    xid: u64,
+}
+
+fn physical_insert_prepared_gid(index_oid: pg_sys::Oid, node_id: u32, served_epoch: u64) -> String {
     // The top-level xid makes the intent auditable, while the process-local
     // suffix keeps two callbacks in one transaction distinct (for example an
     // UPDATE that prepares both an owner append and a remote backlink).
     let xid = unsafe { u32::from(pg_sys::GetTopTransactionId()) };
     let serial = NEXT_PHYSICAL_INSERT_GID.fetch_add(1, Ordering::Relaxed);
-    format!("ec_distann_insert_{vec_id:016x}_{node_id}_{xid}_{serial}")
+    format!(
+        "ec_distann_insert_{}_{}_{}_{}_{}",
+        u32::from(index_oid),
+        node_id,
+        served_epoch,
+        xid,
+        serial
+    )
+}
+
+fn parse_physical_prepared_gid(gid: &str) -> Option<PhysicalPreparedGidParts> {
+    let suffix = gid.strip_prefix("ec_distann_insert_")?;
+    let mut parts = suffix.split('_');
+    let index_oid = parts.next()?.parse::<u32>().ok()?;
+    let node_id = parts.next()?.parse::<u32>().ok()?;
+    let served_epoch = parts.next()?.parse::<u64>().ok()?;
+    let xid = parts.next()?.parse::<u64>().ok()?;
+    let _serial = parts.next()?.parse::<u64>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    if index_oid == 0 || node_id == 0 {
+        return None;
+    }
+    Some(PhysicalPreparedGidParts {
+        index_oid,
+        node_id,
+        served_epoch,
+        xid,
+    })
+}
+
+const PHYSICAL_INTENT_TABLE: &str = "ec_distann_remote_prepared_xact_intent";
+
+async fn record_remote_physical_intent(
+    client: &Client,
+    index_oid: pg_sys::Oid,
+    node_id: u32,
+    served_epoch: u64,
+    gid: &str,
+    state: &str,
+) -> Result<(), String> {
+    let parts = parse_physical_prepared_gid(gid)
+        .ok_or_else(|| format!("EC_REMOTE_WRITE: malformed prepared gid {gid}"))?;
+    if parts.index_oid != u32::from(index_oid)
+        || parts.node_id != node_id
+        || parts.served_epoch != served_epoch
+    {
+        return Err(format!(
+            "EC_REMOTE_WRITE: prepared gid {gid} does not match physical insert intent"
+        ));
+    }
+    client
+        .execute(
+            "INSERT INTO ec_distann_remote_prepared_xact_intent \
+             (index_oid, node_id, served_epoch, xid, gid, intent_state) \
+             VALUES ($1::oid, $2, $3, $4, $5, $6) \
+             ON CONFLICT (gid) DO UPDATE SET intent_state = EXCLUDED.intent_state, \
+                 updated_at = clock_timestamp()",
+            &[
+                &u32::from(index_oid),
+                &node_id,
+                &(served_epoch as i64),
+                &(parts.xid as i64),
+                &gid,
+                &state,
+            ],
+        )
+        .await
+        .map(|_| ())
+        .map_err(|error| format!("EC_REMOTE_WRITE: intent record failed: {error}"))
+}
+
+async fn mark_remote_physical_intent(
+    client: &Client,
+    gid: &str,
+    state: &str,
+) -> Result<(), String> {
+    client
+        .execute(
+            "UPDATE ec_distann_remote_prepared_xact_intent \
+             SET intent_state = $2, updated_at = clock_timestamp() WHERE gid = $1",
+            &[&gid, &state],
+        )
+        .await
+        .map(|_| ())
+        .map_err(|error| format!("EC_REMOTE_WRITE: intent state update failed: {error}"))
 }
 
 fn quote_sql_literal(value: &str) -> String {
@@ -576,7 +671,18 @@ fn resolve_physical_insert_prepared(conninfo: String, node_id: u32, gid: String,
     } else {
         "ROLLBACK PREPARED"
     };
-    let _ = client.batch_execute(&format!("{command} {}", quote_sql_literal(&gid)));
+    if client
+        .batch_execute(&format!("{command} {}", quote_sql_literal(&gid)))
+        .is_ok()
+    {
+        let state = if commit { "commit_local" } else { "rollback_local" };
+        let _ = client.batch_execute(&format!(
+            "UPDATE {PHYSICAL_INTENT_TABLE} SET intent_state = {}, \
+             updated_at = clock_timestamp() WHERE gid = {}",
+            quote_sql_literal(state),
+            quote_sql_literal(&gid),
+        ));
+    }
 }
 
 pub(crate) fn remote_physical_insert(
@@ -596,7 +702,20 @@ pub(crate) fn remote_physical_insert(
             )
             .await?;
             let client = &state.connections[&key].client;
-            let prepared_gid = physical_insert_prepared_gid(request.vec_id, request.target_node_id);
+            let prepared_gid = physical_insert_prepared_gid(
+                request.index_oid,
+                request.target_node_id,
+                request.epoch,
+            );
+            record_remote_physical_intent(
+                client,
+                request.index_oid,
+                request.target_node_id,
+                request.epoch,
+                &prepared_gid,
+                "prepare_requested",
+            )
+            .await?;
             client.batch_execute("BEGIN").await.map_err(|error| {
                 format!("EC_REMOTE_WRITE: physical insert begin failed: {error}")
             })?;
@@ -630,6 +749,7 @@ pub(crate) fn remote_physical_insert(
                         .map_err(|error| {
                             format!("EC_REMOTE_WRITE: physical insert prepare failed: {error}")
                         })?;
+                    mark_remote_physical_intent(&client, &prepared_gid, "prepare_acked").await?;
                     let commit_conninfo = request.conninfo.to_owned();
                     let rollback_conninfo = request.conninfo.to_owned();
                     let commit_gid = prepared_gid.clone();
@@ -671,6 +791,7 @@ pub(crate) fn remote_physical_insert(
 }
 
 pub(crate) struct DistannRemotePhysicalBacklinkRequest<'a> {
+    pub(crate) index_oid: pg_sys::Oid,
     pub(crate) conninfo: &'a str,
     pub(crate) roster_spec: &'a str,
     pub(crate) target_node_id: u32,
@@ -679,11 +800,12 @@ pub(crate) struct DistannRemotePhysicalBacklinkRequest<'a> {
     pub(crate) epoch_fingerprint: &'a [u8],
     pub(crate) target_vec_id: u64,
     pub(crate) new_vec_id: u64,
+    pub(crate) new_source_vector: &'a [f32],
     pub(crate) new_code: &'a [u8],
 }
 
 const PHYSICAL_BACKLINK_SQL: &str = "SELECT ec_distann_apply_physical_backlink(\
-        $1::text::regclass::oid, $2::bytea, $3::bigint, $4::bigint, $5::bytea)";
+        $1::text::regclass::oid, $2::bytea, $3::bigint, $4::bigint, $5::real[], $6::bytea)";
 
 pub(crate) fn remote_physical_backlink(
     request: &DistannRemotePhysicalBacklinkRequest<'_>,
@@ -702,8 +824,20 @@ pub(crate) fn remote_physical_backlink(
             )
             .await?;
             let client = &state.connections[&key].client;
-            let prepared_gid =
-                physical_insert_prepared_gid(request.new_vec_id, request.target_node_id);
+            let prepared_gid = physical_insert_prepared_gid(
+                request.index_oid,
+                request.target_node_id,
+                request.epoch,
+            );
+            record_remote_physical_intent(
+                client,
+                request.index_oid,
+                request.target_node_id,
+                request.epoch,
+                &prepared_gid,
+                "prepare_requested",
+            )
+            .await?;
             client
                 .batch_execute("BEGIN")
                 .await
@@ -718,6 +852,7 @@ pub(crate) fn remote_physical_backlink(
                         &request.epoch_fingerprint,
                         &(request.target_vec_id as i64),
                         &(request.new_vec_id as i64),
+                        &request.new_source_vector,
                         &request.new_code,
                     ],
                 ),
@@ -734,6 +869,7 @@ pub(crate) fn remote_physical_backlink(
                         .map_err(|error| {
                             format!("EC_REMOTE_WRITE: backlink prepare failed: {error}")
                         })?;
+                    mark_remote_physical_intent(&client, &prepared_gid, "prepare_acked").await?;
                     let commit_conninfo = request.conninfo.to_owned();
                     let rollback_conninfo = request.conninfo.to_owned();
                     let commit_gid = prepared_gid.clone();
@@ -772,6 +908,128 @@ pub(crate) fn remote_physical_backlink(
             }
         })
     })
+}
+
+fn physical_intent_state_remote(
+    client: &mut postgres::Client,
+    gid: &str,
+) -> Result<Option<String>, String> {
+    client
+        .query_opt(
+            "SELECT intent_state FROM ec_distann_remote_prepared_xact_intent WHERE gid = $1",
+            &[&gid],
+        )
+        .map_err(|error| format!("EC_REMOTE_WRITE: intent lookup failed: {error}"))?
+        .map(|row| {
+            row.try_get::<_, String>("intent_state")
+                .map_err(|error| format!("EC_REMOTE_WRITE: intent state decode failed: {error}"))
+        })
+        .transpose()
+}
+
+fn coordinator_xid_is_live(client: &mut postgres::Client, xid: u64) -> Result<bool, String> {
+    client
+        .query_one(
+            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity \
+              WHERE backend_xid::text = $1 OR backend_xmin::text = $1)",
+            &[&xid.to_string()],
+        )
+        .map_err(|error| format!("EC_REMOTE_WRITE: coordinator xid liveness lookup failed: {error}"))?
+        .try_get::<_, bool>(0)
+        .map_err(|error| format!("EC_REMOTE_WRITE: coordinator xid liveness decode failed: {error}"))
+}
+
+/// Reconcile remote prepared physical writes after a coordinator/backend
+/// failure. A live coordinator xid is left alone; a committed local intent is
+/// committed remotely; every other orphan is rolled back. The returned lines
+/// are deliberately compact so callers can persist them as packet evidence.
+pub(crate) fn reap_orphaned_physical_prepared_xacts(
+    conninfo: &str,
+    node_id: u32,
+    index_oid: pg_sys::Oid,
+) -> Result<Vec<String>, String> {
+    let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+        conninfo,
+        node_id,
+        "ec_distann physical prepared transaction reaper",
+    )?;
+    let prepared_rows = client
+        .query(
+            "SELECT gid FROM pg_catalog.pg_prepared_xacts \
+              WHERE database = current_database() \
+                AND gid LIKE 'ec_distann_insert_%' \
+              ORDER BY prepared, gid",
+            &[],
+        )
+        .map_err(|error| format!("EC_REMOTE_WRITE: prepared transaction scan failed: {error}"))?;
+    let mut results = Vec::with_capacity(prepared_rows.len());
+    for row in prepared_rows {
+        let gid = row
+            .try_get::<_, String>("gid")
+            .map_err(|error| format!("EC_REMOTE_WRITE: prepared gid decode failed: {error}"))?;
+        let Some(parts) = parse_physical_prepared_gid(&gid) else {
+            results.push(format!("{gid}:unparseable:skipped"));
+            continue;
+        };
+        if parts.index_oid != u32::from(index_oid) || parts.node_id != node_id {
+            results.push(format!("{gid}:node_or_index_mismatch:skipped"));
+            continue;
+        }
+        let intent = physical_intent_state_remote(&mut client, &gid)?
+            .unwrap_or_else(|| "missing_intent".to_owned());
+        if coordinator_xid_is_live(&mut client, parts.xid)? {
+            results.push(format!("{gid}:{intent}:xid_live"));
+            continue;
+        }
+        let commit = intent == "commit_local";
+        let command = if commit {
+            "COMMIT PREPARED"
+        } else {
+            "ROLLBACK PREPARED"
+        };
+        match client.batch_execute(&format!("{command} {}", quote_sql_literal(&gid))) {
+            Ok(()) => {
+                let final_state = if commit {
+                    "commit_local"
+                } else {
+                    "rollback_local"
+                };
+                if intent == "missing_intent" {
+                    client
+                        .execute(
+                            "INSERT INTO ec_distann_remote_prepared_xact_intent \
+                             (index_oid, node_id, served_epoch, xid, gid, intent_state) \
+                             VALUES ($1::oid, $2, $3, $4, $5, $6) \
+                             ON CONFLICT (gid) DO UPDATE SET intent_state = EXCLUDED.intent_state, \
+                                 updated_at = clock_timestamp()",
+                            &[
+                                &u32::from(index_oid),
+                                &node_id,
+                                &(parts.served_epoch as i64),
+                                &(parts.xid as i64),
+                                &gid,
+                                &final_state,
+                            ],
+                        )
+                        .map_err(|error| format!("EC_REMOTE_WRITE: intent reconciliation failed: {error}"))?;
+                } else {
+                    client
+                        .execute(
+                            "UPDATE ec_distann_remote_prepared_xact_intent \
+                             SET intent_state = $2, updated_at = clock_timestamp() WHERE gid = $1",
+                            &[&gid, &final_state],
+                        )
+                        .map_err(|error| format!("EC_REMOTE_WRITE: intent reconciliation failed: {error}"))?;
+                }
+                results.push(format!("{gid}:{intent}:{}", final_state));
+            }
+            Err(error) => results.push(format!(
+                "{gid}:{intent}:{}_failed:{error}",
+                if commit { "commit" } else { "rollback" }
+            )),
+        }
+    }
+    Ok(results)
 }
 
 async fn lifecycle_client<'a>(
@@ -3125,6 +3383,30 @@ mod tests {
                 !error.contains(forbidden),
                 "error leaked {forbidden}: {error}"
             );
+        }
+    }
+
+    #[test]
+    fn physical_prepared_gid_is_fenced_to_index_and_owner() {
+        let gid = "ec_distann_insert_4242_7_19_83_2";
+        let parts = parse_physical_prepared_gid(gid).expect("valid physical gid");
+        assert_eq!(parts.index_oid, 4242);
+        assert_eq!(parts.node_id, 7);
+        assert_eq!(parts.served_epoch, 19);
+        assert_eq!(parts.xid, 83);
+        assert!(parse_physical_prepared_gid("ec_distann_insert_4242_7_19_83").is_none());
+        assert!(parse_physical_prepared_gid("ec_distann_insert_4242_8_19_83_2_extra").is_none());
+    }
+
+    #[test]
+    fn physical_prepared_gid_rejects_untrusted_names() {
+        for gid in [
+            "ec_spire_insert_1_2_3_4_5",
+            "ec_distann_insert_x_2_3_4_5",
+            "ec_distann_insert_1_0_3_4_5",
+            "ec_distann_insert_1_2_3_4_-1",
+        ] {
+            assert!(parse_physical_prepared_gid(gid).is_none(), "accepted {gid}");
         }
     }
 
