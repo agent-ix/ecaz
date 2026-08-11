@@ -359,6 +359,12 @@ unsafe fn insert_from_prepared_slot(
                 },
             )?;
         }
+        if options::debug_fail_insert() {
+            return Err(
+                "EC_FAULT_INJECTED: physical insert failed after owner writes before commit"
+                    .to_owned(),
+            );
+        }
         update_source_mapping(index_oid, source_tid, vec_id)?;
         return Ok(());
     }
@@ -408,6 +414,12 @@ unsafe fn insert_from_prepared_slot(
         row_tid,
         previous_version.unwrap_or(-1).saturating_add(1),
     )?;
+    if options::debug_fail_insert() {
+        return Err(
+            "EC_FAULT_INJECTED: physical insert failed after graph append before backlinks"
+                .to_owned(),
+        );
+    }
 
     let metadata = ambuild::read_metadata_from_index(index_relation)?;
     let index_name = unsafe { super::routine::distann_index_relname(index_relation) };

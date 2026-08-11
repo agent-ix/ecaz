@@ -8663,14 +8663,11 @@ async fn mid_delete_drill(
     pass
 }
 
-/// FR-083 mid-insert failure drill (TC-043), on an isolated table so the shared
-/// `dm` other drills use is untouched. Builds a small graph, buffers a few
-/// inserts (delta buffer), then folds them with `ec_distann.debug_fail_insert`
-/// on: `graph_insert_record` errors after staging the node + directory pages but
-/// before publishing metadata. The aborting statement must roll the staged pages
-/// back, so a scan after the failed fold succeeds and is byte-identical to the
-/// pre-fold scan (no partial/corrupt record). Returns true iff the fold errored
-/// AND the post-fold scan matches the pre-fold scan.
+/// FR-083 mid-insert failure drill (TC-043), on an isolated one-owner physical
+/// generation so the shared `dm` fixture remains untouched. The injected
+/// failure occurs after the physical graph append (and after any owner-side
+/// prepared write) but before backlink publication. The source row count and
+/// published physical record count must remain unchanged after the abort.
 async fn mid_insert_drill(
     psql: &Path,
     socket_dir: &Path,
@@ -8678,17 +8675,30 @@ async fn mid_insert_drill(
     args: &LocalMultinodePg18Args,
 ) -> bool {
     let dim = args.dim;
-    let vec = |g: &str| -> String {
+    let vector_expr = |g: &str| -> String {
         format!(
-            "encode_to_ecvector((SELECT array_agg((sin({g} * 0.017 * (d + 1)) + cos({g} * 0.0031 * (d + 1)))::real) \
-               FROM generate_series(0, {dim} - 1) AS d), 4, 42)"
+            "encode_to_ecvector((SELECT array_agg((sin({g} * 0.017 * (d + 1)) + cos({g} * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) AS d), 4, 42)"
         )
     };
     let setup = format!(
-        "DROP TABLE IF EXISTS mi; CREATE TABLE mi (id bigint, embedding ecvector); \
-         INSERT INTO mi SELECT g, {gvec} FROM generate_series(1, 500) AS g; \
-         CREATE INDEX mi_idx ON mi USING ec_distann (embedding ecvector_distann_ip_ops) WITH (graph_degree = {gd});",
-        gvec = vec("g"),
+        "DROP TABLE IF EXISTS mi CASCADE; \
+         CREATE TABLE mi (id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({dim})); \
+         INSERT INTO mi \
+         SELECT g, (substr(md5(g::text),1,8)||'-'||substr(md5(g::text),9,4)||'-4'||\
+                    substr(md5(g::text),14,3)||'-8'||substr(md5(g::text),18,3)||'-'||\
+                    substr(md5(g::text),21,12))::uuid, arr, encode_to_ecvector(arr, 4, 42) \
+           FROM (SELECT g, (SELECT array_agg((sin(g * 0.017 * (d + 1)) +\
+                         cos(g * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) d) arr\
+                   FROM generate_series(1, 500) g) rows; \
+         CREATE INDEX mi_idx ON mi USING ec_distann (embedding ecvector_distann_ip_ops)\
+           INCLUDE (source_id) WITH (distributed_control = true, source_identity = 'include', graph_degree = {gd}); \
+         SELECT ec_distann_configure_participant_identity('mi_idx'::regclass, 'mi/node-1'); \
+         SELECT ec_distann_register_node_descriptor('mi_idx'::regclass, 0, 1, 'mi/node-1',\
+                'DISTANN_MI', 'mi_idx'::regclass, true); \
+         SELECT ec_distann_begin_epoch_build('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid); \
+         SELECT ec_distann_build_epoch('mi_idx'::regclass, 1, '81818181-8181-4181-8181-818181818181'::uuid); \
+         SELECT ec_distann_decide_epoch_publish('mi_idx'::regclass, '81818181-8181-4181-8181-818181818181'::uuid); \
+         SELECT ec_distann_recover_epoch_publish('mi_idx'::regclass, '81818181-8181-4181-8181-818181818181'::uuid);",
         gd = args.graph_degree,
     );
     if run_psql_file(psql, socket_dir, coord_port, &setup)
@@ -8697,37 +8707,51 @@ async fn mid_insert_drill(
     {
         return false;
     }
-    // Buffer a few inserts into the delta buffer (aminsert), to be folded.
-    let more = format!(
-        "INSERT INTO mi SELECT g, {gvec} FROM generate_series(501, 510) AS g;",
-        gvec = vec("g"),
-    );
-    if run_psql_file(psql, socket_dir, coord_port, &more)
-        .await
-        .is_err()
-    {
+    let topology_sql = "SELECT count(*) FROM mi; SELECT record_count FROM ec_distann_epoch_topology(\
+                        'mi_idx'::regclass, (SELECT epoch_fingerprint FROM ec_distann_active_epoch\
+                        WHERE index_oid='mi_idx'::regclass::oid));";
+    let before = capture_psql_allow_error(psql, socket_dir, coord_port, topology_sql).await;
+    let before_values = before
+        .lines()
+        .filter_map(|line| line.trim().parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    if before_values.len() < 2 {
+        let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS mi CASCADE;").await;
         return false;
     }
-    let scan = "SET enable_seqscan=off; SELECT id FROM mi ORDER BY embedding <#> (SELECT embedding FROM mi WHERE id=1) LIMIT 10;";
-    let before = capture_psql_allow_error(psql, socket_dir, coord_port, scan).await;
-    // Inject the mid-insert failure and fold: the fold must error.
-    let fold = "SET ec_distann.debug_fail_insert=true; SELECT ec_distann_fold_delta_into_graph('mi_idx'::regclass);";
-    let fold_out = capture_psql_allow_error(psql, socket_dir, coord_port, fold).await;
-    let fold_errored = query_errored(&fold_out);
-    // Post-failed-fold scan: must still work and match the pre-fold result.
-    let after = capture_psql_allow_error(psql, socket_dir, coord_port, scan).await;
-    let ids =
-        |out: &str| -> Vec<i64> { out.lines().filter_map(|l| l.trim().parse().ok()).collect() };
-    let (before_ids, after_ids) = (ids(&before), ids(&after));
-    let consistent = !after_ids.is_empty() && after_ids == before_ids;
-    let pass = fold_errored && consistent;
-    crate::ecaz_println!(
-        "[distann-multicluster] mid_insert_failure DIAG fold_errored={fold_errored} \
-         before_n={} after_n={} consistent={consistent} pass={pass}",
-        before_ids.len(),
-        after_ids.len(),
+    let insert = format!(
+        "SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,\
+         '00000000-0000-4000-8000-000000000501',\
+         (SELECT array_agg((sin(501 * 0.017 * (d + 1)) + cos(501 * 0.0031 * (d + 1)))::real)\
+          FROM generate_series(0, {dim} - 1) d), {vector});",
+        vector = vector_expr("501"),
     );
-    let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS mi;").await;
+    let insert_out = capture_psql_allow_error(psql, socket_dir, coord_port, &insert).await;
+    let insert_errored = query_errored(&insert_out);
+    let after = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        "RESET ec_distann.debug_fail_insert; SELECT count(*) FROM mi; SELECT record_count FROM ec_distann_epoch_topology(\
+         'mi_idx'::regclass, (SELECT epoch_fingerprint FROM ec_distann_active_epoch\
+         WHERE index_oid='mi_idx'::regclass::oid));",
+    )
+    .await;
+    let after_values = after
+        .lines()
+        .filter_map(|line| line.trim().parse::<i64>().ok())
+        .collect::<Vec<_>>();
+    let consistent = after_values.len() >= 2 && after_values[..2] == before_values[..2];
+    let pass = insert_errored && consistent;
+    crate::ecaz_println!(
+        "[distann-multicluster] mid_insert_failure DIAG physical_insert_errored={insert_errored} \
+         before_rows={} after_rows={} before_records={} after_records={} consistent={consistent} pass={pass}",
+        before_values[0],
+        after_values.first().copied().unwrap_or(-1),
+        before_values[1],
+        after_values.get(1).copied().unwrap_or(-1),
+    );
+    let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS mi CASCADE;").await;
     pass
 }
 
