@@ -2879,7 +2879,10 @@ async fn measure_task167_insert_arm(
     physical: bool,
 ) -> Result<f64> {
     const TRIALS: usize = 3;
-    const ROWS_PER_TRIAL: usize = 128;
+    // Keep the repeated arm small enough for the 50k/100k release matrix:
+    // every physical row performs bounded graph search plus owner/backlink
+    // work, while three disjoint trials still provide a stable median.
+    const ROWS_PER_TRIAL: usize = 16;
     let mut trial_rows_per_second = Vec::with_capacity(TRIALS);
     for trial in 0..TRIALS {
         let started = Instant::now();
@@ -2926,7 +2929,7 @@ async fn task167_insert_throughput_ab(
     capture_work: bool,
     lines: &mut Vec<String>,
 ) -> Result<()> {
-    const ROWS_PER_TRIAL: usize = 128;
+    const ROWS_PER_TRIAL: usize = 16;
     const TRIALS: usize = 3;
     let single_rows_per_second =
         measure_task167_insert_arm(coordinator, single_corpus, physical_corpus, false).await?;
