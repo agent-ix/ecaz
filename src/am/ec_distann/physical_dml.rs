@@ -60,10 +60,11 @@ pub(crate) unsafe fn insert_from_callback(
     let identity_payload = ambuild::extract_identity_payload(identity, values, isnull);
     let vec_id = super::identity::vec_id_from_source_identity(&identity_payload);
 
-    let snapshot = pg_sys::GetActiveSnapshot();
-    if snapshot.is_null() {
-        return Err("EC_BUILD_STATE: physical insert has no active snapshot".to_owned());
-    }
+    // The heap tuple supplied to an index AM callback is the current command's
+    // own tuple.  It is not visible through the ordinary active snapshot until
+    // the command advances its CID; SnapshotSelf is the callback-safe snapshot
+    // used by the other AM insert paths for this exact case.
+    let source_snapshot = std::ptr::addr_of_mut!(pg_sys::SnapshotSelfData);
     let heap_guard = HeapRelationGuard::try_open(
         (*(*index_relation).rd_index).indrelid,
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
@@ -72,7 +73,12 @@ pub(crate) unsafe fn insert_from_callback(
     let source_slot = TupleTableSlotGuard::single_for_heap_guard(&heap_guard).ok_or_else(|| {
         "EC_GENERATION_MISSING: source heap slot could not be allocated".to_owned()
     })?;
-    fetch_source_tuple(heap_relation, heap_tid, source_slot.as_ptr(), snapshot)?;
+    fetch_source_tuple(
+        heap_relation,
+        heap_tid,
+        source_slot.as_ptr(),
+        source_snapshot,
+    )?;
     // `index_unchanged` is only an executor hint and is false for a
     // vector-changing UPDATE. The heap header is the authoritative local
     // discriminator available to an AM callback; retaining the hint covers
