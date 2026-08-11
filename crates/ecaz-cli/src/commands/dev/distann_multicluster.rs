@@ -9010,7 +9010,7 @@ async fn mid_insert_drill(
         }
     }
     let topology_sql = "SELECT count(*) FROM mi; SELECT record_count FROM ec_distann_epoch_topology(\
-                        'mi_idx'::regclass, (SELECT epoch_fingerprint FROM ec_distann_active_epoch\
+                        'mi_idx'::regclass, (SELECT epoch_fingerprint FROM ec_distann_active_epoch \
                         WHERE index_oid='mi_idx'::regclass::oid));";
     let before = capture_psql_allow_error(psql, socket_dir, coord_port, topology_sql).await;
     let before_values = before
@@ -9039,7 +9039,7 @@ async fn mid_insert_drill(
         socket_dir,
         coord_port,
         "RESET ec_distann.debug_fail_insert; SELECT count(*) FROM mi; SELECT record_count FROM ec_distann_epoch_topology(\
-         'mi_idx'::regclass, (SELECT epoch_fingerprint FROM ec_distann_active_epoch\
+         'mi_idx'::regclass, (SELECT epoch_fingerprint FROM ec_distann_active_epoch \
          WHERE index_oid='mi_idx'::regclass::oid));",
     )
     .await;
