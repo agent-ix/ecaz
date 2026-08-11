@@ -1,6 +1,7 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: partial / requires physical-generation adaptation (2026-07-10).
+Status: implementation complete; packets 017–018 review-open; runtime TC-043 and
+10k/50k/100k recall/latency/storage/insert evidence pending (2026-08-11).
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
 (gate verdict remains committed scope unless the operator explicitly descopes
 — ADR-085 D5). The landed delta/fold experiments apply to the legacy local or
