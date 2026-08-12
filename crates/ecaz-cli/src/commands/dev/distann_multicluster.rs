@@ -2887,6 +2887,7 @@ async fn measure_task167_insert_arm(
     for trial in 0..TRIALS {
         let started = Instant::now();
         for ordinal in 0..ROWS_PER_TRIAL {
+            let source_offset = trial * ROWS_PER_TRIAL + ordinal;
             let id = if physical { 2_000_000_i64 } else { 1_000_000_i64 }
                 + trial as i64 * ROWS_PER_TRIAL as i64
                 + ordinal as i64;
@@ -2897,13 +2898,13 @@ async fn measure_task167_insert_arm(
                             substr(md5({id}::text),14,3)||'-8'||substr(md5({id}::text),18,3)||'-'||\
                             substr(md5({id}::text),21,12))::uuid, source, \
                             encode_to_ecvector(source, 4, 42) \
-                       FROM {physical_corpus} ORDER BY id LIMIT 1"
+                       FROM {physical_corpus} ORDER BY id OFFSET {source_offset} LIMIT 1"
                 )
             } else {
                 format!(
                     "INSERT INTO {table} (id, source, embedding) \
                      SELECT {id}, source, encode_to_ecvector(source, 4, 42) \
-                       FROM {physical_corpus} ORDER BY id LIMIT 1"
+                       FROM {physical_corpus} ORDER BY id OFFSET {source_offset} LIMIT 1"
                 )
             };
             let inserted = coordinator.execute(&sql, &[]).await?;
@@ -3041,8 +3042,13 @@ async fn task167_post_insert_fresh_rebuild_parity(
              SET ec_distann.epoch = {epoch};
              DROP TABLE IF EXISTS task167_parity_q, task167_parity_physical, task167_parity_fresh;
              CREATE TEMP TABLE task167_parity_q AS
+               SELECT id AS qid, source AS v
+                 FROM {physical_corpus}
+                WHERE id BETWEEN 2000000 AND 2000047
+                ORDER BY id;
+             INSERT INTO task167_parity_q
                SELECT id AS qid, source AS v FROM {physical_queries}
-                ORDER BY id LIMIT {query_count};
+                ORDER BY id LIMIT greatest({query_count} - 48, 0);
              SET ec_distann.roster = '{roster}';
              CREATE TEMP TABLE task167_parity_physical AS
                SELECT q.qid, hit.id
@@ -3102,7 +3108,7 @@ async fn task167_post_insert_fresh_rebuild_parity(
         );
     }
     Ok(format!(
-        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} pass=true",
+        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} inserted_neighborhood_queries=48 top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} pass=true",
     ))
 }
 
