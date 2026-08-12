@@ -851,7 +851,7 @@ CREATE FUNCTION ec_distann_materialize_row_payloads(
     regclass, bytea, bigint[], smallint[], bytea
 ) RETURNS TABLE (
     vec_id bigint, is_tombstone boolean, tuple_payload_missing boolean,
-    payload_nulls boolean[], payload_values bytea[]
+    payload_nulls boolean[], payload_offsets bigint[], payload_values bytea
 )
 LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
 AS 'SELECT * FROM ec_distann_materialize_physical_row_payloads($1, $2, $3, $4, $5)';

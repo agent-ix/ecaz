@@ -289,6 +289,10 @@ pub struct LocalMultinodePg18Args {
     /// diagnostic fixtures. The default benchmark contract requires release.
     #[arg(long, default_value_t = false)]
     pub allow_debug_extension: bool,
+    /// Insert bounded candidates until one coordinator-routed remote owner
+    /// commit is observed, for protocol validation and review evidence.
+    #[arg(long, default_value_t = false)]
+    pub remote_insert_probe: bool,
     /// After the physical fixture passes, drop the extension on every owner
     /// and prove AM-owned generation relations are dependency-cleaned and the
     /// preloaded hooks pass through ordinary DML without the extension.
@@ -7598,6 +7602,17 @@ async fn drive_physical_fixture(
     if !serving_ok {
         bail!("physical serving returned {served} rows, expected {query_limit}");
     }
+    if args.remote_insert_probe {
+        let remote_insert_ok =
+            physical_remote_insert_probe(psql, socket_dir, nodes[0].port, args, owners.len())
+                .await?;
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_remote_insert_probe pass={remote_insert_ok}"
+        );
+        if !remote_insert_ok {
+            bail!("physical remote insert probe did not commit on a remote owner");
+        }
+    }
     let mut remote_verified = 0_usize;
     let mut remote_fault_lines = Vec::new();
     let remote_owners = if args.coordinator_outside_roster {
@@ -9477,6 +9492,72 @@ async fn physical_concurrency_drill(
         forward_neighbor_count
     );
     Ok(pass && forward_neighbor_check)
+}
+
+/// Commit one coordinator-routed physical insert against a non-local owner.
+/// The empty roster is deliberate: it exercises the published participant
+/// binding fallback used when the coordinator session has no operator roster
+/// GUC installed. Candidates that hash to the coordinator are retained as
+/// harmless local inserts while searching for a remote owner.
+async fn physical_remote_insert_probe(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    args: &LocalMultinodePg18Args,
+    owner_count: usize,
+) -> Result<bool> {
+    let vector = insert_vector_expr(args, "dm");
+    for candidate in 0..32_u32 {
+        let id = 910_000_i64 + i64::from(candidate);
+        let source_id = format!(
+            "11111111-1111-4{:03x}-8{:03x}-{:012x}",
+            candidate,
+            candidate,
+            u64::from(candidate) + 1
+        );
+        let insert_sql = format!(
+            "SET ec_distann.roster=''; SET ec_distann.local_node_id=1; \
+             WITH row_data AS (SELECT {id}::bigint AS id, '{source_id}'::uuid AS source_id, \
+                                      {vector}::real[] AS source) \
+             INSERT INTO dm (id, source_id, source, embedding) \
+             SELECT id, source_id, source, encode_to_ecvector(source, 4, 42) FROM row_data; \
+             SELECT ec_distann_owning_node(m.vec_id, {owner_count}, 1) \
+               FROM ec_distann_physical_source_map m \
+               JOIN dm d ON d.ctid = m.source_tid \
+              WHERE m.index_oid = 'dm_idx'::regclass::oid AND d.source_id = '{source_id}'::uuid;"
+        );
+        let output = run_capture(psql, socket_dir, coord_port, &insert_sql).await;
+        if !output.status_ok {
+            crate::ecaz_println!(
+                "[distann-multicluster] physical_remote_insert_probe candidate={candidate} status=false stderr={}",
+                compact_capture_error(&output.stderr)
+            );
+            return Ok(false);
+        }
+        let Some(owner) = output
+            .stdout
+            .lines()
+            .find_map(|line| line.trim().parse::<usize>().ok())
+        else {
+            crate::ecaz_println!(
+                "[distann-multicluster] physical_remote_insert_probe candidate={candidate} status=false reason=owner_not_found stdout={}",
+                compact_capture_error(&output.stdout)
+            );
+            return Ok(false);
+        };
+        let remote = if args.coordinator_outside_roster {
+            owner < owner_count
+        } else {
+            owner > 0 && owner < owner_count
+        };
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_remote_insert_probe candidate={candidate} committed=true owner={owner} remote={remote}"
+        );
+        if remote {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// Exercise the committed physical DELETE path through PostgreSQL VACUUM. The
