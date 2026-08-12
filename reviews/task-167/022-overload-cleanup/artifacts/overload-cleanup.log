@@ -1,0 +1,9 @@
+Task 167 packet 022 — PG18 overload cleanup evidence
+
+head_sha=fb6a9cd55
+command=cargo pgrx test pg18 test_distann_remote_endpoint_acl_class --no-default-features --features pg18,pg_test
+result=test tests::pg_test_distann_remote_endpoint_acl_class ... ok
+summary=1 passed; 0 failed; 2577 filtered out; finished in 84.65s
+
+The passing broad ACL inventory exercised the protected ec_distann endpoint
+class after the physical DML endpoint hardening in checkpoint 48195c196.
