@@ -222,12 +222,12 @@ exist today underneath them.
 | FR-083-AC-1 | Test | basic: `test_ec_distann_apply_record_writes_tombstones`, `test_ec_distann_tombstone_excludes_and_preserves_live_vectors` (tagged FR-083-AC-1) | ✅ Covered |
 | FR-083-AC-2 | Test | basic: `test_ec_distann_reindex_drains_delta_buffer` (tagged FR-083-AC-2) | ✅ Covered |
 | FR-083-AC-3 | Test | basic: `test_ec_distann_fold_delta_into_graph` (tagged FR-083-AC-3), `test_distann_control_metadata_and_fail_closed` (v5 fail-closed) | ✅ Covered |
-| FR-083-AC-4 | Test (bench A/B) | Tier 2 not implemented | ❌ Planned (code-fix backlog / final milestone) |
-| FR-083-AC-5 | Test (TC-040) | basic: `test_ec_distann_fold_delta_requires_read_committed`, `test_ec_distann_apply_record_writes_requires_read_committed`; the hardened-class (SECURITY DEFINER / revoke) half is a spec-flagged Task 214 gap | ⚠️ Partial |
-| FR-083-AC-6 | Test (fault drill) | mc: mid-insert failure drill (TC-043, isolated table); covers the legacy fold path only — Tier-2 routed insert unimplemented | ⚠️ Partial |
-| FR-083-AC-7 | Test (concurrency drill) | Tier 2 not implemented | ❌ Planned (code-fix backlog / final milestone) |
-| FR-083-AC-8 | Test (TC-043) | Tier 2 not implemented | ❌ Planned (code-fix backlog / final milestone) |
-| FR-083-AC-9 | Test (TC-043) | Tier 2 not implemented | ❌ Planned (code-fix backlog / final milestone) |
+| FR-083-AC-4 | Test (bench A/B) | Task 167 packet 020: `ecaz bench suite` 10k/50k/100k inserted-neighborhood parity against fresh rebuild; normalized `results.jsonl` and cited result lines | 🟡 Review-open |
+| FR-083-AC-5 | Test (TC-040) | `test_ec_distann_apply_record_writes_requires_read_committed`; physical DML endpoint family now has SECURITY DEFINER, pinned search_path, and PUBLIC revoke in `src/lib.rs`; installed-class verification remains review evidence | 🟡 Review-open |
+| FR-083-AC-6 | Test (fault drill) | Task 167 packet 020: physical mid-insert rollback leaves rows/records unchanged; `physical_mid_insert_failure pass=true` at 10k/50k/100k | 🟡 Review-open |
+| FR-083-AC-7 | Test (concurrency drill) | Task 167 packet 020: `physical_concurrent_insert_query` with 4 scanners × 12 iterations passes at 10k/50k/100k | 🟡 Review-open |
+| FR-083-AC-8 | Test (TC-043) | Task 167 packet 020: remote-owner materialization and topology gates pass at 10k/50k/100k; physical source rows are co-placed for inserted vec_ids | 🟡 Review-open |
+| FR-083-AC-9 | Test (TC-043) | Task 167 packet 020: stable-vec_id UPDATE drill observes one identity with `(version,count)` `(1,1)`→`(2,1)` at each scale | 🟡 Review-open |
 
 ### FR-084 — Coordinator Traversal Replica (`spec/functional/distann/read/FR-084-distann-coordinator-traversal-replica.md`)
 

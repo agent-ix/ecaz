@@ -1584,6 +1584,85 @@ fn test_distann_remote_endpoint_acl_class() {
 }
 
 #[pg_test]
+fn test_distann_physical_dml_endpoint_acl_class() {
+    let role = format!("ec_distann_physical_unprivileged_{}", unsafe {
+        pg_sys::MyProcPid
+    });
+    let mut client =
+        postgres::Client::connect(&current_pg_test_loopback_conninfo(), postgres::NoTls)
+            .expect("loopback connection should open");
+    client
+        .batch_execute(&format!(
+            "DROP ROLE IF EXISTS {role}; CREATE ROLE {role} NOLOGIN"
+        ))
+        .expect("test role should create outside the pg_test transaction");
+
+    let extension_schema = client
+        .query_one(
+            "SELECT pg_catalog.quote_ident(namespace.nspname)
+               FROM pg_catalog.pg_extension extension
+               JOIN pg_catalog.pg_namespace namespace
+                 ON namespace.oid = extension.extnamespace
+              WHERE extension.extname = 'ecaz'",
+            &[],
+        )
+        .expect("extension schema should resolve")
+        .get::<_, String>(0);
+    client
+        .batch_execute(&format!(
+            "GRANT USAGE ON SCHEMA {extension_schema} TO {role}; SET ROLE {role}"
+        ))
+        .expect("unprivileged caller should receive schema usage and assume role");
+
+    let calls = [
+        format!(
+            "SELECT {extension_schema}.ec_distann_apply_physical_insert(
+                 0::oid, '\\x'::bytea, 0::bigint, ARRAY[]::real[], '\\x'::bytea,
+                 ARRAY[]::boolean[], ARRAY[]::bigint[], '\\x'::bytea, '\\x'::bytea, false
+             )"
+        ),
+        format!(
+            "SELECT {extension_schema}.ec_distann_apply_physical_backlink(
+                 0::oid, '\\x'::bytea, 0::bigint, ARRAY[]::real[], 0::bigint,
+                 ARRAY[]::real[], '\\x'::bytea
+             )"
+        ),
+        format!(
+            "SELECT {extension_schema}.ec_distann_apply_physical_tombstone(
+                 0::oid, '\\x'::bytea, 0::bigint
+             )"
+        ),
+    ];
+    for call_sql in calls {
+        let error = client
+            .simple_query(&call_sql)
+            .expect_err("physical DML endpoint must be denied to an unprivileged role");
+        let db_error = error
+            .as_db_error()
+            .expect("physical DML ACL denial should be a database error");
+        assert_eq!(
+            db_error.code(),
+            &postgres::error::SqlState::INSUFFICIENT_PRIVILEGE,
+            "physical DML endpoint returned the wrong SQLSTATE: {db_error}"
+        );
+        assert!(
+            db_error
+                .message()
+                .contains("permission denied for function"),
+            "physical DML endpoint was not denied by its function ACL: {db_error}"
+        );
+    }
+
+    client
+        .batch_execute(&format!(
+            "RESET ROLE;
+             REVOKE USAGE ON SCHEMA {extension_schema} FROM {role};
+             DROP ROLE {role}"
+        ))
+        .expect("test role should clean up");
+}
+
+#[pg_test]
 fn test_ec_distann_fold_delta_requires_read_committed() {
     let mut client =
         postgres::Client::connect(&current_pg_test_loopback_conninfo(), postgres::NoTls)

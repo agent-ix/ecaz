@@ -740,6 +740,39 @@ REVOKE ALL ON FUNCTION ec_distann_apply_record_writes(
     oid, bytea, bigint[]
 ) FROM PUBLIC;
 
+-- FR-083 physical DML endpoints.  These endpoints are called by the
+-- coordinator's owner transport, never by unprivileged SQL callers.  Keep
+-- them in the same hardened class as the physical read endpoints: the
+-- implementation performs its own READ COMMITTED check, while this SQL
+-- boundary prevents search_path spoofing and direct PUBLIC execution.
+ALTER FUNCTION ec_distann_apply_physical_insert(
+    oid, bytea, bigint, real[], bytea, boolean[], bigint[], bytea, bytea, boolean
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_apply_physical_insert(
+    oid, bytea, bigint, real[], bytea, boolean[], bigint[], bytea, bytea, boolean
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_apply_physical_insert(
+    oid, bytea, bigint, real[], bytea, boolean[], bigint[], bytea, bytea, boolean
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_apply_physical_backlink(
+    oid, bytea, bigint, real[], bigint, real[], bytea
+) SECURITY DEFINER;
+ALTER FUNCTION ec_distann_apply_physical_backlink(
+    oid, bytea, bigint, real[], bigint, real[], bytea
+) SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_apply_physical_backlink(
+    oid, bytea, bigint, real[], bigint, real[], bytea
+) FROM PUBLIC;
+
+ALTER FUNCTION ec_distann_apply_physical_tombstone(oid, bytea, bigint)
+    SECURITY DEFINER;
+ALTER FUNCTION ec_distann_apply_physical_tombstone(oid, bytea, bigint)
+    SET search_path TO pg_catalog, @extschema@, pg_temp;
+REVOKE ALL ON FUNCTION ec_distann_apply_physical_tombstone(
+    oid, bytea, bigint
+) FROM PUBLIC;
+
 ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real, integer)
     SECURITY DEFINER;
 ALTER FUNCTION ec_distann_expand_physical_nodes(regclass, bytea, real[], bigint[], real, integer)
