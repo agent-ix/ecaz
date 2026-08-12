@@ -9107,9 +9107,9 @@ async fn mid_insert_drill(
         psql,
         socket_dir,
         coord_port,
-        "SELECT graph_store_relid::regclass::text || '|' || row_tier_relid::regclass::text\
-           FROM ec_distann_generation\
-          WHERE index_oid='mi_idx'::regclass::oid AND state='Published'\
+        "SELECT graph_store_relid::regclass::text || '|' || row_tier_relid::regclass::text \
+           FROM ec_distann_generation \
+          WHERE index_oid='mi_idx'::regclass::oid AND state='Published' \
           ORDER BY generation DESC LIMIT 1;",
     )
     .await;
@@ -9128,11 +9128,11 @@ async fn mid_insert_drill(
             if safe_relation(graph_relation) && safe_relation(row_relation) {
                 let version_probe = || {
                     format!(
-                        "SELECT g.vec_id::text || '|' || count(*)::text || '|' ||\
-                                count(*) FILTER (WHERE g.is_current)::text\
-                           FROM {graph_relation} g\
-                           JOIN {row_relation} r ON r.ctid = g.heap_tid\
-                          WHERE r.source_id = '{source_id}'::uuid\
+                        "SELECT g.vec_id::text || '|' || count(*)::text || '|' || \
+                                count(*) FILTER (WHERE g.is_current)::text \
+                           FROM {graph_relation} g \
+                           JOIN {row_relation} r ON r.ctid = g.heap_tid \
+                          WHERE r.source_id = '{source_id}'::uuid \
                           GROUP BY g.vec_id;"
                     )
                 };
