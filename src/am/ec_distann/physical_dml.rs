@@ -446,6 +446,10 @@ unsafe fn insert_from_prepared_slot(
                     new_code: &new_code,
                 },
             )?;
+            // The owner-side endpoint performs the locked read/modify/write;
+            // count the completed RPC here so coordinator evidence includes
+            // successful remote amendments as well as local ones.
+            stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, 1);
         }
         if options::debug_fail_insert() {
             return Err(
@@ -556,6 +560,7 @@ unsafe fn insert_from_prepared_slot(
                         new_code: &new_code,
                     },
                 )?;
+                stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, 1);
                 continue;
             }
             amend_backlink(
@@ -897,24 +902,35 @@ pub(crate) unsafe fn tombstone_dead_records(
             .get(owner)
             .ok_or_else(|| "EC_NODE_DESCRIPTOR: delete owner is outside roster".to_owned())?;
         if owner == local_owner {
-            if tombstone_owner_record(index_oid, vec_id, None)? {
-                removed += 1;
+            match tombstone_owner_record(index_oid, vec_id, None) {
+                Ok(true) => removed += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    pgrx::warning!(
+                        "ec_distann ambulkdelete could not tombstone local vec_id {vec_id:#018x}: {error}"
+                    );
+                    continue;
+                }
             }
             let (block, offset) = pgrx::itemptr::item_pointer_get_both(source_tid);
-            delete_source_mapping(
+            if let Err(error) = delete_source_mapping(
                 index_oid,
                 ItemPointer {
                     block_number: block,
                     offset_number: offset,
                 },
                 vec_id,
-            )?;
+            ) {
+                pgrx::warning!(
+                    "ec_distann ambulkdelete could not prune local source mapping for vec_id {vec_id:#018x}: {error}"
+                );
+            }
         } else {
             let conninfo = route.conninfo.as_deref().ok_or_else(|| {
                 "EC_NODE_DESCRIPTOR: remote delete route has no conninfo".to_owned()
             })?;
             let index_name = super::routine::distann_index_relname(index_relation);
-            super::remote_transport::remote_physical_tombstone(
+            match super::remote_transport::remote_physical_tombstone(
                 &super::remote_transport::DistannRemotePhysicalTombstoneRequest {
                     conninfo,
                     roster_spec: &super::roster::current_roster_spec(),
@@ -924,17 +940,28 @@ pub(crate) unsafe fn tombstone_dead_records(
                     epoch_fingerprint: &fingerprint,
                     vec_id,
                 },
-            )?;
-            removed += 1;
+            ) {
+                Ok(()) => removed += 1,
+                Err(error) => {
+                    pgrx::warning!(
+                        "ec_distann ambulkdelete could not tombstone remote vec_id {vec_id:#018x}: {error}"
+                    );
+                    continue;
+                }
+            }
             let (block, offset) = pgrx::itemptr::item_pointer_get_both(source_tid);
-            delete_source_mapping(
+            if let Err(error) = delete_source_mapping(
                 index_oid,
                 ItemPointer {
                     block_number: block,
                     offset_number: offset,
                 },
                 vec_id,
-            )?;
+            ) {
+                pgrx::warning!(
+                    "ec_distann ambulkdelete could not prune remote source mapping for vec_id {vec_id:#018x}: {error}"
+                );
+            }
         }
     }
     Ok(removed)
