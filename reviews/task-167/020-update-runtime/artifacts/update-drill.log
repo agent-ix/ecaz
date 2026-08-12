@@ -1,0 +1,4 @@
+Task 167 stable-identity UPDATE and mid-insert fault drill, run inside each 10k/50k/100k physical fixture arm.
+physical_mid_insert_failure DIAG physical_insert_errored=true before_rows=500 after_rows=500 before_records=500 after_records=500 consistent=true pass=true
+physical_update_replacement DIAG update_ok=true stable_vec_id=true before=Some((-2641035976082453728, 1, 1)) after=Some((-2641035976082453728, 2, 1)) pass=true
+physical_concurrent_insert_query DIAG scanners=4 iterations=12 expected_count=10 pass=true
