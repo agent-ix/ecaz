@@ -1,0 +1,26 @@
+{
+  "name": "task167-update-drill-10k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-167/020-update-runtime/artifacts/debug-10k",
+  "defaults": { "pg": 18 },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "physical-10k-update-drill",
+      "artifact_dir": "${artifact_dir}/physical-10k",
+      "nodes": 3,
+      "base_port": 41270,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": false,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_10k",
+      "staged_dir": "data/staged-current"
+    }
+  ]
+}

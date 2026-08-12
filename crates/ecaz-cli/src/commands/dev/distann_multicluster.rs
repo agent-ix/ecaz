@@ -9123,17 +9123,17 @@ async fn mid_insert_drill(
                 byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"')
             })
     };
-    let update_probe = if !source_id.is_empty() {
+    let update_probe = if let Some(identity) = source_identity_uuid_bytes(source_id).ok() {
         if let Some((graph_relation, row_relation)) = relation_names {
             if safe_relation(graph_relation) && safe_relation(row_relation) {
+                let vec_id = distann_vec_id_from_source_identity(&identity);
                 let version_probe = || {
                     format!(
-                        "SELECT g.vec_id::text || '|' || count(*)::text || '|' || \
+                        "SELECT vec_id::text || '|' || count(*)::text || '|' || \
                                 count(*) FILTER (WHERE g.is_current)::text \
                            FROM {graph_relation} g \
-                           JOIN {row_relation} r ON r.ctid = g.heap_tid \
-                          WHERE r.source_id = '{source_id}'::uuid \
-                          GROUP BY g.vec_id;"
+                          WHERE vec_id = {vec_id} \
+                          GROUP BY vec_id;"
                     )
                 };
                 let before_update = capture_psql_allow_error(
