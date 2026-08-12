@@ -119,24 +119,28 @@ Tier 1 behavior; independent reviewer disposition is still pending.
 - An in-flight scan MAY observe the old or replacement directory target under
   the FR-082 visibility rule.
 - An in-flight scan SHALL NOT observe both versions as separate result rows.
-- **Remote write endpoint**: data nodes SHALL expose a write counterpart to
-  FR-079 (`ec_distann_apply_record_writes`: new-record append **with its
-  co-placed source-row payload in the epoch row tier**, tombstone set,
-  back-edge amendment with per-record `robust_prune` re-pruning executed on
-  the owning node), epoch-fingerprint-validated like FR-079, with per-record
-  atomicity. A new-record append SHALL co-place the record and its frozen
-  source row on the same hash-owned node atomically
+- **Remote write endpoint family**: data nodes SHALL expose write counterparts
+  to FR-079 through the physical endpoint family
+  (`ec_distann_apply_physical_insert`,
+  `ec_distann_apply_physical_backlink`, and
+  `ec_distann_apply_physical_tombstone`). The family SHALL support new-record
+  append **with its co-placed source-row payload in the epoch row tier**,
+  tombstone set, and back-edge amendment with per-record `robust_prune`
+  re-pruning executed on the owning node. Every operation is
+  epoch-fingerprint-validated like FR-079 and has per-record atomicity. A
+  new-record append SHALL co-place the record and its frozen source row on the
+  same hash-owned node atomically
   ([FR-078](../build/FR-078-distann-hash-placement.md)), so FR-079 exact
   rerank of a freshly inserted vec_id always has a node-local vector and
   final tuple payload. `aminsert`/`ambulkdelete` run on the coordinator and
-  drive this endpoint; degree re-pruning executes on the data node that owns
+  drive this endpoint family; degree re-pruning executes on the data node that owns
   the amended record. The endpoint SHALL reject any transaction isolation
   level other than READ COMMITTED before relation access or mutation, SHALL
   revoke `PUBLIC` execute, and SHALL use the same fixed SECURITY DEFINER
-  search path as the FR-079 remote endpoint class. (A same-named endpoint
-  exists today but implements only the tombstone-set operation, on legacy
-  storage with the legacy 16-byte fingerprint; it does not satisfy this
-  clause.)
+  search path as the FR-079 remote endpoint class. The legacy
+  `ec_distann_apply_record_writes(oid, bytea, bigint[])` compatibility endpoint
+  remains tombstone-only on legacy storage and is not the Tier-2 physical
+  endpoint family.
 - **Incremental distributed insert**: `aminsert` SHALL run the
   [FR-081](../read/FR-081-distann-query-orchestration.md) beam search for the
   new vector, select its edges with `robust_prune`, write the new record

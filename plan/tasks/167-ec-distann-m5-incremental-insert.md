@@ -39,8 +39,10 @@ not silently invoke the legacy local-heap path.
 
 - FR-083 final slice: beam-search placement (FR-081 loop), `robust_prune`
   edge selection, new-record append to the hash-owned node, batched
-  back-edge amendments with on-node degree re-pruning via
-  `ec_distann_apply_record_writes` (per-record atomicity).
+  back-edge amendments with on-node degree re-pruning via the physical remote
+  write endpoint family (`ec_distann_apply_physical_insert`,
+  `ec_distann_apply_physical_backlink`, and
+  `ec_distann_apply_physical_tombstone`) (per-record atomicity).
 - Insert-time vec_id collision → error (live-path D6); UPDATE =
   tombstone-then-insert under the same vec_id.
 - Visibility per FR-082 D10 concurrent-mutation rules; failed insert leaves
