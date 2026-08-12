@@ -1,0 +1,22 @@
+Task 167 packet 021 — PG18 endpoint hardening evidence
+
+head_sha=48195c196
+schema_command=cargo pgrx schema pg18 -p ecaz --features pg18 --no-default-features --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config
+schema_result=325 SQL entities discovered; generated schema contains all three physical DML signatures and hardening statements.
+
+generated physical signatures:
+ec_distann_apply_physical_insert(oid, bytea, bigint, real[], bytea, boolean[], bigint[], bytea, bytea, boolean)
+ec_distann_apply_physical_backlink(oid, bytea, bigint, real[], bigint, real[], bytea)
+ec_distann_apply_physical_tombstone(oid, bytea, bigint)
+
+hardening verified in generated schema:
+SECURITY DEFINER; SET search_path TO pg_catalog, @extschema@, pg_temp; REVOKE ALL ... FROM PUBLIC for each physical endpoint.
+
+test_command=cargo pgrx test pg18 test_distann_physical_dml_endpoint_acl_class --no-default-features --features pg18,pg_test
+test_result=test tests::pg_test_distann_physical_dml_endpoint_acl_class ... ok
+test_summary=1 passed; 0 failed; 2577 filtered out; finished in 73.02s
+
+Note: the pre-existing broad endpoint-class test was also attempted, but its
+five-argument overloaded ec_distann_expand_nodes probe fails with an ambiguity
+before reaching this checkpoint's endpoints. The new focused test uses the
+three unique physical signatures and is the authoritative AC-5 runtime check.
