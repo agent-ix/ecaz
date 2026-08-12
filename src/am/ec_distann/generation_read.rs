@@ -758,6 +758,10 @@ pub(crate) struct PhysicalOwnerRoute {
     pub(crate) node_id: u32,
     pub(crate) is_local: bool,
     pub(crate) remote_index_regclass: String,
+    /// Resolved endpoint for roster serialization. This is present for the
+    /// local route too; `conninfo` remains `None` locally because callers use
+    /// that field as the remote-transport discriminator.
+    pub(crate) roster_conninfo: String,
     pub(crate) conninfo: Option<String>,
 }
 
@@ -807,6 +811,7 @@ pub(crate) fn physical_owner_routes(
                     .value::<String>()
                     .map_err(|error| format!("EC_NODE_DESCRIPTOR: secret decode failed: {error}"))?
                     .ok_or_else(|| "EC_NODE_DESCRIPTOR: secret is NULL".to_owned())?;
+                let roster_conninfo = super::node_registry::resolve_conninfo_secret(&secret)?;
                 Ok(PhysicalOwnerRoute {
                     roster_ordinal: usize::try_from(ordinal).map_err(|_| {
                         "EC_NODE_DESCRIPTOR: binding ordinal is negative".to_owned()
@@ -815,10 +820,11 @@ pub(crate) fn physical_owner_routes(
                         .map_err(|_| "EC_NODE_DESCRIPTOR: node id is negative".to_owned())?,
                     is_local,
                     remote_index_regclass,
+                    roster_conninfo: roster_conninfo.clone(),
                     conninfo: if is_local {
                         None
                     } else {
-                        Some(super::node_registry::resolve_conninfo_secret(&secret)?)
+                        Some(roster_conninfo)
                     },
                 })
             })
@@ -882,6 +888,7 @@ fn physical_owner_routes_for_owner_insert(
             node_id: entry.node_id,
             is_local,
             remote_index_regclass: local_locator.clone(),
+            roster_conninfo: configured[ordinal].conninfo.clone(),
             conninfo: if is_local {
                 None
             } else {

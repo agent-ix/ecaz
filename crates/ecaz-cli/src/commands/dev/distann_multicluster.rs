@@ -7778,6 +7778,7 @@ async fn drive_physical_fixture(
         socket_dir,
         nodes[0].port,
         args,
+        nodes,
         &fixture_roster,
         &concurrency_table,
     )
@@ -9248,6 +9249,7 @@ async fn physical_concurrency_drill(
     socket_dir: &Path,
     coord_port: u16,
     args: &LocalMultinodePg18Args,
+    nodes: &[Node],
     roster: &str,
     table: &str,
 ) -> Result<bool> {
@@ -9283,6 +9285,13 @@ async fn physical_concurrency_drill(
         return Ok(false);
     }
     let base_rows = args.rows;
+    let inserted_ids = (0..WRITERS)
+        .flat_map(|writer| {
+            (0..ITERATIONS).map(move |iteration| {
+                900_000_i64 + base_rows as i64 + (writer * ITERATIONS + iteration) as i64
+            })
+        })
+        .collect::<HashSet<_>>();
 
     let mut tasks = Vec::with_capacity(SCANNERS + WRITERS);
     for _ in 0..SCANNERS {
@@ -9361,10 +9370,113 @@ async fn physical_concurrency_drill(
             }
         }
     }
+    let mut forward_neighbor_count = 0;
+    let forward_neighbor_check = if pass {
+        'check: {
+            let owner_nodes = if args.coordinator_outside_roster {
+                &nodes[1..]
+            } else {
+                nodes
+            };
+            let dimension_output = capture_psql_allow_error(
+                psql,
+                socket_dir,
+                coord_port,
+                &format!("SELECT array_length(source, 1) FROM {table} LIMIT 1;"),
+            )
+            .await;
+            let Some(dimension) = dimension_output
+                .lines()
+                .find_map(|line| line.trim().parse::<usize>().ok())
+            else {
+                crate::ecaz_println!(
+                "[distann-multicluster] physical_concurrent_insert_query DIAG role=back_edge_check reason=source_dimension_missing output={}",
+                compact_capture_error(&dimension_output)
+            );
+                break 'check false;
+            };
+            let zero_query = (0..dimension).map(|_| "0").collect::<Vec<_>>().join(",");
+            let mut found = HashSet::new();
+            let mut check_ok = true;
+            for owner_node in owner_nodes {
+                let relation_output = capture_psql_allow_error(
+                    psql,
+                    socket_dir,
+                    owner_node.port,
+                    "SELECT graph_store_relid::regclass::text \
+                   FROM ec_distann_generation \
+                  WHERE index_oid='dm_idx'::regclass::oid AND state='Published' \
+                  ORDER BY epoch DESC LIMIT 1;",
+                )
+                .await;
+                let Some(graph_relation) = relation_output.lines().map(str::trim).find(|line| {
+                    !line.is_empty()
+                        && line.bytes().all(|byte| {
+                            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"')
+                        })
+                }) else {
+                    crate::ecaz_println!(
+                    "[distann-multicluster] physical_concurrent_insert_query DIAG role=back_edge_check node={} reason=published_graph_relation_missing output={}",
+                    owner_node.node_id,
+                    compact_capture_error(&relation_output)
+                );
+                    check_ok = false;
+                    continue;
+                };
+                let graph_sql = format!(
+                "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id={}; \
+                 SELECT vec_id::text || '|' || COALESCE(array_to_string(neighbor_vec_ids, ','), '') \
+                   FROM ec_distann_expand_physical_nodes(\
+                        'dm_idx'::regclass, \
+                        (SELECT epoch_fingerprint FROM ec_distann_active_epoch \
+                          WHERE index_oid='dm_idx'::regclass::oid), \
+                        ARRAY[{zero_query}]::real[], \
+                        (SELECT COALESCE(array_agg(vec_id), ARRAY[]::bigint[]) \
+                           FROM {graph_relation} WHERE is_current), NULL, NULL);",
+                owner_node.node_id,
+            );
+                let graph_output =
+                    capture_psql_allow_error(psql, socket_dir, owner_node.port, &graph_sql).await;
+                if graph_output.starts_with("psql:") || graph_output.contains("ERROR") {
+                    crate::ecaz_println!(
+                    "[distann-multicluster] physical_concurrent_insert_query DIAG role=back_edge_check node={} reason=graph_expansion_failed output={}",
+                    owner_node.node_id,
+                    compact_capture_error(&graph_output)
+                );
+                    check_ok = false;
+                    continue;
+                }
+                for line in graph_output.lines() {
+                    let Some((_vec_id, neighbors)) = line.trim().split_once('|') else {
+                        continue;
+                    };
+                    for neighbor in neighbors
+                        .split(',')
+                        .filter_map(|value| value.parse::<i64>().ok())
+                    {
+                        if inserted_ids.contains(&neighbor) {
+                            found.insert(neighbor);
+                        }
+                    }
+                }
+            }
+            let missing = inserted_ids.difference(&found).copied().collect::<Vec<_>>();
+            forward_neighbor_count = found.len();
+            if !missing.is_empty() {
+                crate::ecaz_println!(
+                "[distann-multicluster] physical_concurrent_insert_query DIAG role=back_edge_check missing_forward_neighbors={missing:?}"
+            );
+            }
+            break 'check check_ok && missing.is_empty();
+        }
+    } else {
+        false
+    };
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} writers={WRITERS} iterations={ITERATIONS} expected_count={expected_count} pass={pass}"
+        "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} writers={WRITERS} iterations={ITERATIONS} expected_count={expected_count} forward_neighbors_selected={} back_edge_check={forward_neighbor_check} pass={pass}",
+        forward_neighbor_count
     );
-    Ok(pass)
+    Ok(pass && forward_neighbor_check)
 }
 
 /// Exercise the committed physical DELETE path through PostgreSQL VACUUM. The

@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS ec_distann_remote_prepared_xact_intent (
         intent_state IN (
             'prepare_requested',
             'prepare_acked',
+            'commit_intended',
             'commit_local',
             'rollback_local'
         )
