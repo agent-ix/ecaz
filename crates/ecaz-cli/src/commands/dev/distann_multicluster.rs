@@ -8999,11 +8999,12 @@ async fn mid_insert_drill(
     args: &LocalMultinodePg18Args,
 ) -> bool {
     let dim = args.dim;
-    let vector_expr = |g: &str| -> String {
+    let source_expr = |g: &str| -> String {
         format!(
-            "encode_to_ecvector((SELECT array_agg((sin({g} * 0.017 * (d + 1)) + cos({g} * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) AS d), 4, 42)"
+            "(SELECT array_agg((sin({g} * 0.017 * (d + 1)) + cos({g} * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) AS d)"
         )
     };
+    let vector_expr = |g: &str| format!("encode_to_ecvector({}, 4, 42)", source_expr(g));
     let setup = format!(
         "DROP TABLE IF EXISTS mi CASCADE; \
          CREATE TABLE mi (id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({dim})); \
@@ -9089,8 +9090,124 @@ async fn mid_insert_drill(
         before_values[1],
         after_values.get(1).copied().unwrap_or(-1),
     );
+    // Exercise the committed UPDATE contract on the same isolated published
+    // generation. The index AM must preserve the source-derived vec_id while
+    // appending a complete replacement graph/row pair and retiring only the
+    // prior graph version. Resolve the owner-local relation names from the
+    // generation catalog instead of guessing generated identifiers.
+    let source_id_output =
+        capture_psql_allow_error(psql, socket_dir, coord_port, "SELECT source_id::text FROM mi WHERE id=1;")
+            .await;
+    let source_id = source_id_output
+        .lines()
+        .map(str::trim)
+        .find(|line| line.len() == 36 && line.bytes().filter(|byte| *byte == b'-').count() == 4)
+        .unwrap_or("");
+    let relation_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        "SELECT graph_store_relid::regclass::text || '|' || row_tier_relid::regclass::text\
+           FROM ec_distann_generation\
+          WHERE index_oid='mi_idx'::regclass::oid AND state='Published'\
+          ORDER BY generation DESC LIMIT 1;",
+    )
+    .await;
+    let relation_names = relation_output
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.split_once('|'));
+    let safe_relation = |relation: &str| {
+        !relation.is_empty()
+            && relation.bytes().all(|byte| {
+                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"')
+            })
+    };
+    let update_probe = if !source_id.is_empty() {
+        if let Some((graph_relation, row_relation)) = relation_names {
+            if safe_relation(graph_relation) && safe_relation(row_relation) {
+                let version_probe = || {
+                    format!(
+                        "SELECT g.vec_id::text || '|' || count(*)::text || '|' ||\
+                                count(*) FILTER (WHERE g.is_current)::text\
+                           FROM {graph_relation} g\
+                           JOIN {row_relation} r ON r.ctid = g.heap_tid\
+                          WHERE r.source_id = '{source_id}'::uuid\
+                          GROUP BY g.vec_id;"
+                    )
+                };
+                let before_update = capture_psql_allow_error(
+                    psql,
+                    socket_dir,
+                    coord_port,
+                    &version_probe(),
+                )
+                .await;
+                let update_sql = format!(
+                    "UPDATE mi SET source={}, embedding={} WHERE id=1;",
+                    source_expr("1001"),
+                    vector_expr("1001")
+                );
+                let update_output =
+                    capture_psql_allow_error(psql, socket_dir, coord_port, &update_sql).await;
+                let after_update = capture_psql_allow_error(
+                    psql,
+                    socket_dir,
+                    coord_port,
+                    &version_probe(),
+                )
+                .await;
+                let decode_version = |output: &str| {
+                    output.lines().find_map(|line| {
+                        let fields = line.trim().split('|').collect::<Vec<_>>();
+                        if fields.len() == 3 {
+                            Some((
+                                fields[0].parse::<i64>().ok()?,
+                                fields[1].parse::<i64>().ok()?,
+                                fields[2].parse::<i64>().ok()?,
+                            ))
+                        } else {
+                            None
+                        }
+                    })
+                };
+                let before_version = decode_version(&before_update);
+                let after_version = decode_version(&after_update);
+                let update_ok = !query_errored(&update_output);
+                let stable_replacement = matches!(
+                    (before_version, after_version),
+                    (Some((before_vec_id, 1, 1)), Some((after_vec_id, 2, 1)))
+                        if before_vec_id == after_vec_id
+                );
+                crate::ecaz_println!(
+                    "[distann-multicluster] physical_update_replacement DIAG update_ok={update_ok} \
+                     stable_vec_id={stable_replacement} before={before_version:?} after={after_version:?} pass={}",
+                    update_ok && stable_replacement
+                );
+                update_ok && stable_replacement
+            } else {
+                crate::ecaz_eprintln!(
+                    "[distann-multicluster] physical_update_replacement DIAG unsafe relation names: {:?}",
+                    relation_names
+                );
+                false
+            }
+        } else {
+            crate::ecaz_eprintln!(
+                "[distann-multicluster] physical_update_replacement DIAG generation relation lookup failed: {}",
+                compact_capture_error(&relation_output)
+            );
+            false
+        }
+    } else {
+        crate::ecaz_eprintln!(
+            "[distann-multicluster] physical_update_replacement DIAG source identity lookup failed: {}",
+            compact_capture_error(&source_id_output)
+        );
+        false
+    };
     let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS mi CASCADE;").await;
-    pass
+    pass && update_probe
 }
 
 /// FR-083 concurrent insert/query drill (TC-043), against the published
