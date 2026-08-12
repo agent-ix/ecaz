@@ -96,6 +96,7 @@ pub(crate) unsafe fn insert_from_callback(
         source_slot.as_ptr(),
         source_tid,
         None,
+        None,
     )
 }
 
@@ -109,6 +110,7 @@ unsafe fn insert_from_prepared_slot(
     source_slot: *mut pg_sys::TupleTableSlot,
     source_tid: ItemPointer,
     scan_fingerprint: Option<[u8; 34]>,
+    planned_forward_payload: Option<&[u8]>,
 ) -> Result<(), String> {
     if index_relation.is_null() || source_slot.is_null() {
         return Err(
@@ -119,9 +121,12 @@ unsafe fn insert_from_prepared_slot(
     let options = options::relation_options(index_relation);
 
     let index_oid = (*index_relation).rd_id;
-    let scan = match scan_fingerprint {
-        Some(fingerprint) => PhysicalGenerationScan::open_at_fingerprint(index_oid, fingerprint)?,
-        None => PhysicalGenerationScan::open(index_oid)?,
+    let scan = match (scan_fingerprint, planned_forward_payload.is_some()) {
+        (Some(fingerprint), true) => {
+            PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(index_oid, fingerprint)?
+        }
+        (Some(fingerprint), false) => PhysicalGenerationScan::open_at_fingerprint(index_oid, fingerprint)?,
+        (None, _) => PhysicalGenerationScan::open(index_oid)?,
     };
     let (_logical_uuid, _build_id, fingerprint, routed_descriptor, routes) =
         scan.traversal_replica_source();
@@ -144,6 +149,11 @@ unsafe fn insert_from_prepared_slot(
         ));
     }
 
+    let local_owner = routes
+        .iter()
+        .position(|route| route.is_local)
+        .ok_or_else(|| "EC_NODE_DESCRIPTOR: active roster has no local owner".to_owned())?;
+
     // Plan while the read-side generation guard is alive. The physical scan
     // gives us the bounded FR-081 frontier. Remote candidates are materialized
     // through the generation-owned payload contract below; their row TIDs are
@@ -152,22 +162,7 @@ unsafe fn insert_from_prepared_slot(
     if snapshot.is_null() {
         return Err("EC_BUILD_STATE: physical insert has no active snapshot".to_owned());
     }
-    let list_size = usize::from(descriptor.graph_degree)
-        .saturating_mul(8)
-        .max(64);
-    let hits = scan
-        .search(snapshot, source_attnum, &vector, list_size)
-        .map_err(|error| format!("EC_INSERT_SEARCH: {error}"))?;
-    stage_counters::record_insert_work(DistannInsertWork::SearchCandidates, hits.hits.len());
-    let remote_ids = hits
-        .hits
-        .iter()
-        .filter(|hit| hit.heap_tid == ItemPointer::INVALID && hit.vec_id != vec_id)
-        .map(|hit| hit.vec_id)
-        .collect::<Vec<_>>();
     let row_read_relation = row_relation_for_payload(&generation)?;
-    let mut remote_vectors =
-        materialize_remote_vectors(&scan, &row_read_relation, &remote_ids, source_attnum)?;
 
     let graph_name = qualified_relation_name(generation.graph_store_relid)?;
     let previous_version = current_record_version(&graph_name, vec_id)?;
@@ -212,53 +207,124 @@ unsafe fn insert_from_prepared_slot(
         return Err("EC_INSERT_CODEC: generated search code has the wrong length".to_owned());
     }
 
-    let mut candidates = Vec::new();
-    let mut seen = HashSet::new();
-    for hit in hits.hits {
-        if hit.vec_id == vec_id || !seen.insert(hit.vec_id) {
-            continue;
+    let (candidates, mut remote_vectors, forward_ids) = if let Some(payload) = planned_forward_payload {
+        let planned = decode_planned_forward(payload, vector.len(), descriptor.graph_degree)?;
+        let mut candidates = Vec::with_capacity(planned.len());
+        let mut remote_vectors = HashMap::new();
+        let mut seen = HashSet::new();
+        for (planned_vec_id, planned_vector) in planned {
+            if planned_vec_id == vec_id || !seen.insert(planned_vec_id) {
+                continue;
+            }
+            let owner = super::placement::owning_node(
+                planned_vec_id,
+                routes.len(),
+                routed_descriptor.placement_hash_version,
+            );
+            if owner == local_owner {
+                let hit = DistannScanHit {
+                    vec_id: planned_vec_id,
+                    heap_tid: ItemPointer::INVALID,
+                    owner_heap_tid: ItemPointer::INVALID,
+                    exact_dist: 0.0,
+                };
+                let Some(candidate) = read_current_candidate(
+                    &graph_name,
+                    &row_relation,
+                    hit,
+                    descriptor.graph_degree,
+                    code_len,
+                    source_attnum,
+                    snapshot,
+                )?
+                else {
+                    return Err(format!(
+                        "EC_GENERATION_MISSING: planned local candidate {planned_vec_id:#018x} is absent"
+                    ));
+                };
+                if candidate.source_vector != planned_vector {
+                    return Err(format!(
+                        "EC_EPOCH_MISMATCH: planned candidate {planned_vec_id:#018x} changed during owner insert"
+                    ));
+                }
+                candidates.push(candidate);
+            } else {
+                remote_vectors.insert(planned_vec_id, planned_vector.clone());
+                candidates.push(Candidate {
+                    vec_id: planned_vec_id,
+                    source_vector: planned_vector,
+                    node: DistannNodeTuple::empty(),
+                    graph_tid: ItemPointer::INVALID,
+                });
+            }
         }
-        if hit.heap_tid == ItemPointer::INVALID {
-            let Some(source_vector) = remote_vectors.get(&hit.vec_id) else {
-                return Err(format!(
-                    "EC_GENERATION_MISSING: remote candidate payload is absent for vec_id {:#018x}",
-                    hit.vec_id
-                ));
-            };
-            candidates.push(Candidate {
-                vec_id: hit.vec_id,
-                source_vector: source_vector.clone(),
-                node: DistannNodeTuple::empty(),
-                graph_tid: ItemPointer::INVALID,
-            });
-            continue;
-        }
-        let Some(candidate) = read_current_candidate(
-            &graph_name,
-            &row_relation,
-            hit,
-            descriptor.graph_degree,
-            code_len,
-            source_attnum,
-            snapshot,
-        )?
-        else {
-            continue;
-        };
-        candidates.push(candidate);
-    }
-    let forward_ids = select_insert_forward_neighbors(
-        &vector,
-        &candidates
+        let forward_ids = candidates.iter().map(|candidate| candidate.vec_id).collect();
+        (candidates, remote_vectors, forward_ids)
+    } else {
+        let list_size = usize::from(descriptor.graph_degree)
+            .saturating_mul(8)
+            .max(64);
+        let hits = scan
+            .search(snapshot, source_attnum, &vector, list_size)
+            .map_err(|error| format!("EC_INSERT_SEARCH: {error}"))?;
+        stage_counters::record_insert_work(DistannInsertWork::SearchCandidates, hits.hits.len());
+        let remote_ids = hits
+            .hits
             .iter()
-            .map(|candidate| DistannForwardCandidate {
-                vec_id: candidate.vec_id,
-                source_vector: candidate.source_vector.clone(),
-            })
-            .collect::<Vec<_>>(),
-        options.alpha,
-        usize::from(descriptor.graph_degree),
-    )?;
+            .filter(|hit| hit.heap_tid == ItemPointer::INVALID && hit.vec_id != vec_id)
+            .map(|hit| hit.vec_id)
+            .collect::<Vec<_>>();
+        let remote_vectors =
+            materialize_remote_vectors(&scan, &row_read_relation, &remote_ids, source_attnum)?;
+        let mut candidates = Vec::new();
+        let mut seen = HashSet::new();
+        for hit in hits.hits {
+            if hit.vec_id == vec_id || !seen.insert(hit.vec_id) {
+                continue;
+            }
+            if hit.heap_tid == ItemPointer::INVALID {
+                let Some(source_vector) = remote_vectors.get(&hit.vec_id) else {
+                    return Err(format!(
+                        "EC_GENERATION_MISSING: remote candidate payload is absent for vec_id {:#018x}",
+                        hit.vec_id
+                    ));
+                };
+                candidates.push(Candidate {
+                    vec_id: hit.vec_id,
+                    source_vector: source_vector.clone(),
+                    node: DistannNodeTuple::empty(),
+                    graph_tid: ItemPointer::INVALID,
+                });
+                continue;
+            }
+            let Some(candidate) = read_current_candidate(
+                &graph_name,
+                &row_relation,
+                hit,
+                descriptor.graph_degree,
+                code_len,
+                source_attnum,
+                snapshot,
+            )?
+            else {
+                continue;
+            };
+            candidates.push(candidate);
+        }
+        let forward_ids = select_insert_forward_neighbors(
+            &vector,
+            &candidates
+                .iter()
+                .map(|candidate| DistannForwardCandidate {
+                    vec_id: candidate.vec_id,
+                    source_vector: candidate.source_vector.clone(),
+                })
+                .collect::<Vec<_>>(),
+            options.alpha,
+            usize::from(descriptor.graph_degree),
+        )?;
+        (candidates, remote_vectors, forward_ids)
+    };
     let forward = forward_ids
         .iter()
         .filter_map(|id| candidates.iter().find(|candidate| candidate.vec_id == *id))
@@ -269,10 +335,6 @@ unsafe fn insert_from_prepared_slot(
     );
     stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, forward.len());
 
-    let local_owner = routes
-        .iter()
-        .position(|route| route.is_local)
-        .ok_or_else(|| "EC_NODE_DESCRIPTOR: active roster has no local owner".to_owned())?;
     let extra_remote_ids = forward
         .iter()
         .filter(|candidate| candidate.graph_tid != ItemPointer::INVALID)
@@ -308,7 +370,8 @@ unsafe fn insert_from_prepared_slot(
             ambuild::freeze_source_slot_packed(source_slot)?;
         let metadata = ambuild::read_metadata_from_index(index_relation)?;
         let index_name = unsafe { super::routine::distann_index_relname(index_relation) };
-        let roster_spec = super::roster::current_roster_spec();
+        let roster_spec = roster_spec_for_routes(&routes)?;
+        let planned_forward = encode_planned_forward(&forward)?;
         stage_counters::record_insert_work(DistannInsertWork::OwnerWrites, 1);
         super::remote_transport::remote_physical_insert(
             &super::remote_transport::DistannRemotePhysicalInsertRequest {
@@ -325,6 +388,7 @@ unsafe fn insert_from_prepared_slot(
                 payload_nulls: &payload_nulls,
                 payload_offsets: &payload_offsets,
                 payload_values: &payload_values,
+                planned_forward: &planned_forward,
                 allow_replacement,
             },
         )?;
@@ -373,6 +437,7 @@ unsafe fn insert_from_prepared_slot(
                     index_regclass: &index_name,
                     epoch_fingerprint: &fingerprint,
                     target_vec_id: candidate.vec_id,
+                    target_source_vector: &candidate.source_vector,
                     new_vec_id: vec_id,
                     new_source_vector: &vector,
                     new_code: &new_code,
@@ -445,11 +510,12 @@ unsafe fn insert_from_prepared_slot(
 
     let metadata = ambuild::read_metadata_from_index(index_relation)?;
     let index_name = unsafe { super::routine::distann_index_relname(index_relation) };
-    let roster_spec = super::roster::current_roster_spec();
+    let roster_spec = roster_spec_for_routes(&routes)?;
     // Amend at most graph_degree forward-neighbor records. Local mutations
     // use their owner-local ctid; remote mutations are independently prepared
     // and resolved by the same top-level transaction callbacks as the owner
     // append, so an abort cannot leave a cross-owner dangling edge.
+    if planned_forward_payload.is_none() {
     for candidate in forward {
         if candidate.graph_tid == ItemPointer::INVALID {
             let target = super::placement::owning_node(
@@ -479,6 +545,7 @@ unsafe fn insert_from_prepared_slot(
                     index_regclass: &index_name,
                     epoch_fingerprint: &fingerprint,
                     target_vec_id: candidate.vec_id,
+                    target_source_vector: &candidate.source_vector,
                     new_vec_id: vec_id,
                     new_source_vector: &vector,
                     new_code: &new_code,
@@ -500,6 +567,7 @@ unsafe fn insert_from_prepared_slot(
             options.alpha,
             &remote_vectors,
         )?;
+    }
     }
     if source_tid != ItemPointer::INVALID {
         update_source_mapping(index_oid, source_tid, vec_id)?;
@@ -820,6 +888,33 @@ fn row_relation_for_payload(
     })
 }
 
+/// Remote DML must carry the immutable scan roster even when the coordinator
+/// session did not have the operator roster GUC installed.  The coordinator
+/// scan has already resolved every route from the published participant
+/// bindings, so serialize that resolved topology for the owner session.
+fn roster_spec_for_routes(
+    routes: &[super::generation_read::PhysicalOwnerRoute],
+) -> Result<String, String> {
+    let configured = super::roster::current_roster_spec();
+    if !configured.trim().is_empty() {
+        return Ok(configured);
+    }
+    routes
+        .iter()
+        .map(|route| {
+            Ok(format!(
+                "{}@{}",
+                route.node_id,
+                route
+                    .conninfo
+                    .as_deref()
+                    .ok_or_else(|| "EC_NODE_DESCRIPTOR: resolved route has no conninfo".to_owned())?
+            ))
+        })
+        .collect::<Result<Vec<_>, String>>()
+        .map(|entries| entries.join(";"))
+}
+
 unsafe fn materialize_remote_vectors(
     scan: &PhysicalGenerationScan,
     row_relation: &HeapRelationGuard,
@@ -976,6 +1071,7 @@ pub(crate) unsafe fn insert_from_owner_payload(
     payload_nulls: &[bool],
     payload_offsets: &[i64],
     payload_values: &[u8],
+    planned_forward_payload: &[u8],
     allow_replacement: bool,
 ) -> Result<(), String> {
     let identity: [u8; 16] = source_identity
@@ -990,7 +1086,10 @@ pub(crate) unsafe fn insert_from_owner_payload(
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         "ec_distann physical owner payload insert",
     );
-    let scan = PhysicalGenerationScan::open_at_fingerprint(index_oid, epoch_fingerprint)?;
+    let scan = PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(
+        index_oid,
+        epoch_fingerprint,
+    )?;
     let (generation, _descriptor) = scan.local_write_identity()?;
     drop(scan);
     let row_relation = HeapRelationGuard::try_open(
@@ -1043,6 +1142,7 @@ pub(crate) unsafe fn insert_from_owner_payload(
         slot.as_ptr(),
         ItemPointer::INVALID,
         Some(epoch_fingerprint),
+        Some(planned_forward_payload),
     )
 }
 
@@ -1133,6 +1233,92 @@ struct Candidate {
     source_vector: Vec<f32>,
     node: DistannNodeTuple,
     graph_tid: ItemPointer,
+}
+
+const PLANNED_FORWARD_MAGIC: &[u8; 4] = b"EPI1";
+
+/// Serialize the coordinator's selected forward plan for a participant
+/// owner.  The participant cannot search the coordinator-resident head, so
+/// it receives only the bounded, already-pruned `(vec_id, source_vector)`
+/// set.  Owner-local graph records are re-read by vec_id before mutation.
+fn encode_planned_forward(forward: &[&Candidate]) -> Result<Vec<u8>, String> {
+    let count = u32::try_from(forward.len())
+        .map_err(|_| "EC_HANDOFF_FORMAT: planned forward count exceeds u32".to_owned())?;
+    let dimensions = forward
+        .first()
+        .map(|candidate| candidate.source_vector.len())
+        .unwrap_or(0);
+    for candidate in forward {
+        if candidate.source_vector.len() != dimensions {
+            return Err("EC_HANDOFF_FORMAT: planned forward dimensions disagree".to_owned());
+        }
+    }
+    let dimensions = u32::try_from(dimensions)
+        .map_err(|_| "EC_HANDOFF_FORMAT: planned forward dimensions exceed u32".to_owned())?;
+    let mut payload = Vec::with_capacity(12 + forward.len() * (8 + 4 + dimensions as usize * 4));
+    payload.extend_from_slice(PLANNED_FORWARD_MAGIC);
+    payload.extend_from_slice(&count.to_le_bytes());
+    payload.extend_from_slice(&dimensions.to_le_bytes());
+    for candidate in forward {
+        payload.extend_from_slice(&candidate.vec_id.to_le_bytes());
+        for value in &candidate.source_vector {
+            if !value.is_finite() {
+                return Err("EC_SCHEMA_MISMATCH: planned forward vector is not finite".to_owned());
+            }
+            payload.extend_from_slice(&value.to_le_bytes());
+        }
+    }
+    Ok(payload)
+}
+
+fn decode_planned_forward(
+    payload: &[u8],
+    expected_dimensions: usize,
+    graph_degree: u16,
+) -> Result<Vec<(u64, Vec<f32>)>, String> {
+    if payload.len() < 12 || &payload[..4] != PLANNED_FORWARD_MAGIC {
+        return Err("EC_HANDOFF_FORMAT: planned forward payload has an invalid header".to_owned());
+    }
+    let count = u32::from_le_bytes(payload[4..8].try_into().unwrap()) as usize;
+    let dimensions = u32::from_le_bytes(payload[8..12].try_into().unwrap()) as usize;
+    if count > usize::from(graph_degree) {
+        return Err("EC_HANDOFF_FORMAT: planned forward exceeds graph degree".to_owned());
+    }
+    if dimensions != expected_dimensions {
+        return Err(format!(
+            "EC_SCHEMA_MISMATCH: planned forward has {dimensions} dimensions, expected {expected_dimensions}"
+        ));
+    }
+    let entry_bytes = 8usize
+        .checked_add(dimensions.checked_mul(4).ok_or_else(|| {
+            "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned()
+        })?)
+        .ok_or_else(|| "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned())?;
+    let expected_len = 12usize
+        .checked_add(count.checked_mul(entry_bytes).ok_or_else(|| {
+            "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned()
+        })?)
+        .ok_or_else(|| "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned())?;
+    if payload.len() != expected_len {
+        return Err("EC_HANDOFF_FORMAT: planned forward payload length mismatch".to_owned());
+    }
+    let mut position = 12;
+    let mut decoded = Vec::with_capacity(count);
+    for _ in 0..count {
+        let vec_id = u64::from_le_bytes(payload[position..position + 8].try_into().unwrap());
+        position += 8;
+        let mut vector = Vec::with_capacity(dimensions);
+        for _ in 0..dimensions {
+            let value = f32::from_le_bytes(payload[position..position + 4].try_into().unwrap());
+            if !value.is_finite() {
+                return Err("EC_SCHEMA_MISMATCH: planned forward vector is not finite".to_owned());
+            }
+            vector.push(value);
+            position += 4;
+        }
+        decoded.push((vec_id, vector));
+    }
+    Ok(decoded)
 }
 
 unsafe fn fetch_source_tuple(
@@ -1404,7 +1590,13 @@ unsafe fn amend_backlink(
         let source_vector = if let Some(source_vector) = remote_vectors.get(neighbor) {
             source_vector.clone()
         } else {
-            read_current_vector(graph_name, row_relation, *neighbor, source_attnum, snapshot)?
+            read_current_vector(graph_name, row_relation, *neighbor, source_attnum, snapshot)
+                .map_err(|error| {
+                    format!(
+                        "{error}; backlink_target={:#018x}; missing_neighbor={neighbor:#018x}",
+                        candidate.vec_id
+                    )
+                })?
         };
         candidates.push(DistannForwardCandidate {
             vec_id: *neighbor,
@@ -1445,6 +1637,53 @@ unsafe fn amend_backlink(
     let record = node.encode_physical_v1(graph_degree, code_len)?;
     let block = candidate.graph_tid.block_number;
     let offset = candidate.graph_tid.offset_number;
+    let updated = Spi::connect_mut(|client| {
+        client
+            .update(
+                &format!("UPDATE {graph_name} SET graph_record = $1 WHERE ctid = '({block},{offset})'::tid AND is_current"),
+                None,
+                &[record.into()],
+            )
+            .map_err(|error| format!("EC_INSERT_BACKLINK: graph amendment failed: {error}"))
+            .map(|table| table.len())
+    })?;
+    if updated != 1 {
+        return Err(format!(
+            "EC_INSERT_BACKLINK: graph amendment affected {updated} rows, expected one current target"
+        ));
+    }
+    Ok(())
+}
+
+/// Conservative owner fallback for a retained graph record that references a
+/// source row no longer present in the owner row tier.  The new record's
+/// forward edge is already durable; append the reverse edge only when the
+/// target has spare degree, otherwise preserve the existing graph exactly.
+unsafe fn append_backlink_if_room(
+    graph_name: &str,
+    graph_tid: ItemPointer,
+    mut node: DistannNodeTuple,
+    new_vec_id: u64,
+    new_code: &[u8],
+    graph_degree: u16,
+    code_len: usize,
+) -> Result<(), String> {
+    let count = usize::from(node.neighbor_count);
+    if node.neighbor_vec_ids[..count].contains(&new_vec_id) || count >= usize::from(graph_degree) {
+        return Ok(());
+    }
+    if new_code.len() != code_len {
+        return Err("EC_INSERT_CODEC: backlink code has the wrong length".to_owned());
+    }
+    node.neighbor_vec_ids[count] = new_vec_id;
+    node.neighbor_codes[count * code_len..(count + 1) * code_len].copy_from_slice(new_code);
+    node.neighbor_count = node
+        .neighbor_count
+        .checked_add(1)
+        .ok_or_else(|| "EC_INSERT_BACKLINK: backlink degree overflow".to_owned())?;
+    let record = node.encode_physical_v1(graph_degree, code_len)?;
+    let block = graph_tid.block_number;
+    let offset = graph_tid.offset_number;
     let updated = Spi::connect_mut(|client| {
         client
             .update(
@@ -1520,7 +1759,9 @@ unsafe fn read_current_vector(
 /// coordinator-local ctid for a remote relation.
 pub(crate) unsafe fn apply_owner_backlink(
     index_oid: pg_sys::Oid,
+    epoch_fingerprint: [u8; 34],
     target_vec_id: u64,
+    target_source_vector: Vec<f32>,
     new_vec_id: u64,
     new_source_vector: Vec<f32>,
     new_code: &[u8],
@@ -1530,9 +1771,18 @@ pub(crate) unsafe fn apply_owner_backlink(
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         "ec_distann physical owner backlink",
     );
-    let scan = PhysicalGenerationScan::open(index_oid)?;
+    let scan = PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(
+        index_oid,
+        epoch_fingerprint,
+    )?;
     let (generation, descriptor) = scan.local_write_identity()?;
     let code_binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
+    if target_source_vector.len() != usize::from(descriptor.dimensions)
+        || target_source_vector.iter().any(|value| !value.is_finite())
+    {
+        return Err("EC_SCHEMA_MISMATCH: backlink target vector has invalid dimensions or values"
+            .to_owned());
+    }
     let code_len = code_binding.code_len(usize::from(descriptor.dimensions))?;
     if new_code.len() != code_len {
         return Err("EC_INSERT_CODEC: backlink code has the wrong length".to_owned());
@@ -1598,20 +1848,36 @@ pub(crate) unsafe fn apply_owner_backlink(
         .collect::<Vec<_>>();
     let remote_vectors =
         materialize_remote_vectors(&scan, &row_relation, &remote_ids, source_attnum)?;
+    for neighbor in &node.neighbor_vec_ids[..usize::from(node.neighbor_count)] {
+        let neighbor_owner = super::placement::owning_node(
+            *neighbor,
+            routes.len(),
+            routed_descriptor.placement_hash_version,
+        );
+        if neighbor_owner == local_owner && !remote_vectors.contains_key(neighbor) {
+            let (graph_block, graph_offset) =
+                pgrx::itemptr::item_pointer_get_both(graph_tid);
+            return append_backlink_if_room(
+                &graph_name,
+                ItemPointer {
+                    block_number: graph_block,
+                    offset_number: graph_offset,
+                },
+                node,
+                new_vec_id,
+                &new_code,
+                descriptor.graph_degree,
+                code_len,
+            );
+        }
+    }
     drop(scan);
-    let target_vector = read_current_vector(
-        &graph_name,
-        &row_relation,
-        target_vec_id,
-        source_attnum,
-        snapshot,
-    )?;
     let (graph_block, graph_offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
     amend_backlink(
         &graph_name,
         &Candidate {
             vec_id: target_vec_id,
-            source_vector: target_vector,
+            source_vector: target_source_vector,
             node,
             graph_tid: ItemPointer {
                 block_number: graph_block,

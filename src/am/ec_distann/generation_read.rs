@@ -815,11 +815,7 @@ pub(crate) fn physical_owner_routes(
                         .map_err(|_| "EC_NODE_DESCRIPTOR: node id is negative".to_owned())?,
                     is_local,
                     remote_index_regclass,
-                    conninfo: if is_local {
-                        None
-                    } else {
-                        Some(super::node_registry::resolve_conninfo_secret(&secret)?)
-                    },
+                conninfo: Some(super::node_registry::resolve_conninfo_secret(&secret)?),
                 })
             })
             .collect::<Result<Vec<_>, String>>()
@@ -834,6 +830,44 @@ pub(crate) fn physical_owner_routes(
         return Err(
             "EC_NODE_DESCRIPTOR: immutable participant bindings do not cover the roster".to_owned(),
         );
+    }
+    Ok(routes)
+}
+
+/// Owner DML runs on a participant catalog that may retain the published
+/// generation without copying the coordinator's private participant-binding
+/// rows.  Its insert plan only needs placement and connection endpoints; the
+/// immutable descriptor roster plus the already-fenced session roster supply
+/// those fields.  Keep the binding table authoritative whenever it exists.
+fn physical_owner_routes_for_owner_insert(
+    index_oid: pg_sys::Oid,
+) -> Result<Vec<PhysicalOwnerRoute>, String> {
+    let directory = super::roster::placement_directory_for_epoch(super::roster::current_epoch())?;
+    let local_count = directory
+        .nodes
+        .iter()
+        .filter(|entry| entry.is_local)
+        .count();
+    if local_count != 1 {
+        return Err(
+            "EC_NODE_DESCRIPTOR: owner insert roster has no unique local node".to_owned(),
+        );
+    }
+    let local_locator = super::handoff::qualified_relation_name(index_oid)?;
+    let mut routes = Vec::with_capacity(directory.nodes.len());
+    for (ordinal, entry) in directory.nodes.iter().enumerate() {
+        let is_local = entry.is_local;
+        routes.push(PhysicalOwnerRoute {
+            roster_ordinal: ordinal,
+            node_id: entry.node_id,
+            is_local,
+            remote_index_regclass: local_locator.clone(),
+            conninfo: if is_local {
+                None
+            } else {
+                Some(entry.conninfo.clone())
+            },
+        });
     }
     Ok(routes)
 }
@@ -3715,9 +3749,9 @@ impl PhysicalGenerationScan {
     }
 
     pub(crate) fn open(index_oid: pg_sys::Oid) -> Result<Self, String> {
-        match Self::open_once_with_fingerprint(index_oid, None) {
+        match Self::open_once_with_fingerprint(index_oid, None, true) {
             Err(error) if error.starts_with("EC_EPOCH_MISMATCH:") => {
-                Self::open_once_with_fingerprint(index_oid, None)
+                Self::open_once_with_fingerprint(index_oid, None, true)
             }
             result => result,
         }
@@ -3730,12 +3764,25 @@ impl PhysicalGenerationScan {
         index_oid: pg_sys::Oid,
         fingerprint: [u8; 34],
     ) -> Result<Self, String> {
-        Self::open_once_with_fingerprint(index_oid, Some(fingerprint))
+        Self::open_once_with_fingerprint(index_oid, Some(fingerprint), true)
+    }
+
+    /// Open an owner generation for a coordinator-planned physical insert.
+    /// The owner has the immutable generation descriptor and its local graph,
+    /// but the persisted head sample is coordinator-resident (FR-080).  The
+    /// caller therefore supplies the bounded forward plan and must not cause
+    /// this participant to reload or search the coordinator head.
+    pub(crate) fn open_at_fingerprint_for_owner_insert(
+        index_oid: pg_sys::Oid,
+        fingerprint: [u8; 34],
+    ) -> Result<Self, String> {
+        Self::open_once_with_fingerprint(index_oid, Some(fingerprint), false)
     }
 
     fn open_once_with_fingerprint(
         index_oid: pg_sys::Oid,
         requested_fingerprint: Option<[u8; 34]>,
+        load_head: bool,
     ) -> Result<Self, String> {
         let (control, _handle, _metadata, logical_index_uuid) =
             super::generation_store::open_control_index(
@@ -3851,7 +3898,7 @@ impl PhysicalGenerationScan {
                         .to_owned(),
                 );
             }
-            let head_index = {
+            let head_index = if load_head {
                 let (head_sample, head_graph, manifest_build_options) =
                     super::head_sample::load_head_sample(
                         index_oid,
@@ -3866,6 +3913,8 @@ impl PhysicalGenerationScan {
                     manifest_build_options.options.head_policy,
                 )?
                 .map(Arc::new)
+            } else {
+                None
             };
             cache_physical_epoch(CachedPhysicalEpoch {
                 index_oid,
@@ -3880,12 +3929,18 @@ impl PhysicalGenerationScan {
             });
             (descriptor, descriptor_digest, head_index, None, None)
         };
-        let routes = physical_owner_routes(
-            index_oid,
-            logical_index_uuid,
-            active.build_id,
-            descriptor.roster.len(),
-        )?;
+        let routes = if !load_head && requested_fingerprint.is_some() {
+            physical_owner_routes_for_owner_insert(
+                index_oid,
+            )?
+        } else {
+            physical_owner_routes(
+                index_oid,
+                logical_index_uuid,
+                active.build_id,
+                descriptor.roster.len(),
+            )?
+        };
         // TRAV-30 (Task 210 P3): populate the bounded gateway copies once per
         // cached epoch. The gateway set is the FR-080 head membership — already
         // bounded and coordinator-resident — and only routing payload moves.
@@ -4001,18 +4056,19 @@ impl PhysicalGenerationScan {
                         generation.state
                     ));
                 }
-                let local_route =
-                    routes
+                if load_head {
+                    let local_route = routes
                         .get(generation.owner_ordinal as usize)
                         .ok_or_else(|| {
                             "EC_NODE_DESCRIPTOR: local generation owner is outside the roster"
                                 .to_owned()
                         })?;
-                if !local_route.is_local {
-                    return Err(
-                        "EC_NODE_DESCRIPTOR: local generation owner is not the local binding"
-                            .to_owned(),
-                    );
+                    if !local_route.is_local {
+                        return Err(
+                            "EC_NODE_DESCRIPTOR: local generation owner is not the local binding"
+                                .to_owned(),
+                        );
+                    }
                 }
                 if generation.generation_descriptor_digest != descriptor_digest {
                     return Err("EC_GENERATION_DESCRIPTOR: local generation descriptor differs from candidate".to_owned());

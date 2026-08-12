@@ -325,6 +325,7 @@ fn ec_distann_apply_physical_insert(
     payload_nulls: Vec<bool>,
     payload_offsets: Vec<i64>,
     payload_values: Vec<u8>,
+    planned_forward: Vec<u8>,
     allow_replacement: bool,
 ) -> bool {
     super::lifecycle_guard::require_read_committed("ec_distann_apply_physical_insert")
@@ -387,6 +388,7 @@ fn ec_distann_apply_physical_insert(
                 &payload_nulls,
                 &payload_offsets,
                 &payload_values,
+                &planned_forward,
                 allow_replacement,
             )
         }
@@ -403,6 +405,7 @@ fn ec_distann_apply_physical_backlink(
     index_regclass: pg_sys::Oid,
     epoch_fingerprint: Vec<u8>,
     target_vec_id: i64,
+    target_source_vector: Vec<f32>,
     new_vec_id: i64,
     new_source_vector: Vec<f32>,
     new_code: Vec<u8>,
@@ -420,15 +423,17 @@ fn ec_distann_apply_physical_backlink(
                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
                 "ec_distann_apply_physical_backlink",
             )?;
-        let active =
-            super::generation_read::active_generation_identity(index_regclass, logical_index_uuid)?
-                .ok_or_else(|| {
-                    "EC_GENERATION_MISSING: physical backlink has no active epoch".to_owned()
-                })?;
-        if active.fingerprint != fingerprint {
-            return Err(
-                "EC_EPOCH_MISMATCH: physical backlink epoch fingerprint mismatch".to_owned(),
-            );
+        let generation = generation_catalog::lookup_retained_generation_by_fingerprint(
+            index_regclass,
+            logical_index_uuid,
+            &fingerprint,
+        )?
+        .ok_or_else(|| "EC_GENERATION_MISSING: physical backlink has no published epoch".to_owned())?;
+        if generation.generation.state != GenerationState::Published {
+            return Err(format!(
+                "EC_EPOCH_STATE: physical backlink generation is {:?}, expected Published",
+                generation.generation.state
+            ));
         }
         let placement =
             super::roster::placement_directory_for_epoch(super::roster::scan_epoch(&metadata))?;
@@ -451,7 +456,9 @@ fn ec_distann_apply_physical_backlink(
         unsafe {
             super::physical_dml::apply_owner_backlink(
                 index_regclass,
+                fingerprint,
                 target_vec_id as u64,
+                target_source_vector,
                 new_vec_id as u64,
                 new_source_vector,
                 &new_code,

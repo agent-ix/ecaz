@@ -539,12 +539,13 @@ pub(crate) struct DistannRemotePhysicalInsertRequest<'a> {
     pub(crate) payload_nulls: &'a [bool],
     pub(crate) payload_offsets: &'a [i64],
     pub(crate) payload_values: &'a [u8],
+    pub(crate) planned_forward: &'a [u8],
     pub(crate) allow_replacement: bool,
 }
 
 const PHYSICAL_INSERT_SQL: &str = "SELECT ec_distann_apply_physical_insert(\
         $1::text::regclass::oid, $2::bytea, $3::bigint, $4::real[], $5::bytea,\
-        $6::boolean[], $7::bigint[], $8::bytea, $9::boolean)";
+        $6::boolean[], $7::bigint[], $8::bytea, $9::bytea, $10::boolean)";
 
 static NEXT_PHYSICAL_INSERT_GID: AtomicU64 = AtomicU64::new(1);
 
@@ -739,6 +740,7 @@ pub(crate) fn remote_physical_insert(
                         &request.payload_nulls,
                         &request.payload_offsets,
                         &request.payload_values,
+                        &request.planned_forward,
                         &request.allow_replacement,
                     ],
                 ),
@@ -805,6 +807,7 @@ pub(crate) struct DistannRemotePhysicalBacklinkRequest<'a> {
     pub(crate) index_regclass: &'a str,
     pub(crate) epoch_fingerprint: &'a [u8],
     pub(crate) target_vec_id: u64,
+    pub(crate) target_source_vector: &'a [f32],
     pub(crate) new_vec_id: u64,
     pub(crate) new_source_vector: &'a [f32],
     pub(crate) new_code: &'a [u8],
@@ -821,7 +824,7 @@ pub(crate) struct DistannRemotePhysicalTombstoneRequest<'a> {
 }
 
 const PHYSICAL_BACKLINK_SQL: &str = "SELECT ec_distann_apply_physical_backlink(\
-        $1::text::regclass::oid, $2::bytea, $3::bigint, $4::bigint, $5::real[], $6::bytea)";
+        $1::text::regclass::oid, $2::bytea, $3::bigint, $4::real[], $5::bigint, $6::real[], $7::bytea)";
 
 const PHYSICAL_TOMBSTONE_SQL: &str = "SELECT ec_distann_apply_physical_tombstone(\
         $1::text::regclass::oid, $2::bytea, $3::bigint)";
@@ -928,6 +931,7 @@ pub(crate) fn remote_physical_backlink(
                         &request.index_regclass,
                         &request.epoch_fingerprint,
                         &(request.target_vec_id as i64),
+                        &request.target_source_vector,
                         &(request.new_vec_id as i64),
                         &request.new_source_vector,
                         &request.new_code,

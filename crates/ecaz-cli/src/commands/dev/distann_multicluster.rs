@@ -956,7 +956,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             .arg("-o")
             .arg(format!(
                 "-p {} -c listen_addresses=127.0.0.1 -c unix_socket_directories='' \
-                 -c shared_preload_libraries=ecaz",
+                 -c shared_preload_libraries=ecaz -c max_prepared_transactions=32",
                 node.port
             ))
             .arg("start")
@@ -1118,9 +1118,9 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
 /// in synthetic mode it reproduces the deterministic corpus generator at
 /// `args.dim`. A synthetic `args.dim` vector does NOT match a real corpus, so
 /// the drill inserts must not synthesize a vector when a real corpus is loaded.
-fn insert_vector_expr(args: &LocalMultinodePg18Args) -> String {
+fn insert_vector_expr(args: &LocalMultinodePg18Args, table: &str) -> String {
     if args.corpus_prefix.is_some() {
-        "(SELECT source FROM dm ORDER BY id LIMIT 1)".to_owned()
+        format!("(SELECT source FROM {table} ORDER BY id LIMIT 1)")
     } else {
         format!(
             "(SELECT array_agg((sin(7 * 0.017 * (d + 1)) + cos(7 * 0.0031 * (d + 1)))::real) \
@@ -3011,12 +3011,13 @@ async fn task167_post_insert_fresh_rebuild_parity(
     let fresh_index = format!("{fresh_table}_idx");
     coordinator
         .batch_execute(&format!(
-            "DROP TABLE IF EXISTS {fresh_table} CASCADE;
+            "SET ec_distann.roster = '';
+             DROP TABLE IF EXISTS {fresh_table} CASCADE;
              CREATE TABLE {fresh_table} AS
                SELECT id, source, embedding FROM {physical_corpus};
              CREATE INDEX {fresh_index} ON {fresh_table}
                USING ec_distann (embedding ecvector_distann_ip_ops)
-               WITH (graph_degree = {graph_degree}, head_index_cap = {head_index_cap},
+               WITH (distributed_control = false, graph_degree = {graph_degree}, head_index_cap = {head_index_cap},
                      neighbor_code_format = 'rabitq');
              ANALYZE {fresh_table};"
         ))
@@ -3036,49 +3037,47 @@ async fn task167_post_insert_fresh_rebuild_parity(
     coordinator
         .batch_execute(&format!(
             "SET enable_seqscan = off;
-             SET ec_distann.roster = '{roster}';
              SET ec_distann.local_node_id = 1;
-             SET ec_distann.epoch = {epoch};"
+             SET ec_distann.epoch = {epoch};
+             DROP TABLE IF EXISTS task167_parity_q, task167_parity_physical, task167_parity_fresh;
+             CREATE TEMP TABLE task167_parity_q AS
+               SELECT id AS qid, source AS v FROM {physical_queries}
+                ORDER BY id LIMIT {query_count};
+             SET ec_distann.roster = '{roster}';
+             CREATE TEMP TABLE task167_parity_physical AS
+               SELECT q.qid, hit.id
+                 FROM task167_parity_q q
+                 CROSS JOIN LATERAL (
+                   SELECT id FROM {physical_corpus}
+                    ORDER BY embedding <#> q.v LIMIT 10
+                 ) hit;
+             SET ec_distann.roster = '';
+             CREATE TEMP TABLE task167_parity_fresh AS
+               SELECT q.qid, hit.id
+                 FROM task167_parity_q q
+                 CROSS JOIN LATERAL (
+                   SELECT id FROM {fresh_table}
+                    ORDER BY embedding <#> q.v LIMIT 10
+                 ) hit;"
         ))
         .await
         .wrap_err("configuring Task 167 fresh-rebuild parity session")?;
     let result = coordinator
         .query_one(
-            &format!(
-                "WITH q AS (
-                   SELECT id AS qid, source AS v
-                     FROM {physical_queries}
-                    ORDER BY id
-                    LIMIT {query_count}
-                 ), physical_hits AS (
-                   SELECT q.qid, hit.id
-                     FROM q
-                     CROSS JOIN LATERAL (
-                       SELECT id FROM {physical_corpus}
-                        ORDER BY embedding <#> q.v LIMIT 10
-                     ) hit
-                 ), fresh_hits AS (
-                   SELECT q.qid, hit.id
-                     FROM q
-                     CROSS JOIN LATERAL (
-                       SELECT id FROM {fresh_table}
-                        ORDER BY embedding <#> q.v LIMIT 10
-                     ) hit
-                 ), per_query AS (
+            "WITH per_query AS (
                    SELECT q.qid,
                           (SELECT count(*)
-                             FROM (SELECT id FROM physical_hits WHERE qid = q.qid
+                             FROM (SELECT id FROM task167_parity_physical WHERE qid = q.qid
                                    INTERSECT
-                                   SELECT id FROM fresh_hits WHERE qid = q.qid) common)::double precision / 10.0 AS recall,
-                          (SELECT count(*) FROM physical_hits WHERE qid = q.qid) AS physical_rows,
-                          (SELECT count(*) FROM fresh_hits WHERE qid = q.qid) AS fresh_rows
-                     FROM q
+                                   SELECT id FROM task167_parity_fresh WHERE qid = q.qid) common)::double precision / 10.0 AS recall,
+                          (SELECT count(*) FROM task167_parity_physical WHERE qid = q.qid) AS physical_rows,
+                          (SELECT count(*) FROM task167_parity_fresh WHERE qid = q.qid) AS fresh_rows
+                     FROM task167_parity_q q
                  )
                  SELECT count(*)::bigint,
                         avg(recall), min(recall), max(recall),
                         count(*) FILTER (WHERE physical_rows = 10 AND fresh_rows = 10)::bigint
-                   FROM per_query;"
-            ),
+                   FROM per_query;",
             &[],
         )
         .await
@@ -7752,8 +7751,30 @@ async fn drive_physical_fixture(
     for line in &benchmark_lines {
         crate::ecaz_println!("[distann-multicluster] {line}");
     }
-    let physical_concurrency_ok =
-        physical_concurrency_drill(psql, socket_dir, nodes[0].port, args).await?;
+    let concurrency_table = if args.physical_benchmark {
+        let corpus_prefix = args
+            .corpus_prefix
+            .as_deref()
+            .ok_or_else(|| color_eyre::eyre::eyre!("physical benchmark requires corpus_prefix"))?;
+        let scale = corpus_prefix.strip_prefix("ec_real_").unwrap_or(corpus_prefix);
+        format!("task179_physical_{scale}_corpus")
+    } else {
+        "dm".to_owned()
+    };
+    let fixture_roster = nodes
+        .iter()
+        .map(|node| format!("{}@{}", node.node_id, conninfo(socket_dir, node.port)))
+        .collect::<Vec<_>>()
+        .join(";");
+    let physical_concurrency_ok = physical_concurrency_drill(
+        psql,
+        socket_dir,
+        nodes[0].port,
+        args,
+        &fixture_roster,
+        &concurrency_table,
+    )
+    .await?;
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}"
     );
@@ -8187,7 +8208,7 @@ async fn restart_physical_node(
         .arg("-o")
         .arg(format!(
             "-p {} -c listen_addresses=127.0.0.1 -c unix_socket_directories='' \
-             -c shared_preload_libraries=ecaz",
+             -c shared_preload_libraries=ecaz -c max_prepared_transactions=32",
             node.port
         ))
         .arg("start")
@@ -9081,29 +9102,37 @@ async fn physical_concurrency_drill(
     socket_dir: &Path,
     coord_port: u16,
     args: &LocalMultinodePg18Args,
+    roster: &str,
+    table: &str,
 ) -> Result<bool> {
     const SCANNERS: usize = 4;
     const ITERATIONS: usize = 12;
+    let roster = roster.replace('\'', "''");
     let query_sql = format!(
-        "SET enable_seqscan=off; \
-         SELECT count(*) FROM (SELECT source_id FROM dm \
-          ORDER BY embedding <#> (SELECT source FROM dm ORDER BY id LIMIT 1) \
+        "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
+         SELECT count(*) FROM (SELECT source_id FROM {table} \
+          ORDER BY embedding <#> (SELECT source FROM {table} ORDER BY id LIMIT 1) \
           LIMIT {}) rows;",
         args.top_k
     );
-    let insert_vector = insert_vector_expr(args);
-    let source_rows = capture_psql_allow_error(
+    let insert_vector = insert_vector_expr(args, table);
+    let source_rows_output = capture_psql_allow_error(
         psql,
         socket_dir,
         coord_port,
-        "SELECT count(*) FROM dm",
+        &format!("SELECT count(*) FROM {table}"),
     )
-    .await
-    .lines()
+    .await;
+    let source_rows = source_rows_output
+        .lines()
     .find_map(|line| line.trim().parse::<i64>().ok())
     .unwrap_or(0);
     let expected_count = i64::from(args.top_k).min(source_rows);
     if expected_count == 0 {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=source_rows table={table} output={}",
+            compact_capture_error(&source_rows_output)
+        );
         return Ok(false);
     }
     let base_rows = args.rows;
@@ -9114,9 +9143,13 @@ async fn physical_concurrency_drill(
         let socket_dir = socket_dir.to_path_buf();
         let query_sql = query_sql.clone();
         tasks.push(tokio::spawn(async move {
-            for _ in 0..ITERATIONS {
+            for iteration in 0..ITERATIONS {
                 let output = run_capture(&psql, &socket_dir, coord_port, &query_sql).await;
                 if !output.status_ok {
+                    crate::ecaz_println!(
+                        "[distann-multicluster] physical_concurrent_insert_query DIAG role=scanner iteration={iteration} stderr={}",
+                        compact_capture_error(&output.stderr)
+                    );
                     return false;
                 }
                 let count = output
@@ -9124,6 +9157,10 @@ async fn physical_concurrency_drill(
                     .lines()
                     .find_map(|line| line.trim().parse::<i64>().ok());
                 if count != Some(expected_count) {
+                    crate::ecaz_println!(
+                        "[distann-multicluster] physical_concurrent_insert_query DIAG role=scanner iteration={iteration} count={count:?} expected={expected_count} stdout={}",
+                        compact_capture_error(&output.stdout)
+                    );
                     return false;
                 }
             }
@@ -9133,12 +9170,15 @@ async fn physical_concurrency_drill(
 
     let psql_insert = psql.to_path_buf();
     let socket_dir_insert = socket_dir.to_path_buf();
+    let insert_roster = roster.clone();
+    let insert_table = table.to_owned();
     tasks.push(tokio::spawn(async move {
         for iteration in 0..ITERATIONS {
             let id = 900_000_i64 + base_rows as i64 + iteration as i64;
             let insert_sql = format!(
-                "WITH row_data AS (SELECT {id}::bigint AS id, {insert_vector}::real[] AS source) \
-                 INSERT INTO dm (id, source_id, source, embedding) \
+                "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id=1; \
+                 WITH row_data AS (SELECT {id}::bigint AS id, {insert_vector}::real[] AS source) \
+                 INSERT INTO {insert_table} (id, source_id, source, embedding) \
                  SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
                         substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
                         substr(md5(id::text),21,12))::uuid, source, \
@@ -9146,6 +9186,10 @@ async fn physical_concurrency_drill(
             );
             let output = run_capture(&psql_insert, &socket_dir_insert, coord_port, &insert_sql).await;
             if !output.status_ok {
+                crate::ecaz_println!(
+                    "[distann-multicluster] physical_concurrent_insert_query DIAG role=inserter iteration={iteration} stderr={}",
+                    compact_capture_error(&output.stderr)
+                );
                 return false;
             }
         }
@@ -9296,7 +9340,7 @@ async fn concurrency_drill(
     // a synthetic vector matching the corpus generator. Synthetic args.dim does
     // NOT match a real corpus dimension, so a synthetic vector would fail the
     // aminsert dimension check against the real index.
-    let arr = insert_vector_expr(args);
+    let arr = insert_vector_expr(args, "dm");
 
     let mut tasks = Vec::new();
     for _ in 0..scanners {
@@ -9812,7 +9856,7 @@ async fn frozen_vector_drill(
     // real corpus vector (correct dimension) in real mode; the reinserted vector
     // content is irrelevant to the frozen-vector check (which probes a
     // pre-existing live record), only its dimension must match the index.
-    let arr = insert_vector_expr(args);
+    let arr = insert_vector_expr(args, "dm");
     for node in nodes {
         let ins = run_capture(
             psql,
@@ -9946,6 +9990,16 @@ fn psql_base(psql: &Path, _socket_dir: &Path, port: u16) -> Command {
         .arg("-d")
         .arg("postgres");
     command
+}
+
+fn compact_capture_error(output: &str) -> String {
+    output
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .take(3)
+        .collect::<Vec<_>>()
+        .join(" | ")
+        .replace('\n', " ")
 }
 
 async fn run_psql_file(psql: &Path, socket_dir: &Path, port: u16, sql: &str) -> Result<()> {
