@@ -1,4 +1,4 @@
-head_sha: f8c2af988
+head_sha: 28f2d8213
 task_bucket: reviews/task-167
 packet: 023-review-fixes
 timestamp: 2026-08-12 (America/Los_Angeles)
@@ -17,7 +17,14 @@ The config therefore preserves the prior Task 167 physical matrix while
 capturing the corrected counters, isolated inserted-neighborhood parity, and
 the new concurrency/delete drills.
 
-Build validation completed from head `f8c2af988` with `cargo check -p ecaz
+The suite's throughput criterion is explicitly relative A/B only: FR-083 has
+no absolute insert-latency gate, so the packet reports absolute rows/s and
+physical/control ratio without treating `pass=true` as an absolute SLA. The
+`beam_width=4, hop_rounds=100` setting is deliberate for this packet's
+incremental-write attribution; read-side regime correction remains owned by
+Task 203 follow-up work and is not presented as a corrected read benchmark.
+
+Build validation completed from head `28f2d8213` with `cargo check -p ecaz
 --features pg18` and `cargo check -p ecaz-cli`. A release install/build was
 attempted with `cargo pgrx install --release --pg-config
 /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features

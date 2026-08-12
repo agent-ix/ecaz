@@ -1,6 +1,6 @@
 # Task 167 review fixes
 
-Please review code checkpoint `f8c2af988`, which addresses the CHANGES
+Please review code checkpoint `28f2d8213`, which addresses the CHANGES
 REQUESTED findings in packet 022 and the related evidence defects in packet
 020.
 
@@ -32,7 +32,7 @@ Implemented changes:
 Validation and benchmark provenance are recorded in `artifacts/manifest.md`
 and the packet-local logs/results it cites. The packet remains review-open.
 
-head_sha: f8c2af988
+head_sha: 28f2d8213
 task_bucket: reviews/task-167
 packet: 023-review-fixes
 timestamp: 2026-08-12 (America/Los_Angeles)
