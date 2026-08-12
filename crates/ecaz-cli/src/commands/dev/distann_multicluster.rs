@@ -9110,7 +9110,7 @@ async fn mid_insert_drill(
         "SELECT graph_store_relid::regclass::text || '|' || row_tier_relid::regclass::text \
            FROM ec_distann_generation \
           WHERE index_oid='mi_idx'::regclass::oid AND state='Published' \
-          ORDER BY generation DESC LIMIT 1;",
+          ORDER BY epoch DESC LIMIT 1;",
     )
     .await;
     let relation_names = relation_output
