@@ -1,6 +1,6 @@
 # Task 167 review fixes
 
-Please review code checkpoint `28f2d8213`, which addresses the CHANGES
+Please review code checkpoint `ae19b8ce0`, which addresses the CHANGES
 REQUESTED findings in packet 022 and the related evidence defects in packet
 020.
 
@@ -28,11 +28,20 @@ Implemented changes:
   tombstone resurrection.
 - P3-12/P3-13: keep INVALID source TIDs out of remote source-map writes and
   document the palloc lifetime invariant for binary receive datums.
+- New review fixes: allow the physical `commit_intended` state in both schema
+  paths, fail VACUUM on routed tombstone errors so source-map rows remain
+  retry tokens, retain a resolved local endpoint for empty-roster fallback,
+  and make the concurrency drill assert inserted IDs appear in forward
+  neighbor lists.
+- Remote transport compatibility: expose `payload_offsets` from the
+  upgrade-time row-payload wrapper, matching the transport ABI.
 
 Validation and benchmark provenance are recorded in `artifacts/manifest.md`
-and the packet-local logs/results it cites. The packet remains review-open.
+and the packet-local logs it cites. The exact-head two-owner probe committed a
+remote insert (`owner=1`, `remote=true`); the later backlink failure keeps the
+packet review-open and does not claim the concurrency drill passed.
 
-head_sha: 28f2d8213
+head_sha: ae19b8ce0
 task_bucket: reviews/task-167
 packet: 023-review-fixes
 timestamp: 2026-08-12 (America/Los_Angeles)

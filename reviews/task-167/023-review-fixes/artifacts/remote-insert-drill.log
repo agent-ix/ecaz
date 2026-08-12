@@ -1,0 +1,22 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=2 instances=2 coordinator_outside_roster=false base_port=39710 rows=100 dim=4 graph_degree=8 build_shards=1 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=2 unanimous=true extension_git_sha=ae19b8ce0f8c311d6fd8f386d85241592aa95ab3 extension_build_profile=debug debug_override=true
+[distann-multicluster] physical_setup_start rows=100 nodes=2
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=41 rows=41 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=59 rows=59 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=41 rows=41 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=59 rows=59 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=2 source_rows=100
+[distann-multicluster] physical_remote_insert_probe candidate=0 committed=true owner=0 remote=false
+[distann-multicluster] physical_remote_insert_probe candidate=1 committed=true owner=0 remote=false
+[distann-multicluster] physical_remote_insert_probe candidate=2 committed=true owner=1 remote=true
+[distann-multicluster] physical_remote_insert_probe pass=true
+
+   0: [91mquery returned an unexpected number of rows[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m7722[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
