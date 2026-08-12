@@ -1,0 +1,6 @@
+head_sha=f8c2af988
+validation=cargo check -p ecaz --features pg18; result=passed
+validation=cargo check -p ecaz-cli; result=passed
+validation=cargo pgrx test pg18 test_distann_physical_dml_endpoint_acl_class --no-default-features --features pg18,pg_test; result=stopped-after-silence-no-test-result
+validation=cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features pg18; result=stopped-after-silence-before-completion
+validation=cargo build --release --no-default-features --features pg18; result=stopped-after-silence-before-completion
