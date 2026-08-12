@@ -1,10 +1,12 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation complete; packet 022 review-open; runtime TC-043 and
-10k/50k/100k recall/latency/storage/insert evidence captured, including
-inserted-neighborhood parity and stable-vec_id UPDATE; physical DML endpoint
-hardening and focused/broad PG18 ACL evidence added; independent reviewer
-disposition pending (2026-08-12).
+Status: implementation landed; packet 022 review-open; reviewer CHANGES
+REQUESTED on 2026-08-12 for five P1 correctness/atomicity findings plus
+evidence gaps (feedback:
+reviews/task-167/022-overload-cleanup/feedback/2026-08-12-01-reviewer.md);
+fixes are in progress, including immutable-owner placement, locked backlink
+mutation, prepared-commit fencing, routed tombstone resolution, two-writer
+concurrency coverage, and routed DELETE/VACUUM coverage.
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
 (gate verdict remains committed scope unless the operator explicitly descopes
 — ADR-085 D5). The landed delta/fold experiments apply to the legacy local or

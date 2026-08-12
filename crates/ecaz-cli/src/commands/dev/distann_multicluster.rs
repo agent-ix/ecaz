@@ -534,17 +534,17 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         );
     }
     if args.gateway_head_candidate_trace && args.gateway_head_candidate_positions.is_empty() {
-        bail!(
-            "--gateway-head-candidate-trace requires --gateway-head-candidate-positions"
-        );
+        bail!("--gateway-head-candidate-trace requires --gateway-head-candidate-positions");
     }
-    if args.gateway_head_candidate_positions.iter().any(|position| !(1..=4096).contains(position)) {
+    if args
+        .gateway_head_candidate_positions
+        .iter()
+        .any(|position| !(1..=4096).contains(position))
+    {
         bail!("--gateway-head-candidate-positions values must be in 1..=4096");
     }
     if !args.gateway_head_candidate_trace && !args.gateway_head_candidate_positions.is_empty() {
-        bail!(
-            "--gateway-head-candidate-positions requires --gateway-head-candidate-trace"
-        );
+        bail!("--gateway-head-candidate-positions requires --gateway-head-candidate-trace");
     }
     if let Some(limit) = args.gateway_isolated_seed_limit {
         if !(1..=4096).contains(&limit) {
@@ -573,7 +573,11 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         if !args.physical_benchmark {
             bail!("--benchmark-concurrency-sweep requires --physical-benchmark");
         }
-        if args.benchmark_concurrency_sweep.iter().any(|value| *value == 0) {
+        if args
+            .benchmark_concurrency_sweep
+            .iter()
+            .any(|value| *value == 0)
+        {
             bail!("--benchmark-concurrency-sweep values must all be at least 1");
         }
         let unique = args
@@ -655,9 +659,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.crown_capacity.is_some_and(|value| value > 1_048_576) {
         bail!("--crown-capacity must be in 0..=1048576");
     }
-    if (args.crown_width_pruning || args.fused_head_hop)
-        && args.crown_capacity.unwrap_or(0) == 0
-    {
+    if (args.crown_width_pruning || args.fused_head_hop) && args.crown_capacity.unwrap_or(0) == 0 {
         bail!("--crown-width-pruning/--fused-head-hop require --crown-capacity >= 1");
     }
     if (args.crown_width_pruning || args.fused_head_hop) && !args.physical_benchmark {
@@ -1739,9 +1741,7 @@ fn validate_crown_activation(
         return Ok(());
     }
     if !stats_seen {
-        bail!(
-            "crown-enabled physical arm did not report ec_distann crown counters"
-        );
+        bail!("crown-enabled physical arm did not report ec_distann crown counters");
     }
     if args.crown_width_pruning && crown_width_pruning_activations <= 0 {
         bail!("crown-width arm reported zero crown_width_pruning_activations");
@@ -2888,8 +2888,11 @@ async fn measure_task167_insert_arm(
         let started = Instant::now();
         for ordinal in 0..ROWS_PER_TRIAL {
             let source_offset = trial * ROWS_PER_TRIAL + ordinal;
-            let id = if physical { 2_000_000_i64 } else { 1_000_000_i64 }
-                + trial as i64 * ROWS_PER_TRIAL as i64
+            let id = if physical {
+                2_000_000_i64
+            } else {
+                1_000_000_i64
+            } + trial as i64 * ROWS_PER_TRIAL as i64
                 + ordinal as i64;
             let sql = if physical {
                 format!(
@@ -2957,9 +2960,9 @@ async fn task167_insert_throughput_ab(
             .await
             .wrap_err("reading Task 167 physical insert-work counters")?;
         let expected_inserts = (TRIALS * ROWS_PER_TRIAL) as i64;
-        if rows.len() != 6 {
+        if rows.len() != 8 {
             bail!(
-                "Task 167 physical insert-work snapshot returned {} rows, expected 6",
+                "Task 167 physical insert-work snapshot returned {} rows, expected 8",
                 rows.len()
             );
         }
@@ -2986,9 +2989,7 @@ async fn task167_insert_throughput_ab(
                 .copied()
                 .ok_or_else(|| eyre!("insert-work snapshot omitted {metric}"))?;
             if value > bound {
-                bail!(
-                    "Task 167 {metric} exceeded graph-degree bound: value={value} bound={bound}"
-                );
+                bail!("Task 167 {metric} exceeded graph-degree bound: value={value} bound={bound}");
             }
         }
     }
@@ -3082,6 +3083,8 @@ async fn task167_post_insert_fresh_rebuild_parity(
                  )
                  SELECT count(*)::bigint,
                         avg(recall), min(recall), max(recall),
+                        count(*) FILTER (WHERE qid BETWEEN 2000000 AND 2000047)::bigint,
+                        avg(recall) FILTER (WHERE qid BETWEEN 2000000 AND 2000047),
                         count(*) FILTER (WHERE physical_rows = 10 AND fresh_rows = 10)::bigint
                    FROM per_query;",
             &[],
@@ -3092,7 +3095,9 @@ async fn task167_post_insert_fresh_rebuild_parity(
     let recall = result.get::<_, Option<f64>>(1).unwrap_or(0.0);
     let min_recall = result.get::<_, Option<f64>>(2).unwrap_or(0.0);
     let max_recall = result.get::<_, Option<f64>>(3).unwrap_or(0.0);
-    let complete_rows = result.get::<_, i64>(4);
+    let inserted_queries = result.get::<_, i64>(4);
+    let inserted_recall = result.get::<_, Option<f64>>(5).unwrap_or(0.0);
+    let complete_rows = result.get::<_, i64>(6);
     coordinator
         .batch_execute("SET ec_distann.roster = ''")
         .await
@@ -3101,14 +3106,17 @@ async fn task167_post_insert_fresh_rebuild_parity(
         .batch_execute(&format!("DROP TABLE {fresh_table} CASCADE"))
         .await
         .wrap_err("dropping Task 167 post-insert fresh rebuild")?;
-    if queries != i64::from(query_count) || complete_rows != queries {
+    if queries != i64::from(query_count)
+        || inserted_queries != i64::from(query_count.min(48))
+        || complete_rows != queries
+    {
         bail!(
-            "Task 167 fresh-rebuild parity returned incomplete query rows: queries={queries} expected={} complete_rows={complete_rows}",
-            query_count
+            "Task 167 fresh-rebuild parity returned incomplete query rows: queries={queries} expected={} inserted_queries={inserted_queries} complete_rows={complete_rows}",
+            query_count,
         );
     }
     Ok(format!(
-        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} inserted_neighborhood_queries=48 top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} pass=true",
+        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} inserted_neighborhood_queries={inserted_queries} inserted_neighborhood_recall={inserted_recall:.6} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} comparison=physical_vs_fresh_ann_agreement pass=true",
     ))
 }
 
@@ -4621,8 +4629,7 @@ async fn run_materialization_correctness(
                     candidate.packed_payload
                         && candidate.materialization_batch_size
                             == control.materialization_batch_size
-                        && candidate.owner_payload_plan_cache
-                            == control.owner_payload_plan_cache
+                        && candidate.owner_payload_plan_cache == control.owner_payload_plan_cache
                         && candidate.traversal_replica == control.traversal_replica
                         && candidate.typed_locator == control.typed_locator
                         && same_search(control, candidate)
@@ -4639,8 +4646,7 @@ async fn run_materialization_correctness(
                     candidate.expanded_locator
                         && candidate.materialization_batch_size
                             == control.materialization_batch_size
-                        && candidate.owner_payload_plan_cache
-                            == control.owner_payload_plan_cache
+                        && candidate.owner_payload_plan_cache == control.owner_payload_plan_cache
                         && candidate.typed_locator == control.typed_locator
                         && candidate.packed_payload == control.packed_payload
                         && candidate.traversal_replica == control.traversal_replica
@@ -5375,19 +5381,17 @@ async fn run_physical_benchmarks(
         args.queries,
         args.head_index_cap,
     ));
-    let gateway_trace_queries = if args.gateway_trace
-        || args.gateway_isolated_trace
-        || args.gateway_head_candidate_trace
-    {
-        let training_path = std::fs::canonicalize(
-            args.training_query_path
-                .as_deref()
-                .expect("gateway trace validation requires a training query path"),
-        )?;
-        let training_path = training_path.display().to_string().replace('\'', "''");
-        coordinator
-            .batch_execute(&format!(
-                "CREATE TEMP TABLE ec_distann_task185_gateway_training_stage (
+    let gateway_trace_queries =
+        if args.gateway_trace || args.gateway_isolated_trace || args.gateway_head_candidate_trace {
+            let training_path = std::fs::canonicalize(
+                args.training_query_path
+                    .as_deref()
+                    .expect("gateway trace validation requires a training query path"),
+            )?;
+            let training_path = training_path.display().to_string().replace('\'', "''");
+            coordinator
+                .batch_execute(&format!(
+                    "CREATE TEMP TABLE ec_distann_task185_gateway_training_stage (
                      load_ordinal bigserial, source_id bigint, vec text
                  );
                  COPY ec_distann_task185_gateway_training_stage (source_id, vec)
@@ -5399,13 +5403,13 @@ async fn run_physical_benchmarks(
                   WHERE load_ordinal BETWEEN 201 AND 400
                   ORDER BY load_ordinal;
                  DROP TABLE ec_distann_task185_gateway_training_stage;"
-            ))
-            .await
-            .wrap_err("staging Task 185 disjoint gateway-training queries")?;
-        Some("ec_distann_task185_gateway_training_queries")
-    } else {
-        None
-    };
+                ))
+                .await
+                .wrap_err("staging Task 185 disjoint gateway-training queries")?;
+            Some("ec_distann_task185_gateway_training_queries")
+        } else {
+            None
+        };
     if let Some(iterations) = args.coverage_memory_regression_iterations {
         lines.push(
             run_coverage_memory_regression(
@@ -5622,7 +5626,11 @@ async fn run_physical_benchmarks(
                  SET ec_distann.crown_width_pruning = {};\n\
                  SET ec_distann.fused_head_hop = {};",
                 args.crown_capacity.unwrap_or(0),
-                if args.crown_width_pruning { "on" } else { "off" },
+                if args.crown_width_pruning {
+                    "on"
+                } else {
+                    "off"
+                },
                 if args.fused_head_hop { "on" } else { "off" },
             ))
             .await
@@ -5948,18 +5956,19 @@ async fn run_physical_benchmarks(
                     crown_seeds_served = crown_counter(stats, "crown_seeds_served")
                         .ok_or_else(|| eyre!("crown stats omitted crown_seeds_served"))?;
                     crown_width_pruned_shards = crown_counter(stats, "crown_width_pruned_shards")
-                        .ok_or_else(|| eyre!("crown stats omitted crown_width_pruned_shards"))?;
+                        .ok_or_else(|| {
+                        eyre!("crown stats omitted crown_width_pruned_shards")
+                    })?;
                     crown_width_pruning_activations =
-                        crown_counter(stats, "crown_width_pruning_activations").ok_or_else(|| {
-                            eyre!("crown stats omitted crown_width_pruning_activations")
-                        })?;
+                        crown_counter(stats, "crown_width_pruning_activations").ok_or_else(
+                            || eyre!("crown stats omitted crown_width_pruning_activations"),
+                        )?;
                     fused_head_hops = crown_counter(stats, "fused_head_hops")
                         .ok_or_else(|| eyre!("crown stats omitted fused_head_hops"))?;
-                    fused_first_round_requested_ids = crown_counter(
-                        stats,
-                        "fused_first_round_requested_ids",
-                    )
-                    .ok_or_else(|| eyre!("crown stats omitted fused_first_round_requested_ids"))?;
+                    fused_first_round_requested_ids =
+                        crown_counter(stats, "fused_first_round_requested_ids").ok_or_else(
+                            || eyre!("crown stats omitted fused_first_round_requested_ids"),
+                        )?;
                     lines.push(format!(
                         "physical_benchmark_crown_stats scale={scale} variant={variant} arm={arm} {stats}"
                     ));
@@ -6065,9 +6074,8 @@ async fn run_physical_benchmarks(
                 ));
             }
             if arm == "physical" && args.gateway_isolated_trace {
-                let isolated_seed_count = args
-                    .gateway_isolated_seed_limit
-                    .unwrap_or(head_seed_count);
+                let isolated_seed_count =
+                    args.gateway_isolated_seed_limit.unwrap_or(head_seed_count);
                 if isolated_seed_count == 0 || isolated_seed_count > head_seed_count {
                     bail!(
                         "--gateway-isolated-seed-limit {} exceeds arm {} head_seed_count {}",
@@ -6399,15 +6407,15 @@ async fn run_physical_benchmarks(
                 crown_width_pruned_shards = crown_counter(stats, "crown_width_pruned_shards")
                     .ok_or_else(|| eyre!("crown stats omitted crown_width_pruned_shards"))?;
                 crown_width_pruning_activations =
-                    crown_counter(stats, "crown_width_pruning_activations")
-                        .ok_or_else(|| eyre!("crown stats omitted crown_width_pruning_activations"))?;
+                    crown_counter(stats, "crown_width_pruning_activations").ok_or_else(|| {
+                        eyre!("crown stats omitted crown_width_pruning_activations")
+                    })?;
                 fused_head_hops = crown_counter(stats, "fused_head_hops")
                     .ok_or_else(|| eyre!("crown stats omitted fused_head_hops"))?;
-                fused_first_round_requested_ids = crown_counter(
-                    stats,
-                    "fused_first_round_requested_ids",
-                )
-                .ok_or_else(|| eyre!("crown stats omitted fused_first_round_requested_ids"))?;
+                fused_first_round_requested_ids =
+                    crown_counter(stats, "fused_first_round_requested_ids").ok_or_else(|| {
+                        eyre!("crown stats omitted fused_first_round_requested_ids")
+                    })?;
                 lines.push(format!(
                     "physical_benchmark_crown_stats scale={scale} variant={variant} arm={arm} {stats}"
                 ));
@@ -6446,21 +6454,15 @@ async fn run_physical_benchmarks(
                 .transpose()
                 .wrap_err("decoding physical latency concurrency")?
                 .unwrap_or(1);
-            let wall_ms = row
-                .get(12)
-                .map(|value| benchmark_ms(value))
-                .transpose()?;
+            let wall_ms = row.get(12).map(|value| benchmark_ms(value)).transpose()?;
             let qps = row
                 .get(13)
                 .map(|value| value.parse::<f64>())
                 .transpose()
                 .wrap_err("decoding physical latency qps")?;
-            if !args.benchmark_concurrency_sweep.is_empty()
-                && (wall_ms.is_none() || qps.is_none())
+            if !args.benchmark_concurrency_sweep.is_empty() && (wall_ms.is_none() || qps.is_none())
             {
-                bail!(
-                    "physical latency concurrency sweep row lacks wall_ms/qps for arm {arm:?}"
-                );
+                bail!("physical latency concurrency sweep row lacks wall_ms/qps for arm {arm:?}");
             }
             let wall_ms_label = wall_ms
                 .map(|value| format!("{value:.2}"))
@@ -6519,7 +6521,8 @@ async fn run_physical_benchmarks(
             .sum::<Result<f64>>()?;
             let remote_error =
                 (remote_components - remote_expand).abs() / remote_expand.max(f64::EPSILON);
-            let traversal_total = attribution_stage_mean(attribution_stage_rows, "traversal_total")?;
+            let traversal_total =
+                attribution_stage_mean(attribution_stage_rows, "traversal_total")?;
             let traversal_component_names: &[&str] = if traversal_replica {
                 &[
                     "replica_graph_vector_read",
@@ -6591,8 +6594,8 @@ async fn run_physical_benchmarks(
         let candidate_path = prediction_paths.get(candidate).ok_or_else(|| {
             eyre!("same-generation recall candidate variant {candidate:?} produced no predictions")
         })?;
-        let control_bytes = std::fs::read(control_path)
-            .wrap_err("reading same-generation control predictions")?;
+        let control_bytes =
+            std::fs::read(control_path).wrap_err("reading same-generation control predictions")?;
         let candidate_bytes = std::fs::read(candidate_path)
             .wrap_err("reading same-generation candidate predictions")?;
         let byte_identical = control_bytes == candidate_bytes;
@@ -6912,15 +6915,11 @@ async fn run_physical_benchmarks(
         lines.push(format!(
             "physical_benchmark_storage_relation scale={scale} {shared} arm=physical node=coordinator node_role=coordinator relation=ec_distann_generation_head_state relation_bytes={head_state_bytes} storage_derived=false arm_invariant=true nfr_021_class=control",
         ));
-        let (
-            crown_capacity,
-            crown_entries,
-            crown_resident_bytes,
-            crown_resident_bytes_bound,
-        ) = crown_storage
-            .get(&variant.name)
-            .copied()
-            .unwrap_or_default();
+        let (crown_capacity, crown_entries, crown_resident_bytes, crown_resident_bytes_bound) =
+            crown_storage
+                .get(&variant.name)
+                .copied()
+                .unwrap_or_default();
         if crown_resident_bytes > crown_resident_bytes_bound {
             bail!(
                 "crown resident bytes exceed bound for variant {}: {} > {}",
@@ -7762,7 +7761,9 @@ async fn drive_physical_fixture(
             .corpus_prefix
             .as_deref()
             .ok_or_else(|| color_eyre::eyre::eyre!("physical benchmark requires corpus_prefix"))?;
-        let scale = corpus_prefix.strip_prefix("ec_real_").unwrap_or(corpus_prefix);
+        let scale = corpus_prefix
+            .strip_prefix("ec_real_")
+            .unwrap_or(corpus_prefix);
         format!("task179_physical_{scale}_corpus")
     } else {
         "dm".to_owned()
@@ -7786,6 +7787,18 @@ async fn drive_physical_fixture(
     );
     if !physical_concurrency_ok {
         bail!("physical TC-043 concurrent insert/query drill failed");
+    }
+    let physical_delete_vacuum_ok = physical_routed_delete_vacuum_drill(
+        psql,
+        socket_dir,
+        nodes[0].port,
+        nodes,
+        args,
+        &fixture_roster,
+    )
+    .await?;
+    if !physical_delete_vacuum_ok {
+        bail!("physical routed DELETE + VACUUM drill failed");
     }
     if args.drop_extension_cleanup_drill {
         let unpublished_build_id = "72727272-7272-4272-8272-727272727272";
@@ -7854,6 +7867,9 @@ async fn drive_physical_fixture(
     ));
     summary.push_str(&format!(
         "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}\n"
+    ));
+    summary.push_str(&format!(
+        "[distann-multicluster] physical_routed_delete_vacuum pass={physical_delete_vacuum_ok}\n"
     ));
     for line in &drop_extension_lines {
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
@@ -9048,7 +9064,8 @@ async fn mid_insert_drill(
             return false;
         }
     }
-    let topology_sql = "SELECT count(*) FROM mi; SELECT record_count FROM ec_distann_epoch_topology(\
+    let topology_sql =
+        "SELECT count(*) FROM mi; SELECT record_count FROM ec_distann_epoch_topology(\
                         'mi_idx'::regclass, (SELECT epoch_fingerprint FROM ec_distann_active_epoch \
                         WHERE index_oid='mi_idx'::regclass::oid));";
     let before = capture_psql_allow_error(psql, socket_dir, coord_port, topology_sql).await;
@@ -9061,7 +9078,13 @@ async fn mid_insert_drill(
             "[distann-multicluster] mid_insert_failure DIAG before_probe_output={:?}",
             before
         );
-        let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS mi CASCADE;").await;
+        let _ = run_psql_file(
+            psql,
+            socket_dir,
+            coord_port,
+            "DROP TABLE IF EXISTS mi CASCADE;",
+        )
+        .await;
         return false;
     }
     let insert = format!(
@@ -9101,9 +9124,13 @@ async fn mid_insert_drill(
     // appending a complete replacement graph/row pair and retiring only the
     // prior graph version. Resolve the owner-local relation names from the
     // generation catalog instead of guessing generated identifiers.
-    let source_id_output =
-        capture_psql_allow_error(psql, socket_dir, coord_port, "SELECT source_id::text FROM mi WHERE id=1;")
-            .await;
+    let source_id_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        "SELECT source_id::text FROM mi WHERE id=1;",
+    )
+    .await;
     let source_id = source_id_output
         .lines()
         .map(str::trim)
@@ -9125,9 +9152,9 @@ async fn mid_insert_drill(
         .find_map(|line| line.split_once('|'));
     let safe_relation = |relation: &str| {
         !relation.is_empty()
-            && relation.bytes().all(|byte| {
-                byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"')
-            })
+            && relation
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"'))
     };
     let update_probe = if let Some(identity) = source_identity_uuid_bytes(source_id).ok() {
         if let Some((graph_relation, row_relation)) = relation_names {
@@ -9142,13 +9169,8 @@ async fn mid_insert_drill(
                           GROUP BY vec_id;"
                     )
                 };
-                let before_update = capture_psql_allow_error(
-                    psql,
-                    socket_dir,
-                    coord_port,
-                    &version_probe(),
-                )
-                .await;
+                let before_update =
+                    capture_psql_allow_error(psql, socket_dir, coord_port, &version_probe()).await;
                 let update_sql = format!(
                     "UPDATE mi SET source={}, embedding={} WHERE id=1;",
                     source_expr("1001"),
@@ -9156,13 +9178,8 @@ async fn mid_insert_drill(
                 );
                 let update_output =
                     capture_psql_allow_error(psql, socket_dir, coord_port, &update_sql).await;
-                let after_update = capture_psql_allow_error(
-                    psql,
-                    socket_dir,
-                    coord_port,
-                    &version_probe(),
-                )
-                .await;
+                let after_update =
+                    capture_psql_allow_error(psql, socket_dir, coord_port, &version_probe()).await;
                 let decode_version = |output: &str| {
                     output.lines().find_map(|line| {
                         let fields = line.trim().split('|').collect::<Vec<_>>();
@@ -9212,7 +9229,13 @@ async fn mid_insert_drill(
         );
         false
     };
-    let _ = run_psql_file(psql, socket_dir, coord_port, "DROP TABLE IF EXISTS mi CASCADE;").await;
+    let _ = run_psql_file(
+        psql,
+        socket_dir,
+        coord_port,
+        "DROP TABLE IF EXISTS mi CASCADE;",
+    )
+    .await;
     pass && update_probe
 }
 
@@ -9229,6 +9252,7 @@ async fn physical_concurrency_drill(
     table: &str,
 ) -> Result<bool> {
     const SCANNERS: usize = 4;
+    const WRITERS: usize = 2;
     const ITERATIONS: usize = 12;
     let roster = roster.replace('\'', "''");
     let query_sql = format!(
@@ -9248,8 +9272,8 @@ async fn physical_concurrency_drill(
     .await;
     let source_rows = source_rows_output
         .lines()
-    .find_map(|line| line.trim().parse::<i64>().ok())
-    .unwrap_or(0);
+        .find_map(|line| line.trim().parse::<i64>().ok())
+        .unwrap_or(0);
     let expected_count = i64::from(args.top_k).min(source_rows);
     if expected_count == 0 {
         crate::ecaz_println!(
@@ -9260,7 +9284,7 @@ async fn physical_concurrency_drill(
     }
     let base_rows = args.rows;
 
-    let mut tasks = Vec::with_capacity(SCANNERS + 1);
+    let mut tasks = Vec::with_capacity(SCANNERS + WRITERS);
     for _ in 0..SCANNERS {
         let psql = psql.to_path_buf();
         let socket_dir = socket_dir.to_path_buf();
@@ -9291,33 +9315,39 @@ async fn physical_concurrency_drill(
         }));
     }
 
-    let psql_insert = psql.to_path_buf();
-    let socket_dir_insert = socket_dir.to_path_buf();
-    let insert_roster = roster.clone();
-    let insert_table = table.to_owned();
-    tasks.push(tokio::spawn(async move {
-        for iteration in 0..ITERATIONS {
-            let id = 900_000_i64 + base_rows as i64 + iteration as i64;
-            let insert_sql = format!(
-                "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id=1; \
-                 WITH row_data AS (SELECT {id}::bigint AS id, {insert_vector}::real[] AS source) \
-                 INSERT INTO {insert_table} (id, source_id, source, embedding) \
-                 SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
-                        substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
-                        substr(md5(id::text),21,12))::uuid, source, \
-                        encode_to_ecvector(source, 4, 42) FROM row_data;"
-            );
-            let output = run_capture(&psql_insert, &socket_dir_insert, coord_port, &insert_sql).await;
-            if !output.status_ok {
-                crate::ecaz_println!(
-                    "[distann-multicluster] physical_concurrent_insert_query DIAG role=inserter iteration={iteration} stderr={}",
-                    compact_capture_error(&output.stderr)
+    for writer in 0..WRITERS {
+        let psql_insert = psql.to_path_buf();
+        let socket_dir_insert = socket_dir.to_path_buf();
+        let insert_roster = roster.clone();
+        let insert_table = table.to_owned();
+        let insert_vector = insert_vector.clone();
+        tasks.push(tokio::spawn(async move {
+            for iteration in 0..ITERATIONS {
+                let id = 900_000_i64
+                    + base_rows as i64
+                    + (writer * ITERATIONS + iteration) as i64;
+                let insert_sql = format!(
+                    "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id=1; \
+                     WITH row_data AS (SELECT {id}::bigint AS id, {insert_vector}::real[] AS source) \
+                     INSERT INTO {insert_table} (id, source_id, source, embedding) \
+                     SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
+                            substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
+                            substr(md5(id::text),21,12))::uuid, source, \
+                            encode_to_ecvector(source, 4, 42) FROM row_data;"
                 );
-                return false;
+                let output =
+                    run_capture(&psql_insert, &socket_dir_insert, coord_port, &insert_sql).await;
+                if !output.status_ok {
+                    crate::ecaz_println!(
+                        "[distann-multicluster] physical_concurrent_insert_query DIAG role=writer writer={writer} iteration={iteration} stderr={}",
+                        compact_capture_error(&output.stderr)
+                    );
+                    return false;
+                }
             }
-        }
-        true
-    }));
+            true
+        }));
+    }
 
     let mut pass = true;
     for task in tasks {
@@ -9332,7 +9362,104 @@ async fn physical_concurrency_drill(
         }
     }
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} iterations={ITERATIONS} expected_count={expected_count} pass={pass}"
+        "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} writers={WRITERS} iterations={ITERATIONS} expected_count={expected_count} pass={pass}"
+    );
+    Ok(pass)
+}
+
+/// Exercise the committed physical DELETE path through PostgreSQL VACUUM. The
+/// selected row is deliberately owned by a remote participant so this covers
+/// the routed tombstone endpoint and verifies the owner retained the graph
+/// record as a tombstone after the source heap tuple was reclaimed.
+async fn physical_routed_delete_vacuum_drill(
+    psql: &Path,
+    socket_dir: &Path,
+    coord_port: u16,
+    nodes: &[Node],
+    args: &LocalMultinodePg18Args,
+    roster: &str,
+) -> Result<bool> {
+    let owner_count = if args.coordinator_outside_roster {
+        args.nodes.saturating_sub(1)
+    } else {
+        args.nodes
+    };
+    let discovered = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!(
+            "SET ec_distann.roster = '{}'; SET ec_distann.local_node_id=1; \
+             SELECT t.id || '|' || d.vec_id::text || '|' || \
+                    ec_distann_owning_node(d.vec_id, {owner_count}, 1)::text \
+               FROM ec_distann_list_directory('dm_idx'::regclass) d \
+               JOIN dm t ON t.ctid = ('(' || d.heap_block || ',' || d.heap_offset || ')')::tid \
+              WHERE NOT d.is_tombstone \
+              ORDER BY t.id LIMIT 1;",
+            roster.replace('\'', "''")
+        ),
+    )
+    .await;
+    let Some((id_text, rest)) = discovered
+        .lines()
+        .find_map(|line| line.trim().split_once('|'))
+    else {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_routed_delete_vacuum pass=false reason=no_live_source_row"
+        );
+        return Ok(false);
+    };
+    let Some((vec_id_text, owner_text)) = rest.split_once('|') else {
+        return Ok(false);
+    };
+    let id = id_text.trim().parse::<i64>()?;
+    let vec_id = vec_id_text.trim().parse::<i64>()?;
+    let owner_ordinal = owner_text.trim().parse::<usize>()?;
+    let owner_node_index = if args.coordinator_outside_roster {
+        owner_ordinal + 1
+    } else {
+        owner_ordinal
+    };
+    let Some(owner_node) = nodes.get(owner_node_index) else {
+        return Ok(false);
+    };
+    if owner_node.port == coord_port {
+        return Ok(false);
+    }
+    let deleted = run_capture(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!("DELETE FROM dm WHERE id = {id};"),
+    )
+    .await;
+    let vacuum = run_capture(
+        psql,
+        socket_dir,
+        coord_port,
+        "VACUUM (INDEX_CLEANUP ON) dm;",
+    )
+    .await;
+    let tombstone = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        owner_node.port,
+        &format!(
+            "SELECT count(*) FROM ec_distann_list_directory('dm_idx'::regclass) \
+              WHERE vec_id = {vec_id} AND is_tombstone;"
+        ),
+    )
+    .await;
+    let tombstoned = tombstone
+        .lines()
+        .find_map(|line| line.trim().parse::<i64>().ok())
+        == Some(1);
+    let pass = deleted.status_ok && vacuum.status_ok && tombstoned;
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_routed_delete_vacuum pass={pass} id={id} vec_id={vec_id} owner={} delete_ok={} vacuum_ok={} owner_tombstone={tombstoned}",
+        owner_node.node_id,
+        deleted.status_ok,
+        vacuum.status_ok,
     );
     Ok(pass)
 }

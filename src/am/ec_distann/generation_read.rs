@@ -815,7 +815,11 @@ pub(crate) fn physical_owner_routes(
                         .map_err(|_| "EC_NODE_DESCRIPTOR: node id is negative".to_owned())?,
                     is_local,
                     remote_index_regclass,
-                conninfo: Some(super::node_registry::resolve_conninfo_secret(&secret)?),
+                    conninfo: if is_local {
+                        None
+                    } else {
+                        Some(super::node_registry::resolve_conninfo_secret(&secret)?)
+                    },
                 })
             })
             .collect::<Result<Vec<_>, String>>()
@@ -841,22 +845,38 @@ pub(crate) fn physical_owner_routes(
 /// those fields.  Keep the binding table authoritative whenever it exists.
 fn physical_owner_routes_for_owner_insert(
     index_oid: pg_sys::Oid,
+    descriptor: &DistannGenerationDescriptor,
 ) -> Result<Vec<PhysicalOwnerRoute>, String> {
-    let directory = super::roster::placement_directory_for_epoch(super::roster::current_epoch())?;
-    let local_count = directory
-        .nodes
-        .iter()
-        .filter(|entry| entry.is_local)
-        .count();
-    if local_count != 1 {
+    let configured = super::roster::parse_roster(&super::roster::current_roster_spec())?;
+    if configured.len() != descriptor.roster.len() {
         return Err(
-            "EC_NODE_DESCRIPTOR: owner insert roster has no unique local node".to_owned(),
+            "EC_NODE_DESCRIPTOR: owner insert roster does not match the immutable descriptor"
+                .to_owned(),
         );
     }
+    if configured
+        .iter()
+        .zip(&descriptor.roster)
+        .any(|(configured, descriptor)| configured.node_id != descriptor.node_id)
+    {
+        return Err(
+            "EC_NODE_DESCRIPTOR: owner insert roster ordering differs from the immutable descriptor"
+                .to_owned(),
+        );
+    }
+    let local_node_id = super::roster::current_local_node_id();
+    let local_count = descriptor
+        .roster
+        .iter()
+        .filter(|entry| entry.node_id == local_node_id)
+        .count();
+    if local_count != 1 {
+        return Err("EC_NODE_DESCRIPTOR: owner insert roster has no unique local node".to_owned());
+    }
     let local_locator = super::handoff::qualified_relation_name(index_oid)?;
-    let mut routes = Vec::with_capacity(directory.nodes.len());
-    for (ordinal, entry) in directory.nodes.iter().enumerate() {
-        let is_local = entry.is_local;
+    let mut routes = Vec::with_capacity(descriptor.roster.len());
+    for (ordinal, entry) in descriptor.roster.iter().enumerate() {
+        let is_local = entry.node_id == local_node_id;
         routes.push(PhysicalOwnerRoute {
             roster_ordinal: ordinal,
             node_id: entry.node_id,
@@ -865,7 +885,7 @@ fn physical_owner_routes_for_owner_insert(
             conninfo: if is_local {
                 None
             } else {
-                Some(entry.conninfo.clone())
+                Some(configured[ordinal].conninfo.clone())
             },
         });
     }
@@ -1404,9 +1424,8 @@ impl RetainedGenerationScan {
             self.descriptor.placement_hash_version,
         )
         .map_err(DistannExpandError::BadInput)?;
-        let shard_ordinal = u32::try_from(shard_ordinal).map_err(|_| {
-            DistannExpandError::Internal("shard ordinal exceeds u32".to_owned())
-        })?;
+        let shard_ordinal = u32::try_from(shard_ordinal)
+            .map_err(|_| DistannExpandError::Internal("shard ordinal exceeds u32".to_owned()))?;
         // The shard is epoch-immutable and its build is deterministic in every
         // keyed input, so it is built once per backend per epoch, not per RPC.
         let shard_key = owner_head_shard_key(
@@ -2183,7 +2202,14 @@ fn expand_physical_nodes_impl(
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
         .collect::<Vec<_>>();
     RetainedGenerationScan::open(index_oid, epoch_fingerprint)?
-        .expand(query, query_digest, &ids, code_threshold, candidate_limit, &skip)
+        .expand(
+            query,
+            query_digest,
+            &ids,
+            code_threshold,
+            candidate_limit,
+            &skip,
+        )
         .map(|expanded| {
             expanded
                 .into_iter()
@@ -2440,11 +2466,7 @@ fn populate_head_replicas_impl(
                      DO UPDATE SET replica_count = EXCLUDED.replica_count"
                 ),
                 None,
-                &[
-                    index_oid.into(),
-                    fingerprint.into(),
-                    replica_count.into(),
-                ],
+                &[index_oid.into(), fingerprint.into(), replica_count.into()],
             )
             .map_err(|error| {
                 DistannExpandError::Internal(format!("recording head replica state: {error}"))
@@ -2718,8 +2740,16 @@ fn ec_distann_expand_physical_nodes_profile(
                     .map(|id| i64::from_le_bytes(id.to_le_bytes()))
                     .collect(),
                 node.neighbor_code_dists,
-                if expanded_locator { i64::from(node.heap_tid.block_number) } else { -1 },
-                if expanded_locator { i32::from(node.heap_tid.offset_number) } else { -1 },
+                if expanded_locator {
+                    i64::from(node.heap_tid.block_number)
+                } else {
+                    -1
+                },
+                if expanded_locator {
+                    i32::from(node.heap_tid.offset_number)
+                } else {
+                    -1
+                },
             )
         })
         .collect::<Vec<_>>();
@@ -2997,8 +3027,8 @@ fn ec_distann_physical_seed_isolated_gateway_trace_benchmark(
     if snapshot.is_null() {
         pgrx::error!("isolated gateway trace has no active snapshot");
     }
-    let scan = PhysicalGenerationScan::open(index_oid)
-        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let scan =
+        PhysicalGenerationScan::open(index_oid).unwrap_or_else(|error| pgrx::error!("{error}"));
     let seeds = scan
         .select_seed_candidates(&query)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
@@ -3105,8 +3135,8 @@ fn ec_distann_physical_head_candidate_trace_benchmark(
     if snapshot.is_null() {
         pgrx::error!("head candidate trace has no active snapshot");
     }
-    let scan = PhysicalGenerationScan::open(index_oid)
-        .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let scan =
+        PhysicalGenerationScan::open(index_oid).unwrap_or_else(|error| pgrx::error!("{error}"));
     let candidates = scan
         .benchmark_head_candidates(&query)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
@@ -3454,8 +3484,12 @@ fn ec_distann_active_head_construction(
                 })
                 .next()
                 .transpose()
-                .map_err(|error| format!("EC_HEAD_SAMPLE: active construction decode failed: {error}"))?
-                .ok_or_else(|| "EC_GENERATION_MISSING: active head construction is absent".to_owned())
+                .map_err(|error| {
+                    format!("EC_HEAD_SAMPLE: active construction decode failed: {error}")
+                })?
+                .ok_or_else(|| {
+                    "EC_GENERATION_MISSING: active head construction is absent".to_owned()
+                })
         })
     })()
     .unwrap_or_else(|error| pgrx::error!("{error}"));
@@ -3569,11 +3603,16 @@ fn ec_distann_materialize_physical_row_payloads_profile(
                 .into_iter()
                 .zip(owner_heap_offsets)
                 .map(|(block, offset)| {
-                    let block = u32::try_from(block)
-                        .unwrap_or_else(|_| pgrx::error!("expanded owner heap block is out of range"));
-                    let offset = u16::try_from(offset)
-                        .unwrap_or_else(|_| pgrx::error!("expanded owner heap offset is out of range"));
-                    let tid = ItemPointer { block_number: block, offset_number: offset };
+                    let block = u32::try_from(block).unwrap_or_else(|_| {
+                        pgrx::error!("expanded owner heap block is out of range")
+                    });
+                    let offset = u16::try_from(offset).unwrap_or_else(|_| {
+                        pgrx::error!("expanded owner heap offset is out of range")
+                    });
+                    let tid = ItemPointer {
+                        block_number: block,
+                        offset_number: offset,
+                    };
                     if tid == ItemPointer::INVALID {
                         pgrx::error!("expanded owner heap locator is invalid");
                     }
@@ -3603,7 +3642,8 @@ fn ec_distann_materialize_physical_row_payloads_profile(
         .rows
         .iter()
         .map(|(_, _, _, nulls, offsets, values)| {
-            nulls.len()
+            nulls
+                .len()
                 .saturating_add(offsets.len())
                 .saturating_add(values.len())
         })
@@ -3797,14 +3837,17 @@ impl PhysicalGenerationScan {
         // before its relations can retire; the second read rejects the stale
         // attempt and the bounded open() retry above resolves the successor.
         let first = match requested_fingerprint {
-            Some(fingerprint) => published_generation_identity(
-                index_oid,
-                logical_index_uuid,
-                &fingerprint,
-            )?
-            .ok_or_else(|| "EC_GENERATION_MISSING: logical index has no published epoch".to_owned())?,
-            None => active_generation_identity(index_oid, logical_index_uuid)?
-                .ok_or_else(|| "EC_GENERATION_MISSING: logical index has no active epoch".to_owned())?,
+            Some(fingerprint) => {
+                published_generation_identity(index_oid, logical_index_uuid, &fingerprint)?
+                    .ok_or_else(|| {
+                        "EC_GENERATION_MISSING: logical index has no published epoch".to_owned()
+                    })?
+            }
+            None => {
+                active_generation_identity(index_oid, logical_index_uuid)?.ok_or_else(|| {
+                    "EC_GENERATION_MISSING: logical index has no active epoch".to_owned()
+                })?
+            }
         };
         let scan_token =
             ScanTokenGuard::register_checked(logical_index_uuid, first.fingerprint, || {
@@ -3818,15 +3861,18 @@ impl PhysicalGenerationScan {
                 detail.unwrap_or_else(|| error.stable_message().to_owned())
             })?;
         let active = match requested_fingerprint {
-            Some(fingerprint) => published_generation_identity(
-                index_oid,
-                logical_index_uuid,
-                &fingerprint,
-            )?
-            .ok_or_else(|| "EC_GENERATION_MISSING: published epoch disappeared during registration".to_owned())?,
-            None => active_generation_identity(index_oid, logical_index_uuid)?.ok_or_else(|| {
-                "EC_GENERATION_MISSING: active epoch disappeared during registration".to_owned()
-            })?,
+            Some(fingerprint) => {
+                published_generation_identity(index_oid, logical_index_uuid, &fingerprint)?
+                    .ok_or_else(|| {
+                        "EC_GENERATION_MISSING: published epoch disappeared during registration"
+                            .to_owned()
+                    })?
+            }
+            None => {
+                active_generation_identity(index_oid, logical_index_uuid)?.ok_or_else(|| {
+                    "EC_GENERATION_MISSING: active epoch disappeared during registration".to_owned()
+                })?
+            }
         };
         if active.build_id != first.build_id || active.fingerprint != first.fingerprint {
             return Err(
@@ -3834,105 +3880,107 @@ impl PhysicalGenerationScan {
             );
         }
 
-        let (descriptor, descriptor_digest, head_index, mut gateway_copies, mut crown) = if let Some(cached) =
-            cached_physical_epoch(index_oid, logical_index_uuid, &active)
-        {
-            (
-                cached.descriptor,
-                cached.descriptor_digest,
-                cached.head_index,
-                cached.gateway_copies,
-                cached.crown,
-            )
-        } else {
-            let (generation_descriptor, generation_descriptor_digest) =
-                if requested_fingerprint.is_some() {
+        let (descriptor, descriptor_digest, head_index, mut gateway_copies, mut crown) =
+            if let Some(cached) = cached_physical_epoch(index_oid, logical_index_uuid, &active) {
+                (
+                    cached.descriptor,
+                    cached.descriptor_digest,
+                    cached.head_index,
+                    cached.gateway_copies,
+                    cached.crown,
+                )
+            } else {
+                let (generation_descriptor, generation_descriptor_digest) =
+                    if requested_fingerprint.is_some() {
+                        let generation = generation_catalog::lookup_generation(
+                            index_oid,
+                            logical_index_uuid,
+                            active.build_id,
+                        )?
+                        .ok_or_else(|| {
+                            "EC_GENERATION_MISSING: published generation is absent".to_owned()
+                        })?;
+                        (
+                            generation.generation_descriptor,
+                            generation.generation_descriptor_digest,
+                        )
+                    } else {
+                        let candidate = super::build_coordinator::load_build_candidate(
+                            index_oid,
+                            logical_index_uuid,
+                            active.build_id,
+                        )?
+                        .ok_or_else(|| {
+                            "EC_GENERATION_MISSING: active build candidate is absent".to_owned()
+                        })?;
+                        (
+                            candidate.generation_descriptor,
+                            candidate.generation_descriptor_digest,
+                        )
+                    };
+                let descriptor =
+                    Arc::new(DistannGenerationDescriptor::decode(&generation_descriptor)?);
+                let descriptor_digest = descriptor.digest()?;
+                let identity_matches = if requested_fingerprint.is_some() {
                     let generation = generation_catalog::lookup_generation(
                         index_oid,
                         logical_index_uuid,
                         active.build_id,
                     )?
                     .ok_or_else(|| {
-                        "EC_GENERATION_MISSING: published generation is absent".to_owned()
+                        "EC_GENERATION_MISSING: published generation disappeared".to_owned()
                     })?;
-                    (generation.generation_descriptor, generation.generation_descriptor_digest)
+                    let roster_entry = descriptor
+                        .roster
+                        .get(generation.owner_ordinal as usize)
+                        .ok_or_else(|| {
+                            "EC_NODE_DESCRIPTOR: participant owner ordinal is outside the roster"
+                                .to_owned()
+                        })?;
+                    roster_entry.logical_index_uuid == *logical_index_uuid.as_bytes()
+                        && roster_entry.node_id == generation.node_id
                 } else {
-                    let candidate = super::build_coordinator::load_build_candidate(
-                        index_oid,
-                        logical_index_uuid,
-                        active.build_id,
-                    )?
-                    .ok_or_else(|| {
-                        "EC_GENERATION_MISSING: active build candidate is absent".to_owned()
-                    })?;
-                    (candidate.generation_descriptor, candidate.generation_descriptor_digest)
+                    descriptor.coordinator_logical_index_uuid == *logical_index_uuid.as_bytes()
                 };
-            let descriptor = Arc::new(DistannGenerationDescriptor::decode(
-                &generation_descriptor,
-            )?);
-            let descriptor_digest = descriptor.digest()?;
-            let identity_matches = if requested_fingerprint.is_some() {
-                let generation = generation_catalog::lookup_generation(
+                if descriptor_digest != generation_descriptor_digest || !identity_matches {
+                    return Err(
+                        "EC_GENERATION_DESCRIPTOR: active generation descriptor identity mismatch"
+                            .to_owned(),
+                    );
+                }
+                let head_index = if load_head {
+                    let (head_sample, head_graph, manifest_build_options) =
+                        super::head_sample::load_head_sample(
+                            index_oid,
+                            logical_index_uuid,
+                            active.build_id,
+                            &active.fingerprint,
+                        )?;
+                    super::head_sample::DistannPhysicalHeadIndex::load(
+                        head_sample,
+                        head_graph,
+                        usize::from(manifest_build_options.graph_degree),
+                        manifest_build_options.options.head_policy,
+                    )?
+                    .map(Arc::new)
+                } else {
+                    None
+                };
+                cache_physical_epoch(CachedPhysicalEpoch {
                     index_oid,
                     logical_index_uuid,
-                    active.build_id,
-                )?
-                .ok_or_else(|| {
-                    "EC_GENERATION_MISSING: published generation disappeared".to_owned()
-                })?;
-                let roster_entry = descriptor
-                    .roster
-                    .get(generation.owner_ordinal as usize)
-                    .ok_or_else(|| {
-                        "EC_NODE_DESCRIPTOR: participant owner ordinal is outside the roster"
-                            .to_owned()
-                    })?;
-                roster_entry.logical_index_uuid == *logical_index_uuid.as_bytes()
-                    && roster_entry.node_id == generation.node_id
-            } else {
-                descriptor.coordinator_logical_index_uuid == *logical_index_uuid.as_bytes()
+                    build_id: active.build_id,
+                    fingerprint: active.fingerprint,
+                    descriptor: Arc::clone(&descriptor),
+                    descriptor_digest,
+                    head_index: head_index.clone(),
+                    gateway_copies: None,
+                    crown: None,
+                });
+                (descriptor, descriptor_digest, head_index, None, None)
             };
-            if descriptor_digest != generation_descriptor_digest || !identity_matches {
-                return Err(
-                    "EC_GENERATION_DESCRIPTOR: active generation descriptor identity mismatch"
-                        .to_owned(),
-                );
-            }
-            let head_index = if load_head {
-                let (head_sample, head_graph, manifest_build_options) =
-                    super::head_sample::load_head_sample(
-                        index_oid,
-                        logical_index_uuid,
-                        active.build_id,
-                        &active.fingerprint,
-                    )?;
-                super::head_sample::DistannPhysicalHeadIndex::load(
-                    head_sample,
-                    head_graph,
-                    usize::from(manifest_build_options.graph_degree),
-                    manifest_build_options.options.head_policy,
-                )?
-                .map(Arc::new)
-            } else {
-                None
-            };
-            cache_physical_epoch(CachedPhysicalEpoch {
-                index_oid,
-                logical_index_uuid,
-                build_id: active.build_id,
-                fingerprint: active.fingerprint,
-                descriptor: Arc::clone(&descriptor),
-                descriptor_digest,
-                head_index: head_index.clone(),
-                gateway_copies: None,
-                crown: None,
-            });
-            (descriptor, descriptor_digest, head_index, None, None)
-        };
         let routes = if !load_head && requested_fingerprint.is_some() {
-            physical_owner_routes_for_owner_insert(
-                index_oid,
-            )?
+            physical_owner_routes_for_owner_insert(index_oid, &descriptor)?
         } else {
             physical_owner_routes(
                 index_oid,
@@ -4057,12 +4105,13 @@ impl PhysicalGenerationScan {
                     ));
                 }
                 if load_head {
-                    let local_route = routes
-                        .get(generation.owner_ordinal as usize)
-                        .ok_or_else(|| {
-                            "EC_NODE_DESCRIPTOR: local generation owner is outside the roster"
-                                .to_owned()
-                        })?;
+                    let local_route =
+                        routes
+                            .get(generation.owner_ordinal as usize)
+                            .ok_or_else(|| {
+                                "EC_NODE_DESCRIPTOR: local generation owner is outside the roster"
+                                    .to_owned()
+                            })?;
                     if !local_route.is_local {
                         return Err(
                             "EC_NODE_DESCRIPTOR: local generation owner is not the local binding"
@@ -4174,13 +4223,7 @@ impl PhysicalGenerationScan {
         query: &[f32],
         effective_top_k: usize,
     ) -> Result<DistannHitCollection, String> {
-        self.search_with_seed_candidates(
-            snapshot,
-            source_attnum,
-            query,
-            effective_top_k,
-            None,
-        )
+        self.search_with_seed_candidates(snapshot, source_attnum, query, effective_top_k, None)
     }
 
     fn search_with_seed_candidates(
@@ -4613,8 +4656,7 @@ impl PhysicalGenerationScan {
         // 4,096-member head. Force that policy for the diagnostic even when a
         // legacy/current-sample fixture is used; this does not affect the
         // normal scan selector.
-        let exact_policy =
-            super::generation_descriptor::DistannHeadPolicy::TrainingLandmarksExact;
+        let exact_policy = super::generation_descriptor::DistannHeadPolicy::TrainingLandmarksExact;
         if self.routes.len() > 1 || head.is_membership_only() {
             return self.sharded_head_seeds(
                 query,
@@ -4654,10 +4696,8 @@ impl PhysicalGenerationScan {
             }
             let binding = DistannCodecBinding::from_artifact(&self.descriptor.codec_artifact)?;
             let code_len = binding.code_len(usize::from(self.descriptor.dimensions))?;
-            let prepared = DistannPreparedQuery::prepare_artifact(
-                &self.descriptor.codec_artifact,
-                query,
-            )?;
+            let prepared =
+                DistannPreparedQuery::prepare_artifact(&self.descriptor.codec_artifact, query)?;
             let seeds = crown.rank(seed_count, |code| {
                 let mut distance = [0.0_f32; 1];
                 prepared
@@ -4706,7 +4746,8 @@ impl PhysicalGenerationScan {
                             self.descriptor.placement_hash_version,
                         );
                         let complete = shard.iter().all(|vec_id| crown_ids.contains(vec_id));
-                        let keep = !complete || shard.iter().any(|vec_id| promising.contains(vec_id));
+                        let keep =
+                            !complete || shard.iter().any(|vec_id| promising.contains(vec_id));
                         if keep {
                             filtered_members.extend(shard);
                         } else {
@@ -4865,7 +4906,7 @@ impl PhysicalGenerationScan {
         Ok(seeds)
     }
 
-pub(crate) fn materialize_remote_payloads(
+    pub(crate) fn materialize_remote_payloads(
         &self,
         hits: &[DistannScanHit],
         projection_attnums: &[pg_sys::AttrNumber],
@@ -4900,11 +4941,21 @@ pub(crate) fn materialize_remote_payloads(
         remote_pairs: &[(u64, ItemPointer)],
         projection_attnums: &[pg_sys::AttrNumber],
     ) -> Result<HashMap<u64, PhysicalRemotePayload>, String> {
-        let remote_ids = remote_pairs.iter().map(|(vec_id, _)| *vec_id).collect::<Vec<_>>();
+        let remote_ids = remote_pairs
+            .iter()
+            .map(|(vec_id, _)| *vec_id)
+            .collect::<Vec<_>>();
         let candidate = super::options::benchmark_expanded_locator();
         let remote_locators = remote_pairs.iter().map(|(_, tid)| *tid).collect::<Vec<_>>();
-        if candidate && remote_locators.iter().any(|tid| *tid == ItemPointer::INVALID) {
-            return Err("EC_INTERNAL: expanded locator arm received a remote hit without owner TID".to_owned());
+        if candidate
+            && remote_locators
+                .iter()
+                .any(|tid| *tid == ItemPointer::INVALID)
+        {
+            return Err(
+                "EC_INTERNAL: expanded locator arm received a remote hit without owner TID"
+                    .to_owned(),
+            );
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let prepare_started = Instant::now();
@@ -5222,29 +5273,39 @@ fn populate_crown_cache(
         let nodes = match local.resolve_nodes(&ids) {
             Ok(nodes) => nodes,
             Err(error) => {
-                pgrx::warning!("ec_distann crown population disabled: local resolve failed: {error}");
+                pgrx::warning!(
+                    "ec_distann crown population disabled: local resolve failed: {error}"
+                );
                 return None;
             }
         };
-        entries.extend(nodes.into_iter().map(|node| super::crown_cache::DistannCrownEntry {
-            vec_id: node.vec_id,
-            search_code: node.search_code,
-        }));
+        entries.extend(
+            nodes
+                .into_iter()
+                .map(|node| super::crown_cache::DistannCrownEntry {
+                    vec_id: node.vec_id,
+                    search_code: node.search_code,
+                }),
+        );
     }
     let requests = remote_work
         .iter()
-        .map(|(ordinal, ids, conninfo)| super::remote_transport::DistannCrownCodeRequest {
-            conninfo,
-            index_regclass: &routes[*ordinal].remote_index_regclass,
-            epoch_fingerprint: fingerprint,
-            member_vec_ids: ids,
-        })
+        .map(
+            |(ordinal, ids, conninfo)| super::remote_transport::DistannCrownCodeRequest {
+                conninfo,
+                index_regclass: &routes[*ordinal].remote_index_regclass,
+                epoch_fingerprint: fingerprint,
+                member_vec_ids: ids,
+            },
+        )
         .collect::<Vec<_>>();
     for response in super::remote_transport::remote_crown_code_batch(&requests) {
         match response {
             Ok(mut remote_entries) => entries.append(&mut remote_entries),
             Err(error) => {
-                pgrx::warning!("ec_distann crown population disabled: remote export failed: {error}");
+                pgrx::warning!(
+                    "ec_distann crown population disabled: remote export failed: {error}"
+                );
                 return None;
             }
         }

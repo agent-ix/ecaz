@@ -338,16 +338,20 @@ pub(crate) enum DistannInsertWork {
     SearchCandidates,
     ForwardNeighborsSelected,
     BacklinkAmendments,
+    BacklinkAlreadyPresent,
+    BacklinkNoRoom,
     OwnerWrites,
     GraphRecordsAppended,
 }
 
 impl DistannInsertWork {
-    pub(crate) const ALL: [Self; 6] = [
+    pub(crate) const ALL: [Self; 8] = [
         Self::InsertAttempts,
         Self::SearchCandidates,
         Self::ForwardNeighborsSelected,
         Self::BacklinkAmendments,
+        Self::BacklinkAlreadyPresent,
+        Self::BacklinkNoRoom,
         Self::OwnerWrites,
         Self::GraphRecordsAppended,
     ];
@@ -358,6 +362,8 @@ impl DistannInsertWork {
             Self::SearchCandidates => "search_candidates",
             Self::ForwardNeighborsSelected => "forward_neighbors_selected",
             Self::BacklinkAmendments => "backlink_amendments",
+            Self::BacklinkAlreadyPresent => "backlink_already_present",
+            Self::BacklinkNoRoom => "backlink_no_room",
             Self::OwnerWrites => "owner_writes",
             Self::GraphRecordsAppended => "graph_records_appended",
         }
@@ -369,8 +375,10 @@ impl DistannInsertWork {
             Self::SearchCandidates => 1,
             Self::ForwardNeighborsSelected => 2,
             Self::BacklinkAmendments => 3,
-            Self::OwnerWrites => 4,
-            Self::GraphRecordsAppended => 5,
+            Self::BacklinkAlreadyPresent => 4,
+            Self::BacklinkNoRoom => 5,
+            Self::OwnerWrites => 6,
+            Self::GraphRecordsAppended => 7,
         }
     }
 }

@@ -36,8 +36,9 @@ use super::epoch::{
 };
 use super::expand::LocalNodeExpander;
 use super::expand_error::DistannExpandError;
-use super::head_cache::cached_index_entry;
 use super::generation_catalog;
+use super::generation_descriptor::DistannGenerationDescriptor;
+use super::head_cache::cached_index_entry;
 use super::lifecycle_state::GenerationState;
 use super::placement::owning_node;
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
@@ -53,6 +54,19 @@ use super::tuple::{
     DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FLAGS_OFFSET, DISTANN_NODE_HEAP_TID_OFFSET,
     DISTANN_NODE_TAG, DISTANN_NODE_TAG_OFFSET,
 };
+
+fn immutable_local_owner(descriptor: &DistannGenerationDescriptor) -> Result<usize, String> {
+    let local_node_id = super::roster::current_local_node_id();
+    descriptor
+        .roster
+        .iter()
+        .position(|entry| entry.node_id == local_node_id)
+        .ok_or_else(|| {
+            format!(
+                "EC_NODE_DESCRIPTOR: local node {local_node_id} is absent from the immutable roster"
+            )
+        })
+}
 use crate::storage::page::ItemPointer;
 use std::time::Instant;
 
@@ -335,7 +349,7 @@ fn ec_distann_apply_physical_insert(
         let fingerprint: [u8; 34] = epoch_fingerprint.try_into().map_err(|_| {
             "EC_EPOCH_MISMATCH: physical insert fingerprint must be 34 bytes".to_owned()
         })?;
-        let (control, _handle, metadata, logical_index_uuid) =
+        let (control, _handle, _metadata, logical_index_uuid) =
             super::generation_store::open_control_index(
                 index_regclass,
                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
@@ -360,17 +374,13 @@ fn ec_distann_apply_physical_insert(
                 generation.generation.state
             ));
         }
-        let placement =
-            super::roster::placement_directory_for_epoch(super::roster::scan_epoch(&metadata))?;
-        let local_index = placement
-            .nodes
-            .iter()
-            .position(|node| node.is_local)
-            .ok_or_else(|| "EC_NODE_DESCRIPTOR: local owner is absent from roster".to_owned())?;
+        let descriptor =
+            DistannGenerationDescriptor::decode(&generation.generation.generation_descriptor)?;
+        let local_index = immutable_local_owner(&descriptor)?;
         let owner = super::placement::owning_node(
             vec_id as u64,
-            placement.node_count(),
-            placement.hash_version,
+            descriptor.roster.len(),
+            descriptor.placement_hash_version,
         );
         if owner != local_index {
             return Err(format!(
@@ -417,7 +427,7 @@ fn ec_distann_apply_physical_backlink(
         let fingerprint: [u8; 34] = epoch_fingerprint.try_into().map_err(|_| {
             "EC_EPOCH_MISMATCH: physical backlink fingerprint must be 34 bytes".to_owned()
         })?;
-        let (control, _handle, metadata, logical_index_uuid) =
+        let (control, _handle, _metadata, logical_index_uuid) =
             super::generation_store::open_control_index(
                 index_regclass,
                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
@@ -428,24 +438,22 @@ fn ec_distann_apply_physical_backlink(
             logical_index_uuid,
             &fingerprint,
         )?
-        .ok_or_else(|| "EC_GENERATION_MISSING: physical backlink has no published epoch".to_owned())?;
+        .ok_or_else(|| {
+            "EC_GENERATION_MISSING: physical backlink has no published epoch".to_owned()
+        })?;
         if generation.generation.state != GenerationState::Published {
             return Err(format!(
                 "EC_EPOCH_STATE: physical backlink generation is {:?}, expected Published",
                 generation.generation.state
             ));
         }
-        let placement =
-            super::roster::placement_directory_for_epoch(super::roster::scan_epoch(&metadata))?;
-        let local_index = placement
-            .nodes
-            .iter()
-            .position(|node| node.is_local)
-            .ok_or_else(|| "EC_NODE_DESCRIPTOR: local owner is absent from roster".to_owned())?;
+        let descriptor =
+            DistannGenerationDescriptor::decode(&generation.generation.generation_descriptor)?;
+        let local_index = immutable_local_owner(&descriptor)?;
         let owner = super::placement::owning_node(
             target_vec_id as u64,
-            placement.node_count(),
-            placement.hash_version,
+            descriptor.roster.len(),
+            descriptor.placement_hash_version,
         );
         if owner != local_index {
             return Err(format!(
@@ -484,31 +492,33 @@ fn ec_distann_apply_physical_tombstone(
         let fingerprint: [u8; 34] = epoch_fingerprint.try_into().map_err(|_| {
             "EC_EPOCH_MISMATCH: physical tombstone fingerprint must be 34 bytes".to_owned()
         })?;
-        let (control, _handle, metadata, logical_index_uuid) =
+        let (control, _handle, _metadata, logical_index_uuid) =
             super::generation_store::open_control_index(
                 index_regclass,
                 pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
                 "ec_distann_apply_physical_tombstone",
             )?;
-        let active =
-            super::generation_read::active_generation_identity(index_regclass, logical_index_uuid)?
-                .ok_or_else(|| {
-                    "EC_GENERATION_MISSING: physical tombstone has no active epoch".to_owned()
-                })?;
-        if active.fingerprint != fingerprint {
-            return Err("EC_EPOCH_MISMATCH: physical tombstone epoch fingerprint mismatch".to_owned());
+        let generation = generation_catalog::lookup_retained_generation_by_fingerprint(
+            index_regclass,
+            logical_index_uuid,
+            &fingerprint,
+        )?
+        .ok_or_else(|| {
+            "EC_GENERATION_MISSING: physical tombstone has no published epoch".to_owned()
+        })?;
+        if generation.generation.state != GenerationState::Published {
+            return Err(format!(
+                "EC_EPOCH_STATE: physical tombstone generation is {:?}, expected Published",
+                generation.generation.state
+            ));
         }
-        let placement =
-            super::roster::placement_directory_for_epoch(super::roster::scan_epoch(&metadata))?;
-        let local_index = placement
-            .nodes
-            .iter()
-            .position(|node| node.is_local)
-            .ok_or_else(|| "EC_NODE_DESCRIPTOR: local owner is absent from roster".to_owned())?;
+        let descriptor =
+            DistannGenerationDescriptor::decode(&generation.generation.generation_descriptor)?;
+        let local_index = immutable_local_owner(&descriptor)?;
         let owner = super::placement::owning_node(
             vec_id as u64,
-            placement.node_count(),
-            placement.hash_version,
+            descriptor.roster.len(),
+            descriptor.placement_hash_version,
         );
         if owner != local_index {
             return Err(format!(
@@ -516,7 +526,13 @@ fn ec_distann_apply_physical_tombstone(
             ));
         }
         drop(control);
-        unsafe { super::physical_dml::tombstone_owner_record(index_regclass, vec_id as u64)?; }
+        unsafe {
+            super::physical_dml::tombstone_owner_record(
+                index_regclass,
+                vec_id as u64,
+                Some(fingerprint),
+            )?;
+        }
         Ok(())
     })();
     result.unwrap_or_else(|error| pgrx::error!("{error}"));

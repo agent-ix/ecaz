@@ -22,9 +22,10 @@ use std::time::Duration;
 
 #[cfg(feature = "pg_test")]
 use pgrx::iter::TableIterator;
+use pgrx::pg_sys;
+use pgrx::Spi;
 #[cfg(feature = "pg_test")]
 use pgrx::{name, pg_extern};
-use pgrx::pg_sys;
 use tokio_postgres::types::ToSql;
 use tokio_postgres::{Client, NoTls, Row, Statement};
 
@@ -682,7 +683,11 @@ fn resolve_physical_insert_prepared(conninfo: String, node_id: u32, gid: String,
         .batch_execute(&format!("{command} {}", quote_sql_literal(&gid)))
         .is_ok()
     {
-        let state = if commit { "commit_local" } else { "rollback_local" };
+        let state = if commit {
+            "commit_local"
+        } else {
+            "rollback_local"
+        };
         let _ = client.batch_execute(&format!(
             "UPDATE {PHYSICAL_INTENT_TABLE} SET intent_state = {}, \
              updated_at = clock_timestamp() WHERE gid = {}",
@@ -690,6 +695,38 @@ fn resolve_physical_insert_prepared(conninfo: String, node_id: u32, gid: String,
             quote_sql_literal(&gid),
         ));
     }
+}
+
+/// Record the commit decision on the owner before PostgreSQL completes the
+/// coordinator commit.  The owner intent row is the recovery fence: if the
+/// post-commit callback loses connectivity, the reaper can distinguish a
+/// coordinator that was committed from one that aborted.
+fn mark_remote_physical_intent_precommit(
+    conninfo: &str,
+    node_id: u32,
+    gid: &str,
+) -> Result<(), String> {
+    let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+        conninfo,
+        node_id,
+        "ec_distann physical insert pre-commit intent",
+    )?;
+    let updated = client
+        .execute(
+            &format!(
+                "UPDATE {PHYSICAL_INTENT_TABLE} SET intent_state = 'commit_intended', \
+                 updated_at = clock_timestamp() WHERE gid = {}",
+                quote_sql_literal(gid)
+            ),
+            &[],
+        )
+        .map_err(|error| format!("EC_REMOTE_WRITE: pre-commit intent update failed: {error}"))?;
+    if updated != 1 {
+        return Err(format!(
+            "EC_REMOTE_WRITE: pre-commit intent update affected {updated} rows for {gid}"
+        ));
+    }
+    Ok(())
 }
 
 pub(crate) fn remote_physical_insert(
@@ -758,6 +795,18 @@ pub(crate) fn remote_physical_insert(
                             format!("EC_REMOTE_WRITE: physical insert prepare failed: {error}")
                         })?;
                     mark_remote_physical_intent(&client, &prepared_gid, "prepare_acked").await?;
+                    let intent_conninfo = request.conninfo.to_owned();
+                    let intent_gid = prepared_gid.clone();
+                    let intent_node_id = request.target_node_id;
+                    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::PreCommit, move || {
+                        if let Err(error) = mark_remote_physical_intent_precommit(
+                            &intent_conninfo,
+                            intent_node_id,
+                            &intent_gid,
+                        ) {
+                            pgrx::error!("{error}");
+                        }
+                    });
                     let commit_conninfo = request.conninfo.to_owned();
                     let rollback_conninfo = request.conninfo.to_owned();
                     let commit_gid = prepared_gid.clone();
@@ -846,10 +895,9 @@ pub(crate) fn remote_physical_tombstone(
             )
             .await?;
             let client = &state.connections[&key].client;
-            client
-                .batch_execute("BEGIN")
-                .await
-                .map_err(|error| format!("EC_DELETE_ROUTE: remote tombstone begin failed: {error}"))?;
+            client.batch_execute("BEGIN").await.map_err(|error| {
+                format!("EC_DELETE_ROUTE: remote tombstone begin failed: {error}")
+            })?;
             let result = await_remote(
                 call_timeout(),
                 Some(client.cancel_token()),
@@ -864,12 +912,9 @@ pub(crate) fn remote_physical_tombstone(
             )
             .await;
             match result {
-                Ok(_) => client
-                    .batch_execute("COMMIT")
-                    .await
-                    .map_err(|error| {
-                        format!("EC_DELETE_ROUTE: remote tombstone commit failed: {error}")
-                    }),
+                Ok(_) => client.batch_execute("COMMIT").await.map_err(|error| {
+                    format!("EC_DELETE_ROUTE: remote tombstone commit failed: {error}")
+                }),
                 Err(RemoteAwaitError::Remote(error)) => {
                     let _ = client.batch_execute("ROLLBACK").await;
                     Err(format!("EC_DELETE_ROUTE: remote tombstone failed: {error}"))
@@ -951,6 +996,18 @@ pub(crate) fn remote_physical_backlink(
                             format!("EC_REMOTE_WRITE: backlink prepare failed: {error}")
                         })?;
                     mark_remote_physical_intent(&client, &prepared_gid, "prepare_acked").await?;
+                    let intent_conninfo = request.conninfo.to_owned();
+                    let intent_gid = prepared_gid.clone();
+                    let intent_node_id = request.target_node_id;
+                    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::PreCommit, move || {
+                        if let Err(error) = mark_remote_physical_intent_precommit(
+                            &intent_conninfo,
+                            intent_node_id,
+                            &intent_gid,
+                        ) {
+                            pgrx::error!("{error}");
+                        }
+                    });
                     let commit_conninfo = request.conninfo.to_owned();
                     let rollback_conninfo = request.conninfo.to_owned();
                     let commit_gid = prepared_gid.clone();
@@ -1008,16 +1065,17 @@ fn physical_intent_state_remote(
         .transpose()
 }
 
-fn coordinator_xid_is_live(client: &mut postgres::Client, xid: u64) -> Result<bool, String> {
-    client
-        .query_one(
-            "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity \
-              WHERE backend_xid::text = $1 OR backend_xmin::text = $1)",
-            &[&xid.to_string()],
-        )
-        .map_err(|error| format!("EC_REMOTE_WRITE: coordinator xid liveness lookup failed: {error}"))?
-        .try_get::<_, bool>(0)
-        .map_err(|error| format!("EC_REMOTE_WRITE: coordinator xid liveness decode failed: {error}"))
+fn coordinator_xid_is_live(xid: u64) -> Result<bool, String> {
+    // XIDs are cluster-local.  This query must run through the coordinator's
+    // SPI connection, not the owner libpq connection used to inspect the
+    // prepared transaction.
+    Spi::get_one_with_args::<bool>(
+        "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_stat_activity \
+          WHERE backend_xid::text = $1 OR backend_xmin::text = $1)",
+        &[xid.to_string().into()],
+    )
+    .map_err(|error| format!("EC_REMOTE_WRITE: coordinator xid liveness lookup failed: {error}"))?
+    .ok_or_else(|| "EC_REMOTE_WRITE: coordinator xid liveness lookup returned NULL".to_owned())
 }
 
 /// Reconcile remote prepared physical writes after a coordinator/backend
@@ -1058,11 +1116,11 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
         }
         let intent = physical_intent_state_remote(&mut client, &gid)?
             .unwrap_or_else(|| "missing_intent".to_owned());
-        if coordinator_xid_is_live(&mut client, parts.xid)? {
+        if coordinator_xid_is_live(parts.xid)? {
             results.push(format!("{gid}:{intent}:xid_live"));
             continue;
         }
-        let commit = intent == "commit_local";
+        let commit = matches!(intent.as_str(), "commit_intended" | "commit_local");
         let command = if commit {
             "COMMIT PREPARED"
         } else {
@@ -1092,7 +1150,9 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
                                 &final_state,
                             ],
                         )
-                        .map_err(|error| format!("EC_REMOTE_WRITE: intent reconciliation failed: {error}"))?;
+                        .map_err(|error| {
+                            format!("EC_REMOTE_WRITE: intent reconciliation failed: {error}")
+                        })?;
                 } else {
                     client
                         .execute(
@@ -1100,7 +1160,9 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
                              SET intent_state = $2, updated_at = clock_timestamp() WHERE gid = $1",
                             &[&gid, &final_state],
                         )
-                        .map_err(|error| format!("EC_REMOTE_WRITE: intent reconciliation failed: {error}"))?;
+                        .map_err(|error| {
+                            format!("EC_REMOTE_WRITE: intent reconciliation failed: {error}")
+                        })?;
                 }
                 results.push(format!("{gid}:{intent}:{}", final_state));
             }

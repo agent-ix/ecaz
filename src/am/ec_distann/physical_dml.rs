@@ -125,7 +125,9 @@ unsafe fn insert_from_prepared_slot(
         (Some(fingerprint), true) => {
             PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(index_oid, fingerprint)?
         }
-        (Some(fingerprint), false) => PhysicalGenerationScan::open_at_fingerprint(index_oid, fingerprint)?,
+        (Some(fingerprint), false) => {
+            PhysicalGenerationScan::open_at_fingerprint(index_oid, fingerprint)?
+        }
         (None, _) => PhysicalGenerationScan::open(index_oid)?,
     };
     let (_logical_uuid, _build_id, fingerprint, routed_descriptor, routes) =
@@ -207,7 +209,9 @@ unsafe fn insert_from_prepared_slot(
         return Err("EC_INSERT_CODEC: generated search code has the wrong length".to_owned());
     }
 
-    let (candidates, mut remote_vectors, forward_ids) = if let Some(payload) = planned_forward_payload {
+    let (candidates, mut remote_vectors, forward_ids) = if let Some(payload) =
+        planned_forward_payload
+    {
         let planned = decode_planned_forward(payload, vector.len(), descriptor.graph_degree)?;
         let mut candidates = Vec::with_capacity(planned.len());
         let mut remote_vectors = HashMap::new();
@@ -258,7 +262,10 @@ unsafe fn insert_from_prepared_slot(
                 });
             }
         }
-        let forward_ids = candidates.iter().map(|candidate| candidate.vec_id).collect();
+        let forward_ids = candidates
+            .iter()
+            .map(|candidate| candidate.vec_id)
+            .collect();
         (candidates, remote_vectors, forward_ids)
     } else {
         let list_size = usize::from(descriptor.graph_degree)
@@ -329,11 +336,7 @@ unsafe fn insert_from_prepared_slot(
         .iter()
         .filter_map(|id| candidates.iter().find(|candidate| candidate.vec_id == *id))
         .collect::<Vec<_>>();
-    stage_counters::record_insert_work(
-        DistannInsertWork::ForwardNeighborsSelected,
-        forward.len(),
-    );
-    stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, forward.len());
+    stage_counters::record_insert_work(DistannInsertWork::ForwardNeighborsSelected, forward.len());
 
     let extra_remote_ids = forward
         .iter()
@@ -450,7 +453,9 @@ unsafe fn insert_from_prepared_slot(
                     .to_owned(),
             );
         }
-        update_source_mapping(index_oid, source_tid, vec_id)?;
+        if source_tid != ItemPointer::INVALID {
+            update_source_mapping(index_oid, source_tid, vec_id)?;
+        }
         return Ok(());
     }
 
@@ -516,58 +521,58 @@ unsafe fn insert_from_prepared_slot(
     // and resolved by the same top-level transaction callbacks as the owner
     // append, so an abort cannot leave a cross-owner dangling edge.
     if planned_forward_payload.is_none() {
-    for candidate in forward {
-        if candidate.graph_tid == ItemPointer::INVALID {
-            let target = super::placement::owning_node(
-                candidate.vec_id,
-                routes.len(),
-                routed_descriptor.placement_hash_version,
-            );
-            let target_route = routes.get(target).ok_or_else(|| {
-                "EC_NODE_DESCRIPTOR: backlink target is outside the active roster".to_owned()
-            })?;
-            if target_route.is_local {
-                return Err(
+        for candidate in forward {
+            if candidate.graph_tid == ItemPointer::INVALID {
+                let target = super::placement::owning_node(
+                    candidate.vec_id,
+                    routes.len(),
+                    routed_descriptor.placement_hash_version,
+                );
+                let target_route = routes.get(target).ok_or_else(|| {
+                    "EC_NODE_DESCRIPTOR: backlink target is outside the active roster".to_owned()
+                })?;
+                if target_route.is_local {
+                    return Err(
                     "EC_INSERT_BACKLINK: remote candidate resolved to local owner without a ctid"
                         .to_owned(),
                 );
+                }
+                let conninfo = target_route.conninfo.as_deref().ok_or_else(|| {
+                    "EC_NODE_DESCRIPTOR: remote backlink has no connection descriptor".to_owned()
+                })?;
+                super::remote_transport::remote_physical_backlink(
+                    &super::remote_transport::DistannRemotePhysicalBacklinkRequest {
+                        index_oid,
+                        conninfo,
+                        roster_spec: &roster_spec,
+                        target_node_id: target_route.node_id,
+                        epoch: super::roster::scan_epoch(&metadata),
+                        index_regclass: &index_name,
+                        epoch_fingerprint: &fingerprint,
+                        target_vec_id: candidate.vec_id,
+                        target_source_vector: &candidate.source_vector,
+                        new_vec_id: vec_id,
+                        new_source_vector: &vector,
+                        new_code: &new_code,
+                    },
+                )?;
+                continue;
             }
-            let conninfo = target_route.conninfo.as_deref().ok_or_else(|| {
-                "EC_NODE_DESCRIPTOR: remote backlink has no connection descriptor".to_owned()
-            })?;
-            super::remote_transport::remote_physical_backlink(
-                &super::remote_transport::DistannRemotePhysicalBacklinkRequest {
-                    index_oid,
-                    conninfo,
-                    roster_spec: &roster_spec,
-                    target_node_id: target_route.node_id,
-                    epoch: super::roster::scan_epoch(&metadata),
-                    index_regclass: &index_name,
-                    epoch_fingerprint: &fingerprint,
-                    target_vec_id: candidate.vec_id,
-                    target_source_vector: &candidate.source_vector,
-                    new_vec_id: vec_id,
-                    new_source_vector: &vector,
-                    new_code: &new_code,
-                },
+            amend_backlink(
+                &graph_name,
+                candidate,
+                vec_id,
+                &vector,
+                &new_code,
+                descriptor.graph_degree,
+                code_len,
+                &row_relation,
+                source_attnum,
+                snapshot,
+                options.alpha,
+                &remote_vectors,
             )?;
-            continue;
         }
-        amend_backlink(
-            &graph_name,
-            candidate,
-            vec_id,
-            &vector,
-            &new_code,
-            descriptor.graph_degree,
-            code_len,
-            &row_relation,
-            source_attnum,
-            snapshot,
-            options.alpha,
-            &remote_vectors,
-        )?;
-    }
     }
     if source_tid != ItemPointer::INVALID {
         update_source_mapping(index_oid, source_tid, vec_id)?;
@@ -607,6 +612,31 @@ fn update_source_mapping(
                 &[index_oid.into(), tid.into(), signed_id.into()],
             )
             .map_err(|error| format!("EC_INSERT_PUBLISH: source mapping append failed: {error}"))?;
+        Ok::<(), String>(())
+    })
+}
+
+fn delete_source_mapping(
+    index_oid: pg_sys::Oid,
+    source_tid: ItemPointer,
+    vec_id: u64,
+) -> Result<(), String> {
+    let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    let mut tid = pg_sys::ItemPointerData::default();
+    pgrx::itemptr::item_pointer_set_all(
+        &mut tid,
+        source_tid.block_number,
+        source_tid.offset_number,
+    );
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                "DELETE FROM ec_distann_physical_source_map \
+                 WHERE index_oid = $1::oid AND source_tid = $2::tid AND vec_id = $3",
+                None,
+                &[index_oid.into(), tid.into(), signed_id.into()],
+            )
+            .map_err(|error| format!("EC_DELETE_ROUTE: source mapping cleanup failed: {error}"))?;
         Ok::<(), String>(())
     })
 }
@@ -671,7 +701,9 @@ pub(crate) fn refresh_source_mapping(index_oid: pg_sys::Oid) -> Result<(), Strin
                 None,
                 &[],
             )
-            .map_err(|error| format!("EC_DELETE_ROUTE: source mapping refresh scan failed: {error}"))?
+            .map_err(|error| {
+                format!("EC_DELETE_ROUTE: source mapping refresh scan failed: {error}")
+            })?
             .map(|row| {
                 let tid = row["ctid"]
                     .value::<pg_sys::ItemPointerData>()
@@ -681,14 +713,20 @@ pub(crate) fn refresh_source_mapping(index_oid: pg_sys::Oid) -> Result<(), Strin
                     .value::<Vec<u8>>()
                     .map_err(|error| error.to_string())?
                     .ok_or_else(|| "source identity is NULL".to_owned())?;
-                let identity: [u8; 16] = payload
-                    .try_into()
-                    .map_err(|_| "EC_SOURCE_IDENTITY: source identity is not 16 bytes".to_owned())?;
-                Ok::<_, String>((tid, i64::from_le_bytes(super::identity::vec_id_from_source_identity(&identity).to_le_bytes())))
+                let identity: [u8; 16] = payload.try_into().map_err(|_| {
+                    "EC_SOURCE_IDENTITY: source identity is not 16 bytes".to_owned()
+                })?;
+                Ok::<_, String>((
+                    tid,
+                    i64::from_le_bytes(
+                        super::identity::vec_id_from_source_identity(&identity).to_le_bytes(),
+                    ),
+                ))
             })
             .collect::<Result<Vec<_>, _>>()
     })?;
-    let table = super::generation_catalog::extension_relation_name("ec_distann_physical_source_map")?;
+    let table =
+        super::generation_catalog::extension_relation_name("ec_distann_physical_source_map")?;
     let tids = rows.iter().map(|(tid, _)| *tid).collect::<Vec<_>>();
     let vec_ids = rows.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>();
     Spi::connect_mut(|client| {
@@ -698,7 +736,9 @@ pub(crate) fn refresh_source_mapping(index_oid: pg_sys::Oid) -> Result<(), Strin
                 None,
                 &[index_oid.into()],
             )
-            .map_err(|error| format!("EC_DELETE_ROUTE: source mapping refresh cleanup failed: {error}"))?;
+            .map_err(|error| {
+                format!("EC_DELETE_ROUTE: source mapping refresh cleanup failed: {error}")
+            })?;
         if tids.is_empty() {
             return Ok::<(), String>(());
         }
@@ -714,7 +754,9 @@ pub(crate) fn refresh_source_mapping(index_oid: pg_sys::Oid) -> Result<(), Strin
                 None,
                 &[index_oid.into(), tids.into(), vec_ids.into()],
             )
-            .map_err(|error| format!("EC_DELETE_ROUTE: source mapping refresh append failed: {error}"))?;
+            .map_err(|error| {
+                format!("EC_DELETE_ROUTE: source mapping refresh append failed: {error}")
+            })?;
         Ok::<(), String>(())
     })
 }
@@ -724,19 +766,25 @@ pub(crate) fn refresh_source_mapping(index_oid: pg_sys::Oid) -> Result<(), Strin
 pub(crate) unsafe fn tombstone_owner_record(
     index_oid: pg_sys::Oid,
     vec_id: u64,
+    epoch_fingerprint: Option<[u8; 34]>,
 ) -> Result<bool, String> {
-    let scan = PhysicalGenerationScan::open(index_oid)?;
+    let scan = match epoch_fingerprint {
+        Some(fingerprint) => {
+            PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(index_oid, fingerprint)?
+        }
+        None => PhysicalGenerationScan::open(index_oid)?,
+    };
     let (generation, descriptor) = scan.local_write_identity()?;
     let graph_name = qualified_relation_name(generation.graph_store_relid)?;
     let code_binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
     let code_len = code_binding.code_len(usize::from(descriptor.dimensions))?;
     let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
-    let row = Spi::connect(|client| {
+    let row = Spi::connect_mut(|client| {
         client
             .select(
                 &format!(
                     "SELECT graph_record, ctid FROM {graph_name} \
-                     WHERE vec_id = $1 AND is_current"
+                     WHERE vec_id = $1 AND is_current FOR UPDATE"
                 ),
                 None,
                 &[signed_id.into()],
@@ -761,7 +809,8 @@ pub(crate) unsafe fn tombstone_owner_record(
             "EC_RECORD_MISSING: physical owner has no current vec_id {vec_id:#018x}"
         ));
     };
-    let mut node = DistannNodeTuple::decode_physical_v1(&record, descriptor.graph_degree, code_len)?;
+    let mut node =
+        DistannNodeTuple::decode_physical_v1(&record, descriptor.graph_degree, code_len)?;
     if node.tombstoned {
         return Ok(false);
     }
@@ -843,18 +892,23 @@ pub(crate) unsafe fn tombstone_dead_records(
         if !callback(&mut raw_tid, callback_state) {
             continue;
         }
-        let owner = super::placement::owning_node(
-            vec_id,
-            routes.len(),
-            placement_hash_version,
-        );
+        let owner = super::placement::owning_node(vec_id, routes.len(), placement_hash_version);
         let route = routes
             .get(owner)
             .ok_or_else(|| "EC_NODE_DESCRIPTOR: delete owner is outside roster".to_owned())?;
         if owner == local_owner {
-            if tombstone_owner_record(index_oid, vec_id)? {
+            if tombstone_owner_record(index_oid, vec_id, None)? {
                 removed += 1;
             }
+            let (block, offset) = pgrx::itemptr::item_pointer_get_both(source_tid);
+            delete_source_mapping(
+                index_oid,
+                ItemPointer {
+                    block_number: block,
+                    offset_number: offset,
+                },
+                vec_id,
+            )?;
         } else {
             let conninfo = route.conninfo.as_deref().ok_or_else(|| {
                 "EC_NODE_DESCRIPTOR: remote delete route has no conninfo".to_owned()
@@ -872,6 +926,15 @@ pub(crate) unsafe fn tombstone_dead_records(
                 },
             )?;
             removed += 1;
+            let (block, offset) = pgrx::itemptr::item_pointer_get_both(source_tid);
+            delete_source_mapping(
+                index_oid,
+                ItemPointer {
+                    block_number: block,
+                    offset_number: offset,
+                },
+                vec_id,
+            )?;
         }
     }
     Ok(removed)
@@ -905,10 +968,9 @@ fn roster_spec_for_routes(
             Ok(format!(
                 "{}@{}",
                 route.node_id,
-                route
-                    .conninfo
-                    .as_deref()
-                    .ok_or_else(|| "EC_NODE_DESCRIPTOR: resolved route has no conninfo".to_owned())?
+                route.conninfo.as_deref().ok_or_else(|| {
+                    "EC_NODE_DESCRIPTOR: resolved route has no conninfo".to_owned()
+                })?
             ))
         })
         .collect::<Result<Vec<_>, String>>()
@@ -1086,10 +1148,8 @@ pub(crate) unsafe fn insert_from_owner_payload(
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         "ec_distann physical owner payload insert",
     );
-    let scan = PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(
-        index_oid,
-        epoch_fingerprint,
-    )?;
+    let scan =
+        PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(index_oid, epoch_fingerprint)?;
     let (generation, _descriptor) = scan.local_write_identity()?;
     drop(scan);
     let row_relation = HeapRelationGuard::try_open(
@@ -1211,6 +1271,9 @@ unsafe fn decode_packed_row(
             typioparam,
             (*attribute).atttypmod,
         );
+        // PostgreSQL's receive functions return a palloc-owned datum.  The
+        // input buffer is intentionally iteration-local; no receive function
+        // may retain a pointer into it after ReceiveFunctionCall returns.
         if input.cursor != input.len {
             return Err(format!(
                 "EC_HANDOFF_FORMAT: row attribute {} binary input left bytes",
@@ -1289,16 +1352,18 @@ fn decode_planned_forward(
             "EC_SCHEMA_MISMATCH: planned forward has {dimensions} dimensions, expected {expected_dimensions}"
         ));
     }
-    let entry_bytes = 8usize
-        .checked_add(dimensions.checked_mul(4).ok_or_else(|| {
-            "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned()
-        })?)
-        .ok_or_else(|| "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned())?;
-    let expected_len = 12usize
-        .checked_add(count.checked_mul(entry_bytes).ok_or_else(|| {
-            "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned()
-        })?)
-        .ok_or_else(|| "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned())?;
+    let entry_bytes =
+        8usize
+            .checked_add(dimensions.checked_mul(4).ok_or_else(|| {
+                "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned()
+            })?)
+            .ok_or_else(|| "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned())?;
+    let expected_len =
+        12usize
+            .checked_add(count.checked_mul(entry_bytes).ok_or_else(|| {
+                "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned()
+            })?)
+            .ok_or_else(|| "EC_HANDOFF_FORMAT: planned forward byte length overflow".to_owned())?;
     if payload.len() != expected_len {
         return Err("EC_HANDOFF_FORMAT: planned forward payload length mismatch".to_owned());
     }
@@ -1576,11 +1641,24 @@ unsafe fn amend_backlink(
     alpha: f32,
     remote_vectors: &HashMap<u64, Vec<f32>>,
 ) -> Result<(), String> {
-    let mut node = candidate.node.clone();
+    // Lock and re-read the current target before computing the replacement.
+    // A concurrent backlink amendment or tombstone may have replaced the
+    // tuple since the scan planned this candidate; updating from the stale
+    // candidate would lose the other writer or resurrect a tombstone.
+    let (current_record, graph_tid) =
+        current_graph_record_for_update(graph_name, candidate.vec_id)?.ok_or_else(|| {
+            format!(
+                "EC_INSERT_BACKLINK: current target vec_id {:#018x} is missing",
+                candidate.vec_id
+            )
+        })?;
+    let mut node = DistannNodeTuple::decode_physical_v1(&current_record, graph_degree, code_len)?;
     let count = usize::from(node.neighbor_count);
     if node.neighbor_vec_ids[..count].contains(&new_vec_id) {
+        stage_counters::record_insert_work(DistannInsertWork::BacklinkAlreadyPresent, 1);
         return Ok(());
     }
+    let original_node = node.clone();
     let mut candidates = Vec::with_capacity(count + 1);
     candidates.push(DistannForwardCandidate {
         vec_id: new_vec_id,
@@ -1621,7 +1699,7 @@ unsafe fn amend_backlink(
         let code = if *vec_id == new_vec_id {
             new_code
         } else {
-            let old_slot = candidate.node.neighbor_vec_ids[..count]
+            let old_slot = original_node.neighbor_vec_ids[..count]
                 .iter()
                 .position(|id| id == vec_id)
                 .ok_or_else(|| {
@@ -1635,8 +1713,8 @@ unsafe fn amend_backlink(
         node.neighbor_codes[slot * code_len..(slot + 1) * code_len].copy_from_slice(code);
     }
     let record = node.encode_physical_v1(graph_degree, code_len)?;
-    let block = candidate.graph_tid.block_number;
-    let offset = candidate.graph_tid.offset_number;
+    let block = graph_tid.block_number;
+    let offset = graph_tid.offset_number;
     let updated = Spi::connect_mut(|client| {
         client
             .update(
@@ -1652,7 +1730,47 @@ unsafe fn amend_backlink(
             "EC_INSERT_BACKLINK: graph amendment affected {updated} rows, expected one current target"
         ));
     }
+    stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, 1);
     Ok(())
+}
+
+fn current_graph_record_for_update(
+    graph_name: &str,
+    vec_id: u64,
+) -> Result<Option<(Vec<u8>, ItemPointer)>, String> {
+    let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    Spi::connect_mut(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT graph_record, ctid FROM {graph_name} \
+                      WHERE vec_id = $1 AND is_current FOR UPDATE"
+                ),
+                None,
+                &[signed_id.into()],
+            )
+            .map_err(|error| format!("EC_INSERT_BACKLINK: current target lock failed: {error}"))?
+            .map(|row| {
+                let record = row["graph_record"]
+                    .value::<Vec<u8>>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "graph_record is NULL".to_owned())?;
+                let graph_tid = row["ctid"]
+                    .value::<pg_sys::ItemPointerData>()
+                    .map_err(|error| error.to_string())?
+                    .ok_or_else(|| "ctid is NULL".to_owned())?;
+                let (block, offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
+                Ok::<_, String>((
+                    record,
+                    ItemPointer {
+                        block_number: block,
+                        offset_number: offset,
+                    },
+                ))
+            })
+            .next()
+            .transpose()
+    })
 }
 
 /// Conservative owner fallback for a retained graph record that references a
@@ -1661,15 +1779,24 @@ unsafe fn amend_backlink(
 /// target has spare degree, otherwise preserve the existing graph exactly.
 unsafe fn append_backlink_if_room(
     graph_name: &str,
-    graph_tid: ItemPointer,
-    mut node: DistannNodeTuple,
+    target_vec_id: u64,
     new_vec_id: u64,
     new_code: &[u8],
     graph_degree: u16,
     code_len: usize,
 ) -> Result<(), String> {
+    let (current_record, graph_tid) = current_graph_record_for_update(graph_name, target_vec_id)?
+        .ok_or_else(|| {
+        format!("EC_INSERT_BACKLINK: current target vec_id {target_vec_id:#018x} is missing")
+    })?;
+    let mut node = DistannNodeTuple::decode_physical_v1(&current_record, graph_degree, code_len)?;
     let count = usize::from(node.neighbor_count);
-    if node.neighbor_vec_ids[..count].contains(&new_vec_id) || count >= usize::from(graph_degree) {
+    if node.neighbor_vec_ids[..count].contains(&new_vec_id) {
+        stage_counters::record_insert_work(DistannInsertWork::BacklinkAlreadyPresent, 1);
+        return Ok(());
+    }
+    if count >= usize::from(graph_degree) {
+        stage_counters::record_insert_work(DistannInsertWork::BacklinkNoRoom, 1);
         return Ok(());
     }
     if new_code.len() != code_len {
@@ -1699,6 +1826,7 @@ unsafe fn append_backlink_if_room(
             "EC_INSERT_BACKLINK: graph amendment affected {updated} rows, expected one current target"
         ));
     }
+    stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, 1);
     Ok(())
 }
 
@@ -1771,17 +1899,17 @@ pub(crate) unsafe fn apply_owner_backlink(
         pg_sys::RowExclusiveLock as pg_sys::LOCKMODE,
         "ec_distann physical owner backlink",
     );
-    let scan = PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(
-        index_oid,
-        epoch_fingerprint,
-    )?;
+    let scan =
+        PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(index_oid, epoch_fingerprint)?;
     let (generation, descriptor) = scan.local_write_identity()?;
     let code_binding = DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
     if target_source_vector.len() != usize::from(descriptor.dimensions)
         || target_source_vector.iter().any(|value| !value.is_finite())
     {
-        return Err("EC_SCHEMA_MISMATCH: backlink target vector has invalid dimensions or values"
-            .to_owned());
+        return Err(
+            "EC_SCHEMA_MISMATCH: backlink target vector has invalid dimensions or values"
+                .to_owned(),
+        );
     }
     let code_len = code_binding.code_len(usize::from(descriptor.dimensions))?;
     if new_code.len() != code_len {
@@ -1848,28 +1976,37 @@ pub(crate) unsafe fn apply_owner_backlink(
         .collect::<Vec<_>>();
     let remote_vectors =
         materialize_remote_vectors(&scan, &row_relation, &remote_ids, source_attnum)?;
+    let mut missing_local_neighbor = false;
     for neighbor in &node.neighbor_vec_ids[..usize::from(node.neighbor_count)] {
         let neighbor_owner = super::placement::owning_node(
             *neighbor,
             routes.len(),
             routed_descriptor.placement_hash_version,
         );
-        if neighbor_owner == local_owner && !remote_vectors.contains_key(neighbor) {
-            let (graph_block, graph_offset) =
-                pgrx::itemptr::item_pointer_get_both(graph_tid);
-            return append_backlink_if_room(
+        if neighbor_owner == local_owner {
+            if read_current_vector(
                 &graph_name,
-                ItemPointer {
-                    block_number: graph_block,
-                    offset_number: graph_offset,
-                },
-                node,
-                new_vec_id,
-                &new_code,
-                descriptor.graph_degree,
-                code_len,
-            );
+                &row_relation,
+                *neighbor,
+                source_attnum,
+                snapshot,
+            )
+            .is_err()
+            {
+                missing_local_neighbor = true;
+                break;
+            }
         }
+    }
+    if missing_local_neighbor {
+        return append_backlink_if_room(
+            &graph_name,
+            target_vec_id,
+            new_vec_id,
+            &new_code,
+            descriptor.graph_degree,
+            code_len,
+        );
     }
     drop(scan);
     let (graph_block, graph_offset) = pgrx::itemptr::item_pointer_get_both(graph_tid);
