@@ -50,6 +50,23 @@ CREATE INDEX IF NOT EXISTS ec_distann_remote_prepared_xact_intent_by_index
 
 REVOKE ALL ON TABLE ec_distann_remote_prepared_xact_intent FROM PUBLIC;
 
+-- Keep the upgrade-time compatibility wrapper in sync with the packed
+-- payload ABI used by the physical transport. Older 0.1.1 installations
+-- otherwise expose only payload_values while the current transport selects
+-- payload_offsets as well.
+DROP FUNCTION IF EXISTS ec_distann_materialize_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+);
+
+CREATE FUNCTION ec_distann_materialize_row_payloads(
+    regclass, bytea, bigint[], smallint[], bytea
+) RETURNS TABLE (
+    vec_id bigint, is_tombstone boolean, tuple_payload_missing boolean,
+    payload_nulls boolean[], payload_offsets bigint[], payload_values bytea
+)
+LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
+AS 'SELECT * FROM ec_distann_materialize_physical_row_payloads($1, $2, $3, $4, $5)';
+
 CREATE TABLE IF NOT EXISTS ec_distann_physical_source_map (
     index_oid oid NOT NULL,
     source_tid tid NOT NULL,
