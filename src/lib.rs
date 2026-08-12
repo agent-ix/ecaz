@@ -821,7 +821,7 @@ LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
 AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5, NULL)';
 
 CREATE FUNCTION ec_distann_expand_nodes(
-    regclass, bytea, real[], bigint[], real, integer DEFAULT NULL
+    regclass, bytea, real[], bigint[], real, integer
 ) RETURNS TABLE (
     vec_id bigint, exact_dist real, is_tombstone boolean,
     neighbor_vec_ids bigint[], neighbor_code_dists real[]
@@ -839,8 +839,7 @@ LANGUAGE SQL VOLATILE PARALLEL RESTRICTED
 AS 'SELECT * FROM ec_distann_expand_physical_nodes($1, $2, $3, $4, $5, $6, NULL)';
 
 CREATE FUNCTION ec_distann_expand_nodes(
-    regclass, bytea, real[], bytea, bigint[], real, integer DEFAULT NULL,
-    bigint[] DEFAULT NULL
+    regclass, bytea, real[], bytea, bigint[], real, integer, bigint[]
 ) RETURNS TABLE (
     vec_id bigint, exact_dist real, is_tombstone boolean,
     neighbor_vec_ids bigint[], neighbor_code_dists real[]
