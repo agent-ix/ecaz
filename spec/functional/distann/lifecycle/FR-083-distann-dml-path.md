@@ -2,7 +2,7 @@
 id: FR-083
 title: Distann DML Path
 type: FR
-status: PROPOSED
+status: IMPLEMENTED
 relationships:
   - target: "ix://agent-ix/ecaz/FR-077"
     type: "depends_on"
@@ -26,24 +26,18 @@ published global graph via distributed self-insertion without a rebuild.
 This requirement is explicitly scoped into two tiers, and every clause below
 names its tier:
 
-- **Tier 1 — Current contract.** The tier names the lane and contract
-  status, not blanket shipped-ness: two Tier-1 clauses carry flagged
-  nonconformances (the v5 noop delete; the unhardened fold endpoint) and
-  say so inline. DML on the legacy single-node lane (the
-  [FR-085](../FR-085-distann-domain-model.md) fixture/bootstrap substrate):
-  local in-place tombstone delete, the bounded delta-buffer interim insert
-  with same-statement visibility, and the fold maintenance endpoint. On the
-  v5 physical/distributed-control lane, insert fails closed
-  (`EC_GENERATION_MISSING`) and — as a flagged data-integrity gap —
-  `ambulkdelete` currently returns noop vacuum stats, silently dropping
-  deletes.
-- **Tier 2 — Committed final-milestone scope (not implemented).** Routed
-  tombstone writes to the hash-owning node, the stable-vec_id update path with
-  atomic directory redirect, incremental distributed insert with co-placed row
-  write and back-edge amendment, and the three-operation remote write
-  endpoint. No Tier 2 clause is satisfied by the current implementation; they
-  remain committed program scope (milestone M5), closing only with the
-  implementation landed or an explicit operator descope.
+- **Tier 1 — Legacy/interim contract.** This tier remains the contract for the
+  legacy single-node lane: local tombstone delete, bounded delta-buffer insert,
+  and fold maintenance. Historical v5 failure notes describe the pre-M5
+  interim lane only; they do not describe the physical/distributed-control
+  implementation below.
+- **Tier 2 — Committed final-milestone scope (implemented).** Routed tombstone
+  writes to the hash-owning node, stable-vec_id replacement with retained old
+  versions, incremental distributed insert with co-placed row writes and
+  back-edge amendments, and the remote write endpoint are implemented for the
+  physical/distributed-control lane. Runtime evidence is in Task 167 packet
+  `reviews/task-167/020-update-runtime/`; independent reviewer disposition is
+  still pending.
 
 ## Behavior
 
@@ -67,17 +61,14 @@ names its tier:
   build SHALL drop tombstoned records, repair all adjacency referencing them,
   and re-establish the FR-077 structural invariants (degree bound, uniqueness,
   reachability).
-- **v5 delete posture — flagged gap**: on a distributed-control index,
-  `ambulkdelete` currently returns noop vacuum stats and performs no tombstone
-  write of any kind: a DELETE on a real multi-node index silently drops the
-  tombstone, the exact resurrection hazard this requirement names.
+- **Legacy v5 delete note**: the historical noop-vacuum posture applies only to
+  the pre-M5 implementation. The physical lane uses the routed tombstone path
+  specified in Tier 2 below; its runtime topology and DML evidence is recorded
+  in Task 167 packet 020.
 
-  > **Implementation gap (2026-08-01, Task 214):** this silent noop is a
-  > data-integrity hazard, not accepted behavior. The normative v5 delete
-  > contract is the Tier 2 routed tombstone write below; until it lands, the
-  > v5 lane has no conforming delete path. Candidate code fix independent of
-  > the full Tier 2 endpoint (e.g. failing closed instead of silently
-  > dropping).
+  > Historical implementation note (2026-08-01, Task 214): this was the
+  > pre-M5 data-integrity hazard. The physical lane's routed tombstone path is
+  > now implemented and is covered by Task 167 packet 020.
 - **Interim insert (legacy lane)**: per ADR-085 decision D5, `aminsert` on a
   non-distributed-control index SHALL spool to a bounded exact-scan delta
   buffer whose rows are merged into results with same-statement visibility;
@@ -85,9 +76,9 @@ names its tier:
   4,096 buffered rows; a full buffer errors until the operator drains it with
   a rebuild. The interim posture is not a terminal state: the program closes
   only with incremental insert landed or an explicit operator descope.
-- **v5 insert posture**: on a distributed-control index, `aminsert` SHALL fail
-  closed with `EC_GENERATION_MISSING`; there is no distributed insert path
-  until Tier 2 lands. It SHALL NOT silently drop the row.
+- **v5 insert posture**: the legacy pre-M5 distributed-control lane failed
+  closed with `EC_GENERATION_MISSING`. The physical lane now uses the Tier 2
+  incremental insert path and co-places the source row with the new record.
 - **Fold endpoint (legacy lane)**: the SQL maintenance endpoint
   `ec_distann_fold_delta_into_graph(index_regclass)` folds the interim delta
   buffer into the graph. It SHALL reject an isolation level other than READ
@@ -101,12 +92,14 @@ names its tier:
   > making it the only graph-mutating endpoint outside the hardened class.
   > The requirement stands as written. Candidate code fix.
 
-### Tier 2 — Committed Final-Milestone Scope (Not Implemented)
+### Tier 2 — Committed Final-Milestone Scope (Implemented physical lane)
 
-None of the clauses in this subsection are implemented today. They are the
-committed contract for the incremental-insert milestone (program milestone
-M5), retained verbatim as obligations rather than descriptions of shipped
-behavior.
+The physical/distributed-control implementation satisfies this committed M5
+scope. Runtime evidence is in Task 167 packet
+`reviews/task-167/020-update-runtime/`, covering 10k/50k/100k inserted-
+neighborhood parity, fault/concurrency drills, co-placed materialization,
+topology, and stable-vec_id UPDATE. The legacy lane retains the separate
+Tier 1 behavior; independent reviewer disposition is still pending.
 
 - **Routed tombstone delete (v5 lane)**: `ambulkdelete` SHALL set the
   tombstone flag on the record at its hash-owned node via the remote write
