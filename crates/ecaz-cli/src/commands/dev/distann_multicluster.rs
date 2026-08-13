@@ -9585,10 +9585,11 @@ async fn physical_concurrency_drill(
         );
         let graph_output =
             capture_psql_allow_error(psql, socket_dir, owner_node.port, &graph_sql).await;
-        // Reserve one slot for the controlled writer backlink. Requiring two
-        // spare slots made the degree-7 real-corpus fixture reject every
-        // otherwise valid target before the saturated-target assertion ran.
-        let spare_limit = args.graph_degree.saturating_sub(2) as usize;
+        // Select an already full target. The saturation assertion is about
+        // preserving a full target under concurrent writers; requiring spare
+        // capacity and then manufacturing fill rows can legitimately leave
+        // the graph below degree because robust pruning declines those edges.
+        let full_degree = args.graph_degree as usize;
         for target in graph_output.lines().filter_map(|line| {
             let (vec_id, neighbors) = line.trim().split_once('|')?;
             let neighbor_count = neighbors
@@ -9596,7 +9597,7 @@ async fn physical_concurrency_drill(
                 .filter(|value| !value.is_empty())
                 .count();
             let signed_id = vec_id.parse::<i64>().ok()?;
-            if neighbor_count > spare_limit {
+            if neighbor_count < full_degree {
                 return None;
             }
             Some((
@@ -9623,7 +9624,8 @@ async fn physical_concurrency_drill(
     let seeded_target_signed_id = shared_target_candidates
         .iter()
         .find(|(_, vec_id, _, _)| seed_neighbors.contains(vec_id))
-        .map(|(_, _, signed_id, _)| *signed_id);
+        .map(|(_, _, signed_id, _)| *signed_id)
+        .or_else(|| shared_target_candidates.first().map(|(_, _, signed_id, _)| *signed_id));
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target seed_vec_id={} seed_neighbor_count={} seeded_target_signed_id={:?}",
         seed_signed_id,
@@ -9632,7 +9634,7 @@ async fn physical_concurrency_drill(
     );
     let Some(nearest_target_signed_id) = seeded_target_signed_id else {
         crate::ecaz_println!(
-            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=seed_has_no_spare_target"
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=no_full_target"
         );
         return Ok(false);
     };
