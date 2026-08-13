@@ -6,6 +6,8 @@
 //! orchestration seam.
 
 use std::cell::RefCell;
+#[cfg(feature = "pg_test")]
+use std::cell::Cell;
 use std::collections::{HashMap, VecDeque};
 use std::ptr;
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -293,15 +295,44 @@ fn lookup_graph_nodes_with_intent_retry<F>(
 where
     F: Fn(u64) -> DistannExpandError + Copy,
 {
-    let records = lookup_graph_nodes(
-        graph_relation,
-        directory_relation,
-        snapshot,
-        vec_ids,
-        graph_degree,
-        code_len,
-        missing,
-    );
+    let records = {
+        #[cfg(feature = "pg_test")]
+        {
+            let forced = FORCED_FRONTIER_RETRY_USED.with(|used| {
+                if super::options::debug_force_frontier_retry() && !used.get() {
+                    used.set(true);
+                    true
+                } else {
+                    false
+                }
+            });
+            if forced {
+                Err(missing(vec_ids[0]))
+            } else {
+                lookup_graph_nodes(
+                    graph_relation,
+                    directory_relation,
+                    snapshot,
+                    vec_ids,
+                    graph_degree,
+                    code_len,
+                    missing,
+                )
+            }
+        }
+        #[cfg(not(feature = "pg_test"))]
+        {
+            lookup_graph_nodes(
+                graph_relation,
+                directory_relation,
+                snapshot,
+                vec_ids,
+                graph_degree,
+                code_len,
+                missing,
+            )
+        }
+    };
     let Err(error @ DistannExpandError::OwnedRecordMissing(_)) = records else {
         return records;
     };
@@ -623,6 +654,8 @@ struct CachedOwnerPayloadPlan {
 thread_local! {
     static RETAINED_EPOCH_CACHE: RefCell<VecDeque<CachedRetainedEpoch>> =
         const { RefCell::new(VecDeque::new()) };
+    #[cfg(feature = "pg_test")]
+    static FORCED_FRONTIER_RETRY_USED: Cell<bool> = const { Cell::new(false) };
 }
 
 const PHYSICAL_PREPARED_QUERY_CACHE_CAPACITY: usize = 4;
@@ -3680,6 +3713,23 @@ fn ec_distann_materialize_physical_row_payloads(
         .map(|batch| batch.rows)
         .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
+}
+
+/// Task 167 pg_test probe for the owner-side 2PC visibility retry. The
+/// fixture installs a recent commit intent, enables the one-shot test fault,
+/// and calls the same `resolve_nodes` path used by remote insert planning.
+#[cfg(feature = "pg_test")]
+#[pg_extern(volatile)]
+fn ec_distann_debug_resolve_nodes_retry(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    vec_id: i64,
+) -> bool {
+    let vec_id = u64::from_le_bytes(vec_id.to_le_bytes());
+    RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
+        .and_then(|scan| scan.resolve_nodes(&[vec_id]).map(|_| ()))
+        .map(|_| true)
+        .unwrap_or_else(|error| error.raise())
 }
 
 /// Task 184 benchmark-only physical payload endpoint with owner-side timing

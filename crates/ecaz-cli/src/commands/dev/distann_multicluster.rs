@@ -9652,8 +9652,7 @@ async fn physical_concurrency_drill(
             "ALTER TABLE ec_distann_remote_prepared_xact_intent \
                 ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
              SELECT ec_distann_stage_scoring_reset(); \
-             UPDATE ec_distann_remote_prepared_xact_intent \
-                SET retry_count = 0 WHERE index_oid = 'dm_idx'::regclass::oid;",
+             UPDATE ec_distann_remote_prepared_xact_intent SET retry_count = 0;",
         )
         .await;
         counter_reset_ok &= !output.contains("ERROR");
@@ -9665,6 +9664,57 @@ async fn physical_concurrency_drill(
         );
         return Ok(false);
     }
+    let retry_probe_owner = owner_nodes
+        .iter()
+        .find(|node| node.node_id == shared_target_owner)
+        .unwrap_or(&owner_nodes[0]);
+    let retry_probe_vec_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        retry_probe_owner.port,
+        "SELECT vec_id::text FROM ec_distann_list_directory('public.dm_idx'::regclass) \
+          WHERE NOT is_tombstone LIMIT 1;",
+    )
+    .await;
+    let retry_probe_vec_id = retry_probe_vec_output
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.parse::<i64>().ok());
+    let forced_retry_probe = if let Some(retry_probe_vec_id) = retry_probe_vec_id {
+        let probe_sql = format!(
+            "ALTER TABLE ec_distann_remote_prepared_xact_intent \
+                ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
+             WITH published AS (SELECT epoch FROM ec_distann_generation \
+                 WHERE index_oid='dm_idx'::regclass::oid AND state='Published' \
+                 ORDER BY epoch DESC LIMIT 1) \
+             INSERT INTO ec_distann_remote_prepared_xact_intent \
+                    (index_oid, node_id, served_epoch, xid, gid, intent_state, retry_count) \
+             SELECT 'dm_idx'::regclass::oid, {owner}, epoch, 0, \
+                    'ec_distann_insert_retry_probe_{owner}', 'commit_local', 0 \
+               FROM published \
+             ON CONFLICT (gid) DO UPDATE SET intent_state='commit_local', retry_count=0, updated_at=clock_timestamp(); \
+             SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id={owner}; \
+             SET ec_distann.debug_force_frontier_retry=true; \
+             SELECT ec_distann_debug_resolve_nodes_retry(\
+                 'public.dm_idx'::regclass, decode('{epoch_fingerprint}', 'hex'), {retry_probe_vec_id});",
+            owner = retry_probe_owner.node_id,
+        );
+        let probe_output = run_capture(
+            psql,
+            socket_dir,
+            retry_probe_owner.port,
+            &probe_sql,
+        )
+        .await;
+        probe_output.status_ok && probe_output.stdout.lines().any(|line| line.trim() == "t")
+    } else {
+        false
+    };
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_probe owner={} vec_id={retry_probe_vec_id:?} pass={forced_retry_probe} discovery_output={}",
+        retry_probe_owner.node_id,
+        compact_capture_error(&retry_probe_vec_output)
+    );
     let inserted_ids = (0..WRITERS)
         .flat_map(|writer| {
             (0..ITERATIONS).map(move |iteration| {
@@ -9845,8 +9895,7 @@ async fn physical_concurrency_drill(
     );
     pass &= saturation_pass;
     let retry_snapshot_sql =
-        "SELECT COALESCE(sum(retry_count), 0) FROM ec_distann_remote_prepared_xact_intent \
-          WHERE index_oid = 'dm_idx'::regclass::oid;";
+        "SELECT COALESCE(sum(retry_count), 0) FROM ec_distann_remote_prepared_xact_intent;";
     let parse_retry_count = |output: &str| {
         output
             .lines()
@@ -9876,8 +9925,7 @@ async fn physical_concurrency_drill(
             "ALTER TABLE ec_distann_remote_prepared_xact_intent \
                 ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
              SELECT ec_distann_stage_scoring_reset(); \
-             UPDATE ec_distann_remote_prepared_xact_intent \
-                SET retry_count = 0 WHERE index_oid = 'dm_idx'::regclass::oid;",
+             UPDATE ec_distann_remote_prepared_xact_intent SET retry_count = 0;",
         )
         .await;
         steady_reset_ok &= !output.contains("ERROR");
@@ -9899,6 +9947,7 @@ async fn physical_concurrency_drill(
         .map(|(_, count, _)| *count)
         .sum::<Option<u64>>();
     let retry_counter_ok = counter_reset_ok
+        && forced_retry_probe
         && steady_reset_ok
         && steady_query.status_ok
         && churn_retries.is_some_and(|count| count > 0)
@@ -9951,7 +10000,7 @@ async fn physical_concurrency_drill(
     } else {
         HashSet::new()
     };
-    let mut forward_neighbor_count = 0;
+    let mut reverse_edge_coverage_count = 0;
     let forward_neighbor_check = if pass {
         'check: {
             let graph_vec_ids = inserted_vec_ids
@@ -10047,7 +10096,7 @@ async fn physical_concurrency_drill(
                     }
                 }
             }
-            forward_neighbor_count = found.len();
+            reverse_edge_coverage_count = found.len();
             if current_graph_rows != inserted_vec_ids.len() {
                 crate::ecaz_println!(
                 "[distann-multicluster] physical_concurrent_insert_query DIAG role=back_edge_check inserted_graph_rows={} expected_graph_rows={}",
@@ -10123,8 +10172,8 @@ async fn physical_concurrency_drill(
     // the inserted nodes; the controlled target assertion separately proves
     // the two writer backlinks.
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} writers={WRITERS} iterations={ITERATIONS} expected_count={expected_count} forward_neighbors_selected={} shared_target_vec_id={} shared_target_owner={} back_edge_check={forward_neighbor_check} pass={pass}",
-        forward_neighbor_count,
+        "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} writers={WRITERS} iterations={ITERATIONS} expected_count={expected_count} reverse_edge_coverage={reverse_edge_coverage_count}/{} shared_target_vec_id={} shared_target_owner={} back_edge_check={forward_neighbor_check} pass={pass}",
+        inserted_vec_ids.len(),
         shared_target_vec_id,
         shared_target_owner
     );

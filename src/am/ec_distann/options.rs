@@ -138,6 +138,8 @@ static ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC: GucSetting<i32> = GucSetting::<i32>::
 /// from the node's directory). The scan must error, never silently under-return.
 static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "pg_test")]
+static ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+#[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 /// NFR-020 fault injection (debug only): when true, `graph_insert_record` (the
@@ -700,6 +702,15 @@ pub(super) fn register_gucs() {
     );
     #[cfg(feature = "pg_test")]
     GucRegistry::define_bool_guc(
+        c"ec_distann.debug_force_frontier_retry",
+        c"Task 167 test fault: force one owner frontier lookup miss before retry.",
+        c"When on, the first retained physical node lookup in this backend is forced to miss. The intent-gated retry must recover it; pg_test only.",
+        &ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "pg_test")]
+    GucRegistry::define_bool_guc(
         c"ec_distann.debug_fail_crown_population",
         c"Task 212 test fault: make bounded crown population fail before serving.",
         c"When on, physical crown population returns no cache so the scan must use the ordinary full-head fallback. This GUC exists only in pg_test builds and is off by default.",
@@ -1060,6 +1071,11 @@ pub(super) fn debug_fail_hop_round() -> Option<usize> {
 /// NFR-020 fault injection: force the FR-079 case-(c) missing-record fault.
 pub(super) fn debug_missing_node_record() -> bool {
     ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC.get()
+}
+
+#[cfg(feature = "pg_test")]
+pub(super) fn debug_force_frontier_retry() -> bool {
+    ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC.get()
 }
 
 /// NFR-020 fault injection: fail a graph insert after staging, before publish.
