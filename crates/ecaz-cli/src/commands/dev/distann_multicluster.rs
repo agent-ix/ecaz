@@ -9668,14 +9668,35 @@ async fn physical_concurrency_drill(
         .iter()
         .find(|node| node.node_id == shared_target_owner)
         .unwrap_or(&owner_nodes[0]);
-    let retry_probe_vec_output = capture_psql_allow_error(
+    let retry_probe_relation_output = capture_psql_allow_error(
         psql,
         socket_dir,
         retry_probe_owner.port,
-        "SELECT vec_id::text FROM ec_distann_list_directory('public.dm_idx'::regclass) \
-          WHERE NOT is_tombstone LIMIT 1;",
+        "SELECT graph_store_relid::regclass::text FROM ec_distann_generation \
+          WHERE index_oid='dm_idx'::regclass::oid AND state='Published' \
+          ORDER BY epoch DESC LIMIT 1;",
     )
     .await;
+    let retry_probe_relation = retry_probe_relation_output
+        .lines()
+        .map(str::trim)
+        .find(|line| {
+            !line.is_empty()
+                && line
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"'))
+        });
+    let retry_probe_vec_output = if let Some(relation) = retry_probe_relation {
+        capture_psql_allow_error(
+            psql,
+            socket_dir,
+            retry_probe_owner.port,
+            &format!("SELECT vec_id::text FROM {relation} WHERE is_current LIMIT 1;"),
+        )
+        .await
+    } else {
+        retry_probe_relation_output.clone()
+    };
     let retry_probe_vec_id = retry_probe_vec_output
         .lines()
         .map(str::trim)

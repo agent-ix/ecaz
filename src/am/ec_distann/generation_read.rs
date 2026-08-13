@@ -247,7 +247,7 @@ where
 /// deliberately retains rows for audit, and an old unresolved row must not
 /// turn every later missing-record error into a retry budget.
 fn recent_remote_insert_intent(
-    index_oid: pg_sys::Oid,
+    _index_oid: pg_sys::Oid,
     node_id: u32,
     epoch: u64,
 ) -> Result<bool, DistannExpandError> {
@@ -259,12 +259,11 @@ fn recent_remote_insert_intent(
     Spi::get_one_with_args::<bool>(
         "SELECT EXISTS (\
            SELECT 1 FROM ec_distann_remote_prepared_xact_intent \
-            WHERE index_oid = $1::oid \
-              AND node_id = $2 \
-              AND served_epoch = $3 \
+            WHERE node_id = $1 \
+              AND served_epoch = $2 \
               AND updated_at >= clock_timestamp() - interval '2 seconds' \
               AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local'))",
-        &[index_oid.into(), node_id.into(), epoch.into()],
+        &[node_id.into(), epoch.into()],
     )
     .map_err(|error| {
         DistannExpandError::Internal(format!(
@@ -350,12 +349,10 @@ where
     let _ = Spi::run(&format!(
         "UPDATE ec_distann_remote_prepared_xact_intent \
             SET retry_count = retry_count + 1 \
-          WHERE index_oid = '{}'::oid \
-            AND node_id = {} \
+          WHERE node_id = {} \
             AND served_epoch = {} \
             AND updated_at >= clock_timestamp() - interval '2 seconds' \
             AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')",
-        u32::from(index_oid),
         generation.node_id,
         generation.epoch,
     ));
