@@ -238,6 +238,109 @@ where
     Ok(records)
 }
 
+/// A remote physical append/backlink is allowed to make a retained edge
+/// visible before its owner graph tuple becomes visible to this backend's
+/// snapshot. The intent row is the owner-local, transaction-independent fence
+/// for that narrow 2PC window. Keep the predicate recent: terminal cleanup
+/// deliberately retains rows for audit, and an old unresolved row must not
+/// turn every later missing-record error into a retry budget.
+fn recent_remote_insert_intent(
+    index_oid: pg_sys::Oid,
+    node_id: u32,
+    epoch: u64,
+) -> Result<bool, DistannExpandError> {
+    let node_id = i32::try_from(node_id).map_err(|_| {
+        DistannExpandError::Internal("physical intent node id exceeds int4".to_owned())
+    })?;
+    let epoch = i64::try_from(epoch)
+        .map_err(|_| DistannExpandError::Internal("physical intent epoch exceeds int8".to_owned()))?;
+    Spi::get_one_with_args::<bool>(
+        "SELECT EXISTS (\
+           SELECT 1 FROM ec_distann_remote_prepared_xact_intent \
+            WHERE index_oid = $1::oid \
+              AND node_id = $2 \
+              AND served_epoch = $3 \
+              AND updated_at >= clock_timestamp() - interval '2 seconds' \
+              AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended'))",
+        &[index_oid.into(), node_id.into(), epoch.into()],
+    )
+    .map_err(|error| {
+        DistannExpandError::Internal(format!(
+            "physical remote insert intent lookup failed: {error}"
+        ))
+    })?
+    .ok_or_else(|| {
+        DistannExpandError::Internal(
+            "physical remote insert intent lookup returned NULL".to_owned(),
+        )
+    })
+}
+
+/// Resolve an owner-local graph batch with a bounded 2PC visibility retry.
+/// Both traversal expansion and physical materialization use this helper so
+/// the retry policy cannot drift between their lookup paths.
+fn lookup_graph_nodes_with_intent_retry<F>(
+    index_oid: pg_sys::Oid,
+    generation: &GenerationCatalogRow,
+    graph_relation: &HeapRelationGuard,
+    directory_relation: &IndexRelationGuard,
+    snapshot: pg_sys::Snapshot,
+    vec_ids: &[u64],
+    graph_degree: u16,
+    code_len: usize,
+    missing: F,
+) -> Result<HashMap<u64, DistannNodeTuple>, DistannExpandError>
+where
+    F: Fn(u64) -> DistannExpandError + Copy,
+{
+    let records = lookup_graph_nodes(
+        graph_relation,
+        directory_relation,
+        snapshot,
+        vec_ids,
+        graph_degree,
+        code_len,
+        missing,
+    );
+    let Err(error @ DistannExpandError::OwnedRecordMissing(_)) = records else {
+        return records;
+    };
+    if !recent_remote_insert_intent(index_oid, generation.node_id, generation.epoch)? {
+        return Err(error);
+    }
+    super::stage_counters::record_work(
+        super::stage_counters::DistannMaterializationWork::TraversalFrontierRetries,
+        1,
+    );
+    let mut last_error = error;
+    // A 1 ms event-loop yield, bounded to three attempts, is enough to let
+    // the commit callback resolve a prepared owner transaction without
+    // holding a long sleep under the relation guards.
+    for _ in 0..3 {
+        let _ = Spi::run("SELECT pg_sleep(0.001)");
+        let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| last_error.clone())?;
+        match lookup_graph_nodes(
+            graph_relation,
+            directory_relation,
+            latest.as_ptr(),
+            vec_ids,
+            graph_degree,
+            code_len,
+            missing,
+        ) {
+            Ok(found) => return Ok(found),
+            Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
+                last_error = next;
+                if !recent_remote_insert_intent(index_oid, generation.node_id, generation.epoch)? {
+                    break;
+                }
+            }
+            Err(next) => return Err(next),
+        }
+    }
+    Err(last_error)
+}
+
 #[cfg(test)]
 mod cache_tests {
     use super::*;
@@ -1704,7 +1807,9 @@ impl RetainedGenerationScan {
             return Ok(Vec::new());
         }
         let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
-        let records = lookup_graph_nodes(
+        let records = lookup_graph_nodes_with_intent_retry(
+            self.index_oid,
+            &self.generation,
             &self.graph_relation,
             &self.directory_relation,
             snapshot,
@@ -5698,46 +5803,6 @@ impl GenerationExpander<'_> {
 }
 
 impl GenerationExpander<'_> {
-    /// A remote physical append is prepared on the owner before the
-    /// coordinator commits. During that interval its graph tuple is not yet
-    /// visible to a fresh owner snapshot, but the intent row is the durable
-    /// signal that this is a bounded 2PC visibility window rather than a
-    /// dangling graph edge.
-    fn pending_remote_insert_intent(&self) -> Result<bool, DistannExpandError> {
-        let state = Spi::get_one_with_args::<String>(
-            "SELECT intent_state \
-               FROM ec_distann_remote_prepared_xact_intent \
-              WHERE index_oid = $1::oid \
-                AND node_id = $2 \
-                AND served_epoch = $3 \
-                AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended') \
-              ORDER BY updated_at DESC LIMIT 1",
-            &[
-                self.index_oid.into(),
-                i32::try_from(self.generation.node_id)
-                    .map_err(|_| {
-                        DistannExpandError::Internal(
-                            "physical intent node id exceeds int4".to_owned(),
-                        )
-                    })?
-                    .into(),
-                i64::try_from(self.generation.epoch)
-                    .map_err(|_| {
-                        DistannExpandError::Internal(
-                            "physical intent epoch exceeds int8".to_owned(),
-                        )
-                    })?
-                    .into(),
-            ],
-        )
-        .map_err(|error| {
-            DistannExpandError::Internal(format!(
-                "physical remote insert intent lookup failed: {error}"
-            ))
-        })?;
-        Ok(state.is_some())
-    }
-
     /// Expand with a gateway-copy skip mask (TRAV-30, Task 210 P3). Ids in
     /// `skip_neighbors` still get their record read and exact distance — the
     /// result half stays owner-authoritative — but their neighbour payload is
@@ -5762,7 +5827,9 @@ impl GenerationExpander<'_> {
                 self.generation.epoch
             ))
         };
-        let records = match lookup_graph_nodes(
+        let records = lookup_graph_nodes_with_intent_retry(
+            self.index_oid,
+            self.generation,
             self.graph_relation,
             self.directory_relation,
             self.snapshot,
@@ -5770,52 +5837,7 @@ impl GenerationExpander<'_> {
             self.descriptor.graph_degree,
             self.code_len,
             missing,
-        ) {
-            Ok(records) => records,
-            Err(ref error @ DistannExpandError::OwnedRecordMissing(_)) => {
-                // A prepared cross-owner write can publish its retained edge
-                // before the owner graph tuple becomes visible to this
-                // snapshot. Only the owner-side intent row permits treating
-                // that miss as transient; an ordinary missing record remains
-                // a strict EC_RECORD_MISSING.
-                if !self.pending_remote_insert_intent()? {
-                    return Err(error.clone());
-                }
-                super::stage_counters::record_work(
-                    super::stage_counters::DistannMaterializationWork::TraversalFrontierRetries,
-                    1,
-                );
-                let mut last_error = error.clone();
-                let mut records = None;
-                for _ in 0..8 {
-                    let _ = Spi::run("SELECT pg_sleep(0.005)");
-                    let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| error.clone())?;
-                    match lookup_graph_nodes(
-                        self.graph_relation,
-                        self.directory_relation,
-                        latest.as_ptr(),
-                        vec_ids,
-                        self.descriptor.graph_degree,
-                        self.code_len,
-                        missing,
-                    ) {
-                        Ok(found) => {
-                            records = Some(found);
-                            break;
-                        }
-                        Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
-                            last_error = next;
-                            if !self.pending_remote_insert_intent()? {
-                                break;
-                            }
-                        }
-                        Err(next) => return Err(next),
-                    }
-                }
-                records.ok_or(last_error)?
-            }
-            Err(error) => return Err(error),
-        };
+        )?;
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let owner_graph_read_ns =
             i64::try_from(duration_ns(graph_started.elapsed())).unwrap_or(i64::MAX);

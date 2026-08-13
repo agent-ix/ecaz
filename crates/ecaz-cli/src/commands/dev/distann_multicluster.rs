@@ -7737,10 +7737,11 @@ async fn drive_physical_fixture(
             .lines()
             .map(str::trim)
             .find(|candidate| *candidate == source_id);
-        // This probe is diagnostic only: zero_rows is a valid ordinary
-        // filtered-owner result, while the owner_exact_probe below is the
-        // authoritative placement proof. Record the outcome so the packet
-        // does not mistake the probe for a serving assertion.
+        // This probe is diagnostic only: zero_rows and returned_sample are
+        // both expected under ANN post-filter semantics because the equality
+        // qual is applied after the distributed top-k. The owner_exact_probe
+        // below is the authoritative placement proof; record both outcomes
+        // so the packet does not mistake the probe for a serving assertion.
         let pinned_probe_status = if pinned_probe_source_id.is_some() {
             "returned_sample"
         } else if pinned_probe_output
@@ -7841,9 +7842,6 @@ async fn drive_physical_fixture(
         remote_verified += 1;
     }
     let physical_mid_insert_ok = mid_insert_drill(psql, socket_dir, nodes[0].port, args).await;
-    // `forward_neighbors_selected` counts each inserted node's selected
-    // forward edges. It is not a reverse-membership count; `back_edge_check`
-    // is the separate assertion that both controlled backlinks survived.
     crate::ecaz_println!(
         "[distann-multicluster] physical_mid_insert_failure pass={physical_mid_insert_ok}"
     );
@@ -7900,6 +7898,10 @@ async fn drive_physical_fixture(
         &fingerprint,
     )
     .await?;
+    // This diagnostic is reverse-edge coverage: `found` contains inserted
+    // vec_ids discovered in other nodes' neighbour lists. It is not the
+    // number of forward edges selected by inserted nodes; the controlled
+    // two-writer target assertion below is the separate backlink invariant.
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query pass={physical_concurrency_ok}"
     );
@@ -9640,17 +9642,22 @@ async fn physical_concurrency_drill(
         shared_target_signed_id,
         shared_target_source
     );
-    let counter_reset_output = capture_psql_allow_error(
-        psql,
-        socket_dir,
-        coord_port,
-        "SELECT ec_distann_stage_scoring_reset();",
-    )
-    .await;
-    if counter_reset_output.contains("ERROR") {
+    let mut counter_reset_ok = true;
+    let mut counter_reset_outputs = Vec::new();
+    for owner in owner_nodes {
+        let output = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            owner.port,
+            "SELECT ec_distann_stage_scoring_reset();",
+        )
+        .await;
+        counter_reset_ok &= !output.contains("ERROR");
+        counter_reset_outputs.push((owner.node_id, compact_capture_error(&output)));
+    }
+    if !counter_reset_ok {
         crate::ecaz_println!(
-            "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter reason=reset_failed output={}",
-            compact_capture_error(&counter_reset_output)
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter reason=owner_reset_failed outputs={counter_reset_outputs:?}"
         );
         return Ok(false);
     }
@@ -9833,44 +9840,63 @@ async fn physical_concurrency_drill(
         saturation_pass
     );
     pass &= saturation_pass;
-    let retry_output = capture_psql_allow_error(
-        psql,
-        socket_dir,
-        coord_port,
+    let retry_snapshot_sql =
         "SELECT value FROM ec_distann_materialization_work_snapshot() \
-          WHERE metric = 'traversal_frontier_retries';",
-    )
-    .await;
-    let churn_retries = retry_output
-        .lines()
-        .find_map(|line| line.trim().parse::<u64>().ok());
-    let steady_reset_output = capture_psql_allow_error(
-        psql,
-        socket_dir,
-        coord_port,
-        "SELECT ec_distann_stage_scoring_reset();",
-    )
-    .await;
+          WHERE metric = 'traversal_frontier_retries';";
+    let parse_retry_count = |output: &str| {
+        output
+            .lines()
+            .find_map(|line| line.trim().parse::<u64>().ok())
+    };
+    let mut churn_retries_by_owner = Vec::new();
+    for owner in owner_nodes {
+        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
+            .await;
+        churn_retries_by_owner.push((
+            owner.node_id,
+            parse_retry_count(&output),
+            compact_capture_error(&output),
+        ));
+    }
+    let churn_retries = churn_retries_by_owner
+        .iter()
+        .map(|(_, count, _)| *count)
+        .sum::<Option<u64>>();
+    let mut steady_reset_ok = true;
+    let mut steady_reset_outputs = Vec::new();
+    for owner in owner_nodes {
+        let output = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            owner.port,
+            "SELECT ec_distann_stage_scoring_reset();",
+        )
+        .await;
+        steady_reset_ok &= !output.contains("ERROR");
+        steady_reset_outputs.push((owner.node_id, compact_capture_error(&output)));
+    }
     let steady_query = run_capture(psql, socket_dir, coord_port, &query_sql).await;
-    let steady_retry_output = capture_psql_allow_error(
-        psql,
-        socket_dir,
-        coord_port,
-        "SELECT value FROM ec_distann_materialization_work_snapshot() \
-          WHERE metric = 'traversal_frontier_retries';",
-    )
-    .await;
-    let steady_retries = steady_retry_output
-        .lines()
-        .find_map(|line| line.trim().parse::<u64>().ok());
-    let retry_counter_ok = !steady_reset_output.contains("ERROR")
+    let mut steady_retries_by_owner = Vec::new();
+    for owner in owner_nodes {
+        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
+            .await;
+        steady_retries_by_owner.push((
+            owner.node_id,
+            parse_retry_count(&output),
+            compact_capture_error(&output),
+        ));
+    }
+    let steady_retries = steady_retries_by_owner
+        .iter()
+        .map(|(_, count, _)| *count)
+        .sum::<Option<u64>>();
+    let retry_counter_ok = counter_reset_ok
+        && steady_reset_ok
         && steady_query.status_ok
-        && churn_retries.is_some()
+        && churn_retries.is_some_and(|count| count > 0)
         && steady_retries == Some(0);
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries={churn_retries:?} steady_retries={steady_retries:?} pass={retry_counter_ok} output={} steady_output={}",
-        compact_capture_error(&retry_output),
-        compact_capture_error(&steady_retry_output)
+        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries={churn_retries:?} churn_by_owner={churn_retries_by_owner:?} steady_retries={steady_retries:?} steady_by_owner={steady_retries_by_owner:?} pass={retry_counter_ok} reset_outputs={counter_reset_outputs:?} steady_reset_outputs={steady_reset_outputs:?}"
     );
     let mut inserted_vec_ids_by_id = HashMap::new();
     let inserted_vec_ids = if pass {
@@ -10084,6 +10110,10 @@ async fn physical_concurrency_drill(
     } else {
         false
     };
+    // Reverse-edge coverage: `found` contains inserted vec_ids discovered in
+    // other nodes' neighbour lists. This is not forward-edge selection by
+    // the inserted nodes; the controlled target assertion separately proves
+    // the two writer backlinks.
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} writers={WRITERS} iterations={ITERATIONS} expected_count={expected_count} forward_neighbors_selected={} shared_target_vec_id={} shared_target_owner={} back_edge_check={forward_neighbor_check} pass={pass}",
         forward_neighbor_count,
