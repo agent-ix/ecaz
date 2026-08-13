@@ -7687,12 +7687,9 @@ async fn drive_physical_fixture(
         // literal here to prove the same CustomScan shape as production literal
         // and benchmark queries.
         let owner_query = format!(
-            "SELECT source_id FROM (
-                 SELECT source_id FROM dm
-                  ORDER BY embedding <#> '{vector}'::real[]
-                  LIMIT {source_count}
-             ) candidates
-             WHERE source_id = '{source_id}'::uuid"
+            "SELECT source_id FROM dm
+              ORDER BY embedding <#> '{vector}'::real[]
+              LIMIT {source_count}"
         );
         let owner_plan = coordinator
             .query(
@@ -7734,15 +7731,18 @@ async fn drive_physical_fixture(
                 &[],
             )
             .await?;
-        if materialized_rows.len() != 1 {
+        let Some(materialized_row) = materialized_rows
+            .iter()
+            .find(|row| row.get::<_, String>(0) == source_id)
+        else {
             bail!(
-                "remote owner materialization returned {} rows for node {} and source_id {}; owner_query={owner_query}",
+                "remote owner materialization omitted source_id {} from {} rows for node {}; owner_query={owner_query}",
+                source_id,
                 materialized_rows.len(),
-                node.node_id,
-                source_id
+                node.node_id
             );
-        }
-        let materialized_source_id = materialized_rows[0].get::<_, String>(0);
+        };
+        let materialized_source_id = materialized_row.get::<_, String>(0);
         let owner_served = materialized_source_id == source_id;
         crate::ecaz_println!(
             "[distann-multicluster] physical_remote_owner node={} custom_scan=true pass={} expected_source_id={} materialized_source_id={}",
