@@ -2067,23 +2067,40 @@ async fn run_one_physical_expand(
 ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let rpc_started = std::time::Instant::now();
-    let rows = physical_query(
-        client,
-        statement,
-        &[
-            &request.index_regclass,
-            &request.epoch_fingerprint,
-            &wire_query,
-            &request.query_digest.as_slice(),
-            &wire_ids,
-            &request.code_threshold,
-            &request.candidate_limit,
-            &wire_skip_ids,
-            #[cfg(feature = "distann-head-attribution-benchmark")]
-            &request.expanded_locator,
-        ],
-    )
-    .await?;
+    let rows = {
+        let mut attempt = 0_u8;
+        let loop_result = loop {
+            let result = physical_query(
+                client,
+                statement,
+                &[
+                    &request.index_regclass,
+                    &request.epoch_fingerprint,
+                    &wire_query,
+                    &request.query_digest.as_slice(),
+                    &wire_ids,
+                    &request.code_threshold,
+                    &request.candidate_limit,
+                    &wire_skip_ids,
+                    #[cfg(feature = "distann-head-attribution-benchmark")]
+                    &request.expanded_locator,
+                ],
+            )
+            .await;
+            match result {
+                Ok(rows) => break Ok(rows),
+                Err(error @ DistannExpandError::OwnedRecordMissing(_)) => {
+                    if attempt >= 31 {
+                        break Err(error);
+                    }
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                Err(error) => break Err(error),
+            }
+        };
+        loop_result?
+    };
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let decode_started = std::time::Instant::now();
     let nodes = rows
