@@ -276,7 +276,6 @@ CREATE TABLE ec_distann_participant_identity (
     endpoint_identity text NOT NULL CHECK (
         endpoint_identity ~ '^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$'
     ),
-    tracked_vec_id bigint,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (index_oid, logical_index_uuid)
 );
@@ -519,6 +518,7 @@ CREATE TABLE ec_distann_remote_prepared_xact_intent (
             'rollback_local'
         )
     ),
+    tracked_vec_id bigint,
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (gid)
