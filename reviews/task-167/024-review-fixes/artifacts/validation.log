@@ -1,0 +1,7 @@
+head_sha=12ab7c44e
+cargo_check_pg18=pass
+cargo_check_ecaz_cli=pass
+touched_file_rustfmt_and_git_diff_check=pass
+fixture_exact_head_runtime=not_claimed
+fixture_installed_extension_sha=0a7854fc1171f9599ad89278f8b180f8855e0e22
+benchmark_10k_50k_100k=not_run

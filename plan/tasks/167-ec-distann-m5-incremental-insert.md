@@ -1,6 +1,6 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation landed; packet 023 review-open; reviewer CHANGES
+Status: implementation landed; packet 024 review-open; outside reviewer disposition pending
 REQUESTED on 2026-08-12; follow-up code and exact-head fixture now pass, with
 outside reviewer re-review pending (feedback:
 reviews/task-167/023-review-fixes/feedback/2026-08-12-03-reviewer.md).
