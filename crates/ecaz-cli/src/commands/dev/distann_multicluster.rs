@@ -7731,18 +7731,48 @@ async fn drive_physical_fixture(
                 &[],
             )
             .await?;
-        let Some(materialized_row) = materialized_rows
-            .iter()
-            .find(|row| row.get::<_, String>(0) == source_id)
-        else {
+        let mut materialized_source_id = None;
+        for row in &materialized_rows {
+            let candidate_source_id = row.get::<_, String>(0);
+            if !candidate_source_id
+                .bytes()
+                .enumerate()
+                .all(|(index, byte)| {
+                    if matches!(index, 8 | 13 | 18 | 23) {
+                        byte == b'-'
+                    } else {
+                        byte.is_ascii_hexdigit()
+                    }
+                })
+            {
+                continue;
+            }
+            let owner_match = capture_psql_allow_error(
+                psql,
+                socket_dir,
+                node.port,
+                &format!(
+                    "SELECT count(*) FROM {row_relation} \
+                      WHERE source_id = '{candidate_source_id}'::uuid;"
+                ),
+            )
+            .await;
+            if owner_match
+                .lines()
+                .find_map(|line| line.trim().parse::<i64>().ok())
+                == Some(1)
+            {
+                materialized_source_id = Some(candidate_source_id);
+                break;
+            }
+        }
+        let Some(materialized_source_id) = materialized_source_id else {
             bail!(
-                "remote owner materialization omitted source_id {} from {} rows for node {}; owner_query={owner_query}",
-                source_id,
+                "remote owner materialization returned no row belonging to owner node {} among {} rows; sampled_source_id={source_id}; owner_query={owner_query}",
+                node.node_id,
                 materialized_rows.len(),
-                node.node_id
             );
         };
-        let materialized_source_id = materialized_row.get::<_, String>(0);
         let owner_served = materialized_source_id == source_id;
         crate::ecaz_println!(
             "[distann-multicluster] physical_remote_owner node={} custom_scan=true pass={} expected_source_id={} materialized_source_id={}",
