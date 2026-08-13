@@ -7688,8 +7688,9 @@ async fn drive_physical_fixture(
         // and benchmark queries.
         let owner_query = format!(
             "SELECT source_id FROM dm
+              WHERE source_id = '{source_id}'::uuid
               ORDER BY embedding <#> '{vector}'::real[]
-              LIMIT {source_count}"
+              LIMIT 1"
         );
         let owner_plan = coordinator
             .query(
@@ -7773,10 +7774,7 @@ async fn drive_physical_fixture(
                 materialized_rows.len(),
             );
         };
-        // Approximate traversal is not required to return the sampled owner
-        // row itself. The owner-side membership check above proves that the
-        // returned row came from this remote row tier.
-        let owner_served = true;
+        let owner_served = materialized_source_id == source_id;
         crate::ecaz_println!(
             "[distann-multicluster] physical_remote_owner node={} custom_scan=true pass={} expected_source_id={} materialized_source_id={}",
             node.node_id,
@@ -9353,6 +9351,127 @@ async fn physical_concurrency_drill(
         return Ok(false);
     }
     let base_rows = args.rows;
+    let owner_nodes = if args.coordinator_outside_roster {
+        &nodes[1..]
+    } else {
+        nodes
+    };
+    let dimension_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!("SELECT array_length(source, 1) FROM {table} LIMIT 1;"),
+    )
+    .await;
+    let Some(dimension) = dimension_output
+        .lines()
+        .find_map(|line| line.trim().parse::<usize>().ok())
+    else {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=source_dimension_missing output={}",
+            compact_capture_error(&dimension_output)
+        );
+        return Ok(false);
+    };
+    let zero_query = (0..dimension).map(|_| "0").collect::<Vec<_>>().join(",");
+    let mut shared_target = None;
+    for owner_node in owner_nodes {
+        let relation_output = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            owner_node.port,
+            "SELECT graph_store_relid::regclass::text \
+               FROM ec_distann_generation \
+              WHERE index_oid='dm_idx'::regclass::oid AND state='Published' \
+              ORDER BY epoch DESC LIMIT 1;",
+        )
+        .await;
+        let Some(graph_relation) = relation_output.lines().map(str::trim).find(|line| {
+            !line.is_empty()
+                && line
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"'))
+        }) else {
+            continue;
+        };
+        let graph_sql = format!(
+            "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id={}; \
+             SELECT vec_id::text || '|' || COALESCE(array_to_string(neighbor_vec_ids, ','), '') \
+               FROM ec_distann_expand_physical_nodes(\
+                    'public.dm_idx'::regclass, \
+                    decode('{epoch_fingerprint}', 'hex'), \
+                    ARRAY[{zero_query}]::real[], \
+                    (SELECT COALESCE(array_agg(vec_id), ARRAY[]::bigint[]) \
+                       FROM {graph_relation} WHERE is_current), NULL, NULL);",
+            owner_node.node_id,
+        );
+        let graph_output =
+            capture_psql_allow_error(psql, socket_dir, owner_node.port, &graph_sql).await;
+        let spare_limit = args.graph_degree.saturating_sub(2) as usize;
+        let Some((target_vec_id, target_signed_id)) = graph_output.lines().find_map(|line| {
+            let (vec_id, neighbors) = line.trim().split_once('|')?;
+            let neighbor_count = neighbors
+                .split(',')
+                .filter(|value| !value.is_empty())
+                .count();
+            if neighbor_count > spare_limit {
+                return None;
+            }
+            let signed_id = vec_id.parse::<i64>().ok()?;
+            Some((u64::from_le_bytes(signed_id.to_le_bytes()), signed_id))
+        }) else {
+            continue;
+        };
+        let source_output = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            coord_port,
+            &format!(
+                "SELECT d.source::text FROM {table} d \
+                   JOIN ec_distann_physical_source_map m ON m.source_tid = d.ctid \
+                  WHERE m.index_oid = 'dm_idx'::regclass::oid \
+                    AND m.vec_id = {target_signed_id};"
+            ),
+        )
+        .await;
+        let Some(source) = source_output.lines().map(str::trim).find(|line| {
+            line.starts_with('{')
+                && line.ends_with('}')
+                && line.bytes().all(|byte| {
+                    byte.is_ascii_digit()
+                        || matches!(byte, b'{' | b'}' | b',' | b'.' | b'-' | b'+' | b'e' | b'E')
+                })
+        }) else {
+            continue;
+        };
+        shared_target = Some((
+            owner_node.node_id,
+            target_vec_id,
+            target_signed_id,
+            source.to_owned(),
+        ));
+        break;
+    }
+    let Some((
+        shared_target_owner,
+        shared_target_vec_id,
+        shared_target_signed_id,
+        shared_target_source,
+    )) = shared_target
+    else {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=no_target_with_two_spare_slots graph_degree={}",
+            args.graph_degree
+        );
+        return Ok(false);
+    };
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner={} vec_id={} signed_vec_id={} source={}",
+        shared_target_owner,
+        shared_target_vec_id,
+        shared_target_signed_id,
+        shared_target_source
+    );
     let inserted_ids = (0..WRITERS)
         .flat_map(|writer| {
             (0..ITERATIONS).map(move |iteration| {
@@ -9398,14 +9517,20 @@ async fn physical_concurrency_drill(
         let insert_roster = roster.clone();
         let insert_table = table.to_owned();
         let insert_vector = insert_vector.clone();
+        let shared_target_source = shared_target_source.clone();
         tasks.push(tokio::spawn(async move {
             for iteration in 0..ITERATIONS {
                 let id = 900_000_i64
                     + base_rows as i64
                     + (writer * ITERATIONS + iteration) as i64;
+                let source_expr = if iteration == 0 {
+                    format!("'{shared_target_source}'::real[]")
+                } else {
+                    insert_vector.clone()
+                };
                 let insert_sql = format!(
                     "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id=1; \
-                     WITH row_data AS (SELECT {id}::bigint AS id, {insert_vector}::real[] AS source) \
+                     WITH row_data AS (SELECT {id}::bigint AS id, {source_expr}::real[] AS source) \
                      INSERT INTO {insert_table} (id, source_id, source, embedding) \
                      SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
                             substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
@@ -9438,6 +9563,7 @@ async fn physical_concurrency_drill(
             }
         }
     }
+    let mut inserted_vec_ids_by_id = HashMap::new();
     let inserted_vec_ids = if pass {
         let first_id = 900_000_i64 + base_rows as i64;
         let last_id = first_id + (WRITERS * ITERATIONS) as i64;
@@ -9473,6 +9599,7 @@ async fn physical_concurrency_drill(
             );
             pass = false;
         }
+        inserted_vec_ids_by_id = mapped.clone();
         mapped
             .into_iter()
             .filter(|(id, _)| inserted_ids.contains(id))
@@ -9484,29 +9611,6 @@ async fn physical_concurrency_drill(
     let mut forward_neighbor_count = 0;
     let forward_neighbor_check = if pass {
         'check: {
-            let owner_nodes = if args.coordinator_outside_roster {
-                &nodes[1..]
-            } else {
-                nodes
-            };
-            let dimension_output = capture_psql_allow_error(
-                psql,
-                socket_dir,
-                coord_port,
-                &format!("SELECT array_length(source, 1) FROM {table} LIMIT 1;"),
-            )
-            .await;
-            let Some(dimension) = dimension_output
-                .lines()
-                .find_map(|line| line.trim().parse::<usize>().ok())
-            else {
-                crate::ecaz_println!(
-                "[distann-multicluster] physical_concurrent_insert_query DIAG role=back_edge_check reason=source_dimension_missing output={}",
-                compact_capture_error(&dimension_output)
-            );
-                break 'check false;
-            };
-            let zero_query = (0..dimension).map(|_| "0").collect::<Vec<_>>().join(",");
             let graph_vec_ids = inserted_vec_ids
                 .iter()
                 .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()).to_string())
@@ -9606,21 +9710,76 @@ async fn physical_concurrency_drill(
                 "[distann-multicluster] physical_concurrent_insert_query DIAG role=back_edge_check inserted_graph_rows={} expected_graph_rows={}",
                 current_graph_rows,
                 inserted_vec_ids.len()
-            );
+                );
             }
-            // A new row is not required to become a neighbor of another
-            // row: robust pruning may legitimately retain no reverse edge.
-            // The blocking invariant is that every committed insert has one
-            // current graph record on its placement owner. The observed
-            // forward-neighbor count remains diagnostic only.
-            break 'check check_ok && current_graph_rows == inserted_vec_ids.len();
+            let shared_ids = [
+                900_000_i64 + base_rows as i64,
+                900_000_i64 + base_rows as i64 + ITERATIONS as i64,
+            ];
+            let Some(shared_vec_ids) = shared_ids
+                .iter()
+                .map(|id| inserted_vec_ids_by_id.get(id).copied())
+                .collect::<Option<Vec<_>>>()
+            else {
+                crate::ecaz_println!(
+                    "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=controlled_insert_mapping_missing"
+                );
+                break 'check false;
+            };
+            let target_port = owner_nodes
+                .iter()
+                .find(|node| node.node_id == shared_target_owner)
+                .map(|node| node.port)
+                .unwrap_or(coord_port);
+            let target_graph_sql = format!(
+                "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id={shared_target_owner}; \
+                 SELECT vec_id::text || '|' || COALESCE(array_to_string(neighbor_vec_ids, ','), '') \
+                   FROM ec_distann_expand_physical_nodes(\
+                        'public.dm_idx'::regclass, \
+                        decode('{epoch_fingerprint}', 'hex'), \
+                        ARRAY[{zero_query}]::real[], \
+                        ARRAY[{shared_target_signed_id}]::bigint[], NULL, NULL);"
+            );
+            let target_output =
+                capture_psql_allow_error(psql, socket_dir, target_port, &target_graph_sql).await;
+            let target_neighbors = target_output
+                .lines()
+                .find_map(|line| line.trim().split_once('|'))
+                .map(|(_, neighbors)| {
+                    neighbors
+                        .split(',')
+                        .filter_map(|value| value.parse::<i64>().ok())
+                        .map(|value| u64::from_le_bytes(value.to_le_bytes()))
+                        .collect::<HashSet<_>>()
+                })
+                .unwrap_or_default();
+            let shared_target_ok = shared_vec_ids
+                .iter()
+                .all(|vec_id| target_neighbors.contains(vec_id));
+            crate::ecaz_println!(
+                "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner={} target_vec_id={} inserted_vec_ids={:?} target_neighbors={:?} pass={}",
+                shared_target_owner,
+                shared_target_vec_id,
+                shared_vec_ids,
+                target_neighbors,
+                shared_target_ok
+            );
+            // The broad count proves every committed insert has one current
+            // graph record on its placement owner. The controlled target is
+            // the lost-update invariant: two writers insert near-duplicates
+            // while sharing one target, and both backlinks must survive.
+            break 'check check_ok
+                && current_graph_rows == inserted_vec_ids.len()
+                && shared_target_ok;
         }
     } else {
         false
     };
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} writers={WRITERS} iterations={ITERATIONS} expected_count={expected_count} forward_neighbors_selected={} back_edge_check={forward_neighbor_check} pass={pass}",
-        forward_neighbor_count
+        "[distann-multicluster] physical_concurrent_insert_query DIAG scanners={SCANNERS} writers={WRITERS} iterations={ITERATIONS} expected_count={expected_count} forward_neighbors_selected={} shared_target_vec_id={} shared_target_owner={} back_edge_check={forward_neighbor_check} pass={pass}",
+        forward_neighbor_count,
+        shared_target_vec_id,
+        shared_target_owner
     );
     Ok(pass && forward_neighbor_check)
 }

@@ -1694,16 +1694,10 @@ unsafe fn amend_backlink(
                 *neighbor,
                 source_attnum,
                 latest_snapshot.as_ptr(),
-            )
-            .map_err(|error| {
-                format!(
-                    "{error}; backlink_target={:#018x}; missing_neighbor={neighbor:#018x}",
-                    candidate.vec_id
-                )
-            });
+            );
             match source_vector {
                 Ok(source_vector) => source_vector,
-                Err(error) if error.starts_with("EC_INSERT_BACKLINK: current row for vec_id") => {
+                Err(error) if is_current_vector_missing(&error) => {
                     // A tombstone or a concurrent replacement can leave a
                     // retained target pointing at a neighbor with no current
                     // row-tier tuple. Drop that stale edge while rebuilding
@@ -1711,7 +1705,12 @@ unsafe fn amend_backlink(
                     // remain hard failures below.
                     continue;
                 }
-                Err(error) => return Err(error),
+                Err(error) => {
+                    return Err(format!(
+                        "{error}; backlink_target={:#018x}; missing_neighbor={neighbor:#018x}",
+                        candidate.vec_id
+                    ));
+                }
             }
         };
         candidates.push(DistannForwardCandidate {
@@ -1920,6 +1919,11 @@ unsafe fn read_current_vector(
     Ok(ecvector_datum_to_vec(datum))
 }
 
+fn is_current_vector_missing(error: &str) -> bool {
+    error.starts_with("EC_INSERT_BACKLINK: current row for vec_id")
+        && error.ends_with(" is missing")
+}
+
 /// Apply one owner-local backlink from a coordinator-prepared remote write.
 /// The target is looked up by stable vec_id; the caller never supplies a
 /// coordinator-local ctid for a remote relation.
@@ -2024,17 +2028,18 @@ pub(crate) unsafe fn apply_owner_backlink(
             routed_descriptor.placement_hash_version,
         );
         if neighbor_owner == local_owner {
-            if read_current_vector(
+            if let Err(error) = read_current_vector(
                 &graph_name,
                 &row_relation,
                 *neighbor,
                 source_attnum,
                 latest_snapshot.as_ptr(),
-            )
-            .is_err()
-            {
-                missing_local_neighbor = true;
-                break;
+            ) {
+                if is_current_vector_missing(&error) {
+                    missing_local_neighbor = true;
+                    break;
+                }
+                return Err(error);
             }
         }
     }

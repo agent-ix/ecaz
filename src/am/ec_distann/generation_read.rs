@@ -27,6 +27,7 @@ use crate::storage::page::ItemPointer;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::scan_guard::IndexScanGuard;
 use crate::storage::slot_guard::TupleTableSlotGuard;
+use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
 
 use super::expand_error::DistannExpandError;
 use super::generation_catalog::{self, GenerationCatalogRow};
@@ -171,7 +172,7 @@ fn lookup_graph_nodes<F>(
     vec_ids: &[u64],
     graph_degree: u16,
     code_len: usize,
-    _missing: F,
+    missing: F,
 ) -> Result<HashMap<u64, DistannNodeTuple>, DistannExpandError>
 where
     F: Fn(u64) -> DistannExpandError,
@@ -223,12 +224,7 @@ where
             )
         };
         if !found {
-            // A concurrent cross-owner commit can briefly expose a retained
-            // edge before the referenced owner graph tuple is visible. The
-            // strict callers below still convert an absent requested node to
-            // OwnedRecordMissing; traversal expansion treats it as a
-            // tombstoned frontier entry and continues with the other nodes.
-            continue;
+            return Err(missing(*vec_id));
         }
         let node = graph_node_from_slot(&slot, graph_degree, code_len)?;
         if node.vec_id != *vec_id {
@@ -5715,20 +5711,42 @@ impl GenerationExpander<'_> {
     ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let graph_started = Instant::now();
-        let records = lookup_graph_nodes(
+        let missing = |vec_id| {
+            DistannExpandError::OwnedRecordMissing(format!(
+                "physical generation {} lacks vec_id {vec_id:#018x}",
+                self.generation.epoch
+            ))
+        };
+        let records = match lookup_graph_nodes(
             self.graph_relation,
             self.directory_relation,
             self.snapshot,
             vec_ids,
             self.descriptor.graph_degree,
             self.code_len,
-            |vec_id| {
-                DistannExpandError::Internal(format!(
-                    "EC_RECORD_MISSING: physical generation {} lacks vec_id {vec_id:#018x}",
-                    self.generation.epoch
-                ))
-            },
-        )?;
+            missing,
+        ) {
+            Ok(records) => records,
+            Err(ref error @ DistannExpandError::OwnedRecordMissing(_)) => {
+                // A prepared cross-owner write can publish its retained edge
+                // before the owner graph tuple becomes visible to this
+                // snapshot. Re-read the complete frontier exactly once under
+                // a fresh snapshot. A second miss remains a strict
+                // EC_RECORD_MISSING so corruption or a permanent dangling
+                // edge cannot silently become a tombstone.
+                let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| error.clone())?;
+                lookup_graph_nodes(
+                    self.graph_relation,
+                    self.directory_relation,
+                    latest.as_ptr(),
+                    vec_ids,
+                    self.descriptor.graph_degree,
+                    self.code_len,
+                    missing,
+                )?
+            }
+            Err(error) => return Err(error),
+        };
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let owner_graph_read_ns =
             i64::try_from(duration_ns(graph_started.elapsed())).unwrap_or(i64::MAX);
@@ -5737,31 +5755,12 @@ impl GenerationExpander<'_> {
         let mut responses = vec_ids
             .iter()
             .map(|vec_id| {
-                let Some(node) = records.get(vec_id) else {
-                    // A missing requested frontier node is a transient
-                    // cross-owner visibility gap or a retained stale edge,
-                    // not a reason to discard otherwise valid concurrent
-                    // query results. Represent it as a tombstone so the
-                    // orchestrator records no hit and does not expand it.
-                    return Ok(DistannExpandedNode {
-                        vec_id: *vec_id,
-                        exact_dist: None,
-                        is_tombstone: true,
-                        heap_tid: ItemPointer::INVALID,
-                        owner_heap_tid: ItemPointer::INVALID,
-                        neighbor_vec_ids: Vec::new(),
-                        neighbor_code_dists: Vec::new(),
-                        neighbors_pruned: 0,
-                        owner_total_ns: 0,
-                        owner_open_validate_ns: 0,
-                        owner_graph_read_ns: 0,
-                        owner_score_ns: 0,
-                        owner_response_encode_ns: 0,
-                        owner_response_bytes: 0,
-                        coordinator_rpc_ns: 0,
-                        coordinator_decode_ns: 0,
-                    });
-                };
+                let node = records.get(vec_id).ok_or_else(|| {
+                    DistannExpandError::OwnedRecordMissing(format!(
+                        "physical generation {} lacks vec_id {vec_id:#018x}",
+                        self.generation.epoch
+                    ))
+                })?;
                 let (neighbor_vec_ids, neighbor_code_dists) = if skip_neighbors.contains(vec_id) {
                     (Vec::new(), Vec::new())
                 } else {
