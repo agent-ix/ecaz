@@ -9981,7 +9981,7 @@ async fn physical_concurrency_drill(
                 .filter(|value| !value.is_empty())
                 .count()
         });
-    let saturation_pass = before_saturation_count == Some(args.graph_degree as usize)
+    let saturation_pass = shared_target_initial_neighbor_count >= args.graph_degree as usize
         && saturation_inserts_ok
         && final_neighbor_count.is_some_and(|count| count <= args.graph_degree as usize);
     crate::ecaz_println!(
