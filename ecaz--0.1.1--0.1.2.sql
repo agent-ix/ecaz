@@ -54,6 +54,9 @@ REVOKE ALL ON TABLE ec_distann_remote_prepared_xact_intent FROM PUBLIC;
 ALTER TABLE ec_distann_remote_prepared_xact_intent
     ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0;
 
+ALTER TABLE ec_distann_remote_prepared_xact_intent
+    ADD COLUMN IF NOT EXISTS tracked_vec_id bigint;
+
 -- Keep the upgrade-time compatibility wrapper in sync with the packed
 -- payload ABI used by the physical transport. Older 0.1.1 installations
 -- otherwise expose only payload_values while the current transport selects

@@ -9714,6 +9714,8 @@ async fn physical_concurrency_drill(
             owner.port,
             "ALTER TABLE ec_distann_remote_prepared_xact_intent \
                 ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
+             ALTER TABLE ec_distann_remote_prepared_xact_intent \
+                ADD COLUMN IF NOT EXISTS tracked_vec_id bigint; \
              SELECT ec_distann_stage_scoring_reset(); \
              UPDATE ec_distann_remote_prepared_xact_intent SET retry_count = 0;",
         )
@@ -10025,6 +10027,8 @@ async fn physical_concurrency_drill(
             owner.port,
             "ALTER TABLE ec_distann_remote_prepared_xact_intent \
                 ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
+             ALTER TABLE ec_distann_remote_prepared_xact_intent \
+                ADD COLUMN IF NOT EXISTS tracked_vec_id bigint; \
              SELECT ec_distann_stage_scoring_reset(); \
              UPDATE ec_distann_remote_prepared_xact_intent SET retry_count = 0;",
         )

@@ -249,6 +249,7 @@ where
 fn recent_remote_insert_intent(
     _index_oid: pg_sys::Oid,
     node_ids: &[u32],
+    vec_ids: &[u64],
     epoch: u64,
 ) -> Result<bool, DistannExpandError> {
     let node_ids = node_ids
@@ -267,11 +268,17 @@ fn recent_remote_insert_intent(
     let epoch = i64::try_from(epoch)
         .map_err(|_| DistannExpandError::Internal("physical intent epoch exceeds int8".to_owned()))?;
     let node_ids = node_ids.join(",");
+    let vec_ids = vec_ids
+        .iter()
+        .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()).to_string())
+        .collect::<Vec<_>>()
+        .join(",");
     Spi::get_one_with_args::<bool>(
         &format!("SELECT EXISTS (\
            SELECT 1 FROM ec_distann_remote_prepared_xact_intent \
             WHERE node_id IN ({node_ids}) \
               AND served_epoch = $1 \
+              AND tracked_vec_id IN ({vec_ids}) \
               AND updated_at >= clock_timestamp() - interval '2 seconds' \
               AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local'))"),
         &[epoch.into()],
@@ -347,7 +354,7 @@ where
     let Err(error @ DistannExpandError::OwnedRecordMissing(_)) = records else {
         return records;
     };
-    if !recent_remote_insert_intent(index_oid, intent_node_ids, generation.epoch)? {
+    if !recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
         return Err(error);
     }
     super::stage_counters::record_work(
@@ -363,11 +370,17 @@ where
             SET retry_count = retry_count + 1 \
           WHERE node_id IN ({}) \
             AND served_epoch = {} \
+            AND tracked_vec_id IN ({}) \
             AND updated_at >= clock_timestamp() - interval '2 seconds' \
             AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')",
         intent_node_ids
             .iter()
             .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
+        vec_ids
+            .iter()
+            .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()).to_string())
             .collect::<Vec<_>>()
             .join(","),
         generation.epoch,
@@ -392,7 +405,7 @@ where
             Ok(found) => return Ok(found),
             Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
                 last_error = next;
-                if !recent_remote_insert_intent(index_oid, intent_node_ids, generation.epoch)? {
+                if !recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
                     break;
                 }
             }

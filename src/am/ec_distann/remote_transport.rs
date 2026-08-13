@@ -619,6 +619,7 @@ async fn record_remote_physical_intent(
     served_epoch: u64,
     gid: &str,
     state: &str,
+    tracked_vec_id: Option<u64>,
 ) -> Result<(), String> {
     let parts = parse_physical_prepared_gid(gid)
         .ok_or_else(|| format!("EC_REMOTE_WRITE: malformed prepared gid {gid}"))?;
@@ -639,10 +640,10 @@ async fn record_remote_physical_intent(
     client
         .execute(
             "INSERT INTO ec_distann_remote_prepared_xact_intent \
-             (index_oid, node_id, served_epoch, xid, gid, intent_state) \
-             VALUES ($1::text::oid, $2::int4, $3, $4, $5, $6) \
+             (index_oid, node_id, served_epoch, xid, gid, intent_state, tracked_vec_id) \
+             VALUES ($1::text::oid, $2::int4, $3, $4, $5, $6, $7) \
              ON CONFLICT (gid) DO UPDATE SET intent_state = EXCLUDED.intent_state, \
-                 updated_at = clock_timestamp()",
+                 tracked_vec_id = EXCLUDED.tracked_vec_id, updated_at = clock_timestamp()",
             &[
                 &index_oid_text,
                 &node_id_value,
@@ -650,6 +651,7 @@ async fn record_remote_physical_intent(
                 &(parts.xid as i64),
                 &gid,
                 &state,
+                &tracked_vec_id.map(|id| i64::from_le_bytes(id.to_le_bytes())),
             ],
         )
         .await
@@ -772,6 +774,7 @@ pub(crate) fn remote_physical_insert(
                 request.epoch,
                 &prepared_gid,
                 "prepare_requested",
+                Some(request.vec_id),
             )
             .await?;
             client.batch_execute("BEGIN").await.map_err(|error| {
@@ -995,6 +998,7 @@ pub(crate) fn remote_physical_backlink(
                 request.epoch,
                 &prepared_gid,
                 "prepare_requested",
+                Some(request.target_vec_id),
             )
             .await?;
             client
