@@ -200,6 +200,7 @@ pub(crate) enum DistannMaterializationWork {
     TraversalNodesReturned,
     TraversalFrontierInsertions,
     TraversalRepeatedNodes,
+    TraversalFrontierRetries,
     TraversalConnectionsOpened,
     TraversalStatementsPrepared,
     TraversalQueryCacheHits,
@@ -216,7 +217,7 @@ pub(crate) enum DistannMaterializationWork {
 }
 
 impl DistannMaterializationWork {
-    pub(crate) const ALL: [Self; 32] = [
+    pub(crate) const ALL: [Self; 33] = [
         Self::RankedCandidates,
         Self::RemoteCandidatesRequested,
         Self::RemoteOwnersRequested,
@@ -236,6 +237,7 @@ impl DistannMaterializationWork {
         Self::TraversalNodesReturned,
         Self::TraversalFrontierInsertions,
         Self::TraversalRepeatedNodes,
+        Self::TraversalFrontierRetries,
         Self::TraversalConnectionsOpened,
         Self::TraversalStatementsPrepared,
         Self::TraversalQueryCacheHits,
@@ -272,6 +274,7 @@ impl DistannMaterializationWork {
             Self::TraversalNodesReturned => "traversal_nodes_returned",
             Self::TraversalFrontierInsertions => "traversal_frontier_insertions",
             Self::TraversalRepeatedNodes => "traversal_repeated_nodes",
+            Self::TraversalFrontierRetries => "traversal_frontier_retries",
             Self::TraversalConnectionsOpened => "traversal_connections_opened",
             Self::TraversalStatementsPrepared => "traversal_statements_prepared",
             Self::TraversalQueryCacheHits => "traversal_query_cache_hits",
@@ -309,19 +312,20 @@ impl DistannMaterializationWork {
             Self::TraversalNodesReturned => 16,
             Self::TraversalFrontierInsertions => 17,
             Self::TraversalRepeatedNodes => 18,
-            Self::TraversalConnectionsOpened => 19,
-            Self::TraversalStatementsPrepared => 20,
-            Self::TraversalQueryCacheHits => 21,
-            Self::TraversalQueryCacheMisses => 22,
-            Self::TraversalRequestBytes => 23,
-            Self::TraversalResponseBytes => 24,
-            Self::ReplicaScans => 25,
-            Self::ReplicaFallbacks => 26,
-            Self::PushdownRoundsWithThreshold => 27,
-            Self::NeighborsPruned => 28,
-            Self::GatewayCopiesServed => 29,
-            Self::HeadReplicaFallbacks => 30,
-            Self::HeadReplicaShardsServed => 31,
+            Self::TraversalFrontierRetries => 19,
+            Self::TraversalConnectionsOpened => 20,
+            Self::TraversalStatementsPrepared => 21,
+            Self::TraversalQueryCacheHits => 22,
+            Self::TraversalQueryCacheMisses => 23,
+            Self::TraversalRequestBytes => 24,
+            Self::TraversalResponseBytes => 25,
+            Self::ReplicaScans => 26,
+            Self::ReplicaFallbacks => 27,
+            Self::PushdownRoundsWithThreshold => 28,
+            Self::NeighborsPruned => 29,
+            Self::GatewayCopiesServed => 30,
+            Self::HeadReplicaFallbacks => 31,
+            Self::HeadReplicaShardsServed => 32,
         }
     }
 }

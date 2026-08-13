@@ -5734,6 +5734,10 @@ impl GenerationExpander<'_> {
                 // a fresh snapshot. A second miss remains a strict
                 // EC_RECORD_MISSING so corruption or a permanent dangling
                 // edge cannot silently become a tombstone.
+                super::stage_counters::record_work(
+                    super::stage_counters::DistannMaterializationWork::TraversalFrontierRetries,
+                    1,
+                );
                 let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| error.clone())?;
                 lookup_graph_nodes(
                     self.graph_relation,

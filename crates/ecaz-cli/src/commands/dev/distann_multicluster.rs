@@ -9627,6 +9627,20 @@ async fn physical_concurrency_drill(
         shared_target_signed_id,
         shared_target_source
     );
+    let counter_reset_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        "SELECT ec_distann_stage_scoring_reset();",
+    )
+    .await;
+    if counter_reset_output.contains("ERROR") {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter reason=reset_failed output={}",
+            compact_capture_error(&counter_reset_output)
+        );
+        return Ok(false);
+    }
     let inserted_ids = (0..WRITERS)
         .flat_map(|writer| {
             (0..ITERATIONS).map(move |iteration| {
@@ -9723,6 +9737,45 @@ async fn physical_concurrency_drill(
             }
         }
     }
+    let retry_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        "SELECT value FROM ec_distann_materialization_work_snapshot() \
+          WHERE metric = 'traversal_frontier_retries';",
+    )
+    .await;
+    let churn_retries = retry_output
+        .lines()
+        .find_map(|line| line.trim().parse::<u64>().ok());
+    let steady_reset_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        "SELECT ec_distann_stage_scoring_reset();",
+    )
+    .await;
+    let steady_query = run_capture(psql, socket_dir, coord_port, &query_sql).await;
+    let steady_retry_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        "SELECT value FROM ec_distann_materialization_work_snapshot() \
+          WHERE metric = 'traversal_frontier_retries';",
+    )
+    .await;
+    let steady_retries = steady_retry_output
+        .lines()
+        .find_map(|line| line.trim().parse::<u64>().ok());
+    let retry_counter_ok = !steady_reset_output.contains("ERROR")
+        && steady_query.status_ok
+        && churn_retries.is_some()
+        && steady_retries == Some(0);
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries={churn_retries:?} steady_retries={steady_retries:?} pass={retry_counter_ok} output={} steady_output={}",
+        compact_capture_error(&retry_output),
+        compact_capture_error(&steady_retry_output)
+    );
     let mut inserted_vec_ids_by_id = HashMap::new();
     let inserted_vec_ids = if pass {
         let first_id = 900_000_i64 + base_rows as i64;
@@ -9941,7 +9994,7 @@ async fn physical_concurrency_drill(
         shared_target_vec_id,
         shared_target_owner
     );
-    Ok(pass && forward_neighbor_check)
+    Ok(pass && forward_neighbor_check && retry_counter_ok)
 }
 
 /// Commit one coordinator-routed physical insert against a non-local owner.
