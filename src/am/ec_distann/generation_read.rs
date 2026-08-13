@@ -373,7 +373,7 @@ where
         generation.epoch,
     ));
     let mut last_error = error;
-    // A 1 ms event-loop yield, bounded to eight attempts, is enough to let
+    // Task 167: an event-loop yield, bounded to eight attempts, is enough to let
     // the commit callback resolve a prepared owner transaction under the
     // heavier multi-owner benchmark wave without reintroducing the old
     // 40-ms sleep budget under the relation guards.
