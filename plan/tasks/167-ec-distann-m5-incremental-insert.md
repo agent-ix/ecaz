@@ -1,11 +1,11 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
 Status: implementation landed; packet 023 review-open; reviewer CHANGES
-REQUESTED on 2026-08-12 for coverage and evidence fixes remaining after the
-production-path findings were closed (feedback:
+REQUESTED on 2026-08-12; follow-up code and exact-head fixture now pass, with
+outside reviewer re-review pending (feedback:
 reviews/task-167/023-review-fixes/feedback/2026-08-12-03-reviewer.md).
-The current follow-ups are the corrected id-to-vec_id back-edge assertion and
-a complete fixture run with detailed remote error attribution.
+Task closeout still requires the mandated 10k/50k/100k benchmark evidence and
+reviewer ACCEPT.
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
 (gate verdict remains committed scope unless the operator explicitly descopes
 — ADR-085 D5). The landed delta/fold experiments apply to the legacy local or

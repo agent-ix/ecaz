@@ -1,7 +1,7 @@
-head_sha=ae19b8ce0f8c311d6fd8f386d85241592aa95ab3
+head_sha=c7e2f4a5c7e1c43fd361cc327f6f4995423d601b
 validation=cargo check -p ecaz --features pg18; result=passed
 validation=cargo check -p ecaz-cli; result=passed
 validation=cargo build -p ecaz; result=passed
 validation=cargo build -p ecaz-cli; result=passed
 validation=cargo pgrx install --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features pg18; result=passed
-validation=ecaz dev distann-multicluster local-multinode-pg18 --nodes 2 --rows 100 --dim 4 --graph-degree 8 --skip-fault-drills --allow-debug-extension --remote-insert-probe; result=remote_insert_probe_passed_owner_1; later_two_writer_backlink_failed
+validation=ecaz dev distann-multicluster local-multinode-pg18 --pg 18 --pgbin /home/peter/.pgrx/18.3/pgrx-install/bin --nodes 2 --rows 100 --dim 4 --graph-degree 8 --skip-fault-drills --allow-debug-extension --remote-insert-probe; result=passed

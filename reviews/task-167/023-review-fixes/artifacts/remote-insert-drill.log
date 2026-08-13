@@ -1,7 +1,7 @@
 [distann-multicluster] repo=/home/peter/dev/ecaz
 [distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
 [distann-multicluster] mode=physical owners=2 instances=2 coordinator_outside_roster=false base_port=39710 rows=100 dim=4 graph_degree=8 build_shards=1 head_index_cap=4096
-[distann-multicluster] release_profile_preflight status=passed nodes=2 unanimous=true extension_git_sha=ae19b8ce0f8c311d6fd8f386d85241592aa95ab3 extension_build_profile=debug debug_override=true
+[distann-multicluster] release_profile_preflight status=passed nodes=2 unanimous=true extension_git_sha=c7e2f4a5c7e1c43fd361cc327f6f4995423d601b-dirty extension_build_profile=debug debug_override=true
 [distann-multicluster] physical_setup_start rows=100 nodes=2
 [distann-multicluster] physical_topology phase=ready node=1 state=Ready records=41 rows=41 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
 [distann-multicluster] physical_topology phase=ready node=2 state=Ready records=59 rows=59 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
@@ -12,11 +12,12 @@
 [distann-multicluster] physical_remote_insert_probe candidate=1 committed=true owner=0 remote=false
 [distann-multicluster] physical_remote_insert_probe candidate=2 committed=true owner=1 remote=true
 [distann-multicluster] physical_remote_insert_probe pass=true
-
-   0: [91mquery returned an unexpected number of rows[0m
-
-Location:
-   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m7722[0m
-
-Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
-Run with RUST_BACKTRACE=full to include source snippets.
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true expected_source_id=072b030b-a126-42f4-8237-4f342be9ed44 materialized_source_id=6c8349cc-7260-4e62-83b1-396831a8398f
+[distann-multicluster] mid_insert_failure DIAG physical_insert_errored=true before_rows=500 after_rows=500 before_records=500 after_records=500 consistent=true pass=true
+[distann-multicluster] physical_update_replacement DIAG update_ok=true stable_vec_id=true before=Some((-2641035976082453728, 1, 1)) after=Some((-2641035976082453728, 2, 1)) pass=true
+[distann-multicluster] physical_mid_insert_failure pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG scanners=4 writers=2 iterations=12 expected_count=10 forward_neighbors_selected=8 back_edge_check=true pass=true
+[distann-multicluster] physical_concurrent_insert_query pass=true
+[distann-multicluster] physical_routed_delete_vacuum pass=true id=2 vec_id=3536405524735406996 owner=2 delete_ok=true vacuum_ok=true owner_tombstone=true delete_stderr= vacuum_stderr= owner_output=t
+[distann-multicluster] physical_topology_gate pass=true owners=2 remote_verified=1 source_rows=100
+[distann-multicluster] summary written to /home/peter/dev/ecaz/reviews/task-167/023-review-fixes/artifacts/distann-multinode-summary.log

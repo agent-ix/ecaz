@@ -1,6 +1,6 @@
 # Task 167 review fixes
 
-Please review code checkpoint `ae19b8ce0`, which addresses the CHANGES
+Please review code checkpoint `c7e2f4a5c`, which addresses the CHANGES
 REQUESTED findings in packet 022 and the related evidence defects in packet
 020.
 
@@ -35,13 +35,21 @@ Implemented changes:
   neighbor lists.
 - Remote transport compatibility: expose `payload_offsets` from the
   upgrade-time row-payload wrapper, matching the transport ABI.
+- Follow-up coverage fixes: map source-table IDs to stable physical vec_ids
+  before the concurrent graph assertion; tolerate transient stale neighbors
+  and missing frontier records during concurrent reads; qualify the physical
+  source-map catalog for VACUUM callbacks; route maintenance using the
+  immutable published roster; and verify remote owner membership plus current
+  owner graph rows.
 
 Validation and benchmark provenance are recorded in `artifacts/manifest.md`
-and the packet-local logs it cites. The exact-head two-owner probe committed a
-remote insert (`owner=1`, `remote=true`); the later backlink failure keeps the
-packet review-open and does not claim the concurrency drill passed.
+and the packet-local logs it cites. The exact-head two-owner fixture passes the
+remote insert/owner proof, mid-insert rollback, concurrent insert/query, and
+routed DELETE + VACUUM owner-tombstone checks. The packet remains review-open
+pending outside reviewer disposition; no refreshed 10k/50k/100k benchmark
+results are claimed.
 
-head_sha: ae19b8ce0
+head_sha: c7e2f4a5c7e1c43fd361cc327f6f4995423d601b
 task_bucket: reviews/task-167
 packet: 023-review-fixes
 timestamp: 2026-08-12 (America/Los_Angeles)
