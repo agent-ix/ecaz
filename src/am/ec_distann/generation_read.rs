@@ -248,22 +248,33 @@ where
 /// turn every later missing-record error into a retry budget.
 fn recent_remote_insert_intent(
     _index_oid: pg_sys::Oid,
-    node_id: u32,
+    node_ids: &[u32],
     epoch: u64,
 ) -> Result<bool, DistannExpandError> {
-    let node_id = i32::try_from(node_id).map_err(|_| {
-        DistannExpandError::Internal("physical intent node id exceeds int4".to_owned())
-    })?;
+    let node_ids = node_ids
+        .iter()
+        .map(|node_id| {
+            i32::try_from(*node_id)
+                .map(|value| value.to_string())
+                .map_err(|_| {
+                    DistannExpandError::Internal("physical intent node id exceeds int4".to_owned())
+                })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if node_ids.is_empty() {
+        return Ok(false);
+    }
     let epoch = i64::try_from(epoch)
         .map_err(|_| DistannExpandError::Internal("physical intent epoch exceeds int8".to_owned()))?;
+    let node_ids = node_ids.join(",");
     Spi::get_one_with_args::<bool>(
-        "SELECT EXISTS (\
+        &format!("SELECT EXISTS (\
            SELECT 1 FROM ec_distann_remote_prepared_xact_intent \
-            WHERE node_id = $1 \
-              AND served_epoch = $2 \
+            WHERE node_id IN ({node_ids}) \
+              AND served_epoch = $1 \
               AND updated_at >= clock_timestamp() - interval '2 seconds' \
-              AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local'))",
-        &[node_id.into(), epoch.into()],
+              AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local'))"),
+        &[epoch.into()],
     )
     .map_err(|error| {
         DistannExpandError::Internal(format!(
@@ -287,6 +298,7 @@ fn lookup_graph_nodes_with_intent_retry<F>(
     directory_relation: &IndexRelationGuard,
     snapshot: pg_sys::Snapshot,
     vec_ids: &[u64],
+    intent_node_ids: &[u32],
     graph_degree: u16,
     code_len: usize,
     missing: F,
@@ -335,7 +347,7 @@ where
     let Err(error @ DistannExpandError::OwnedRecordMissing(_)) = records else {
         return records;
     };
-    if !recent_remote_insert_intent(index_oid, generation.node_id, generation.epoch)? {
+    if !recent_remote_insert_intent(index_oid, intent_node_ids, generation.epoch)? {
         return Err(error);
     }
     super::stage_counters::record_work(
@@ -349,11 +361,15 @@ where
     let _ = Spi::run(&format!(
         "UPDATE ec_distann_remote_prepared_xact_intent \
             SET retry_count = retry_count + 1 \
-          WHERE node_id = {} \
+          WHERE node_id IN ({}) \
             AND served_epoch = {} \
             AND updated_at >= clock_timestamp() - interval '2 seconds' \
             AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')",
-        generation.node_id,
+        intent_node_ids
+            .iter()
+            .map(u32::to_string)
+            .collect::<Vec<_>>()
+            .join(","),
         generation.epoch,
     ));
     let mut last_error = error;
@@ -375,7 +391,7 @@ where
             Ok(found) => return Ok(found),
             Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
                 last_error = next;
-                if !recent_remote_insert_intent(index_oid, generation.node_id, generation.epoch)? {
+                if !recent_remote_insert_intent(index_oid, intent_node_ids, generation.epoch)? {
                     break;
                 }
             }
@@ -1852,6 +1868,17 @@ impl RetainedGenerationScan {
         if vec_ids.is_empty() {
             return Ok(Vec::new());
         }
+        let intent_node_ids = vec_ids
+            .iter()
+            .map(|vec_id| {
+                let ordinal = super::placement::owning_node(
+                    *vec_id,
+                    self.descriptor.roster.len(),
+                    self.descriptor.placement_hash_version,
+                );
+                self.descriptor.roster[ordinal].node_id
+            })
+            .collect::<Vec<_>>();
         let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
         let records = lookup_graph_nodes_with_intent_retry(
             self.index_oid,
@@ -1860,6 +1887,7 @@ impl RetainedGenerationScan {
             &self.directory_relation,
             snapshot,
             vec_ids,
+            &intent_node_ids,
             self.descriptor.graph_degree,
             self.code_len,
             |vec_id| {
@@ -5897,6 +5925,17 @@ impl GenerationExpander<'_> {
             self.directory_relation,
             self.snapshot,
             vec_ids,
+            &vec_ids
+                .iter()
+                .map(|vec_id| {
+                    let ordinal = super::placement::owning_node(
+                        *vec_id,
+                        self.descriptor.roster.len(),
+                        self.descriptor.placement_hash_version,
+                    );
+                    self.descriptor.roster[ordinal].node_id
+                })
+                .collect::<Vec<_>>(),
             self.descriptor.graph_degree,
             self.code_len,
             missing,
