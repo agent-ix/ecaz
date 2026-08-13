@@ -7687,9 +7687,12 @@ async fn drive_physical_fixture(
         // literal here to prove the same CustomScan shape as production literal
         // and benchmark queries.
         let owner_query = format!(
-            "SELECT source_id FROM dm
-              WHERE source_id = '{source_id}'::uuid
-              ORDER BY embedding <#> '{vector}'::real[] LIMIT 1"
+            "SELECT source_id FROM (
+                 SELECT source_id FROM dm
+                  ORDER BY embedding <#> '{vector}'::real[]
+                  LIMIT {source_count}
+             ) candidates
+             WHERE source_id = '{source_id}'::uuid"
         );
         let owner_plan = coordinator
             .query(
