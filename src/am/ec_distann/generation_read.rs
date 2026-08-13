@@ -279,7 +279,7 @@ fn recent_remote_insert_intent(
             WHERE node_id IN ({node_ids}) \
               AND served_epoch = $1 \
               AND tracked_vec_id IN ({vec_ids}) \
-              AND updated_at >= clock_timestamp() - interval '2 seconds' \
+              AND updated_at >= clock_timestamp() - interval '5 seconds' \
               AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local'))"),
         &[epoch.into()],
     )
@@ -297,7 +297,9 @@ fn recent_remote_insert_intent(
 
 /// Resolve an owner-local graph batch with a bounded 2PC visibility retry.
 /// Both traversal expansion and physical materialization use this helper so
-/// the retry policy cannot drift between their lookup paths.
+/// the retry policy cannot drift between their lookup paths. Five seconds is
+/// deliberately finite: it covers a contended insert-planning wave without
+/// converting an abandoned audit row into a permanent retry permission.
 fn lookup_graph_nodes_with_intent_retry<F>(
     index_oid: pg_sys::Oid,
     generation: &GenerationCatalogRow,
@@ -371,7 +373,7 @@ where
           WHERE node_id IN ({}) \
             AND served_epoch = {} \
             AND tracked_vec_id IN ({}) \
-            AND updated_at >= clock_timestamp() - interval '2 seconds' \
+            AND updated_at >= clock_timestamp() - interval '5 seconds' \
             AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')",
         intent_node_ids
             .iter()

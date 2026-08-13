@@ -9774,11 +9774,11 @@ async fn physical_concurrency_drill(
                  WHERE index_oid='dm_idx'::regclass::oid AND state='Published' \
                  ORDER BY epoch DESC LIMIT 1) \
              INSERT INTO ec_distann_remote_prepared_xact_intent \
-                    (index_oid, node_id, served_epoch, xid, gid, intent_state, retry_count) \
+                    (index_oid, node_id, served_epoch, xid, gid, intent_state, retry_count, tracked_vec_id) \
              SELECT 'dm_idx'::regclass::oid, {owner}, epoch, 0, \
-                    'ec_distann_insert_retry_probe_{owner}', 'commit_local', 0 \
+                    'ec_distann_insert_retry_probe_{owner}', 'commit_local', 0, {retry_probe_vec_id} \
                FROM published \
-             ON CONFLICT (gid) DO UPDATE SET intent_state='commit_local', retry_count=0, updated_at=clock_timestamp(); \
+             ON CONFLICT (gid) DO UPDATE SET intent_state='commit_local', retry_count=0, tracked_vec_id={retry_probe_vec_id}, updated_at=clock_timestamp(); \
              SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id={owner}; \
              SET ec_distann.debug_force_frontier_retry=true; \
              SELECT ec_distann_debug_resolve_nodes_retry(\
