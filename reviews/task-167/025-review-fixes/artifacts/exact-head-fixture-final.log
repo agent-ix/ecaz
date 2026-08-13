@@ -1,0 +1,28 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=2 instances=2 coordinator_outside_roster=false base_port=39710 rows=100 dim=4 graph_degree=8 build_shards=1 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=2 unanimous=true extension_git_sha=f0bcb06f8e50908a67568ce583d2e877103c3cc8 extension_build_profile=release debug_override=false
+[distann-multicluster] physical_setup_start rows=100 nodes=2
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=41 rows=41 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=59 rows=59 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=41 rows=41 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=59 rows=59 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=2 source_rows=100
+[distann-multicluster] physical_remote_insert_probe candidate=0 committed=true owner=0 remote=false
+[distann-multicluster] physical_remote_insert_probe candidate=1 committed=true owner=0 remote=false
+[distann-multicluster] physical_remote_insert_probe candidate=2 committed=true owner=1 remote=true
+[distann-multicluster] physical_remote_insert_probe pass=true
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true expected_source_id=072b030b-a126-42f4-8237-4f342be9ed44 materialized_source_id=6c8349cc-7260-4e62-83b1-396831a8398f pinned_probe=zero_rows pinned_probe_output= owner_exact_probe=072b030b-a126-42f4-8237-4f342be9ed44
+[distann-multicluster] mid_insert_failure DIAG physical_insert_errored=true before_rows=500 after_rows=500 before_records=500 after_records=500 consistent=true pass=true
+[distann-multicluster] physical_update_replacement DIAG update_ok=true stable_vec_id=true before=Some((-2641035976082453728, 1, 1)) after=Some((-2641035976082453728, 2, 1)) pass=true
+[distann-multicluster] physical_mid_insert_failure pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target seed_vec_id=-5350135242608440401 seed_neighbor_count=1 seeded_target_signed_id=Some(1736800619301335481)
+[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner=2 vec_id=1736800619301335481 signed_vec_id=1736800619301335481 source={1.4544628,1.7995466,1.9561089,1.8853285}
+[distann-multicluster] physical_concurrent_insert_query DIAG role=saturated_target owner=2 vec_id=1736800619301335481 initial_neighbors=5 before_neighbors=Some(8) final_neighbors=Some(8) inserts_ok=true pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries=Some(0) steady_retries=Some(0) pass=true output=0 steady_output=0
+[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner=2 target_vec_id=1736800619301335481 inserted_vec_ids=[37609981335140335, 1588768264916520866] target_neighbors={15100966681944742009, 37609981335140335, 15805708097627097888, 10353819648135128783, 13096608831101111215, 1588768264916520866, 18253847924327236637, 14581980033772775215} pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG scanners=4 writers=2 iterations=12 expected_count=10 forward_neighbors_selected=2 shared_target_vec_id=1736800619301335481 shared_target_owner=2 back_edge_check=true pass=true
+[distann-multicluster] physical_concurrent_insert_query pass=true
+[distann-multicluster] physical_routed_delete_vacuum pass=true id=2 vec_id=3536405524735406996 owner=2 delete_ok=true vacuum_ok=true owner_tombstone=true delete_stderr= vacuum_stderr= owner_output=t
+[distann-multicluster] physical_topology_gate pass=true owners=2 remote_verified=1 source_rows=100
+[distann-multicluster] summary written to /home/peter/dev/ecaz/reviews/task-167/025-review-fixes/artifacts/distann-multinode-summary.log

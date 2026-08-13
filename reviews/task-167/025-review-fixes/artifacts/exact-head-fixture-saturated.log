@@ -1,0 +1,33 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=2 instances=2 coordinator_outside_roster=false base_port=39710 rows=100 dim=4 graph_degree=8 build_shards=1 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=2 unanimous=true extension_git_sha=8d3101a54dc18662ef63afc282e8e61af7a820b4 extension_build_profile=release debug_override=false
+[distann-multicluster] physical_setup_start rows=100 nodes=2
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=41 rows=41 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=59 rows=59 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=41 rows=41 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=59 rows=59 non_owned=0 orphans=0 graph_bytes=49152 row_bytes=16384 directory_bytes=16384 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=2 source_rows=100
+[distann-multicluster] physical_remote_insert_probe candidate=0 committed=true owner=0 remote=false
+[distann-multicluster] physical_remote_insert_probe candidate=1 committed=true owner=0 remote=false
+[distann-multicluster] physical_remote_insert_probe candidate=2 committed=true owner=1 remote=true
+[distann-multicluster] physical_remote_insert_probe pass=true
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true expected_source_id=072b030b-a126-42f4-8237-4f342be9ed44 materialized_source_id=17e62166-fc85-46df-84d1-bc0e1742c08b pinned_probe=returned_sample pinned_probe_output=072b030b-a126-42f4-8237-4f342be9ed44 owner_exact_probe=072b030b-a126-42f4-8237-4f342be9ed44
+[distann-multicluster] mid_insert_failure DIAG physical_insert_errored=true before_rows=500 after_rows=500 before_records=500 after_records=500 consistent=true pass=true
+[distann-multicluster] physical_update_replacement DIAG update_ok=true stable_vec_id=true before=Some((-2641035976082453728, 1, 1)) after=Some((-2641035976082453728, 2, 1)) pass=true
+[distann-multicluster] physical_mid_insert_failure pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target seed_vec_id=-5350135242608440401 seed_neighbor_count=1 seeded_target_signed_id=Some(-8643960146400958352)
+[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner=2 vec_id=9802783927308593264 signed_vec_id=-8643960146400958352 source={1.4692324,1.817704,1.9596405,1.8566293}
+[distann-multicluster] physical_concurrent_insert_query DIAG role=writer writer=1 iteration=1 stderr=ERROR:  ec_distann physical aminsert failed: [EC_RECORD_MISSING] physical generation RPC failed: [EC_RECORD_MISSING] retained physical generation lacks owned vec_id 0x29a26c9b2f0f8b74
+[distann-multicluster] physical_concurrent_insert_query DIAG role=saturated_target reason=full_degree_target_or_source_missing pass=false
+[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries=Some(0) steady_retries=Some(0) pass=true output=0 steady_output=0
+[distann-multicluster] physical_concurrent_insert_query DIAG scanners=4 writers=2 iterations=12 expected_count=10 forward_neighbors_selected=0 shared_target_vec_id=9802783927308593264 shared_target_owner=2 back_edge_check=false pass=false
+[distann-multicluster] physical_concurrent_insert_query pass=false
+
+   0: [91mphysical TC-043 concurrent insert/query drill failed[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m7900[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

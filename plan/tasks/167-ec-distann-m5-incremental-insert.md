@@ -1,9 +1,9 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation landed; packet 024 review-open; outside reviewer disposition pending
-REQUESTED on 2026-08-12; follow-up code and exact-head fixture now pass, with
-outside reviewer re-review pending (feedback:
-reviews/task-167/023-review-fixes/feedback/2026-08-12-03-reviewer.md).
+Status: implementation landed; packet 025 review-open; outside reviewer disposition pending
+REQUESTED on 2026-08-12; packet 025 exact-head PG18 fixture passes the
+intent-gated concurrent insert and saturated-target drill (feedback addressed:
+reviews/task-167/024-review-fixes/feedback/2026-08-13-01-reviewer.md).
 Task closeout still requires the mandated 10k/50k/100k benchmark evidence and
 reviewer ACCEPT.
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
