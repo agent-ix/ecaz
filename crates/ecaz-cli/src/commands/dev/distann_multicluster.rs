@@ -20,7 +20,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 use tokio::process::Command;
-use tokio::sync::Mutex;
+use tokio::sync::{Barrier, Mutex};
 
 use crate::commands::bench::latency::{monitor_backend_memory, rss_slope_kb_per_second};
 
@@ -7688,9 +7688,8 @@ async fn drive_physical_fixture(
         // and benchmark queries.
         let owner_query = format!(
             "SELECT source_id FROM dm
-              WHERE source_id = '{source_id}'::uuid
               ORDER BY embedding <#> '{vector}'::real[]
-              LIMIT 1"
+              LIMIT {source_count}"
         );
         let owner_plan = coordinator
             .query(
@@ -7725,6 +7724,49 @@ async fn drive_physical_fixture(
                 crate::ecaz_println!("[distann-multicluster] {line}");
                 remote_fault_lines.push(line);
             }
+        }
+        let pinned_owner_query = format!(
+            "SELECT source_id::text FROM dm
+              WHERE source_id = '{source_id}'::uuid
+              ORDER BY embedding <#> '{vector}'::real[]
+              LIMIT 1"
+        );
+        let pinned_probe_output =
+            capture_psql_allow_error(psql, socket_dir, nodes[0].port, &pinned_owner_query).await;
+        let pinned_probe_source_id = pinned_probe_output
+            .lines()
+            .map(str::trim)
+            .find(|candidate| *candidate == source_id);
+        let pinned_probe_status = if pinned_probe_source_id.is_some() {
+            "returned_sample"
+        } else if pinned_probe_output
+            .lines()
+            .all(|line| line.trim().is_empty())
+        {
+            "zero_rows"
+        } else {
+            "error_or_unexpected_row"
+        };
+        let owner_exact_probe = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            node.port,
+            &format!(
+                "SELECT source_id::text FROM {row_relation} \
+                  WHERE source_id = '{source_id}'::uuid LIMIT 1;"
+            ),
+        )
+        .await;
+        let owner_exact_source_id = owner_exact_probe
+            .lines()
+            .map(str::trim)
+            .find(|candidate| *candidate == source_id);
+        if owner_exact_source_id.is_none() {
+            bail!(
+                "remote owner exact pinned probe did not return sampled source_id for node {}; sampled_source_id={source_id}; output={}",
+                node.node_id,
+                compact_capture_error(&owner_exact_probe),
+            );
         }
         let materialized_rows = coordinator
             .query(
@@ -7774,13 +7816,17 @@ async fn drive_physical_fixture(
                 materialized_rows.len(),
             );
         };
-        let owner_served = materialized_source_id == source_id;
+        let owner_served =
+            owner_exact_source_id == Some(source_id) && !materialized_source_id.is_empty();
         crate::ecaz_println!(
-            "[distann-multicluster] physical_remote_owner node={} custom_scan=true pass={} expected_source_id={} materialized_source_id={}",
+            "[distann-multicluster] physical_remote_owner node={} custom_scan=true pass={} expected_source_id={} materialized_source_id={} pinned_probe={} pinned_probe_output={} owner_exact_probe={}",
             node.node_id,
             owner_served,
             source_id,
-            materialized_source_id
+            materialized_source_id,
+            pinned_probe_status,
+            compact_capture_error(&pinned_probe_output),
+            compact_capture_error(&owner_exact_probe)
         );
         if !owner_served {
             bail!(
@@ -9374,7 +9420,72 @@ async fn physical_concurrency_drill(
         return Ok(false);
     };
     let zero_query = (0..dimension).map(|_| "0").collect::<Vec<_>>().join(",");
-    let mut shared_target = None;
+    let seed_id = 899_999_i64;
+    let seed_insert_sql = format!(
+        "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
+         WITH row_data AS (SELECT {seed_id}::bigint AS id, {insert_vector}::real[] AS source) \
+         INSERT INTO {table} (id, source_id, source, embedding) \
+         SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
+                substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
+                substr(md5(id::text),21,12))::uuid, source, \
+                encode_to_ecvector(source, 4, 42) FROM row_data;"
+    );
+    let seed_output = run_capture(psql, socket_dir, coord_port, &seed_insert_sql).await;
+    if !seed_output.status_ok {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=seed_insert_failed stderr={}",
+            compact_capture_error(&seed_output.stderr)
+        );
+        return Ok(false);
+    }
+    let seed_mapping_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!(
+            "SELECT m.vec_id::text FROM {table} d \
+               JOIN ec_distann_physical_source_map m ON m.source_tid = d.ctid \
+              WHERE m.index_oid = 'dm_idx'::regclass::oid AND d.id = {seed_id};"
+        ),
+    )
+    .await;
+    let Some(seed_signed_id) = seed_mapping_output
+        .lines()
+        .map(str::trim)
+        .find_map(|line| line.parse::<i64>().ok())
+    else {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=seed_mapping_failed output={}",
+            compact_capture_error(&seed_mapping_output)
+        );
+        return Ok(false);
+    };
+    let mut seed_neighbors = HashSet::new();
+    for owner_node in owner_nodes {
+        let seed_graph_sql = format!(
+            "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id={}; \
+             SELECT vec_id::text || '|' || COALESCE(array_to_string(neighbor_vec_ids, ','), '') \
+               FROM ec_distann_expand_physical_nodes(\
+                    'public.dm_idx'::regclass, decode('{epoch_fingerprint}', 'hex'), \
+                    ARRAY[{zero_query}]::real[], ARRAY[{seed_signed_id}]::bigint[], NULL, NULL);",
+            owner_node.node_id,
+        );
+        let seed_graph_output =
+            capture_psql_allow_error(psql, socket_dir, owner_node.port, &seed_graph_sql).await;
+        if let Some((_, neighbors)) = seed_graph_output
+            .lines()
+            .find_map(|line| line.trim().split_once('|'))
+        {
+            seed_neighbors.extend(
+                neighbors
+                    .split(',')
+                    .filter_map(|value| value.parse::<i64>().ok())
+                    .map(|value| u64::from_le_bytes(value.to_le_bytes())),
+            );
+            break;
+        }
+    }
+    let mut shared_target_candidates = Vec::new();
     for owner_node in owner_nodes {
         let relation_output = capture_psql_allow_error(
             psql,
@@ -9407,8 +9518,8 @@ async fn physical_concurrency_drill(
         );
         let graph_output =
             capture_psql_allow_error(psql, socket_dir, owner_node.port, &graph_sql).await;
-        let spare_limit = args.graph_degree.saturating_sub(2) as usize;
-        let Some((target_vec_id, target_signed_id)) = graph_output.lines().find_map(|line| {
+        let spare_limit = args.graph_degree.saturating_sub(3) as usize;
+        for target in graph_output.lines().filter_map(|line| {
             let (vec_id, neighbors) = line.trim().split_once('|')?;
             let neighbor_count = neighbors
                 .split(',')
@@ -9418,53 +9529,97 @@ async fn physical_concurrency_drill(
                 return None;
             }
             let signed_id = vec_id.parse::<i64>().ok()?;
-            Some((u64::from_le_bytes(signed_id.to_le_bytes()), signed_id))
-        }) else {
-            continue;
-        };
-        let source_output = capture_psql_allow_error(
-            psql,
-            socket_dir,
-            coord_port,
-            &format!(
-                "SELECT d.source::text FROM {table} d \
-                   JOIN ec_distann_physical_source_map m ON m.source_tid = d.ctid \
-                  WHERE m.index_oid = 'dm_idx'::regclass::oid \
-                    AND m.vec_id = {target_signed_id};"
-            ),
-        )
-        .await;
-        let Some(source) = source_output.lines().map(str::trim).find(|line| {
-            line.starts_with('{')
-                && line.ends_with('}')
-                && line.bytes().all(|byte| {
-                    byte.is_ascii_digit()
-                        || matches!(byte, b'{' | b'}' | b',' | b'.' | b'-' | b'+' | b'e' | b'E')
-                })
-        }) else {
-            continue;
-        };
-        shared_target = Some((
-            owner_node.node_id,
-            target_vec_id,
-            target_signed_id,
-            source.to_owned(),
-        ));
-        break;
+            Some((
+                owner_node.node_id,
+                u64::from_le_bytes(signed_id.to_le_bytes()),
+                signed_id,
+            ))
+        }) {
+            shared_target_candidates.push(target);
+        }
     }
-    let Some((
-        shared_target_owner,
-        shared_target_vec_id,
-        shared_target_signed_id,
-        shared_target_source,
-    )) = shared_target
-    else {
+    let candidate_signed_ids = shared_target_candidates
+        .iter()
+        .map(|(_, _, signed_id)| signed_id.to_string())
+        .collect::<Vec<_>>();
+    if candidate_signed_ids.is_empty() {
         crate::ecaz_println!(
             "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=no_target_with_two_spare_slots graph_degree={}",
             args.graph_degree
         );
         return Ok(false);
+    }
+    let seeded_target_signed_id = shared_target_candidates
+        .iter()
+        .find(|(_, vec_id, _)| seed_neighbors.contains(vec_id))
+        .map(|(_, _, signed_id)| *signed_id);
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target seed_vec_id={} seed_neighbor_count={} seeded_target_signed_id={:?}",
+        seed_signed_id,
+        seed_neighbors.len(),
+        seeded_target_signed_id
+    );
+    let Some(nearest_target_signed_id) = seeded_target_signed_id else {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=seed_has_no_spare_target"
+        );
+        return Ok(false);
     };
+    let Some((shared_target_owner, shared_target_vec_id, shared_target_signed_id)) =
+        shared_target_candidates
+            .into_iter()
+            .find(|(_, _, signed_id)| *signed_id == nearest_target_signed_id)
+    else {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=nearest_target_owner_lookup_failed signed_vec_id={nearest_target_signed_id}"
+        );
+        return Ok(false);
+    };
+    let source_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!(
+            "SELECT d.source::text FROM {table} d \
+               JOIN ec_distann_physical_source_map m ON m.source_tid = d.ctid \
+              WHERE m.index_oid = 'dm_idx'::regclass::oid \
+                AND m.vec_id = {shared_target_signed_id};"
+        ),
+    )
+    .await;
+    let Some(source) = source_output.lines().map(str::trim).find(|line| {
+        line.starts_with('{')
+            && line.ends_with('}')
+            && line.bytes().all(|byte| {
+                byte.is_ascii_digit()
+                    || matches!(byte, b'{' | b'}' | b',' | b'.' | b'-' | b'+' | b'e' | b'E')
+            })
+    }) else {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=source_lookup_failed output={}",
+            compact_capture_error(&source_output)
+        );
+        return Ok(false);
+    };
+    let shared_target_source = source.to_owned();
+    let target_seed_id = 899_998_i64;
+    let target_seed_sql = format!(
+        "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
+         WITH row_data AS (SELECT {target_seed_id}::bigint AS id, '{shared_target_source}'::real[] AS source) \
+         INSERT INTO {table} (id, source_id, source, embedding) \
+         SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
+                substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
+                substr(md5(id::text),21,12))::uuid, source, \
+                encode_to_ecvector(source, 4, 42) FROM row_data;"
+    );
+    let target_seed_output = run_capture(psql, socket_dir, coord_port, &target_seed_sql).await;
+    if !target_seed_output.status_ok {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=target_seed_insert_failed stderr={}",
+            compact_capture_error(&target_seed_output.stderr)
+        );
+        return Ok(false);
+    }
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner={} vec_id={} signed_vec_id={} source={}",
         shared_target_owner,
@@ -9511,6 +9666,7 @@ async fn physical_concurrency_drill(
         }));
     }
 
+    let writer_barrier = Arc::new(Barrier::new(WRITERS));
     for writer in 0..WRITERS {
         let psql_insert = psql.to_path_buf();
         let socket_dir_insert = socket_dir.to_path_buf();
@@ -9518,6 +9674,7 @@ async fn physical_concurrency_drill(
         let insert_table = table.to_owned();
         let insert_vector = insert_vector.clone();
         let shared_target_source = shared_target_source.clone();
+        let writer_barrier = Arc::clone(&writer_barrier);
         tasks.push(tokio::spawn(async move {
             for iteration in 0..ITERATIONS {
                 let id = 900_000_i64
@@ -9537,6 +9694,9 @@ async fn physical_concurrency_drill(
                             substr(md5(id::text),21,12))::uuid, source, \
                             encode_to_ecvector(source, 4, 42) FROM row_data;"
                 );
+                if iteration == 0 {
+                    writer_barrier.wait().await;
+                }
                 let output =
                     run_capture(&psql_insert, &socket_dir_insert, coord_port, &insert_sql).await;
                 if !output.status_ok {

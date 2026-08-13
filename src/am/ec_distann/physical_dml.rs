@@ -1678,6 +1678,37 @@ unsafe fn amend_backlink(
         stage_counters::record_insert_work(DistannInsertWork::BacklinkAlreadyPresent, 1);
         return Ok(());
     }
+    if count < usize::from(graph_degree) {
+        if new_code.len() != code_len {
+            return Err("EC_INSERT_CODEC: backlink code has the wrong length".to_owned());
+        }
+        node.neighbor_vec_ids[count] = new_vec_id;
+        node.neighbor_codes[count * code_len..(count + 1) * code_len].copy_from_slice(new_code);
+        node.neighbor_count = node
+            .neighbor_count
+            .checked_add(1)
+            .ok_or_else(|| "EC_INSERT_BACKLINK: backlink degree overflow".to_owned())?;
+        let record = node.encode_physical_v1(graph_degree, code_len)?;
+        let block = graph_tid.block_number;
+        let offset = graph_tid.offset_number;
+        let updated = Spi::connect_mut(|client| {
+            client
+                .update(
+                    &format!("UPDATE {graph_name} SET graph_record = $1 WHERE ctid = '({block},{offset})'::tid AND is_current"),
+                    None,
+                    &[record.into()],
+                )
+                .map_err(|error| format!("EC_INSERT_BACKLINK: graph amendment failed: {error}"))
+                .map(|table| table.len())
+        })?;
+        if updated != 1 {
+            return Err(format!(
+                "EC_INSERT_BACKLINK: graph amendment affected {updated} rows, expected one current target"
+            ));
+        }
+        stage_counters::record_insert_work(DistannInsertWork::BacklinkAmendments, 1);
+        return Ok(());
+    }
     let original_node = node.clone();
     let mut candidates = Vec::with_capacity(count + 1);
     candidates.push(DistannForwardCandidate {
@@ -1742,7 +1773,7 @@ unsafe fn amend_backlink(
                 .ok_or_else(|| {
                     "EC_INSERT_BACKLINK: pruned neighbor was absent from current node".to_owned()
                 })?;
-            &candidate.node.neighbor_codes[old_slot * code_len..(old_slot + 1) * code_len]
+            &original_node.neighbor_codes[old_slot * code_len..(old_slot + 1) * code_len]
         };
         if code.len() != code_len {
             return Err("EC_INSERT_CODEC: backlink code has the wrong length".to_owned());
