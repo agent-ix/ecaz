@@ -2881,6 +2881,7 @@ async fn measure_task167_insert_arm(
     table: &str,
     physical_corpus: &str,
     physical: bool,
+    id_base: i64,
 ) -> Result<f64> {
     const TRIALS: usize = 3;
     // Keep the repeated arm small enough for the 50k/100k release matrix:
@@ -2892,11 +2893,7 @@ async fn measure_task167_insert_arm(
         let started = Instant::now();
         for ordinal in 0..ROWS_PER_TRIAL {
             let source_offset = trial * ROWS_PER_TRIAL + ordinal;
-            let id = if physical {
-                2_000_000_i64
-            } else {
-                1_000_000_i64
-            } + trial as i64 * ROWS_PER_TRIAL as i64
+            let id = id_base + trial as i64 * ROWS_PER_TRIAL as i64
                 + ordinal as i64;
             let sql = if physical {
                 format!(
@@ -2939,19 +2936,80 @@ async fn task167_insert_throughput_ab(
 ) -> Result<()> {
     const ROWS_PER_TRIAL: usize = 16;
     const TRIALS: usize = 3;
-    let single_rows_per_second =
-        measure_task167_insert_arm(coordinator, single_corpus, physical_corpus, false).await?;
+    let single_rows_per_second = measure_task167_insert_arm(
+        coordinator,
+        single_corpus,
+        physical_corpus,
+        false,
+        1_000_000,
+    )
+    .await?;
+    coordinator
+        .batch_execute("SET ec_distann.debug_disable_append_when_room = on")
+        .await
+        .wrap_err("enable append-when-room A/B control")?;
     if capture_work {
         coordinator
             .batch_execute("SELECT ec_distann_insert_work_reset()")
             .await
             .wrap_err("resetting Task 167 physical insert-work counters")?;
     }
-    let physical_rows_per_second =
-        measure_task167_insert_arm(coordinator, physical_corpus, physical_corpus, true).await?;
+    let physical_append_disabled_rows_per_second = measure_task167_insert_arm(
+        coordinator,
+        physical_corpus,
+        physical_corpus,
+        true,
+        2_000_000,
+    )
+    .await?;
+    let append_disabled_work = coordinator
+        .query(
+            "SELECT metric, value FROM ec_distann_insert_work_snapshot() ORDER BY metric",
+            &[],
+        )
+        .await?
+        .into_iter()
+        .map(|row| (row.get::<_, String>(0), row.get::<_, i64>(1)))
+        .collect::<HashMap<_, _>>();
+    coordinator
+        .batch_execute("SET ec_distann.debug_disable_append_when_room = off")
+        .await
+        .wrap_err("enable append-when-room A/B candidate")?;
+    if capture_work {
+        coordinator
+            .batch_execute("SELECT ec_distann_insert_work_reset()")
+            .await
+            .wrap_err("reset append-when-room candidate counters")?;
+    }
+    let physical_rows_per_second = measure_task167_insert_arm(
+        coordinator,
+        physical_corpus,
+        physical_corpus,
+        true,
+        3_000_000,
+    )
+    .await?;
+    let append_enabled_work = coordinator
+        .query(
+            "SELECT metric, value FROM ec_distann_insert_work_snapshot() ORDER BY metric",
+            &[],
+        )
+        .await?
+        .into_iter()
+        .map(|row| (row.get::<_, String>(0), row.get::<_, i64>(1)))
+        .collect::<HashMap<_, _>>();
     let ratio = physical_rows_per_second / single_rows_per_second.max(f64::EPSILON);
     lines.push(format!(
         "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true"
+    ));
+    let append_ratio = physical_rows_per_second
+        / physical_append_disabled_rows_per_second.max(f64::EPSILON);
+    lines.push(format!(
+        "physical_benchmark_append_when_room_ab scale={scale} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={} enabled_backlink_amendments={} disabled_backlink_no_room={} enabled_backlink_no_room={} pass=true",
+        append_disabled_work.get("backlink_amendments").copied().unwrap_or_default(),
+        append_enabled_work.get("backlink_amendments").copied().unwrap_or_default(),
+        append_disabled_work.get("backlink_no_room").copied().unwrap_or_default(),
+        append_enabled_work.get("backlink_no_room").copied().unwrap_or_default(),
     ));
     if capture_work {
         let rows = coordinator
@@ -6566,16 +6624,16 @@ async fn run_physical_benchmarks(
                 .lines()
                 .filter_map(|line| line.strip_prefix("[distann-materialization-work] "))
                 .collect::<Vec<_>>();
-            // The extension exposes 32 server-side work metrics
+            // The extension exposes 33 server-side work metrics
             // (DistannMaterializationWork::ALL). The bench child appends one
             // client_result_rows metric so the measured result-consumption
             // boundary is represented in the same stream. Keep this in step
             // with the enum: adding a counter without updating it fails every
             // physical latency step.
-            if work_rows.len() != 33 * expected_counter_groups {
+            if work_rows.len() != 34 * expected_counter_groups {
                 bail!(
                     "physical latency attribution expected {} ec_distann attribution-work rows ({} concurrency groups), got {}",
-                    33 * expected_counter_groups,
+                    34 * expected_counter_groups,
                     expected_counter_groups,
                     work_rows.len()
                 );
@@ -9857,24 +9915,41 @@ async fn physical_concurrency_drill(
                 .filter(|value| !value.is_empty())
                 .count()
         });
-    let saturation_ids = [
-        900_000_i64 + base_rows as i64 + (WRITERS * ITERATIONS) as i64,
-        900_001_i64 + base_rows as i64 + (WRITERS * ITERATIONS) as i64,
-    ];
-    let saturation_barrier = Arc::new(Barrier::new(saturation_ids.len()));
+    let saturation_needed = before_saturation_count
+        .map(|count| (args.graph_degree as usize).saturating_sub(count))
+        .unwrap_or(0);
+    // Fill the target to the configured degree before the second wave. Keep
+    // this range disjoint from the first writer wave: those ids occupy
+    // base_rows + 0..WRITERS*ITERATIONS.
+    let saturation_rows = (0..saturation_needed)
+        .map(|offset| {
+            let id = 900_000_i64
+                + base_rows as i64
+                + (WRITERS * ITERATIONS) as i64
+                + 1_000
+                + offset as i64;
+            // Use the target's exact source vector so every fill row is a
+            // deterministic candidate backlink. Arbitrary corpus vectors can
+            // be valid inserts without being selected into this target's
+            // neighbour list, leaving the saturation precondition unmet.
+            let source_expr = format!("'{shared_target_source}'::real[]");
+            (id, source_expr)
+        })
+        .collect::<Vec<_>>();
+    let saturation_barrier = Arc::new(Barrier::new(saturation_rows.len().max(1)));
     let mut saturation_tasks = Vec::new();
-    for id in saturation_ids {
+    for (id, saturation_source_expr) in saturation_rows {
         let psql_insert = psql.to_path_buf();
         let socket_dir_insert = socket_dir.to_path_buf();
         let insert_roster = roster.clone();
         let insert_table = table.to_owned();
-        let insert_source = shared_target_source.clone();
+        let insert_source_expr = saturation_source_expr;
         let saturation_barrier = Arc::clone(&saturation_barrier);
         saturation_tasks.push(tokio::spawn(async move {
             saturation_barrier.wait().await;
             let insert_sql = format!(
                 "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id=1; \
-                 WITH row_data AS (SELECT {id}::bigint AS id, '{insert_source}'::real[] AS source) \
+                 WITH row_data AS (SELECT {id}::bigint AS id, {insert_source_expr}::real[] AS source) \
                  INSERT INTO {insert_table} (id, source_id, source, embedding) \
                  SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
                         substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\

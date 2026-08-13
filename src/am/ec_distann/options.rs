@@ -140,6 +140,8 @@ static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<
 #[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "pg_test")]
+static ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+#[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 /// NFR-020 fault injection (debug only): when true, `graph_insert_record` (the
@@ -711,6 +713,15 @@ pub(super) fn register_gucs() {
     );
     #[cfg(feature = "pg_test")]
     GucRegistry::define_bool_guc(
+        c"ec_distann.debug_disable_append_when_room",
+        c"Task 167 A/B control: disable free-capacity backlink append.",
+        c"When on, a backlink target with spare degree follows the legacy robust-prune union path instead of appending directly. pg_test only.",
+        &ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "pg_test")]
+    GucRegistry::define_bool_guc(
         c"ec_distann.debug_fail_crown_population",
         c"Task 212 test fault: make bounded crown population fail before serving.",
         c"When on, physical crown population returns no cache so the scan must use the ordinary full-head fallback. This GUC exists only in pg_test builds and is off by default.",
@@ -1076,6 +1087,11 @@ pub(super) fn debug_missing_node_record() -> bool {
 #[cfg(feature = "pg_test")]
 pub(super) fn debug_force_frontier_retry() -> bool {
     ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC.get()
+}
+
+#[cfg(feature = "pg_test")]
+pub(super) fn debug_disable_append_when_room() -> bool {
+    ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC.get()
 }
 
 /// NFR-020 fault injection: fail a graph insert after staging, before publish.

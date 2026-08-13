@@ -373,10 +373,11 @@ where
         generation.epoch,
     ));
     let mut last_error = error;
-    // A 1 ms event-loop yield, bounded to three attempts, is enough to let
-    // the commit callback resolve a prepared owner transaction without
-    // holding a long sleep under the relation guards.
-    for _ in 0..3 {
+    // A 1 ms event-loop yield, bounded to eight attempts, is enough to let
+    // the commit callback resolve a prepared owner transaction under the
+    // heavier multi-owner benchmark wave without reintroducing the old
+    // 40-ms sleep budget under the relation guards.
+    for _ in 0..8 {
         let _ = Spi::run("SELECT pg_sleep(0.001)");
         let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| last_error.clone())?;
         match lookup_graph_nodes(
