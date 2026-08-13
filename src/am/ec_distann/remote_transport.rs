@@ -934,7 +934,10 @@ pub(crate) fn remote_physical_tombstone(
                 }),
                 Err(RemoteAwaitError::Remote(error)) => {
                     let _ = client.batch_execute("ROLLBACK").await;
-                    Err(format!("EC_DELETE_ROUTE: remote tombstone failed: {error}"))
+                    Err(format!(
+                        "EC_DELETE_ROUTE: remote tombstone failed: {}",
+                        remote_db_error_detail(&error)
+                    ))
                 }
                 Err(RemoteAwaitError::TimedOut) => {
                     let _ = client.batch_execute("ROLLBACK").await;

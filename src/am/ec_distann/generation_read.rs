@@ -171,7 +171,7 @@ fn lookup_graph_nodes<F>(
     vec_ids: &[u64],
     graph_degree: u16,
     code_len: usize,
-    missing: F,
+    _missing: F,
 ) -> Result<HashMap<u64, DistannNodeTuple>, DistannExpandError>
 where
     F: Fn(u64) -> DistannExpandError,
@@ -223,7 +223,12 @@ where
             )
         };
         if !found {
-            return Err(missing(*vec_id));
+            // A concurrent cross-owner commit can briefly expose a retained
+            // edge before the referenced owner graph tuple is visible. The
+            // strict callers below still convert an absent requested node to
+            // OwnedRecordMissing; traversal expansion treats it as a
+            // tombstoned frontier entry and continues with the other nodes.
+            continue;
         }
         let node = graph_node_from_slot(&slot, graph_degree, code_len)?;
         if node.vec_id != *vec_id {
@@ -5732,12 +5737,31 @@ impl GenerationExpander<'_> {
         let mut responses = vec_ids
             .iter()
             .map(|vec_id| {
-                let node = records.get(vec_id).ok_or_else(|| {
-                    DistannExpandError::Internal(format!(
-                        "EC_RECORD_MISSING: physical generation {} lacks vec_id {vec_id:#018x}",
-                        self.generation.epoch
-                    ))
-                })?;
+                let Some(node) = records.get(vec_id) else {
+                    // A missing requested frontier node is a transient
+                    // cross-owner visibility gap or a retained stale edge,
+                    // not a reason to discard otherwise valid concurrent
+                    // query results. Represent it as a tombstone so the
+                    // orchestrator records no hit and does not expand it.
+                    return Ok(DistannExpandedNode {
+                        vec_id: *vec_id,
+                        exact_dist: None,
+                        is_tombstone: true,
+                        heap_tid: ItemPointer::INVALID,
+                        owner_heap_tid: ItemPointer::INVALID,
+                        neighbor_vec_ids: Vec::new(),
+                        neighbor_code_dists: Vec::new(),
+                        neighbors_pruned: 0,
+                        owner_total_ns: 0,
+                        owner_open_validate_ns: 0,
+                        owner_graph_read_ns: 0,
+                        owner_score_ns: 0,
+                        owner_response_encode_ns: 0,
+                        owner_response_bytes: 0,
+                        coordinator_rpc_ns: 0,
+                        coordinator_decode_ns: 0,
+                    });
+                };
                 let (neighbor_vec_ids, neighbor_code_dists) = if skip_neighbors.contains(vec_id) {
                     (Vec::new(), Vec::new())
                 } else {

@@ -24,6 +24,7 @@ use crate::am::ec_distann::tuple::DistannNodeTuple;
 use crate::storage::page::ItemPointer;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
 use crate::storage::slot_guard::TupleTableSlotGuard;
+use crate::storage::snapshot_guard::RegisteredSnapshotGuard;
 
 use super::quantizer::DistannCodecBinding;
 use super::routine::indexed_ecvector_attnum;
@@ -407,7 +408,6 @@ unsafe fn insert_from_prepared_slot(
                     code_len,
                     &row_relation,
                     source_attnum,
-                    snapshot,
                     options.alpha,
                     &remote_vectors,
                 )?;
@@ -573,7 +573,6 @@ unsafe fn insert_from_prepared_slot(
                 code_len,
                 &row_relation,
                 source_attnum,
-                snapshot,
                 options.alpha,
                 &remote_vectors,
             )?;
@@ -593,6 +592,8 @@ fn update_source_mapping(
     vec_id: u64,
 ) -> Result<(), String> {
     let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    let source_map =
+        super::generation_catalog::extension_relation_name("ec_distann_physical_source_map")?;
     let mut tid = pg_sys::ItemPointerData::default();
     pgrx::itemptr::item_pointer_set_all(
         &mut tid,
@@ -602,17 +603,21 @@ fn update_source_mapping(
     Spi::connect_mut(|client| {
         client
             .update(
-                "DELETE FROM ec_distann_physical_source_map WHERE index_oid = $1::oid AND vec_id = $2",
+                &format!("DELETE FROM {source_map} WHERE index_oid = $1::oid AND vec_id = $2"),
                 None,
                 &[index_oid.into(), signed_id.into()],
             )
-            .map_err(|error| format!("EC_INSERT_PUBLISH: source mapping cleanup failed: {error}"))?;
+            .map_err(|error| {
+                format!("EC_INSERT_PUBLISH: source mapping cleanup failed: {error}")
+            })?;
         client
             .update(
-                "INSERT INTO ec_distann_physical_source_map (index_oid, source_tid, vec_id) \
+                &format!(
+                    "INSERT INTO {source_map} (index_oid, source_tid, vec_id) \
                  VALUES ($1::oid, $2::tid, $3) \
                  ON CONFLICT (index_oid, source_tid) DO UPDATE SET vec_id = EXCLUDED.vec_id, \
-                     created_at = clock_timestamp()",
+                     created_at = clock_timestamp()"
+                ),
                 None,
                 &[index_oid.into(), tid.into(), signed_id.into()],
             )
@@ -627,6 +632,8 @@ fn delete_source_mapping(
     vec_id: u64,
 ) -> Result<(), String> {
     let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    let source_map =
+        super::generation_catalog::extension_relation_name("ec_distann_physical_source_map")?;
     let mut tid = pg_sys::ItemPointerData::default();
     pgrx::itemptr::item_pointer_set_all(
         &mut tid,
@@ -636,8 +643,10 @@ fn delete_source_mapping(
     Spi::connect_mut(|client| {
         client
             .update(
-                "DELETE FROM ec_distann_physical_source_map \
-                 WHERE index_oid = $1::oid AND source_tid = $2::tid AND vec_id = $3",
+                &format!(
+                    "DELETE FROM {source_map} \
+                     WHERE index_oid = $1::oid AND source_tid = $2::tid AND vec_id = $3"
+                ),
                 None,
                 &[index_oid.into(), tid.into(), signed_id.into()],
             )
@@ -862,8 +871,11 @@ pub(crate) unsafe fn tombstone_dead_records(
     let fingerprint = fingerprint_ref;
     let placement_hash_version = routed_descriptor.placement_hash_version;
     let routes = routes_ref.to_owned();
+    let roster_spec = roster_spec_for_routes(&routes)?;
     let metadata = ambuild::read_metadata_from_index(index_relation)?;
     let epoch = super::roster::scan_epoch(&metadata);
+    let source_map =
+        super::generation_catalog::extension_relation_name("ec_distann_physical_source_map")?;
     let local_owner = routes
         .iter()
         .position(|route| route.is_local)
@@ -871,8 +883,10 @@ pub(crate) unsafe fn tombstone_dead_records(
     let mappings = Spi::connect(|client| {
         client
             .select(
-                "SELECT source_tid, vec_id FROM ec_distann_physical_source_map \
-                 WHERE index_oid = $1::oid ORDER BY source_tid",
+                &format!(
+                    "SELECT source_tid, vec_id FROM {source_map} \
+                     WHERE index_oid = $1::oid ORDER BY source_tid"
+                ),
                 None,
                 &[index_oid.into()],
             )
@@ -926,7 +940,7 @@ pub(crate) unsafe fn tombstone_dead_records(
             super::remote_transport::remote_physical_tombstone(
                 &super::remote_transport::DistannRemotePhysicalTombstoneRequest {
                     conninfo,
-                    roster_spec: &super::roster::current_roster_spec(),
+                    roster_spec: &roster_spec,
                     target_node_id: route.node_id,
                     epoch,
                     index_regclass: &index_name,
@@ -1638,7 +1652,6 @@ unsafe fn amend_backlink(
     code_len: usize,
     row_relation: &HeapRelationGuard,
     source_attnum: i32,
-    snapshot: pg_sys::Snapshot,
     alpha: f32,
     remote_vectors: &HashMap<u64, Vec<f32>>,
 ) -> Result<(), String> {
@@ -1654,6 +1667,12 @@ unsafe fn amend_backlink(
             )
         })?;
     let mut node = DistannNodeTuple::decode_physical_v1(&current_record, graph_degree, code_len)?;
+    // FOR UPDATE may wait for a concurrent backlink transaction and then
+    // return its newer graph version. Refresh the snapshot before fetching
+    // the row-tier vectors referenced by that version; the original insert
+    // snapshot can predate the transaction whose graph edge we just locked.
+    let latest_snapshot = RegisteredSnapshotGuard::latest()
+        .ok_or_else(|| "EC_BUILD_STATE: backlink could not acquire a latest snapshot".to_owned())?;
     let count = usize::from(node.neighbor_count);
     if node.neighbor_vec_ids[..count].contains(&new_vec_id) {
         stage_counters::record_insert_work(DistannInsertWork::BacklinkAlreadyPresent, 1);
@@ -1669,13 +1688,31 @@ unsafe fn amend_backlink(
         let source_vector = if let Some(source_vector) = remote_vectors.get(neighbor) {
             source_vector.clone()
         } else {
-            read_current_vector(graph_name, row_relation, *neighbor, source_attnum, snapshot)
-                .map_err(|error| {
-                    format!(
-                        "{error}; backlink_target={:#018x}; missing_neighbor={neighbor:#018x}",
-                        candidate.vec_id
-                    )
-                })?
+            let source_vector = read_current_vector(
+                graph_name,
+                row_relation,
+                *neighbor,
+                source_attnum,
+                latest_snapshot.as_ptr(),
+            )
+            .map_err(|error| {
+                format!(
+                    "{error}; backlink_target={:#018x}; missing_neighbor={neighbor:#018x}",
+                    candidate.vec_id
+                )
+            });
+            match source_vector {
+                Ok(source_vector) => source_vector,
+                Err(error) if error.starts_with("EC_INSERT_BACKLINK: current row for vec_id") => {
+                    // A tombstone or a concurrent replacement can leave a
+                    // retained target pointing at a neighbor with no current
+                    // row-tier tuple. Drop that stale edge while rebuilding
+                    // the target; malformed vectors and other lookup errors
+                    // remain hard failures below.
+                    continue;
+                }
+                Err(error) => return Err(error),
+            }
         };
         candidates.push(DistannForwardCandidate {
             vec_id: *neighbor,
@@ -1927,6 +1964,8 @@ pub(crate) unsafe fn apply_owner_backlink(
     if snapshot.is_null() {
         return Err("EC_BUILD_STATE: backlink has no active snapshot".to_owned());
     }
+    let latest_snapshot = RegisteredSnapshotGuard::latest()
+        .ok_or_else(|| "EC_BUILD_STATE: backlink could not acquire a latest snapshot".to_owned())?;
     let signed_id = i64::from_le_bytes(target_vec_id.to_le_bytes());
     let row = Spi::connect(|client| {
         client
@@ -1990,7 +2029,7 @@ pub(crate) unsafe fn apply_owner_backlink(
                 &row_relation,
                 *neighbor,
                 source_attnum,
-                snapshot,
+                latest_snapshot.as_ptr(),
             )
             .is_err()
             {
@@ -2029,7 +2068,6 @@ pub(crate) unsafe fn apply_owner_backlink(
         code_len,
         &row_relation,
         source_attnum,
-        snapshot,
         options::relation_options(index_guard.as_ptr()).alpha,
         &remote_vectors,
     )
