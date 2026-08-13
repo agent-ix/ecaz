@@ -7603,9 +7603,15 @@ async fn drive_physical_fixture(
         bail!("physical serving returned {served} rows, expected {query_limit}");
     }
     if args.remote_insert_probe {
-        let remote_insert_ok =
-            physical_remote_insert_probe(psql, socket_dir, nodes[0].port, args, owners.len())
-                .await?;
+        let remote_insert_ok = physical_remote_insert_probe(
+            psql,
+            socket_dir,
+            nodes[0].port,
+            args,
+            nodes,
+            owners.len(),
+        )
+        .await?;
         crate::ecaz_println!(
             "[distann-multicluster] physical_remote_insert_probe pass={remote_insert_ok}"
         );
@@ -7719,13 +7725,21 @@ async fn drive_physical_fixture(
                 remote_fault_lines.push(line);
             }
         }
-        let materialized_source_id = coordinator
-            .query_one(
+        let materialized_rows = coordinator
+            .query(
                 &format!("SELECT source_id::text FROM ({owner_query}) q"),
                 &[],
             )
-            .await?
-            .get::<_, String>(0);
+            .await?;
+        if materialized_rows.len() != 1 {
+            bail!(
+                "remote owner materialization returned {} rows for node {} and source_id {}; owner_query={owner_query}",
+                materialized_rows.len(),
+                node.node_id,
+                source_id
+            );
+        }
+        let materialized_source_id = materialized_rows[0].get::<_, String>(0);
         let owner_served = materialized_source_id == source_id;
         crate::ecaz_println!(
             "[distann-multicluster] physical_remote_owner node={} custom_scan=true pass={} expected_source_id={} materialized_source_id={}",
@@ -9385,6 +9399,49 @@ async fn physical_concurrency_drill(
             }
         }
     }
+    let inserted_vec_ids = if pass {
+        let first_id = 900_000_i64 + base_rows as i64;
+        let last_id = first_id + (WRITERS * ITERATIONS) as i64;
+        let mapping_output = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            coord_port,
+            &format!(
+                "SELECT d.id::text || '|' || m.vec_id::text \
+                   FROM {table} d \
+                   JOIN ec_distann_physical_source_map m ON m.source_tid = d.ctid \
+                  WHERE m.index_oid = 'dm_idx'::regclass::oid \
+                    AND d.id >= {first_id} AND d.id < {last_id} \
+                  ORDER BY d.id;"
+            ),
+        )
+        .await;
+        let mapped = mapping_output
+            .lines()
+            .filter_map(|line| {
+                let (id, vec_id) = line.trim().split_once('|')?;
+                let id = id.parse::<i64>().ok()?;
+                let vec_id = vec_id.parse::<i64>().ok()?;
+                Some((id, u64::from_le_bytes(vec_id.to_le_bytes())))
+            })
+            .collect::<HashMap<_, _>>();
+        if mapped.len() != inserted_ids.len() {
+            crate::ecaz_println!(
+                "[distann-multicluster] physical_concurrent_insert_query DIAG role=back_edge_check reason=source_map_vec_id_mapping_incomplete expected={} actual={} output={}",
+                inserted_ids.len(),
+                mapped.len(),
+                compact_capture_error(&mapping_output)
+            );
+            pass = false;
+        }
+        mapped
+            .into_iter()
+            .filter(|(id, _)| inserted_ids.contains(id))
+            .map(|(_, vec_id)| vec_id)
+            .collect::<HashSet<_>>()
+    } else {
+        HashSet::new()
+    };
     let mut forward_neighbor_count = 0;
     let forward_neighbor_check = if pass {
         'check: {
@@ -9469,13 +9526,17 @@ async fn physical_concurrency_drill(
                         .split(',')
                         .filter_map(|value| value.parse::<i64>().ok())
                     {
-                        if inserted_ids.contains(&neighbor) {
+                        let neighbor = u64::from_le_bytes(neighbor.to_le_bytes());
+                        if inserted_vec_ids.contains(&neighbor) {
                             found.insert(neighbor);
                         }
                     }
                 }
             }
-            let missing = inserted_ids.difference(&found).copied().collect::<Vec<_>>();
+            let missing = inserted_vec_ids
+                .difference(&found)
+                .copied()
+                .collect::<Vec<_>>();
             forward_neighbor_count = found.len();
             if !missing.is_empty() {
                 crate::ecaz_println!(
@@ -9504,6 +9565,7 @@ async fn physical_remote_insert_probe(
     socket_dir: &Path,
     coord_port: u16,
     args: &LocalMultinodePg18Args,
+    nodes: &[Node],
     owner_count: usize,
 ) -> Result<bool> {
     let vector = insert_vector_expr(args, "dm");
@@ -9521,7 +9583,7 @@ async fn physical_remote_insert_probe(
                                       {vector}::real[] AS source) \
              INSERT INTO dm (id, source_id, source, embedding) \
              SELECT id, source_id, source, encode_to_ecvector(source, 4, 42) FROM row_data; \
-             SELECT ec_distann_owning_node(m.vec_id, {owner_count}, 1) \
+             SELECT m.vec_id::text || '|' || ec_distann_owning_node(m.vec_id, {owner_count}, 1)::text \
                FROM ec_distann_physical_source_map m \
                JOIN dm d ON d.ctid = m.source_tid \
               WHERE m.index_oid = 'dm_idx'::regclass::oid AND d.source_id = '{source_id}'::uuid;"
@@ -9534,10 +9596,10 @@ async fn physical_remote_insert_probe(
             );
             return Ok(false);
         }
-        let Some(owner) = output
+        let Some((vec_id_text, owner_text)) = output
             .stdout
             .lines()
-            .find_map(|line| line.trim().parse::<usize>().ok())
+            .find_map(|line| line.trim().split_once('|'))
         else {
             crate::ecaz_println!(
                 "[distann-multicluster] physical_remote_insert_probe candidate={candidate} status=false reason=owner_not_found stdout={}",
@@ -9545,6 +9607,8 @@ async fn physical_remote_insert_probe(
             );
             return Ok(false);
         };
+        let vec_id = vec_id_text.parse::<i64>()?;
+        let owner = owner_text.parse::<usize>()?;
         let remote = if args.coordinator_outside_roster {
             owner < owner_count
         } else {
@@ -9554,6 +9618,52 @@ async fn physical_remote_insert_probe(
             "[distann-multicluster] physical_remote_insert_probe candidate={candidate} committed=true owner={owner} remote={remote}"
         );
         if remote {
+            let owner_node_index = if args.coordinator_outside_roster {
+                owner + 1
+            } else {
+                owner
+            };
+            let Some(owner_node) = nodes.get(owner_node_index) else {
+                return Ok(false);
+            };
+            let relation_output = capture_psql_allow_error(
+                psql,
+                socket_dir,
+                owner_node.port,
+                "SELECT graph_store_relid::regclass::text \
+                   FROM ec_distann_generation \
+                  WHERE index_oid='dm_idx'::regclass::oid AND state='Published' \
+                  ORDER BY epoch DESC LIMIT 1;",
+            )
+            .await;
+            let Some(graph_relation) = relation_output.lines().map(str::trim).find(|line| {
+                !line.is_empty()
+                    && line.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"')
+                    })
+            }) else {
+                return Ok(false);
+            };
+            let owner_check = capture_psql_allow_error(
+                psql,
+                socket_dir,
+                owner_node.port,
+                &format!(
+                    "SELECT count(*) FROM {graph_relation} \
+                      WHERE vec_id = {vec_id} AND is_current;"
+                ),
+            )
+            .await;
+            let owner_count = owner_check
+                .lines()
+                .find_map(|line| line.trim().parse::<i64>().ok());
+            if owner_count != Some(1) {
+                crate::ecaz_println!(
+                    "[distann-multicluster] physical_remote_insert_probe candidate={candidate} owner_graph_check=false vec_id={vec_id} output={}",
+                    compact_capture_error(&owner_check)
+                );
+                return Ok(false);
+            }
             return Ok(true);
         }
     }

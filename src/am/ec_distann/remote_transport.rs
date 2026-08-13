@@ -58,6 +58,20 @@ enum RemoteAwaitError<E> {
     Interrupted,
 }
 
+fn remote_db_error_detail(error: &tokio_postgres::Error) -> String {
+    let Some(db) = error.as_db_error() else {
+        return error.to_string();
+    };
+    let mut detail = format!("sqlstate={} message={}", db.code().code(), db.message());
+    if let Some(value) = db.detail() {
+        detail.push_str(&format!(" detail={value}"));
+    }
+    if let Some(value) = db.hint() {
+        detail.push_str(&format!(" hint={value}"));
+    }
+    detail
+}
+
 const POSTGRES_INTERRUPT_POLL_MS: u64 = 5;
 const REMOTE_CANCEL_DELIVERY_TIMEOUT_MS: u64 = 100;
 
@@ -832,7 +846,10 @@ pub(crate) fn remote_physical_insert(
                 }
                 Err(RemoteAwaitError::Remote(error)) => {
                     let _ = client.batch_execute("ROLLBACK").await;
-                    Err(format!("EC_REMOTE_WRITE: physical insert failed: {error}"))
+                    Err(format!(
+                        "EC_REMOTE_WRITE: physical insert failed: {}",
+                        remote_db_error_detail(&error)
+                    ))
                 }
                 Err(RemoteAwaitError::TimedOut) => {
                     let _ = client.batch_execute("ROLLBACK").await;
@@ -1033,7 +1050,10 @@ pub(crate) fn remote_physical_backlink(
                 }
                 Err(RemoteAwaitError::Remote(error)) => {
                     let _ = client.batch_execute("ROLLBACK").await;
-                    Err(format!("EC_REMOTE_WRITE: backlink failed: {error}"))
+                    Err(format!(
+                        "EC_REMOTE_WRITE: backlink failed: {}",
+                        remote_db_error_detail(&error)
+                    ))
                 }
                 Err(RemoteAwaitError::TimedOut) => {
                     let _ = client.batch_execute("ROLLBACK").await;

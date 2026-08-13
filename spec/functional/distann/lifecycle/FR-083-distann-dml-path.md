@@ -106,7 +106,11 @@ Tier 1 behavior; independent reviewer disposition is still pending.
   endpoint below; a failed remote tombstone write SHALL error. The origin
   node issuing the DML need not own the vec_id; the tombstone write is routed
   to the hash-owning node exactly like a record write. The Tier 1 retention
-  rule (no within-epoch row-tier reclaim) applies unchanged.
+  rule (no within-epoch row-tier reclaim) applies unchanged. If the owner is
+  unreachable, the source-table `VACUUM` (including autovacuum) intentionally
+  fails closed and retains the source-map row as a retry token; operators must
+  restore the owner and rerun maintenance before the dead source tuple can be
+  reclaimed.
 - **Update**: an UPDATE of an indexed row SHALL preserve its source-derived
   vec_id.
 - The update path SHALL append a complete replacement row-tier tuple and graph
