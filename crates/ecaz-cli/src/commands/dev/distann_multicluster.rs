@@ -9486,6 +9486,7 @@ async fn physical_concurrency_drill(
         }
     }
     let mut shared_target_candidates = Vec::new();
+    let mut saturated_target_candidates = Vec::new();
     for owner_node in owner_nodes {
         let relation_output = capture_psql_allow_error(
             psql,
@@ -9525,10 +9526,18 @@ async fn physical_concurrency_drill(
                 .split(',')
                 .filter(|value| !value.is_empty())
                 .count();
+            let signed_id = vec_id.parse::<i64>().ok()?;
+            if neighbor_count >= args.graph_degree as usize {
+                saturated_target_candidates.push((
+                    owner_node.node_id,
+                    u64::from_le_bytes(signed_id.to_le_bytes()),
+                    signed_id,
+                    neighbor_count,
+                ));
+            }
             if neighbor_count > spare_limit {
                 return None;
             }
-            let signed_id = vec_id.parse::<i64>().ok()?;
             Some((
                 owner_node.node_id,
                 u64::from_le_bytes(signed_id.to_le_bytes()),
@@ -9602,6 +9611,33 @@ async fn physical_concurrency_drill(
         return Ok(false);
     };
     let shared_target_source = source.to_owned();
+    let saturated_target = saturated_target_candidates.into_iter().next();
+    let saturated_target_source = if let Some((owner, _, signed_id, _)) = saturated_target {
+        let source_output = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            owner_nodes
+                .iter()
+                .find(|node| node.node_id == owner)
+                .map(|node| node.port)
+                .unwrap_or(coord_port),
+            &format!(
+                "SELECT d.source::text FROM {table} d \
+                   JOIN ec_distann_physical_source_map m ON m.source_tid = d.ctid \
+                  WHERE m.index_oid = 'dm_idx'::regclass::oid \
+                    AND m.vec_id = {signed_id};"
+            ),
+        )
+        .await;
+        source_output.lines().map(str::trim).find_map(|line| {
+            (!line.is_empty()
+                && line.starts_with('{')
+                && line.ends_with('}'))
+                .then(|| line.to_owned())
+        })
+    } else {
+        None
+    };
     let target_seed_id = 899_998_i64;
     let target_seed_sql = format!(
         "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
@@ -9737,6 +9773,88 @@ async fn physical_concurrency_drill(
             }
         }
     }
+    let saturation_pass = if let (
+        Some((saturated_target_owner, saturated_target_vec_id, saturated_target_signed_id, initial)),
+        Some(saturated_target_source),
+    ) = (saturated_target, saturated_target_source)
+    {
+        let saturation_ids = [
+            900_000_i64 + base_rows as i64 + (WRITERS * ITERATIONS) as i64,
+            900_001_i64 + base_rows as i64 + (WRITERS * ITERATIONS) as i64,
+        ];
+        let barrier = Arc::new(Barrier::new(saturation_ids.len()));
+        let mut saturation_tasks = Vec::new();
+        for id in saturation_ids {
+            let psql_insert = psql.to_path_buf();
+            let socket_dir_insert = socket_dir.to_path_buf();
+            let insert_roster = roster.clone();
+            let insert_table = table.to_owned();
+            let insert_source = saturated_target_source.clone();
+            let barrier = Arc::clone(&barrier);
+            saturation_tasks.push(tokio::spawn(async move {
+                barrier.wait().await;
+                let insert_sql = format!(
+                    "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id=1; \
+                     WITH row_data AS (SELECT {id}::bigint AS id, '{insert_source}'::real[] AS source) \
+                     INSERT INTO {insert_table} (id, source_id, source, embedding) \
+                     SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
+                            substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
+                            substr(md5(id::text),21,12))::uuid, source, \
+                            encode_to_ecvector(source, 4, 42) FROM row_data;"
+                );
+                run_capture(&psql_insert, &socket_dir_insert, coord_port, &insert_sql)
+                    .await
+                    .status_ok
+            }));
+        }
+        let mut inserts_ok = true;
+        for task in saturation_tasks {
+            inserts_ok &= task.await.unwrap_or(false);
+        }
+        let target_port = owner_nodes
+            .iter()
+            .find(|node| node.node_id == saturated_target_owner)
+            .map(|node| node.port)
+            .unwrap_or(coord_port);
+        let target_graph_sql = format!(
+            "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id={saturated_target_owner}; \
+             SELECT vec_id::text || '|' || COALESCE(array_to_string(neighbor_vec_ids, ','), '') \
+               FROM ec_distann_expand_physical_nodes(\
+                    'public.dm_idx'::regclass, \
+                    decode('{epoch_fingerprint}', 'hex'), \
+                    ARRAY[{zero_query}]::real[], \
+                    ARRAY[{saturated_target_signed_id}]::bigint[], NULL, NULL);"
+        );
+        let target_output =
+            capture_psql_allow_error(psql, socket_dir, target_port, &target_graph_sql).await;
+        let final_count = target_output
+            .lines()
+            .find_map(|line| line.trim().split_once('|'))
+            .map(|(_, neighbors)| {
+                neighbors
+                    .split(',')
+                    .filter(|value| !value.is_empty())
+                    .count()
+            });
+        let target_ok = final_count.is_some_and(|count| count <= args.graph_degree as usize);
+        let saturation_pass = inserts_ok && target_ok;
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=saturated_target owner={} vec_id={} initial_neighbors={} final_neighbors={:?} inserts_ok={} pass={}",
+            saturated_target_owner,
+            saturated_target_vec_id,
+            initial,
+            final_count,
+            inserts_ok,
+            saturation_pass
+        );
+        saturation_pass
+    } else {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query DIAG role=saturated_target reason=full_degree_target_or_source_missing pass=false"
+        );
+        false
+    };
+    pass &= saturation_pass;
     let retry_output = capture_psql_allow_error(
         psql,
         socket_dir,

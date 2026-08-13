@@ -1375,6 +1375,7 @@ impl RetainedGenerationScan {
                 DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
             })?;
         let mut expander = GenerationExpander {
+            index_oid: self.index_oid,
             generation: &self.generation,
             descriptor: &self.descriptor,
             graph_relation: &self.graph_relation,
@@ -1475,6 +1476,7 @@ impl RetainedGenerationScan {
                 DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
             })?;
         let expander = GenerationExpander {
+            index_oid: self.index_oid,
             generation: &self.generation,
             descriptor: &self.descriptor,
             graph_relation: &self.graph_relation,
@@ -1675,6 +1677,7 @@ impl RetainedGenerationScan {
             &empty_query,
         )?;
         let expander = GenerationExpander {
+            index_oid: self.index_oid,
             generation: &self.generation,
             descriptor: &self.descriptor,
             graph_relation: &self.graph_relation,
@@ -4426,6 +4429,7 @@ impl PhysicalGenerationScan {
                 Some(directory_relation),
                 Some(slot),
             ) => Some(GenerationExpander {
+                index_oid: self.index_oid,
                 generation,
                 descriptor: &self.descriptor,
                 graph_relation,
@@ -5592,6 +5596,7 @@ fn place_physical_owner_responses(
 }
 
 struct GenerationExpander<'a> {
+    index_oid: pg_sys::Oid,
     generation: &'a GenerationCatalogRow,
     descriptor: &'a DistannGenerationDescriptor,
     graph_relation: &'a HeapRelationGuard,
@@ -5693,6 +5698,46 @@ impl GenerationExpander<'_> {
 }
 
 impl GenerationExpander<'_> {
+    /// A remote physical append is prepared on the owner before the
+    /// coordinator commits. During that interval its graph tuple is not yet
+    /// visible to a fresh owner snapshot, but the intent row is the durable
+    /// signal that this is a bounded 2PC visibility window rather than a
+    /// dangling graph edge.
+    fn pending_remote_insert_intent(&self) -> Result<bool, DistannExpandError> {
+        let state = Spi::get_one_with_args::<String>(
+            "SELECT intent_state \
+               FROM ec_distann_remote_prepared_xact_intent \
+              WHERE index_oid = $1::oid \
+                AND node_id = $2 \
+                AND served_epoch = $3 \
+                AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended') \
+              ORDER BY updated_at DESC LIMIT 1",
+            &[
+                self.index_oid.into(),
+                i32::try_from(self.generation.node_id)
+                    .map_err(|_| {
+                        DistannExpandError::Internal(
+                            "physical intent node id exceeds int4".to_owned(),
+                        )
+                    })?
+                    .into(),
+                i64::try_from(self.generation.epoch)
+                    .map_err(|_| {
+                        DistannExpandError::Internal(
+                            "physical intent epoch exceeds int8".to_owned(),
+                        )
+                    })?
+                    .into(),
+            ],
+        )
+        .map_err(|error| {
+            DistannExpandError::Internal(format!(
+                "physical remote insert intent lookup failed: {error}"
+            ))
+        })?;
+        Ok(state.is_some())
+    }
+
     /// Expand with a gateway-copy skip mask (TRAV-30, Task 210 P3). Ids in
     /// `skip_neighbors` still get their record read and exact distance — the
     /// result half stays owner-authoritative — but their neighbour payload is
@@ -5730,24 +5775,44 @@ impl GenerationExpander<'_> {
             Err(ref error @ DistannExpandError::OwnedRecordMissing(_)) => {
                 // A prepared cross-owner write can publish its retained edge
                 // before the owner graph tuple becomes visible to this
-                // snapshot. Re-read the complete frontier exactly once under
-                // a fresh snapshot. A second miss remains a strict
-                // EC_RECORD_MISSING so corruption or a permanent dangling
-                // edge cannot silently become a tombstone.
+                // snapshot. Only the owner-side intent row permits treating
+                // that miss as transient; an ordinary missing record remains
+                // a strict EC_RECORD_MISSING.
+                if !self.pending_remote_insert_intent()? {
+                    return Err(error.clone());
+                }
                 super::stage_counters::record_work(
                     super::stage_counters::DistannMaterializationWork::TraversalFrontierRetries,
                     1,
                 );
-                let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| error.clone())?;
-                lookup_graph_nodes(
-                    self.graph_relation,
-                    self.directory_relation,
-                    latest.as_ptr(),
-                    vec_ids,
-                    self.descriptor.graph_degree,
-                    self.code_len,
-                    missing,
-                )?
+                let mut last_error = error.clone();
+                let mut records = None;
+                for _ in 0..8 {
+                    let _ = Spi::run("SELECT pg_sleep(0.005)");
+                    let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| error.clone())?;
+                    match lookup_graph_nodes(
+                        self.graph_relation,
+                        self.directory_relation,
+                        latest.as_ptr(),
+                        vec_ids,
+                        self.descriptor.graph_degree,
+                        self.code_len,
+                        missing,
+                    ) {
+                        Ok(found) => {
+                            records = Some(found);
+                            break;
+                        }
+                        Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
+                            last_error = next;
+                            if !self.pending_remote_insert_intent()? {
+                                break;
+                            }
+                        }
+                        Err(next) => return Err(next),
+                    }
+                }
+                records.ok_or(last_error)?
             }
             Err(error) => return Err(error),
         };
