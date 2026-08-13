@@ -2480,6 +2480,11 @@ fn classify_physical_read_error(error: tokio_postgres::Error) -> DistannExpandEr
         .as_db_error()
         .map(|db| db.message().to_owned())
         .unwrap_or_else(|| error.to_string());
+    if detail.contains("EC_RECORD_MISSING") {
+        return DistannExpandError::OwnedRecordMissing(format!(
+            "physical generation RPC failed: {detail}"
+        ));
+    }
     DistannExpandError::from_wire_sqlstate(
         code.as_deref(),
         format!("physical generation RPC failed: {detail}"),
