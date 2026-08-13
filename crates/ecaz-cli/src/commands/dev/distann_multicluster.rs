@@ -9649,7 +9649,11 @@ async fn physical_concurrency_drill(
             psql,
             socket_dir,
             owner.port,
-            "SELECT ec_distann_stage_scoring_reset();",
+            "ALTER TABLE ec_distann_remote_prepared_xact_intent \
+                ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
+             SELECT ec_distann_stage_scoring_reset(); \
+             UPDATE ec_distann_remote_prepared_xact_intent \
+                SET retry_count = 0 WHERE index_oid = 'dm_idx'::regclass::oid;",
         )
         .await;
         counter_reset_ok &= !output.contains("ERROR");
@@ -9841,8 +9845,8 @@ async fn physical_concurrency_drill(
     );
     pass &= saturation_pass;
     let retry_snapshot_sql =
-        "SELECT value FROM ec_distann_materialization_work_snapshot() \
-          WHERE metric = 'traversal_frontier_retries';";
+        "SELECT COALESCE(sum(retry_count), 0) FROM ec_distann_remote_prepared_xact_intent \
+          WHERE index_oid = 'dm_idx'::regclass::oid;";
     let parse_retry_count = |output: &str| {
         output
             .lines()
@@ -9869,7 +9873,11 @@ async fn physical_concurrency_drill(
             psql,
             socket_dir,
             owner.port,
-            "SELECT ec_distann_stage_scoring_reset();",
+            "ALTER TABLE ec_distann_remote_prepared_xact_intent \
+                ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
+             SELECT ec_distann_stage_scoring_reset(); \
+             UPDATE ec_distann_remote_prepared_xact_intent \
+                SET retry_count = 0 WHERE index_oid = 'dm_idx'::regclass::oid;",
         )
         .await;
         steady_reset_ok &= !output.contains("ERROR");

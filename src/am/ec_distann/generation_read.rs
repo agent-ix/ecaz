@@ -261,7 +261,7 @@ fn recent_remote_insert_intent(
               AND node_id = $2 \
               AND served_epoch = $3 \
               AND updated_at >= clock_timestamp() - interval '2 seconds' \
-              AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended'))",
+              AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local'))",
         &[index_oid.into(), node_id.into(), epoch.into()],
     )
     .map_err(|error| {
@@ -312,6 +312,22 @@ where
         super::stage_counters::DistannMaterializationWork::TraversalFrontierRetries,
         1,
     );
+    // The retry runs in the owner backend that served the RPC. Persist a
+    // per-owner attribution marker so an external fixture can observe the
+    // retry after that backend exits; process-local stage counters cannot
+    // cross the coordinator/owner RPC boundary.
+    let _ = Spi::run(&format!(
+        "UPDATE ec_distann_remote_prepared_xact_intent \
+            SET retry_count = retry_count + 1 \
+          WHERE index_oid = '{}'::oid \
+            AND node_id = {} \
+            AND served_epoch = {} \
+            AND updated_at >= clock_timestamp() - interval '2 seconds' \
+            AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')",
+        u32::from(index_oid),
+        generation.node_id,
+        generation.epoch,
+    ));
     let mut last_error = error;
     // A 1 ms event-loop yield, bounded to three attempts, is enough to let
     // the commit callback resolve a prepared owner transaction without

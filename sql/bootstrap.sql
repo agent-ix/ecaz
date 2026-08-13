@@ -171,6 +171,7 @@ CREATE TABLE ec_spire_remote_prepared_xact_intent (
             'rollback_local'
         )
     ),
+    retry_count bigint NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (gid)

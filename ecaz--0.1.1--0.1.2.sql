@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS ec_distann_remote_prepared_xact_intent (
             'rollback_local'
         )
     ),
+    retry_count bigint NOT NULL DEFAULT 0 CHECK (retry_count >= 0),
     created_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     updated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
     PRIMARY KEY (gid)
@@ -49,6 +50,9 @@ CREATE INDEX IF NOT EXISTS ec_distann_remote_prepared_xact_intent_by_index
     ON ec_distann_remote_prepared_xact_intent (index_oid, node_id, served_epoch);
 
 REVOKE ALL ON TABLE ec_distann_remote_prepared_xact_intent FROM PUBLIC;
+
+ALTER TABLE ec_distann_remote_prepared_xact_intent
+    ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0;
 
 -- Keep the upgrade-time compatibility wrapper in sync with the packed
 -- payload ABI used by the physical transport. Older 0.1.1 installations
