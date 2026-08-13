@@ -5,3 +5,4 @@ validation=cargo build -p ecaz; result=passed
 validation=cargo build -p ecaz-cli; result=passed
 validation=cargo pgrx install --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --no-default-features --features pg18; result=passed
 validation=ecaz dev distann-multicluster local-multinode-pg18 --pg 18 --pgbin /home/peter/.pgrx/18.3/pgrx-install/bin --nodes 2 --rows 100 --dim 4 --graph-degree 8 --skip-fault-drills --allow-debug-extension --remote-insert-probe; result=passed
+validation=extension_git_sha=0a7854fc1171f9599ad89278f8b180f8855e0e22; result=clean-head-runtime-provenance

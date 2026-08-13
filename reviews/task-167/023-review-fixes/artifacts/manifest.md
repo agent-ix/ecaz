@@ -30,7 +30,7 @@ mid-insert rollback, concurrent insert/query, routed DELETE + VACUUM with an
 owner tombstone, and the topology gate. The packet-local log records
 `physical_remote_insert_probe pass=true`, `physical_concurrent_insert_query
 pass=true`, and `physical_routed_delete_vacuum pass=true`. The final install
-was from the committed code head; the runtime provenance line may carry the
-fixture's packet-artifact dirty suffix. No refreshed 10k/50k/100k benchmark
+was from clean packet commit `0a7854fc1171f9599ad89278f8b180f8855e0e22`, and
+the runtime provenance line is clean. No refreshed 10k/50k/100k benchmark
 results are claimed. No corpus, cluster directory, polling exhaust, or
 transient cache belongs in this packet.
