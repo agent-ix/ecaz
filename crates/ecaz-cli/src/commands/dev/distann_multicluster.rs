@@ -9585,7 +9585,10 @@ async fn physical_concurrency_drill(
         );
         let graph_output =
             capture_psql_allow_error(psql, socket_dir, owner_node.port, &graph_sql).await;
-        let spare_limit = args.graph_degree.saturating_sub(3) as usize;
+        // Reserve one slot for the controlled writer backlink. Requiring two
+        // spare slots made the degree-7 real-corpus fixture reject every
+        // otherwise valid target before the saturated-target assertion ran.
+        let spare_limit = args.graph_degree.saturating_sub(2) as usize;
         for target in graph_output.lines().filter_map(|line| {
             let (vec_id, neighbors) = line.trim().split_once('|')?;
             let neighbor_count = neighbors
