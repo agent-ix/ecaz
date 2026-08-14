@@ -159,15 +159,20 @@ unsafe fn insert_from_prepared_slot(
         .position(|route| route.is_local)
         .ok_or_else(|| "EC_NODE_DESCRIPTOR: active roster has no local owner".to_owned())?;
 
-    if owner_route.is_local {
-        super::remote_transport::record_local_physical_insert_intent(
-            &owner_route.roster_conninfo,
-            index_oid,
-            owner_route.node_id,
-            scan_epoch,
-            vec_id,
-        )?;
-    }
+    let owner_intent_conninfo = if owner_route.is_local {
+        owner_route.roster_conninfo.as_str()
+    } else {
+        owner_route.conninfo.as_deref().ok_or_else(|| {
+            "EC_NODE_DESCRIPTOR: remote physical insert has no connection descriptor".to_owned()
+        })?
+    };
+    super::remote_transport::record_physical_insert_intent(
+        owner_intent_conninfo,
+        index_oid,
+        owner_route.node_id,
+        scan_epoch,
+        vec_id,
+    )?;
 
     // Plan while the read-side generation guard is alive. The physical scan
     // gives us the bounded FR-081 frontier. Remote candidates are materialized

@@ -777,12 +777,13 @@ fn mark_physical_intent_terminal(
     Ok(())
 }
 
-/// Publish a transaction-independent intent before a local-owner insert starts
-/// its search. Remote-owner inserts publish the equivalent row immediately
-/// before their prepared transaction; local-owner inserts need this separate
-/// connection because a row written through the callback transaction is not
-/// visible to a concurrent reader until the graph append commits.
-pub(crate) fn record_local_physical_insert_intent(
+/// Publish a transaction-independent intent before an owner insert starts its
+/// search. This separate connection is required for both local and remote
+/// owners because a row written through the callback transaction is not
+/// visible to a concurrent reader until the graph append commits. The remote
+/// owner transport records its own prepared-transaction intent later as well;
+/// this coordinator-side fence covers the planning race before that RPC.
+pub(crate) fn record_physical_insert_intent(
     conninfo: &str,
     index_oid: pg_sys::Oid,
     node_id: u32,
@@ -793,7 +794,7 @@ pub(crate) fn record_local_physical_insert_intent(
     let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
         conninfo,
         node_id,
-        "ec_distann physical insert local intent",
+        "ec_distann physical insert pre-planning intent",
     )?;
     let parts = parse_physical_prepared_gid(&gid)
         .ok_or_else(|| format!("EC_REMOTE_WRITE: malformed local intent gid {gid}"))?;
