@@ -638,13 +638,6 @@ async fn record_remote_physical_intent(
     let node_id_value = i32::try_from(node_id)
         .map_err(|_| format!("EC_REMOTE_WRITE: node id {node_id} exceeds int4"))?;
     client
-        .batch_execute(
-            "ALTER TABLE ec_distann_remote_prepared_xact_intent \
-             ADD COLUMN IF NOT EXISTS tracked_vec_id bigint",
-        )
-        .await
-        .map_err(|error| format!("EC_REMOTE_WRITE: intent schema upgrade failed: {error}"))?;
-    client
         .execute(
             "INSERT INTO ec_distann_remote_prepared_xact_intent \
              (index_oid, node_id, served_epoch, xid, gid, intent_state, tracked_vec_id) \
@@ -792,12 +785,6 @@ fn record_physical_insert_intent_row(
     )?;
     let parts = parse_physical_prepared_gid(gid)
         .ok_or_else(|| format!("EC_REMOTE_WRITE: malformed pre-planning intent gid {gid}"))?;
-    client
-        .batch_execute(
-            "ALTER TABLE ec_distann_remote_prepared_xact_intent \
-             ADD COLUMN IF NOT EXISTS tracked_vec_id bigint",
-        )
-        .map_err(|error| format!("EC_REMOTE_WRITE: pre-planning intent schema upgrade failed: {error}"))?;
     client
         .execute(
             "INSERT INTO ec_distann_remote_prepared_xact_intent \
