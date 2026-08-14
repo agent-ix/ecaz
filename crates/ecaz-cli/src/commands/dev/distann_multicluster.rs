@@ -969,9 +969,17 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
         for target in &nodes {
+            let remote_conninfo = if args.physical_benchmark {
+                format!(
+                    "{} options=-cstatement_timeout=3600000",
+                    conninfo(&socket_dir, target.port)
+                )
+            } else {
+                conninfo(&socket_dir, target.port)
+            };
             command.env(
                 format!("EC_SPIRE_REMOTE_CONNINFO_DISTANN_NODE_{}", target.node_id),
-                conninfo(&socket_dir, target.port),
+                remote_conninfo,
             );
         }
         if node.node_id == 1 {
