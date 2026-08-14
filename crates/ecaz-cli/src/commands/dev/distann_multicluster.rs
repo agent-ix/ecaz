@@ -7339,6 +7339,12 @@ async fn drive_reused_physical_fixture(
             .await
             .wrap_err("connecting persistent reused physical coordinator session")?;
     let connection_task = tokio::spawn(async move { connection.await });
+    if args.physical_benchmark {
+        coordinator
+            .batch_execute("SET ec_distann.remote_statement_timeout_ms = 3600000")
+            .await
+            .wrap_err("setting large-scale physical benchmark remote timeout")?;
+    }
     let fingerprint = coordinator
         .query_one(
             "SELECT encode(epoch_fingerprint, 'hex')
@@ -7461,6 +7467,12 @@ async fn drive_physical_fixture(
             .await
             .wrap_err("connecting persistent physical coordinator session")?;
     let connection_task = tokio::spawn(async move { connection.await });
+    if args.physical_benchmark {
+        coordinator
+            .batch_execute("SET ec_distann.remote_statement_timeout_ms = 3600000")
+            .await
+            .wrap_err("setting large-scale physical benchmark remote timeout")?;
+    }
     let owners = if args.coordinator_outside_roster {
         &nodes[1..]
     } else {
