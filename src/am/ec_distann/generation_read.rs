@@ -311,7 +311,13 @@ fn lookup_graph_nodes_with_intent_retry<F>(
     graph_degree: u16,
     code_len: usize,
     missing: F,
-) -> Result<HashMap<u64, DistannNodeTuple>, DistannExpandError>
+) -> Result<
+    (
+        HashMap<u64, DistannNodeTuple>,
+        Option<RegisteredSnapshotGuard>,
+    ),
+    DistannExpandError,
+>
 where
     F: Fn(u64) -> DistannExpandError + Copy,
 {
@@ -354,7 +360,7 @@ where
         }
     };
     let Err(error @ DistannExpandError::OwnedRecordMissing(_)) = records else {
-        return records;
+        return records.map(|records| (records, None));
     };
     if !recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
         return Err(error);
@@ -388,11 +394,11 @@ where
     ));
     let mut last_error = error;
     // Task 167 final fixture provenance: an event-loop yield, bounded to
-    // thirty-two attempts, is enough to let
+    // 256 attempts, is enough to let
     // the commit callback resolve a prepared owner transaction under the
     // heavier multi-owner benchmark wave without reintroducing the old
     // 40-ms sleep budget under the relation guards.
-    for _ in 0..32 {
+    for _ in 0..256 {
         let _ = Spi::run("SELECT pg_sleep(0.001)");
         let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| last_error.clone())?;
         match lookup_graph_nodes(
@@ -404,7 +410,7 @@ where
             code_len,
             missing,
         ) {
-            Ok(found) => return Ok(found),
+            Ok(found) => return Ok((found, Some(latest))),
             Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
                 last_error = next;
                 if !recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
@@ -439,6 +445,7 @@ fn lookup_graph_nodes_with_reopened_intent_retry<F, O>(
         HashMap<u64, DistannNodeTuple>,
         HeapRelationGuard,
         IndexRelationGuard,
+        RegisteredSnapshotGuard,
     ),
     DistannExpandError,
 >
@@ -477,7 +484,15 @@ where
         )
     };
     let Err(error @ DistannExpandError::OwnedRecordMissing(_)) = initial else {
-        return initial.map(|records| (records, graph_relation, directory_relation));
+        return initial.map(|records| {
+            (
+                records,
+                graph_relation,
+                directory_relation,
+                RegisteredSnapshotGuard::latest()
+                    .expect("active physical generation endpoint must have a latest snapshot"),
+            )
+        });
     };
     if !recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
         return Err(error);
@@ -506,7 +521,7 @@ where
     let mut graph_relation = Some(graph_relation);
     let mut directory_relation = Some(directory_relation);
     let mut last_error = error;
-    for _ in 0..32 {
+    for _ in 0..256 {
         drop(graph_relation.take());
         drop(directory_relation.take());
         let _ = Spi::run("SELECT pg_sleep(0.001)");
@@ -522,7 +537,12 @@ where
             missing,
         ) {
             Ok(found) => {
-                return Ok((found, next_graph_relation, next_directory_relation));
+                return Ok((
+                    found,
+                    next_graph_relation,
+                    next_directory_relation,
+                    latest,
+                ));
             }
             Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
                 last_error = next;
@@ -1219,6 +1239,7 @@ struct RetainedGenerationScan {
     row_relation: Option<HeapRelationGuard>,
     graph_relation: Option<HeapRelationGuard>,
     directory_relation: Option<IndexRelationGuard>,
+    retry_snapshot: Option<RegisteredSnapshotGuard>,
     #[cfg(feature = "distann-head-attribution-benchmark")]
     graph_relation_name: String,
     source_attnum: i32,
@@ -1360,6 +1381,7 @@ impl RetainedGenerationScan {
             row_relation: Some(row_relation),
             graph_relation: Some(graph_relation),
             directory_relation: Some(directory_relation),
+            retry_snapshot: None,
             #[cfg(feature = "distann-head-attribution-benchmark")]
             graph_relation_name,
             source_attnum,
@@ -1817,6 +1839,11 @@ impl RetainedGenerationScan {
             }
             None => {
                 let nodes = self.resolve_nodes(members)?;
+                let snapshot = self
+                    .retry_snapshot
+                    .as_ref()
+                    .map(RegisteredSnapshotGuard::as_ptr)
+                    .unwrap_or(snapshot);
                 let slot = TupleTableSlotGuard::single_for_heap_guard(self.row_relation_ref()?)
                     .ok_or_else(|| {
                         DistannExpandError::Internal(
@@ -2000,6 +2027,11 @@ impl RetainedGenerationScan {
             &empty_query,
         )?;
         let nodes = self.resolve_nodes(members)?;
+        let snapshot = self
+            .retry_snapshot
+            .as_ref()
+            .map(RegisteredSnapshotGuard::as_ptr)
+            .unwrap_or(snapshot);
         let slot = TupleTableSlotGuard::single_for_heap_guard(self.row_relation_ref()?)
             .ok_or_else(|| {
                 DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
@@ -2085,7 +2117,7 @@ impl RetainedGenerationScan {
                 ))
             },
         )?;
-        let (records, graph_relation, directory_relation) = records;
+        let (records, graph_relation, directory_relation, retry_snapshot) = records;
         let row_relation = HeapRelationGuard::try_access_share(self.generation.row_tier_relid)
             .ok_or_else(|| {
                 DistannExpandError::GenerationMissing(
@@ -2095,6 +2127,7 @@ impl RetainedGenerationScan {
         self.row_relation = Some(row_relation);
         self.graph_relation = Some(graph_relation);
         self.directory_relation = Some(directory_relation);
+        self.retry_snapshot = Some(retry_snapshot);
         vec_ids
             .iter()
             .map(|vec_id| {
@@ -6117,7 +6150,7 @@ impl GenerationExpander<'_> {
                 self.generation.epoch
             ))
         };
-        let records = lookup_graph_nodes_with_intent_retry(
+        let (records, retry_snapshot) = lookup_graph_nodes_with_intent_retry(
             self.index_oid,
             self.generation,
             self.graph_relation,
@@ -6139,6 +6172,9 @@ impl GenerationExpander<'_> {
             self.code_len,
             missing,
         )?;
+        if let Some(snapshot) = retry_snapshot.as_ref() {
+            self.snapshot = snapshot.as_ptr();
+        }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let owner_graph_read_ns =
             i64::try_from(duration_ns(graph_started.elapsed())).unwrap_or(i64::MAX);
