@@ -1,0 +1,10 @@
+Diagnostic run: suite artifact `bench-suite-final-2168-10k`.
+The extension preflight was `2168b60d6...-dirty` because task bookkeeping
+was still modified; this run is not exact-head evidence.
+
+[distann-multicluster] physical_concurrent_insert_query DIAG role=saturated_target owner=1 vec_id=9225194207212718996 initial_neighbors=5 before_neighbors=Some(3) final_neighbors=Some(3) inserts_ok=true pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries=Some(1) churn_by_owner=[(1, Some(1), "1"), (2, Some(0), "0"), (3, Some(0), "0")] steady_retries=Some(0) steady_by_owner=[(1, Some(0), "0"), (2, Some(0), "0"), (3, Some(0), "0")] pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner=1 target_vec_id=9225194207212718996 inserted_vec_ids=[8370535816742736759, 2247823663917361747] target_neighbors={18253847924327236637, 2247823663917361747, 8370535816742736759} pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG scanners=4 writers=2 iterations=12 expected_count=10 reverse_edge_coverage=15/24 shared_target_vec_id=9225194207212718996 shared_target_owner=1 back_edge_check=true pass=true
+[distann-multicluster] physical_concurrent_insert_query pass=true
+[distann-multicluster] physical_routed_delete_vacuum pass=false reason=no_live_source_row
