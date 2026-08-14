@@ -927,6 +927,16 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     // initdb + start + extension on every node. Reuse deliberately skips
     // initdb and starts the exact stopped PGDATA trees after provenance is
     // checked below; it never silently rebuilds a mismatched fixture.
+    let physical_benchmark_startup_options = if args.physical_benchmark {
+        // Large staged physical generations can spend more than ten minutes
+        // in the owner-side head search before the coordinator receives the
+        // first row.  Set both the extension budget and PostgreSQL's backend
+        // default at server start so child benchmark sessions and the
+        // backend-created owner sessions inherit the same measurement budget.
+        " -c ec_distann.remote_statement_timeout_ms=3600000 -c statement_timeout=3600000"
+    } else {
+        ""
+    };
     for node in &nodes {
         if args.reuse_fixture {
             if !node.data_dir.join("PG_VERSION").is_file() {
@@ -962,8 +972,8 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             .arg("-o")
             .arg(format!(
                 "-p {} -c listen_addresses=127.0.0.1 -c unix_socket_directories='' \
-                 -c shared_preload_libraries=ecaz -c max_prepared_transactions=32",
-                node.port
+                 -c shared_preload_libraries=ecaz -c max_prepared_transactions=32{}",
+                node.port, physical_benchmark_startup_options
             ))
             .arg("start")
             .stdout(Stdio::null())
