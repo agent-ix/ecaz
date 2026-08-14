@@ -143,8 +143,6 @@ unsafe fn insert_from_prepared_slot(
         "EC_NODE_DESCRIPTOR: physical insert owner is outside the active roster".to_owned()
     })?;
     let (generation, descriptor) = scan.local_write_identity()?;
-    let metadata = ambuild::read_metadata_from_index(index_relation)?;
-    let scan_epoch = super::roster::scan_epoch(&metadata);
     let source_attnum = indexed_ecvector_attnum(index_relation)?;
     if vector.len() != usize::from(descriptor.dimensions) {
         return Err(format!(
@@ -172,7 +170,7 @@ unsafe fn insert_from_prepared_slot(
         coordinator_conninfo,
         index_oid,
         owner_route.node_id,
-        scan_epoch,
+        generation.epoch,
         vec_id,
     )?;
 
@@ -401,7 +399,7 @@ unsafe fn insert_from_prepared_slot(
                 conninfo,
                 roster_spec: &roster_spec,
                 target_node_id: owner_route.node_id,
-                epoch: scan_epoch,
+                epoch: generation.epoch,
                 index_regclass: &index_name,
                 epoch_fingerprint: &fingerprint,
                 vec_id,
@@ -454,7 +452,7 @@ unsafe fn insert_from_prepared_slot(
                     conninfo,
                     roster_spec: &roster_spec,
                     target_node_id: target_route.node_id,
-                    epoch: scan_epoch,
+                    epoch: generation.epoch,
                     index_regclass: &index_name,
                     epoch_fingerprint: &fingerprint,
                     target_vec_id: candidate.vec_id,
@@ -567,7 +565,7 @@ unsafe fn insert_from_prepared_slot(
                         conninfo,
                         roster_spec: &roster_spec,
                         target_node_id: target_route.node_id,
-                        epoch: scan_epoch,
+                        epoch: generation.epoch,
                         index_regclass: &index_name,
                         epoch_fingerprint: &fingerprint,
                         target_vec_id: candidate.vec_id,
