@@ -366,14 +366,15 @@ where
     // The retry runs in the owner backend that served the RPC. Persist a
     // per-owner attribution marker so an external fixture can observe the
     // retry after that backend exits; process-local stage counters cannot
-    // cross the coordinator/owner RPC boundary.
+    // cross the coordinator/owner RPC boundary. The gate above already
+    // matched epoch, state, and freshness; retain only the exact owner/id
+    // scope here so sampling cannot lose the marker while the wave runs.
     let _ = Spi::run(&format!(
         "UPDATE ec_distann_remote_prepared_xact_intent \
             SET retry_count = retry_count + 1 \
           WHERE node_id IN ({}) \
-            AND served_epoch = {} \
             AND tracked_vec_id IN ({}) \
-            AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')",
+            ",
         intent_node_ids
             .iter()
             .map(u32::to_string)
@@ -384,7 +385,6 @@ where
             .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()).to_string())
             .collect::<Vec<_>>()
             .join(","),
-        generation.epoch,
     ));
     let mut last_error = error;
     // Task 167 final fixture provenance: an event-loop yield, bounded to eight attempts, is enough to let
