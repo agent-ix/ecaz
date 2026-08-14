@@ -777,33 +777,27 @@ fn mark_physical_intent_terminal(
     Ok(())
 }
 
-/// Publish a transaction-independent intent before an owner insert starts its
-/// search. This separate connection is required for both local and remote
-/// owners because a row written through the callback transaction is not
-/// visible to a concurrent reader until the graph append commits. The remote
-/// owner transport records its own prepared-transaction intent later as well;
-/// this coordinator-side fence covers the planning race before that RPC.
-pub(crate) fn record_physical_insert_intent(
+fn record_physical_insert_intent_row(
     conninfo: &str,
     index_oid: pg_sys::Oid,
     node_id: u32,
     served_epoch: u64,
+    gid: &str,
     tracked_vec_id: u64,
 ) -> Result<(), String> {
-    let gid = physical_insert_prepared_gid(index_oid, node_id, served_epoch);
     let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
         conninfo,
         node_id,
         "ec_distann physical insert pre-planning intent",
     )?;
-    let parts = parse_physical_prepared_gid(&gid)
-        .ok_or_else(|| format!("EC_REMOTE_WRITE: malformed local intent gid {gid}"))?;
+    let parts = parse_physical_prepared_gid(gid)
+        .ok_or_else(|| format!("EC_REMOTE_WRITE: malformed pre-planning intent gid {gid}"))?;
     client
         .batch_execute(
             "ALTER TABLE ec_distann_remote_prepared_xact_intent \
              ADD COLUMN IF NOT EXISTS tracked_vec_id bigint",
         )
-        .map_err(|error| format!("EC_REMOTE_WRITE: local intent schema upgrade failed: {error}"))?;
+        .map_err(|error| format!("EC_REMOTE_WRITE: pre-planning intent schema upgrade failed: {error}"))?;
     client
         .execute(
             "INSERT INTO ec_distann_remote_prepared_xact_intent \
@@ -821,39 +815,80 @@ pub(crate) fn record_physical_insert_intent(
                 &i64::from_le_bytes(tracked_vec_id.to_le_bytes()),
             ],
         )
-        .map_err(|error| format!("EC_REMOTE_WRITE: local intent record failed: {error}"))?;
-    drop(client);
+        .map_err(|error| format!("EC_REMOTE_WRITE: pre-planning intent record failed: {error}"))?;
+    Ok(())
+}
 
-    let precommit_conninfo = conninfo.to_owned();
-    let precommit_gid = gid.clone();
-    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::PreCommit, move || {
-        if let Err(error) = mark_remote_physical_intent_precommit(
-            &precommit_conninfo,
+/// Publish transaction-independent intents before an owner insert starts its
+/// search. The coordinator and owner endpoints both receive a fence: the
+/// coordinator must gate its planning read, while the owner must gate its
+/// retained-generation materialization read. The remote owner transport
+/// records its own prepared-transaction intent later as well.
+pub(crate) fn record_physical_insert_intent(
+    owner_conninfo: &str,
+    coordinator_conninfo: &str,
+    index_oid: pg_sys::Oid,
+    node_id: u32,
+    served_epoch: u64,
+    tracked_vec_id: u64,
+) -> Result<(), String> {
+    let gid = physical_insert_prepared_gid(index_oid, node_id, served_epoch);
+    record_physical_insert_intent_row(
+        coordinator_conninfo,
+        index_oid,
+        node_id,
+        served_epoch,
+        &gid,
+        tracked_vec_id,
+    )?;
+    if owner_conninfo != coordinator_conninfo {
+        record_physical_insert_intent_row(
+            owner_conninfo,
+            index_oid,
             node_id,
-            &precommit_gid,
-        ) {
-            pgrx::error!("{error}");
-        }
-    });
-    let commit_conninfo = conninfo.to_owned();
-    let commit_gid = gid.clone();
-    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
-        let _ = mark_physical_intent_terminal(
-            &commit_conninfo,
-            node_id,
-            &commit_gid,
-            "commit_local",
-        );
-    });
-    let abort_conninfo = conninfo.to_owned();
-    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
-        let _ = mark_physical_intent_terminal(
-            &abort_conninfo,
-            node_id,
+            served_epoch,
             &gid,
-            "rollback_local",
-        );
-    });
+            tracked_vec_id,
+        )?;
+    }
+    let endpoints = if owner_conninfo == coordinator_conninfo {
+        vec![coordinator_conninfo.to_owned()]
+    } else {
+        vec![coordinator_conninfo.to_owned(), owner_conninfo.to_owned()]
+    };
+    for endpoint in endpoints {
+        let precommit_conninfo = endpoint.clone();
+        let precommit_gid = gid.clone();
+        pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::PreCommit, move || {
+            if let Err(error) = mark_remote_physical_intent_precommit(
+                &precommit_conninfo,
+                node_id,
+                &precommit_gid,
+            ) {
+                pgrx::error!("{error}");
+            }
+        });
+        let commit_conninfo = endpoint.clone();
+        let commit_gid = gid.clone();
+        pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
+            let _ = mark_physical_intent_terminal(
+                &commit_conninfo,
+                node_id,
+                &commit_gid,
+                "commit_local",
+            );
+        });
+        let abort_conninfo = endpoint;
+        let abort_gid = gid.clone();
+        pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
+            let _ = mark_physical_intent_terminal(
+                &abort_conninfo,
+                node_id,
+                &abort_gid,
+                "rollback_local",
+            );
+        });
+    }
     Ok(())
 }
 

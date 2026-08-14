@@ -166,8 +166,10 @@ unsafe fn insert_from_prepared_slot(
             "EC_NODE_DESCRIPTOR: remote physical insert has no connection descriptor".to_owned()
         })?
     };
+    let coordinator_conninfo = routes[local_owner].roster_conninfo.as_str();
     super::remote_transport::record_physical_insert_intent(
         owner_intent_conninfo,
+        coordinator_conninfo,
         index_oid,
         owner_route.node_id,
         scan_epoch,
