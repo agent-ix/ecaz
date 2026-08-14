@@ -1483,14 +1483,35 @@ fn read_current_candidate(
     let mut raw_tid = pg_sys::ItemPointerData::default();
     let (row_block, row_offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
     pgrx::itemptr::item_pointer_set_all(&mut raw_tid, row_block, row_offset);
-    if !unsafe {
+    let mut visible = unsafe {
         pg_sys::table_tuple_fetch_row_version(
             row_relation.as_ptr(),
             &mut raw_tid,
             snapshot,
             vector_slot.as_ptr(),
         )
-    } {
+    };
+    if !visible {
+        if let Some(latest) = RegisteredSnapshotGuard::latest() {
+            let (row_block, row_offset) =
+                pgrx::itemptr::item_pointer_get_both(row_tid);
+            pgrx::itemptr::item_pointer_set_all(
+                &mut raw_tid,
+                row_block,
+                row_offset,
+            );
+            unsafe { pg_sys::ExecClearTuple(vector_slot.as_ptr()) };
+            visible = unsafe {
+                pg_sys::table_tuple_fetch_row_version(
+                    row_relation.as_ptr(),
+                    &mut raw_tid,
+                    latest.as_ptr(),
+                    vector_slot.as_ptr(),
+                )
+            };
+        }
+    }
+    if !visible {
         return Err(format!(
             "EC_GENERATION_MISSING: candidate row tier is absent for vec_id {:#018x}",
             hit.vec_id

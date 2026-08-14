@@ -246,6 +246,10 @@ where
 /// for that narrow 2PC window. Keep the predicate recent: terminal cleanup
 /// deliberately retains rows for audit, and an old unresolved row must not
 /// turn every later missing-record error into a retry budget.
+/// The intent row carries the coordinator's relation OID, which is not a
+/// cross-node identity. Scope the owner-side gate by the stable served epoch,
+/// exact placement owner, and exact tracked vec_id instead; the thirty-second
+/// freshness lease bounds a crashed coordinator's stale row.
 fn recent_remote_insert_intent(
     _index_oid: pg_sys::Oid,
     node_ids: &[u32],
@@ -279,7 +283,7 @@ fn recent_remote_insert_intent(
             WHERE node_id IN ({node_ids}) \
               AND served_epoch = $1 \
               AND tracked_vec_id IN ({vec_ids}) \
-              AND updated_at >= clock_timestamp() - interval '5 seconds' \
+              AND updated_at >= clock_timestamp() - interval '30 seconds' \
               AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local'))"),
         &[epoch.into()],
     )
@@ -295,10 +299,51 @@ fn recent_remote_insert_intent(
     })
 }
 
+/// Check the exact current graph tuple when the physical directory scan
+/// reports a missing key. This is the narrowly scoped admission predicate for
+/// the complementary directory/index visibility race; it does not weaken the
+/// typed `OwnedRecordMissing` contract for an absent graph tuple.
+fn current_graph_tuple_exists(
+    graph_relid: pg_sys::Oid,
+    vec_id: u64,
+) -> Option<bool> {
+    let relation = super::handoff::qualified_relation_name(graph_relid).ok()?;
+    let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
+    Spi::get_one_with_args::<bool>(
+        &format!(
+            "SELECT EXISTS (SELECT 1 FROM {relation} WHERE vec_id = $1 AND is_current)"
+        ),
+        &[signed_id.into()],
+    )
+    .ok()
+    .flatten()
+}
+
+/// Admit a bounded visibility retry only for the requested generation's exact
+/// candidates.  The intent predicate covers a prepared owner write; the
+/// current-tuple predicate covers the complementary local backlink race where
+/// a committed graph tuple exists but its directory entry is not visible to
+/// this index scan yet.  Both predicates are scoped to this retained graph
+/// relation and exact requested ids; neither can turn an arbitrary open epoch
+/// row into a retry permission.
+fn visibility_retry_allowed(
+    index_oid: pg_sys::Oid,
+    generation: &GenerationCatalogRow,
+    intent_node_ids: &[u32],
+    vec_ids: &[u64],
+) -> Result<bool, DistannExpandError> {
+    if recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
+        return Ok(true);
+    }
+    Ok(vec_ids.iter().any(|vec_id| {
+        current_graph_tuple_exists(generation.graph_store_relid, *vec_id).unwrap_or(false)
+    }))
+}
+
 /// Resolve an owner-local graph batch with a bounded 2PC visibility retry.
 /// Both traversal expansion and physical materialization use this helper so
-/// the retry policy cannot drift between their lookup paths. Five seconds is
-/// deliberately finite: it covers a contended insert-planning wave without
+/// the retry policy cannot drift between their lookup paths. The retry budget
+/// is deliberately finite: it covers a contended insert-planning wave without
 /// converting an abandoned audit row into a permanent retry permission.
 fn lookup_graph_nodes_with_intent_retry<F>(
     index_oid: pg_sys::Oid,
@@ -362,7 +407,9 @@ where
     let Err(error @ DistannExpandError::OwnedRecordMissing(_)) = records else {
         return records.map(|records| (records, None));
     };
-    if !recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
+    let intent_gate =
+        recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)?;
+    if !visibility_retry_allowed(index_oid, generation, intent_node_ids, vec_ids)? {
         return Err(error);
     }
     super::stage_counters::record_work(
@@ -375,12 +422,17 @@ where
     // cross the coordinator/owner RPC boundary. The gate above already
     // matched epoch, state, and freshness; retain only the exact owner/id
     // scope here so sampling cannot lose the marker while the wave runs.
-    let _ = Spi::run(&format!(
+    if intent_gate {
+        let _ = Spi::run(&format!(
         "UPDATE ec_distann_remote_prepared_xact_intent \
             SET retry_count = retry_count + 1 \
-          WHERE node_id IN ({}) \
+          WHERE served_epoch = {} \
+            AND node_id IN ({}) \
             AND tracked_vec_id IN ({}) \
+            AND updated_at >= clock_timestamp() - interval '30 seconds' \
+            AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')\
             ",
+        generation.epoch,
         intent_node_ids
             .iter()
             .map(u32::to_string)
@@ -391,14 +443,14 @@ where
             .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()).to_string())
             .collect::<Vec<_>>()
             .join(","),
-    ));
+        ));
+    }
     let mut last_error = error;
     // Task 167 final fixture provenance: an event-loop yield, bounded to
-    // 256 attempts, is enough to let
-    // the commit callback resolve a prepared owner transaction under the
-    // heavier multi-owner benchmark wave without reintroducing the old
-    // 40-ms sleep budget under the relation guards.
-    for _ in 0..256 {
+    // thirty-two milliseconds, is enough to let the commit callback resolve
+    // a prepared owner transaction under the multi-owner benchmark wave
+    // without holding the retained scan's relation guards during the wait.
+    for _ in 0..32 {
         let _ = Spi::run("SELECT pg_sleep(0.001)");
         let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| last_error.clone())?;
         match lookup_graph_nodes(
@@ -413,7 +465,7 @@ where
             Ok(found) => return Ok((found, Some(latest))),
             Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
                 last_error = next;
-                if !recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
+                if !visibility_retry_allowed(index_oid, generation, intent_node_ids, vec_ids)? {
                     break;
                 }
             }
@@ -494,19 +546,26 @@ where
             )
         });
     };
-    if !recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
+    let intent_gate =
+        recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)?;
+    if !visibility_retry_allowed(index_oid, generation, intent_node_ids, vec_ids)? {
         return Err(error);
     }
     super::stage_counters::record_work(
         super::stage_counters::DistannMaterializationWork::TraversalFrontierRetries,
         1,
     );
-    let _ = Spi::run(&format!(
+    if intent_gate {
+        let _ = Spi::run(&format!(
         "UPDATE ec_distann_remote_prepared_xact_intent \
             SET retry_count = retry_count + 1 \
-          WHERE node_id IN ({}) \
+          WHERE served_epoch = {} \
+            AND node_id IN ({}) \
             AND tracked_vec_id IN ({}) \
+            AND updated_at >= clock_timestamp() - interval '30 seconds' \
+            AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')\
             ",
+        generation.epoch,
         intent_node_ids
             .iter()
             .map(u32::to_string)
@@ -517,11 +576,12 @@ where
             .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()).to_string())
             .collect::<Vec<_>>()
             .join(","),
-    ));
+        ));
+    }
     let mut graph_relation = Some(graph_relation);
     let mut directory_relation = Some(directory_relation);
     let mut last_error = error;
-    for _ in 0..256 {
+    for _ in 0..32 {
         drop(graph_relation.take());
         drop(directory_relation.take());
         let _ = Spi::run("SELECT pg_sleep(0.001)");
@@ -546,12 +606,7 @@ where
             }
             Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
                 last_error = next;
-                if !recent_remote_insert_intent(
-                    index_oid,
-                    intent_node_ids,
-                    vec_ids,
-                    generation.epoch,
-                )? {
+                if !visibility_retry_allowed(index_oid, generation, intent_node_ids, vec_ids)? {
                     return Err(last_error);
                 }
                 graph_relation = Some(next_graph_relation);
@@ -2112,8 +2167,9 @@ impl RetainedGenerationScan {
                 Ok((graph_relation, directory_relation))
             },
             |vec_id| {
+                let tuple_exists = current_graph_tuple_exists(graph_relid, vec_id);
                 DistannExpandError::OwnedRecordMissing(format!(
-                    "retained physical generation lacks owned vec_id {vec_id:#018x}"
+                    "retained physical generation lacks owned vec_id {vec_id:#018x} (current_graph_tuple={tuple_exists:?})"
                 ))
             },
         )?;
@@ -6052,7 +6108,7 @@ impl GenerationExpander<'_> {
             node.heap_tid.offset_number,
         );
         unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
-        let found = unsafe {
+        let mut found = unsafe {
             pg_sys::table_tuple_fetch_row_version(
                 self.row_relation.as_ptr(),
                 &mut tid,
@@ -6060,6 +6116,29 @@ impl GenerationExpander<'_> {
                 self.slot.as_ptr(),
             )
         };
+        // A long-lived coordinator scan can retain a snapshot from just
+        // before an owner-side prepared write becomes visible.  The graph
+        // tuple and its co-located row-tier tuple are published atomically,
+        // but refreshing once here avoids treating a stale row-tier snapshot
+        // as structural corruption.  A second miss remains fail-closed.
+        if !found {
+            if let Some(latest) = RegisteredSnapshotGuard::latest() {
+                pgrx::itemptr::item_pointer_set_all(
+                    &mut tid,
+                    node.heap_tid.block_number,
+                    node.heap_tid.offset_number,
+                );
+                unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+                found = unsafe {
+                    pg_sys::table_tuple_fetch_row_version(
+                        self.row_relation.as_ptr(),
+                        &mut tid,
+                        latest.as_ptr(),
+                        self.slot.as_ptr(),
+                    )
+                };
+            }
+        }
         if !found {
             return Err(DistannExpandError::Internal(format!(
                 "EC_GENERATION_MISSING: row tier missing vec_id {:#018x}",
@@ -6091,7 +6170,7 @@ impl GenerationExpander<'_> {
             node.heap_tid.offset_number,
         );
         unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
-        let found = unsafe {
+        let mut found = unsafe {
             pg_sys::table_tuple_fetch_row_version(
                 self.row_relation.as_ptr(),
                 &mut tid,
@@ -6099,6 +6178,24 @@ impl GenerationExpander<'_> {
                 self.slot.as_ptr(),
             )
         };
+        if !found {
+            if let Some(latest) = RegisteredSnapshotGuard::latest() {
+                pgrx::itemptr::item_pointer_set_all(
+                    &mut tid,
+                    node.heap_tid.block_number,
+                    node.heap_tid.offset_number,
+                );
+                unsafe { pg_sys::ExecClearTuple(self.slot.as_ptr()) };
+                found = unsafe {
+                    pg_sys::table_tuple_fetch_row_version(
+                        self.row_relation.as_ptr(),
+                        &mut tid,
+                        latest.as_ptr(),
+                        self.slot.as_ptr(),
+                    )
+                };
+            }
+        }
         if !found {
             return Err(DistannExpandError::Internal(format!(
                 "EC_GENERATION_MISSING: row tier missing vec_id {:#018x}",
@@ -6145,9 +6242,26 @@ impl GenerationExpander<'_> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let graph_started = Instant::now();
         let missing = |vec_id| {
+            let graph_tuple = current_graph_tuple_exists(
+                self.generation.graph_store_relid,
+                vec_id,
+            );
+            let owner_ordinal = super::placement::owning_node(
+                vec_id,
+                self.descriptor.roster.len(),
+                self.descriptor.placement_hash_version,
+            );
+            let owner_node_id = self.descriptor.roster[owner_ordinal].node_id;
+            let intent_gate = recent_remote_insert_intent(
+                self.index_oid,
+                &[owner_node_id],
+                &[vec_id],
+                self.generation.epoch,
+            )
+            .unwrap_or(false);
             DistannExpandError::OwnedRecordMissing(format!(
-                "physical generation {} lacks vec_id {vec_id:#018x}",
-                self.generation.epoch
+                "physical generation {} lacks vec_id {vec_id:#018x} (current_graph_tuple={graph_tuple:?} intent_gate={intent_gate})",
+                self.generation.epoch,
             ))
         };
         let (records, retry_snapshot) = lookup_graph_nodes_with_intent_retry(

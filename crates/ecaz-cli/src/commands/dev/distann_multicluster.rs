@@ -9767,8 +9767,8 @@ async fn physical_concurrency_drill(
         .lines()
         .map(str::trim)
         .find_map(|line| line.parse::<i64>().ok());
-    let forced_retry_probe = if let Some(retry_probe_vec_id) = retry_probe_vec_id {
-        let probe_sql = format!(
+    let retry_probe_sql = retry_probe_vec_id.map(|retry_probe_vec_id| {
+        format!(
             "ALTER TABLE ec_distann_remote_prepared_xact_intent \
                 ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
              WITH published AS (SELECT epoch FROM ec_distann_generation \
@@ -9777,31 +9777,44 @@ async fn physical_concurrency_drill(
              INSERT INTO ec_distann_remote_prepared_xact_intent \
                     (index_oid, node_id, served_epoch, xid, gid, intent_state, retry_count, tracked_vec_id) \
              SELECT 'dm_idx'::regclass::oid, {owner}, epoch, 0, \
-                    'ec_distann_insert_retry_probe_{owner}', 'commit_local', 0, {retry_probe_vec_id} \
+                    'ec_distann_insert_retry_probe_{owner}', 'commit_intended', 0, {retry_probe_vec_id} \
                FROM published \
-             ON CONFLICT (gid) DO UPDATE SET intent_state='commit_local', retry_count=0, tracked_vec_id={retry_probe_vec_id}, updated_at=clock_timestamp(); \
+             ON CONFLICT (gid) DO UPDATE SET intent_state='commit_intended', retry_count=0, tracked_vec_id={retry_probe_vec_id}, updated_at=clock_timestamp(); \
              SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id={owner}; \
              SET ec_distann.debug_force_frontier_retry=true; \
              SELECT ec_distann_debug_resolve_nodes_retry(\
                  'public.dm_idx'::regclass, decode('{epoch_fingerprint}', 'hex'), {retry_probe_vec_id});",
             owner = retry_probe_owner.node_id,
-        );
-        let probe_output = run_capture(
-            psql,
-            socket_dir,
-            retry_probe_owner.port,
-            &probe_sql,
         )
-        .await;
-        probe_output.status_ok && probe_output.stdout.lines().any(|line| line.trim() == "t")
-    } else {
-        false
-    };
+    });
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_probe owner={} vec_id={retry_probe_vec_id:?} pass={forced_retry_probe} discovery_output={}",
+        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_probe owner={} vec_id={retry_probe_vec_id:?} scheduled={} discovery_output={}",
         retry_probe_owner.node_id,
+        retry_probe_sql.is_some(),
         compact_capture_error(&retry_probe_vec_output)
     );
+    // Clear any prior marker before the concurrent wave. The deterministic
+    // resolve_nodes probe is launched behind the same barrier as the writers,
+    // so the owner-side counter sample proves that the exercised retry ran
+    // during the churn window rather than in setup.
+    let mut live_counter_reset_ok = true;
+    for owner in owner_nodes {
+        let output = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            owner.port,
+            "UPDATE ec_distann_remote_prepared_xact_intent SET retry_count = 0;",
+        )
+        .await;
+        live_counter_reset_ok &= !output.contains("ERROR");
+    }
+    let retry_snapshot_sql =
+        "SELECT COALESCE(sum(retry_count), 0) FROM ec_distann_remote_prepared_xact_intent;";
+    let parse_retry_count = |output: &str| {
+        output
+            .lines()
+            .find_map(|line| line.trim().parse::<u64>().ok())
+    };
     let inserted_ids = (0..WRITERS)
         .flat_map(|writer| {
             (0..ITERATIONS).map(move |iteration| {
@@ -9841,7 +9854,21 @@ async fn physical_concurrency_drill(
         }));
     }
 
-    let writer_barrier = Arc::new(Barrier::new(WRITERS));
+    let writer_barrier = Arc::new(Barrier::new(
+        WRITERS + if retry_probe_sql.is_some() { 1 } else { 0 },
+    ));
+    let probe_task = retry_probe_sql.map(|probe_sql| {
+        let psql_probe = psql.to_path_buf();
+        let socket_dir_probe = socket_dir.to_path_buf();
+        let probe_barrier = Arc::clone(&writer_barrier);
+        let probe_port = retry_probe_owner.port;
+        tokio::spawn(async move {
+            probe_barrier.wait().await;
+            let probe_output =
+                run_capture(&psql_probe, &socket_dir_probe, probe_port, &probe_sql).await;
+            probe_output.status_ok && probe_output.stdout.lines().any(|line| line.trim() == "t")
+        })
+    });
     for writer in 0..WRITERS {
         let psql_insert = psql.to_path_buf();
         let socket_dir_insert = socket_dir.to_path_buf();
@@ -9877,7 +9904,7 @@ async fn physical_concurrency_drill(
                     run_capture(&psql_insert, &socket_dir_insert, coord_port, &insert_sql).await;
                 if !output.status_ok {
                     crate::ecaz_println!(
-                        "[distann-multicluster] physical_concurrent_insert_query DIAG role=writer writer={writer} iteration={iteration} stderr={}",
+                        "[distann-multicluster] physical_concurrent_insert_query DIAG role=writer writer={writer} iteration={iteration} id={id} stderr={}",
                         compact_capture_error(&output.stderr)
                     );
                     return false;
@@ -9899,6 +9926,46 @@ async fn physical_concurrency_drill(
             }
         }
     }
+    let forced_retry_probe = match probe_task {
+        Some(task) => task.await.unwrap_or(false),
+        None => false,
+    };
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_probe owner={} vec_id={retry_probe_vec_id:?} pass={forced_retry_probe} during_churn=true",
+        retry_probe_owner.node_id,
+    );
+    let mut recent_intent_rows_by_owner = Vec::new();
+    for owner in owner_nodes {
+        let output = capture_psql_allow_error(
+            psql,
+            socket_dir,
+            owner.port,
+            "SELECT node_id::text || '|' || served_epoch::text || '|' || intent_state || '|' || COALESCE(tracked_vec_id::text, 'NULL') || '|' || retry_count::text \
+               FROM ec_distann_remote_prepared_xact_intent \
+              WHERE updated_at >= clock_timestamp() - interval '30 seconds' \
+                AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local') \
+              ORDER BY updated_at DESC LIMIT 24;",
+        )
+        .await;
+        recent_intent_rows_by_owner.push((owner.node_id, compact_capture_error(&output)));
+    }
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_concurrent_insert_query DIAG role=recent_intents by_owner={recent_intent_rows_by_owner:?}"
+    );
+    let mut churn_retries_by_owner = Vec::new();
+    for owner in owner_nodes {
+        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
+            .await;
+        churn_retries_by_owner.push((
+            owner.node_id,
+            parse_retry_count(&output),
+            compact_capture_error(&output),
+        ));
+    }
+    let churn_retries = churn_retries_by_owner
+        .iter()
+        .map(|(_, count, _)| *count)
+        .sum::<Option<u64>>();
     let target_port = owner_nodes
         .iter()
         .find(|node| node.node_id == shared_target_owner)
@@ -9999,27 +10066,6 @@ async fn physical_concurrency_drill(
         saturation_pass
     );
     pass &= saturation_pass;
-    let retry_snapshot_sql =
-        "SELECT COALESCE(sum(retry_count), 0) FROM ec_distann_remote_prepared_xact_intent;";
-    let parse_retry_count = |output: &str| {
-        output
-            .lines()
-            .find_map(|line| line.trim().parse::<u64>().ok())
-    };
-    let mut churn_retries_by_owner = Vec::new();
-    for owner in owner_nodes {
-        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
-            .await;
-        churn_retries_by_owner.push((
-            owner.node_id,
-            parse_retry_count(&output),
-            compact_capture_error(&output),
-        ));
-    }
-    let churn_retries = churn_retries_by_owner
-        .iter()
-        .map(|(_, count, _)| *count)
-        .sum::<Option<u64>>();
     let mut steady_reset_ok = true;
     let mut steady_reset_outputs = Vec::new();
     for owner in owner_nodes {
@@ -10054,6 +10100,7 @@ async fn physical_concurrency_drill(
         .map(|(_, count, _)| *count)
         .sum::<Option<u64>>();
     let retry_counter_ok = counter_reset_ok
+        && live_counter_reset_ok
         && forced_retry_probe
         && steady_reset_ok
         && steady_query.status_ok
@@ -10062,8 +10109,7 @@ async fn physical_concurrency_drill(
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries={churn_retries:?} churn_by_owner={churn_retries_by_owner:?} steady_retries={steady_retries:?} steady_by_owner={steady_retries_by_owner:?} pass={retry_counter_ok} reset_outputs={counter_reset_outputs:?} steady_reset_outputs={steady_reset_outputs:?}"
     );
-    let mut inserted_vec_ids_by_id = HashMap::new();
-    let inserted_vec_ids = if pass {
+    let (inserted_vec_ids, inserted_vec_ids_by_id) = {
         let first_id = 900_000_i64 + base_rows as i64;
         let last_id = first_id + (WRITERS * ITERATIONS) as i64;
         let mapping_output = capture_psql_allow_error(
@@ -10098,17 +10144,15 @@ async fn physical_concurrency_drill(
             );
             pass = false;
         }
-        inserted_vec_ids_by_id = mapped.clone();
-        mapped
-            .into_iter()
+        let inserted_vec_ids = mapped
+            .iter()
             .filter(|(id, _)| inserted_ids.contains(id))
-            .map(|(_, vec_id)| vec_id)
-            .collect::<HashSet<_>>()
-    } else {
-        HashSet::new()
+            .map(|(_, vec_id)| *vec_id)
+            .collect::<HashSet<_>>();
+        (inserted_vec_ids, mapped)
     };
     let mut reverse_edge_coverage_count = 0;
-    let forward_neighbor_check = if pass {
+    let forward_neighbor_check = if !inserted_vec_ids.is_empty() {
         'check: {
             let graph_vec_ids = inserted_vec_ids
                 .iter()

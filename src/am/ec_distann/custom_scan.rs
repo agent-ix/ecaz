@@ -1044,7 +1044,7 @@ unsafe extern "C-unwind" fn custom_scan_access(
                 pgrx::itemptr::item_pointer_set_all(&mut item, tid.block_number, tid.offset_number);
                 let estate = (*scan_state).ps.state;
                 pg_sys::ExecClearTuple(state.frozen_row_slot);
-                let visible = pg_sys::table_tuple_fetch_row_version(
+                let mut visible = pg_sys::table_tuple_fetch_row_version(
                     context.row_relation().unwrap_or_else(|| {
                         pgrx::error!("EC_GENERATION_MISSING: local hit has no local row tier")
                     }),
@@ -1052,6 +1052,31 @@ unsafe extern "C-unwind" fn custom_scan_access(
                     (*estate).es_snapshot,
                     state.frozen_row_slot,
                 );
+                // A concurrent physical replacement can retire the row-TID
+                // after traversal has ranked the immutable graph record but
+                // before the executor consumes the result.  Refresh once
+                // against the latest registered snapshot; the generation
+                // reader already treats this as a bounded visibility race.
+                if !visible {
+                    if let Some(latest) =
+                        crate::storage::snapshot_guard::RegisteredSnapshotGuard::latest()
+                    {
+                        pgrx::itemptr::item_pointer_set_all(
+                            &mut item,
+                            tid.block_number,
+                            tid.offset_number,
+                        );
+                        pg_sys::ExecClearTuple(state.frozen_row_slot);
+                        visible = pg_sys::table_tuple_fetch_row_version(
+                            context.row_relation().unwrap_or_else(|| {
+                                pgrx::error!("EC_GENERATION_MISSING: local hit has no local row tier")
+                            }),
+                            &mut item,
+                            latest.as_ptr(),
+                            state.frozen_row_slot,
+                        );
+                    }
+                }
                 if visible {
                     #[cfg(feature = "distann-head-attribution-benchmark")]
                     record_executor_consumption(false);
