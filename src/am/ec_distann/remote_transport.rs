@@ -2398,37 +2398,71 @@ async fn run_one_physical_materialize_raw(
 ) -> Result<(Vec<Row>, Duration), DistannExpandError> {
     let started = std::time::Instant::now();
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
-    let rows = physical_query(
-        client,
-        statement,
-        &[
-            &request.index_regclass,
-            &request.epoch_fingerprint,
-            &wire_ids,
-            &request.projection_attnums,
-            &request.expected_schema_fingerprint,
-        ],
-    )
-    .await?;
+    let rows = {
+        let mut attempt = 0_u8;
+        loop {
+            let result = physical_query(
+                client,
+                statement,
+                &[
+                    &request.index_regclass,
+                    &request.epoch_fingerprint,
+                    &wire_ids,
+                    &request.projection_attnums,
+                    &request.expected_schema_fingerprint,
+                ],
+            )
+            .await;
+            match result {
+                Ok(rows) => break Ok(rows),
+                Err(error @ DistannExpandError::OwnedRecordMissing(_)) => {
+                    if attempt >= 31 {
+                        break Err(error);
+                    }
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                Err(error) => break Err(error),
+            }
+        }
+        ?
+    };
     #[cfg(feature = "distann-head-attribution-benchmark")]
-    let rows = physical_query(
-        client,
-        statement,
-        &[
-            &request.index_regclass,
-            &request.epoch_fingerprint,
-            &wire_ids,
-            &request.projection_attnums,
-            &request.expected_schema_fingerprint,
-            &request.use_cached_payload_plan,
-            &request.use_typed_locator,
-            &request.use_packed_payload,
-            &wire_owner_blocks,
-            &wire_owner_offsets,
-            &request.use_expanded_locator,
-        ],
-    )
-    .await?;
+    let rows = {
+        let mut attempt = 0_u8;
+        loop {
+            let result = physical_query(
+                client,
+                statement,
+                &[
+                    &request.index_regclass,
+                    &request.epoch_fingerprint,
+                    &wire_ids,
+                    &request.projection_attnums,
+                    &request.expected_schema_fingerprint,
+                    &request.use_cached_payload_plan,
+                    &request.use_typed_locator,
+                    &request.use_packed_payload,
+                    &wire_owner_blocks,
+                    &wire_owner_offsets,
+                    &request.use_expanded_locator,
+                ],
+            )
+            .await;
+            match result {
+                Ok(rows) => break Ok(rows),
+                Err(error @ DistannExpandError::OwnedRecordMissing(_)) => {
+                    if attempt >= 31 {
+                        break Err(error);
+                    }
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_millis(1)).await;
+                }
+                Err(error) => break Err(error),
+            }
+        }
+        ?
+    };
     Ok((rows, started.elapsed()))
 }
 
