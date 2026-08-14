@@ -7054,7 +7054,13 @@ async fn run_physical_benchmarks(
         .await?;
         let roster = nodes
             .iter()
-            .map(|node| format!("{}@{}", node.node_id, conninfo(socket_dir, node.port)))
+            .map(|node| {
+                format!(
+                    "{}@{} options=-cstatement_timeout=3600000",
+                    node.node_id,
+                    conninfo(socket_dir, node.port)
+                )
+            })
             .collect::<Vec<_>>()
             .join(";");
         lines.push(
@@ -7940,9 +7946,21 @@ async fn drive_physical_fixture(
     } else {
         "dm".to_owned()
     };
+    // The 50k/100k physical head search can legitimately exceed PostgreSQL's
+    // default ten-minute statement timeout while the owner scans the larger
+    // staged generation. Keep the benchmark workload unchanged, but give the
+    // remote owner sessions the same bounded one-hour measurement allowance;
+    // this is required in the conninfo because PGOPTIONS on the coordinator
+    // does not propagate through the backend-created owner connections.
     let fixture_roster = nodes
         .iter()
-        .map(|node| format!("{}@{}", node.node_id, conninfo(socket_dir, node.port)))
+        .map(|node| {
+            format!(
+                "{}@{} options=-cstatement_timeout=3600000",
+                node.node_id,
+                conninfo(socket_dir, node.port)
+            )
+        })
         .collect::<Vec<_>>()
         .join(";");
     let physical_concurrency_ok = physical_concurrency_drill(
