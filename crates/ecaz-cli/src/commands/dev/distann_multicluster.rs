@@ -9859,8 +9859,9 @@ async fn physical_concurrency_drill(
                 } else {
                     insert_vector.clone()
                 };
+                let writer_owner = writer + 2;
                 let insert_sql = format!(
-                    "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id=1; \
+                    "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id={writer_owner}; \
                      WITH row_data AS (SELECT {id}::bigint AS id, {source_expr}::real[] AS source) \
                      INSERT INTO {insert_table} (id, source_id, source, embedding) \
                      SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
