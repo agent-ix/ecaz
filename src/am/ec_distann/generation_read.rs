@@ -387,11 +387,12 @@ where
             .join(","),
     ));
     let mut last_error = error;
-    // Task 167 final fixture provenance: an event-loop yield, bounded to eight attempts, is enough to let
+    // Task 167 final fixture provenance: an event-loop yield, bounded to
+    // thirty-two attempts, is enough to let
     // the commit callback resolve a prepared owner transaction under the
     // heavier multi-owner benchmark wave without reintroducing the old
     // 40-ms sleep budget under the relation guards.
-    for _ in 0..8 {
+    for _ in 0..32 {
         let _ = Spi::run("SELECT pg_sleep(0.001)");
         let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| last_error.clone())?;
         match lookup_graph_nodes(
