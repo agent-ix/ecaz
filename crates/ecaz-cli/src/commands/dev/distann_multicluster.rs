@@ -10464,6 +10464,23 @@ async fn physical_routed_delete_vacuum_drill(
     if owner_node.port == coord_port {
         return Ok(false);
     }
+    let dimension_output = capture_psql_allow_error(
+        psql,
+        socket_dir,
+        coord_port,
+        &format!("SELECT array_length(source, 1) FROM {table} LIMIT 1;"),
+    )
+    .await;
+    let Some(dimension) = dimension_output
+        .lines()
+        .find_map(|line| line.trim().parse::<usize>().ok())
+    else {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_routed_delete_vacuum pass=false reason=source_dimension_missing output={}",
+            compact_capture_error(&dimension_output)
+        );
+        return Ok(false);
+    };
     let deleted = run_capture(
         psql,
         socket_dir,
@@ -10487,7 +10504,7 @@ async fn physical_routed_delete_vacuum_drill(
                FROM ec_distann_expand_physical_nodes(\
                     'public.dm_idx'::regclass, decode('{epoch_fingerprint}', 'hex'), \
                     ARRAY[{zero_query}]::real[], ARRAY[{vec_id}]::bigint[], NULL, NULL);",
-            zero_query = (0..args.dim).map(|_| "0").collect::<Vec<_>>().join(","),
+            zero_query = (0..dimension).map(|_| "0").collect::<Vec<_>>().join(","),
         ),
     )
     .await;
