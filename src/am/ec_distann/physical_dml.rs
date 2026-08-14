@@ -143,6 +143,8 @@ unsafe fn insert_from_prepared_slot(
         "EC_NODE_DESCRIPTOR: physical insert owner is outside the active roster".to_owned()
     })?;
     let (generation, descriptor) = scan.local_write_identity()?;
+    let metadata = ambuild::read_metadata_from_index(index_relation)?;
+    let scan_epoch = super::roster::scan_epoch(&metadata);
     let source_attnum = indexed_ecvector_attnum(index_relation)?;
     if vector.len() != usize::from(descriptor.dimensions) {
         return Err(format!(
@@ -156,6 +158,16 @@ unsafe fn insert_from_prepared_slot(
         .iter()
         .position(|route| route.is_local)
         .ok_or_else(|| "EC_NODE_DESCRIPTOR: active roster has no local owner".to_owned())?;
+
+    if owner_route.is_local {
+        super::remote_transport::record_local_physical_insert_intent(
+            &owner_route.roster_conninfo,
+            index_oid,
+            owner_route.node_id,
+            scan_epoch,
+            vec_id,
+        )?;
+    }
 
     // Plan while the read-side generation guard is alive. The physical scan
     // gives us the bounded FR-081 frontier. Remote candidates are materialized
@@ -372,7 +384,6 @@ unsafe fn insert_from_prepared_slot(
         })?;
         let (payload_nulls, payload_offsets, payload_values) =
             ambuild::freeze_source_slot_packed(source_slot)?;
-        let metadata = ambuild::read_metadata_from_index(index_relation)?;
         let index_name = unsafe { super::routine::distann_index_relname(index_relation) };
         let roster_spec = roster_spec_for_routes(&routes)?;
         let planned_forward = encode_planned_forward(&forward)?;
@@ -383,7 +394,7 @@ unsafe fn insert_from_prepared_slot(
                 conninfo,
                 roster_spec: &roster_spec,
                 target_node_id: owner_route.node_id,
-                epoch: super::roster::scan_epoch(&metadata),
+                epoch: scan_epoch,
                 index_regclass: &index_name,
                 epoch_fingerprint: &fingerprint,
                 vec_id,
@@ -436,7 +447,7 @@ unsafe fn insert_from_prepared_slot(
                     conninfo,
                     roster_spec: &roster_spec,
                     target_node_id: target_route.node_id,
-                    epoch: super::roster::scan_epoch(&metadata),
+                    epoch: scan_epoch,
                     index_regclass: &index_name,
                     epoch_fingerprint: &fingerprint,
                     target_vec_id: candidate.vec_id,
@@ -517,7 +528,6 @@ unsafe fn insert_from_prepared_slot(
         );
     }
 
-    let metadata = ambuild::read_metadata_from_index(index_relation)?;
     let index_name = unsafe { super::routine::distann_index_relname(index_relation) };
     let roster_spec = roster_spec_for_routes(&routes)?;
     // Amend at most graph_degree forward-neighbor records. Local mutations
@@ -550,7 +560,7 @@ unsafe fn insert_from_prepared_slot(
                         conninfo,
                         roster_spec: &roster_spec,
                         target_node_id: target_route.node_id,
-                        epoch: super::roster::scan_epoch(&metadata),
+                        epoch: scan_epoch,
                         index_regclass: &index_name,
                         epoch_fingerprint: &fingerprint,
                         target_vec_id: candidate.vec_id,

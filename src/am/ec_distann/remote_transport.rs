@@ -752,6 +752,110 @@ fn mark_remote_physical_intent_precommit(
     Ok(())
 }
 
+fn mark_physical_intent_terminal(
+    conninfo: &str,
+    node_id: u32,
+    gid: &str,
+    state: &str,
+) -> Result<(), String> {
+    let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+        conninfo,
+        node_id,
+        "ec_distann physical insert local intent terminal state",
+    )?;
+    client
+        .execute(
+            &format!(
+                "UPDATE {PHYSICAL_INTENT_TABLE} SET intent_state = {}, \
+                 updated_at = clock_timestamp() WHERE gid = {}",
+                quote_sql_literal(state),
+                quote_sql_literal(gid),
+            ),
+            &[],
+        )
+        .map_err(|error| format!("EC_REMOTE_WRITE: terminal intent update failed: {error}"))?;
+    Ok(())
+}
+
+/// Publish a transaction-independent intent before a local-owner insert starts
+/// its search. Remote-owner inserts publish the equivalent row immediately
+/// before their prepared transaction; local-owner inserts need this separate
+/// connection because a row written through the callback transaction is not
+/// visible to a concurrent reader until the graph append commits.
+pub(crate) fn record_local_physical_insert_intent(
+    conninfo: &str,
+    index_oid: pg_sys::Oid,
+    node_id: u32,
+    served_epoch: u64,
+    tracked_vec_id: u64,
+) -> Result<(), String> {
+    let gid = physical_insert_prepared_gid(index_oid, node_id, served_epoch);
+    let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+        conninfo,
+        node_id,
+        "ec_distann physical insert local intent",
+    )?;
+    let parts = parse_physical_prepared_gid(&gid)
+        .ok_or_else(|| format!("EC_REMOTE_WRITE: malformed local intent gid {gid}"))?;
+    client
+        .batch_execute(
+            "ALTER TABLE ec_distann_remote_prepared_xact_intent \
+             ADD COLUMN IF NOT EXISTS tracked_vec_id bigint",
+        )
+        .map_err(|error| format!("EC_REMOTE_WRITE: local intent schema upgrade failed: {error}"))?;
+    client
+        .execute(
+            "INSERT INTO ec_distann_remote_prepared_xact_intent \
+             (index_oid, node_id, served_epoch, xid, gid, intent_state, tracked_vec_id) \
+             VALUES ($1::oid, $2, $3, $4, $5, 'prepare_requested', $6) \
+             ON CONFLICT (gid) DO UPDATE SET intent_state = EXCLUDED.intent_state, \
+                 tracked_vec_id = EXCLUDED.tracked_vec_id, updated_at = clock_timestamp()",
+            &[
+                &u32::from(index_oid),
+                &i32::try_from(node_id)
+                    .map_err(|_| format!("EC_REMOTE_WRITE: node id {node_id} exceeds int4"))?,
+                &(served_epoch as i64),
+                &(parts.xid as i64),
+                &gid,
+                &i64::from_le_bytes(tracked_vec_id.to_le_bytes()),
+            ],
+        )
+        .map_err(|error| format!("EC_REMOTE_WRITE: local intent record failed: {error}"))?;
+    drop(client);
+
+    let precommit_conninfo = conninfo.to_owned();
+    let precommit_gid = gid.clone();
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::PreCommit, move || {
+        if let Err(error) = mark_remote_physical_intent_precommit(
+            &precommit_conninfo,
+            node_id,
+            &precommit_gid,
+        ) {
+            pgrx::error!("{error}");
+        }
+    });
+    let commit_conninfo = conninfo.to_owned();
+    let commit_gid = gid.clone();
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Commit, move || {
+        let _ = mark_physical_intent_terminal(
+            &commit_conninfo,
+            node_id,
+            &commit_gid,
+            "commit_local",
+        );
+    });
+    let abort_conninfo = conninfo.to_owned();
+    pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::Abort, move || {
+        let _ = mark_physical_intent_terminal(
+            &abort_conninfo,
+            node_id,
+            &gid,
+            "rollback_local",
+        );
+    });
+    Ok(())
+}
+
 pub(crate) fn remote_physical_insert(
     request: &DistannRemotePhysicalInsertRequest<'_>,
 ) -> Result<(), String> {
