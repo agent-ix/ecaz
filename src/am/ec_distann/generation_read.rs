@@ -373,7 +373,6 @@ where
           WHERE node_id IN ({}) \
             AND served_epoch = {} \
             AND tracked_vec_id IN ({}) \
-            AND updated_at >= clock_timestamp() - interval '5 seconds' \
             AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')",
         intent_node_ids
             .iter()
