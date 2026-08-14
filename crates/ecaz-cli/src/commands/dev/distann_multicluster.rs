@@ -7973,6 +7973,7 @@ async fn drive_physical_fixture(
         nodes,
         args,
         &fixture_roster,
+        &concurrency_table,
         &fingerprint,
     )
     .await?;
@@ -10412,6 +10413,7 @@ async fn physical_routed_delete_vacuum_drill(
     nodes: &[Node],
     args: &LocalMultinodePg18Args,
     roster: &str,
+    table: &str,
     epoch_fingerprint: &str,
 ) -> Result<bool> {
     let owner_count = if args.coordinator_outside_roster {
@@ -10427,8 +10429,8 @@ async fn physical_routed_delete_vacuum_drill(
             "SET ec_distann.roster = '{}'; SET ec_distann.local_node_id=1; \
              SELECT t.id || '|' || m.vec_id::text || '|' || \
                     ec_distann_owning_node(m.vec_id, {owner_count}, 1)::text \
-               FROM dm t \
-               JOIN ec_distann_physical_source_map m ON m.source_tid = t.ctid \
+               FROM {table} t \
+             JOIN ec_distann_physical_source_map m ON m.source_tid = t.ctid \
               WHERE m.index_oid = 'dm_idx'::regclass::oid \
                 AND ec_distann_owning_node(m.vec_id, {owner_count}, 1) > 0 \
               ORDER BY t.id LIMIT 1;",
@@ -10466,14 +10468,14 @@ async fn physical_routed_delete_vacuum_drill(
         psql,
         socket_dir,
         coord_port,
-        &format!("DELETE FROM dm WHERE id = {id};"),
+        &format!("DELETE FROM {table} WHERE id = {id};"),
     )
     .await;
     let vacuum = run_capture(
         psql,
         socket_dir,
         coord_port,
-        "VACUUM (INDEX_CLEANUP ON) dm;",
+        &format!("VACUUM (INDEX_CLEANUP ON) {table};"),
     )
     .await;
     let tombstone = capture_psql_allow_error(
