@@ -1,6 +1,6 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation checkpoint `8f0334661`; packets 026 through 028
+Status: implementation checkpoint `71396d0e6`; packets 026 through 029
 review-open;
 outside reviewer disposition pending; both owner retry paths now reopen graph
 and directory guards per attempt, but current-head production benchmark
@@ -9,6 +9,8 @@ inserted-neighborhood parity and the real saturated-target gate; the 50k/100k
 rerun is blocked by the host read-only filesystem. The production append A/B
 toggle now propagates to remote owner sessions, and the 50k/100k concurrency
 drills are enabled in the next suite config, but no runtime result is claimed.
+Parity now reports append-disabled and append-enabled recall separately; no
+runtime result is claimed for either arm yet.
 No merge or closeout until current-head production 10k/50k/100k evidence and
 reviewer ACCEPT.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
