@@ -1,0 +1,33 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=41600 rows=2000 dim=4 graph_degree=8 build_shards=1 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=563cb18f782c9641cca4ab7620c0747da58cbf87 extension_build_profile=release extension_features=pg18 debug_override=false
+[distann-multicluster] physical_setup_start rows=2000 nodes=3
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=677 rows=677 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=114688 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=650 rows=650 non_owned=0 orphans=0 graph_bytes=212992 row_bytes=106496 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=673 rows=673 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=106496 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=677 rows=677 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=114688 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=650 rows=650 non_owned=0 orphans=0 graph_bytes=212992 row_bytes=106496 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=673 rows=673 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=106496 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=2000
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true expected_source_id=008bd5ad-93b7-44d5-8033-8c253d9c1770 materialized_source_id=d67d8ab4-f4c1-4bf2-8aa3-53e27879133c pinned_probe=returned_sample pinned_probe_output=008bd5ad-93b7-44d5-8033-8c253d9c1770 owner_exact_probe=008bd5ad-93b7-44d5-8033-8c253d9c1770
+[distann-multicluster] physical_remote_owner node=3 custom_scan=true pass=true expected_source_id=0004d0b5-9e19-461f-8126-e3a08a814c33 materialized_source_id=4e732ced-3463-406d-80ca-9a15b6153677 pinned_probe=zero_rows pinned_probe_output= owner_exact_probe=0004d0b5-9e19-461f-8126-e3a08a814c33
+[distann-multicluster] mid_insert_failure DIAG physical_insert_errored=true before_rows=500 after_rows=500 before_records=500 after_records=500 consistent=true pass=true
+[distann-multicluster] physical_update_replacement DIAG update_ok=true stable_vec_id=true before=Some((-2641035976082453728, 1, 1)) after=Some((-2641035976082453728, 2, 1)) pass=true
+[distann-multicluster] physical_mid_insert_failure pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target seed_vec_id=-5350135242608440401 seed_neighbor_count=2 seeded_target_signed_id=Some(1949153177052862655)
+[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner=2 vec_id=1949153177052862655 signed_vec_id=1949153177052862655 source={1.0278937,-1.5893505,-0.8028963,1.9110245}
+[distann-multicluster] physical_concurrent_insert_query DIAG role=recent_intents by_owner=[(1, "2|1|commit_local|-7644419781465283983 | 2|1|commit_local|-5775485599086671743 | 2|1|commit_local|-6440003394146892748"), (2, "2|1|commit_local|1949153177052862655 | 2|1|commit_local|-7644419781465283983 | 2|1|commit_local|-7644419781465283983"), (3, "3|1|commit_local|1736800619301335481 | 3|1|commit_local|1736800619301335481 | 3|1|commit_local|1736800619301335481")]
+[distann-multicluster] physical_concurrent_insert_query DIAG role=saturated_target owner=2 vec_id=1949153177052862655 initial_neighbors=8 before_neighbors=Some(8) final_neighbors=Some(8) inserts_ok=true pass=true
+[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries=Some(99) churn_by_owner=[(1, Some(99), "99"), (2, Some(0), "0"), (3, Some(0), "0")] steady_retries=Some(0) steady_by_owner=[(1, Some(0), "0"), (2, Some(0), "0"), (3, Some(0), "0")] pass=true reset_outputs=[(1, "CREATE TABLE | TRUNCATE TABLE"), (2, "CREATE TABLE | TRUNCATE TABLE"), (3, "CREATE TABLE | TRUNCATE TABLE")] steady_reset_outputs=[(1, "TRUNCATE TABLE"), (2, "TRUNCATE TABLE"), (3, "TRUNCATE TABLE")]
+[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner=2 target_vec_id=1949153177052862655 inserted_vec_ids=[8370535816742736759, 2247823663917361747] target_neighbors={13993636136718025517, 6447655514814454180, 6139938083845657544, 4202156802592327003, 15328030920407400088, 3477138406501534175, 7077941471063372189, 11974731853787019764} pass=false
+[distann-multicluster] physical_concurrent_insert_query DIAG scanners=4 writers=2 iterations=12 expected_count=10 reverse_edge_coverage=11/24 shared_target_vec_id=1949153177052862655 shared_target_owner=2 back_edge_check=false pass=true
+[distann-multicluster] physical_concurrent_insert_query pass=false
+
+   0: [91mphysical TC-043 concurrent insert/query drill failed[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m8065[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

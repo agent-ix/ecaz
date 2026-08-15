@@ -1,0 +1,121 @@
+{
+  "suite": "task167-production-owner-retry",
+  "schema_version": 1,
+  "config": "reviews/task-167/026-owner-retry/artifacts/task167-owner-retry-suite.json",
+  "config_sha256": "0b1b3b434da5508e0d7c5503df2bbf665d002b053d05115db7d51b1333828fbc",
+  "dry_run": false,
+  "generated_at_unix_ms": 1786810864390,
+  "runner_git_commit": "563cb18f782c9641cca4ab7620c0747da58cbf87-dirty",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "physical-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_10k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/026-owner-retry/artifacts/production-final-synthetic-degree8-seed/physical-10k/distann-multinode-summary.log",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-synthetic-degree8-seed/physical-10k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "physical-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_50k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/026-owner-retry/artifacts/production-final-synthetic-degree8-seed/physical-50k/distann-multinode-summary.log",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-synthetic-degree8-seed/physical-50k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "physical-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_100k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/026-owner-retry/artifacts/production-final-synthetic-degree8-seed/physical-100k/distann-multinode-summary.log",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-synthetic-degree8-seed/physical-100k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "concurrency-synthetic",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-synthetic-degree8-seed/concurrency-synthetic",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task167-production-concurrency-synthetic",
+        "--log-file",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-synthetic-degree8-seed/concurrency-synthetic/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--base-port",
+        "41600",
+        "--rows",
+        "2000",
+        "--dim",
+        "4",
+        "--graph-degree",
+        "8",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "20",
+        "--skip-fault-drills"
+      ],
+      "selected": true,
+      "tags": [
+        "task167",
+        "production",
+        "natural-retry",
+        "saturation",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/026-owner-retry/artifacts/production-final-synthetic-degree8-seed/concurrency-synthetic/distann-multinode-summary.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1786810864416,
+      "finished_at_unix_ms": 1786810882531,
+      "duration_ms": 18989,
+      "exit_code": 1
+    }
+  ]
+}

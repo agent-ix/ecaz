@@ -1,0 +1,135 @@
+{
+  "suite": "task167-production-owner-retry",
+  "schema_version": 1,
+  "config": "reviews/task-167/026-owner-retry/artifacts/task167-owner-retry-suite.json",
+  "config_sha256": "ac6836f514e1b8cc3b5cb300ab5c94990431abeade0473d25a796d60536e2c16",
+  "dry_run": false,
+  "generated_at_unix_ms": 1786818048574,
+  "runner_git_commit": "48ca7caea50706e3b80908f22162632f57cb1576",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "physical-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_10k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/026-owner-retry/artifacts/production-final-matrix-indexed-50k/physical-10k/distann-multinode-summary.log",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-matrix-indexed-50k/physical-10k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "physical-50k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-matrix-indexed-50k/physical-50k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task167-production-50k",
+        "--log-file",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-matrix-indexed-50k/physical-50k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--skip-concurrency-drill",
+        "--benchmark-iterations",
+        "5",
+        "--benchmark-concurrency-sweep",
+        "1",
+        "--benchmark-warmup-iterations",
+        "2",
+        "--benchmark-parity-queries",
+        "48",
+        "--base-port",
+        "41390",
+        "--graph-degree",
+        "5",
+        "--head-index-cap",
+        "32768",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_50k",
+        "--staged-dir",
+        "data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_50k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/026-owner-retry/artifacts/production-final-matrix-indexed-50k/physical-50k/distann-multinode-summary.log",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-matrix-indexed-50k/physical-50k/physical-head-membership.json"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1786818048686,
+      "finished_at_unix_ms": 1786818048798,
+      "duration_ms": 110,
+      "exit_code": 1
+    },
+    {
+      "name": "physical-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_100k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/026-owner-retry/artifacts/production-final-matrix-indexed-50k/physical-100k/distann-multinode-summary.log",
+        "reviews/task-167/026-owner-retry/artifacts/production-final-matrix-indexed-50k/physical-100k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "concurrency-synthetic",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "natural-retry",
+        "saturation",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/026-owner-retry/artifacts/production-final-matrix-indexed-50k/concurrency-synthetic/distann-multinode-summary.log"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

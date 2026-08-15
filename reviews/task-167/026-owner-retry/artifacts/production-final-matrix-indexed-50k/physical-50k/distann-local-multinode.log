@@ -1,0 +1,9 @@
+
+   0: [91mclearing /home/peter/.ecaz/clusters/task167-production-50k[0m
+   1: [91mRead-only file system (os error 30)[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m885[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

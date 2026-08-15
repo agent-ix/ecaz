@@ -8,40 +8,52 @@ seq: 1
 
 # Task 167 owner retry follow-up
 
-Status: review-open; not merge-ready.
+Status: review-open; NOT merge-ready. This packet records the fixes and the
+remaining evidence gap; it does not request merge or task closeout.
 
-This packet addresses reviewer feedback 025 by:
+The implementation fixes from the reviewer feedback are present in the pushed
+production code:
 
-- applying the bounded intent-gated retry in `RetainedGenerationScan::resolve_nodes`;
-- keeping the intent fence owner-, epoch-, freshness-, state-, and vec-id-scoped;
-- adding durable owner-side retry attribution and a deterministic resolve probe;
-- correcting the append A/B and reverse-edge metric labeling;
-- documenting pinned ANN post-filter nondeterminism; and
-- adding the required `ecaz bench suite` configuration and packet-local logs.
+- `RetainedGenerationScan::resolve_nodes` owns the exact missing-vec-id,
+  intent-gated retry, with graph/directory guards reopened per attempt and a
+  bounded wait outside the guards.
+- Retry attribution is written to a separate unlogged side relation. The
+  retry path does not update or lock the 2PC intent rows.
+- The append-when-room diagnostic is a normal userset GUC and, as of
+  `3c162f69d`, its value is honored by production `physical_dml` code.
+- The fixture uses no mid-drill `ALTER TABLE`; the owner probe is indexed by
+  `source_id`, large-scale latency uses five measured iterations plus two
+  warmups, and the append A/B now uses five 32-row trials. Its pass condition
+  requires both no throughput regression and no increase in backlink
+  amendments; the output labels the arms as sequential on one fixture.
+- The retry gate checks the vec_id carried by `OwnedRecordMissing`, rather than
+  any id in the batch. Saturation requires the exact graph degree before and
+  after the concurrent inserts.
 
-The production checkpoint is `cf5ad6761` (parent implementation checkpoint
-`5f56390d1`). The retry is now in
-`RetainedGenerationScan::resolve_nodes`, the function that emitted the reviewer's
-`EC_RECORD_MISSING` and that serves owner materialization during insert planning.
-Each bounded attempt releases and reopens the graph/directory guards; it does
-not sleep while holding an owner scan lock. The gate is exact to owner, epoch,
-generation node, vec_id, and fresh intent state. The owner counter is sampled on
-the owner backend and reset per owner, so the exact-head 10k proof is meaningful:
-`churn_retries=3`, `steady_retries=0`, and all retry owners are zero in the
-steady arm. The reverse-edge metric is now labeled as coverage
-(`reverse_edge_coverage=15/24`) and the controlled shared-target backlink check
-passes.
+The production extension installed for the existing evidence is
+`563cb18f7` (`--release --no-default-features --features pg18`), and its
+preflight reports `extension_features=pg18`, `debug_override=false`. The
+latest harness checkpoint is `ac90e38a7`; the latest product checkpoint is
+`3c162f69d`. The append-control fix has only passed a production-feature
+compile check so far; it has not yet been installed and benchmarked.
 
-The release matrix produced passing benchmark metrics at 10k, 50k, and 100k;
-the 50k and 100k fixtures' separate shared-target concurrency drills were
-terminated after stalling and are explicitly not claimed as passing. The exact
-10k owner-side retry proof is the passing concurrency gate; the reviewer gate
-requires proof of the path, not a redundant full-corpus concurrency arm at every
-matrix scale. The 100k
-pinned ANN sample also produced one expected post-filter diagnostic while the
-owner-local exact probe passed; that diagnostic is retained in the packet, not
-treated as an owner-placement failure.
+Existing production evidence is retained as diagnostic evidence, not current
+head closeout evidence. The 10k run demonstrates an unforced natural retry
+(`churn_retries=37`, `steady_retries=0`) but fails the full concurrency gate:
+the real saturated target shrank from five to three neighbors, and only one
+of the two controlled writer ids was present. Its inserted-neighborhood
+fresh-rebuild recall is `0.133333`, so the old unconditional `pass=true` claim
+has been removed from the packet's interpretation. The synthetic production
+probe also shows natural retries (`99`) with no forced retry probe, but its
+controlled target backlink check fails.
 
-Evidence: `artifacts/manifest.md` and `artifacts/cited-results-final.log`, with
-the cited raw logs under the packet's `artifacts/` directory. No merge is
-requested.
+The required 50k/100k production matrix is not complete. The prior 50k/100k
+attempts were either superseded by an invalid head cap or interrupted before a
+decision-grade suite result. A fresh indexed rerun was blocked before setup
+because the host root filesystem is read-only and the mandated external
+cluster root cannot be recreated. No partial result is claimed as a pass.
+
+Evidence and provenance are in `artifacts/manifest.md`. The task remains open
+until the current production extension is installed, the 10k/50k/100k suite is
+rerun with complete results, the unforced retry and concurrency gates pass, and
+the low incremental-neighborhood recall is explained or fixed.

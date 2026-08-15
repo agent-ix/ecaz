@@ -1,50 +1,61 @@
 # Task 167 packet 026 artifacts
 
 - Packet: `reviews/task-167/026-owner-retry`.
-- Production code checkpoint: `cf5ad6761` (parent implementation checkpoint
-  `5f56390d1`); the cited matrix extension SHA is:
-  `5f56390d18c09a7c3020951d0e0318fab7d9eede`.
-- Fixture/harness checkpoints: `4ad02848c`, `234e6925d`, `e0d58ab8e`,
-  `6afbe9257`, `8f6dd3621`, and `f75ea993f`. These only provide owner timeout
-  propagation, bounded large-scale controls, and packet runner options; the
-  release extension provenance is the production SHA above.
-- Suite config: `artifacts/task167-owner-retry-suite.json`; runner:
-  `ecaz bench suite`.
-- Timestamp: 2026-08-14; PG18; three-node physical generation; graph degree 5.
-  All cited runs report `release_profile_preflight status=passed`, unanimous
-  release profile, and the exact extension SHA.
-- Run directories are outside the repository under `/home/peter/.ecaz/clusters/`.
-- Compact cited lines are in `artifacts/cited-results-final.log`. The raw
-  release logs cited there are the 10k, 50k, and 100k fixture logs in the
-  corresponding `bench-suite-final-*` directories.
+- Task: 167; packet remains review-open and is not merge evidence.
+- Product checkpoints: `563cb18f7` is the installed production evidence
+  build; `3c162f69d` is the current product head and has only compile-check
+  validation. Harness checkpoints: `88bc8a57d`, `48ca7caea`, and
+  `7e11f8322`, and `ac90e38a7`.
+- Installed build command:
+  `cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features pg18 --no-default-features`.
+- Installed preflight: `extension_build_profile=release`,
+  `extension_features=pg18`, `debug_override=false`, SHA
+  `563cb18f782c9641cca4ab7620c0747da58cbf87`.
+- Matrix runner/config: `ecaz bench suite` with
+  `artifacts/task167-owner-retry-suite.json`; graph degree 5, three physical
+  owners, PG18, production feature set. The bespoke config is intentional: it
+  isolates Task 167 owner-retry/physical-DML behavior and uses the task's
+  physical 10k/50k/100k corpus lanes rather than the mutable current-lane
+  index.
+- Cluster policy: all intended run directories are under
+  `/home/peter/.ecaz/clusters/`, outside the repository and Cargo target.
 
-Reviewer finding coverage:
+## Results that are usable
 
-- `resolve_nodes` now owns the bounded, exact intent-gated retry. The gate is
-  scoped to owner, epoch, generation node, vec_id, fresh intent state, and
-  freshness; it is fail-closed when the exact current tuple is absent. There
-  is no `pg_sleep` inside the locked owner scan.
-- Owner-side attribution is sampled/reset on each owner backend. The exact 10k
-  churn arm proves `churn_retries=3`; the steady arm proves `steady_retries=0`
-  on every owner. The corrected reverse-edge label and shared-target backlink
-  gate report `reverse_edge_coverage=15/24` and `back_edge_check=true`.
-- Append-when-room is isolated by an A/B arm. Results are 1.062237x, 1.043178x,
-  and 1.026743x enabled/disabled at 10k/50k/100k respectively, with amendment
-  counts retained in the cited log.
-- Recall, latency, storage, insert throughput, and inserted-neighborhood
-  fresh-rebuild checks are present at 10k/50k/100k. Large-scale latency is
-  intentionally one warmup plus one measured query; exact counts and
-  provenance are retained in the raw logs.
-- The pinned ANN probe is diagnostic only because ANN selection precedes the
-  post-filter; the owner-local exact probe is authoritative. The 100k node-3
-  pinned sample's stable-prefix diagnostic is retained verbatim and is not
-  misreported as a passing pinned query.
+The existing 10k and synthetic runs are diagnostic results from installed
+extension SHA `563cb18f7`, not current-head closeout results:
 
-Open disposition:
+- Production preflight reports `features=pg18`, release profile, and no debug
+  override.
+- Natural retry attribution is positive with the forced probe disabled:
+  10k `churn_retries=37`, `steady_retries=0`; synthetic degree-8
+  `churn_retries=99`, `steady_retries=0`. Attribution is owner-local and is
+  read from the side relation, not the 2PC intent table.
+- The old 10k physical benchmark used ten measured iterations. The new
+  50k/100k configuration requests five measured iterations plus two warmups;
+  those results are not yet complete.
+- 10k inserted-neighborhood fresh-rebuild recall is `0.133333` in the spare-slot
+  run. This is a failure signal, not a passing acceptance result.
+- The same run reports `initial_neighbors=5`, `before_neighbors=3`, and
+  `final_neighbors=3`; the exact-degree saturation gate correctly fails.
+  The controlled target check also misses one writer id. The synthetic
+  degree-8 case keeps degree 8 but misses both controlled writer ids.
 
-- The 50k and 100k benchmark metrics pass, but their separate shared-target
-  concurrency drills stalled and were terminated. They are not claimed as
-  passes; the exact 10k owner-side concurrency gate is the authoritative proof
-  that the `resolve_nodes` retry executes on the owner. A fresh large-scale
-  concurrency arm is not required to establish that path and is not used as
-  closeout evidence.
+## Incomplete or rejected runs
+
+- The old 50k/100k matrix was not decision-grade: one attempt used an
+  unsuitable head cap, another was interrupted before suite completion, and
+  the latest indexed rerun failed before fixture setup because the host root
+  filesystem was read-only. These logs are retained for diagnosis only.
+- The append A/B values in the old run were small-sample diagnostics. The
+  production-path GUC was corrected at `3c162f69d`, and the harness now uses
+  five 32-row trials with a pass condition requiring no throughput regression
+  and no increase in backlink amendments. The corrected extension was not
+  installed, so no current-head A/B result exists yet.
+- No packet line claims 10k/50k/100k closeout, no large-scale pass is inferred
+  from a partial log, and no forced retry probe is used as proof of the natural
+  race.
+
+See the packet-local raw logs and `cited-results-final.log` for exact result
+lines. The packet must remain open pending a clean current-head production
+install and rerun.

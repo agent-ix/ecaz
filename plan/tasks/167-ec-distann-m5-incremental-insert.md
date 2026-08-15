@@ -1,11 +1,14 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation complete; packet 026 review-open; outside reviewer disposition pending; exact 10k owner-retry gate passes and 10k/50k/100k recall-latency-storage plus append A/B evidence is packeted; no merge until outside review ACCEPT
-REQUESTED on 2026-08-12; packet 025 exact-head PG18 fixture passes the
-intent-gated concurrent insert and saturated-target drill (feedback addressed:
-reviews/task-167/024-review-fixes/feedback/2026-08-13-01-reviewer.md).
-Task closeout still requires the mandated 10k/50k/100k benchmark evidence and
-reviewer ACCEPT.
+Status: implementation checkpoint `3c162f69d`; packet 026 review-open; outside
+reviewer disposition pending; production resolve_nodes retry and unforced retry
+attribution are implemented, but current-head production benchmark closeout is
+not complete. Existing 10k diagnostic evidence fails inserted-neighborhood
+parity and the real saturated-target gate; the 50k/100k rerun is blocked by the
+host read-only filesystem. No merge or closeout until current-head production
+10k/50k/100k evidence and reviewer ACCEPT.
+REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
+and are not acceptance evidence.
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
 (gate verdict remains committed scope unless the operator explicitly descopes
 — ADR-085 D5). The landed delta/fold experiments apply to the legacy local or

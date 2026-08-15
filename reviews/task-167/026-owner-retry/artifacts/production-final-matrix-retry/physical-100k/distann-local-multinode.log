@@ -1,0 +1,5 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=41410 rows=2000 dim=16 graph_degree=5 build_shards=1 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=563cb18f782c9641cca4ab7620c0747da58cbf87 extension_build_profile=release extension_features=pg18 debug_override=false
+[distann-multicluster] physical_setup_start rows=2000 nodes=3
