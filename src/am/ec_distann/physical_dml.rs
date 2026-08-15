@@ -1714,16 +1714,10 @@ unsafe fn amend_backlink(
         stage_counters::record_insert_work(DistannInsertWork::BacklinkAlreadyPresent, 1);
         return Ok(());
     }
-    let append_when_room = {
-        #[cfg(feature = "pg_test")]
-        {
-            !options::debug_disable_append_when_room()
-        }
-        #[cfg(not(feature = "pg_test"))]
-        {
-            true
-        }
-    };
+    // This is a normal userset diagnostic GUC, so the production build must
+    // honor it too.  Keeping the branch behind `pg_test` would make the
+    // production A/B control a no-op while still advertising the setting.
+    let append_when_room = !options::debug_disable_append_when_room();
     if count < usize::from(graph_degree) && append_when_room {
         if new_code.len() != code_len {
             return Err("EC_INSERT_CODEC: backlink code has the wrong length".to_owned());
