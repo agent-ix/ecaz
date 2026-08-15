@@ -3134,6 +3134,9 @@ async fn task167_insert_throughput_ab(
 /// here: it cannot observe the rows added by the throughput arm. The append
 /// A/B uses duplicate source vectors, so matching raw row IDs would count
 /// arbitrary ANN tie-breaking as graph loss; compare source fingerprints.
+/// Keep the two insert arms separate: the disabled control uses the 2m id
+/// range and the enabled candidate uses the 3m range. A single fixed range
+/// would silently report only the control arm as Task 167 recall.
 async fn task167_post_insert_fresh_rebuild_parity(
     coordinator: &tokio_postgres::Client,
     scale: &str,
@@ -3178,16 +3181,21 @@ async fn task167_post_insert_fresh_rebuild_parity(
              SET ec_distann.epoch = {epoch};
              DROP TABLE IF EXISTS task167_parity_q, task167_parity_physical, task167_parity_fresh;
              CREATE TEMP TABLE task167_parity_q AS
-               SELECT id AS qid, source AS v
+               SELECT id AS qid, source AS v, 'append_disabled'::text AS arm
                  FROM {physical_corpus}
-                WHERE id BETWEEN 2000000 AND 2000047
+                WHERE id BETWEEN 2000000 AND 2000023
                 ORDER BY id;
              INSERT INTO task167_parity_q
-               SELECT id AS qid, source AS v FROM {physical_queries}
+               SELECT id AS qid, source AS v, 'corpus_query'::text AS arm FROM {physical_queries}
                 ORDER BY id LIMIT greatest({query_count} - 48, 0);
+             INSERT INTO task167_parity_q
+               SELECT id AS qid, source AS v, 'append_enabled'::text AS arm
+                 FROM {physical_corpus}
+                WHERE id BETWEEN 3000000 AND 3000023
+                ORDER BY id;
              SET ec_distann.roster = '{roster}';
              CREATE TEMP TABLE task167_parity_physical AS
-               SELECT q.qid, hit.id, md5(hit.source::text) AS hit_key
+                   SELECT q.qid, q.arm, hit.id, md5(hit.source::text) AS hit_key
                  FROM task167_parity_q q
                  CROSS JOIN LATERAL (
                    SELECT id, source FROM {physical_corpus}
@@ -3195,7 +3203,7 @@ async fn task167_post_insert_fresh_rebuild_parity(
                  ) hit;
              SET ec_distann.roster = '';
              CREATE TEMP TABLE task167_parity_fresh AS
-               SELECT q.qid, hit.id, md5(hit.source::text) AS hit_key
+                   SELECT q.qid, q.arm, hit.id, md5(hit.source::text) AS hit_key
                  FROM task167_parity_q q
                  CROSS JOIN LATERAL (
                    SELECT id, source FROM {fresh_table}
@@ -3207,7 +3215,7 @@ async fn task167_post_insert_fresh_rebuild_parity(
     let result = coordinator
         .query_one(
             "WITH per_query AS (
-                   SELECT q.qid,
+                   SELECT q.qid, q.arm,
                           (SELECT count(*)
                              FROM (SELECT hit_key FROM task167_parity_physical WHERE qid = q.qid
                                    INTERSECT
@@ -3218,8 +3226,10 @@ async fn task167_post_insert_fresh_rebuild_parity(
                  )
                  SELECT count(*)::bigint,
                         avg(recall), min(recall), max(recall),
-                        count(*) FILTER (WHERE qid BETWEEN 2000000 AND 2000047)::bigint,
-                        avg(recall) FILTER (WHERE qid BETWEEN 2000000 AND 2000047),
+                        count(*) FILTER (WHERE arm = 'append_disabled')::bigint,
+                        avg(recall) FILTER (WHERE arm = 'append_disabled'),
+                        count(*) FILTER (WHERE arm = 'append_enabled')::bigint,
+                        avg(recall) FILTER (WHERE arm = 'append_enabled'),
                         count(*) FILTER (WHERE physical_rows = 10 AND fresh_rows = 10)::bigint
                    FROM per_query;",
             &[],
@@ -3230,14 +3240,17 @@ async fn task167_post_insert_fresh_rebuild_parity(
     let recall = result.get::<_, Option<f64>>(1).unwrap_or(0.0);
     let min_recall = result.get::<_, Option<f64>>(2).unwrap_or(0.0);
     let max_recall = result.get::<_, Option<f64>>(3).unwrap_or(0.0);
-    let inserted_queries = result.get::<_, i64>(4);
-    let inserted_recall = result.get::<_, Option<f64>>(5).unwrap_or(0.0);
-    let complete_rows = result.get::<_, i64>(6);
+    let disabled_queries = result.get::<_, i64>(4);
+    let disabled_recall = result.get::<_, Option<f64>>(5).unwrap_or(0.0);
+    let enabled_queries = result.get::<_, i64>(6);
+    let enabled_recall = result.get::<_, Option<f64>>(7).unwrap_or(0.0);
+    let complete_rows = result.get::<_, i64>(8);
     // The parity line is a correctness gate, not a descriptive metric. A
     // post-insert graph that agrees with a fresh rebuild on fewer than 80% of
     // the inserted-neighborhood queries is evidence of incremental graph
     // quality loss and must not be reported as passing.
-    let parity_pass = inserted_recall >= 0.80 && recall >= 0.80;
+    let parity_pass = enabled_recall >= 0.80 && recall >= 0.80;
+    let arm_delta = enabled_recall - disabled_recall;
     coordinator
         .batch_execute("SET ec_distann.roster = ''")
         .await
@@ -3247,16 +3260,17 @@ async fn task167_post_insert_fresh_rebuild_parity(
         .await
         .wrap_err("dropping Task 167 post-insert fresh rebuild")?;
     if queries != i64::from(query_count)
-        || inserted_queries != i64::from(query_count.min(48))
+        || disabled_queries != 24
+        || enabled_queries != 24
         || complete_rows != queries
     {
         bail!(
-            "Task 167 fresh-rebuild parity returned incomplete query rows: queries={queries} expected={} inserted_queries={inserted_queries} complete_rows={complete_rows}",
+            "Task 167 fresh-rebuild parity returned incomplete query rows: queries={queries} expected={} disabled_queries={disabled_queries} enabled_queries={enabled_queries} complete_rows={complete_rows}",
             query_count,
         );
     }
     Ok(format!(
-        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} inserted_neighborhood_queries={inserted_queries} inserted_neighborhood_recall={inserted_recall:.6} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} comparison=physical_vs_fresh_source_fingerprint duplicate_ties_collapsed=true pass={parity_pass}",
+        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} append_disabled_queries={disabled_queries} append_disabled_recall={disabled_recall:.6} append_enabled_queries={enabled_queries} append_enabled_recall={enabled_recall:.6} append_enabled_minus_disabled={arm_delta:.6} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} comparison=physical_vs_fresh_source_fingerprint duplicate_ties_collapsed=true pass={parity_pass}",
     ))
 }
 
