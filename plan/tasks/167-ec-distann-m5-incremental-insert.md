@@ -1,12 +1,16 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation checkpoint `79afb0d82`; packets 026 and 027 review-open;
+Status: implementation checkpoint `8f0334661`; packets 026 through 028
+review-open;
 outside reviewer disposition pending; both owner retry paths now reopen graph
 and directory guards per attempt, but current-head production benchmark
 closeout is not complete. Existing 10k diagnostic evidence fails
 inserted-neighborhood parity and the real saturated-target gate; the 50k/100k
-rerun is blocked by the host read-only filesystem. No merge or closeout until
-current-head production 10k/50k/100k evidence and reviewer ACCEPT.
+rerun is blocked by the host read-only filesystem. The production append A/B
+toggle now propagates to remote owner sessions, and the 50k/100k concurrency
+drills are enabled in the next suite config, but no runtime result is claimed.
+No merge or closeout until current-head production 10k/50k/100k evidence and
+reviewer ACCEPT.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
 and are not acceptance evidence.
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
