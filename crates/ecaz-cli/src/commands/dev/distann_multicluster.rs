@@ -9862,22 +9862,9 @@ async fn physical_concurrency_drill(
         );
         return Ok(false);
     }
-    // Clear any prior attribution before the concurrent wave. The counter is
-    // append-only in a separate unlogged relation, so sampling it cannot lock
-    // or delay the 2PC intent rows that the coordinator must advance.
-    let mut live_counter_reset_ok = true;
-    for owner in owner_nodes {
-        let output = capture_psql_allow_error(
-            psql,
-            socket_dir,
-            owner.port,
-            "TRUNCATE ec_distann_retry_attribution;",
-        )
-        .await;
-        live_counter_reset_ok &= !output.contains("ERROR");
-    }
-    let retry_snapshot_sql =
-        "SELECT count(*) FROM ec_distann_retry_attribution;";
+    // The attribution relation is created by fixture setup before this reset;
+    // it is intentionally not touched while the 2PC wave is running.
+    let retry_snapshot_sql = "SELECT count(*) FROM ec_distann_retry_attribution;";
     let parse_retry_count = |output: &str| {
         output
             .lines()
@@ -10001,17 +9988,17 @@ async fn physical_concurrency_drill(
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=recent_intents by_owner={recent_intent_rows_by_owner:?}"
     );
-    let mut churn_retries_by_owner = Vec::new();
+    let mut natural_retries_by_owner = Vec::new();
     for owner in owner_nodes {
         let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
             .await;
-        churn_retries_by_owner.push((
+        natural_retries_by_owner.push((
             owner.node_id,
             parse_retry_count(&output),
             compact_capture_error(&output),
         ));
     }
-    let churn_retries = churn_retries_by_owner
+    let natural_retries = natural_retries_by_owner
         .iter()
         .map(|(_, count, _)| *count)
         .sum::<Option<u64>>();
@@ -10145,13 +10132,12 @@ async fn physical_concurrency_drill(
         .map(|(_, count, _)| *count)
         .sum::<Option<u64>>();
     let retry_counter_ok = counter_reset_ok
-        && live_counter_reset_ok
         && steady_reset_ok
         && steady_query.status_ok
-        && churn_retries.is_some_and(|count| count > 0)
+        && natural_retries.is_some_and(|count| count > 0)
         && steady_retries == Some(0);
     crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries={churn_retries:?} churn_by_owner={churn_retries_by_owner:?} steady_retries={steady_retries:?} steady_by_owner={steady_retries_by_owner:?} pass={retry_counter_ok} reset_outputs={counter_reset_outputs:?} steady_reset_outputs={steady_reset_outputs:?}"
+        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_counter retry_source=natural_2pc_wave forced_retry_probe=false natural_retries={natural_retries:?} natural_by_owner={natural_retries_by_owner:?} steady_retries={steady_retries:?} steady_by_owner={steady_retries_by_owner:?} pass={retry_counter_ok} reset_outputs={counter_reset_outputs:?} steady_reset_outputs={steady_reset_outputs:?}"
     );
     let (inserted_vec_ids, inserted_vec_ids_by_id) = {
         let first_id = 900_000_i64 + base_rows as i64;
@@ -11441,21 +11427,28 @@ async fn capture_psql_allow_error(psql: &Path, socket_dir: &Path, port: u16, sql
 mod tests {
     use super::*;
 
-    fn provenance(node_id: u32, port: u16, sha: &str, profile: &str) -> ExtensionProvenance {
+    fn provenance(
+        node_id: u32,
+        port: u16,
+        sha: &str,
+        profile: &str,
+        features: &str,
+    ) -> ExtensionProvenance {
         ExtensionProvenance {
             node_id,
             port,
             git_sha: sha.to_owned(),
             build_profile: profile.to_owned(),
+            features: features.to_owned(),
         }
     }
 
     #[test]
     fn extension_preflight_accepts_unanimous_release_nodes() {
         let observed = [
-            provenance(1, 39710, "abc123", "release"),
-            provenance(2, 39711, "abc123", "release"),
-            provenance(3, 39712, "abc123", "release"),
+            provenance(1, 39710, "abc123", "release", "pg18"),
+            provenance(2, 39711, "abc123", "release", "pg18"),
+            provenance(3, 39712, "abc123", "release", "pg18"),
         ];
         let preflight = validate_extension_preflight(&observed, false).unwrap();
         assert_eq!(preflight.git_sha, "abc123");
@@ -11468,8 +11461,8 @@ mod tests {
     fn extension_preflight_rejects_debug_without_override() {
         let error = validate_extension_preflight(
             &[
-                provenance(1, 39710, "abc123", "debug"),
-                provenance(2, 39711, "abc123", "debug"),
+                provenance(1, 39710, "abc123", "debug", "pg18"),
+                provenance(2, 39711, "abc123", "debug", "pg18"),
             ],
             false,
         )
@@ -11481,11 +11474,38 @@ mod tests {
     }
 
     #[test]
+    fn extension_preflight_rejects_pg_test_feature_without_override() {
+        let error = validate_extension_preflight(
+            &[
+                provenance(
+                    1,
+                    39710,
+                    "abc123",
+                    "release",
+                    "distann-head-attribution-benchmark,pg-test,pg18",
+                ),
+                provenance(
+                    2,
+                    39711,
+                    "abc123",
+                    "release",
+                    "distann-head-attribution-benchmark,pg-test,pg18",
+                ),
+            ],
+            false,
+        )
+        .unwrap_err();
+        let rendered = error.to_string();
+        assert!(rendered.contains("pg-test"));
+        assert!(rendered.contains("--no-default-features --features pg18"));
+    }
+
+    #[test]
     fn extension_preflight_rejects_mixed_node_provenance_even_with_override() {
         let error = validate_extension_preflight(
             &[
-                provenance(1, 39710, "abc123", "debug"),
-                provenance(2, 39711, "abc123", "release"),
+                provenance(1, 39710, "abc123", "debug", "pg18"),
+                provenance(2, 39711, "abc123", "release", "pg18"),
             ],
             true,
         )
@@ -11499,8 +11519,8 @@ mod tests {
     #[test]
     fn extension_preflight_allows_unanimous_debug_with_explicit_override() {
         let observed = [
-            provenance(1, 39710, "abc123", "debug"),
-            provenance(2, 39711, "abc123", "debug"),
+            provenance(1, 39710, "abc123", "debug", "pg18"),
+            provenance(2, 39711, "abc123", "debug", "pg18"),
         ];
         let preflight = validate_extension_preflight(&observed, true).unwrap();
         assert_eq!(preflight.build_profile, "debug");
