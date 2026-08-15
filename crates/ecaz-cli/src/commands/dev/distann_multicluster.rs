@@ -3067,11 +3067,18 @@ async fn task167_insert_throughput_ab(
     ));
     let append_ratio = physical_rows_per_second
         / physical_append_disabled_rows_per_second.max(f64::EPSILON);
+    let disabled_amendments = append_disabled_work
+        .get("backlink_amendments")
+        .copied()
+        .unwrap_or_default();
+    let enabled_amendments = append_enabled_work
+        .get("backlink_amendments")
+        .copied()
+        .unwrap_or_default();
+    let append_ab_pass = append_ratio >= 1.0 && enabled_amendments <= disabled_amendments;
     lines.push(format!(
-        "physical_benchmark_append_when_room_ab scale={scale} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} sample_rows={} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={} enabled_backlink_amendments={} disabled_backlink_no_room={} enabled_backlink_no_room={} pass=true",
+        "physical_benchmark_append_when_room_ab scale={scale} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} sample_rows={} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={disabled_amendments} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} comparison=sequential_same_fixture pass={append_ab_pass}",
         TRIALS * ROWS_PER_TRIAL,
-        append_disabled_work.get("backlink_amendments").copied().unwrap_or_default(),
-        append_enabled_work.get("backlink_amendments").copied().unwrap_or_default(),
         append_disabled_work.get("backlink_no_room").copied().unwrap_or_default(),
         append_enabled_work.get("backlink_no_room").copied().unwrap_or_default(),
     ));
