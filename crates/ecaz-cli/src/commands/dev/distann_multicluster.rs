@@ -1461,6 +1461,10 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
         "{prefix}
          {load}
          {correctness_fixture}
+         -- The owner-placement proof filters by source_id. Keep that probe
+         -- indexed so 50k/100k matrix setup measures the physical access path
+         -- rather than repeatedly scanning the wide vector heap.
+         CREATE INDEX dm_source_id_probe_idx ON dm (source_id);
          ANALYZE dm;
          {shard_head_storage}
          CREATE INDEX dm_idx ON dm USING ec_distann
