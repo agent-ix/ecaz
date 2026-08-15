@@ -2,15 +2,20 @@
 
 - Packet: `reviews/task-167/026-owner-retry`.
 - Task: 167; packet remains review-open and is not merge evidence.
-- Product checkpoints: `563cb18f7` is the installed production evidence
-  build; `3c162f69d` is the current product head and has only compile-check
-  validation. Harness checkpoints: `88bc8a57d`, `48ca7caea`, and
+- Product checkpoint `79afb0d82` is now installed with
+  `--release --no-default-features --features pg18`; no runtime preflight has
+  completed yet. Existing diagnostic evidence is from `563cb18f7`. Harness
+  checkpoints: `88bc8a57d`, `48ca7caea`, and
   `7e11f8322`, and `ac90e38a7`.
 - Installed build command:
   `cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features pg18 --no-default-features`.
-- Installed preflight: `extension_build_profile=release`,
-  `extension_features=pg18`, `debug_override=false`, SHA
-  `563cb18f782c9641cca4ab7620c0747da58cbf87`.
+- Installed binary provenance: SHA
+  `79afb0d826ce5f382945c5ed891e3411b30aa1ba`; feature set is
+  `--no-default-features --features pg18`. Runtime preflight remains pending.
+- The current-head attempt is captured under
+  `artifacts/production-current-79-10k-fresh/`: fixture initialization fails
+  before producing `results.jsonl` because the external cluster root is
+  mounted read-only. This is a blocker record, not benchmark evidence.
 - Matrix runner/config: `ecaz bench suite` with
   `artifacts/task167-owner-retry-suite.json`; graph degree 5, three physical
   owners, PG18, production feature set. The bespoke config is intentional: it

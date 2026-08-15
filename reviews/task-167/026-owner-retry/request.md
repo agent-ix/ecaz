@@ -30,12 +30,12 @@ production code:
   any id in the batch. Saturation requires the exact graph degree before and
   after the concurrent inserts.
 
-The production extension installed for the existing evidence is
-`563cb18f7` (`--release --no-default-features --features pg18`), and its
-preflight reports `extension_features=pg18`, `debug_override=false`. The
-latest harness checkpoint is `ac90e38a7`; the latest product checkpoint is
-`3c162f69d`. The append-control fix has only passed a production-feature
-compile check so far; it has not yet been installed and benchmarked.
+The current production extension install now embeds `79afb0d82` from
+`--release --no-default-features --features pg18`. Runtime preflight has not
+completed because fresh external fixture initialization fails with
+`Read-only file system`; the prior logs under this packet remain SHA
+`563cb18f7` diagnostics. The latest harness checkpoint is `ac90e38a7`; the
+latest product checkpoint is `79afb0d82`.
 
 Existing production evidence is retained as diagnostic evidence, not current
 head closeout evidence. The 10k run demonstrates an unforced natural retry

@@ -1,0 +1,9 @@
+Task 167 current-head install provenance
+timestamp=2026-08-15T11:43-07:00 (filesystem mtime observed)
+product_head=79afb0d826ce5f382945c5ed891e3411b30aa1ba
+install_command=cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features pg18 --no-default-features
+installed_so=/home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+embedded_git_sha=79afb0d826ce5f382945c5ed891e3411b30aa1ba
+features=pg18
+runtime_preflight=not_run
+fixture_failure=Read-only file system while creating/clearing external cluster data

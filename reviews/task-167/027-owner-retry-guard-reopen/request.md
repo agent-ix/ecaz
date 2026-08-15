@@ -22,8 +22,9 @@ Validation:
 
 - `cargo check --no-default-features --features pg18` passed.
 - `cargo check --no-default-features --features pg18,pg_test` passed.
-- The installed PG18 extension is still the older `563cb18f7`; the current
-  `79afb0d82` production install and runtime matrix are outstanding.
+- The installed PG18 extension now embeds `79afb0d82`; runtime preflight and
+  matrix execution are outstanding because external fixture initialization is
+  currently blocked by the read-only host filesystem.
 - Packet 026's prior production diagnostics remain diagnostic only: natural
   retry was observed, but 10k parity/saturation failed and 50k/100k current-head
   evidence is absent.
