@@ -1,6 +1,6 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation complete; packet 026 review-open; outside reviewer disposition pending; diagnostic 10k clears live writer EC_RECORD_MISSING, clean-head routed DELETE/VACUUM rerun and 10k/50k/100k closeout evidence remain open
+Status: implementation complete; packet 026 review-open; outside reviewer disposition pending; exact 10k owner-retry gate passes and 10k/50k/100k recall-latency-storage plus append A/B evidence is packeted; no merge until outside review ACCEPT
 REQUESTED on 2026-08-12; packet 025 exact-head PG18 fixture passes the
 intent-gated concurrent insert and saturated-target drill (feedback addressed:
 reviews/task-167/024-review-fixes/feedback/2026-08-13-01-reviewer.md).

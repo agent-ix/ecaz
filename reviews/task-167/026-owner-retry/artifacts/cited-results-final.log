@@ -1,0 +1,50 @@
+Task 167 owner-retry follow-up — compact cited results
+Code under test: cf5ad6761 (matrix extension SHA 5f56390d18c09a7c3020951d0e0318fab7d9eede; parent implementation 5f56390d1)
+All cited production-extension runs report extension_build_profile=release and
+release_profile_preflight status=passed.
+
+Follow-up source hardening:
+  `cargo check -p ecaz --no-default-features --features 'pg18 pg_test'` passed
+  on `cf5ad6761`; both bounded retry loops now avoid `pg_sleep`, and the
+  `resolve_nodes` loop still releases/reopens owner relation guards per attempt.
+
+10k source:
+  artifacts/bench-suite-final-5f56390d1-10k/physical-10k/distann-local-multinode.log
+  release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release debug_override=false
+  physical_benchmark_recall scale=10k variant=production ... queries=200 trials=2000 recall=0.8430 ... mean_ms=27.63 ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_latency scale=10k variant=production ... count=50 mean_ms=16.50 p50_ms=16.30 p95_ms=20.40 ... concurrency=1 ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_storage scale=10k variant=production ... physical_generation_bytes=181059584 ... cluster_index_space_amplification=0.231067 ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_insert_throughput_ab scale=10k ... physical_rows_per_second=1.441 control_rows_per_second=2.194 physical_over_control=0.656769 pass=true ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_append_when_room_ab scale=10k ... append_disabled_rows_per_second=1.356 append_enabled_rows_per_second=1.441 append_enabled_over_disabled=1.062237 disabled_backlink_amendments=117 enabled_backlink_amendments=61 ... pass=true ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_post_insert_fresh_rebuild scale=10k ... queries=200 inserted_neighborhood_queries=48 inserted_neighborhood_recall=0.141667 ... comparison=physical_vs_fresh_ann_agreement pass=true ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_concurrent_insert_query DIAG role=frontier_retry_counter churn_retries=Some(3) ... steady_retries=Some(0) ... pass=true
+  physical_concurrent_insert_query DIAG scanners=4 writers=2 iterations=12 expected_count=10 reverse_edge_coverage=15/24 ... back_edge_check=true pass=true
+  physical_concurrent_insert_query pass=true
+
+50k source:
+  artifacts/bench-suite-final-50k-parity48-f75ea993f/physical-50k/distann-local-multinode.log
+  release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release debug_override=false
+  physical_benchmark_recall scale=50k variant=production ... queries=200 trials=2000 recall=0.6925 ... mean_ms=1983.43 ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_latency scale=50k variant=production ... count=1 mean_ms=22.50 p50_ms=22.50 ... warmup_iterations=1 ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_storage scale=50k variant=production ... physical_generation_bytes=903405568 ... cluster_index_space_amplification=0.228053 ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_insert_throughput_ab scale=50k ... physical_rows_per_second=0.378 control_rows_per_second=0.417 physical_over_control=0.907126 pass=true ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_append_when_room_ab scale=50k ... append_disabled_rows_per_second=0.363 append_enabled_rows_per_second=0.378 append_enabled_over_disabled=1.043178 disabled_backlink_amendments=86 enabled_backlink_amendments=56 ... pass=true ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_post_insert_fresh_rebuild scale=50k ... queries=48 inserted_neighborhood_queries=48 inserted_neighborhood_recall=0.537500 ... comparison=physical_vs_fresh_ann_agreement pass=true ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  NOTE: This 50k fixture's separate shared-target concurrency drill ended with
+  `seed_insert_failed ... terminating connection due to administrator command`.
+  It is not cited as a passing concurrency result; the passing owner retry gate
+  is the exact 10k run above.
+
+100k source:
+  artifacts/bench-suite-final-100k-parity48-f75ea993f-rerun/physical-100k/distann-local-multinode.log
+  release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release debug_override=false
+  physical_benchmark_recall scale=100k variant=production ... queries=48 trials=480 recall=0.4583 ... mean_ms=14621.99 ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_latency scale=100k variant=production ... count=1 mean_ms=18.90 p50_ms=18.90 ... warmup_iterations=1 ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_storage scale=100k variant=production ... physical_generation_bytes=1806401536 ... cluster_index_space_amplification=0.227720 ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_insert_throughput_ab scale=100k ... physical_rows_per_second=0.198 control_rows_per_second=0.207 physical_over_control=0.952713 pass=true ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_append_when_room_ab scale=100k ... append_disabled_rows_per_second=0.192 append_enabled_rows_per_second=0.198 append_enabled_over_disabled=1.026743 disabled_backlink_amendments=76 enabled_backlink_amendments=52 ... pass=true ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_benchmark_post_insert_fresh_rebuild scale=100k ... queries=48 inserted_neighborhood_queries=48 inserted_neighborhood_recall=0.612500 ... comparison=physical_vs_fresh_ann_agreement pass=true ... extension_git_sha=5f56390d18c09a7c3020951d0e0318fab7d9eede extension_build_profile=release
+  physical_remote_owner node=3 ... pinned_probe=error_or_unexpected_row ... owner_exact_probe=00003e3b-9e53-4668-8200-ae85d21b4f5e
+  The preceding pinned probe is diagnostic only: the pinned ANN query can
+  change under ANN-before-post-filter behavior; the exact owner probe is the
+  authoritative placement check and passed.
