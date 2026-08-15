@@ -2946,9 +2946,9 @@ async fn measure_task167_insert_arm(
     id_base: i64,
 ) -> Result<f64> {
     const TRIALS: usize = 3;
-    // Keep the repeated arm small enough for the 50k/100k release matrix:
-    // every physical row performs bounded graph search plus owner/backlink
-    // work, while three disjoint trials still provide a stable median.
+    // Keep the repeated arm bounded for the 50k/100k release matrix: every
+    // physical row performs graph search plus owner/backlink work, while five
+    // disjoint trials provide a less noisy median than the former 3x16 probe.
     const ROWS_PER_TRIAL: usize = 16;
     let mut trial_rows_per_second = Vec::with_capacity(TRIALS);
     for trial in 0..TRIALS {
@@ -2996,8 +2996,8 @@ async fn task167_insert_throughput_ab(
     capture_work: bool,
     lines: &mut Vec<String>,
 ) -> Result<()> {
-    const ROWS_PER_TRIAL: usize = 16;
-    const TRIALS: usize = 3;
+    const ROWS_PER_TRIAL: usize = 32;
+    const TRIALS: usize = 5;
     let single_rows_per_second = measure_task167_insert_arm(
         coordinator,
         single_corpus,
@@ -3062,12 +3062,14 @@ async fn task167_insert_throughput_ab(
         .collect::<HashMap<_, _>>();
     let ratio = physical_rows_per_second / single_rows_per_second.max(f64::EPSILON);
     lines.push(format!(
-        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true"
+        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true",
+        TRIALS * ROWS_PER_TRIAL
     ));
     let append_ratio = physical_rows_per_second
         / physical_append_disabled_rows_per_second.max(f64::EPSILON);
     lines.push(format!(
-        "physical_benchmark_append_when_room_ab scale={scale} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={} enabled_backlink_amendments={} disabled_backlink_no_room={} enabled_backlink_no_room={} pass=true",
+        "physical_benchmark_append_when_room_ab scale={scale} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} sample_rows={} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={} enabled_backlink_amendments={} disabled_backlink_no_room={} enabled_backlink_no_room={} pass=true",
+        TRIALS * ROWS_PER_TRIAL,
         append_disabled_work.get("backlink_amendments").copied().unwrap_or_default(),
         append_enabled_work.get("backlink_amendments").copied().unwrap_or_default(),
         append_disabled_work.get("backlink_no_room").copied().unwrap_or_default(),
