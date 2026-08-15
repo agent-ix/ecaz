@@ -1,12 +1,12 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation checkpoint `3c162f69d`; packet 026 review-open; outside
-reviewer disposition pending; production resolve_nodes retry and unforced retry
-attribution are implemented, but current-head production benchmark closeout is
-not complete. Existing 10k diagnostic evidence fails inserted-neighborhood
-parity and the real saturated-target gate; the 50k/100k rerun is blocked by the
-host read-only filesystem. No merge or closeout until current-head production
-10k/50k/100k evidence and reviewer ACCEPT.
+Status: implementation checkpoint `79afb0d82`; packets 026 and 027 review-open;
+outside reviewer disposition pending; both owner retry paths now reopen graph
+and directory guards per attempt, but current-head production benchmark
+closeout is not complete. Existing 10k diagnostic evidence fails
+inserted-neighborhood parity and the real saturated-target gate; the 50k/100k
+rerun is blocked by the host read-only filesystem. No merge or closeout until
+current-head production 10k/50k/100k evidence and reviewer ACCEPT.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
 and are not acceptance evidence.
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
