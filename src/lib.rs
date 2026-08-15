@@ -1819,6 +1819,11 @@ fn ecaz_build_git_sha() -> &'static str {
 }
 
 #[pg_extern(stable)]
+fn ecaz_build_features() -> &'static str {
+    env!("ECAZ_FEATURES")
+}
+
+#[pg_extern(stable)]
 #[allow(clippy::type_complexity)]
 fn ec_block_kernel_scoring_snapshot() -> TableIterator<
     'static,
@@ -1966,7 +1971,6 @@ fn ec_distann_materialization_work_snapshot() -> TableIterator<
 /// Task 167 benchmark-only physical insert work attribution. `inserts` is the
 /// number of insert attempts since the last reset; callers use it as the
 /// denominator for the bounded graph-work metrics.
-#[cfg(feature = "distann-head-attribution-benchmark")]
 #[pg_extern(stable)]
 fn ec_distann_insert_work_snapshot() -> TableIterator<
     'static,
@@ -1994,13 +1998,11 @@ fn ec_distann_insert_work_snapshot() -> TableIterator<
     TableIterator::new(rows)
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 #[pg_extern(volatile)]
 fn ec_distann_insert_work_reset() {
     am::ec_distann::stage_counters::reset();
 }
 
-#[cfg(feature = "distann-head-attribution-benchmark")]
 #[pg_extern(volatile)]
 fn ec_distann_stage_scoring_reset() {
     am::ec_distann::stage_counters::reset();

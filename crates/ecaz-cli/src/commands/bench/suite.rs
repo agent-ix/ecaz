@@ -702,6 +702,10 @@ struct DistannLocalMultinodeStep {
     skip_single_control: bool,
     #[serde(default)]
     skip_single_benchmark: bool,
+    /// Skip the expensive concurrent insert/query drill after the benchmark
+    /// matrix when a dedicated concurrency gate is run separately.
+    #[serde(default)]
+    skip_concurrency_drill: bool,
     #[serde(default)]
     materialization_correctness: bool,
     /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
@@ -5699,6 +5703,9 @@ fn expand_distann_local_multinode(
     }
     if step.skip_single_benchmark {
         args.push("--skip-single-benchmark".into());
+    }
+    if step.skip_concurrency_drill {
+        args.push("--skip-concurrency-drill".into());
     }
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());

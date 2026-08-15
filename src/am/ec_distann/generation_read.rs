@@ -330,14 +330,39 @@ fn visibility_retry_allowed(
     index_oid: pg_sys::Oid,
     generation: &GenerationCatalogRow,
     intent_node_ids: &[u32],
-    vec_ids: &[u64],
+    missing_vec_id: u64,
 ) -> Result<bool, DistannExpandError> {
-    if recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)? {
+    if recent_remote_insert_intent(
+        index_oid,
+        intent_node_ids,
+        &[missing_vec_id],
+        generation.epoch,
+    )? {
         return Ok(true);
     }
-    Ok(vec_ids.iter().any(|vec_id| {
-        current_graph_tuple_exists(generation.graph_store_relid, *vec_id).unwrap_or(false)
-    }))
+    Ok(current_graph_tuple_exists(generation.graph_store_relid, missing_vec_id).unwrap_or(false))
+}
+
+fn record_retry_attribution(
+    epoch: u64,
+    node_ids: &[u32],
+    vec_ids: &[u64],
+    missing_vec_id: u64,
+) {
+    let node_id = vec_ids
+        .iter()
+        .position(|vec_id| *vec_id == missing_vec_id)
+        .and_then(|index| node_ids.get(index).copied())
+        .or_else(|| node_ids.first().copied());
+    let Some(node_id) = node_id else {
+        return;
+    };
+    let _ = Spi::run(&format!(
+        "INSERT INTO ec_distann_retry_attribution \
+         (backend_pid, node_id, served_epoch, missing_vec_id) VALUES \
+         (pg_backend_pid(), {node_id}, {epoch}, {})",
+        i64::from_le_bytes(missing_vec_id.to_le_bytes())
+    ));
 }
 
 /// Resolve an owner-local graph batch with a bounded 2PC visibility retry.
@@ -407,44 +432,24 @@ where
     let Err(error @ DistannExpandError::OwnedRecordMissing(_)) = records else {
         return records.map(|records| (records, None));
     };
-    let intent_gate =
-        recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)?;
-    if !visibility_retry_allowed(index_oid, generation, intent_node_ids, vec_ids)? {
+    let Some(missing_vec_id) = error.owned_record_missing_vec_id() else {
+        return Err(error);
+    };
+    let intent_gate = recent_remote_insert_intent(
+        index_oid,
+        intent_node_ids,
+        &[missing_vec_id],
+        generation.epoch,
+    )?;
+    if !visibility_retry_allowed(index_oid, generation, intent_node_ids, missing_vec_id)? {
         return Err(error);
     }
     super::stage_counters::record_work(
         super::stage_counters::DistannMaterializationWork::TraversalFrontierRetries,
         1,
     );
-    // The retry runs in the owner backend that served the RPC. Persist a
-    // per-owner attribution marker so an external fixture can observe the
-    // retry after that backend exits; process-local stage counters cannot
-    // cross the coordinator/owner RPC boundary. The gate above already
-    // matched epoch, state, and freshness; retain only the exact owner/id
-    // scope here so sampling cannot lose the marker while the wave runs.
-    if intent_gate {
-        let _ = Spi::run(&format!(
-        "UPDATE ec_distann_remote_prepared_xact_intent \
-            SET retry_count = retry_count + 1 \
-          WHERE served_epoch = {} \
-            AND node_id IN ({}) \
-            AND tracked_vec_id IN ({}) \
-            AND updated_at >= clock_timestamp() - interval '30 seconds' \
-            AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')\
-            ",
-        generation.epoch,
-        intent_node_ids
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(","),
-        vec_ids
-            .iter()
-            .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()).to_string())
-            .collect::<Vec<_>>()
-            .join(","),
-        ));
-    }
+    let _ = intent_gate;
+    record_retry_attribution(generation.epoch, intent_node_ids, vec_ids, missing_vec_id);
     let mut last_error = error;
     // Keep the retry bounded and non-blocking. The owner lookup itself is
     // short-lived; retrying with the latest registered snapshot gives a
@@ -463,8 +468,11 @@ where
         ) {
             Ok(found) => return Ok((found, Some(latest))),
             Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
+                let Some(missing_vec_id) = next.owned_record_missing_vec_id() else {
+                    return Err(next);
+                };
                 last_error = next;
-                if !visibility_retry_allowed(index_oid, generation, intent_node_ids, vec_ids)? {
+                if !visibility_retry_allowed(index_oid, generation, intent_node_ids, missing_vec_id)? {
                     break;
                 }
             }
@@ -545,44 +553,24 @@ where
             )
         });
     };
-    let intent_gate =
-        recent_remote_insert_intent(index_oid, intent_node_ids, vec_ids, generation.epoch)?;
-    if !visibility_retry_allowed(index_oid, generation, intent_node_ids, vec_ids)? {
+    let Some(missing_vec_id) = error.owned_record_missing_vec_id() else {
+        return Err(error);
+    };
+    if !visibility_retry_allowed(index_oid, generation, intent_node_ids, missing_vec_id)? {
         return Err(error);
     }
     super::stage_counters::record_work(
         super::stage_counters::DistannMaterializationWork::TraversalFrontierRetries,
         1,
     );
-    if intent_gate {
-        let _ = Spi::run(&format!(
-        "UPDATE ec_distann_remote_prepared_xact_intent \
-            SET retry_count = retry_count + 1 \
-          WHERE served_epoch = {} \
-            AND node_id IN ({}) \
-            AND tracked_vec_id IN ({}) \
-            AND updated_at >= clock_timestamp() - interval '30 seconds' \
-            AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local')\
-            ",
-        generation.epoch,
-        intent_node_ids
-            .iter()
-            .map(u32::to_string)
-            .collect::<Vec<_>>()
-            .join(","),
-        vec_ids
-            .iter()
-            .map(|vec_id| i64::from_le_bytes(vec_id.to_le_bytes()).to_string())
-            .collect::<Vec<_>>()
-            .join(","),
-        ));
-    }
+    record_retry_attribution(generation.epoch, intent_node_ids, vec_ids, missing_vec_id);
     let mut graph_relation = Some(graph_relation);
     let mut directory_relation = Some(directory_relation);
     let mut last_error = error;
     for _ in 0..32 {
         drop(graph_relation.take());
         drop(directory_relation.take());
+        let _ = Spi::run("SELECT pg_sleep(0.001)");
         let (next_graph_relation, next_directory_relation) = open_relations()?;
         let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| last_error.clone())?;
         match lookup_graph_nodes(
@@ -603,8 +591,11 @@ where
                 ));
             }
             Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
+                let Some(missing_vec_id) = next.owned_record_missing_vec_id() else {
+                    return Err(next);
+                };
                 last_error = next;
-                if !visibility_retry_allowed(index_oid, generation, intent_node_ids, vec_ids)? {
+                if !visibility_retry_allowed(index_oid, generation, intent_node_ids, missing_vec_id)? {
                     return Err(last_error);
                 }
                 graph_relation = Some(next_graph_relation);

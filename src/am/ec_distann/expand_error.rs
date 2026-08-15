@@ -91,6 +91,18 @@ impl DistannExpandError {
         }
     }
 
+    pub(crate) fn owned_record_missing_vec_id(&self) -> Option<u64> {
+        let Self::OwnedRecordMissing(message) = self else {
+            return None;
+        };
+        let value = message.split_once("vec_id ")?.1.trim_start_matches("0x");
+        let value = value
+            .chars()
+            .take_while(|character| character.is_ascii_hexdigit())
+            .collect::<String>();
+        (!value.is_empty()).then(|| u64::from_str_radix(&value, 16).ok()).flatten()
+    }
+
     /// Raise as a PostgreSQL ERROR carrying the distinct SQLSTATE (endpoint
     /// side). Diverges.
     pub(crate) fn raise(&self) -> ! {

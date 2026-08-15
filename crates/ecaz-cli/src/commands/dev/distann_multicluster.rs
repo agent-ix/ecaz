@@ -295,6 +295,11 @@ pub struct LocalMultinodePg18Args {
     /// (expensive at scale) per-drill re-setups.
     #[arg(long, default_value_t = false)]
     pub skip_fault_drills: bool,
+    /// Skip the expensive concurrent insert/query drill after the benchmark
+    /// matrix. Used for large-scale measurement arms when the dedicated
+    /// bounded concurrency gate is run separately.
+    #[arg(long, default_value_t = false)]
+    pub skip_concurrency_drill: bool,
     /// Permit a unanimous non-release extension profile for intentional short
     /// diagnostic fixtures. The default benchmark contract requires release.
     #[arg(long, default_value_t = false)]
@@ -380,6 +385,7 @@ struct ExtensionProvenance {
     port: u16,
     git_sha: String,
     build_profile: String,
+    features: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -388,6 +394,7 @@ struct ExtensionPreflight {
     build_profile: String,
     nodes: usize,
     debug_override: bool,
+    features: String,
 }
 
 fn validate_extension_preflight(
@@ -405,15 +412,20 @@ fn validate_extension_preflight(
         );
     }
     for node in observed.iter().skip(1) {
-        if node.git_sha != expected.git_sha || node.build_profile != expected.build_profile {
+        if node.git_sha != expected.git_sha
+            || node.build_profile != expected.build_profile
+            || node.features != expected.features
+        {
             bail!(
-                "extension provenance mismatch on node {} port {}: expected {}/{}, observed {}/{}",
+                "extension provenance mismatch on node {} port {}: expected {}/{}/{}, observed {}/{}/{}",
                 node.node_id,
                 node.port,
                 expected.git_sha,
                 expected.build_profile,
+                expected.features,
                 node.git_sha,
-                node.build_profile
+                node.build_profile,
+                node.features
             );
         }
     }
@@ -426,11 +438,24 @@ fn validate_extension_preflight(
             expected.build_profile
         );
     }
+    if expected.features.split(',').any(|feature| feature == "pg-test") && !allow_debug_extension {
+        bail!(
+            "extension preflight rejected pg-test feature on node {} port {}: observed {}/{}/{}; install with --no-default-features --features pg18 for production evidence or explicitly allow a diagnostic build",
+            expected.node_id,
+            expected.port,
+            expected.git_sha,
+            expected.build_profile,
+            expected.features
+        );
+    }
     Ok(ExtensionPreflight {
         git_sha: expected.git_sha.clone(),
         build_profile: expected.build_profile.clone(),
         nodes: observed.len(),
-        debug_override: allow_debug_extension && expected.build_profile != "release",
+        debug_override: allow_debug_extension
+            && (expected.build_profile != "release"
+                || expected.features.split(',').any(|feature| feature == "pg-test")),
+        features: expected.features.clone(),
     })
 }
 
@@ -466,7 +491,10 @@ async fn preflight_fixture_extensions(
                 })?;
         let connection_task = tokio::spawn(async move { connection.await });
         let row = client
-            .query_one("SELECT ecaz_build_git_sha(), ecaz_build_profile()", &[])
+            .query_one(
+                "SELECT ecaz_build_git_sha(), ecaz_build_profile(), ecaz_build_features()",
+                &[],
+            )
             .await
             .wrap_err_with(|| {
                 format!(
@@ -479,15 +507,17 @@ async fn preflight_fixture_extensions(
             port: node.port,
             git_sha: row.get(0),
             build_profile: row.get(1),
+            features: row.get(2),
         });
         connection_task.abort();
     }
     let preflight = validate_extension_preflight(&observed, allow_debug_extension)?;
     crate::ecaz_println!(
-        "[distann-multicluster] release_profile_preflight status=passed nodes={} unanimous=true extension_git_sha={} extension_build_profile={} debug_override={}",
+        "[distann-multicluster] release_profile_preflight status=passed nodes={} unanimous=true extension_git_sha={} extension_build_profile={} extension_features={} debug_override={}",
         preflight.nodes,
         preflight.git_sha,
         preflight.build_profile,
+        preflight.features,
         preflight.debug_override
     );
     Ok(preflight)
@@ -8004,17 +8034,24 @@ async fn drive_physical_fixture(
         })
         .collect::<Vec<_>>()
         .join(";");
-    let physical_concurrency_ok = physical_concurrency_drill(
-        psql,
-        socket_dir,
-        nodes[0].port,
-        args,
-        nodes,
-        &fixture_roster,
-        &concurrency_table,
-        &fingerprint,
-    )
-    .await?;
+    let physical_concurrency_ok = if args.skip_concurrency_drill {
+        crate::ecaz_println!(
+            "[distann-multicluster] physical_concurrent_insert_query pass=skipped reason=skip_concurrency_drill"
+        );
+        true
+    } else {
+        physical_concurrency_drill(
+            psql,
+            socket_dir,
+            nodes[0].port,
+            args,
+            nodes,
+            &fixture_roster,
+            &concurrency_table,
+            &fingerprint,
+        )
+        .await?
+    };
     // This diagnostic is reverse-edge coverage: `found` contains inserted
     // vec_ids discovered in other nodes' neighbour lists. It is not the
     // number of forward edges selected by inserted nodes; the controlled
@@ -9772,12 +9809,15 @@ async fn physical_concurrency_drill(
             psql,
             socket_dir,
             owner.port,
-            "ALTER TABLE ec_distann_remote_prepared_xact_intent \
-                ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
-             ALTER TABLE ec_distann_remote_prepared_xact_intent \
-                ADD COLUMN IF NOT EXISTS tracked_vec_id bigint; \
-             SELECT ec_distann_stage_scoring_reset(); \
-             UPDATE ec_distann_remote_prepared_xact_intent SET retry_count = 0;",
+            "CREATE UNLOGGED TABLE IF NOT EXISTS ec_distann_retry_attribution (\
+                 backend_pid integer NOT NULL,\
+                 node_id integer NOT NULL,\
+                 served_epoch bigint NOT NULL,\
+                 missing_vec_id bigint NOT NULL,\
+                 recorded_at timestamptz NOT NULL DEFAULT clock_timestamp()\
+             );\
+             TRUNCATE ec_distann_retry_attribution;\
+             SELECT ec_distann_stage_scoring_reset();",
         )
         .await;
         counter_reset_ok &= !output.contains("ERROR");
@@ -9789,86 +9829,22 @@ async fn physical_concurrency_drill(
         );
         return Ok(false);
     }
-    let retry_probe_owner = owner_nodes
-        .iter()
-        .find(|node| node.node_id == shared_target_owner)
-        .unwrap_or(&owner_nodes[0]);
-    let retry_probe_relation_output = capture_psql_allow_error(
-        psql,
-        socket_dir,
-        retry_probe_owner.port,
-        "SELECT graph_store_relid::regclass::text FROM ec_distann_generation \
-          WHERE index_oid='dm_idx'::regclass::oid AND state='Published' \
-          ORDER BY epoch DESC LIMIT 1;",
-    )
-    .await;
-    let retry_probe_relation = retry_probe_relation_output
-        .lines()
-        .map(str::trim)
-        .find(|line| {
-            !line.is_empty()
-                && line
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'"'))
-        });
-    let retry_probe_vec_output = if let Some(relation) = retry_probe_relation {
-        capture_psql_allow_error(
-            psql,
-            socket_dir,
-            retry_probe_owner.port,
-            &format!("SELECT vec_id::text FROM {relation} WHERE is_current LIMIT 1;"),
-        )
-        .await
-    } else {
-        retry_probe_relation_output.clone()
-    };
-    let retry_probe_vec_id = retry_probe_vec_output
-        .lines()
-        .map(str::trim)
-        .find_map(|line| line.parse::<i64>().ok());
-    let retry_probe_sql = retry_probe_vec_id.map(|retry_probe_vec_id| {
-        format!(
-            "ALTER TABLE ec_distann_remote_prepared_xact_intent \
-                ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
-             WITH published AS (SELECT epoch FROM ec_distann_generation \
-                 WHERE index_oid='dm_idx'::regclass::oid AND state='Published' \
-                 ORDER BY epoch DESC LIMIT 1) \
-             INSERT INTO ec_distann_remote_prepared_xact_intent \
-                    (index_oid, node_id, served_epoch, xid, gid, intent_state, retry_count, tracked_vec_id) \
-             SELECT 'dm_idx'::regclass::oid, {owner}, epoch, 0, \
-                    'ec_distann_insert_retry_probe_{owner}', 'commit_intended', 0, {retry_probe_vec_id} \
-               FROM published \
-             ON CONFLICT (gid) DO UPDATE SET intent_state='commit_intended', retry_count=0, tracked_vec_id={retry_probe_vec_id}, updated_at=clock_timestamp(); \
-             SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id={owner}; \
-             SET ec_distann.debug_force_frontier_retry=true; \
-             SELECT ec_distann_debug_resolve_nodes_retry(\
-                 'public.dm_idx'::regclass, decode('{epoch_fingerprint}', 'hex'), {retry_probe_vec_id});",
-            owner = retry_probe_owner.node_id,
-        )
-    });
-    crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_probe owner={} vec_id={retry_probe_vec_id:?} scheduled={} discovery_output={}",
-        retry_probe_owner.node_id,
-        retry_probe_sql.is_some(),
-        compact_capture_error(&retry_probe_vec_output)
-    );
-    // Clear any prior marker before the concurrent wave. The deterministic
-    // resolve_nodes probe is launched behind the same barrier as the writers,
-    // so the owner-side counter sample proves that the exercised retry ran
-    // during the churn window rather than in setup.
+    // Clear any prior attribution before the concurrent wave. The counter is
+    // append-only in a separate unlogged relation, so sampling it cannot lock
+    // or delay the 2PC intent rows that the coordinator must advance.
     let mut live_counter_reset_ok = true;
     for owner in owner_nodes {
         let output = capture_psql_allow_error(
             psql,
             socket_dir,
             owner.port,
-            "UPDATE ec_distann_remote_prepared_xact_intent SET retry_count = 0;",
+            "TRUNCATE ec_distann_retry_attribution;",
         )
         .await;
         live_counter_reset_ok &= !output.contains("ERROR");
     }
     let retry_snapshot_sql =
-        "SELECT COALESCE(sum(retry_count), 0) FROM ec_distann_remote_prepared_xact_intent;";
+        "SELECT count(*) FROM ec_distann_retry_attribution;";
     let parse_retry_count = |output: &str| {
         output
             .lines()
@@ -9913,21 +9889,7 @@ async fn physical_concurrency_drill(
         }));
     }
 
-    let writer_barrier = Arc::new(Barrier::new(
-        WRITERS + if retry_probe_sql.is_some() { 1 } else { 0 },
-    ));
-    let probe_task = retry_probe_sql.map(|probe_sql| {
-        let psql_probe = psql.to_path_buf();
-        let socket_dir_probe = socket_dir.to_path_buf();
-        let probe_barrier = Arc::clone(&writer_barrier);
-        let probe_port = retry_probe_owner.port;
-        tokio::spawn(async move {
-            probe_barrier.wait().await;
-            let probe_output =
-                run_capture(&psql_probe, &socket_dir_probe, probe_port, &probe_sql).await;
-            probe_output.status_ok && probe_output.stdout.lines().any(|line| line.trim() == "t")
-        })
-    });
+    let writer_barrier = Arc::new(Barrier::new(WRITERS));
     for writer in 0..WRITERS {
         let psql_insert = psql.to_path_buf();
         let socket_dir_insert = socket_dir.to_path_buf();
@@ -9985,21 +9947,13 @@ async fn physical_concurrency_drill(
             }
         }
     }
-    let forced_retry_probe = match probe_task {
-        Some(task) => task.await.unwrap_or(false),
-        None => false,
-    };
-    crate::ecaz_println!(
-        "[distann-multicluster] physical_concurrent_insert_query DIAG role=frontier_retry_probe owner={} vec_id={retry_probe_vec_id:?} pass={forced_retry_probe} during_churn=true",
-        retry_probe_owner.node_id,
-    );
     let mut recent_intent_rows_by_owner = Vec::new();
     for owner in owner_nodes {
         let output = capture_psql_allow_error(
             psql,
             socket_dir,
             owner.port,
-            "SELECT node_id::text || '|' || served_epoch::text || '|' || intent_state || '|' || COALESCE(tracked_vec_id::text, 'NULL') || '|' || retry_count::text \
+            "SELECT node_id::text || '|' || served_epoch::text || '|' || intent_state || '|' || COALESCE(tracked_vec_id::text, 'NULL') \
                FROM ec_distann_remote_prepared_xact_intent \
               WHERE updated_at >= clock_timestamp() - interval '30 seconds' \
                 AND intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended', 'commit_local') \
@@ -10112,8 +10066,9 @@ async fn physical_concurrency_drill(
                 .count()
         });
     let saturation_pass = shared_target_initial_neighbor_count >= args.graph_degree as usize
+        && before_saturation_count == Some(args.graph_degree as usize)
         && saturation_inserts_ok
-        && final_neighbor_count.is_some_and(|count| count <= args.graph_degree as usize);
+        && final_neighbor_count == Some(args.graph_degree as usize);
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=saturated_target owner={} vec_id={} initial_neighbors={} before_neighbors={:?} final_neighbors={:?} inserts_ok={} pass={}",
         shared_target_owner,
@@ -10132,12 +10087,8 @@ async fn physical_concurrency_drill(
             psql,
             socket_dir,
             owner.port,
-            "ALTER TABLE ec_distann_remote_prepared_xact_intent \
-                ADD COLUMN IF NOT EXISTS retry_count bigint NOT NULL DEFAULT 0; \
-             ALTER TABLE ec_distann_remote_prepared_xact_intent \
-                ADD COLUMN IF NOT EXISTS tracked_vec_id bigint; \
-             SELECT ec_distann_stage_scoring_reset(); \
-             UPDATE ec_distann_remote_prepared_xact_intent SET retry_count = 0;",
+            "TRUNCATE ec_distann_retry_attribution; \
+             SELECT ec_distann_stage_scoring_reset();",
         )
         .await;
         steady_reset_ok &= !output.contains("ERROR");
@@ -10160,7 +10111,6 @@ async fn physical_concurrency_drill(
         .sum::<Option<u64>>();
     let retry_counter_ok = counter_reset_ok
         && live_counter_reset_ok
-        && forced_retry_probe
         && steady_reset_ok
         && steady_query.status_ok
         && churn_retries.is_some_and(|count| count > 0)

@@ -25,6 +25,20 @@ fn emit_git_sha_env() {
     emit_git_rerun_paths();
 }
 
+fn emit_feature_env() {
+    let mut features = std::env::vars()
+        .filter_map(|(key, value)| {
+            let feature = key.strip_prefix("CARGO_FEATURE_")?;
+            if value != "1" {
+                return None;
+            }
+            Some(feature.to_ascii_lowercase().replace('_', "-"))
+        })
+        .collect::<Vec<_>>();
+    features.sort();
+    println!("cargo:rustc-env=ECAZ_FEATURES={}", features.join(","));
+}
+
 fn emit_git_rerun_paths() {
     let git_path = |name: &str| {
         std::process::Command::new("git")
@@ -61,6 +75,7 @@ fn main() {
     println!("cargo:rustc-check-cfg=cfg(miri)");
     println!("cargo:rerun-if-changed=build.rs");
     emit_git_sha_env();
+    emit_feature_env();
     println!("cargo:rerun-if-changed=csrc/standalone_pg_backend_stubs.c");
     println!("cargo:rerun-if-changed=csrc/pg18_pgstat_shim.c");
     println!("cargo:rerun-if-env-changed=PGRX_PG_CONFIG_PATH");
