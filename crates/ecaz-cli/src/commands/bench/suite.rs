@@ -653,6 +653,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
+    benchmark_parity_queries: Option<u32>,
+    #[serde(default)]
     benchmark_backend_batch_size: Option<u32>,
     /// Run the Task 200 repeated coverage-call RSS regression in one backend
     /// transaction. The fixture is reused when `reuse_fixture` is true.
@@ -5722,6 +5724,11 @@ fn expand_distann_local_multinode(
         step.benchmark_warmup_iterations
             .map(|v| v.to_string())
             .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--benchmark-parity-queries",
+        step.benchmark_parity_queries.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,

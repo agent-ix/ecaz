@@ -88,6 +88,11 @@ pub struct LocalMultinodePg18Args {
     /// measurement. This warms backend-local head and transport caches.
     #[arg(long, default_value_t = 0)]
     pub benchmark_warmup_iterations: u32,
+    /// Query count for the post-insert fresh-rebuild parity sample. A value of
+    /// 48 measures the complete fixed inserted-neighborhood probe set without
+    /// repeating the expensive large-corpus parity arm over all recall queries.
+    #[arg(long)]
+    pub benchmark_parity_queries: Option<u32>,
     /// Reconnect a latency worker after this many timed queries. Zero keeps
     /// one backend for the whole arm; nonzero values bound backend-local
     /// memory during long physical-query diagnostics and replay the untimed
@@ -7086,6 +7091,7 @@ async fn run_physical_benchmarks(
             })
             .collect::<Vec<_>>()
             .join(";");
+        let parity_query_count = args.benchmark_parity_queries.unwrap_or(args.queries);
         lines.push(
             task167_post_insert_fresh_rebuild_parity(
                 coordinator,
@@ -7095,7 +7101,7 @@ async fn run_physical_benchmarks(
                 &roster,
                 args.graph_degree,
                 args.head_index_cap,
-                args.queries,
+                parity_query_count,
             )
             .await?,
         );
