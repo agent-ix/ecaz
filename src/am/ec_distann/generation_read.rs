@@ -446,12 +446,11 @@ where
         ));
     }
     let mut last_error = error;
-    // Task 167 final fixture provenance: an event-loop yield, bounded to
-    // thirty-two milliseconds, is enough to let the commit callback resolve
-    // a prepared owner transaction under the multi-owner benchmark wave
-    // without holding the retained scan's relation guards during the wait.
+    // Keep the retry bounded and non-blocking. The owner lookup itself is
+    // short-lived; retrying with the latest registered snapshot gives a
+    // concurrently committing owner transaction an opportunity to become
+    // visible without putting a sleep in the scan path.
     for _ in 0..32 {
-        let _ = Spi::run("SELECT pg_sleep(0.001)");
         let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| last_error.clone())?;
         match lookup_graph_nodes(
             graph_relation,
@@ -584,7 +583,6 @@ where
     for _ in 0..32 {
         drop(graph_relation.take());
         drop(directory_relation.take());
-        let _ = Spi::run("SELECT pg_sleep(0.001)");
         let (next_graph_relation, next_directory_relation) = open_relations()?;
         let latest = RegisteredSnapshotGuard::latest().ok_or_else(|| last_error.clone())?;
         match lookup_graph_nodes(
