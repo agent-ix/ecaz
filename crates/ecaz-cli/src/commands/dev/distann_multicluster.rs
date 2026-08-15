@@ -148,6 +148,11 @@ pub struct LocalMultinodePg18Args {
     /// Skip building and measuring the single-index control arm.
     #[arg(long, default_value_t = false)]
     pub skip_single_control: bool,
+    /// Keep the single-index control available for storage and insert A/B,
+    /// but skip its duplicate recall/latency arms. Large physical indexes can
+    /// make that redundant control query dominate the matrix wall time.
+    #[arg(long, default_value_t = false)]
+    pub skip_single_benchmark: bool,
     /// Task 183 benchmark-only per-stage attribution for the physical latency
     /// arm. Requires a measurement extension exposing the stage snapshot API.
     #[arg(long, default_value_t = false)]
@@ -5818,7 +5823,7 @@ async fn run_physical_benchmarks(
             variant.expanded_locator,
         ));
     }
-    if !args.stage_counter_only && !args.skip_single_control {
+    if !args.stage_counter_only && !args.skip_single_control && !args.skip_single_benchmark {
         benchmark_arms.push((
             "single",
             single_prefix.as_str(),

@@ -699,6 +699,8 @@ struct DistannLocalMultinodeStep {
     #[serde(default)]
     skip_single_control: bool,
     #[serde(default)]
+    skip_single_benchmark: bool,
+    #[serde(default)]
     materialization_correctness: bool,
     /// Run the Task 199 armed LD_PRELOAD ENOSPC replica-build drill.
     #[serde(default)]
@@ -5692,6 +5694,9 @@ fn expand_distann_local_multinode(
     }
     if step.skip_single_control {
         args.push("--skip-single-control".into());
+    }
+    if step.skip_single_benchmark {
+        args.push("--skip-single-benchmark".into());
     }
     if step.materialization_correctness {
         args.push("--materialization-correctness".into());
