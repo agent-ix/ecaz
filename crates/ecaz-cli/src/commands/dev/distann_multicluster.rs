@@ -3118,7 +3118,9 @@ async fn task167_insert_throughput_ab(
 
 /// Compare the post-insert physical generation with a fresh local rebuild
 /// over the same rows. The pre-insert single control is deliberately not used
-/// here: it cannot observe the rows added by the throughput arm.
+/// here: it cannot observe the rows added by the throughput arm. The append
+/// A/B uses duplicate source vectors, so matching raw row IDs would count
+/// arbitrary ANN tie-breaking as graph loss; compare source fingerprints.
 async fn task167_post_insert_fresh_rebuild_parity(
     coordinator: &tokio_postgres::Client,
     scale: &str,
@@ -3172,18 +3174,18 @@ async fn task167_post_insert_fresh_rebuild_parity(
                 ORDER BY id LIMIT greatest({query_count} - 48, 0);
              SET ec_distann.roster = '{roster}';
              CREATE TEMP TABLE task167_parity_physical AS
-               SELECT q.qid, hit.id
+               SELECT q.qid, hit.id, md5(hit.source::text) AS hit_key
                  FROM task167_parity_q q
                  CROSS JOIN LATERAL (
-                   SELECT id FROM {physical_corpus}
+                   SELECT id, source FROM {physical_corpus}
                     ORDER BY embedding <#> q.v LIMIT 10
                  ) hit;
              SET ec_distann.roster = '';
              CREATE TEMP TABLE task167_parity_fresh AS
-               SELECT q.qid, hit.id
+               SELECT q.qid, hit.id, md5(hit.source::text) AS hit_key
                  FROM task167_parity_q q
                  CROSS JOIN LATERAL (
-                   SELECT id FROM {fresh_table}
+                   SELECT id, source FROM {fresh_table}
                     ORDER BY embedding <#> q.v LIMIT 10
                  ) hit;"
         ))
@@ -3194,9 +3196,9 @@ async fn task167_post_insert_fresh_rebuild_parity(
             "WITH per_query AS (
                    SELECT q.qid,
                           (SELECT count(*)
-                             FROM (SELECT id FROM task167_parity_physical WHERE qid = q.qid
+                             FROM (SELECT hit_key FROM task167_parity_physical WHERE qid = q.qid
                                    INTERSECT
-                                   SELECT id FROM task167_parity_fresh WHERE qid = q.qid) common)::double precision / 10.0 AS recall,
+                                   SELECT hit_key FROM task167_parity_fresh WHERE qid = q.qid) common)::double precision / 10.0 AS recall,
                           (SELECT count(*) FROM task167_parity_physical WHERE qid = q.qid) AS physical_rows,
                           (SELECT count(*) FROM task167_parity_fresh WHERE qid = q.qid) AS fresh_rows
                      FROM task167_parity_q q
@@ -3218,6 +3220,11 @@ async fn task167_post_insert_fresh_rebuild_parity(
     let inserted_queries = result.get::<_, i64>(4);
     let inserted_recall = result.get::<_, Option<f64>>(5).unwrap_or(0.0);
     let complete_rows = result.get::<_, i64>(6);
+    // The parity line is a correctness gate, not a descriptive metric. A
+    // post-insert graph that agrees with a fresh rebuild on fewer than 80% of
+    // the inserted-neighborhood queries is evidence of incremental graph
+    // quality loss and must not be reported as passing.
+    let parity_pass = inserted_recall >= 0.80 && recall >= 0.80;
     coordinator
         .batch_execute("SET ec_distann.roster = ''")
         .await
@@ -3236,7 +3243,7 @@ async fn task167_post_insert_fresh_rebuild_parity(
         );
     }
     Ok(format!(
-        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} inserted_neighborhood_queries={inserted_queries} inserted_neighborhood_recall={inserted_recall:.6} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} comparison=physical_vs_fresh_ann_agreement pass=true",
+        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} inserted_neighborhood_queries={inserted_queries} inserted_neighborhood_recall={inserted_recall:.6} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} comparison=physical_vs_fresh_source_fingerprint duplicate_ties_collapsed=true pass={parity_pass}",
     ))
 }
 
@@ -9682,10 +9689,9 @@ async fn physical_concurrency_drill(
         );
         let graph_output =
             capture_psql_allow_error(psql, socket_dir, owner_node.port, &graph_sql).await;
-        // Select an already full target. The saturation assertion is about
-        // preserving a full target under concurrent writers; requiring spare
-        // capacity and then manufacturing fill rows can legitimately leave
-        // the graph below degree because robust pruning declines those edges.
+        // Select a target with exactly two spare slots for the two concurrent
+        // writers. This directly exercises append-when-room; before and after
+        // the fill wave must both be exactly at the configured degree.
         let full_degree = args.graph_degree as usize;
         for target in graph_output.lines().filter_map(|line| {
             let (vec_id, neighbors) = line.trim().split_once('|')?;
@@ -9694,7 +9700,7 @@ async fn physical_concurrency_drill(
                 .filter(|value| !value.is_empty())
                 .count();
             let signed_id = vec_id.parse::<i64>().ok()?;
-            if neighbor_count < full_degree {
+            if neighbor_count.saturating_add(WRITERS) != full_degree {
                 return None;
             }
             Some((
@@ -9903,6 +9909,9 @@ async fn physical_concurrency_drill(
                 let id = 900_000_i64
                     + base_rows as i64
                     + (writer * ITERATIONS + iteration) as i64;
+                // Force the first insert from each writer through the shared
+                // target. Later rows keep the ordinary deterministic source
+                // used by the concurrent wave.
                 let source_expr = if iteration == 0 {
                     format!("'{shared_target_source}'::real[]")
                 } else {
@@ -10065,8 +10074,7 @@ async fn physical_concurrency_drill(
                 .filter(|value| !value.is_empty())
                 .count()
         });
-    let saturation_pass = shared_target_initial_neighbor_count >= args.graph_degree as usize
-        && before_saturation_count == Some(args.graph_degree as usize)
+    let saturation_pass = before_saturation_count == Some(args.graph_degree as usize)
         && saturation_inserts_ok
         && final_neighbor_count == Some(args.graph_degree as usize);
     crate::ecaz_println!(
