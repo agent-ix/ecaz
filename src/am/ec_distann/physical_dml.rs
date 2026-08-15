@@ -122,7 +122,7 @@ unsafe fn insert_from_prepared_slot(
     let options = options::relation_options(index_relation);
 
     let index_oid = (*index_relation).rd_id;
-    let scan = match (scan_fingerprint, planned_forward_payload.is_some()) {
+    let mut scan = match (scan_fingerprint, planned_forward_payload.is_some()) {
         (Some(fingerprint), true) => {
             PhysicalGenerationScan::open_at_fingerprint_for_owner_insert(index_oid, fingerprint)?
         }

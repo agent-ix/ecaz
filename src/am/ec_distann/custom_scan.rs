@@ -1448,7 +1448,7 @@ unsafe fn run_physical_generation_search(
         );
         let context = state
             .physical_generation
-            .as_ref()
+            .as_mut()
             .expect("physical generation initialized");
         if state.frozen_row_slot.is_null() {
             let estate = (*scan_state).ps.state;
