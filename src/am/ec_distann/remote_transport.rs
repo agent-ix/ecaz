@@ -914,7 +914,6 @@ pub(crate) fn remote_physical_insert(
             client.batch_execute("BEGIN").await.map_err(|error| {
                 format!("EC_REMOTE_WRITE: physical insert begin failed: {error}")
             })?;
-            #[cfg(feature = "pg_test")]
             client
                 .batch_execute(&format!(
                     "SET ec_distann.debug_disable_append_when_room = {}",
@@ -1139,7 +1138,6 @@ pub(crate) fn remote_physical_backlink(
                 .batch_execute("BEGIN")
                 .await
                 .map_err(|error| format!("EC_REMOTE_WRITE: backlink begin failed: {error}"))?;
-            #[cfg(feature = "pg_test")]
             client
                 .batch_execute(&format!(
                     "SET ec_distann.debug_disable_append_when_room = {}",
