@@ -10,7 +10,7 @@
       "name": "physical-10k",
       "tags": ["task167", "production", "ec_real_10k"],
       "artifact_dir": "${artifact_dir}/physical-10k",
-      "run_dir": "/home/peter/.ecaz/clusters/task167-production-10k-rerun",
+      "run_dir": "/home/peter/.ecaz/clusters/task167-production-10k-current79",
       "nodes": 3,
       "base_port": 41570,
       "graph_degree": 5,
