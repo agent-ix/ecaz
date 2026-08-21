@@ -1,11 +1,11 @@
 ---
 id: TM-002
-title: "DistANN Requirements Test Matrix"
-type: TestMatrix
+title: "DistANN Requirements Coverage Index"
+type: index
 name: distann
 status: PARTIAL
 ---
-# DistANN Test Matrix (FR-075..FR-090, NFR-017..NFR-022)
+# DistANN Requirements Coverage Index (FR-075..FR-090, NFR-017..NFR-022)
 
 Scope: every acceptance criterion (AC) and constraint (CON) in
 `spec/functional/distann/` (FR-075..FR-090 across build/read/storage/lifecycle)
@@ -17,6 +17,47 @@ before being written into a row. Rows follow the `/spec-matrix` skill shape.
 Test-case group ids (TC-037..TC-044, TC-050, TC-051) are the planning
 groups defined in `spec/tests.md`; this matrix cites the concrete tests that
 exist today underneath them.
+
+## Contents
+
+Coverage is indexed per requirement, keyed on **acceptance criterion**, with the
+concrete test or evidence packet that covers it.
+
+| Section | What it indexes |
+| --- | --- |
+| [Test Matrix Rules](#test-matrix-rules) | how a row is allowed to claim coverage |
+| [Status Legend](#status-legend) | what each marker in this document means |
+| [Evidence Index (verified files)](#evidence-index-verified-files) | the test files every row cites |
+| [Functional Requirement Coverage](#functional-requirement-coverage) | FR-075..FR-090, one subsection per requirement, keyed on `FR-nnn-AC-n` |
+| [Non-Functional Requirement Coverage](#non-functional-requirement-coverage) | NFR-017..NFR-022 |
+| [Coverage Summary](#coverage-summary) | the AC/CON row totals |
+| [Coverage Discrepancies (spec claims vs. found tests)](#coverage-discrepancies-spec-claims-vs-found-tests) | ACs whose declared `Verification` no test backs |
+| [AC-Id Mapping Notes (reported, not fixed)](#ac-id-mapping-notes-reported-not-fixed) | ids cited here that do not resolve |
+
+> **Typed `index`, not `TestMatrix` (2026-08-20).** This document does not mint
+> test-case ids and never did: its own header says it *"supplements the
+> repo-wide `spec/tests.md` (TM-001)"*, and that the ids it cites
+> (TC-037..TC-044, TC-050, TC-051) are *"the planning groups defined in
+> `spec/tests.md`"*.
+>
+> Carrying `type: TestMatrix` therefore made the archetype demand two tables it
+> can never have. A `## Test Case Summary` here would **duplicate-mint** every
+> id TM-001 already owns, and the `## Functional Requirement Coverage` the
+> archetype asserts is a flat `Functional Req | Acceptance Criteria | Test Cases
+> | Coverage Status` table — a different projection from the per-AC tables
+> below, which are keyed on `FR-nnn-AC-n` and cite test *function names*.
+>
+> Two projections, not duplicates: TM-001 is TC → requirement, this is AC →
+> evidence. `quire-rs` keeps its equivalent as an `## AC → TC Coverage Audit`
+> section inside its single matrix rather than as a separate typed document.
+>
+> **What this typing does not do is validate the tables below.** No archetype in
+> the module set describes a 192-row AC audit, so they are unchecked either way
+> — `index` is honest about that, where `TestMatrix` was a permanent validation
+> failure that asserted a shape this document does not have. The destination, if
+> the DistANN rows are ever moved out of TM-001, is a real nested module matrix
+> (the `filament-ide-rs` pattern); that is a restructure of two files and a
+> separate decision. See agent-ix/ecaz#74.
 
 ## Test Matrix Rules
 
