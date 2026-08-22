@@ -1,6 +1,6 @@
 # ec_distann Recall and Latency Optimization Roadmap
 
-Status: active planning ledger (updated 2026-08-21). This document records the option
+Status: active planning ledger (updated 2026-08-22). This document records the option
 space after Tasks 180--183. It is not an ADR and does not authorize a production
 default, format, protocol, or placement change. Canonical execution scope lives
 in `plan/tasks/`; accepted architectural decisions live in an ADR.
@@ -131,6 +131,10 @@ validity requirements.
 | 226 | Current-head BW8 transfer | proposed — P0 recall/latency | same-generation current-production BW4/H100 vs BW8/H100; tests whether Task 188's smaller simultaneous recall+latency win survives the sharded-head/pushdown/gateway/lazy surface |
 | 227 | Recall residual + adaptive search | proposed — gated on 226 | complete the frontier/rerank/reachability/stitch attribution Task 188 explicitly left unrun; at most one truth-free adaptive budget candidate |
 | 228 | RTT/BatANN trigger | proposed — measurement-only after 222–227 | suite-driven injected/real-network curve; BatANN planning reopens only at ADR-085 D4's >=50% transport-share trigger and must be reauthored against current identities |
+| 229 | Covering scalar payload sidecar | proposed — mandatory prototype after 222–224 | owner-local generation sidecar for declared common scalar projections; exact fallback, DML/lifecycle, and full 10k/50k/100k A/B required |
+| 230 | Hot/cold vertical row tier | proposed — mandatory prototype after 229 | exact vector + bounded scalar hot tier and arbitrary-payload cold tier; no attribute duplication and full retrieval/storage/DML matrix |
+| 231 | Fixed-stride graph/vector blocks | proposed — mandatory prototype after 230 | relation-backed dense-ordinal whole-node extents, direct block arithmetic, aligned multi-block records, warm and controlled-residency evidence |
+| 232 | Packed columnar immutable row tier | proposed — mandatory prototype last | per-attnum fixed/variable segments plus a transactional row-heap DML overlay; narrow through whole-row workload comparison |
 
 ## Post-221 follow-up program (2026-08-21)
 
@@ -162,6 +166,34 @@ surface. The historical `task-173-batann-specs` branch is planning archaeology:
 it predates Tasks 203--221 and collides with current ADR-086 and NFR-021/022.
 Any future GO creates a new spec task with current identifiers; it does not
 revive that branch.
+
+## Retrieval-layout prototype sequence (2026-08-22)
+
+The operator selected four storage-layout hypotheses for implementation and
+measurement, not attribution-only triage:
+
+1. Task 229 — covering scalar payload sidecar;
+2. Task 230 — hot exact-vector/scalar tier plus cold arbitrary payload tier;
+3. Task 231 — fixed-stride, dense-ordinal whole graph/vector node extents; and
+4. Task 232 — packed per-attnum columnar immutable row tier, deliberately last
+   because it has the broadest format, reconstruction, DML, and recovery scope.
+
+All four tasks implement an opt-in prototype and run isolated 10k/50k/100k
+recall, latency, storage, construction, and DML evidence. None is skipped merely
+because an earlier task wins. The primary comparison baseline is frozen at the
+reviewed post-Task-224 production disposition, and candidates are not stacked
+in their attribution arms. If an earlier layout wins, later tasks may report a
+secondary winner-to-candidate comparison, but only the unstacked arm decides
+the later mechanism's independent effect.
+
+Fixed-stride and columnar layouts optimize different retrieval units.
+DiskANN/DistributedANN read a graph node as a unit: exact vector, adjacency, and
+associated compressed codes. Fixed-stride extents make that whole-node address
+computable and its I/O bounded. SQL result materialization often needs only one
+or two attributes, so columnar storage instead avoids reading unrelated
+attributes. Task 231 tests the former premise without graph reordering; Task
+232 tests the latter after Task 222 supplies the exact attribute mask. Theory
+does not select between them: both require complete measured evidence.
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -344,7 +376,7 @@ remain controls rather than new candidates.
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional Task 224 after refreshed heap-locality counters |
 | MAT-26 | Batch detoast/binary-send work by physical block | conditional Task 224 after refreshed varlena/detoast attribution |
-| MAT-27 | Covering row-tier layout for common scalar projections | deferred; format/storage decision |
+| MAT-27 | Covering row-tier layout for common scalar projections | **active Task 229 — mandatory prototype**; owner-local sidecar with exact Task-222 mask subset selection and full 10k/50k/100k evidence |
 | MAT-28 | Exclude large/toasted columns unless planner proof requires them | **active Task 222**; derive target+qual+recheck attributes with all-column fallback |
 | MAT-29 | Strengthen minimal projection derivation | **active Task 222**; id-only control currently ships 4 columns and 123,076.8 bytes/scan |
 | MAT-30 | Generation-scoped coordinator payload cache | conditional on cross-query hit-rate evidence; **NFR-021 screen required** — a generation-scoped cache is O(N) if unbounded and must carry an explicit fixed bound |
@@ -497,8 +529,8 @@ Task 190 may compare architectures but may not implement several together.
 | ARCH-02 | Replicated global routing layer over sharded lower graph | **measured useful by Task 198; promoted to Task 199 productionization**: exact recall, 14–17% warm-mean win, about 65–66% extra generation storage; production unchanged pending normal-build/operator gate |
 | ARCH-03 | Graph/community-aware placement instead of hash placement | deferred; FR-078/ADR-085 replacement |
 | ARCH-04 | Hash ownership plus replicated boundary nodes | deferred Task 190 |
-| ARCH-05 | Columnar/packed immutable row tier | deferred; storage format decision |
-| ARCH-06 | Covering payload sidecars for common projections | deferred; workload/storage decision |
+| ARCH-05 | Columnar/packed immutable row tier | **active Task 232 — mandatory prototype, last**; per-attnum segments plus transactional row-heap DML overlay |
+| ARCH-06 | Covering payload sidecars for common projections | **active Task 229 — mandatory prototype**; owner-local only, no O(N) coordinator copy |
 | ARCH-07 | Dedicated binary RPC instead of SQL-function transport | rejected for this escalation: measured encode/decode/connection work is only 0.071 ms/scan and the ten sequential remote/backend boundaries remain; reopen only with an independently measured transport-service premise |
 | ARCH-08 | Shared-memory or Unix-domain same-host transport | rejected for this escalation: it optimizes the same-host benchmark topology but neither serves genuinely remote owners nor removes sequential owner boundaries; reopen only for an explicitly same-host deployment product |
 | ARCH-09 | GPU/SIMD exhaustive compact-head scoring | deferred accelerator path |
@@ -508,6 +540,8 @@ Task 190 may compare architectures but may not implement several together.
 | ARCH-13 | Query-routed coordinator colocated with likely result owner | deferred topology decision |
 | ARCH-14 | Per-query coordinator selection under one logical index | deferred lifecycle/routing decision |
 | ARCH-15 | Workload-aware payload replication | deferred storage/lifecycle decision |
+| ARCH-16 | Vertically split hot exact-vector/scalar tier and cold arbitrary-payload tier | **active Task 230 — mandatory prototype**; attributes have one authoritative tier and candidates remain unstacked |
+| ARCH-17 | Dense-ordinal fixed-stride graph/vector node extents | **active Task 231 — mandatory prototype**; PostgreSQL relation/WAL backed, direct block arithmetic, no graph reordering |
 
 ## Measured and contractual negative-result ledger
 
@@ -544,7 +578,10 @@ premise and does not repeat the same experiment unchanged.
    families in one attribution cell.
 3. Initial screens use a fresh 100k physical generation and Task 182's retained
    policy unless the task explains a different control.
-4. Only a useful isolated candidate proceeds to 10k/50k/100k confirmation.
+4. Only a useful isolated candidate proceeds to 10k/50k/100k confirmation,
+   except Tasks 229--232: the operator explicitly selected all four layout
+   prototypes for a complete cross-scale comparison, so each runs the full
+   matrix even when its 100k screen is negative.
 5. All matrices and sweeps use checked-in `ecaz bench suite` configs.
 6. Recall, mean/p50/p95/p99/max latency, storage, construction, work/bytes,
    topology, remote engagement, query separation, and release provenance are
