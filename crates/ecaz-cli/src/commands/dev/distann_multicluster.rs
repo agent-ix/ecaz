@@ -88,9 +88,9 @@ pub struct LocalMultinodePg18Args {
     /// measurement. This warms backend-local head and transport caches.
     #[arg(long, default_value_t = 0)]
     pub benchmark_warmup_iterations: u32,
-    /// Query count for the post-insert fresh-rebuild parity sample. A value of
-    /// 48 measures the complete fixed inserted-neighborhood probe set without
-    /// repeating the expensive large-corpus parity arm over all recall queries.
+    /// Query count for post-insert exact-ground-truth quality. The first 48
+    /// queries cover inserted neighborhoods; the remainder are held out and
+    /// must outnumber the inserted subset.
     #[arg(long)]
     pub benchmark_parity_queries: Option<u32>,
     /// Reconnect a latency worker after this many timed queries. Zero keeps
@@ -438,7 +438,12 @@ fn validate_extension_preflight(
             expected.build_profile
         );
     }
-    if expected.features.split(',').any(|feature| feature == "pg-test") && !allow_debug_extension {
+    if expected
+        .features
+        .split(',')
+        .any(|feature| feature == "pg-test")
+        && !allow_debug_extension
+    {
         bail!(
             "extension preflight rejected pg-test feature on node {} port {}: observed {}/{}/{}; install with --no-default-features --features pg18 for production evidence or explicitly allow a diagnostic build",
             expected.node_id,
@@ -454,7 +459,10 @@ fn validate_extension_preflight(
         nodes: observed.len(),
         debug_override: allow_debug_extension
             && (expected.build_profile != "release"
-                || expected.features.split(',').any(|feature| feature == "pg-test")),
+                || expected
+                    .features
+                    .split(',')
+                    .any(|feature| feature == "pg-test")),
         features: expected.features.clone(),
     })
 }
@@ -1221,6 +1229,39 @@ fn synthetic_unit_vector_expr(row: &str, dimensions: u32) -> String {
                                  cos(({row}) * 0.0031 * (d + 1)))::double precision AS component \
                            FROM generate_series(0, {dimensions} - 1) AS d) raw) normalized)"
     )
+}
+
+/// Execute the synthetic generator in PostgreSQL and verify the contract the
+/// distance operator relies on. Keeping this as a live SQL preflight catches
+/// expression/type changes that a Rust string-shape assertion cannot.
+async fn preflight_synthetic_unit_norm(
+    coordinator: &tokio_postgres::Client,
+    dimensions: u32,
+) -> Result<f64> {
+    const SAMPLES: u32 = 32;
+    const MAX_ABS_ERROR: f64 = 1.0e-5;
+    let vector = synthetic_unit_vector_expr("g", dimensions);
+    let sql = format!(
+        "SELECT max(abs(sqrt(norm_sq) - 1.0))::double precision
+           FROM (
+             SELECT g, sum(component::double precision * component::double precision) AS norm_sq
+               FROM generate_series(1, {SAMPLES}) AS g
+               CROSS JOIN LATERAL unnest({vector}) AS component
+              GROUP BY g
+           ) norms"
+    );
+    let max_abs_error = coordinator
+        .query_one(&sql, &[])
+        .await
+        .wrap_err("running PostgreSQL synthetic unit-norm preflight")?
+        .get::<_, Option<f64>>(0)
+        .ok_or_else(|| eyre!("PostgreSQL synthetic unit-norm preflight returned no samples"))?;
+    if !max_abs_error.is_finite() || max_abs_error > MAX_ABS_ERROR {
+        bail!(
+            "PostgreSQL synthetic unit-norm preflight failed: dimensions={dimensions} samples={SAMPLES} max_abs_error={max_abs_error} tolerance={MAX_ABS_ERROR}"
+        );
+    }
+    Ok(max_abs_error)
 }
 
 /// Real staged-corpus load: COPY each 2-column TSV (`id\t[v1,v2,...]`) into a
@@ -2970,6 +3011,19 @@ const TASK167_AB_TRIALS: usize = 5;
 const TASK167_AB_ROWS_PER_TRIAL: usize = 32;
 const TASK167_AB_SAMPLE_ROWS: usize = TASK167_AB_TRIALS * TASK167_AB_ROWS_PER_TRIAL;
 
+#[derive(Debug, Clone, Copy)]
+struct Task167InsertMeasurement {
+    rows_per_second: f64,
+    inserted_rows: usize,
+}
+
+fn task167_insert_trial_items(
+    trial: usize,
+    rows_per_trial: usize,
+) -> impl Iterator<Item = (usize, usize)> {
+    (0..rows_per_trial).map(move |ordinal| (ordinal, trial * rows_per_trial + ordinal))
+}
+
 async fn measure_task167_insert_arm(
     coordinator: &tokio_postgres::Client,
     table: &str,
@@ -2978,12 +3032,12 @@ async fn measure_task167_insert_arm(
     id_base: i64,
     trials: usize,
     rows_per_trial: usize,
-) -> Result<f64> {
+) -> Result<Task167InsertMeasurement> {
     let mut trial_rows_per_second = Vec::with_capacity(trials);
+    let mut inserted_rows = 0;
     for trial in 0..trials {
         let started = Instant::now();
-        for ordinal in 0..rows_per_trial {
-            let source_offset = trial * rows_per_trial + ordinal;
+        for (ordinal, source_offset) in task167_insert_trial_items(trial, rows_per_trial) {
             let id = id_base + trial as i64 * rows_per_trial as i64 + ordinal as i64;
             let sql = if physical {
                 format!(
@@ -3007,12 +3061,16 @@ async fn measure_task167_insert_arm(
                     "Task 167 {table} trial {trial} inserted {inserted} rows for ordinal {ordinal}"
                 );
             }
+            inserted_rows += usize::try_from(inserted).unwrap_or(usize::MAX);
         }
         let elapsed_ns = started.elapsed().as_nanos().max(1) as f64;
         trial_rows_per_second.push(rows_per_trial as f64 * 1_000_000_000.0 / elapsed_ns);
     }
     trial_rows_per_second.sort_by(f64::total_cmp);
-    Ok(trial_rows_per_second[trials / 2])
+    Ok(Task167InsertMeasurement {
+        rows_per_second: trial_rows_per_second[trials / 2],
+        inserted_rows,
+    })
 }
 
 async fn task167_insert_throughput_ab(
@@ -3023,7 +3081,7 @@ async fn task167_insert_throughput_ab(
     graph_degree: u32,
     lines: &mut Vec<String>,
 ) -> Result<()> {
-    let single_rows_per_second = measure_task167_insert_arm(
+    let single = measure_task167_insert_arm(
         coordinator,
         single_corpus,
         physical_corpus,
@@ -3041,7 +3099,7 @@ async fn task167_insert_throughput_ab(
         .batch_execute("SELECT ec_distann_insert_work_reset()")
         .await
         .wrap_err("resetting Task 167 physical insert-work counters")?;
-    let physical_append_disabled_rows_per_second = measure_task167_insert_arm(
+    let append_disabled = measure_task167_insert_arm(
         coordinator,
         physical_corpus,
         physical_corpus,
@@ -3068,7 +3126,7 @@ async fn task167_insert_throughput_ab(
         .batch_execute("SELECT ec_distann_insert_work_reset()")
         .await
         .wrap_err("reset append-when-room candidate counters")?;
-    let physical_rows_per_second = measure_task167_insert_arm(
+    let append_enabled = measure_task167_insert_arm(
         coordinator,
         physical_corpus,
         physical_corpus,
@@ -3087,12 +3145,26 @@ async fn task167_insert_throughput_ab(
         .into_iter()
         .map(|row| (row.get::<_, String>(0), row.get::<_, i64>(1)))
         .collect::<HashMap<_, _>>();
-    let ratio = physical_rows_per_second / single_rows_per_second.max(f64::EPSILON);
+    if single.inserted_rows != TASK167_AB_SAMPLE_ROWS
+        || append_disabled.inserted_rows != TASK167_AB_SAMPLE_ROWS
+        || append_enabled.inserted_rows != TASK167_AB_SAMPLE_ROWS
+    {
+        bail!(
+            "Task 167 insert A/B executed unexpected statement counts: single={} append_disabled={} append_enabled={} preregistered={TASK167_AB_SAMPLE_ROWS}",
+            single.inserted_rows,
+            append_disabled.inserted_rows,
+            append_enabled.inserted_rows,
+        );
+    }
+    let ratio = append_enabled.rows_per_second / single.rows_per_second.max(f64::EPSILON);
     lines.push(format!(
-        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={TASK167_AB_SAMPLE_ROWS} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true",
+        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
+        append_enabled.inserted_rows,
+        append_enabled.rows_per_second,
+        single.rows_per_second,
     ));
     let append_ratio =
-        physical_rows_per_second / physical_append_disabled_rows_per_second.max(f64::EPSILON);
+        append_enabled.rows_per_second / append_disabled.rows_per_second.max(f64::EPSILON);
     let disabled_amendments = append_disabled_work
         .get("backlink_amendments")
         .copied()
@@ -3103,7 +3175,10 @@ async fn task167_insert_throughput_ab(
         .unwrap_or_default();
     let append_ab_pass = append_ratio >= 1.0 && enabled_amendments <= disabled_amendments;
     lines.push(format!(
-        "physical_benchmark_append_when_room_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={TASK167_AB_SAMPLE_ROWS} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={disabled_amendments} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture pass={append_ab_pass}",
+        "physical_benchmark_append_when_room_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} append_disabled_rows_per_second={:.3} append_enabled_rows_per_second={:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={disabled_amendments} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture pass={append_ab_pass}",
+        append_enabled.inserted_rows,
+        append_disabled.rows_per_second,
+        append_enabled.rows_per_second,
         append_disabled_work.get("backlink_no_room").copied().unwrap_or_default(),
         append_enabled_work.get("backlink_no_room").copied().unwrap_or_default(),
     ));
@@ -3116,7 +3191,7 @@ async fn task167_insert_throughput_ab(
         )
         .await
         .wrap_err("reading Task 167 physical insert-work counters")?;
-    let expected_inserts = TASK167_AB_SAMPLE_ROWS as i64;
+    let expected_inserts = append_enabled.inserted_rows as i64;
     if rows.len() != 8 {
         bail!(
             "Task 167 physical insert-work snapshot returned {} rows, expected 8",
@@ -3152,24 +3227,38 @@ async fn task167_insert_throughput_ab(
     Ok(())
 }
 
-/// Compare the post-insert physical generation with a fresh local rebuild
-/// over the same rows. The pre-insert single control is deliberately not used
-/// here: it cannot observe the rows added by the throughput arm. The append
-/// A/B uses duplicate source vectors, so matching raw row IDs would count
-/// arbitrary ANN tie-breaking as graph loss; compare source fingerprints.
-/// Keep the two insert arms separate: the disabled control uses the 2m id
-/// range and the enabled candidate uses the 3m range. A single fixed range
-/// would silently report only the control arm as Task 167 recall.
-async fn task167_post_insert_fresh_rebuild_parity(
+const TASK167_INSERTED_QUALITY_QUERIES: usize = 48;
+const TASK167_EXACT_RECALL_TOLERANCE: f64 = 0.002;
+
+/// Compare the post-insert physical generation and a reloption-matched fresh
+/// rebuild against the same brute-force fp32 ground truth. Pairwise ANN set
+/// overlap is deliberately not a correctness metric: independently built
+/// graphs may return different valid approximations. Source fingerprints
+/// collapse exact duplicate rows, and each query divides by its own number of
+/// distinct exact-truth keys so duplicate ties cannot lower the metric ceiling.
+async fn task167_post_insert_exact_recall(
     coordinator: &tokio_postgres::Client,
     scale: &str,
     physical_corpus: &str,
-    physical_queries: &str,
     roster: &str,
     graph_degree: u32,
     head_index_cap: u32,
+    build_shards: u32,
+    head_construction: &str,
+    head_sizing: &str,
     query_count: u32,
-) -> Result<String> {
+    truth_corpus_path: &Path,
+    truth_queries_path: &Path,
+) -> Result<Vec<String>> {
+    let query_count = usize::try_from(query_count).unwrap_or(usize::MAX);
+    let heldout_count = query_count.saturating_sub(TASK167_INSERTED_QUALITY_QUERIES);
+    if heldout_count <= TASK167_INSERTED_QUALITY_QUERIES {
+        bail!(
+            "Task 167 exact-recall quality sample requires held-out queries to dominate: total={query_count} inserted={} heldout={heldout_count}",
+            TASK167_INSERTED_QUALITY_QUERIES,
+        );
+    }
+
     let fresh_table = format!("task167_fresh_{scale}");
     let fresh_index = format!("{fresh_table}_idx");
     coordinator
@@ -3181,12 +3270,82 @@ async fn task167_post_insert_fresh_rebuild_parity(
              CREATE INDEX {fresh_index} ON {fresh_table}
                USING ec_distann (embedding ecvector_distann_ip_ops)
                WITH (distributed_control = false, graph_degree = {graph_degree}, head_index_cap = {head_index_cap},
-                     neighbor_code_format = 'rabitq');
+                     build_shards = {build_shards}, head_construction = '{head_construction}',
+                     neighbor_code_format = 'rabitq'{head_sizing});
              ANALYZE {fresh_table};"
         ))
         .await
         .wrap_err("building Task 167 post-insert fresh rebuild")?;
-    let roster = roster.replace('\'', "''");
+
+    let (mut corpus_ids, base_corpus) =
+        crate::commands::bench::recall::load_sources_tsv_file(truth_corpus_path)
+            .wrap_err("loading Task 167 exact-truth corpus")?;
+    if !corpus_ids.windows(2).all(|ids| ids[0] < ids[1]) {
+        bail!(
+            "Task 167 exact-truth corpus IDs must be strictly increasing to match INSERT ... ORDER BY id offsets"
+        );
+    }
+    if base_corpus.nrows() < TASK167_AB_SAMPLE_ROWS
+        || base_corpus.nrows() < TASK167_INSERTED_QUALITY_QUERIES
+    {
+        bail!(
+            "Task 167 exact-truth corpus has {} rows, expected at least {}",
+            base_corpus.nrows(),
+            TASK167_AB_SAMPLE_ROWS.max(TASK167_INSERTED_QUALITY_QUERIES),
+        );
+    }
+    let (_, heldout_queries) =
+        crate::commands::bench::recall::load_sources_tsv_file(truth_queries_path)
+            .wrap_err("loading Task 167 held-out exact-recall queries")?;
+    if heldout_queries.nrows() < heldout_count || heldout_queries.ncols() != base_corpus.ncols() {
+        bail!(
+            "Task 167 held-out query shape is {}x{}, expected at least {}x{}",
+            heldout_queries.nrows(),
+            heldout_queries.ncols(),
+            heldout_count,
+            base_corpus.ncols(),
+        );
+    }
+
+    let dimension = base_corpus.ncols();
+    let mut corpus_values = base_corpus
+        .as_slice()
+        .ok_or_else(|| eyre!("Task 167 base corpus is not contiguous"))?
+        .to_vec();
+    for id_base in [2_000_000_i64, 3_000_000_i64] {
+        for source_offset in 0..TASK167_AB_SAMPLE_ROWS {
+            corpus_ids.push(id_base + source_offset as i64);
+            corpus_values.extend(base_corpus.row(source_offset).iter().copied());
+        }
+    }
+    let exact_corpus =
+        ndarray::Array2::from_shape_vec((corpus_ids.len(), dimension), corpus_values)?;
+
+    let mut query_populations = Vec::with_capacity(query_count);
+    let mut query_values = Vec::with_capacity(query_count * dimension);
+    for source_offset in 0..TASK167_INSERTED_QUALITY_QUERIES {
+        query_populations.push("inserted_neighborhood");
+        query_values.extend(base_corpus.row(source_offset).iter().copied());
+    }
+    for query_offset in 0..heldout_count {
+        query_populations.push("heldout");
+        query_values.extend(heldout_queries.row(query_offset).iter().copied());
+    }
+    let exact_queries = ndarray::Array2::from_shape_vec((query_count, dimension), query_values)?;
+
+    let truth =
+        crate::commands::bench::recall::brute_force_top_k(&exact_corpus, &exact_queries, 10);
+    let truth_indices = truth.indices;
+    let corpus_keys = exact_corpus
+        .outer_iter()
+        .map(|source| task167_source_fingerprint(source.as_slice().expect("contiguous row")))
+        .collect::<Vec<_>>();
+    let key_by_id = corpus_ids
+        .iter()
+        .copied()
+        .zip(corpus_keys.iter().copied())
+        .collect::<HashMap<_, _>>();
+
     let epoch = coordinator
         .query_one(
             "SELECT epoch
@@ -3197,84 +3356,59 @@ async fn task167_post_insert_fresh_rebuild_parity(
         .await
         .wrap_err("reading active epoch for Task 167 fresh-rebuild parity")?
         .get::<_, i64>(0);
-    coordinator
-        .batch_execute(&format!(
-            "SET enable_seqscan = off;
-             SET ec_distann.local_node_id = 1;
-             SET ec_distann.epoch = {epoch};
-             DROP TABLE IF EXISTS task167_parity_q, task167_parity_physical, task167_parity_fresh;
-             CREATE TEMP TABLE task167_parity_q AS
-               SELECT id AS qid, source AS v, 'append_disabled'::text AS arm
-                 FROM {physical_corpus}
-                WHERE id BETWEEN 2000000 AND 2000023
-                ORDER BY id;
-             INSERT INTO task167_parity_q
-               SELECT id AS qid, source AS v, 'corpus_query'::text AS arm FROM {physical_queries}
-                ORDER BY id LIMIT greatest({query_count} - 48, 0);
-             INSERT INTO task167_parity_q
-               SELECT id AS qid, source AS v, 'append_enabled'::text AS arm
-                 FROM {physical_corpus}
-                WHERE id BETWEEN 3000000 AND 3000023
-                ORDER BY id;
-             SET ec_distann.roster = '{roster}';
-             CREATE TEMP TABLE task167_parity_physical AS
-                   SELECT q.qid, q.arm, hit.id, md5(hit.source::text) AS hit_key
-                 FROM task167_parity_q q
-                 CROSS JOIN LATERAL (
-                   SELECT id, source FROM {physical_corpus}
-                    ORDER BY embedding <#> q.v LIMIT 10
-                 ) hit;
-             SET ec_distann.roster = '';
-             CREATE TEMP TABLE task167_parity_fresh AS
-                   SELECT q.qid, q.arm, hit.id, md5(hit.source::text) AS hit_key
-                 FROM task167_parity_q q
-                 CROSS JOIN LATERAL (
-                   SELECT id, source FROM {fresh_table}
-                    ORDER BY embedding <#> q.v LIMIT 10
-                 ) hit;"
-        ))
-        .await
-        .wrap_err("configuring Task 167 fresh-rebuild parity session")?;
-    let result = coordinator
-        .query_one(
-            "WITH per_query AS (
-                   SELECT q.qid, q.arm,
-                          (SELECT count(*)
-                             FROM (SELECT hit_key FROM task167_parity_physical WHERE qid = q.qid
-                                   INTERSECT
-                                   SELECT hit_key FROM task167_parity_fresh WHERE qid = q.qid) common)::double precision / 10.0 AS recall,
-                          (SELECT count(*) FROM task167_parity_physical WHERE qid = q.qid) AS physical_rows,
-                          (SELECT count(*) FROM task167_parity_fresh WHERE qid = q.qid) AS fresh_rows
-                     FROM task167_parity_q q
-                 )
-                 SELECT count(*)::bigint,
-                        avg(recall), min(recall), max(recall),
-                        count(*) FILTER (WHERE arm = 'append_disabled')::bigint,
-                        avg(recall) FILTER (WHERE arm = 'append_disabled'),
-                        count(*) FILTER (WHERE arm = 'append_enabled')::bigint,
-                        avg(recall) FILTER (WHERE arm = 'append_enabled'),
-                        count(*) FILTER (WHERE physical_rows = 10 AND fresh_rows = 10)::bigint
-                   FROM per_query;",
-            &[],
-        )
-        .await
-        .wrap_err("running Task 167 post-insert fresh-rebuild parity")?;
-    let queries = result.get::<_, i64>(0);
-    let recall = result.get::<_, Option<f64>>(1).unwrap_or(0.0);
-    let min_recall = result.get::<_, Option<f64>>(2).unwrap_or(0.0);
-    let max_recall = result.get::<_, Option<f64>>(3).unwrap_or(0.0);
-    let disabled_queries = result.get::<_, i64>(4);
-    let disabled_recall = result.get::<_, Option<f64>>(5).unwrap_or(0.0);
-    let enabled_queries = result.get::<_, i64>(6);
-    let enabled_recall = result.get::<_, Option<f64>>(7).unwrap_or(0.0);
-    let complete_rows = result.get::<_, i64>(8);
-    // The parity line is a correctness gate, not a descriptive metric. A
-    // post-insert graph that agrees with a fresh rebuild on fewer than 80% of
-    // the inserted-neighborhood queries is evidence of incremental graph
-    // quality loss and must not be reported as passing.
-    let parity_validation = validate_task167_post_insert_parity(enabled_recall, recall);
-    let parity_pass = parity_validation.is_ok();
-    let arm_delta = enabled_recall - disabled_recall;
+    let roster = roster.replace('\'', "''");
+    let physical_predictions = task167_ann_predictions(
+        coordinator,
+        physical_corpus,
+        &exact_queries,
+        &format!(
+            "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch={epoch};"
+        ),
+        "EcDistannDistributedScan",
+    )
+    .await
+    .wrap_err("running Task 167 incremental physical exact-recall arm")?;
+    let fresh_predictions = task167_ann_predictions(
+        coordinator,
+        &fresh_table,
+        &exact_queries,
+        "SET enable_seqscan=off; SET ec_distann.roster=''; SET ec_distann.local_node_id=1; SET ec_distann.epoch=0;",
+        "Index Scan",
+    )
+    .await
+    .wrap_err("running Task 167 fresh-rebuild exact-recall arm")?;
+
+    let mut lines = Vec::new();
+    let mut failures = Vec::new();
+    for population in ["inserted_neighborhood", "heldout"] {
+        let summary = task167_exact_recall_summary(
+            population,
+            &query_populations,
+            &truth_indices,
+            &physical_predictions,
+            &fresh_predictions,
+            &corpus_keys,
+            &key_by_id,
+        )?;
+        let validation =
+            validate_task167_exact_recall(summary.physical_recall, summary.fresh_recall);
+        let pass = validation.is_ok();
+        let line = format!(
+            "physical_benchmark_post_insert_exact_recall scale={scale} population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} parity_tolerance={TASK167_EXACT_RECALL_TOLERANCE:.6} fresh_reloptions_matched=true heldout_queries_dominate=true pass={pass}",
+            summary.queries,
+            summary.truth_slots,
+            summary.truth_distinct_keys,
+            summary.truth_duplicate_slots,
+            summary.physical_recall,
+            summary.fresh_recall,
+            summary.physical_recall - summary.fresh_recall,
+        );
+        if let Err(error) = validation {
+            failures.push(format!("{error}: {line}"));
+        }
+        lines.push(line);
+    }
+
     coordinator
         .batch_execute("SET ec_distann.roster = ''")
         .await
@@ -3283,30 +3417,191 @@ async fn task167_post_insert_fresh_rebuild_parity(
         .batch_execute(&format!("DROP TABLE {fresh_table} CASCADE"))
         .await
         .wrap_err("dropping Task 167 post-insert fresh rebuild")?;
-    if queries != i64::from(query_count)
-        || disabled_queries != 24
-        || enabled_queries != 24
-        || complete_rows != queries
-    {
-        bail!(
-            "Task 167 fresh-rebuild parity returned incomplete query rows: queries={queries} expected={} disabled_queries={disabled_queries} enabled_queries={enabled_queries} complete_rows={complete_rows}",
-            query_count,
-        );
+    if !failures.is_empty() {
+        bail!("{}", failures.join("; "));
     }
-    let line = format!(
-        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} append_disabled_queries={disabled_queries} append_disabled_recall={disabled_recall:.6} append_enabled_queries={enabled_queries} append_enabled_recall={enabled_recall:.6} append_enabled_minus_disabled={arm_delta:.6} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} comparison=physical_vs_fresh_source_fingerprint duplicate_ties_collapsed=true pass={parity_pass}",
-    );
-    if let Err(error) = parity_validation {
-        bail!("{error}: {line}");
-    }
-    Ok(line)
+    Ok(lines)
 }
 
-fn validate_task167_post_insert_parity(enabled_recall: f64, overall_recall: f64) -> Result<()> {
-    const MIN_RECALL: f64 = 0.80;
-    if enabled_recall < MIN_RECALL || overall_recall < MIN_RECALL {
+async fn task167_ann_predictions(
+    coordinator: &tokio_postgres::Client,
+    table: &str,
+    queries: &ndarray::Array2<f32>,
+    setup_sql: &str,
+    required_plan_node: &str,
+) -> Result<Vec<Vec<i64>>> {
+    coordinator.batch_execute(setup_sql).await?;
+    let mut predictions = Vec::with_capacity(queries.nrows());
+    for (query_index, query) in queries.outer_iter().enumerate() {
+        let literal = task167_real_array_literal(
+            query
+                .as_slice()
+                .ok_or_else(|| eyre!("Task 167 query row is not contiguous"))?,
+        )?;
+        let sql = format!("SELECT id FROM {table} ORDER BY embedding <#> {literal} LIMIT 10");
+        if query_index == 0 {
+            let plan = coordinator
+                .query(&format!("EXPLAIN (FORMAT TEXT, COSTS OFF) {sql}"), &[])
+                .await?
+                .into_iter()
+                .map(|row| row.get::<_, String>(0))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if !plan.contains(required_plan_node) {
+                bail!(
+                    "Task 167 exact-recall arm for {table} expected plan node {required_plan_node}: {plan}"
+                );
+            }
+        }
+        let ids = coordinator
+            .query(&sql, &[])
+            .await?
+            .into_iter()
+            .map(|row| row.get::<_, i64>(0))
+            .collect::<Vec<_>>();
+        if ids.len() != 10 {
+            bail!(
+                "Task 167 exact-recall arm for {table} query {query_index} returned {} rows, expected 10",
+                ids.len(),
+            );
+        }
+        predictions.push(ids);
+    }
+    Ok(predictions)
+}
+
+fn task167_real_array_literal(values: &[f32]) -> Result<String> {
+    if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
+        bail!("Task 167 exact-recall query contains empty or non-finite source data");
+    }
+    Ok(format!(
+        "ARRAY[{}]::real[]",
+        values
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
+    ))
+}
+
+fn task167_source_fingerprint(source: &[f32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for value in source {
+        hasher.update(value.to_bits().to_le_bytes());
+    }
+    hasher.finalize().into()
+}
+
+fn task167_distinct_recall<K>(truth: &[K], predicted: &[K]) -> (f64, usize, usize)
+where
+    K: Copy + Eq + std::hash::Hash,
+{
+    let truth_slots = truth.len();
+    let truth = truth.iter().copied().collect::<HashSet<_>>();
+    let predicted = predicted.iter().copied().collect::<HashSet<_>>();
+    let distinct = truth.len();
+    let duplicate_slots = truth_slots.saturating_sub(distinct);
+    if distinct == 0 {
+        return (0.0, 0, duplicate_slots);
+    }
+    let hits = truth.intersection(&predicted).count();
+    (hits as f64 / distinct as f64, distinct, duplicate_slots)
+}
+
+#[derive(Debug)]
+struct Task167ExactRecallSummary {
+    queries: usize,
+    truth_slots: usize,
+    truth_distinct_keys: usize,
+    truth_duplicate_slots: usize,
+    physical_recall: f64,
+    fresh_recall: f64,
+}
+
+fn task167_exact_recall_summary(
+    population: &str,
+    populations: &[&str],
+    truth_indices: &[Vec<usize>],
+    physical_predictions: &[Vec<i64>],
+    fresh_predictions: &[Vec<i64>],
+    corpus_keys: &[[u8; 32]],
+    key_by_id: &HashMap<i64, [u8; 32]>,
+) -> Result<Task167ExactRecallSummary> {
+    let query_count = populations.len();
+    if truth_indices.len() != query_count
+        || physical_predictions.len() != query_count
+        || fresh_predictions.len() != query_count
+    {
         bail!(
-            "Task 167 post-insert fresh-rebuild parity failed: append_enabled_recall={enabled_recall:.6} distinct_recall={overall_recall:.6} required={MIN_RECALL:.6}"
+            "Task 167 exact-recall input length mismatch: populations={query_count} truth={} physical={} fresh={}",
+            truth_indices.len(),
+            physical_predictions.len(),
+            fresh_predictions.len(),
+        );
+    }
+    let mut queries = 0;
+    let mut truth_slots = 0;
+    let mut truth_distinct_keys = 0;
+    let mut physical_recall = 0.0;
+    let mut fresh_recall = 0.0;
+    for query_index in 0..populations.len() {
+        if populations[query_index] != population {
+            continue;
+        }
+        let truth_keys = truth_indices[query_index]
+            .iter()
+            .map(|index| {
+                corpus_keys.get(*index).copied().ok_or_else(|| {
+                    eyre!("Task 167 exact truth returned out-of-range corpus row {index}")
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let physical_keys = physical_predictions[query_index]
+            .iter()
+            .map(|id| {
+                key_by_id
+                    .get(id)
+                    .copied()
+                    .ok_or_else(|| eyre!("Task 167 physical prediction returned unknown id {id}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let fresh_keys = fresh_predictions[query_index]
+            .iter()
+            .map(|id| {
+                key_by_id
+                    .get(id)
+                    .copied()
+                    .ok_or_else(|| eyre!("Task 167 fresh prediction returned unknown id {id}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let (physical, distinct, _) = task167_distinct_recall(&truth_keys, &physical_keys);
+        let (fresh, fresh_distinct, _) = task167_distinct_recall(&truth_keys, &fresh_keys);
+        if fresh_distinct != distinct {
+            bail!("Task 167 exact-recall denominator drifted between arms");
+        }
+        queries += 1;
+        truth_slots += truth_keys.len();
+        truth_distinct_keys += distinct;
+        physical_recall += physical;
+        fresh_recall += fresh;
+    }
+    if queries == 0 {
+        bail!("Task 167 exact-recall population {population} has no queries");
+    }
+    Ok(Task167ExactRecallSummary {
+        queries,
+        truth_slots,
+        truth_distinct_keys,
+        truth_duplicate_slots: truth_slots.saturating_sub(truth_distinct_keys),
+        physical_recall: physical_recall / queries as f64,
+        fresh_recall: fresh_recall / queries as f64,
+    })
+}
+
+fn validate_task167_exact_recall(physical_recall: f64, fresh_recall: f64) -> Result<()> {
+    if fresh_recall - physical_recall > TASK167_EXACT_RECALL_TOLERANCE + f64::EPSILON {
+        bail!(
+            "Task 167 post-insert exact recall failed: physical_distinct_recall={physical_recall:.6} fresh_distinct_recall={fresh_recall:.6} maximum_degradation={TASK167_EXACT_RECALL_TOLERANCE:.6}"
         );
     }
     Ok(())
@@ -7193,16 +7488,20 @@ async fn run_physical_benchmarks(
             .collect::<Vec<_>>()
             .join(";");
         let parity_query_count = args.benchmark_parity_queries.unwrap_or(args.queries);
-        lines.push(
-            task167_post_insert_fresh_rebuild_parity(
+        lines.extend(
+            task167_post_insert_exact_recall(
                 coordinator,
                 scale,
                 &physical_corpus,
-                &physical_queries,
                 &roster,
                 args.graph_degree,
                 args.head_index_cap,
+                args.build_shards,
+                &args.head_construction,
+                &head_sizing_reloptions(args),
                 parity_query_count,
+                &truth_corpus,
+                &truth_queries,
             )
             .await?,
         );
@@ -7595,6 +7894,11 @@ async fn drive_physical_fixture(
             .await
             .wrap_err("setting large-scale physical benchmark remote timeout")?;
     }
+    let synthetic_norm_error = preflight_synthetic_unit_norm(&coordinator, args.dim).await?;
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_synthetic_unit_norm samples=32 dimensions={} max_abs_error={synthetic_norm_error:.9} tolerance=0.000010000 pass=true",
+        args.dim,
+    );
     let owners = if args.coordinator_outside_roster {
         &nodes[1..]
     } else {
@@ -9786,7 +10090,11 @@ async fn physical_concurrency_drill(
         .iter()
         .find(|(_, vec_id, _, _)| seed_neighbors.contains(vec_id))
         .map(|(_, _, signed_id, _)| *signed_id)
-        .or_else(|| shared_target_candidates.first().map(|(_, _, signed_id, _)| *signed_id));
+        .or_else(|| {
+            shared_target_candidates
+                .first()
+                .map(|(_, _, signed_id, _)| *signed_id)
+        });
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target seed_vec_id={} seed_neighbor_count={} seeded_target_signed_id={:?}",
         seed_signed_id,
@@ -9804,10 +10112,9 @@ async fn physical_concurrency_drill(
         shared_target_vec_id,
         shared_target_signed_id,
         shared_target_initial_neighbor_count,
-    )) =
-        shared_target_candidates
-            .into_iter()
-            .find(|(_, _, signed_id, _)| *signed_id == nearest_target_signed_id)
+    )) = shared_target_candidates
+        .into_iter()
+        .find(|(_, _, signed_id, _)| *signed_id == nearest_target_signed_id)
     else {
         crate::ecaz_println!(
             "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=nearest_target_owner_lookup_failed signed_vec_id={nearest_target_signed_id}"
@@ -10018,8 +10325,8 @@ async fn physical_concurrency_drill(
     );
     let mut natural_retries_by_owner = Vec::new();
     for owner in owner_nodes {
-        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
-            .await;
+        let output =
+            capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql).await;
         natural_retries_by_owner.push((
             owner.node_id,
             parse_retry_count(&output),
@@ -10147,8 +10454,8 @@ async fn physical_concurrency_drill(
     let steady_query = run_capture(psql, socket_dir, coord_port, &query_sql).await;
     let mut steady_retries_by_owner = Vec::new();
     for owner in owner_nodes {
-        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
-            .await;
+        let output =
+            capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql).await;
         steady_retries_by_owner.push((
             owner.node_id,
             parse_retry_count(&output),
@@ -11508,18 +11815,29 @@ mod tests {
     }
 
     #[test]
-    fn task167_ab_workload_uses_the_preregistered_sample_size() {
-        assert_eq!(TASK167_AB_TRIALS, 5);
-        assert_eq!(TASK167_AB_ROWS_PER_TRIAL, 32);
-        assert_eq!(TASK167_AB_SAMPLE_ROWS, 160);
+    fn task167_ab_work_items_match_the_preregistered_sample_size() {
+        let work = (0..TASK167_AB_TRIALS)
+            .flat_map(|trial| task167_insert_trial_items(trial, TASK167_AB_ROWS_PER_TRIAL))
+            .collect::<Vec<_>>();
+        assert_eq!(work.len(), TASK167_AB_SAMPLE_ROWS);
+        assert_eq!(work.first(), Some(&(0, 0)));
+        assert_eq!(work.last(), Some(&(TASK167_AB_ROWS_PER_TRIAL - 1, 159)));
+        assert_eq!(
+            work.iter()
+                .map(|(_, source_offset)| *source_offset)
+                .collect::<HashSet<_>>()
+                .len(),
+            TASK167_AB_SAMPLE_ROWS,
+        );
     }
 
     #[test]
-    fn task167_synthetic_vectors_are_unit_normalized() {
+    fn task167_synthetic_vector_sql_has_stable_component_order() {
         let expression = synthetic_unit_vector_expr("g", 4);
         assert!(expression.contains("sqrt(sum(component * component) OVER ())"));
         assert!(expression.contains("generate_series(0, 4 - 1)"));
         assert!(expression.contains("(g) * 0.017"));
+        assert!(expression.contains("array_agg((component / norm)::real ORDER BY d)"));
     }
 
     #[test]
@@ -11538,11 +11856,8 @@ mod tests {
 
     #[test]
     fn task167_query_stage_counters_accept_benchmark_feature() {
-        validate_query_stage_counter_feature(
-            true,
-            "distann-head-attribution-benchmark,pg18",
-        )
-        .unwrap();
+        validate_query_stage_counter_feature(true, "distann-head-attribution-benchmark,pg18")
+            .unwrap();
     }
 
     #[test]
@@ -11556,17 +11871,28 @@ mod tests {
     }
 
     #[test]
-    fn task167_post_insert_parity_accepts_threshold() {
-        validate_task167_post_insert_parity(0.80, 0.80).unwrap();
+    fn task167_distinct_exact_recall_uses_the_distinct_truth_denominator() {
+        let truth = ["same", "same", "same", "b", "c", "d", "e", "f", "g", "h"];
+        let predicted = ["same", "b", "c", "d", "e", "f", "g", "h", "x", "y"];
+        let (recall, distinct, duplicate_slots) = task167_distinct_recall(&truth, &predicted);
+        assert_eq!(distinct, 8);
+        assert_eq!(duplicate_slots, 2);
+        assert!((recall - 1.0).abs() < f64::EPSILON);
     }
 
     #[test]
-    fn task167_post_insert_parity_rejects_observed_10k_result() {
-        let error = validate_task167_post_insert_parity(0.541667, 0.541667).unwrap_err();
+    fn task167_exact_recall_accepts_fresh_rebuild_parity() {
+        validate_task167_exact_recall(0.997, 0.999).unwrap();
+        validate_task167_exact_recall(1.0, 0.999).unwrap();
+    }
+
+    #[test]
+    fn task167_exact_recall_rejects_quality_loss() {
+        let error = validate_task167_exact_recall(0.996, 0.999).unwrap_err();
         let rendered = error.to_string();
-        assert!(rendered.contains("append_enabled_recall=0.541667"));
-        assert!(rendered.contains("distinct_recall=0.541667"));
-        assert!(rendered.contains("required=0.800000"));
+        assert!(rendered.contains("physical_distinct_recall=0.996000"));
+        assert!(rendered.contains("fresh_distinct_recall=0.999000"));
+        assert!(rendered.contains("maximum_degradation=0.002000"));
     }
 
     #[test]
