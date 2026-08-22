@@ -1,21 +1,17 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation checkpoint `04657f7f0`; packets 026 through 030
-review-open;
-outside reviewer disposition pending; both owner retry paths now reopen graph
-and directory guards per attempt, but current-head production benchmark
-closeout is not complete. Existing 10k diagnostic evidence fails
-inserted-neighborhood parity and the real saturated-target gate; the 50k/100k
-rerun is blocked by the host read-only filesystem. The production append A/B
-toggle now propagates to remote owner sessions, and the 50k/100k concurrency
-drills are enabled in the next suite config, but no runtime result is claimed.
-Parity now reports append-disabled and append-enabled recall separately; no
-runtime result is claimed for either arm yet. The natural retry drill now
-labels its source explicitly and performs no counter reset during the 2PC
-wave; preflight tests reject `pg-test` feature provenance unless explicitly
-overridden.
-No merge or closeout until current-head production 10k/50k/100k evidence and
-reviewer ACCEPT.
+Status: implementation/evidence checkpoints through `6968f0a3d`; packets 031
+through 039 review-open on PR 77; outside reviewer disposition pending. The
+clean production PG18 synthetic gate passed at packet 036, including rollback,
+replacement, saturation, natural-retry, backlink, routed-delete, and topology
+coverage. Packet 037's corrected production 10k measurement completed recall,
+latency, storage, insert A/B, insert-work, concurrency, and delete gates, but
+failed required post-insert physical-vs-fresh distinct-recall parity:
+append-disabled `0.541667`, append-enabled `0.541667`, required `0.80`.
+Checkpoint `6968f0a3d` makes that existing threshold fail the suite process;
+50k/100k were stopped at the failed 10k gate. No merge or closeout until the
+outside reviewer dispositions packets 037 through 039. PR:
+`https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
 and are not acceptance evidence.
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
