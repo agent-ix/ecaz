@@ -1,17 +1,17 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation/evidence checkpoints through `6968f0a3d`; packets 031
-through 039 review-open on PR 77; outside reviewer disposition pending. The
-clean production PG18 synthetic gate passed at packet 036, including rollback,
-replacement, saturation, natural-retry, backlink, routed-delete, and topology
-coverage. Packet 037's corrected production 10k measurement completed recall,
-latency, storage, insert A/B, insert-work, concurrency, and delete gates, but
-failed required post-insert physical-vs-fresh distinct-recall parity:
-append-disabled `0.541667`, append-enabled `0.541667`, required `0.80`.
-Checkpoint `6968f0a3d` makes that existing threshold fail the suite process;
-50k/100k were stopped at the failed 10k gate. No merge or closeout until the
-outside reviewer dispositions packets 037 through 039. PR:
-`https://github.com/agent-ix/ecaz/pull/77`.
+Status: implementation/evidence checkpoints through `a001bf7e6`; packets
+040–042 review-open on PR 77; outside reviewer disposition pending. Packet 041
+replaced the defective pairwise ANN-overlap gate and re-ran production 10k
+against exact fp32 truth. It proved real incremental quality loss: inserted
+neighborhood physical `0.805382` versus fresh `0.954985` (`-0.149603`), and
+held-out `0.973684` versus `0.977632` (`-0.003947`); 50k/100k correctly
+stopped. Checkpoint `a001bf7e6` fixes the identified root cause—incremental
+alpha-pruning used negative `-ip` instead of batch construction's required
+nonnegative `max(0, 1-ip)` distance. Packet 042 owns the candidate and pending
+10k/50k/100k rerun. No merge or closeout until that evidence and outside
+reviewer disposition. Packets 027–030 are explicitly superseded by this round.
+PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
 and are not acceptance evidence.
 Depends on: Task 166 and Task 179's Published-generation storage/read contract
