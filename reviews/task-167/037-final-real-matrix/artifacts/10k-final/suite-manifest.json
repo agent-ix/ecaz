@@ -1,0 +1,117 @@
+{
+  "suite": "task167-final-production-real-matrix",
+  "schema_version": 1,
+  "config": "reviews/task-167/037-final-real-matrix/artifacts/task167-final-real-suite.json",
+  "config_sha256": "d65a9690fa07e8c735de0e30172cca9a60b8f97359327e6f7b2d83bece5eefaa",
+  "dry_run": false,
+  "generated_at_unix_ms": 1787382511268,
+  "runner_git_commit": "703f1bbdfcd52ae90e12cdb0462f17e7f79172b1",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "physical-10k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-167/037-final-real-matrix/artifacts/10k-final/physical-10k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task167-final-20260821-10k",
+        "--log-file",
+        "reviews/task-167/037-final-real-matrix/artifacts/10k-final/physical-10k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--benchmark-iterations",
+        "10",
+        "--benchmark-concurrency-sweep",
+        "1",
+        "--benchmark-warmup-iterations",
+        "2",
+        "--benchmark-parity-queries",
+        "48",
+        "--base-port",
+        "41570",
+        "--graph-degree",
+        "32",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "100",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_10k",
+        "--staged-dir",
+        "data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_10k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/037-final-real-matrix/artifacts/10k-final/physical-10k/distann-multinode-summary.log",
+        "reviews/task-167/037-final-real-matrix/artifacts/10k-final/physical-10k/physical-head-membership.json"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1787382511288,
+      "finished_at_unix_ms": 1787383242858,
+      "duration_ms": 688013,
+      "exit_code": 0
+    },
+    {
+      "name": "physical-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_50k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/037-final-real-matrix/artifacts/10k-final/physical-50k/distann-multinode-summary.log",
+        "reviews/task-167/037-final-real-matrix/artifacts/10k-final/physical-50k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "physical-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_100k",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/037-final-real-matrix/artifacts/10k-final/physical-100k/distann-multinode-summary.log",
+        "reviews/task-167/037-final-real-matrix/artifacts/10k-final/physical-100k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    }
+  ]
+}

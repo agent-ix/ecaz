@@ -1,0 +1,16 @@
+2026-08-22 00:08:34.706 PDT [162420] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-22 00:08:34.717 PDT [162420] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-22 00:08:34.717 PDT [162420] LOG:  listening on IPv4 address "127.0.0.1", port 41572
+2026-08-22 00:08:34.727 PDT [162426] LOG:  database system was shut down at 2026-08-22 00:08:34 PDT
+2026-08-22 00:08:34.739 PDT [162420] LOG:  database system is ready to accept connections
+2026-08-22 00:13:49.552 PDT [162424] LOG:  checkpoint starting: time
+2026-08-22 00:18:19.248 PDT [162424] LOG:  checkpoint complete: wrote 10325 buffers (63.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 4 recycled; write=269.452 s, sync=0.197 s, total=269.696 s; sync files=292, longest=0.009 s, average=0.001 s; distance=71547 kB, estimate=71547 kB; lsn=0/5FF30B0, redo lsn=0/5D33478
+2026-08-22 00:18:51.154 PDT [162424] LOG:  checkpoint starting: time
+2026-08-22 00:19:19.195 PDT [162424] LOG:  checkpoint complete: wrote 260 buffers (1.6%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=27.975 s, sync=0.032 s, total=28.041 s; sync files=48, longest=0.007 s, average=0.001 s; distance=2856 kB, estimate=64678 kB; lsn=0/5FFD5A8, redo lsn=0/5FFD518
+2026-08-22 00:20:42.655 PDT [162420] LOG:  received fast shutdown request
+2026-08-22 00:20:42.690 PDT [162420] LOG:  aborting any active transactions
+2026-08-22 00:20:42.691 PDT [162420] LOG:  background worker "logical replication launcher" (PID 162429) exited with exit code 1
+2026-08-22 00:20:42.691 PDT [162424] LOG:  shutting down
+2026-08-22 00:20:42.695 PDT [162424] LOG:  checkpoint starting: shutdown immediate
+2026-08-22 00:20:42.742 PDT [162424] LOG:  checkpoint complete: wrote 46 buffers (0.3%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.005 s, sync=0.018 s, total=0.052 s; sync files=22, longest=0.008 s, average=0.001 s; distance=321 kB, estimate=58242 kB; lsn=0/604D9C8, redo lsn=0/604D9C8
+2026-08-22 00:20:42.762 PDT [162420] LOG:  database system is shut down
