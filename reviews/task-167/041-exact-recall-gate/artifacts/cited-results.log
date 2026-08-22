@@ -1,0 +1,12 @@
+Task 167 packet 041 corrected-gate result, 2026-08-22
+
+source: final-suite/physical-10k/distann-local-multinode.log
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=aebafec24b0b5d6734f4908f41248bff52128d5c extension_build_profile=release extension_features=pg18 debug_override=false
+[distann-multicluster] physical_synthetic_unit_norm samples=32 dimensions=16 max_abs_error=0.000000017 tolerance=0.000010000 pass=true
+physical_benchmark_post_insert_exact_recall scale=10k population=inserted_neighborhood queries=48 top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots=480 truth_distinct_keys=266 truth_duplicate_slots=214 physical_distinct_recall=0.805382 fresh_distinct_recall=0.954985 physical_minus_fresh=-0.149603 parity_tolerance=0.002000 fresh_reloptions_matched=true heldout_queries_dominate=true pass=false
+physical_benchmark_post_insert_exact_recall scale=10k population=heldout queries=152 top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots=1520 truth_distinct_keys=1520 truth_duplicate_slots=0 physical_distinct_recall=0.973684 fresh_distinct_recall=0.977632 physical_minus_fresh=-0.003947 parity_tolerance=0.002000 fresh_reloptions_matched=true heldout_queries_dominate=true pass=false
+
+source: final-suite/suite-manifest.json
+physical-10k status=failed exit_code=1 duration_ms=599805
+physical-50k status=pending exit_code=null
+physical-100k status=pending exit_code=null

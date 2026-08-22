@@ -71,5 +71,30 @@
   state uses `/home/peter/.ecaz/clusters/task167-exact-20260822-*`, outside the
   repository and outside Cargo `target/`, and will be removed after cited
   artifacts are captured.
-- Runtime matrix status: pending; no measurement result is claimed by this
-  checkpoint packet yet.
+- Runtime suite command:
+  `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-167/041-exact-recall-gate/artifacts/task167-exact-recall-suite.json --log-file reviews/task-167/041-exact-recall-gate/artifacts/suite-run.log`.
+- 10k runtime provenance: release PG18 extension at
+  `aebafec24b0b5d6734f4908f41248bff52128d5c`, three unanimous nodes, no debug
+  override.
+- PostgreSQL normalization preflight: 32 samples, maximum absolute norm error
+  `0.000000017`, tolerance `0.000010000`, pass.
+- Corrected 10k inserted-neighborhood result: 48 queries, 480 truth slots, 266
+  distinct truth keys, 214 duplicate slots; physical `0.805382`, fresh
+  `0.954985`, delta `-0.149603`, fail.
+- Corrected 10k held-out result: 152 queries, 1,520 distinct truth keys, zero
+  duplicate slots; physical `0.973684`, fresh `0.977632`, delta `-0.003947`,
+  fail.
+- Suite disposition: `physical-10k` failed with exit 1 after 599,805 ms;
+  `physical-50k` and `physical-100k` remain pending/unrun because the suite was
+  intentionally invoked without `--continue-on-error`.
+- Result summary: `cited-results.log` (SHA-256
+  `0e373ffc3e4b58c5ad2724ee6d445b528483648beca5ec3065505972967f1d36`).
+  Raw sources: `final-suite/suite-manifest.json` (SHA-256
+  `4c0b91296e791403e4a1d4391ca5f72f4765d4601445d24ff60b1f7f88056799`),
+  `final-suite/physical-10k/distann-local-multinode.log` (SHA-256
+  `41b6f9baad2331b976f52b2367b1e9249b2da9b7fdfa659f7b9c705fccd2085f`),
+  and `suite-run.log` (SHA-256
+  `1d523a21f2bddb1001107cf24e0cd65ea81ec5803134a6df796cf36c43b045f8`).
+- This failed result re-derives the old `0.541667` disposition using the
+  reviewer-requested exact instrument and proves a real incremental graph
+  quality loss. It does not close Task 167.
