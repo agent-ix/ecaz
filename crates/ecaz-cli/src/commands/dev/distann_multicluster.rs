@@ -459,6 +459,21 @@ fn validate_extension_preflight(
     })
 }
 
+fn validate_query_stage_counter_feature(requested: bool, features: &str) -> Result<()> {
+    if requested
+        && !features
+            .split(',')
+            .any(|feature| feature == "distann-head-attribution-benchmark")
+    {
+        bail!(
+            "--distann-stage-counters requires extension feature \
+             distann-head-attribution-benchmark; observed features {features}. \
+             Task 167 insert-work counters are collected independently"
+        );
+    }
+    Ok(())
+}
+
 async fn preflight_fixture_extensions(
     psql: &Path,
     socket_dir: &Path,
@@ -1082,6 +1097,10 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         let extension_preflight =
             preflight_fixture_extensions(&psql, &socket_dir, &nodes, args.allow_debug_extension)
                 .await?;
+        validate_query_stage_counter_feature(
+            args.distann_stage_counters,
+            &extension_preflight.features,
+        )?;
 
         match mode {
             FixtureMode::Physical => {
@@ -3002,7 +3021,6 @@ async fn task167_insert_throughput_ab(
     physical_corpus: &str,
     single_corpus: &str,
     graph_degree: u32,
-    capture_work: bool,
     lines: &mut Vec<String>,
 ) -> Result<()> {
     let single_rows_per_second = measure_task167_insert_arm(
@@ -3019,12 +3037,10 @@ async fn task167_insert_throughput_ab(
         .batch_execute("SET ec_distann.debug_disable_append_when_room = on")
         .await
         .wrap_err("enable append-when-room A/B control")?;
-    if capture_work {
-        coordinator
-            .batch_execute("SELECT ec_distann_insert_work_reset()")
-            .await
-            .wrap_err("resetting Task 167 physical insert-work counters")?;
-    }
+    coordinator
+        .batch_execute("SELECT ec_distann_insert_work_reset()")
+        .await
+        .wrap_err("resetting Task 167 physical insert-work counters")?;
     let physical_append_disabled_rows_per_second = measure_task167_insert_arm(
         coordinator,
         physical_corpus,
@@ -3048,12 +3064,10 @@ async fn task167_insert_throughput_ab(
         .batch_execute("SET ec_distann.debug_disable_append_when_room = off")
         .await
         .wrap_err("enable append-when-room A/B candidate")?;
-    if capture_work {
-        coordinator
-            .batch_execute("SELECT ec_distann_insert_work_reset()")
-            .await
-            .wrap_err("reset append-when-room candidate counters")?;
-    }
+    coordinator
+        .batch_execute("SELECT ec_distann_insert_work_reset()")
+        .await
+        .wrap_err("reset append-when-room candidate counters")?;
     let physical_rows_per_second = measure_task167_insert_arm(
         coordinator,
         physical_corpus,
@@ -3093,48 +3107,46 @@ async fn task167_insert_throughput_ab(
         append_disabled_work.get("backlink_no_room").copied().unwrap_or_default(),
         append_enabled_work.get("backlink_no_room").copied().unwrap_or_default(),
     ));
-    if capture_work {
-        let rows = coordinator
-            .query(
-                "SELECT metric, inserts, value, mean_per_insert
+    let rows = coordinator
+        .query(
+            "SELECT metric, inserts, value, mean_per_insert
                    FROM ec_distann_insert_work_snapshot()
                   ORDER BY metric",
-                &[],
-            )
-            .await
-            .wrap_err("reading Task 167 physical insert-work counters")?;
-        let expected_inserts = TASK167_AB_SAMPLE_ROWS as i64;
-        if rows.len() != 8 {
+            &[],
+        )
+        .await
+        .wrap_err("reading Task 167 physical insert-work counters")?;
+    let expected_inserts = TASK167_AB_SAMPLE_ROWS as i64;
+    if rows.len() != 8 {
+        bail!(
+            "Task 167 physical insert-work snapshot returned {} rows, expected 8",
+            rows.len()
+        );
+    }
+    let mut values = HashMap::new();
+    for row in rows {
+        let metric = row.get::<_, String>(0);
+        let inserts = row.get::<_, i64>(1);
+        let value = row.get::<_, i64>(2);
+        let mean = row.get::<_, f64>(3);
+        if inserts != expected_inserts {
             bail!(
-                "Task 167 physical insert-work snapshot returned {} rows, expected 8",
-                rows.len()
+                "Task 167 physical insert-work metric {metric} counted {inserts} attempts, expected {expected_inserts}"
             );
         }
-        let mut values = HashMap::new();
-        for row in rows {
-            let metric = row.get::<_, String>(0);
-            let inserts = row.get::<_, i64>(1);
-            let value = row.get::<_, i64>(2);
-            let mean = row.get::<_, f64>(3);
-            if inserts != expected_inserts {
-                bail!(
-                    "Task 167 physical insert-work metric {metric} counted {inserts} attempts, expected {expected_inserts}"
-                );
-            }
-            values.insert(metric.clone(), (value, mean));
-            lines.push(format!(
-                "physical_benchmark_insert_work scale={scale} metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} pass=true"
-            ));
-        }
-        let bound = i64::from(graph_degree) * expected_inserts;
-        for metric in ["forward_neighbors_selected", "backlink_amendments"] {
-            let (value, _) = values
-                .get(metric)
-                .copied()
-                .ok_or_else(|| eyre!("insert-work snapshot omitted {metric}"))?;
-            if value > bound {
-                bail!("Task 167 {metric} exceeded graph-degree bound: value={value} bound={bound}");
-            }
+        values.insert(metric.clone(), (value, mean));
+        lines.push(format!(
+            "physical_benchmark_insert_work scale={scale} metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} pass=true"
+        ));
+    }
+    let bound = i64::from(graph_degree) * expected_inserts;
+    for metric in ["forward_neighbors_selected", "backlink_amendments"] {
+        let (value, _) = values
+            .get(metric)
+            .copied()
+            .ok_or_else(|| eyre!("insert-work snapshot omitted {metric}"))?;
+        if value > bound {
+            bail!("Task 167 {metric} exceeded graph-degree bound: value={value} bound={bound}");
         }
     }
     Ok(())
@@ -7151,7 +7163,6 @@ async fn run_physical_benchmarks(
             &physical_corpus,
             &single_corpus,
             args.graph_degree,
-            args.distann_stage_counters,
             &mut lines,
         )
         .await?;
@@ -11470,6 +11481,29 @@ mod tests {
         assert!(expression.contains("sqrt(sum(component * component) OVER ())"));
         assert!(expression.contains("generate_series(0, 4 - 1)"));
         assert!(expression.contains("(g) * 0.017"));
+    }
+
+    #[test]
+    fn task167_production_insert_work_does_not_require_query_stage_feature() {
+        validate_query_stage_counter_feature(false, "pg18").unwrap();
+    }
+
+    #[test]
+    fn task167_query_stage_counters_reject_missing_benchmark_feature() {
+        let error = validate_query_stage_counter_feature(true, "pg18").unwrap_err();
+        let rendered = error.to_string();
+        assert!(rendered.contains("--distann-stage-counters"));
+        assert!(rendered.contains("distann-head-attribution-benchmark"));
+        assert!(rendered.contains("insert-work counters are collected independently"));
+    }
+
+    #[test]
+    fn task167_query_stage_counters_accept_benchmark_feature() {
+        validate_query_stage_counter_feature(
+            true,
+            "distann-head-attribution-benchmark,pg18",
+        )
+        .unwrap();
     }
 
     #[test]
