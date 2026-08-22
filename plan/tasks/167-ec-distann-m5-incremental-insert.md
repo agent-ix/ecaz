@@ -1,17 +1,18 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation/evidence checkpoints through `0bce21c05`; packets
-040–043 review-open on PR 77; outside reviewer disposition pending. Packet 041
-replaced the defective pairwise ANN-overlap gate and proved real 10k quality
-loss. Packet 042's production rerun confirms the nonnegative-distance fix is
-material: inserted-neighborhood physical recall improved from `0.805382` to
-`0.945809` versus fresh `0.954985`, but still fails at `-0.009177`; held-out
-remains `0.973684` versus `0.977632` (`-0.003947`). The suite correctly stopped
-before 50k/100k. Packet 043 removes the unsupported hard `0.002` process gate
-while retaining it as a labeled reference band; valid exact-truth results now
-complete for outside disposition. The full matrix remains pending; no merge or
-closeout until it lands and the outside reviewer responds. Packets 027–030 are
-explicitly superseded by this round.
+Status: implementation and required 10k/50k/100k evidence complete; packets
+040–043 review-open on PR 77; outside reviewer disposition pending, with no
+merge or closeout claim. Packet 041 replaced the defective pairwise ANN-overlap
+gate; packet 042 fixed incremental pruning to use the batch path's nonnegative
+distance; packet 043 completed exact fp32 physical-vs-fresh measurements with
+distinct-key denominators, a 48/152 inserted/heldout split, matched fresh
+reloptions, and no unsupported hard process gate. Inserted deltas are
+`-0.014385 / +0.011285 / -0.003472` and heldout deltas are
+`-0.003289 / -0.025987 / -0.005921` at 10k/50k/100k. The real same-fixture
+append-enabled/disabled throughput ratios are
+`0.975741 / 0.997529 / 0.993053` (`pass=false` at every scale). Concurrency,
+routed delete/vacuum, UPDATE, rollback, owner placement, storage, and topology
+evidence landed. Packets 027–030 are explicitly superseded by this round.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
 and are not acceptance evidence.

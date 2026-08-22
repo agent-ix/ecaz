@@ -43,6 +43,72 @@
   `suite-audit-runtime.log` (SHA-256
   `e4bb53217dad093c26f6516e2741217560a2bb2448ea649bc208fdb35aa8e165`).
 - Run directories are under `/home/peter/.ecaz/clusters/`, outside the repo
-  and Cargo target, and will be removed after cited artifacts are committed and
-  pushed.
-- Runtime status: pending.
+  and Cargo target. They are per-scale isolated fixtures, never evidence, and
+  will be removed after cited artifacts are committed and pushed.
+
+## Production matrix run
+
+- Head SHA at run start: `e5cbafb58596934bf21cc7ac601295f8b1f3e8cc`.
+- Runtime CLI: `ddf5dbdce2bace098650678aef5b39713b1ebd9a/release`;
+  runtime extension: `01da3574498fcd30cef6b29e14cf4ca7f3872326/release`.
+- Command:
+  `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-167/043-exact-recall-disposition/artifacts/task167-disposition-suite.json --log-file reviews/task-167/043-exact-recall-disposition/artifacts/suite-run.log`.
+- Time: `2026-08-22T10:28:48-07:00` through
+  `2026-08-22T13:17:00-07:00`.
+- Result: all three steps succeeded with exit code 0. Step durations were
+  `1319031 ms` (10k), `3213415 ms` (50k), and `5568101 ms` (100k).
+- Isolation: each scale used its own three-node PG18 fixture, port range, run
+  directory, corpus tables, physical index, single-node control index, and
+  fresh comparison index. Each table had one index; variants shared only the
+  owning scale's fixture so the insert A/B remained same-fixture attributable.
+- Lane: physical distributed DistANN, real staged `ec_real_10k`,
+  `ec_real_50k`, and `ec_real_100k`; rabitq stored neighbor codes; exact fp32
+  truth; no rerank variant.
+- Corpus data and truth caches are not committed. Corpus prefixes, query
+  hashes, commands, runtime SHAs, and per-step topology are in the summaries,
+  suite manifest, and structured results.
+
+## Cited results
+
+- Compact source of request values: `cited-results.log`, SHA-256
+  `920f39123d4f181c39de9434811fd7276a82a578b3ced7ca6bed855829ffa358`.
+- Exact fp32 recall, physical / fresh / delta:
+  - 10k inserted `0.940600 / 0.954985 / -0.014385`; heldout
+    `0.974342 / 0.977632 / -0.003289`.
+  - 50k inserted `0.952257 / 0.940972 / +0.011285`; heldout
+    `0.853289 / 0.879276 / -0.025987`.
+  - 100k inserted `0.933160 / 0.936632 / -0.003472`; heldout
+    `0.802632 / 0.808553 / -0.005921`.
+- Ordinary distinct recall: `0.9990 / 0.9535 / 0.9280`; mean latency:
+  `17.50 / 20.40 / 19.50 ms`; physical generation bytes:
+  `242958336 / 1243553792 / 2498248704` at 10k/50k/100k.
+- Same-fixture append-enabled/disabled throughput ratios:
+  `0.975741 / 0.997529 / 0.993053`; each honestly reports `pass=false`.
+- Concurrency, routed delete/vacuum, and topology gates pass at all scales.
+  The 100k concurrency wave observed 23 natural 2PC retries.
+
+## Durable artifacts
+
+- `final-suite/suite-manifest.json`: canonical commands, configuration SHA,
+  timing, step status, and exit codes; SHA-256
+  `85daa3fbd55485cea4a187660f89b923ba8dda3c827e2c9f592f4fa45aed03ea`.
+- `final-suite/results.jsonl`: structured metrics cited above; SHA-256
+  `b6e50617c6fce002284e68051680af0b506536acdec8d1bd884eedcb152f22a2`.
+- Per-scale `distann-multinode-summary.log`: primary raw summaries; SHA-256
+  `677e88bbdcf9aebd7d1bbf3bce3b2eb133827bff7836efa1b7d7b06515f1f06b`
+  (10k),
+  `3551bb61c4d99bac48dc99df2006675a5b249311474873493ecf5d4fade9d50e`
+  (50k), and
+  `756aa60819f0b12c3520db3d2c8707fc78b6c6cef2a6e11b0212c8535d63ccb0`
+  (100k).
+- `final-suite/artifact-sha256.txt`: SHA-256 inventory for every generated
+  suite artifact retained in the packet; inventory SHA-256
+  `4c2c0178d26c55ccd15dbb41961eb1e51ebf7468a0155c6ef3153fd88a23065a`.
+- `suite-run.log`: suite-level runner log; SHA-256
+  `8509d8d348c1dbdd9e7f5f4cc281d39cb8b1f14a3ea1ee27a9e5ec1ccb48dc3a`.
+- Per-scale raw fixture stdout, recall, latency, predictions, and head
+  membership files are retained and inventoried. Node PostgreSQL operational
+  logs were removed before commit; they are not decision-grade evidence.
+
+Runtime status: full 10k/50k/100k matrix complete; outside reviewer
+disposition pending.
