@@ -20,11 +20,11 @@
 - Release CLI build command:
   `env CARGO_TARGET_DIR=/home/peter/.cargo-target cargo build --release -p ecaz-cli`.
   Log: `build-cli.log`; SHA-256
-  `4bf75914448abf6f39b6318f6c33a79272b3d3399fa3a330ad3a16a890f3f871`.
+  `56c79bdb2ffb31e098808999a19861dbffdca7d61fec49c9e027eb1ebfba357f`.
 - PG18 extension install command:
   `env CARGO_TARGET_DIR=/home/peter/.cargo-target cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features pg18 --no-default-features`.
   Log: `install-extension.log`; SHA-256
-  `e4859bc373853daa52c9b22ffb4bc63e0cc2387e36c6e59b9d70d86e0419cde0`.
+  `f186fc7b444c6b00d690c12a87d93eed8fa3dd19d9515e1a5f0e40081c11ace4`.
 - Artifact hashes: release CLI
   `9fb0d0f310c11bdaa15cef29c43c5508b97ab6dc5bfd2a9f41a1d14b6bab5545`;
   installed PG18 `ecaz.so`
