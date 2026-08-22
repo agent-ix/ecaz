@@ -8,7 +8,8 @@ seq: 1
 
 # Task 167 production counter separation
 
-Status: review-open; corrected real-corpus matrix pending.
+Status: review-open; clean production runtime built and corrected real-corpus
+matrix pending.
 
 Please review CLI checkpoint `a49ffd92a`.
 
@@ -24,6 +25,7 @@ graph-degree-bound validation unconditional in the physical benchmark. The
 query-stage switch now controls only query-stage instrumentation and receives
 an early extension-feature preflight before any corpus build begins.
 
-The focused Task 167 CLI tests pass. No extension product code changed. The
-corrected production-only 10k/50k/100k matrix remains required before task
-closeout.
+The focused Task 167 CLI tests pass. A clean release CLI and production-only
+PG18 extension were built at exact runtime head `cce839647`; the corrected
+three-step suite audit passes. No extension product code changed. The
+10k/50k/100k matrix remains required before task closeout.

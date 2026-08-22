@@ -16,4 +16,21 @@
 - Validation result: 5 passed, 0 failed, 497 filtered in
   `validation-test.log` (SHA-256
   `04a541f88f8c48a9ad5ddae9a3f9660d05542c02d84cc52f2d1dd75eb61bc9c8`).
-- Runtime build, audit, and corrected real-corpus evidence are pending.
+- Exact runtime head: `cce839647834e2bd3880ec826430af04c6175b0e`.
+- Release CLI build command:
+  `env CARGO_TARGET_DIR=/home/peter/.cargo-target cargo build --release -p ecaz-cli`.
+  Log: `build-cli.log`; SHA-256
+  `4bf75914448abf6f39b6318f6c33a79272b3d3399fa3a330ad3a16a890f3f871`.
+- PG18 extension install command:
+  `env CARGO_TARGET_DIR=/home/peter/.cargo-target cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features pg18 --no-default-features`.
+  Log: `install-extension.log`; SHA-256
+  `e4859bc373853daa52c9b22ffb4bc63e0cc2387e36c6e59b9d70d86e0419cde0`.
+- Artifact hashes: release CLI
+  `9fb0d0f310c11bdaa15cef29c43c5508b97ab6dc5bfd2a9f41a1d14b6bab5545`;
+  installed PG18 `ecaz.so`
+  `86870052ba73f91c73016dab5d5273b538e895865f938f323e09921107443f3f`.
+- Suite audit command:
+  `/home/peter/.cargo-target/release/ecaz bench suite audit --config reviews/task-167/037-final-real-matrix/artifacts/task167-final-real-suite.json --log-file reviews/task-167/038-production-counter-separation/artifacts/suite-audit.log`.
+- Suite audit passed all three real-corpus steps; `suite-audit.log` SHA-256
+  `63bdd2109ae0855c2de0d11eff5b6eaa8e0af93d8cf7a70bba9e3cfbf5a0a703`.
+- Corrected real-corpus evidence is pending.

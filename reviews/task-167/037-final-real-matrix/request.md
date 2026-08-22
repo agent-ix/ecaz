@@ -14,7 +14,8 @@ fresh 10k gate pending.
 This packet owns the final Task 167 production 10k/50k/100k evidence. The
 passing warning-free synthetic prerequisite remains in packet 036. Packet 038
 separates production insert-work evidence from optional query-stage timing at
-CLI checkpoint `a49ffd92a`.
+CLI checkpoint `a49ffd92a`; the clean release CLI and production PG18 extension
+are built at exact runtime head `cce839647` and the corrected suite audit passes.
 
 The corrected immutable suite configuration is
 [`artifacts/task167-final-real-suite.json`](artifacts/task167-final-real-suite.json).
@@ -33,4 +34,4 @@ This is not a 10k result: concurrency, parity, append A/B, latency, and storage
 did not complete, and 50k/100k remain blocked. The corrected config explicitly
 disables benchmark-only query-stage timing while retaining unconditional
 production insert-work accounting. It uses fresh external cluster directories;
-the next action is a clean-head build, suite audit, and fresh 10k gate.
+the next action is a fresh 10k gate.

@@ -15,6 +15,14 @@
   `d65a9690fa07e8c735de0e30172cca9a60b8f97359327e6f7b2d83bece5eefaa`).
 - Counter mode: benchmark-only query-stage counters disabled; production
   Task 167 insert-work counters remain unconditionally captured and validated.
+- Corrected exact runtime head:
+  `cce839647834e2bd3880ec826430af04c6175b0e`.
+- Corrected release CLI SHA-256:
+  `9fb0d0f310c11bdaa15cef29c43c5508b97ab6dc5bfd2a9f41a1d14b6bab5545`.
+- Corrected installed production PG18 `ecaz.so` SHA-256:
+  `86870052ba73f91c73016dab5d5273b538e895865f938f323e09921107443f3f`.
+- Corrected build/install logs and suite audit:
+  `reviews/task-167/038-production-counter-separation/artifacts/manifest.md`.
 - Release CLI SHA-256:
   `d1a028e828a452717342935e0af11b971a4d5d0d110853994485e977463c5977`.
 - Installed production PG18 `ecaz.so` SHA-256:
