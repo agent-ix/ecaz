@@ -396,7 +396,7 @@ fn lookup_graph_nodes_with_reopened_intent_retry<F, O>(
         HashMap<u64, DistannNodeTuple>,
         HeapRelationGuard,
         IndexRelationGuard,
-        RegisteredSnapshotGuard,
+        Option<RegisteredSnapshotGuard>,
     ),
     DistannExpandError,
 >
@@ -440,8 +440,7 @@ where
                 records,
                 graph_relation,
                 directory_relation,
-                RegisteredSnapshotGuard::latest()
-                    .expect("active physical generation endpoint must have a latest snapshot"),
+                None,
             )
         });
     };
@@ -479,7 +478,7 @@ where
                     found,
                     next_graph_relation,
                     next_directory_relation,
-                    latest,
+                    Some(latest),
                 ));
             }
             Err(next @ DistannExpandError::OwnedRecordMissing(_)) => {
@@ -1673,6 +1672,7 @@ impl RetainedGenerationScan {
                 row_relation: self.row_relation_ref()?,
                 slot: &slot,
                 snapshot,
+                retry_snapshot: None,
                 source_attnum: self.source_attnum,
                 query,
                 prepared: &prepared,
@@ -1814,6 +1814,7 @@ impl RetainedGenerationScan {
                         row_relation: self.row_relation_ref()?,
                         slot: &slot,
                         snapshot,
+                        retry_snapshot: None,
                         source_attnum: self.source_attnum,
                         query,
                         prepared: &prepared,
@@ -2011,6 +2012,7 @@ impl RetainedGenerationScan {
                 row_relation: self.row_relation_ref()?,
                 slot: &slot,
                 snapshot,
+                retry_snapshot: None,
                 source_attnum: self.source_attnum,
                 query: &empty_query,
                 prepared: &prepared,
@@ -2098,7 +2100,9 @@ impl RetainedGenerationScan {
         self.row_relation = Some(row_relation);
         self.graph_relation = Some(graph_relation);
         self.directory_relation = Some(directory_relation);
-        self.retry_snapshot = Some(retry_snapshot);
+        if let Some(retry_snapshot) = retry_snapshot {
+            self.retry_snapshot = Some(retry_snapshot);
+        }
         vec_ids
             .iter()
             .map(|vec_id| {
@@ -4836,6 +4840,7 @@ impl PhysicalGenerationScan {
                 row_relation,
                 slot,
                 snapshot,
+                retry_snapshot: None,
                 source_attnum,
                 query,
                 prepared: &prepared,
@@ -6008,6 +6013,10 @@ struct GenerationExpander<'a> {
     row_relation: &'a HeapRelationGuard,
     slot: &'a TupleTableSlotGuard<'a>,
     snapshot: pg_sys::Snapshot,
+    // A refreshed snapshot must outlive every later traversal round that uses
+    // its raw pointer. Keeping only `snapshot` after the registration guard
+    // drops leaves PostgreSQL reading freed snapshot storage.
+    retry_snapshot: Option<RegisteredSnapshotGuard>,
     source_attnum: i32,
     query: &'a [f32],
     prepared: &'a DistannPreparedQuery,
@@ -6243,9 +6252,9 @@ impl GenerationExpander<'_> {
         };
         self.graph_relation = Some(graph_relation);
         self.directory_relation = Some(directory_relation);
-        let retry_snapshot = Some(retry_snapshot);
-        if let Some(snapshot) = retry_snapshot.as_ref() {
-            self.snapshot = snapshot.as_ptr();
+        if let Some(retry_snapshot) = retry_snapshot {
+            self.snapshot = retry_snapshot.as_ptr();
+            self.retry_snapshot = Some(retry_snapshot);
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let owner_graph_read_ns =
