@@ -3272,7 +3272,8 @@ async fn task167_post_insert_fresh_rebuild_parity(
     // post-insert graph that agrees with a fresh rebuild on fewer than 80% of
     // the inserted-neighborhood queries is evidence of incremental graph
     // quality loss and must not be reported as passing.
-    let parity_pass = enabled_recall >= 0.80 && recall >= 0.80;
+    let parity_validation = validate_task167_post_insert_parity(enabled_recall, recall);
+    let parity_pass = parity_validation.is_ok();
     let arm_delta = enabled_recall - disabled_recall;
     coordinator
         .batch_execute("SET ec_distann.roster = ''")
@@ -3292,9 +3293,23 @@ async fn task167_post_insert_fresh_rebuild_parity(
             query_count,
         );
     }
-    Ok(format!(
+    let line = format!(
         "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} append_disabled_queries={disabled_queries} append_disabled_recall={disabled_recall:.6} append_enabled_queries={enabled_queries} append_enabled_recall={enabled_recall:.6} append_enabled_minus_disabled={arm_delta:.6} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} comparison=physical_vs_fresh_source_fingerprint duplicate_ties_collapsed=true pass={parity_pass}",
-    ))
+    );
+    if let Err(error) = parity_validation {
+        bail!("{error}: {line}");
+    }
+    Ok(line)
+}
+
+fn validate_task167_post_insert_parity(enabled_recall: f64, overall_recall: f64) -> Result<()> {
+    const MIN_RECALL: f64 = 0.80;
+    if enabled_recall < MIN_RECALL || overall_recall < MIN_RECALL {
+        bail!(
+            "Task 167 post-insert fresh-rebuild parity failed: append_enabled_recall={enabled_recall:.6} distinct_recall={overall_recall:.6} required={MIN_RECALL:.6}"
+        );
+    }
+    Ok(())
 }
 
 async fn retire_and_reclaim_traversal_replica(
@@ -11504,6 +11519,20 @@ mod tests {
             "distann-head-attribution-benchmark,pg18",
         )
         .unwrap();
+    }
+
+    #[test]
+    fn task167_post_insert_parity_accepts_threshold() {
+        validate_task167_post_insert_parity(0.80, 0.80).unwrap();
+    }
+
+    #[test]
+    fn task167_post_insert_parity_rejects_observed_10k_result() {
+        let error = validate_task167_post_insert_parity(0.541667, 0.541667).unwrap_err();
+        let rendered = error.to_string();
+        assert!(rendered.contains("append_enabled_recall=0.541667"));
+        assert!(rendered.contains("distinct_recall=0.541667"));
+        assert!(rendered.contains("required=0.800000"));
     }
 
     #[test]
