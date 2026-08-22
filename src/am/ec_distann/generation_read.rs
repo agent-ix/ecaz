@@ -349,6 +349,15 @@ fn record_retry_attribution(
     vec_ids: &[u64],
     missing_vec_id: u64,
 ) {
+    // This unlogged relation belongs to the Task 167 fixture, not the
+    // extension schema. Production retries must remain correct when the
+    // diagnostic surface is absent: attempting the INSERT directly turns a
+    // successful visibility retry into an undefined-table error.
+    let Ok(Some(true)) = Spi::get_one::<bool>(
+        "SELECT pg_catalog.to_regclass('public.ec_distann_retry_attribution') IS NOT NULL",
+    ) else {
+        return;
+    };
     let node_id = vec_ids
         .iter()
         .position(|vec_id| *vec_id == missing_vec_id)
@@ -358,7 +367,7 @@ fn record_retry_attribution(
         return;
     };
     let _ = Spi::run(&format!(
-        "INSERT INTO ec_distann_retry_attribution \
+        "INSERT INTO public.ec_distann_retry_attribution \
          (backend_pid, node_id, served_epoch, missing_vec_id) VALUES \
          (pg_backend_pid(), {node_id}, {epoch}, {})",
         i64::from_le_bytes(missing_vec_id.to_le_bytes())
