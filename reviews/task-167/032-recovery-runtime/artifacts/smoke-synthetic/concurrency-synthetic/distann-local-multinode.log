@@ -1,0 +1,20 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=41600 rows=2000 dim=4 graph_degree=8 build_shards=1 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=cdecb75e4bf02172010b65184095c682a1020704 extension_build_profile=release extension_features=pg18 debug_override=false
+[distann-multicluster] physical_setup_start rows=2000 nodes=3
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=677 rows=677 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=114688 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=650 rows=650 non_owned=0 orphans=0 graph_bytes=212992 row_bytes=106496 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=673 rows=673 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=106496 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=677 rows=677 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=114688 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=650 rows=650 non_owned=0 orphans=0 graph_bytes=212992 row_bytes=106496 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=673 rows=673 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=106496 directory_bytes=49152 control_bytes=8192
+
+   0: [91mdb error[0m
+   1: [91mERROR: relation "ec_distann_retry_attribution" does not exist[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m7752[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

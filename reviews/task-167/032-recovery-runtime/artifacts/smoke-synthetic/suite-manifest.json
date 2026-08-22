@@ -1,0 +1,121 @@
+{
+  "suite": "task167-current-head-recovery",
+  "schema_version": 1,
+  "config": "reviews/task-167/032-recovery-runtime/artifacts/task167-recovery-suite.json",
+  "config_sha256": "52861345c295613b11765059ad6a080c0111bfa9daf15f24930b444a0f6841cb",
+  "dry_run": false,
+  "generated_at_unix_ms": 1787375072292,
+  "runner_git_commit": "cdecb75e4bf02172010b65184095c682a1020704",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "concurrency-synthetic",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-167/032-recovery-runtime/artifacts/smoke-synthetic/concurrency-synthetic",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task167-recovery-20260821-synthetic",
+        "--log-file",
+        "reviews/task-167/032-recovery-runtime/artifacts/smoke-synthetic/concurrency-synthetic/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--base-port",
+        "41600",
+        "--rows",
+        "2000",
+        "--dim",
+        "4",
+        "--graph-degree",
+        "8",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--hop-rounds",
+        "20",
+        "--skip-fault-drills"
+      ],
+      "selected": true,
+      "tags": [
+        "task167",
+        "production",
+        "natural-retry",
+        "saturation",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/032-recovery-runtime/artifacts/smoke-synthetic/concurrency-synthetic/distann-multinode-summary.log"
+      ],
+      "status": "failed",
+      "started_at_unix_ms": 1787375072312,
+      "finished_at_unix_ms": 1787375079501,
+      "duration_ms": 7188,
+      "exit_code": 1
+    },
+    {
+      "name": "physical-10k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_10k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/032-recovery-runtime/artifacts/smoke-synthetic/physical-10k/distann-multinode-summary.log",
+        "reviews/task-167/032-recovery-runtime/artifacts/smoke-synthetic/physical-10k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "physical-50k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_50k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/032-recovery-runtime/artifacts/smoke-synthetic/physical-50k/distann-multinode-summary.log",
+        "reviews/task-167/032-recovery-runtime/artifacts/smoke-synthetic/physical-50k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    },
+    {
+      "name": "physical-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task167",
+        "production",
+        "ec_real_100k",
+        "metrics_mode=full_metrics"
+      ],
+      "expected_artifacts": [
+        "reviews/task-167/032-recovery-runtime/artifacts/smoke-synthetic/physical-100k/distann-multinode-summary.log",
+        "reviews/task-167/032-recovery-runtime/artifacts/smoke-synthetic/physical-100k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    }
+  ]
+}
