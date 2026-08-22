@@ -2,11 +2,19 @@
 
 - Task bucket: `reviews/task-167/`.
 - Packet: `037-final-real-matrix`.
-- Code/runtime checkpoint: `5568aba17026f74de7d5685816ce2a923f160d60`.
-- Preregistered config:
+- Initial failed runtime checkpoint:
+  `5568aba17026f74de7d5685816ce2a923f160d60`.
+- Initial preregistered config:
   `reviews/task-167/032-recovery-runtime/artifacts/task167-recovery-suite.json`
   (SHA-256
   `52861345c295613b11765059ad6a080c0111bfa9daf15f24930b444a0f6841cb`).
+- Corrected code checkpoint: `a49ffd92a` (packet 038).
+- Corrected preregistered config:
+  `reviews/task-167/037-final-real-matrix/artifacts/task167-final-real-suite.json`
+  (SHA-256
+  `d65a9690fa07e8c735de0e30172cca9a60b8f97359327e6f7b2d83bece5eefaa`).
+- Counter mode: benchmark-only query-stage counters disabled; production
+  Task 167 insert-work counters remain unconditionally captured and validated.
 - Release CLI SHA-256:
   `d1a028e828a452717342935e0af11b971a4d5d0d110853994485e977463c5977`.
 - Installed production PG18 `ecaz.so` SHA-256:
