@@ -9342,12 +9342,7 @@ async fn mid_insert_drill(
     args: &LocalMultinodePg18Args,
 ) -> bool {
     let dim = args.dim;
-    let source_expr = |g: &str| -> String {
-        format!(
-            "(SELECT array_agg((sin({g} * 0.017 * (d + 1)) + cos({g} * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) AS d)"
-        )
-    };
-    let vector_expr = |g: &str| format!("encode_to_ecvector({}, 4, 42)", source_expr(g));
+    let setup_source = synthetic_unit_vector_expr("g", dim);
     let setup = format!(
         "DROP TABLE IF EXISTS mi CASCADE; \
          CREATE TABLE mi (id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({dim})); \
@@ -9355,8 +9350,7 @@ async fn mid_insert_drill(
          SELECT g, (substr(md5(g::text),1,8)||'-'||substr(md5(g::text),9,4)||'-4'||\
                     substr(md5(g::text),14,3)||'-8'||substr(md5(g::text),18,3)||'-'||\
                     substr(md5(g::text),21,12))::uuid, arr, encode_to_ecvector(arr, 4, 42) \
-           FROM (SELECT g, (SELECT array_agg((sin(g * 0.017 * (d + 1)) +\
-                         cos(g * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) d) arr \
+           FROM (SELECT g, {setup_source} AS arr \
                    FROM generate_series(1, 500) g) rows; \
          CREATE INDEX mi_idx ON mi USING ec_distann (embedding ecvector_distann_ip_ops)\
            INCLUDE (source_id) WITH (distributed_control = true, source_identity = 'include', graph_degree = {gd}); \
@@ -9408,12 +9402,11 @@ async fn mid_insert_drill(
         .await;
         return false;
     }
+    let failed_source = synthetic_unit_vector_expr("501", dim);
     let insert = format!(
         "SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,\
          '00000000-0000-4000-8000-000000000501',\
-         (SELECT array_agg((sin(501 * 0.017 * (d + 1)) + cos(501 * 0.0031 * (d + 1)))::real)\
-          FROM generate_series(0, {dim} - 1) d), {vector});",
-        vector = vector_expr("501"),
+         {failed_source}, encode_to_ecvector({failed_source}, 4, 42));",
     );
     let insert_out = capture_psql_allow_error(psql, socket_dir, coord_port, &insert).await;
     let insert_errored = query_errored(&insert_out);
@@ -9492,10 +9485,10 @@ async fn mid_insert_drill(
                 };
                 let before_update =
                     capture_psql_allow_error(psql, socket_dir, coord_port, &version_probe()).await;
+                let update_source = synthetic_unit_vector_expr("1001", dim);
                 let update_sql = format!(
-                    "UPDATE mi SET source={}, embedding={} WHERE id=1;",
-                    source_expr("1001"),
-                    vector_expr("1001")
+                    "UPDATE mi SET source={update_source}, \
+                     embedding=encode_to_ecvector({update_source}, 4, 42) WHERE id=1;"
                 );
                 let update_output =
                     capture_psql_allow_error(psql, socket_dir, coord_port, &update_sql).await;
