@@ -1,6 +1,6 @@
 # ec_distann Recall and Latency Optimization Roadmap
 
-Status: active planning ledger (2026-07-29). This document records the option
+Status: active planning ledger (updated 2026-08-21). This document records the option
 space after Tasks 180--183. It is not an ADR and does not authorize a production
 default, format, protocol, or placement change. Canonical execution scope lives
 in `plan/tasks/`; accepted architectural decisions live in an ADR.
@@ -124,6 +124,44 @@ validity requirements.
 | 219 | Recall/latency Pareto default | **complete — review-closed ACCEPT** (2026-08-09) | retains BW4/H100/L32 and recall-equivalence; frontier verified against Task 215 run-r2; reopening trigger is a product ruling for a recall-sensitive regime, not new benchmarks |
 | 220 | Owner array materialization (MAT-16) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | packed SQL arm regressed payload SQL 9.36→32.06 ms/scan (~3.4×) and warm physical latency 23.00→36.00 ms; correction `c8b5fd9ee` restored featureless production and FR-079 to `build_payload_sql` (verified round 2, production SQL now test-pinned); MAT-16 rejected as implemented |
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
+| 222 | Qual-aware payload projection | proposed — P0 latency | id-only control currently ships every row column: 6.66 remote rows, 4 columns/row, 123,076.8 bytes, 8.752 ms owner payload SQL per scan; restore narrowing as target+qual+recheck with fail-closed all-column fallback |
+| 223 | Direct owner tuple materialization | proposed — gated on 222 | split the refreshed owner SQL bucket and conditionally bypass generated SPI/LATERAL/array work with direct row-tier tuple fetch + cached send calls |
+| 224 | Owner payload heap locality | proposed — conditional on 223 attribution | measure block dispersion and detoast/send share; at most one TID reorder or block-batched detoast candidate |
+| 225 | Finalist materialization overlap | proposed — conditional | measure finalist stability and hidden round-trip ceiling; at most one bounded overlap/piggyback candidate |
+| 226 | Current-head BW8 transfer | proposed — P0 recall/latency | same-generation current-production BW4/H100 vs BW8/H100; tests whether Task 188's smaller simultaneous recall+latency win survives the sharded-head/pushdown/gateway/lazy surface |
+| 227 | Recall residual + adaptive search | proposed — gated on 226 | complete the frontier/rerank/reachability/stitch attribution Task 188 explicitly left unrun; at most one truth-free adaptive budget candidate |
+| 228 | RTT/BatANN trigger | proposed — measurement-only after 222–227 | suite-driven injected/real-network curve; BatANN planning reopens only at ADR-085 D4's >=50% transport-share trigger and must be reauthored against current identities |
+
+## Post-221 follow-up program (2026-08-21)
+
+Materialization is the primary measured latency lane, but it is not the only
+campaign lane. The production lazy-10 100k attribution reports
+`custom_scan_total=18.826614 ms/scan`, owner endpoint work `9.100528 ms/scan`,
+owner payload SQL `8.751874 ms/scan`, 6.66 remote rows, four payload columns per
+row, and 123,076.8 returned payload bytes per scan. The standard latency query
+projects only `id`; the extra columns come from the deliberate all-column
+fallback added after target-list-only narrowing omitted qual columns and
+returned wrong results.
+
+The ordered materialization sequence is therefore **projection proof (222) ->
+direct tuple access (223) -> physical locality (224) -> overlap (225)**. Each
+later task starts from the prior task's reviewed production disposition and
+may stop at attribution. Do not stack these candidates in one A/B.
+
+The independent recall/search sequence is **current-head BW8 transfer (226) ->
+query-level residual and adaptive work (227)**. Task 188 accepted BW8/H100 only
+on a cap-16,384 research head and explicitly left frontier containment,
+connectivity/reachability, and monolithic-versus-sharded graph quality unrun.
+Tasks 226/227 close those transfer and attribution gaps without reopening the
+retired large-head program or the rejected BW64/H8 default.
+
+Task 228 runs after both sequences because they change the end-to-end
+denominator and gate-relevant BW/H point. Current transport wait (~4.1--5.0
+ms/scan) is below ADR-085 D4's 50% BatANN trigger on the measured same-host
+surface. The historical `task-173-batann-specs` branch is planning archaeology:
+it predates Tasks 203--221 and collides with current ADR-086 and NFR-021/022.
+Any future GO creates a new spec task with current identifiers; it does not
+revive that branch.
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -304,11 +342,11 @@ remain controls rather than new candidates.
 | MAT-22 | Return row-tier locator with expanded candidates | **rejected — Task 221 review-closed STOP (2026-08-10)**: the lookup saving (0.311 ms/scan) was smaller than the added expand/wire work; end-to-end +1.2–1.6% at 100k with byte-identical predictions; a revisit must carry tombstone state in the locator payload (reviewer P3) |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
-| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
-| MAT-26 | Batch detoast/binary-send work by physical block | conditional on varlena/heap share |
+| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional Task 224 after refreshed heap-locality counters |
+| MAT-26 | Batch detoast/binary-send work by physical block | conditional Task 224 after refreshed varlena/detoast attribution |
 | MAT-27 | Covering row-tier layout for common scalar projections | deferred; format/storage decision |
-| MAT-28 | Exclude large/toasted columns unless planner proof requires them | deferred; Task 184 preserved existing planner projection proof |
-| MAT-29 | Strengthen minimal projection derivation | deferred; current endpoint already accepts attnums |
+| MAT-28 | Exclude large/toasted columns unless planner proof requires them | **active Task 222**; derive target+qual+recheck attributes with all-column fallback |
+| MAT-29 | Strengthen minimal projection derivation | **active Task 222**; id-only control currently ships 4 columns and 123,076.8 bytes/scan |
 | MAT-30 | Generation-scoped coordinator payload cache | conditional on cross-query hit-rate evidence; **NFR-021 screen required** — a generation-scoped cache is O(N) if unbounded and must carry an explicit fixed bound |
 | MAT-31 | Bounded hot cache keyed by generation, vec_id, and projection | conditional on MAT-30; **NFR-021 screen required** — the bound must be a constant, not a fraction of N |
 | MAT-32 | Bounded coordinator hot-payload replica | deferred; **NFR-021 screen required** — 'replica' here must remain bounded-in-N; the FR-084 precedent shows how a bounded-sounding entry becomes a full copy without the ledger changing |
@@ -320,6 +358,7 @@ remain controls rather than new candidates.
 | MAT-38 | Avoid repeated attested-generation validation on a hot connection | **production behavior via accepted Task 195**; epoch/reclaim fencing and release A/B passed |
 | MAT-39 | Owner-side parallel heap fetch | conditional on owner CPU/IO dominance |
 | MAT-40 | Projection-shape payload cache/prepared portal | conditional on repeated projection shapes |
+| MAT-41 | Direct row-tier tuple fetch + cached binary send calls | conditional Task 223 after Task 222 refreshes the owner SQL denominator; distinct from Task 220's rejected SQL concatenation |
 
 ## Candidate ledger: bounded entry coverage
 
@@ -401,6 +440,7 @@ Task 187 begins only after Task 184 refreshes the residual profile.
 | TRAV-28 | Replicated coordinator top-layer graph | **SCOPE DRIFT — entry not delivered as written.** Selected by Task 190, but Tasks 198/199 shipped a **full-graph** replica (every vec_id's graph record + full-precision vector, 1.660 GB at 100k, linear in N on one node), not the bounded top-layer structure this row describes. The delivered artifact violates NFR-021, NFR-018's per-node bound, NFR-017:38, and FR-078:492. A bounded top-layer candidate remains unbuilt and unmeasured. |
 | TRAV-29 | Replicated frequently traversed bridge nodes | deferred Task 190 architecture |
 | TRAV-30 | Routing-only gateway copies without full graph replication | **complete — review-closed ACCEPT in Task 210 packet 006** (2026-08-08). The NFR-021-conforming direction is shipped as part of the distribution-restoration task; the zero-byte membership-head gate is accepted, and no latency win is required for this conformance work. |
+| TRAV-31 | Current-production BW8/H100 transfer screen | **active Task 226**; changed premise is the fixed-4096 sharded head + pushdown + gateway + lazy materialization surface, not Task 188's cap-16,384 research head or Task 215's BW64/H8 arm |
 
 ## Candidate ledger: graph construction and adaptive search
 
@@ -417,15 +457,15 @@ Task 188 owns this family only after bounded entry work quantifies the residual.
 | GRAPH-07 | Higher build search list size | conditional build-quality A/B |
 | GRAPH-08 | Vamana alpha tuning | conditional build-quality A/B |
 | GRAPH-09 | Closure/stitch parameter tuning | conditional if shard stitching is implicated |
-| GRAPH-10 | Connectivity and reachability audit | active Task 188 prerequisite |
+| GRAPH-10 | Connectivity and reachability audit | active Task 227; explicitly unrun, not refuted, at Task 188 closeout |
 | GRAPH-11 | Reverse-edge repair for low-indegree nodes | conditional on GRAPH-10 |
 | GRAPH-12 | Bridge edges between weak regions | conditional on GRAPH-10 |
 | GRAPH-13 | Seed-aware landmark-to-region shortcuts | conditional on a future operator-approved follow-up; Task 186 superseded and Task 185 fixed-cap gateway result was negative |
 | GRAPH-14 | Alternate deterministic graph-build seeds | unmeasured stability diagnostic |
 | GRAPH-15 | Bounded second-graph ensemble | deferred storage/build candidate |
 | GRAPH-16 | Training-query-aware gateway augmentation | conditional on a future operator-approved follow-up; Task 186 superseded and Task 185 fixed-cap gateway result was negative |
-| GRAPH-17 | Query-difficulty adaptive search budget | conditional after confidence diagnostics |
-| GRAPH-18 | Attribute owner-oracle residual to graph, BW/H, or rerank | active Task 188 decision requirement |
+| GRAPH-17 | Query-difficulty adaptive search budget | conditional Task 227 after truth-free confidence diagnostics |
+| GRAPH-18 | Attribute owner-oracle residual to graph, BW/H, or rerank | active Task 227; completes Task 188's explicit scope correction |
 
 ## Candidate ledger: codec and distance estimation
 
