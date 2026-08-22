@@ -1,0 +1,6 @@
+[suite:task167-current-head-recovery] wrote reviews/task-167/035-concurrent-gate-stability/artifacts/smoke-synthetic-clean-head/suite-manifest.json
+[suite:task167-current-head-recovery] concurrency-synthetic -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-167/035-concurrent-gate-stability/artifacts/smoke-synthetic-clean-head/concurrency-synthetic --run-dir /home/peter/.ecaz/clusters/task167-recovery-20260821-synthetic --log-file reviews/task-167/035-concurrent-gate-stability/artifacts/smoke-synthetic-clean-head/concurrency-synthetic/distann-local-multinode.log --nodes 3 --base-port 41600 --rows 2000 --dim 4 --graph-degree 8 --head-index-cap 4096 --beam-width 4 --hop-rounds 20 --skip-fault-drills
+[suite:task167-current-head-recovery] wrote reviews/task-167/035-concurrent-gate-stability/artifacts/smoke-synthetic-clean-head/suite-manifest.json
+[suite:task167-current-head-recovery] wrote reviews/task-167/035-concurrent-gate-stability/artifacts/smoke-synthetic-clean-head/suite-manifest.json
+[suite:task167-current-head-recovery] wrote reviews/task-167/035-concurrent-gate-stability/artifacts/smoke-synthetic-clean-head/results.jsonl
+[suite:task167-current-head-recovery] wrote reviews/task-167/035-concurrent-gate-stability/artifacts/smoke-synthetic-clean-head/suite-manifest.json

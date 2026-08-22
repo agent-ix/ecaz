@@ -8,7 +8,8 @@ seq: 1
 
 # Task 167 concurrent-gate stability
 
-Status: review-open; clean-head synthetic runtime pending.
+Status: review-open; clean-head synthetic gate passed, isolated normalization
+follow-up carried.
 
 Please review harness checkpoint `d799dc4fe`.
 
@@ -31,7 +32,14 @@ both writers finish, subject to a bounded 16x query budget; it still performs
 at least the original 12 queries. Writer completion is published through an
 atomic count.
 
-The two focused Task 167 CLI tests pass. Runtime acceptance remains open until
-the release CLI is rebuilt from a clean worktree, the matching production PG18
-extension is installed, and the fresh synthetic suite gate passes.
+The two focused Task 167 CLI tests pass. The clean-head synthetic suite now
+passes at `31e6c9138` with a release, production-feature (`pg18`) extension:
+both controlled writer backlinks survive, the target fills from six to eight
+neighbors, three natural 2PC-wave retries are attributed, steady-state retries
+remain zero, and the complete physical topology gate passes.
 
+The successful run still emits one unit-normalization warning from the
+separate `mi` rollback subfixture, whose generator predates the normalized main
+physical fixture. That warning did not fail the rollback gate, but it is being
+removed before the real 10k/50k/100k matrix so every synthetic DistANN build in
+the final checkpoint honors the same documented precondition.
