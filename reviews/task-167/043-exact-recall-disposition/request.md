@@ -8,8 +8,8 @@ seq: 1
 
 # Task 167 exact-recall disposition matrix
 
-Status: review-open; harness checkpoint implemented and focused tests pass;
-production 10k/50k/100k matrix pending.
+Status: review-open; harness checkpoint implemented, focused tests pass, and
+exact-head release runtime is prepared; production 10k/50k/100k matrix pending.
 
 Please review checkpoint `0bce21c05`.
 

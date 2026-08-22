@@ -1,15 +1,17 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation/evidence checkpoints through `a001bf7e6`; packets
-040–042 review-open on PR 77; outside reviewer disposition pending. Packet 041
+Status: implementation/evidence checkpoints through `0bce21c05`; packets
+040–043 review-open on PR 77; outside reviewer disposition pending. Packet 041
 replaced the defective pairwise ANN-overlap gate and proved real 10k quality
 loss. Packet 042's production rerun confirms the nonnegative-distance fix is
 material: inserted-neighborhood physical recall improved from `0.805382` to
 `0.945809` versus fresh `0.954985`, but still fails at `-0.009177`; held-out
 remains `0.973684` versus `0.977632` (`-0.003947`). The suite correctly stopped
-before 50k/100k. Residual online-versus-batch construction divergence remains
-under investigation; no merge or closeout until the full matrix and outside
-reviewer disposition. Packets 027–030 are explicitly superseded by this round.
+before 50k/100k. Packet 043 removes the unsupported hard `0.002` process gate
+while retaining it as a labeled reference band; valid exact-truth results now
+complete for outside disposition. The full matrix remains pending; no merge or
+closeout until it lands and the outside reviewer responds. Packets 027–030 are
+explicitly superseded by this round.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
 and are not acceptance evidence.
