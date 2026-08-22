@@ -144,8 +144,8 @@ pub(super) fn rank_insert_candidates(
         }
         scored.push((exact_distance(new_vector, &sample.1), sample));
     }
-    // A candidate that is the inserted vector itself (re-insert) is dropped: a
-    // node is never its own neighbor.
+    // Rank the sampled candidates deterministically by exact distance. Self
+    // exclusion is enforced by the caller's candidate population, not here.
     scored.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
     Ok(scored
         .into_iter()

@@ -88,9 +88,8 @@ pub struct LocalMultinodePg18Args {
     /// measurement. This warms backend-local head and transport caches.
     #[arg(long, default_value_t = 0)]
     pub benchmark_warmup_iterations: u32,
-    /// Query count for post-insert exact-ground-truth quality. The first 48
-    /// queries cover inserted neighborhoods; the remainder are held out and
-    /// must outnumber the inserted subset.
+    /// Held-out query count for post-insert exact-ground-truth quality. An
+    /// additional fixed 48 queries cover inserted neighborhoods.
     #[arg(long)]
     pub benchmark_parity_queries: Option<u32>,
     /// Reconnect a latency worker after this many timed queries. Zero keeps
@@ -2040,6 +2039,77 @@ fn paired_recall_line(
     ))
 }
 
+fn task167_pre_insert_recall_calibration_line(
+    scale: &str,
+    predictions_path: &Path,
+    truth_path: &Path,
+    ordinary_distinct_recall: f64,
+    k: usize,
+) -> Result<String> {
+    let predictions: PairedPredictionFile = serde_json::from_slice(&fs::read(predictions_path)?)
+        .wrap_err_with(|| {
+            format!(
+                "reading Task 167 pre-insert predictions {}",
+                predictions_path.display()
+            )
+        })?;
+    let truth: PairedTruthCache = serde_json::from_slice(&fs::read(truth_path)?)
+        .wrap_err_with(|| format!("reading Task 167 truth cache {}", truth_path.display()))?;
+    let sweep = predictions
+        .rows
+        .iter()
+        .find(|row| row.sweep_value == 32)
+        .ok_or_else(|| eyre!("Task 167 pre-insert predictions have no sweep 32"))?;
+    if k == 0
+        || truth.truth.ids.is_empty()
+        || predictions.query_ids.len() != truth.truth.ids.len()
+        || sweep.predictions.len() != truth.truth.ids.len()
+    {
+        bail!(
+            "Task 167 pre-insert calibration inputs are not aligned: query_ids={} predictions={} truth={} k={k}",
+            predictions.query_ids.len(),
+            sweep.predictions.len(),
+            truth.truth.ids.len(),
+        );
+    }
+    for (query_index, (truth, predicted)) in
+        truth.truth.ids.iter().zip(&sweep.predictions).enumerate()
+    {
+        let distinct_truth = truth.iter().take(k).copied().collect::<HashSet<_>>();
+        if truth.len() != k || distinct_truth.len() != k || predicted.len() != k {
+            bail!(
+                "Task 167 pre-insert calibration query {query_index} is not a full distinct recall@{k} row: truth={} distinct_truth={} predictions={}",
+                truth.len(),
+                distinct_truth.len(),
+                predicted.len(),
+            );
+        }
+    }
+    let exact_scorer_recall = truth
+        .truth
+        .ids
+        .iter()
+        .zip(&sweep.predictions)
+        .map(|(truth, predicted)| task167_distinct_recall(truth, predicted).0)
+        .sum::<f64>()
+        / truth.truth.ids.len() as f64;
+    // The ordinary bench table is rendered to four decimal places before it
+    // is parsed here. Half a displayed unit is therefore the strictest useful
+    // cross-instrument comparison tolerance.
+    const DISPLAY_TOLERANCE: f64 = 0.000_05;
+    let absolute_delta = (ordinary_distinct_recall - exact_scorer_recall).abs();
+    let pass = absolute_delta <= DISPLAY_TOLERANCE + f64::EPSILON;
+    if !pass {
+        bail!(
+            "Task 167 pre-insert recall instruments disagree: ordinary={ordinary_distinct_recall:.6} exact_scorer={exact_scorer_recall:.6} delta={absolute_delta:.6} tolerance={DISPLAY_TOLERANCE:.6}"
+        );
+    }
+    Ok(format!(
+        "physical_benchmark_recall_instrument_calibration scale={scale} phase=pre_incremental_insert graph_state=same predictions=same truth=same queries={} top_k={k} ordinary_distinct_recall={ordinary_distinct_recall:.6} exact_scorer_distinct_recall={exact_scorer_recall:.6} absolute_delta={absolute_delta:.6} tolerance={DISPLAY_TOLERANCE:.6} pass=true",
+        truth.truth.ids.len(),
+    ))
+}
+
 fn parse_benchmark_seed_variants(values: &[String]) -> Result<Vec<BenchmarkSeedVariant>> {
     let mut names = std::collections::BTreeSet::new();
     values
@@ -3145,6 +3215,10 @@ async fn task167_insert_throughput_ab(
         .into_iter()
         .map(|row| (row.get::<_, String>(0), row.get::<_, i64>(1)))
         .collect::<HashMap<_, _>>();
+    coordinator
+        .batch_execute("RESET ec_distann.debug_disable_append_when_room")
+        .await
+        .wrap_err("restoring the shipped append-when-room disposition")?;
     if single.inserted_rows != TASK167_AB_SAMPLE_ROWS
         || append_disabled.inserted_rows != TASK167_AB_SAMPLE_ROWS
         || append_enabled.inserted_rows != TASK167_AB_SAMPLE_ROWS
@@ -3230,6 +3304,105 @@ async fn task167_insert_throughput_ab(
 const TASK167_INSERTED_QUALITY_QUERIES: usize = 48;
 const TASK167_EXACT_RECALL_REFERENCE_BAND: f64 = 0.002;
 
+fn task167_search_guc_sql(
+    args: &LocalMultinodePg18Args,
+    production: &BenchmarkSeedVariant,
+    beam_width: u32,
+    candidate_heap_limit: u32,
+    hop_rounds: u32,
+) -> Result<String> {
+    let beam_width = production.beam_width.unwrap_or(beam_width);
+    let hop_rounds = production.hop_rounds.unwrap_or(hop_rounds);
+    let mut sql = format!(
+        "SET enable_seqscan = off;\
+         SET ec_distann.beam_width = {beam_width};\
+         SET ec_distann.candidate_heap_limit = {candidate_heap_limit};\
+         SET ec_distann.hop_rounds = {hop_rounds};\
+         SET ec_distann.top_k = {};",
+        args.top_k,
+    );
+    // Match the ordinary recall child's precedence: general caller-supplied
+    // assignments follow the base budgets, then the named variant controls
+    // below win if the same setting was supplied twice.
+    for assignment in &args.bench_session_gucs {
+        let (name, value) = assignment.split_once('=').ok_or_else(|| {
+            eyre!("Task 167 benchmark session GUC must be NAME=VALUE: {assignment:?}")
+        })?;
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'.')
+            || value.is_empty()
+        {
+            bail!("Task 167 benchmark session GUC is not a safe NAME=VALUE assignment: {assignment:?}");
+        }
+        sql.push_str(&format!(" SET {name} = {value};"));
+    }
+    let strategy = production.strategy.replace('\'', "''");
+    sql.push_str(&format!(
+        " SET ec_distann.benchmark_seed_mode = '{strategy}';\
+          SET ec_distann.benchmark_head_search_width = {};\
+          SET ec_distann.benchmark_head_seed_count = {};\
+          SET ec_distann.benchmark_exact_neighbor = {};\
+          SET ec_distann.benchmark_materialization_batch_size = {};\
+          SET ec_distann.benchmark_owner_payload_plan_cache = {};\
+          SET ec_distann.benchmark_typed_locator = {};\
+          SET ec_distann.benchmark_packed_payload = {};\
+          SET ec_distann.benchmark_expanded_locator = {};\
+          SET ec_distann.allow_nonconforming_replica = {};\
+          SET ec_distann.sharded_head_search = {};\
+          SET ec_distann.head_replica_count = {};\
+          SET ec_distann.gateway_copy_capacity = {};\
+          SET ec_distann.crown_capacity = {};\
+          SET ec_distann.crown_width_pruning = {};\
+          SET ec_distann.fused_head_hop = {};",
+        production.head_search_width,
+        production.head_seed_count,
+        if production.neighbor_score_mode == "exact_neighbor" {
+            "on"
+        } else {
+            "off"
+        },
+        production.materialization_batch_size,
+        if production.owner_payload_plan_cache {
+            "on"
+        } else {
+            "off"
+        },
+        if production.typed_locator {
+            "on"
+        } else {
+            "off"
+        },
+        if production.packed_payload {
+            "on"
+        } else {
+            "off"
+        },
+        if production.expanded_locator {
+            "on"
+        } else {
+            "off"
+        },
+        if production.traversal_replica {
+            "on"
+        } else {
+            "off"
+        },
+        if args.local_head { "off" } else { "on" },
+        args.head_replica_count.unwrap_or(0),
+        args.gateway_copy_capacity.unwrap_or(0),
+        args.crown_capacity.unwrap_or(0),
+        if args.crown_width_pruning {
+            "on"
+        } else {
+            "off"
+        },
+        if args.fused_head_hop { "on" } else { "off" },
+    ));
+    Ok(sql)
+}
+
 /// Compare the post-insert physical generation and a reloption-matched fresh
 /// rebuild against the same brute-force fp32 ground truth. Pairwise ANN set
 /// overlap is deliberately not a correctness metric: independently built
@@ -3253,15 +3426,16 @@ async fn task167_post_insert_exact_recall(
     query_count: u32,
     truth_corpus_path: &Path,
     truth_queries_path: &Path,
+    search_guc_sql: &str,
 ) -> Result<Vec<String>> {
-    let query_count = usize::try_from(query_count).unwrap_or(usize::MAX);
-    let heldout_count = query_count.saturating_sub(TASK167_INSERTED_QUALITY_QUERIES);
+    let heldout_count = usize::try_from(query_count).unwrap_or(usize::MAX);
     if heldout_count <= TASK167_INSERTED_QUALITY_QUERIES {
         bail!(
-            "Task 167 exact-recall quality sample requires held-out queries to dominate: total={query_count} inserted={} heldout={heldout_count}",
+            "Task 167 exact-recall quality sample requires held-out queries to dominate: inserted={} heldout={heldout_count}",
             TASK167_INSERTED_QUALITY_QUERIES,
         );
     }
+    let query_count = heldout_count + TASK167_INSERTED_QUALITY_QUERIES;
 
     let fresh_table = format!("task167_fresh_{scale}");
     let fresh_index = format!("{fresh_table}_idx");
@@ -3366,7 +3540,7 @@ async fn task167_post_insert_exact_recall(
         physical_corpus,
         &exact_queries,
         &format!(
-            "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch={epoch};"
+            "{search_guc_sql} SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch={epoch};"
         ),
         "EcDistannDistributedScan",
     )
@@ -3376,7 +3550,9 @@ async fn task167_post_insert_exact_recall(
         coordinator,
         &fresh_table,
         &exact_queries,
-        "SET enable_seqscan=off; SET ec_distann.roster=''; SET ec_distann.local_node_id=1; SET ec_distann.epoch=0;",
+        &format!(
+            "{search_guc_sql} SET ec_distann.roster=''; SET ec_distann.local_node_id=1; SET ec_distann.epoch=0;"
+        ),
         "Index Scan",
     )
     .await
@@ -3398,7 +3574,7 @@ async fn task167_post_insert_exact_recall(
             summary.fresh_recall,
         );
         let line = format!(
-            "physical_benchmark_post_insert_exact_recall scale={scale} population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} reference_band={TASK167_EXACT_RECALL_REFERENCE_BAND:.6} within_reference_band={within_reference_band} disposition=outside_review fresh_reloptions_matched=true heldout_queries_dominate=true measurement_complete=true",
+            "physical_benchmark_post_insert_exact_recall scale={scale} phase=post_320_incremental_inserts population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} reference_band={TASK167_EXACT_RECALL_REFERENCE_BAND:.6} within_reference_band={within_reference_band} disposition=outside_review fresh_reloptions_matched=true heldout_query_set_matches_ordinary=true heldout_queries_dominate=true search_gucs_pinned=true measurement_complete=true",
             summary.queries,
             summary.truth_slots,
             summary.truth_distinct_keys,
@@ -6243,6 +6419,7 @@ async fn run_physical_benchmarks(
     // not a scan-path selector GUC, the A/B boundary.
     benchmark_arms.sort_by_key(|arm| arm.9);
     let mut prediction_paths = std::collections::BTreeMap::<String, PathBuf>::new();
+    let mut physical_distinct_recall = std::collections::BTreeMap::<String, f64>::new();
     let mut same_generation_identity: Option<String> = None;
 
     for (
@@ -6480,6 +6657,7 @@ async fn run_physical_benchmarks(
             let mean_ms = benchmark_ms(&row[11])?;
             if arm == "physical" {
                 prediction_paths.insert(variant.to_owned(), predictions_output);
+                physical_distinct_recall.insert(variant.to_owned(), distinct_recall);
             }
             if arm == "physical" && args.gateway_trace {
                 let seed_strategy_sql = seed_strategy.replace('\'', "''");
@@ -7460,6 +7638,37 @@ async fn run_physical_benchmarks(
             "physical_benchmark_insert_throughput_ab scale={scale} pass=false reason=single_control_skipped"
         ));
     } else {
+        let production = seed_variants
+            .iter()
+            .find(|variant| variant.name == "production")
+            .ok_or_else(|| {
+                eyre!(
+                    "Task 167 exact-recall closeout requires a physical seed variant named production"
+                )
+            })?;
+        if !args.skip_recall {
+            let production_predictions = prediction_paths.get("production").ok_or_else(|| {
+                eyre!("Task 167 production recall arm produced no prediction artifact")
+            })?;
+            let ordinary_distinct_recall = physical_distinct_recall
+                .get("production")
+                .copied()
+                .ok_or_else(|| eyre!("Task 167 production recall arm produced no recall score"))?;
+            lines.push(task167_pre_insert_recall_calibration_line(
+                scale,
+                production_predictions,
+                &truth_cache,
+                ordinary_distinct_recall,
+                args.top_k as usize,
+            )?);
+        }
+        let search_guc_sql = task167_search_guc_sql(
+            args,
+            production,
+            beam_width,
+            candidate_heap_limit,
+            hop_rounds,
+        )?;
         task167_insert_throughput_ab(
             coordinator,
             scale,
@@ -7495,6 +7704,7 @@ async fn run_physical_benchmarks(
                 parity_query_count,
                 &truth_corpus,
                 &truth_queries,
+                &search_guc_sql,
             )
             .await?,
         );
@@ -11776,6 +11986,13 @@ async fn capture_psql_allow_error(psql: &Path, socket_dir: &Path, port: u16, sql
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct TestLocalMultinodeArgs {
+        #[command(flatten)]
+        args: LocalMultinodePg18Args,
+    }
 
     fn provenance(
         node_id: u32,
@@ -11871,6 +12088,44 @@ mod tests {
         assert_eq!(distinct, 8);
         assert_eq!(duplicate_slots, 2);
         assert!((recall - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn task167_exact_recall_pins_the_production_search_operating_point() {
+        let mut args = TestLocalMultinodeArgs::parse_from(["test"]).args;
+        args.top_k = 10;
+        args.bench_session_gucs = vec!["ec_distann.remote_statement_timeout_ms=12345".to_owned()];
+        let production = BenchmarkSeedVariant {
+            name: "production".to_owned(),
+            strategy: "persisted_head".to_owned(),
+            head_search_width: 32,
+            head_seed_count: 32,
+            neighbor_score_mode: "rabitq".to_owned(),
+            materialization_batch_size: 10,
+            owner_payload_plan_cache: false,
+            beam_width: None,
+            hop_rounds: None,
+            traversal_replica: false,
+            typed_locator: false,
+            packed_payload: false,
+            expanded_locator: false,
+        };
+        let sql = task167_search_guc_sql(&args, &production, 4, 32, 100).unwrap();
+        for pinned in [
+            "ec_distann.beam_width = 4",
+            "ec_distann.candidate_heap_limit = 32",
+            "ec_distann.hop_rounds = 100",
+            "ec_distann.top_k = 10",
+            "ec_distann.remote_statement_timeout_ms = 12345",
+            "ec_distann.benchmark_seed_mode = 'persisted_head'",
+            "ec_distann.benchmark_head_search_width = 32",
+            "ec_distann.benchmark_head_seed_count = 32",
+            "ec_distann.benchmark_materialization_batch_size = 10",
+            "ec_distann.sharded_head_search = on",
+            "ec_distann.crown_capacity = 0",
+        ] {
+            assert!(sql.contains(pinned), "missing pinned GUC: {pinned}");
+        }
     }
 
     #[test]

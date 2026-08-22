@@ -139,7 +139,10 @@ static ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC: GucSetting<i32> = GucSetting::<i32>::
 static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
-static ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+// Task 167's 10k/50k/100k A/B found no throughput win from the free-capacity
+// append shortcut, so robust-prune union is the shipped path. The negative
+// diagnostic toggle remains so the rejected candidate can still be measured.
+static ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 static ECDISTANN_DEBUG_RETRY_ATTRIBUTION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
@@ -714,7 +717,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_bool_guc(
         c"ec_distann.debug_disable_append_when_room",
         c"Task 167 A/B control: disable free-capacity backlink append.",
-        c"When on, a backlink target with spare degree follows the legacy robust-prune union path instead of appending directly. This is a userset diagnostic toggle; production defaults off.",
+        c"When on, a backlink target with spare degree follows robust-prune union instead of appending directly. This is a userset diagnostic toggle; production defaults on because the Task 167 10k/50k/100k A/B found no candidate win.",
         &ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC,
         GucContext::Userset,
         GucFlags::default(),
