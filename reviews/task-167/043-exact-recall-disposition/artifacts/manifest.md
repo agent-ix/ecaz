@@ -12,7 +12,7 @@
 - Validation command:
   `env CARGO_TARGET_DIR=/home/peter/.cargo-target cargo test -p ecaz-cli task167_ --no-default-features --quiet`.
 - Validation result: 9 passed, 0 failed in `task167-cli-tests.log` (SHA-256
-  `2a34ce4ee7cd3b1c7940aca48ffefac5424efeb464cbf03ac6554722865b2ec9`).
+  `4fc581e6d73512af851876b1a55a13dd5bc6bc8cf47aa6bce5795c93967d78fd`).
 - Matrix config: `task167-disposition-suite.json`; production PG18, three
   owners, real 10k/50k/100k, 48 inserted-neighborhood plus 152 held-out exact
   fp32 truth queries, ordinary recall/latency, insert throughput/work,
