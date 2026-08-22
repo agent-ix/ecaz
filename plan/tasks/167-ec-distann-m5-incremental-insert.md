@@ -2,14 +2,13 @@
 
 Status: implementation/evidence checkpoints through `a001bf7e6`; packets
 040–042 review-open on PR 77; outside reviewer disposition pending. Packet 041
-replaced the defective pairwise ANN-overlap gate and re-ran production 10k
-against exact fp32 truth. It proved real incremental quality loss: inserted
-neighborhood physical `0.805382` versus fresh `0.954985` (`-0.149603`), and
-held-out `0.973684` versus `0.977632` (`-0.003947`); 50k/100k correctly
-stopped. Checkpoint `a001bf7e6` fixes the identified root cause—incremental
-alpha-pruning used negative `-ip` instead of batch construction's required
-nonnegative `max(0, 1-ip)` distance. Packet 042 owns the candidate and pending
-10k/50k/100k rerun. No merge or closeout until that evidence and outside
+replaced the defective pairwise ANN-overlap gate and proved real 10k quality
+loss. Packet 042's production rerun confirms the nonnegative-distance fix is
+material: inserted-neighborhood physical recall improved from `0.805382` to
+`0.945809` versus fresh `0.954985`, but still fails at `-0.009177`; held-out
+remains `0.973684` versus `0.977632` (`-0.003947`). The suite correctly stopped
+before 50k/100k. Residual online-versus-batch construction divergence remains
+under investigation; no merge or closeout until the full matrix and outside
 reviewer disposition. Packets 027–030 are explicitly superseded by this round.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback

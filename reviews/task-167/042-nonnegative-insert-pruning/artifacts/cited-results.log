@@ -1,0 +1,6 @@
+runtime_head=01da3574498fcd30cef6b29e14cf4ca7f3872326
+code_checkpoint=a001bf7e6
+suite_step physical-10k status=failed exit_code=1 physical-50k=pending physical-100k=pending
+physical_benchmark_post_insert_exact_recall scale=10k population=inserted_neighborhood queries=48 top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots=480 truth_distinct_keys=266 truth_duplicate_slots=214 physical_distinct_recall=0.945809 fresh_distinct_recall=0.954985 physical_minus_fresh=-0.009177 parity_tolerance=0.002000 fresh_reloptions_matched=true heldout_queries_dominate=true pass=false
+physical_benchmark_post_insert_exact_recall scale=10k population=heldout queries=152 top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots=1520 truth_distinct_keys=1520 truth_duplicate_slots=0 physical_distinct_recall=0.973684 fresh_distinct_recall=0.977632 physical_minus_fresh=-0.003947 parity_tolerance=0.002000 fresh_reloptions_matched=true heldout_queries_dominate=true pass=false
+comparison packet041_inserted_physical=0.805382 packet042_inserted_physical=0.945809 absolute_improvement=0.140427 fresh_reference_unchanged=0.954985

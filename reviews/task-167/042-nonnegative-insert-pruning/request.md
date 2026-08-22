@@ -9,7 +9,7 @@ seq: 1
 # Task 167 nonnegative incremental-prune distance
 
 Status: review-open; algorithm candidate implemented and unit-validated;
-production 10k/50k/100k rerun pending.
+production 10k rerun failed the exact-recall gate; 50k/100k stopped fail-fast.
 
 Please review checkpoint `a001bf7e6`.
 
@@ -34,6 +34,11 @@ inner-product pairs, and the full existing insert-planning module.
 
 The immutable rerun config is
 [`artifacts/task167-distance-fix-suite.json`](artifacts/task167-distance-fix-suite.json).
-No runtime win is claimed until that suite supplies 10k/50k/100k exact recall,
-ordinary recall/latency, insert throughput/work, concurrency, and storage
-evidence.
+The production 10k rerun confirms that the distance correction was material:
+inserted-neighborhood physical distinct recall rose from `0.805382` in packet
+041 to `0.945809`, against the same fresh value `0.954985`. It still fails the
+unchanged `0.002` degradation tolerance (`-0.009177`). Held-out recall remains
+`0.973684` physical versus `0.977632` fresh (`-0.003947`), also outside the
+tolerance. The suite therefore stopped before 50k/100k. No closeout or parity
+claim is made; the residual online-versus-batch construction divergence is the
+next product investigation.

@@ -46,4 +46,19 @@
 - Cluster state uses `/home/peter/.ecaz/clusters/task167-distance-20260822-*`,
   outside the repository and Cargo `target/`; each directory will be removed
   after cited artifacts are captured.
-- Runtime status: pending; no performance or quality result is claimed yet.
+- Runtime command:
+  `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-167/042-nonnegative-insert-pruning/artifacts/task167-distance-fix-suite.json --log-file reviews/task-167/042-nonnegative-insert-pruning/artifacts/suite-run.log`.
+- Runtime result: failed at `physical-10k` with exit code 1; fail-fast left
+  `physical-50k` and `physical-100k` pending. The suite manifest is
+  `final-suite/suite-manifest.json` (SHA-256
+  `5cb7f2f974805b1bc3d71bd99771994657910796b1d7e0250f5dc1f5c990615b`).
+- Exact 10k result (`cited-results.log`): inserted-neighborhood physical/fresh
+  distinct recall `0.945809/0.954985` (`-0.009177`), and held-out
+  `0.973684/0.977632` (`-0.003947`), both outside the unchanged `0.002`
+  tolerance. Compared with packet 041's `0.805382` inserted result, the
+  nonnegative-distance fix recovered `0.140427` absolute recall but did not
+  close parity.
+- Ordinary pre-gate recall and latency logs are retained under
+  `final-suite/physical-10k/`; the exact gate failed before insert-throughput,
+  concurrency, and storage summaries could be emitted. No 50k/100k result is
+  claimed.
