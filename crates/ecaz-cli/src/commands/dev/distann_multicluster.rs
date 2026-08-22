@@ -15,7 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant};
@@ -1186,12 +1186,22 @@ fn insert_vector_expr(args: &LocalMultinodePg18Args, table: &str) -> String {
     if args.corpus_prefix.is_some() {
         format!("(SELECT source FROM {table} ORDER BY id LIMIT 1)")
     } else {
-        format!(
-            "(SELECT array_agg((sin(7 * 0.017 * (d + 1)) + cos(7 * 0.0031 * (d + 1)))::real) \
-             FROM generate_series(0, {} - 1) AS d)",
-            args.dim
-        )
+        synthetic_unit_vector_expr("7", args.dim)
     }
+}
+
+/// The `ecvector_distann_ip_ops` build/search distance assumes unit vectors.
+/// Keep the deterministic synthetic fixture on that same contract so an exact
+/// copied source is its own maximum-inner-product candidate.
+fn synthetic_unit_vector_expr(row: &str, dimensions: u32) -> String {
+    format!(
+        "(SELECT array_agg((component / norm)::real ORDER BY d) \
+           FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm \
+                   FROM (SELECT d, \
+                                (sin(({row}) * 0.017 * (d + 1)) + \
+                                 cos(({row}) * 0.0031 * (d + 1)))::double precision AS component \
+                           FROM generate_series(0, {dimensions} - 1) AS d) raw) normalized)"
+    )
 }
 
 /// Real staged-corpus load: COPY each 2-column TSV (`id\t[v1,v2,...]`) into a
@@ -1400,6 +1410,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
             args.queries
         )
     } else {
+        let synthetic_vector = synthetic_unit_vector_expr("g", args.dim);
         format!(
             "INSERT INTO dm (id, source_id, source, embedding)
              SELECT g,
@@ -1409,12 +1420,10 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
                     arr, encode_to_ecvector(arr, 4, 42)
                FROM (
                  SELECT g,
-                        (SELECT array_agg((sin(g * 0.017 * (d + 1)) +
-                                           cos(g * 0.0031 * (d + 1)))::real)
-                           FROM generate_series(0, {} - 1) AS d) AS arr
-                   FROM generate_series(1, {}) AS g
+                        {synthetic_vector} AS arr
+                   FROM generate_series(1, {rows}) AS g
                ) source_rows;",
-            args.dim, args.rows
+            rows = args.rows,
         )
     };
     let correctness_fixture = if coordinator && args.materialization_correctness {
@@ -9812,24 +9821,6 @@ async fn physical_concurrency_drill(
         return Ok(false);
     };
     let shared_target_source = source.to_owned();
-    let target_seed_id = 899_998_i64;
-    let target_seed_sql = format!(
-        "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
-         WITH row_data AS (SELECT {target_seed_id}::bigint AS id, '{shared_target_source}'::real[] AS source) \
-         INSERT INTO {table} (id, source_id, source, embedding) \
-         SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
-                substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
-                substr(md5(id::text),21,12))::uuid, source, \
-                encode_to_ecvector(source, 4, 42) FROM row_data;"
-    );
-    let target_seed_output = run_capture(psql, socket_dir, coord_port, &target_seed_sql).await;
-    if !target_seed_output.status_ok {
-        crate::ecaz_println!(
-            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=target_seed_insert_failed stderr={}",
-            compact_capture_error(&target_seed_output.stderr)
-        );
-        return Ok(false);
-    }
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner={} vec_id={} signed_vec_id={} source={}",
         shared_target_owner,
@@ -9881,12 +9872,21 @@ async fn physical_concurrency_drill(
         .collect::<HashSet<_>>();
 
     let mut tasks = Vec::with_capacity(SCANNERS + WRITERS);
+    let start_barrier = Arc::new(Barrier::new(SCANNERS + WRITERS));
+    let active_writers = Arc::new(AtomicUsize::new(WRITERS));
     for _ in 0..SCANNERS {
         let psql = psql.to_path_buf();
         let socket_dir = socket_dir.to_path_buf();
         let query_sql = query_sql.clone();
+        let start_barrier = Arc::clone(&start_barrier);
+        let active_writers = Arc::clone(&active_writers);
         tasks.push(tokio::spawn(async move {
-            for iteration in 0..ITERATIONS {
+            start_barrier.wait().await;
+            let max_iterations = ITERATIONS * 16;
+            for iteration in 0..max_iterations {
+                if iteration >= ITERATIONS && active_writers.load(Ordering::Acquire) == 0 {
+                    return true;
+                }
                 let output = run_capture(&psql, &socket_dir, coord_port, &query_sql).await;
                 if !output.status_ok {
                     crate::ecaz_println!(
@@ -9907,11 +9907,14 @@ async fn physical_concurrency_drill(
                     return false;
                 }
             }
-            true
+            crate::ecaz_println!(
+                "[distann-multicluster] physical_concurrent_insert_query DIAG role=scanner reason=writers_exceeded_scan_budget active_writers={}",
+                active_writers.load(Ordering::Acquire)
+            );
+            false
         }));
     }
 
-    let writer_barrier = Arc::new(Barrier::new(WRITERS));
     for writer in 0..WRITERS {
         let psql_insert = psql.to_path_buf();
         let socket_dir_insert = socket_dir.to_path_buf();
@@ -9919,8 +9922,11 @@ async fn physical_concurrency_drill(
         let insert_table = table.to_owned();
         let insert_vector = insert_vector.clone();
         let shared_target_source = shared_target_source.clone();
-        let writer_barrier = Arc::clone(&writer_barrier);
+        let start_barrier = Arc::clone(&start_barrier);
+        let active_writers = Arc::clone(&active_writers);
         tasks.push(tokio::spawn(async move {
+            start_barrier.wait().await;
+            let mut writer_ok = true;
             for iteration in 0..ITERATIONS {
                 let id = 900_000_i64
                     + base_rows as i64
@@ -9943,9 +9949,6 @@ async fn physical_concurrency_drill(
                             substr(md5(id::text),21,12))::uuid, source, \
                             encode_to_ecvector(source, 4, 42) FROM row_data;"
                 );
-                if iteration == 0 {
-                    writer_barrier.wait().await;
-                }
                 let output =
                     run_capture(&psql_insert, &socket_dir_insert, coord_port, &insert_sql).await;
                 if !output.status_ok {
@@ -9953,10 +9956,12 @@ async fn physical_concurrency_drill(
                         "[distann-multicluster] physical_concurrent_insert_query DIAG role=writer writer={writer} iteration={iteration} id={id} stderr={}",
                         compact_capture_error(&output.stderr)
                     );
-                    return false;
+                    writer_ok = false;
+                    break;
                 }
             }
-            true
+            active_writers.fetch_sub(1, Ordering::Release);
+            writer_ok
         }));
     }
 
@@ -11464,6 +11469,14 @@ mod tests {
         assert_eq!(TASK167_AB_TRIALS, 5);
         assert_eq!(TASK167_AB_ROWS_PER_TRIAL, 32);
         assert_eq!(TASK167_AB_SAMPLE_ROWS, 160);
+    }
+
+    #[test]
+    fn task167_synthetic_vectors_are_unit_normalized() {
+        let expression = synthetic_unit_vector_expr("g", 4);
+        assert!(expression.contains("sqrt(sum(component * component) OVER ())"));
+        assert!(expression.contains("generate_series(0, 4 - 1)"));
+        assert!(expression.contains("(g) * 0.017"));
     }
 
     #[test]
