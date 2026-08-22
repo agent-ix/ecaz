@@ -9842,14 +9842,14 @@ async fn physical_concurrency_drill(
             psql,
             socket_dir,
             owner.port,
-            "CREATE UNLOGGED TABLE IF NOT EXISTS ec_distann_retry_attribution (\
+            "CREATE UNLOGGED TABLE IF NOT EXISTS public.ec_distann_retry_attribution (\
                  backend_pid integer NOT NULL,\
                  node_id integer NOT NULL,\
                  served_epoch bigint NOT NULL,\
                  missing_vec_id bigint NOT NULL,\
                  recorded_at timestamptz NOT NULL DEFAULT clock_timestamp()\
              );\
-             TRUNCATE ec_distann_retry_attribution;\
+             TRUNCATE public.ec_distann_retry_attribution;\
              SELECT ec_distann_stage_scoring_reset();",
         )
         .await;
@@ -9864,7 +9864,7 @@ async fn physical_concurrency_drill(
     }
     // The attribution relation is created by fixture setup before this reset;
     // it is intentionally not touched while the 2PC wave is running.
-    let retry_snapshot_sql = "SELECT count(*) FROM ec_distann_retry_attribution;";
+    let retry_snapshot_sql = "SELECT count(*) FROM public.ec_distann_retry_attribution;";
     let parse_retry_count = |output: &str| {
         output
             .lines()
@@ -10109,7 +10109,7 @@ async fn physical_concurrency_drill(
             psql,
             socket_dir,
             owner.port,
-            "TRUNCATE ec_distann_retry_attribution; \
+            "TRUNCATE public.ec_distann_retry_attribution; \
              SELECT ec_distann_stage_scoring_reset();",
         )
         .await;
