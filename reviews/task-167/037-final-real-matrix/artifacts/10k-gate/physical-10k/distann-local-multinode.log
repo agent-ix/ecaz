@@ -1,0 +1,168 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=41570 rows=2000 dim=16 graph_degree=32 build_shards=1 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=5568aba17026f74de7d5685816ce2a923f160d60 extension_build_profile=release extension_features=pg18 debug_override=false
+[distann-multicluster] physical_setup_start rows=2000 nodes=3
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=3323 rows=3323 non_owned=0 orphans=0 graph_bytes=25190400 row_bytes=55427072 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=3391 rows=3391 non_owned=0 orphans=0 graph_bytes=25624576 row_bytes=56582144 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=3286 rows=3286 non_owned=0 orphans=0 graph_bytes=24854528 row_bytes=54837248 directory_bytes=122880 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=3323 rows=3323 non_owned=0 orphans=0 graph_bytes=25206784 row_bytes=55443456 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=3391 rows=3391 non_owned=0 orphans=0 graph_bytes=25624576 row_bytes=56582144 directory_bytes=131072 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=3286 rows=3286 non_owned=0 orphans=0 graph_bytes=24854528 row_bytes=54837248 directory_bytes=122880 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=10000
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true expected_source_id=000c076c-390a-4c35-8313-fca29e390ece materialized_source_id=000c076c-390a-4c35-8313-fca29e390ece pinned_probe=returned_sample pinned_probe_output=000c076c-390a-4c35-8313-fca29e390ece owner_exact_probe=000c076c-390a-4c35-8313-fca29e390ece
+[distann-multicluster] physical_remote_owner node=3 custom_scan=true pass=true expected_source_id=00003e3b-9e53-4668-8200-ae85d21b4f5e materialized_source_id=00003e3b-9e53-4668-8200-ae85d21b4f5e pinned_probe=returned_sample pinned_probe_output=00003e3b-9e53-4668-8200-ae85d21b4f5e owner_exact_probe=00003e3b-9e53-4668-8200-ae85d21b4f5e
+[distann-multicluster] mid_insert_failure DIAG physical_insert_errored=true before_rows=500 after_rows=500 before_records=500 after_records=500 consistent=true pass=true
+[distann-multicluster] physical_update_replacement DIAG update_ok=true stable_vec_id=true before=Some((-2641035976082453728, 1, 1)) after=Some((-2641035976082453728, 2, 1)) pass=true
+[distann-multicluster] physical_mid_insert_failure pass=true
+[distann-multicluster] physical_bench_child args=--database postgres --host 127.0.0.1 --port 41570 --user postgres bench recall --prefix task179_physical_10k --profile ec_distann --k 10 --sweep 32 --queries-limit 200 --force-index --truth-cache-file /home/peter/.ecaz/clusters/task167-recovery-20260821-10k/ec_real_10k-truth.json --log-output /home/peter/dev/ecaz/reviews/task-167/037-final-real-matrix/artifacts/10k-gate/physical-10k/physical-production-recall.log --predictions-output /home/peter/dev/ecaz/reviews/task-167/037-final-real-matrix/artifacts/10k-gate/physical-10k/physical-production-predictions.json --session-guc ec_distann.beam_width=4 --session-guc ec_distann.hop_rounds=100 --session-guc ec_distann.candidate_heap_limit=32 --truth-corpus-file /home/peter/dev/ecaz/data/task106_intel_dbpedia_staged/ec_real_10k_corpus.tsv --report-distann-crown-stats
+[distann-multicluster] physical_bench_child args=--database postgres --host 127.0.0.1 --port 41570 --user postgres bench latency --prefix task179_physical_10k --profile ec_distann --k 10 --sweep 32 --iterations 10 --warmup-iterations 2 --concurrency 1 --force-index --cache-state warm --log-output /home/peter/dev/ecaz/reviews/task-167/037-final-real-matrix/artifacts/10k-gate/physical-10k/physical-production-latency.log --session-guc ec_distann.beam_width=4 --session-guc ec_distann.hop_rounds=100 --session-guc ec_distann.candidate_heap_limit=32 --concurrency-sweep 1 --report-distann-crown-stats --distann-stage-counters
+
+   0: [91mphysical benchmark child failed with Some(1): [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=9 records_expanded=36 neighbors_code_scored=374 early_exit=true beam_exhausted=false result_count=36
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=13 records_expanded=52 neighbors_code_scored=365 early_exit=true beam_exhausted=false result_count=52
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=9 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=10 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=11 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=12 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=9 records_expanded=36 neighbors_code_scored=374 early_exit=true beam_exhausted=false result_count=36
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=13 records_expanded=52 neighbors_code_scored=365 early_exit=true beam_exhausted=false result_count=52
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=9 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=10 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=11 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=12 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=9 records_expanded=36 neighbors_code_scored=393 early_exit=true beam_exhausted=false result_count=36
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=9 records_expanded=36 neighbors_code_scored=448 early_exit=true beam_exhausted=false result_count=36
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=9 records_expanded=36 neighbors_code_scored=368 early_exit=true beam_exhausted=false result_count=36
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=11 records_expanded=44 neighbors_code_scored=409 early_exit=true beam_exhausted=false result_count=44
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=9 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=10 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=9 records_expanded=36 neighbors_code_scored=457 early_exit=true beam_exhausted=false result_count=36
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=9 records_expanded=36 neighbors_code_scored=393 early_exit=true beam_exhausted=false result_count=36
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=9 records_expanded=36 neighbors_code_scored=395 early_exit=true beam_exhausted=false result_count=36
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_profile beam_width=4 hop_rounds=100 top_k=32 head_seed_count=32 rounds_executed=9 records_expanded=36 neighbors_code_scored=404 early_exit=true beam_exhausted=false result_count=36
+      [postgres notice] ec_distann_scan_round round=0 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=1 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=2 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=3 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=4 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=5 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=6 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=7 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+      [postgres notice] ec_distann_scan_round round=8 requested_nodes=4 expanded_nodes=unmeasured transport_wait_ns=absent straggler_spread_ns=absent request_bytes=absent response_bytes=absent
+
+         0: [91msnapshotting ec_distann stage counters[0m
+         1: [91mdb error[0m
+         2: [91mERROR: function ec_distann_stage_scoring_snapshot() does not exist
+            HINT: No function matches the given name and argument types. You might need to add explicit type casts.[0m
+
+      Location:
+         [35mcrates/ecaz-cli/src/commands/bench/mod.rs[0m:[35m763[0m
+
+      Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+      Run with RUST_BACKTRACE=full to include source snippets.
+      [0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m1640[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

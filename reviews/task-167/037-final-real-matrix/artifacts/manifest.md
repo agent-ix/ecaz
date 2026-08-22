@@ -20,6 +20,25 @@
   directory under `/home/peter/.ecaz/clusters/`; cluster directories are
   operational state and will be removed after their packet evidence is
   durable.
-- Runtime status: not started. No recall, latency, storage, concurrency,
-  parity, saturation, or append A/B result is claimed yet.
-
+- First 10k command:
+  `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-167/032-recovery-runtime/artifacts/task167-recovery-suite.json --artifact-dir reviews/task-167/037-final-real-matrix/artifacts/10k-gate --only physical-10k --log-file reviews/task-167/037-final-real-matrix/artifacts/10k-gate/suite-run.log`.
+- First 10k result: failed, suite exit code 1. Release preflight passed at clean
+  SHA `5568aba17`, profile `release`, features `pg18`; ready/published topology,
+  initial serving, and both remote-owner proofs passed. The recall child
+  completed before the latency child failed.
+- Failure boundary: `--distann-stage-counters` requested
+  `ec_distann_stage_scoring_snapshot()`, but that SQL function is gated by the
+  `distann-head-attribution-benchmark` extension feature and is absent from the
+  required production `pg18` build.
+- Failure evidence: `10k-gate/suite-manifest.json` SHA-256
+  `cc6b61c3695aee38b702e30a928004c17c7a4de371778195f99de0560f141074`;
+  `physical-10k/distann-local-multinode.log` SHA-256
+  `6bb9ca72013e1594c5904743784d51c31dc97a29f8f5f36cfe353fcf8c415902`.
+- Partial recall artifacts are retained as diagnostics only:
+  `physical-production-recall.log` SHA-256
+  `203bce6ac08ef6e274e9b34fbb14382a7ff47b74784df6306059819b6e79a6ba`;
+  predictions SHA-256
+  `801f6a0b83237047fea6ebd92cb1b85f07aa8dd80ee6dbd5c7877153e724fb6e`.
+- The run stopped before concurrency, natural retry, saturation, parity,
+  append A/B, latency, and storage completed. No 10k result is claimed, and
+  50k/100k were not selected.
