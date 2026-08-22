@@ -45,11 +45,12 @@ pub(crate) struct DistannForwardCandidate {
     pub(crate) source_vector: Vec<f32>,
 }
 
-/// Exact `-inner_product` distance (the ec_distann rerank metric; smaller =
-/// closer), matching the build's `dist` closure so incrementally-inserted
-/// edges are selected on the same metric as the batch build.
+/// Nonnegative unit-vector inner-product distance used by the batch Vamana
+/// build. `robust_prune` requires a nonnegative distance for its alpha
+/// inequality; raw `-inner_product` preserves nearest-neighbor ordering but
+/// makes similar pairs negative and changes the prune decision.
 fn exact_distance(left: &[f32], right: &[f32]) -> f32 {
-    -crate::am::ec_diskann::source_inner_product(left, right)
+    crate::am::ec_diskann::source_inner_product_distance(left, right)
 }
 
 /// Select an inserted node's forward edges: `robust_prune` the candidate set
@@ -706,25 +707,43 @@ mod tests {
     }
 
     #[test]
-    fn simd_diff_exact_distance_is_shared_diskann_inner_product_negation() {
+    fn exact_distance_matches_the_nonnegative_batch_build_metric() {
         for dimensions in [1usize, 7, 8, 9, 31, 32, 33, 384, 1536] {
-            let left = (0..dimensions)
+            let mut left = (0..dimensions)
                 .map(|index| ((index * 17 + 3) as f32 * 0.03125).sin())
                 .collect::<Vec<_>>();
-            let right = (0..dimensions)
+            let mut right = (0..dimensions)
                 .map(|index| ((index * 11 + 5) as f32 * 0.0625).cos())
                 .collect::<Vec<_>>();
-            let shared = crate::am::ec_diskann::source_inner_product(&left, &right);
+            for vector in [&mut left, &mut right] {
+                let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+                for value in vector {
+                    *value /= norm;
+                }
+            }
+            let shared = crate::am::ec_diskann::source_inner_product_distance(&left, &right);
             assert_eq!(
                 exact_distance(&left, &right).to_bits(),
-                (-shared).to_bits(),
+                shared.to_bits(),
                 "dimensions={dimensions}"
             );
+            assert!(exact_distance(&left, &right) >= 0.0);
         }
         eprintln!(
             "task36_distann source_inner_product_backend={}",
             crate::quant::simd_backend_name()
         );
+    }
+
+    #[test]
+    fn exact_distance_keeps_positive_ip_pairs_distinct_for_robust_prune() {
+        let identical = exact_distance(&[1.0, 0.0], &[1.0, 0.0]);
+        let similar = exact_distance(&[1.0, 0.0], &[0.8, 0.6]);
+        let orthogonal = exact_distance(&[1.0, 0.0], &[0.0, 1.0]);
+
+        assert_eq!(identical, 0.0);
+        assert!(similar > identical);
+        assert!(orthogonal > similar);
     }
 
     #[test]
