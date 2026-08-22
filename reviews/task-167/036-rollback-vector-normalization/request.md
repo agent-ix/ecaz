@@ -8,7 +8,8 @@ seq: 1
 
 # Task 167 rollback-vector normalization
 
-Status: review-open; final exact-head runtime pending.
+Status: review-open; final clean-head synthetic gate passed, real matrix
+pending.
 
 Please review harness checkpoint `caa8ad63f`.
 
@@ -22,7 +23,10 @@ injected-failure row, and replacement UPDATE through the same deterministic
 unit-vector expression. Source arrays and encoded embeddings continue to use
 the identical expression in each write.
 
-The focused Task 167 CLI tests pass. The production extension code is
-unchanged, but final runtime provenance will be rebuilt at this packet head
-before the synthetic confirmation and 10k/50k/100k matrix.
+The focused Task 167 CLI tests pass. The final clean-head synthetic suite also
+passes at `5568aba17` with the production `pg18` feature set. The rollback,
+replacement, concurrency, natural-retry, saturation, routed-delete, and
+topology gates are all green, and no unit-normalization warning remains.
 
+The 10k/50k/100k real-corpus matrix is still pending and no task closeout is
+requested by this packet alone.
