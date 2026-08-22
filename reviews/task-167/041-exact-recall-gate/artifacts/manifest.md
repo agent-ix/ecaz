@@ -3,6 +3,8 @@
 - Task bucket: `reviews/task-167/`.
 - Packet: `041-exact-recall-gate`.
 - Code checkpoint: `f83110078ec287060c1d2f714a17835084b3bd6c`.
+- Exact runtime head (code plus this committed packet):
+  `aebafec24b0b5d6734f4908f41248bff52128d5c`.
 - Feedback addressed:
   `reviews/task-167/039-post-insert-parity-gate/feedback/2026-08-22-01-reviewer.md`
   sections 1–4, 6, 7.2, and 8. Packet 040 addresses sections 5 and 7.3.
@@ -21,6 +23,18 @@
   `1042e08cce2ef2ab949eca02108e7e7606f9c72f22f2823a09c9f5188919830c`);
   one pre-existing dead-code warning names
   `commands/corpus/load.rs:190` and is unrelated to this change.
+- Exact-runtime CLI rebuild command: the same release build command after
+  packet commit. Result: passed in `build-cli-runtime.log` (SHA-256
+  `c811cc67e9cc0ad5c491f7b63e0516fc5e5c24a117da4025d32b636d40d13172`).
+- Exact-runtime CLI SHA-256:
+  `f8ab415361968c0252ab0ad112cbddeadd635ecc06fee4298d2a6ca70ecca4e0`;
+  the embedded runner SHA is the exact runtime head above.
+- Production PG18 extension install command:
+  `env CARGO_TARGET_DIR=/home/peter/.cargo-target cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features pg18 --no-default-features`.
+- Extension install result: passed in `install-extension.log` (SHA-256
+  `5fef533b378d6fd2d2b993e5a20cee518effcd9f5a64c53245f29c346113ea78`).
+- Installed PG18 `ecaz.so` SHA-256:
+  `1d4b39ab22bbb3c2f579e7fa9b385681c00f03a94a68c4a97d9a82e207804120`.
 - Repository-wide `cargo fmt --all -- --check` is not used as packet evidence:
   the stable toolchain reports pre-existing formatting differences across
   untouched files because the repository config requests nightly-only import
@@ -31,6 +45,9 @@
 - Suite audit command:
   `/home/peter/.cargo-target/release/ecaz bench suite audit --config reviews/task-167/041-exact-recall-gate/artifacts/task167-exact-recall-suite.json --log-file reviews/task-167/041-exact-recall-gate/artifacts/suite-audit.log`.
 - Suite audit result: passed, 3 steps, in `suite-audit.log` (SHA-256
+  `8dbf37fcaa5e63d9a418affa5a264eddc33d12cf25c56fa44e989e58d1087936`).
+- Exact-runtime suite audit repeated after the CLI rebuild and extension
+  install: passed, 3 steps, in `suite-audit-runtime.log` (same SHA-256
   `8dbf37fcaa5e63d9a418affa5a264eddc33d12cf25c56fa44e989e58d1087936`).
 - Suite query populations per scale: 48 inserted-neighborhood plus 152
   held-out; held-out dominates.
