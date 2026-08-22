@@ -135,6 +135,7 @@ validity requirements.
 | 230 | Hot/cold vertical row tier | proposed — mandatory prototype after 229 | exact vector + bounded scalar hot tier and arbitrary-payload cold tier; no attribute duplication and full retrieval/storage/DML matrix |
 | 231 | Fixed-stride graph/vector blocks | proposed — mandatory prototype after 230 | relation-backed dense-ordinal whole-node extents, direct block arithmetic, aligned multi-block records, warm and controlled-residency evidence |
 | 232 | Packed columnar immutable row tier | proposed — mandatory prototype last | per-attnum fixed/variable segments plus a transactional row-heap DML overlay; narrow through whole-row workload comparison |
+| 233 | Hybrid node/columnar generation | proposed — mandatory integration prototype after 232 | one ordinal and one authoritative field copy; fixed graph/vector extents plus non-vector payload columns; four-arm factorial at every scale |
 
 ## Post-221 follow-up program (2026-08-21)
 
@@ -174,11 +175,14 @@ measurement, not attribution-only triage:
 
 1. Task 229 — covering scalar payload sidecar;
 2. Task 230 — hot exact-vector/scalar tier plus cold arbitrary payload tier;
-3. Task 231 — fixed-stride, dense-ordinal whole graph/vector node extents; and
+3. Task 231 — fixed-stride, dense-ordinal whole graph/vector node extents;
 4. Task 232 — packed per-attnum columnar immutable row tier, deliberately last
-   because it has the broadest format, reconstruction, DML, and recovery scope.
+   among the isolated layouts because it has the broadest format,
+   reconstruction, DML, and recovery scope; and
+5. Task 233 — fixed-stride graph/vector extents plus non-vector packed payload
+   columns over one shared ordinal, tested as a mandatory integration arm.
 
-All four tasks implement an opt-in prototype and run isolated 10k/50k/100k
+The first four tasks implement an opt-in prototype and run isolated 10k/50k/100k
 recall, latency, storage, construction, and DML evidence. None is skipped merely
 because an earlier task wins. The primary comparison baseline is frozen at the
 reviewed post-Task-224 production disposition, and candidates are not stacked
@@ -193,7 +197,12 @@ computable and its I/O bounded. SQL result materialization often needs only one
 or two attributes, so columnar storage instead avoids reading unrelated
 attributes. Task 231 tests the former premise without graph reordering; Task
 232 tests the latter after Task 222 supplies the exact attribute mask. Theory
-does not select between them: both require complete measured evidence.
+does not select between them: both require complete measured evidence. Task
+233 then measures their interaction rather than adding their independent
+results. Its hybrid keeps the exact vector only in the fixed-stride node extent,
+stores only non-vector payload attributes columnarly, and routes both through
+one dense ordinal. It reruns the current/fixed graph × row/columnar payload
+factorial at all three scales even if either isolated mechanism closes STOP.
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -542,6 +551,7 @@ Task 190 may compare architectures but may not implement several together.
 | ARCH-15 | Workload-aware payload replication | deferred storage/lifecycle decision |
 | ARCH-16 | Vertically split hot exact-vector/scalar tier and cold arbitrary-payload tier | **active Task 230 — mandatory prototype**; attributes have one authoritative tier and candidates remain unstacked |
 | ARCH-17 | Dense-ordinal fixed-stride graph/vector node extents | **active Task 231 — mandatory prototype**; PostgreSQL relation/WAL backed, direct block arithmetic, no graph reordering |
+| ARCH-18 | Fixed-stride graph/vector plus packed non-vector payload hybrid | **active Task 233 — mandatory integration prototype after 232**; one shared ordinal, no duplicate exact vector, full four-arm factorial |
 
 ## Measured and contractual negative-result ledger
 
@@ -579,9 +589,10 @@ premise and does not repeat the same experiment unchanged.
 3. Initial screens use a fresh 100k physical generation and Task 182's retained
    policy unless the task explains a different control.
 4. Only a useful isolated candidate proceeds to 10k/50k/100k confirmation,
-   except Tasks 229--232: the operator explicitly selected all four layout
-   prototypes for a complete cross-scale comparison, so each runs the full
-   matrix even when its 100k screen is negative.
+   except Tasks 229--233: the operator explicitly selected all four isolated
+   layouts plus the hybrid integration for complete cross-scale comparison, so
+   each runs the full matrix even when its 100k screen or a constituent result
+   is negative.
 5. All matrices and sweeps use checked-in `ecaz bench suite` configs.
 6. Recall, mean/p50/p95/p99/max latency, storage, construction, work/bytes,
    topology, remote engagement, query separation, and release provenance are

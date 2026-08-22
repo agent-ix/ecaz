@@ -85,7 +85,9 @@ B-tree + graph heap + row-tier vector path.
 
 The fixed-stride prototype and full 10k/50k/100k matrix are mandatory. Warm
 and controlled-residency results must be reported separately; a cold-read win
-cannot be represented as a warm-path win. Continue to Task 232 regardless.
+cannot be represented as a warm-path win. Continue to Task 232 regardless and
+retain the opt-in prototype through Task 233's mandatory factorial hybrid
+experiment even if this isolated arm closes STOP.
 
 ## Non-goals
 
@@ -94,6 +96,8 @@ cannot be represented as a warm-path win. Continue to Task 232 regardless.
   search budget; those would confound the layout A/B.
 - External files or mmap that bypass PostgreSQL relation/WAL ownership.
 - Combining Tasks 229 or 230 into the candidate arm.
+- Combining the Task-232 payload tier into this attribution arm; Task 233 owns
+  that composition after both isolated mechanisms have reported.
 
 ## Acceptance
 
@@ -107,13 +111,14 @@ cannot be represented as a warm-path win. Continue to Task 232 regardless.
 ## Required review packets
 
 1. `reviews/task-231/001-plan/`
-2. `reviews/task-231/002-format-and-reader/`
-3. `reviews/task-231/003-lifecycle-and-dml/`
-4. `reviews/task-231/004-full-scale-decision/`
+2. `reviews/task-231/002-hybrid-handoff/`
+3. `reviews/task-231/003-format-and-reader/`
+4. `reviews/task-231/004-lifecycle-and-dml/`
+5. `reviews/task-231/005-full-scale-decision/`
 
 ## References
 
-- Tasks 168, 179, 204, and 222--224
+- Tasks 168, 179, 204, 222--224, and 233
 - Microsoft DiskANN `disk_index_writer` fixed block layout
 - `DISTRIBUTEDANN` §2.1--2.3 (arXiv:2509.06046)
 - FR-076, FR-079, FR-082, FR-083

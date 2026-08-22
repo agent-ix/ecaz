@@ -82,7 +82,9 @@ shapes.
 - Report segment reads/bytes by attnum, null/offset/value work, exact-vector
   reads, owner CPU/wall, wire bytes, end-to-end latency/tails, recall/result
   identity, build/handoff time, DML overlay cost, compaction estimate, per-tier
-  storage, and NFR conformance.
+  storage, and NFR conformance. Attribute exact-vector-segment work separately
+  from non-vector payload-column work so Task 233 can test their composition
+  without treating an aggregate Task-232 verdict as the interaction result.
 - Report a secondary non-decision comparison against any Task-229--231 winner,
   but do not use a stacked arm to claim columnar attribution.
 
@@ -92,12 +94,15 @@ The prototype and full 10k/50k/100k matrix are mandatory. Promotion requires a
 material end-to-end benefit on at least one declared workload class, no
 unexplained regression on the others, bounded overlay growth, and acceptable
 storage/build/operations cost. Otherwise close STOP and retain the simpler
-layout selected by earlier tasks.
+layout selected by earlier tasks. Continue to Task 233 regardless and retain
+the opt-in prototype until its mandatory factorial hybrid experiment closes.
 
 ## Non-goals
 
 - Replacing graph adjacency with a columnar graph representation.
-- Combining fixed-stride graph blocks with the primary columnar A/B.
+- Combining fixed-stride graph blocks with the primary columnar A/B; Task 233
+  owns that separate composition and removes the duplicate exact-vector
+  segment in its hybrid arm.
 - An external columnar extension dependency or non-WAL sidecar.
 - Claiming benefit from byte reduction without end-to-end movement.
 
@@ -114,13 +119,14 @@ layout selected by earlier tasks.
 ## Required review packets
 
 1. `reviews/task-232/001-plan/`
-2. `reviews/task-232/002-format-and-reader/`
-3. `reviews/task-232/003-overlay-lifecycle-and-correctness/`
-4. `reviews/task-232/004-full-scale-decision/`
+2. `reviews/task-232/002-hybrid-handoff/`
+3. `reviews/task-232/003-format-and-reader/`
+4. `reviews/task-232/004-overlay-lifecycle-and-correctness/`
+5. `reviews/task-232/005-full-scale-decision/`
 
 ## References
 
-- Tasks 222--224 and 229--231
+- Tasks 222--224 and 229--231; Task 233 consumes the isolated evidence
 - Roadmap ARCH-05
 - FR-076, FR-078, FR-079, FR-082, FR-083
 - NFR-007, NFR-016, NFR-018, NFR-021, NFR-022
