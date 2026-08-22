@@ -3103,7 +3103,7 @@ async fn task167_insert_throughput_ab(
         .unwrap_or_default();
     let append_ab_pass = append_ratio >= 1.0 && enabled_amendments <= disabled_amendments;
     lines.push(format!(
-        "physical_benchmark_append_when_room_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={TASK167_AB_SAMPLE_ROWS} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={disabled_amendments} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} comparison=sequential_same_fixture pass={append_ab_pass}",
+        "physical_benchmark_append_when_room_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={TASK167_AB_SAMPLE_ROWS} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={disabled_amendments} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture pass={append_ab_pass}",
         append_disabled_work.get("backlink_no_room").copied().unwrap_or_default(),
         append_enabled_work.get("backlink_no_room").copied().unwrap_or_default(),
     ));
@@ -3136,7 +3136,7 @@ async fn task167_insert_throughput_ab(
         }
         values.insert(metric.clone(), (value, mean));
         lines.push(format!(
-            "physical_benchmark_insert_work scale={scale} metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} pass=true"
+            "physical_benchmark_insert_work scale={scale} metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
         ));
     }
     let bound = i64::from(graph_degree) * expected_inserts;
@@ -9596,9 +9596,10 @@ async fn physical_concurrency_drill(
     const SCANNERS: usize = 4;
     const WRITERS: usize = 2;
     const ITERATIONS: usize = 12;
-    let roster = roster.replace('\'', "''");
+    let roster = task167_retry_attribution_roster(roster)?.replace('\'', "''");
     let query_sql = format!(
-        "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
+        "SET enable_seqscan=off; SET ec_distann.debug_retry_attribution=on; \
+         SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
          SELECT count(*) FROM (SELECT source_id FROM {table} \
           ORDER BY embedding <#> (SELECT source FROM {table} ORDER BY id LIMIT 1) \
           LIMIT {}) rows;",
@@ -9960,7 +9961,8 @@ async fn physical_concurrency_drill(
                 };
                 let writer_owner = writer + 2;
                 let insert_sql = format!(
-                    "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id={writer_owner}; \
+                    "SET ec_distann.debug_retry_attribution=on; \
+                     SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id={writer_owner}; \
                      WITH row_data AS (SELECT {id}::bigint AS id, {source_expr}::real[] AS source) \
                      INSERT INTO {insert_table} (id, source_id, source, embedding) \
                      SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
@@ -10385,6 +10387,28 @@ async fn physical_concurrency_drill(
         shared_target_owner
     );
     Ok(pass && forward_neighbor_check && retry_counter_ok)
+}
+
+fn task167_retry_attribution_roster(roster: &str) -> Result<String> {
+    roster
+        .split(';')
+        .map(|entry| {
+            let (conninfo, options) = entry.rsplit_once(" options=").ok_or_else(|| {
+                eyre!("Task 167 retry-attribution roster entry has no options: {entry}")
+            })?;
+            if options.is_empty()
+                || options
+                    .bytes()
+                    .any(|byte| byte.is_ascii_whitespace() || matches!(byte, b'\'' | b'"'))
+            {
+                bail!("Task 167 retry-attribution roster has unsafe options: {options}");
+            }
+            Ok(format!(
+                "{conninfo} options='{options} -cec_distann.debug_retry_attribution=on'"
+            ))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|entries| entries.join(";"))
 }
 
 /// Commit one coordinator-routed physical insert against a non-local owner.
@@ -11519,6 +11543,16 @@ mod tests {
             "distann-head-attribution-benchmark,pg18",
         )
         .unwrap();
+    }
+
+    #[test]
+    fn task167_retry_attribution_is_explicitly_enabled_in_remote_options() {
+        let roster = "1@host=127.0.0.1 port=39710 options=-cstatement_timeout=3600000;2@host=127.0.0.1 port=39711 options=-cstatement_timeout=3600000";
+        let attributed = task167_retry_attribution_roster(roster).unwrap();
+        assert_eq!(
+            attributed,
+            "1@host=127.0.0.1 port=39710 options='-cstatement_timeout=3600000 -cec_distann.debug_retry_attribution=on';2@host=127.0.0.1 port=39711 options='-cstatement_timeout=3600000 -cec_distann.debug_retry_attribution=on'"
+        );
     }
 
     #[test]

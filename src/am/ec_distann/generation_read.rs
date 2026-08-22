@@ -349,6 +349,9 @@ fn record_retry_attribution(
     vec_ids: &[u64],
     missing_vec_id: u64,
 ) {
+    if !super::options::retry_attribution_enabled() {
+        return;
+    }
     // This unlogged relation belongs to the Task 167 fixture, not the
     // extension schema. Production retries must remain correct when the
     // diagnostic surface is absent: attempting the INSERT directly turns a

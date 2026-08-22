@@ -2000,12 +2000,12 @@ fn ec_distann_insert_work_snapshot() -> TableIterator<
 
 #[pg_extern(volatile)]
 fn ec_distann_insert_work_reset() {
-    am::ec_distann::stage_counters::reset();
+    am::ec_distann::stage_counters::reset_insert_work();
 }
 
 #[pg_extern(volatile)]
 fn ec_distann_stage_scoring_reset() {
-    am::ec_distann::stage_counters::reset();
+    am::ec_distann::stage_counters::reset_stage_scoring();
 }
 
 #[pg_extern(volatile)]

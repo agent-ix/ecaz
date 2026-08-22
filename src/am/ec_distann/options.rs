@@ -140,6 +140,7 @@ static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<
 #[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 static ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+static ECDISTANN_DEBUG_RETRY_ATTRIBUTION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
@@ -718,6 +719,14 @@ pub(super) fn register_gucs() {
         GucContext::Userset,
         GucFlags::default(),
     );
+    GucRegistry::define_bool_guc(
+        c"ec_distann.debug_retry_attribution",
+        c"Task 167 diagnostic: record visibility-retry attribution rows.",
+        c"When on, visibility retries may write to the fixture-owned public.ec_distann_retry_attribution relation when it exists. Off by default; production scans never enable this implicitly.",
+        &ECDISTANN_DEBUG_RETRY_ATTRIBUTION_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     #[cfg(feature = "pg_test")]
     GucRegistry::define_bool_guc(
         c"ec_distann.debug_fail_crown_population",
@@ -791,6 +800,10 @@ pub(super) fn scan_profile_notice_enabled() -> bool {
 
 pub(super) fn physical_epoch_cache_enabled() -> bool {
     ECDISTANN_PHYSICAL_EPOCH_CACHE_GUC.get()
+}
+
+pub(super) fn retry_attribution_enabled() -> bool {
+    ECDISTANN_DEBUG_RETRY_ATTRIBUTION_GUC.get()
 }
 
 pub(super) fn debug_fail_crown_population() -> bool {
