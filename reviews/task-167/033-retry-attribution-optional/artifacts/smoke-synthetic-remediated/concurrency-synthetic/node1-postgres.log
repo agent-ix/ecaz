@@ -54,3 +54,9 @@ postgres: postgres postgres 127.0.0.1(57180) SELECT(_start+0x25)[0x635c48b9a045]
 2026-08-21 22:25:00.822 PDT [38951] LOG:  received fast shutdown request
 2026-08-21 22:25:01.101 PDT [39434] LOG:  database system was not properly shut down; automatic recovery in progress
 2026-08-21 22:25:01.106 PDT [39434] LOG:  redo starts at 0/1754600
+2026-08-21 22:32:27.524 PDT [38951] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-21 22:32:27.524 PDT [38951] LOG:  performing immediate shutdown because data directory lock file is invalid
+2026-08-21 22:32:27.524 PDT [38951] LOG:  received immediate shutdown request
+2026-08-21 22:32:27.524 PDT [38951] LOG:  could not open file "postmaster.pid": No such file or directory
+2026-08-21 22:32:27.525 PDT [38951] LOG:  abnormal database system shutdown
+2026-08-21 22:32:27.528 PDT [38951] LOG:  database system is shut down

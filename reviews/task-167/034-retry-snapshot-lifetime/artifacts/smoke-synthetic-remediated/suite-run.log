@@ -1,0 +1,12 @@
+[suite:task167-current-head-recovery] wrote reviews/task-167/034-retry-snapshot-lifetime/artifacts/smoke-synthetic-remediated/suite-manifest.json
+[suite:task167-current-head-recovery] concurrency-synthetic -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-167/034-retry-snapshot-lifetime/artifacts/smoke-synthetic-remediated/concurrency-synthetic --run-dir /home/peter/.ecaz/clusters/task167-recovery-20260821-synthetic --log-file reviews/task-167/034-retry-snapshot-lifetime/artifacts/smoke-synthetic-remediated/concurrency-synthetic/distann-local-multinode.log --nodes 3 --base-port 41600 --rows 2000 --dim 4 --graph-degree 8 --head-index-cap 4096 --beam-width 4 --hop-rounds 20 --skip-fault-drills
+[suite:task167-current-head-recovery] wrote reviews/task-167/034-retry-snapshot-lifetime/artifacts/smoke-synthetic-remediated/suite-manifest.json
+[suite:task167-current-head-recovery] wrote reviews/task-167/034-retry-snapshot-lifetime/artifacts/smoke-synthetic-remediated/suite-manifest.json
+
+   0: [91msuite step "concurrency-synthetic" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1348[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.

@@ -51,3 +51,9 @@
   `2ad53466e57b16e24037a1119bc50294133fd218b7a8486b3f0efa7018c6fdf2`).
 - The 10k/50k/100k steps were not selected. No concurrency, natural-retry,
   saturation, recall, latency, or storage result is claimed by this packet.
+- Cleanup note: after all three `pg_ctl status` checks reported no running
+  server, removing the exact failed run directory caused the old node-1
+  postmaster (which had been recovering after its assertion abort without a
+  usable lock file) to append an immediate-shutdown sequence to
+  `node1-postgres.log`. No new query evidence was produced; the durable log now
+  includes that terminal shutdown boundary.
