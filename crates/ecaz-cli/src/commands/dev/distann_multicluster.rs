@@ -2938,25 +2938,25 @@ async fn task199_no_replica_insert_throughput(
 /// same-generation local control index. The workload uses source vectors from
 /// the physical corpus and keeps each trial's IDs disjoint so the measured
 /// append path is not contaminated by cleanup/tombstone work.
+const TASK167_AB_TRIALS: usize = 5;
+const TASK167_AB_ROWS_PER_TRIAL: usize = 32;
+const TASK167_AB_SAMPLE_ROWS: usize = TASK167_AB_TRIALS * TASK167_AB_ROWS_PER_TRIAL;
+
 async fn measure_task167_insert_arm(
     coordinator: &tokio_postgres::Client,
     table: &str,
     physical_corpus: &str,
     physical: bool,
     id_base: i64,
+    trials: usize,
+    rows_per_trial: usize,
 ) -> Result<f64> {
-    const TRIALS: usize = 3;
-    // Keep the repeated arm bounded for the 50k/100k release matrix: every
-    // physical row performs graph search plus owner/backlink work, while five
-    // disjoint trials provide a less noisy median than the former 3x16 probe.
-    const ROWS_PER_TRIAL: usize = 16;
-    let mut trial_rows_per_second = Vec::with_capacity(TRIALS);
-    for trial in 0..TRIALS {
+    let mut trial_rows_per_second = Vec::with_capacity(trials);
+    for trial in 0..trials {
         let started = Instant::now();
-        for ordinal in 0..ROWS_PER_TRIAL {
-            let source_offset = trial * ROWS_PER_TRIAL + ordinal;
-            let id = id_base + trial as i64 * ROWS_PER_TRIAL as i64
-                + ordinal as i64;
+        for ordinal in 0..rows_per_trial {
+            let source_offset = trial * rows_per_trial + ordinal;
+            let id = id_base + trial as i64 * rows_per_trial as i64 + ordinal as i64;
             let sql = if physical {
                 format!(
                     "INSERT INTO {table} (id, source_id, source, embedding) \
@@ -2981,10 +2981,10 @@ async fn measure_task167_insert_arm(
             }
         }
         let elapsed_ns = started.elapsed().as_nanos().max(1) as f64;
-        trial_rows_per_second.push(ROWS_PER_TRIAL as f64 * 1_000_000_000.0 / elapsed_ns);
+        trial_rows_per_second.push(rows_per_trial as f64 * 1_000_000_000.0 / elapsed_ns);
     }
     trial_rows_per_second.sort_by(f64::total_cmp);
-    Ok(trial_rows_per_second[TRIALS / 2])
+    Ok(trial_rows_per_second[trials / 2])
 }
 
 async fn task167_insert_throughput_ab(
@@ -2996,14 +2996,14 @@ async fn task167_insert_throughput_ab(
     capture_work: bool,
     lines: &mut Vec<String>,
 ) -> Result<()> {
-    const ROWS_PER_TRIAL: usize = 32;
-    const TRIALS: usize = 5;
     let single_rows_per_second = measure_task167_insert_arm(
         coordinator,
         single_corpus,
         physical_corpus,
         false,
         1_000_000,
+        TASK167_AB_TRIALS,
+        TASK167_AB_ROWS_PER_TRIAL,
     )
     .await?;
     coordinator
@@ -3022,6 +3022,8 @@ async fn task167_insert_throughput_ab(
         physical_corpus,
         true,
         2_000_000,
+        TASK167_AB_TRIALS,
+        TASK167_AB_ROWS_PER_TRIAL,
     )
     .await?;
     let append_disabled_work = coordinator
@@ -3049,6 +3051,8 @@ async fn task167_insert_throughput_ab(
         physical_corpus,
         true,
         3_000_000,
+        TASK167_AB_TRIALS,
+        TASK167_AB_ROWS_PER_TRIAL,
     )
     .await?;
     let append_enabled_work = coordinator
@@ -3062,11 +3066,10 @@ async fn task167_insert_throughput_ab(
         .collect::<HashMap<_, _>>();
     let ratio = physical_rows_per_second / single_rows_per_second.max(f64::EPSILON);
     lines.push(format!(
-        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true",
-        TRIALS * ROWS_PER_TRIAL
+        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={TASK167_AB_SAMPLE_ROWS} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true",
     ));
-    let append_ratio = physical_rows_per_second
-        / physical_append_disabled_rows_per_second.max(f64::EPSILON);
+    let append_ratio =
+        physical_rows_per_second / physical_append_disabled_rows_per_second.max(f64::EPSILON);
     let disabled_amendments = append_disabled_work
         .get("backlink_amendments")
         .copied()
@@ -3077,8 +3080,7 @@ async fn task167_insert_throughput_ab(
         .unwrap_or_default();
     let append_ab_pass = append_ratio >= 1.0 && enabled_amendments <= disabled_amendments;
     lines.push(format!(
-        "physical_benchmark_append_when_room_ab scale={scale} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} sample_rows={} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={disabled_amendments} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} comparison=sequential_same_fixture pass={append_ab_pass}",
-        TRIALS * ROWS_PER_TRIAL,
+        "physical_benchmark_append_when_room_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={TASK167_AB_SAMPLE_ROWS} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={disabled_amendments} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} comparison=sequential_same_fixture pass={append_ab_pass}",
         append_disabled_work.get("backlink_no_room").copied().unwrap_or_default(),
         append_enabled_work.get("backlink_no_room").copied().unwrap_or_default(),
     ));
@@ -3092,7 +3094,7 @@ async fn task167_insert_throughput_ab(
             )
             .await
             .wrap_err("reading Task 167 physical insert-work counters")?;
-        let expected_inserts = (TRIALS * ROWS_PER_TRIAL) as i64;
+        let expected_inserts = TASK167_AB_SAMPLE_ROWS as i64;
         if rows.len() != 8 {
             bail!(
                 "Task 167 physical insert-work snapshot returned {} rows, expected 8",
@@ -11455,6 +11457,13 @@ mod tests {
         assert_eq!(preflight.build_profile, "release");
         assert_eq!(preflight.nodes, 3);
         assert!(!preflight.debug_override);
+    }
+
+    #[test]
+    fn task167_ab_workload_uses_the_preregistered_sample_size() {
+        assert_eq!(TASK167_AB_TRIALS, 5);
+        assert_eq!(TASK167_AB_ROWS_PER_TRIAL, 32);
+        assert_eq!(TASK167_AB_SAMPLE_ROWS, 160);
     }
 
     #[test]
