@@ -1,15 +1,18 @@
 # Task 228: ec_distann RTT and BatANN Reopen Trigger
 
-Status: **proposed, measurement-only** (2026-08-21). Priority: P2 architecture
-gate after Tasks 222--227.
+Status: **proposed, measurement-only** (updated 2026-08-23). Priority: P2
+architecture gate after Tasks 222--237.
 
 ## Why
 
 ADR-085 D4 defers BatANN baton/state passing until hop-round transport is at
 least 50% of gate-relevant multinode p50. Current same-host evidence measures
 roughly 4.1--5.0 ms/scan of traversal transport against approximately 20--28 ms
-end-to-end, below the trigger. Tasks 222--227 can change both the denominator
-and the relevant BW/H operating point.
+end-to-end, below the trigger. Tasks 222--233 can change owner service, payload
+bytes, the end-to-end denominator, and the relevant BW/H operating point.
+Tasks 234--237 replace the loopback/development transport gaps with bounded,
+secure, observable production behavior. Measuring before those changes would
+characterize a substrate that is not eligible for production.
 
 The old `task-173-batann-specs` branch predates distribution restoration,
 pushdown, lazy-10, current FR/NFR numbering, and the present conformance rules.
@@ -23,18 +26,26 @@ implementing—the BatANN program.
 
 ## Entry gate
 
-1. Tasks 222--227 have reported, and the current materialization/search control
-   is frozen.
-2. The measurement uses the selected current BW/H point and the same release,
+1. Tasks 222--233 have reported, and the current materialization/search/storage
+   control is frozen.
+2. Tasks 234--237 are review-closed, so every RPC is bounded/cancellable, the
+   real-network cell uses the production TLS/secret substrate, and EXPLAIN plus
+   suite metrics expose the required protocol counters.
+3. The measurement uses the selected current BW/H point and the same release,
    corpus, query, topology, and cache protocol across delay cells.
-3. Any matrix/sweep is an `ecaz bench suite` configuration. If injected-delay
+4. Any matrix/sweep is an `ecaz bench suite` configuration. If injected-delay
    support is missing, extend the suite runner as a separate reviewed commit;
    do not add a one-off shell sweeper.
 
 ## Scope
 
 - Measure same-host zero-delay and controlled per-hop delay cells, plus a real
-  multi-host cell when available.
+  multi-host production-TLS cell.
+- Capture head, traversal, materialization, and maintenance message counts and
+  actual encoded request/response bytes, including PostgreSQL framing where
+  measurable.
+- Run concurrency 1/2/4/8/16 and report backpressure, live/pooled connection
+  counts, opens/reuse/evictions, queueing, and owner saturation.
 - Report end-to-end mean/p50/p95/p99, traversal rounds, transport wait,
   straggler spread, owner service, materialization, throughput, recall, and
   injected/observed delay provenance.
@@ -71,5 +82,5 @@ implementing—the BatANN program.
 
 - ADR-085 D4
 - NFR-017 injected-latency obligation
-- Tasks 194, 216, and 222--227
+- Tasks 194, 216, and 222--237
 - Historical branch `origin/task-173-batann-specs` (superseded planning only)

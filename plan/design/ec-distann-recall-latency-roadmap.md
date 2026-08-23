@@ -130,12 +130,16 @@ validity requirements.
 | 225 | Finalist materialization overlap | proposed — conditional | measure finalist stability and hidden round-trip ceiling; at most one bounded overlap/piggyback candidate |
 | 226 | Current-head BW8 transfer | proposed — P0 recall/latency | same-generation current-production BW4/H100 vs BW8/H100; tests whether Task 188's smaller simultaneous recall+latency win survives the sharded-head/pushdown/gateway/lazy surface |
 | 227 | Recall residual + adaptive search | proposed — gated on 226 | complete the frontier/rerank/reachability/stitch attribution Task 188 explicitly left unrun; at most one truth-free adaptive budget candidate |
-| 228 | RTT/BatANN trigger | proposed — measurement-only after 222–227 | suite-driven injected/real-network curve; BatANN planning reopens only at ADR-085 D4's >=50% transport-share trigger and must be reauthored against current identities |
+| 228 | RTT/BatANN trigger | proposed — measurement-only after 222–237 | post-layout/post-hardening production-TLS RTT, concurrency, framing, pool, and backpressure curve; BatANN planning reopens only at ADR-085 D4's >=50% transport-share trigger and must be reauthored against current identities |
 | 229 | Covering scalar payload sidecar | proposed — mandatory prototype after 222–224 | owner-local generation sidecar for declared common scalar projections; exact fallback, DML/lifecycle, and full 10k/50k/100k A/B required |
 | 230 | Hot/cold vertical row tier | proposed — mandatory prototype after 229 | exact vector + bounded scalar hot tier and arbitrary-payload cold tier; no attribute duplication and full retrieval/storage/DML matrix |
 | 231 | Fixed-stride graph/vector blocks | proposed — mandatory prototype after 230 | relation-backed dense-ordinal whole-node extents, direct block arithmetic, aligned multi-block records, warm and controlled-residency evidence |
 | 232 | Packed columnar immutable row tier | proposed — mandatory prototype last | per-attnum fixed/variable segments plus a transactional row-heap DML overlay; narrow through whole-row workload comparison |
 | 233 | Hybrid node/columnar generation | proposed — mandatory integration prototype after 232 | one ordinal and one authoritative field copy; fixed graph/vector extents plus non-vector payload columns; four-arm factorial at every scale |
+| 234 | Read RPC deadline/cancel parity | proposed — P0 before 228 | close FR-081 F9 for head, gateway, and head-shard RPCs; bounded cancellation, pool eviction, and no partial results |
+| 235 | Write/lifecycle RPC cancellation | proposed — P0 after 167, before 228 | phase-aware deadlines and outcome-unknown recovery for DML, intent, 2PC callbacks/reaper, and lifecycle operations |
+| 236 | Secure transport/secret resolution | proposed — P0 before 228 | close FR-079 F10 by reusing the SPIRE-grade secret-backed TLS connector; remove production NoTls and sanitize failures |
+| 237 | Protocol errors and EXPLAIN | proposed — P1 after 234/236, before 228 | fail-closed missing-data taxonomy plus bounded normal-release traversal/materialization/pool/failure counters |
 
 ## Post-221 follow-up program (2026-08-21)
 
@@ -160,10 +164,12 @@ connectivity/reachability, and monolithic-versus-sharded graph quality unrun.
 Tasks 226/227 close those transfer and attribution gaps without reopening the
 retired large-head program or the rejected BW64/H8 default.
 
-Task 228 runs after both sequences because they change the end-to-end
-denominator and gate-relevant BW/H point. Current transport wait (~4.1--5.0
-ms/scan) is below ADR-085 D4's 50% BatANN trigger on the measured same-host
-surface. The historical `task-173-batann-specs` branch is planning archaeology:
+Task 228 runs after both sequences, the retrieval-layout Tasks 229--233, and
+the production transport-hardening Tasks 234--237 because they change owner
+service, payload bytes, the end-to-end denominator, TLS/framing overhead, and
+the gate-relevant BW/H point. Current transport wait (~4.1--5.0 ms/scan) is
+below ADR-085 D4's 50% BatANN trigger on the measured same-host surface. The
+historical `task-173-batann-specs` branch is planning archaeology:
 it predates Tasks 203--221 and collides with current ADR-086 and NFR-021/022.
 Any future GO creates a new spec task with current identifiers; it does not
 revive that branch.
@@ -203,6 +209,32 @@ results. Its hybrid keeps the exact vector only in the fixed-stride node extent,
 stores only non-vector payload attributes columnarly, and routes both through
 one dense ordinal. It reruns the current/fixed graph × row/columnar payload
 factorial at all three scales even if either isolated mechanism closes STOP.
+
+## Production transport hardening sequence (2026-08-23)
+
+The communication review found that a new binary RPC is not yet justified:
+Task 216 measured owner response encoding around 0.002 ms/scan and coordinator
+decode around 0.076 ms/scan, while Task 194 attributed materially more time to
+dependent rounds and owner service. Before Task 228 can make a durable
+architecture decision, the existing PostgreSQL transport must become a
+production-eligible measurement substrate:
+
+1. Task 234 closes read RPC deadline/cancellation parity for head, gateway, and
+   head-shard calls that bypass the common wrapper.
+2. Task 235 separately hardens distributed write/lifecycle transaction-control
+   and recovery calls, where a lost acknowledgement can make the outcome
+   unknown and therefore cannot use ordinary read-query cleanup semantics.
+3. Task 236 replaces production `NoTls` with the shared secret-backed TLS
+   connector and proves sanitized security failures and pool invalidation.
+4. Task 237 freezes the fail-closed error taxonomy and normal-release EXPLAIN
+   counters, including structural missing graph/vector/payload cases.
+5. Task 228 then measures message classes, framing bytes, rounds, owner service,
+   socket wait, concurrency, pool behavior, and backpressure on that hardened
+   post-layout surface.
+
+Task 209 consumes Task 228's resulting tail/straggler distribution. BatANN,
+cross-query multiplexing, or packed/streaming response implementation remains
+triggered work, not an assumed next step.
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
