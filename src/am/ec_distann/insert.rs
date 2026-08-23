@@ -172,10 +172,9 @@ pub(super) struct DistannBacklinkTarget {
 /// back-edge amendment). If the neighbor has a free slot, the new node is simply
 /// appended (cheap, edge-preserving). If it is already at `max_degree`, the
 /// union of its current edges plus the new node is `robust_prune`d back to
-/// `max_degree` on exact distance. If that prune excludes the proposed
-/// backlink, the full target remains logically unchanged; otherwise it keeps
-/// the selected α-diverse edges. Returns the resulting out-edge vec_id list.
-/// Pure; the on-disk slice just writes this.
+/// `max_degree` on exact distance — so a full neighbor keeps its most
+/// α-diverse edges rather than rejecting the backlink outright. Returns the
+/// amended out-edge vec_id list. Pure; the on-disk slice just writes this.
 pub(super) fn plan_insert_backlink(
     target: &DistannBacklinkTarget,
     new_vec_id: u64,
@@ -207,16 +206,7 @@ pub(super) fn plan_insert_backlink(
         vec_id: new_vec_id,
         source_vector: new_source_vector.to_vec(),
     });
-    let kept = select_insert_forward_neighbors(&target.source_vector, &union, alpha, max_degree)?;
-    // Match the mature ec_diskann incremental path: a full-target prune that
-    // rejects the proposed backlink is a no-op. Rewriting the target anyway
-    // can reorder or remove old edges without establishing the new reverse
-    // edge, which cannot improve reachability and violates FR-083's
-    // edge-preservation requirement.
-    if !kept.contains(&new_vec_id) {
-        return Ok(target.current_neighbors.iter().map(|n| n.vec_id).collect());
-    }
-    Ok(kept)
+    select_insert_forward_neighbors(&target.source_vector, &union, alpha, max_degree)
 }
 
 /// A forward neighbor for an inserted node's record: its vec_id plus its
@@ -936,21 +926,6 @@ mod tests {
         assert!(kept.len() <= 3, "degree bound respected after re-prune");
         let uniq: std::collections::HashSet<u64> = kept.iter().copied().collect();
         assert_eq!(uniq.len(), kept.len(), "no duplicate edges");
-    }
-
-    #[test]
-    fn backlink_prune_rejection_preserves_full_target_order() {
-        let target = DistannBacklinkTarget {
-            vec_id: 100,
-            source_vector: vec![1.0, 0.0],
-            current_neighbors: vec![candidate(20, &[1.0, 0.0])],
-        };
-        let kept = plan_insert_backlink(&target, 999, &[-1.0, 0.0], 1.2, 1).unwrap();
-        assert_eq!(
-            kept,
-            vec![20],
-            "a rejected backlink must not rewrite the existing adjacency"
-        );
     }
 
     #[test]
