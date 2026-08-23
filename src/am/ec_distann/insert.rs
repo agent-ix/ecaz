@@ -169,12 +169,14 @@ pub(super) struct DistannBacklinkTarget {
 }
 
 /// Plan a neighbor's adjacency after an inserted node points to it (FR-083
-/// back-edge amendment). If the neighbor has a free slot, the new node is simply
-/// appended (cheap, edge-preserving). If it is already at `max_degree`, the
-/// union of its current edges plus the new node is `robust_prune`d back to
-/// `max_degree` on exact distance — so a full neighbor keeps its most
-/// α-diverse edges rather than rejecting the backlink outright. Returns the
-/// amended out-edge vec_id list. Pure; the on-disk slice just writes this.
+/// back-edge amendment). The union is always screened by `robust_prune`. With
+/// spare capacity, the backlink is admitted only when the prune result keeps
+/// every existing edge as well as the new one; otherwise the prior adjacency
+/// is returned unchanged. This prevents an incremental backlink from deleting
+/// a reachability-bearing edge before capacity is exhausted and avoids the
+/// unconditional redundant-edge crowding rejected by Task 167 packet 051.
+/// A full target retains the ordinary re-prune behavior. Pure; the on-disk
+/// slice just writes the returned adjacency.
 pub(super) fn plan_insert_backlink(
     target: &DistannBacklinkTarget,
     new_vec_id: u64,
@@ -193,20 +195,25 @@ pub(super) fn plan_insert_backlink(
     {
         return Ok(target.current_neighbors.iter().map(|n| n.vec_id).collect());
     }
-    // Free slot: append, preserving existing edges.
-    if target.current_neighbors.len() < max_degree {
-        let mut kept: Vec<u64> = target.current_neighbors.iter().map(|n| n.vec_id).collect();
-        kept.push(new_vec_id);
-        return Ok(kept);
-    }
-    // Full: re-prune the union (current edges + the new node) from the
-    // neighbor's own vantage point.
+    let existing = target
+        .current_neighbors
+        .iter()
+        .map(|neighbor| neighbor.vec_id)
+        .collect::<Vec<_>>();
     let mut union = target.current_neighbors.clone();
     union.push(DistannForwardCandidate {
         vec_id: new_vec_id,
         source_vector: new_source_vector.to_vec(),
     });
-    select_insert_forward_neighbors(&target.source_vector, &union, alpha, max_degree)
+    let kept = select_insert_forward_neighbors(&target.source_vector, &union, alpha, max_degree)?;
+    if existing.len() < max_degree
+        && (kept.len() != existing.len() + 1
+            || !kept.contains(&new_vec_id)
+            || existing.iter().any(|vec_id| !kept.contains(vec_id)))
+    {
+        return Ok(existing);
+    }
+    Ok(kept)
 }
 
 /// A forward neighbor for an inserted node's record: its vec_id plus its
@@ -892,8 +899,9 @@ mod tests {
     }
 
     #[test]
-    fn backlink_appends_when_free() {
-        // Neighbor 100 has 2 of max 4 edges; the new node 999 is appended.
+    fn backlink_admits_when_free_without_displacing_existing_edges() {
+        // Neighbor 100 has 2 of max 4 alpha-compatible edges; the new node is
+        // admitted because robust-prune keeps the complete union.
         let target = DistannBacklinkTarget {
             vec_id: 100,
             source_vector: vec![1.0, 0.0, 0.0],
@@ -905,8 +913,38 @@ mod tests {
         let kept = plan_insert_backlink(&target, 999, &[0.95, 0.05, 0.0], 1.2, 4).unwrap();
         assert_eq!(
             kept,
-            vec![10, 20, 999],
-            "free slot -> append, edges preserved"
+            vec![999, 10, 20],
+            "free slot -> admitted with every existing edge, in robust-prune order"
+        );
+    }
+
+    #[test]
+    fn backlink_rejects_free_capacity_candidate_that_would_displace_an_edge() {
+        let target = DistannBacklinkTarget {
+            vec_id: 100,
+            source_vector: vec![1.0, 0.0],
+            current_neighbors: vec![candidate(10, &[0.8, 0.6]), candidate(20, &[0.0, 1.0])],
+        };
+        let kept = plan_insert_backlink(&target, 999, &[0.9, 0.435_889_9], 1.2, 4).unwrap();
+        assert_eq!(
+            kept,
+            vec![10, 20],
+            "a free-capacity backlink must not displace an existing edge"
+        );
+    }
+
+    #[test]
+    fn backlink_admits_exact_equivalent_node_without_losing_existing_edge() {
+        let target = DistannBacklinkTarget {
+            vec_id: 100,
+            source_vector: vec![1.0, 0.0],
+            current_neighbors: vec![candidate(10, &[0.0, 1.0])],
+        };
+        let kept = plan_insert_backlink(&target, 999, &[1.0, 0.0], 1.2, 4).unwrap();
+        assert_eq!(
+            kept,
+            vec![999, 10],
+            "an exact-equivalent node gains an entrance without losing the old edge"
         );
     }
 

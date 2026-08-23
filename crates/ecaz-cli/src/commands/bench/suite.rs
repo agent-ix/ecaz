@@ -6918,7 +6918,7 @@ psql header noise\n\
     fn distann_task167_quality_and_insert_metrics_are_structured() {
         let raw = "\
 [distann-multicluster] physical_benchmark_recall_instrument_calibration scale=50k ordinary_distinct_recall=0.954500 exact_scorer_distinct_recall=0.954500 absolute_delta=0.000000 pass=true\n\
-[distann-multicluster] physical_benchmark_insert_throughput_ab scale=50k physical_insert_mode=shipped_default_append_when_room physical_rows_per_second=0.224 control_rows_per_second=2.000 pass=true\n\
+[distann-multicluster] physical_benchmark_insert_throughput_ab scale=50k physical_insert_mode=candidate_default_conservative_prune_admission physical_rows_per_second=0.224 control_rows_per_second=2.000 pass=true\n\
 [distann-multicluster] physical_benchmark_append_when_room_ab scale=50k append_enabled_over_disabled=1.003392 pass=true\n\
 [distann-multicluster] physical_benchmark_backlink_strategy_ab scale=50k robust_prune_all_over_shipped=1.003392 pass=true\n\
 [distann-multicluster] physical_benchmark_insert_work scale=50k metric=backlink_amendments inserts=160 value=5120 pass=true\n\

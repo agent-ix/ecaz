@@ -17,7 +17,10 @@ use crate::am::ec_diskann::{decode_heap_tid, ecvector_datum_to_vec};
 use crate::am::ec_distann::ambuild;
 use crate::am::ec_distann::generation_read::PhysicalGenerationScan;
 use crate::am::ec_distann::handoff::qualified_relation_name;
-use crate::am::ec_distann::insert::{select_insert_forward_neighbors, DistannForwardCandidate};
+use crate::am::ec_distann::insert::{
+    plan_insert_backlink, select_insert_forward_neighbors, DistannBacklinkTarget,
+    DistannForwardCandidate,
+};
 use crate::am::ec_distann::options;
 use crate::am::ec_distann::stage_counters::{self, DistannInsertWork};
 use crate::am::ec_distann::tuple::DistannNodeTuple;
@@ -1784,16 +1787,30 @@ unsafe fn amend_backlink(
             source_vector,
         });
     }
-    // The planner is vantage-point agnostic: reorder the union from the
-    // target's source vector using the same exact robust-prune metric as
-    // insertion. The shipped strategy uses this for free and full targets;
-    // append-when-room remains an explicit diagnostic candidate.
-    let kept = select_insert_forward_neighbors(
-        &candidate.source_vector,
-        &candidates,
+    let target = DistannBacklinkTarget {
+        vec_id: candidate.vec_id,
+        source_vector: candidate.source_vector.clone(),
+        current_neighbors: candidates.iter().skip(1).cloned().collect(),
+    };
+    let kept = plan_insert_backlink(
+        &target,
+        new_vec_id,
+        new_source_vector,
         alpha,
         usize::from(graph_degree),
     )?;
+    if count < usize::from(graph_degree)
+        && target.current_neighbors.len() == count
+        && kept
+            == target
+                .current_neighbors
+                .iter()
+                .map(|neighbor| neighbor.vec_id)
+                .collect::<Vec<_>>()
+    {
+        stage_counters::record_insert_work(DistannInsertWork::BacklinkPruneRejected, 1);
+        return Ok(());
+    }
     node.neighbor_vec_ids.fill(0);
     node.neighbor_codes.fill(0);
     node.neighbor_count = u16::try_from(kept.len())

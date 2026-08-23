@@ -135,9 +135,10 @@ static ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC: GucSetting<i32> = GucSetting::<i32>::
 static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
-// Packet 051 rejected the batch-consistent append-when-room candidate on the
-// dominant 50k heldout quality gate, so robust-prune-all remains the shipped
-// path. The toggle remains userset for attributed diagnostic measurement.
+// Packet 051 rejected unconditional append-when-room on the dominant 50k
+// heldout quality gate. The next candidate screens free-capacity backlinks
+// through conservative robust-prune admission; the toggle remains userset for
+// an attributed unconditional-append diagnostic.
 static ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(true);
 static ECDISTANN_DEBUG_RETRY_ATTRIBUTION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
@@ -720,8 +721,8 @@ pub(super) fn register_gucs() {
     );
     GucRegistry::define_bool_guc(
         c"ec_distann.debug_disable_append_when_room",
-        c"Task 167 A/B control: disable free-capacity backlink append.",
-        c"When on, a backlink target with spare degree follows robust-prune union instead of appending directly. Production defaults on because packet 051's isolated 50k heldout gate rejected append-when-room.",
+        c"Task 167 A/B control: disable unconditional free-capacity backlink append.",
+        c"When on, a free-capacity target admits a backlink only when robust-prune preserves every existing edge. The Task 167 candidate defaults on because packet 051 rejected unconditional append-when-room.",
         &ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -1406,7 +1407,7 @@ mod tests {
     }
 
     #[test]
-    fn distann_default_backlink_strategy_retains_measured_robust_prune() {
+    fn distann_default_backlink_strategy_uses_conservative_prune_admission() {
         assert!(super::debug_disable_append_when_room());
     }
 
