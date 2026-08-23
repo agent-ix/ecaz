@@ -1,5 +1,13 @@
 # Task 167 packet 060 artifact manifest — preregistration
 
+## Disposition
+
+- Superseded unrun on `2026-08-23` by outside feedback in
+  `reviews/task-167/059-established-tie-priority/feedback/2026-08-23-01-reviewer.md`.
+- The config and preregistration audit remain immutable historical provenance.
+- Do not execute the command below: its fixed cross-scale heldout gate is the
+  semantics the reviewer rejected. Packet 061 owns the correction.
+
 - Preregistration head: `45de2ed6f5c445265e44103fcaa845882ca90a87`.
 - Candidate code checkpoints:
   `350385ce9fe7158286ce6570383f8f44828fe671` and

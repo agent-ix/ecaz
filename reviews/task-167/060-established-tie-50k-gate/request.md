@@ -8,8 +8,10 @@ seq: 1
 
 # Task 167 established-tie 50k gate
 
-Status: preregistered and awaiting outside review of packet 059. No runtime
-result, Task 167 acceptance, or closeout is claimed.
+Status: superseded unrun by packet 059 reviewer feedback. The reviewer accepted
+the established-tie code as a correctness alignment and rejected this packet's
+cross-scale absolute heldout gate semantics. No runtime result exists, and this
+configuration must not run.
 
 Packet 059 aligns the physical backlink robust-prune union with the
 established-first order used by the pure/local planners. Exact-distance ties
@@ -23,11 +25,13 @@ inserted-neighborhood queries, exact fp32 truth, graph/search settings, and
 packet-045 hard bands. The append-when-room control cannot mutate the fixture
 before the candidate quality gate passes.
 
-The run must not start until packet 059 receives outside review and any
-findings are processed. The thresholds will not be widened after observing the
-run. Failure rejects this candidate and leaves Task 167 open. A pass permits,
-but does not replace, the required isolated 10k/50k/100k recall, latency, and
-storage matrix.
+Packet 059 feedback at
+`reviews/task-167/059-established-tie-priority/feedback/2026-08-23-01-reviewer.md`
+directs the coder to land the correctness
+alignment without a quality verdict, replace the heldout gate with a per-scale
+baseline-relative regression detector, and run the final isolated
+10k/50k/100k matrix. Packet 061 implements that gate correction. This packet's
+preregistered config is retained only as historical provenance.
 
 Configuration and provenance are in
 [`artifacts/manifest.md`](artifacts/manifest.md).
