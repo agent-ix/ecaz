@@ -751,7 +751,9 @@ async fn worker(
 
         if report_distann_crown_stats {
             if let Some(stats) = super::snapshot_distann_crown_stats(&client).await? {
-                distann_crown_stats.get_or_insert_default().add_assign(stats);
+                distann_crown_stats
+                    .get_or_insert_default()
+                    .add_assign(stats);
             }
         }
 
