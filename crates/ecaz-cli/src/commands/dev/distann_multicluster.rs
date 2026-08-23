@@ -3072,11 +3072,11 @@ async fn task199_no_replica_insert_throughput(
     Ok(())
 }
 
-/// Task 167 insert-throughput A/B. Measure the same single-row incremental
-/// INSERT workload against the published physical owner-routed index and the
-/// same-generation local control index. The workload uses source vectors from
-/// the physical corpus and keeps each trial's IDs disjoint so the measured
-/// append path is not contaminated by cleanup/tombstone work.
+/// Task 167 insert-throughput and append-strategy A/B. The shipped robust-prune
+/// arm is measured against the same-generation local control, then quality is
+/// gated before the rejected append-when-room candidate mutates the disposable
+/// physical fixture. Every trial uses a disjoint ID range, so no arm includes
+/// cleanup or tombstone work from another arm.
 const TASK167_AB_TRIALS: usize = 5;
 const TASK167_AB_ROWS_PER_TRIAL: usize = 32;
 const TASK167_AB_SAMPLE_ROWS: usize = TASK167_AB_TRIALS * TASK167_AB_ROWS_PER_TRIAL;
@@ -3085,6 +3085,13 @@ const TASK167_AB_SAMPLE_ROWS: usize = TASK167_AB_TRIALS * TASK167_AB_ROWS_PER_TR
 struct Task167InsertMeasurement {
     rows_per_second: f64,
     inserted_rows: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Task167DefaultInsertBaseline {
+    measurement: Task167InsertMeasurement,
+    backlink_amendments: i64,
+    backlink_no_room: i64,
 }
 
 fn task167_insert_trial_items(
@@ -3143,14 +3150,14 @@ async fn measure_task167_insert_arm(
     })
 }
 
-async fn task167_insert_throughput_ab(
+async fn task167_default_insert_throughput(
     coordinator: &tokio_postgres::Client,
     scale: &str,
     physical_corpus: &str,
     single_corpus: &str,
     graph_degree: u32,
     lines: &mut Vec<String>,
-) -> Result<()> {
+) -> Result<Task167DefaultInsertBaseline> {
     let single = measure_task167_insert_arm(
         coordinator,
         single_corpus,
@@ -3181,13 +3188,87 @@ async fn task167_insert_throughput_ab(
     .await?;
     let append_disabled_work = coordinator
         .query(
-            "SELECT metric, value FROM ec_distann_insert_work_snapshot() ORDER BY metric",
+            "SELECT metric, inserts, value, mean_per_insert
+               FROM ec_distann_insert_work_snapshot()
+              ORDER BY metric",
             &[],
         )
-        .await?
-        .into_iter()
-        .map(|row| (row.get::<_, String>(0), row.get::<_, i64>(1)))
-        .collect::<HashMap<_, _>>();
+        .await
+        .wrap_err("reading shipped-default Task 167 insert-work counters")?;
+    coordinator
+        .batch_execute("RESET ec_distann.debug_disable_append_when_room")
+        .await
+        .wrap_err("restoring the shipped append-when-room disposition")?;
+    if single.inserted_rows != TASK167_AB_SAMPLE_ROWS
+        || append_disabled.inserted_rows != TASK167_AB_SAMPLE_ROWS
+    {
+        bail!(
+            "Task 167 default insert measurement executed unexpected statement counts: single={} append_disabled={} preregistered={TASK167_AB_SAMPLE_ROWS}",
+            single.inserted_rows,
+            append_disabled.inserted_rows,
+        );
+    }
+    let ratio = append_disabled.rows_per_second / single.rows_per_second.max(f64::EPSILON);
+    lines.push(format!(
+        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=shipped_default_robust_prune physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
+        append_disabled.inserted_rows,
+        append_disabled.rows_per_second,
+        single.rows_per_second,
+    ));
+    let rows = append_disabled_work;
+    let expected_inserts = append_disabled.inserted_rows as i64;
+    if rows.len() != 8 {
+        bail!(
+            "Task 167 physical insert-work snapshot returned {} rows, expected 8",
+            rows.len()
+        );
+    }
+    let mut values = HashMap::new();
+    for row in rows {
+        let metric = row.get::<_, String>(0);
+        let inserts = row.get::<_, i64>(1);
+        let value = row.get::<_, i64>(2);
+        let mean = row.get::<_, f64>(3);
+        if inserts != expected_inserts {
+            bail!(
+                "Task 167 physical insert-work metric {metric} counted {inserts} attempts, expected {expected_inserts}"
+            );
+        }
+        values.insert(metric.clone(), (value, mean));
+        lines.push(format!(
+            "physical_benchmark_insert_work scale={scale} insert_mode=shipped_default_robust_prune metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
+        ));
+    }
+    let bound = i64::from(graph_degree) * expected_inserts;
+    for metric in ["forward_neighbors_selected", "backlink_amendments"] {
+        let (value, _) = values
+            .get(metric)
+            .copied()
+            .ok_or_else(|| eyre!("insert-work snapshot omitted {metric}"))?;
+        if value > bound {
+            bail!("Task 167 {metric} exceeded graph-degree bound: value={value} bound={bound}");
+        }
+    }
+    Ok(Task167DefaultInsertBaseline {
+        measurement: append_disabled,
+        backlink_amendments: values
+            .get("backlink_amendments")
+            .map(|(value, _)| *value)
+            .unwrap_or_default(),
+        backlink_no_room: values
+            .get("backlink_no_room")
+            .map(|(value, _)| *value)
+            .unwrap_or_default(),
+    })
+}
+
+async fn task167_append_when_room_diagnostic(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    physical_corpus: &str,
+    baseline: Task167DefaultInsertBaseline,
+    lines: &mut Vec<String>,
+) -> Result<()> {
     coordinator
         .batch_execute("SET ec_distann.debug_disable_append_when_room = off")
         .await
@@ -3219,90 +3300,36 @@ async fn task167_insert_throughput_ab(
         .batch_execute("RESET ec_distann.debug_disable_append_when_room")
         .await
         .wrap_err("restoring the shipped append-when-room disposition")?;
-    if single.inserted_rows != TASK167_AB_SAMPLE_ROWS
-        || append_disabled.inserted_rows != TASK167_AB_SAMPLE_ROWS
-        || append_enabled.inserted_rows != TASK167_AB_SAMPLE_ROWS
-    {
+    if append_enabled.inserted_rows != TASK167_AB_SAMPLE_ROWS {
         bail!(
-            "Task 167 insert A/B executed unexpected statement counts: single={} append_disabled={} append_enabled={} preregistered={TASK167_AB_SAMPLE_ROWS}",
-            single.inserted_rows,
-            append_disabled.inserted_rows,
+            "Task 167 append-when-room diagnostic inserted {} rows, expected {TASK167_AB_SAMPLE_ROWS}",
             append_enabled.inserted_rows,
         );
     }
-    let ratio = append_enabled.rows_per_second / single.rows_per_second.max(f64::EPSILON);
-    lines.push(format!(
-        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
-        append_enabled.inserted_rows,
-        append_enabled.rows_per_second,
-        single.rows_per_second,
-    ));
     let append_ratio =
-        append_enabled.rows_per_second / append_disabled.rows_per_second.max(f64::EPSILON);
-    let disabled_amendments = append_disabled_work
-        .get("backlink_amendments")
-        .copied()
-        .unwrap_or_default();
+        append_enabled.rows_per_second / baseline.measurement.rows_per_second.max(f64::EPSILON);
     let enabled_amendments = append_enabled_work
         .get("backlink_amendments")
         .copied()
         .unwrap_or_default();
-    let append_ab_pass = append_ratio >= 1.0 && enabled_amendments <= disabled_amendments;
+    let append_ab_pass = append_ratio >= 1.0 && enabled_amendments <= baseline.backlink_amendments;
     lines.push(format!(
-        "physical_benchmark_append_when_room_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} append_disabled_rows_per_second={:.3} append_enabled_rows_per_second={:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={disabled_amendments} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture pass={append_ab_pass}",
+        "physical_benchmark_append_when_room_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} append_disabled_rows_per_second={:.3} append_enabled_rows_per_second={:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture measurement_order=after_shipped_default_quality_gate candidate_graph_mutation_excluded_from_quality_gate=true pass={append_ab_pass}",
         append_enabled.inserted_rows,
-        append_disabled.rows_per_second,
+        baseline.measurement.rows_per_second,
         append_enabled.rows_per_second,
-        append_disabled_work.get("backlink_no_room").copied().unwrap_or_default(),
+        baseline.backlink_amendments,
+        baseline.backlink_no_room,
         append_enabled_work.get("backlink_no_room").copied().unwrap_or_default(),
     ));
-    let rows = coordinator
-        .query(
-            "SELECT metric, inserts, value, mean_per_insert
-                   FROM ec_distann_insert_work_snapshot()
-                  ORDER BY metric",
-            &[],
-        )
-        .await
-        .wrap_err("reading Task 167 physical insert-work counters")?;
-    let expected_inserts = append_enabled.inserted_rows as i64;
-    if rows.len() != 8 {
-        bail!(
-            "Task 167 physical insert-work snapshot returned {} rows, expected 8",
-            rows.len()
-        );
-    }
-    let mut values = HashMap::new();
-    for row in rows {
-        let metric = row.get::<_, String>(0);
-        let inserts = row.get::<_, i64>(1);
-        let value = row.get::<_, i64>(2);
-        let mean = row.get::<_, f64>(3);
-        if inserts != expected_inserts {
-            bail!(
-                "Task 167 physical insert-work metric {metric} counted {inserts} attempts, expected {expected_inserts}"
-            );
-        }
-        values.insert(metric.clone(), (value, mean));
-        lines.push(format!(
-            "physical_benchmark_insert_work scale={scale} metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
-        ));
-    }
-    let bound = i64::from(graph_degree) * expected_inserts;
-    for metric in ["forward_neighbors_selected", "backlink_amendments"] {
-        let (value, _) = values
-            .get(metric)
-            .copied()
-            .ok_or_else(|| eyre!("insert-work snapshot omitted {metric}"))?;
-        if value > bound {
-            bail!("Task 167 {metric} exceeded graph-degree bound: value={value} bound={bound}");
-        }
-    }
     Ok(())
 }
 
 const TASK167_INSERTED_QUALITY_QUERIES: usize = 48;
-const TASK167_EXACT_RECALL_REFERENCE_BAND: f64 = 0.002;
+// Packet 045 preregistered mean deficit + 2 sample standard deviations,
+// rounded up to the next 0.001, from five isolated 10k production repeats.
+const TASK167_INSERTED_QUALITY_ALLOWED_DEFICIT: f64 = 0.015;
+const TASK167_HELDOUT_QUALITY_ALLOWED_DEFICIT: f64 = 0.007;
 
 fn task167_search_guc_sql(
     args: &LocalMultinodePg18Args,
@@ -3409,10 +3436,11 @@ fn task167_search_guc_sql(
 /// graphs may return different valid approximations. Source fingerprints
 /// collapse exact duplicate rows, and each query divides by its own number of
 /// distinct exact-truth keys so duplicate ties cannot lower the metric ceiling.
-/// FR-083 does not prescribe a numeric non-inferiority threshold, so the
-/// historical 0.002 band is reported as a diagnostic and the outside reviewer
-/// owns the quality disposition. Missing rows, wrong plans, malformed truth,
-/// and other measurement-integrity failures still fail the suite step.
+/// The population-specific non-inferiority thresholds are the variance-derived
+/// bands preregistered and measured in review packet 045. The suite step fails
+/// when either physical population trails its fresh rebuild by more than its
+/// fixed band. Missing rows, wrong plans, malformed truth, and other
+/// measurement-integrity failures also fail the step.
 async fn task167_post_insert_exact_recall(
     coordinator: &tokio_postgres::Client,
     scale: &str,
@@ -3427,7 +3455,12 @@ async fn task167_post_insert_exact_recall(
     truth_corpus_path: &Path,
     truth_queries_path: &Path,
     search_guc_sql: &str,
+    graph_phase: &str,
+    inserted_id_bases: &[i64],
 ) -> Result<Vec<String>> {
+    if inserted_id_bases.is_empty() {
+        bail!("Task 167 exact-recall gate requires at least one inserted ID range");
+    }
     let heldout_count = usize::try_from(query_count).unwrap_or(usize::MAX);
     if heldout_count <= TASK167_INSERTED_QUALITY_QUERIES {
         bail!(
@@ -3490,9 +3523,9 @@ async fn task167_post_insert_exact_recall(
         .as_slice()
         .ok_or_else(|| eyre!("Task 167 base corpus is not contiguous"))?
         .to_vec();
-    for id_base in [2_000_000_i64, 3_000_000_i64] {
+    for id_base in inserted_id_bases {
         for source_offset in 0..TASK167_AB_SAMPLE_ROWS {
-            corpus_ids.push(id_base + source_offset as i64);
+            corpus_ids.push(*id_base + source_offset as i64);
             corpus_values.extend(base_corpus.row(source_offset).iter().copied());
         }
     }
@@ -3559,6 +3592,7 @@ async fn task167_post_insert_exact_recall(
     .wrap_err("running Task 167 fresh-rebuild exact-recall arm")?;
 
     let mut lines = Vec::new();
+    let mut failures = Vec::new();
     for population in ["inserted_neighborhood", "heldout"] {
         let summary = task167_exact_recall_summary(
             population,
@@ -3569,12 +3603,14 @@ async fn task167_post_insert_exact_recall(
             &corpus_keys,
             &key_by_id,
         )?;
-        let within_reference_band = task167_exact_recall_within_reference_band(
+        let allowed_deficit = task167_exact_recall_allowed_deficit(population)?;
+        let quality_gate_pass = task167_exact_recall_within_allowed_deficit(
             summary.physical_recall,
             summary.fresh_recall,
+            allowed_deficit,
         );
         let line = format!(
-            "physical_benchmark_post_insert_exact_recall scale={scale} phase=post_320_incremental_inserts population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} reference_band={TASK167_EXACT_RECALL_REFERENCE_BAND:.6} within_reference_band={within_reference_band} disposition=outside_review fresh_reloptions_matched=true heldout_query_set_matches_ordinary=true heldout_queries_dominate=true search_gucs_pinned=true measurement_complete=true",
+            "physical_benchmark_post_insert_exact_recall scale={scale} phase={graph_phase} population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} allowed_deficit={allowed_deficit:.6} gate_source=packet_045_five_repeat_mean_deficit_plus_2sd_ceil_0_001 quality_gate_pass={quality_gate_pass} fresh_reloptions_matched=true heldout_query_set_matches_ordinary=true heldout_queries_dominate=true search_gucs_pinned=true diagnostic_candidate_mutation_excluded=true measurement_complete=true pass={quality_gate_pass}",
             summary.queries,
             summary.truth_slots,
             summary.truth_distinct_keys,
@@ -3583,6 +3619,13 @@ async fn task167_post_insert_exact_recall(
             summary.fresh_recall,
             summary.physical_recall - summary.fresh_recall,
         );
+        if !quality_gate_pass {
+            failures.push(format!(
+                "Task 167 post-insert exact recall failed for {population}: physical_distinct_recall={:.6} fresh_distinct_recall={:.6} maximum_degradation={allowed_deficit:.6}: {line}",
+                summary.physical_recall,
+                summary.fresh_recall,
+            ));
+        }
         lines.push(line);
     }
 
@@ -3594,6 +3637,9 @@ async fn task167_post_insert_exact_recall(
         .batch_execute(&format!("DROP TABLE {fresh_table} CASCADE"))
         .await
         .wrap_err("dropping Task 167 post-insert fresh rebuild")?;
+    if !failures.is_empty() {
+        bail!("{}", failures.join("; "));
+    }
     Ok(lines)
 }
 
@@ -3772,8 +3818,20 @@ fn task167_exact_recall_summary(
     })
 }
 
-fn task167_exact_recall_within_reference_band(physical_recall: f64, fresh_recall: f64) -> bool {
-    fresh_recall - physical_recall <= TASK167_EXACT_RECALL_REFERENCE_BAND + f64::EPSILON
+fn task167_exact_recall_allowed_deficit(population: &str) -> Result<f64> {
+    match population {
+        "inserted_neighborhood" => Ok(TASK167_INSERTED_QUALITY_ALLOWED_DEFICIT),
+        "heldout" => Ok(TASK167_HELDOUT_QUALITY_ALLOWED_DEFICIT),
+        _ => bail!("Task 167 exact-recall gate has no calibrated band for {population}"),
+    }
+}
+
+fn task167_exact_recall_within_allowed_deficit(
+    physical_recall: f64,
+    fresh_recall: f64,
+    allowed_deficit: f64,
+) -> bool {
+    fresh_recall - physical_recall <= allowed_deficit + f64::EPSILON
 }
 
 async fn retire_and_reclaim_traversal_replica(
@@ -7669,7 +7727,7 @@ async fn run_physical_benchmarks(
             candidate_heap_limit,
             hop_rounds,
         )?;
-        task167_insert_throughput_ab(
+        let default_insert_baseline = task167_default_insert_throughput(
             coordinator,
             scale,
             &physical_corpus,
@@ -7705,9 +7763,19 @@ async fn run_physical_benchmarks(
                 &truth_corpus,
                 &truth_queries,
                 &search_guc_sql,
+                "post_160_shipped_default_robust_prune_inserts",
+                &[2_000_000_i64],
             )
             .await?,
         );
+        task167_append_when_room_diagnostic(
+            coordinator,
+            scale,
+            &physical_corpus,
+            default_insert_baseline,
+            &mut lines,
+        )
+        .await?;
     }
     if args.materialization_correctness {
         lines.extend(
@@ -12129,14 +12197,29 @@ mod tests {
     }
 
     #[test]
-    fn task167_exact_recall_labels_values_inside_the_reference_band() {
-        assert!(task167_exact_recall_within_reference_band(0.997, 0.999));
-        assert!(task167_exact_recall_within_reference_band(1.0, 0.999));
+    fn task167_exact_recall_uses_population_specific_calibrated_bands() {
+        assert_eq!(
+            task167_exact_recall_allowed_deficit("inserted_neighborhood").unwrap(),
+            0.015
+        );
+        assert_eq!(
+            task167_exact_recall_allowed_deficit("heldout").unwrap(),
+            0.007
+        );
+        assert!(task167_exact_recall_allowed_deficit("unknown").is_err());
     }
 
     #[test]
-    fn task167_exact_recall_labels_values_outside_the_reference_band() {
-        assert!(!task167_exact_recall_within_reference_band(0.996, 0.999));
+    fn task167_exact_recall_enforces_the_calibrated_band() {
+        assert!(task167_exact_recall_within_allowed_deficit(
+            0.992, 0.999, 0.007
+        ));
+        assert!(task167_exact_recall_within_allowed_deficit(
+            1.0, 0.999, 0.007
+        ));
+        assert!(!task167_exact_recall_within_allowed_deficit(
+            0.991, 0.999, 0.007
+        ));
     }
 
     #[test]
