@@ -1,23 +1,20 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
 Status: implementation open; packet 043 reviewer findings are addressed by
-packets 044–049, but both measured isolated 50k backlink strategies fail the
-fixed heldout quality gate. Packet 047's shipped robust-prune-only deficit was
-`0.008611`, missing the `0.007000` band by `0.001611`. Packet 051's
-batch-consistent append-when-room candidate measured physical `0.846722`
-versus fresh `0.857333`, a `0.010611` deficit and `0.003611` gate miss. Its
-inserted-neighborhood population passed, but the dominant heldout result was
-`0.002000` worse than robust-prune-only, so candidate `22c1e01c3` is rejected
-and packet 050 is superseded by packet 051's measured disposition. The
+packets 044–049, but all three measured isolated 50k backlink strategies fail
+the fixed heldout quality gate. Packet 047's retained robust-prune-all deficit
+was `0.008611`, missing the `0.007000` band by `0.001611`. Packet 051's
+append-when-room candidate deficit was `0.010611` (miss `0.003611`). Packet
+054's conservative-admission candidate improved its inserted-neighborhood
+deficit to `0.007316` and passed that band, but its dominant heldout deficit was
+`0.009611` (miss `0.002611`): `0.001000` better than append-only and `0.001000`
+worse than robust-prune-all. Candidate `4826e9644` is rejected; packet 055
+restores packet 052's robust-prune-all default and is review-open. The
 threshold is unchanged; no merge, final scale matrix, or closeout is claimed.
-Packet 052 restores the pre-candidate shipped default. Packet 053 introduces a
-review-open conservative admission candidate that robust-prunes the backlink
-union but mutates a target with spare capacity only when every existing edge
-and the new backlink survive; its focused tests pass, but it has no benchmark
-verdict yet. Required follow-ups are to run its separately preregistered clean
-50k branch-point gate and, only if that passes, isolated 10k/50k/100k recall,
-latency, and storage confirmation. Evidence: packets 047, 051, 052, and 053;
-reviewer source:
+Required follow-ups are to diagnose a materially different isolated candidate,
+clear the clean 50k branch point, and only then run isolated 10k/50k/100k
+recall, latency, and storage confirmation. Evidence: packets 047, 051, 054,
+and 055; reviewer source:
 `reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
