@@ -20,11 +20,11 @@
 - Command:
   `cargo test -p ecaz-cli --no-default-features commands::bench::suite::tests::failed_distann_step_retains_primary_log_for_result_extraction -- --exact`.
 - Result: passed, 1/1. Artifact: `cargo-test-failed-step.log`, SHA-256
-  `98f893f914e43966c35aab3d2cde25293cdca1aaa1b3a1cd212ab17950126466`.
+  `ed3036a9bc37f14f174580090928076ee6d81d381f932e0643e8bbf2c253902a`.
 - Command:
   `cargo test -p ecaz-cli --no-default-features commands::bench::suite::tests::distann_task167_quality_and_insert_metrics_are_structured -- --exact`.
 - Result: passed, 1/1. Artifact: `cargo-test-task167-metrics.log`, SHA-256
-  `0ec9670caa06898c3db2fb6ce3e0cadd798a164e4cdb0bfd3bbc005fbc54a616`.
+  `47ea0260bdaf3d1789dc3818f7cbbe668d0bd0c29791dd82c36b1812ac006e9e`.
 
 ## Broader diagnostic
 
@@ -35,7 +35,7 @@
   scope: four seed-variant string expectations and one expected-artifact-list
   expectation.
 - Artifact: `cargo-test-suite.log`, SHA-256
-  `80bbaebcc113948f732f8807aaaceac8d6f9101deed273f9bd4421ab22823b6c`.
+  `02c082618a03fa46e42c4293c04a0668ee9e18db9cc79cd67799735fe075e972`.
 
 ## Packet 047 report-only proof
 
