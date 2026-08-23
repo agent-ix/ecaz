@@ -1,18 +1,20 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation complete; final evidence open. Packet 059's outside
-review accepts the established-neighbor exact-tie correction as a correctness
-alignment and ends the backlink-candidate loop. The same review finds that the
-fixed `0.007` heldout gate was incorrectly applied across scales to a
-population outside FR-083-AC-4. Packet 061 replaces it with a per-scale,
-shipped-default-baseline-relative regression gate while retaining the hard
-inserted-neighborhood AC-4 and measurement-integrity gates; focused Task 167
-tests pass. Packet 060 is superseded unrun and must not execute. Remaining work
-is the final isolated 10k/50k/100k recall, latency, and storage matrix, with
-each scale's heldout deficit recorded as a disclosed characteristic, followed
-by outside closeout review and synchronized status. No merge or closeout is
-claimed. Evidence: packets 059–061; reviewer source:
-`reviews/task-167/059-established-tie-priority/feedback/2026-08-23-01-reviewer.md`.
+Status: implementation and final evidence complete; packet 062 review-open;
+outside closeout pending. Packet 059's outside review accepts the
+established-neighbor exact-tie correction as a correctness alignment and ends
+the backlink-candidate loop. Packet 061 corrects the former fixed `0.007`
+heldout gate while retaining the hard inserted-neighborhood AC-4 and
+measurement-integrity gates; 14 focused Task 167 CLI tests pass. Packet 060 is
+superseded unrun and must not execute. Packet 062 supplies the final-SHA,
+isolated 10k/50k/100k recall, latency, and storage matrix: all three cells
+succeeded and all three inserted-neighborhood AC-4 deficits passed the 0.015
+band (`0.003762`, `0.014261`, `0.005663`); heldout is disclosed per scale in
+baseline-recording mode. No further candidate or benchmark run is requested.
+No closeout is claimed until outside review responds. Evidence: packets
+059–062; reviewer source:
+`reviews/task-167/059-established-tie-priority/feedback/2026-08-23-01-reviewer.md`;
+final matrix: `reviews/task-167/062-final-sha-closeout-matrix/`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
 and are not acceptance evidence.
