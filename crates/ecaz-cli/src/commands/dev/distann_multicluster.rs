@@ -3072,12 +3072,11 @@ async fn task199_no_replica_insert_throughput(
     Ok(())
 }
 
-/// Task 167 insert-throughput and backlink-strategy A/B. The candidate's
-/// conservative prune-admission arm is measured against the same-generation
-/// local control, then quality is gated before the rejected unconditional
-/// append-when-room control mutates the disposable physical fixture. Every
-/// trial uses a disjoint ID range, so no arm includes cleanup or tombstone work
-/// from another arm.
+/// Task 167 insert-throughput and backlink-strategy A/B. The shipped
+/// robust-prune-all arm is measured against the same-generation local control,
+/// then quality is gated before the rejected append-when-room candidate mutates
+/// the disposable physical fixture. Every trial uses a disjoint ID range, so no
+/// arm includes cleanup or tombstone work from another arm.
 const TASK167_AB_TRIALS: usize = 5;
 const TASK167_AB_ROWS_PER_TRIAL: usize = 32;
 const TASK167_AB_SAMPLE_ROWS: usize = TASK167_AB_TRIALS * TASK167_AB_ROWS_PER_TRIAL;
@@ -3093,7 +3092,6 @@ struct Task167DefaultInsertBaseline {
     measurement: Task167InsertMeasurement,
     backlink_amendments: i64,
     backlink_no_room: i64,
-    backlink_prune_rejected: i64,
 }
 
 fn task167_insert_trial_items(
@@ -3173,7 +3171,7 @@ async fn task167_default_insert_throughput(
     coordinator
         .batch_execute("RESET ec_distann.debug_disable_append_when_room")
         .await
-        .wrap_err("selecting conservative backlink admission")?;
+        .wrap_err("selecting the shipped robust-prune insert strategy")?;
     coordinator
         .batch_execute("SELECT ec_distann_insert_work_reset()")
         .await
@@ -3200,7 +3198,7 @@ async fn task167_default_insert_throughput(
     coordinator
         .batch_execute("RESET ec_distann.debug_disable_append_when_room")
         .await
-        .wrap_err("restoring conservative backlink admission")?;
+        .wrap_err("restoring the shipped robust-prune strategy")?;
     if single.inserted_rows != TASK167_AB_SAMPLE_ROWS
         || shipped.inserted_rows != TASK167_AB_SAMPLE_ROWS
     {
@@ -3212,16 +3210,16 @@ async fn task167_default_insert_throughput(
     }
     let ratio = shipped.rows_per_second / single.rows_per_second.max(f64::EPSILON);
     lines.push(format!(
-        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=candidate_default_conservative_prune_admission physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
+        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=shipped_default_robust_prune physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
         shipped.inserted_rows,
         shipped.rows_per_second,
         single.rows_per_second,
     ));
     let rows = shipped_work;
     let expected_inserts = shipped.inserted_rows as i64;
-    if rows.len() != 9 {
+    if rows.len() != 8 {
         bail!(
-            "Task 167 physical insert-work snapshot returned {} rows, expected 9",
+            "Task 167 physical insert-work snapshot returned {} rows, expected 8",
             rows.len()
         );
     }
@@ -3238,15 +3236,11 @@ async fn task167_default_insert_throughput(
         }
         values.insert(metric.clone(), (value, mean));
         lines.push(format!(
-            "physical_benchmark_insert_work scale={scale} insert_mode=candidate_default_conservative_prune_admission metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
+            "physical_benchmark_insert_work scale={scale} insert_mode=shipped_default_robust_prune metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
         ));
     }
     let bound = i64::from(graph_degree) * expected_inserts;
-    for metric in [
-        "forward_neighbors_selected",
-        "backlink_amendments",
-        "backlink_prune_rejected",
-    ] {
+    for metric in ["forward_neighbors_selected", "backlink_amendments"] {
         let (value, _) = values
             .get(metric)
             .copied()
@@ -3263,10 +3257,6 @@ async fn task167_default_insert_throughput(
             .unwrap_or_default(),
         backlink_no_room: values
             .get("backlink_no_room")
-            .map(|(value, _)| *value)
-            .unwrap_or_default(),
-        backlink_prune_rejected: values
-            .get("backlink_prune_rejected")
             .map(|(value, _)| *value)
             .unwrap_or_default(),
     })
@@ -3309,7 +3299,7 @@ async fn task167_append_when_room_diagnostic(
     coordinator
         .batch_execute("RESET ec_distann.debug_disable_append_when_room")
         .await
-        .wrap_err("restoring conservative backlink admission")?;
+        .wrap_err("restoring the shipped robust-prune strategy")?;
     if append_when_room.inserted_rows != TASK167_AB_SAMPLE_ROWS {
         bail!(
             "Task 167 append-when-room diagnostic inserted {} rows, expected {TASK167_AB_SAMPLE_ROWS}",
@@ -3325,18 +3315,13 @@ async fn task167_append_when_room_diagnostic(
     let append_candidate_faster =
         append_ratio >= 1.0 && append_amendments <= baseline.backlink_amendments;
     lines.push(format!(
-        "physical_benchmark_backlink_strategy_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} candidate_conservative_rows_per_second={:.3} append_when_room_rows_per_second={:.3} append_when_room_over_candidate={append_ratio:.6} candidate_backlink_amendments={} append_when_room_backlink_amendments={append_amendments} candidate_backlink_no_room={} append_when_room_backlink_no_room={} candidate_backlink_prune_rejected={} append_when_room_backlink_prune_rejected={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture measurement_order=after_candidate_default_quality_gate control_graph_mutation_excluded_from_quality_gate=true control_faster={append_candidate_faster} pass=true",
+        "physical_benchmark_backlink_strategy_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} shipped_robust_prune_rows_per_second={:.3} append_when_room_rows_per_second={:.3} append_when_room_over_shipped={append_ratio:.6} shipped_backlink_amendments={} append_when_room_backlink_amendments={append_amendments} shipped_backlink_no_room={} append_when_room_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture measurement_order=after_shipped_default_quality_gate candidate_graph_mutation_excluded_from_quality_gate=true candidate_faster={append_candidate_faster} pass=true",
         append_when_room.inserted_rows,
         baseline.measurement.rows_per_second,
         append_when_room.rows_per_second,
         baseline.backlink_amendments,
         baseline.backlink_no_room,
         append_work.get("backlink_no_room").copied().unwrap_or_default(),
-        baseline.backlink_prune_rejected,
-        append_work
-            .get("backlink_prune_rejected")
-            .copied()
-            .unwrap_or_default(),
     ));
     Ok(())
 }
@@ -7792,7 +7777,7 @@ async fn run_physical_benchmarks(
             &truth_corpus,
             &truth_queries,
             &search_guc_sql,
-            "post_160_candidate_default_conservative_prune_admission_inserts",
+            "post_160_shipped_default_robust_prune_inserts",
             &[2_000_000_i64],
         )
         .await?;
@@ -7800,7 +7785,7 @@ async fn run_physical_benchmarks(
         lines.extend(exact_recall_lines);
         if task167_quality_gate_failed {
             lines.push(format!(
-                "physical_benchmark_backlink_strategy_ab scale={scale} pass=skipped reason=candidate_default_quality_gate_failed control_mutation_excluded=true"
+                "physical_benchmark_backlink_strategy_ab scale={scale} pass=skipped reason=shipped_default_quality_gate_failed candidate_mutation_excluded=true"
             ));
         } else {
             task167_append_when_room_diagnostic(
@@ -7815,7 +7800,7 @@ async fn run_physical_benchmarks(
     }
     if task167_quality_gate_failed && args.materialization_correctness {
         lines.push(format!(
-            "physical_benchmark_materialization_correctness scale={scale} pass=skipped reason=candidate_default_quality_gate_failed"
+            "physical_benchmark_materialization_correctness scale={scale} pass=skipped reason=shipped_default_quality_gate_failed"
         ));
     } else if args.materialization_correctness {
         lines.extend(
@@ -12311,7 +12296,7 @@ mod tests {
         let lines = vec![
             "physical_benchmark_post_insert_exact_recall population=inserted_neighborhood quality_gate_pass=true pass=true".to_owned(),
             "physical_benchmark_post_insert_exact_recall population=heldout physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 quality_gate_pass=false pass=false".to_owned(),
-            "physical_benchmark_backlink_strategy_ab pass=skipped reason=candidate_default_quality_gate_failed control_mutation_excluded=true".to_owned(),
+            "physical_benchmark_backlink_strategy_ab pass=skipped reason=shipped_default_quality_gate_failed candidate_mutation_excluded=true".to_owned(),
         ];
         let failure = task167_quality_gate_failure(&lines).expect("heldout gate must fail");
         assert!(failure.contains("population=heldout"));
