@@ -7,10 +7,14 @@ after 160 shipped robust-prune inserts versus `0.857333` for a fresh rebuild:
 deficit `0.008611`, exceeding the fixed `0.007000` band by `0.001611`. The
 rejected append-when-room candidate was excluded, reducing packet 045's
 contaminated `0.026250` deficit by `0.017639`; a residual shipped robust-prune
-quality loss remains under diagnosis. The threshold is unchanged. Packets 046
-and 047 are review-open; no merge or closeout claim. Required follow-ups are a
-corrective robust-prune checkpoint and isolated 10k/50k/100k recall, latency,
-and storage confirmation. Evidence: packet 047; reviewer source:
+quality loss was traced to a physical-path divergence from batch Vamana:
+under-capacity backlink targets were robust-pruned instead of edge-preserving
+append. Candidate `22c1e01c3` restores the batch/shared-planner invariant and
+packet 050 is review-open; its clean 50k before/after gate is pending. The
+threshold is unchanged. No merge or closeout claim. Required follow-ups are
+the decisive isolated 50k result and, if it passes, isolated 10k/50k/100k
+recall, latency, and storage confirmation. Evidence: packets 047 and 050;
+reviewer source:
 `reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
