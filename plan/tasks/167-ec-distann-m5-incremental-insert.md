@@ -10,10 +10,11 @@ inserted-neighborhood population passed, but the dominant heldout result was
 `0.002000` worse than robust-prune-only, so candidate `22c1e01c3` is rejected
 and packet 050 is superseded by packet 051's measured disposition. The
 threshold is unchanged; no merge, final scale matrix, or closeout is claimed.
-Required follow-ups are to restore the pre-candidate shipped default, diagnose
-the remaining isolated physical-vs-fresh loss, clear the 50k branch point with
-a new candidate, and only then run isolated 10k/50k/100k recall, latency, and
-storage confirmation. Evidence: packets 047 and 051; reviewer source:
+Packet 052 restores the pre-candidate shipped default and is review-open.
+Required follow-ups are to diagnose the remaining isolated physical-vs-fresh
+loss, clear the 50k branch point with a new candidate, and only then run
+isolated 10k/50k/100k recall, latency, and storage confirmation. Evidence:
+packets 047, 051, and 052; reviewer source:
 `reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
