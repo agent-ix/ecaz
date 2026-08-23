@@ -1,8 +1,10 @@
 # Task 222: ec_distann Qual-Aware Payload Projection
 
-Status: **implementation ready — plan revisions applied; packet 001 review
-closeout pending** (2026-08-23). Priority: P0 latency. Revised against
-`reviews/task-222/001-plan/feedback/2026-08-23-01-reviewer.md`.
+Status: **contract implementation complete; packet 002 review-open; extended
+P2 cases and the isolated 100k A/B remain pending** (2026-08-23). Priority: P0
+latency. Plan revisions applied against
+`reviews/task-222/001-plan/feedback/2026-08-23-01-reviewer.md`; implementation
+request: `reviews/task-222/002-contract-and-correctness/request.md`.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 MAT-28 and MAT-29. Origin: Task 218's production lazy-10 attribution and the
