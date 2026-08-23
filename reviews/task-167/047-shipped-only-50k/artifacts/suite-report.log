@@ -1,0 +1,32 @@
+# Suite Report: task167-shipped-only-50k
+
+- config: `reviews/task-167/047-shipped-only-50k/artifacts/task167-shipped-only-50k-suite.json`
+- config_sha256: `eb24ee89c998215b191384741b5f0bfa86734731a6d56ef8ab336dc616367cdb`
+- dry_run: `false`
+- runner_git_commit: `cc3b05d4b23182657ee6b5ad897d311bde43c219`
+- steps: completed 0, failed 1, skipped 0, dry-run 0, missing artifacts 0, stale 0
+
+| Step | Kind | Status | Duration ms | Artifacts |
+| --- | --- | --- | ---: | --- |
+| physical-50k-shipped-only | distann-local-multinode | Failed | 2177793 | `reviews/task-167/047-shipped-only-50k/artifacts/final-suite/physical-50k-shipped-only/distann-multinode-summary.log`<br>`reviews/task-167/047-shipped-only-50k/artifacts/final-suite/physical-50k-shipped-only/physical-head-membership.json` |
+
+## Parsed Results
+
+| Step | Kind | Metric | Values |
+| --- | --- | --- | --- |
+| physical-50k-shipped-only | distann-local-multinode | multinode_release_preflight | `debug_override=false`, `extension_build_profile=release`, `extension_features=pg18`, `extension_git_sha=8bf0ac8a451f9cd73813dd0ab59ed305fab026bd`, `metrics_mode=benchmark`, `nodes=3`, `pass_numeric=1`, `status=passed`, `suite_database=tqvector_bench`, `suite_host=local_socket`, `unanimous=true` |
+| physical-50k-shipped-only | distann-local-multinode | drill_outcome | `drill=physical_synthetic_unit_norm_samples_32_dimensions_16_max_abs_error_0_000000017_tolerance_0_000010000`, `metrics_mode=benchmark`, `pass=true`, `pass_numeric=1`, `suite_database=tqvector_bench`, `suite_host=local_socket` |
+| physical-50k-shipped-only | distann-local-multinode | physical_topology | `control_bytes=8192`, `directory_bytes=540672`, `graph_bytes=135864320`, `metrics_mode=benchmark`, `node=1`, `non_owned=0`, `orphans=0`, `phase=ready`, `records=16637`, `row_bytes=277266432`, `rows=16637`, `state=Ready`, `suite_database=tqvector_bench`, `suite_host=local_socket`, `topology_ok=true` |
+| physical-50k-shipped-only | distann-local-multinode | physical_topology | `control_bytes=8192`, `directory_bytes=548864`, `graph_bytes=137093120`, `metrics_mode=benchmark`, `node=2`, `non_owned=0`, `orphans=0`, `phase=ready`, `records=16756`, `row_bytes=279273472`, `rows=16756`, `state=Ready`, `suite_database=tqvector_bench`, `suite_host=local_socket`, `topology_ok=true` |
+| physical-50k-shipped-only | distann-local-multinode | physical_topology | `control_bytes=8192`, `directory_bytes=548864`, `graph_bytes=135569408`, `metrics_mode=benchmark`, `node=3`, `non_owned=0`, `orphans=0`, `phase=ready`, `records=16607`, `row_bytes=276783104`, `rows=16607`, `state=Ready`, `suite_database=tqvector_bench`, `suite_host=local_socket`, `topology_ok=true` |
+| physical-50k-shipped-only | distann-local-multinode | physical_topology | `control_bytes=8192`, `directory_bytes=540672`, `graph_bytes=135880704`, `metrics_mode=benchmark`, `node=1`, `non_owned=0`, `orphans=0`, `phase=published`, `records=16637`, `row_bytes=277291008`, `rows=16637`, `state=Published`, `suite_database=tqvector_bench`, `suite_host=local_socket`, `topology_ok=true` |
+| physical-50k-shipped-only | distann-local-multinode | physical_topology | `control_bytes=8192`, `directory_bytes=548864`, `graph_bytes=137093120`, `metrics_mode=benchmark`, `node=2`, `non_owned=0`, `orphans=0`, `phase=published`, `records=16756`, `row_bytes=279273472`, `rows=16756`, `state=Published`, `suite_database=tqvector_bench`, `suite_host=local_socket`, `topology_ok=true` |
+| physical-50k-shipped-only | distann-local-multinode | physical_topology | `control_bytes=8192`, `directory_bytes=548864`, `graph_bytes=135569408`, `metrics_mode=benchmark`, `node=3`, `non_owned=0`, `orphans=0`, `phase=published`, `records=16607`, `row_bytes=276783104`, `rows=16607`, `state=Published`, `suite_database=tqvector_bench`, `suite_host=local_socket`, `topology_ok=true` |
+| physical-50k-shipped-only | distann-local-multinode | drill_outcome | `drill=physical_serving`, `metrics_mode=benchmark`, `pass=true`, `pass_numeric=1`, `suite_database=tqvector_bench`, `suite_host=local_socket` |
+| physical-50k-shipped-only | distann-local-multinode | drill_outcome | `drill=physical_remote_owner_node_2_custom_scan_true`, `metrics_mode=benchmark`, `pass=true`, `pass_numeric=1`, `suite_database=tqvector_bench`, `suite_host=local_socket` |
+| physical-50k-shipped-only | distann-local-multinode | drill_outcome | `drill=physical_remote_owner_node_3_custom_scan_true`, `metrics_mode=benchmark`, `pass=true`, `pass_numeric=1`, `suite_database=tqvector_bench`, `suite_host=local_socket` |
+| physical-50k-shipped-only | distann-local-multinode | drill_outcome | `drill=mid_insert_failure_DIAG_physical_insert_errored_true_before_rows_500_after_rows_500_before_records_500_after_records_500_consistent_true`, `metrics_mode=benchmark`, `pass=true`, `pass_numeric=1`, `suite_database=tqvector_bench`, `suite_host=local_socket` |
+| physical-50k-shipped-only | distann-local-multinode | drill_outcome | `drill=physical_update_replacement_DIAG_update_ok_true_stable_vec_id_true_before_Some__-2641035976082453728__1__1___after_Some__-2641035976082453728__2__1__`, `metrics_mode=benchmark`, `pass=true`, `pass_numeric=1`, `suite_database=tqvector_bench`, `suite_host=local_socket` |
+| physical-50k-shipped-only | distann-local-multinode | drill_outcome | `drill=physical_mid_insert_failure`, `metrics_mode=benchmark`, `pass=true`, `pass_numeric=1`, `suite_database=tqvector_bench`, `suite_host=local_socket` |
+| physical-50k-shipped-only | distann-local-multinode | physical_benchmark_post_insert_exact_recall | `allowed_deficit=0.007000`, `denominator=per_query_distinct_exact_source_fingerprints`, `diagnostic_candidate_mutation_excluded=true`, `fresh_distinct_recall=0.857333`, `fresh_reloptions_matched=true`, `gate_source=packet_045_five_repeat_mean_deficit_plus_2sd_ceil_0_001`, `heldout_queries_dominate=true`, `heldout_query_set_matches_ordinary=true`, `measurement_complete=true`, `metrics_mode=benchmark`, `pass=false`, `phase=post_160_shipped_default_robust_prune_inserts`, `physical_distinct_recall=0.848722`, `physical_minus_fresh=-0.008611`, `population=heldout`, `quality_gate_pass=false`, `queries=200`, `scale=50k`, `search_gucs_pinned=true`, `suite_database=tqvector_bench`, `suite_host=local_socket`, `top_k=10`, `truth=brute_force_fp32`, `truth_distinct_keys=1998`, `truth_duplicate_slots=2`, `truth_slots=2000` |
+wrote reviews/task-167/047-shipped-only-50k/artifacts/final-suite/results.jsonl

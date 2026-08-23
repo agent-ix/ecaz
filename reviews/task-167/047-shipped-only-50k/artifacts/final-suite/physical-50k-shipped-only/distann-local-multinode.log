@@ -1,0 +1,28 @@
+[distann-multicluster] repo=/home/peter/dev/ecaz
+[distann-multicluster] pgbin=/home/peter/.pgrx/18.3/pgrx-install/bin
+[distann-multicluster] mode=physical owners=3 instances=3 coordinator_outside_roster=false base_port=42000 rows=2000 dim=16 graph_degree=32 build_shards=1 head_index_cap=4096
+[distann-multicluster] release_profile_preflight status=passed nodes=3 unanimous=true extension_git_sha=8bf0ac8a451f9cd73813dd0ab59ed305fab026bd extension_build_profile=release extension_features=pg18 debug_override=false
+[distann-multicluster] physical_setup_start rows=2000 nodes=3
+[distann-multicluster] physical_synthetic_unit_norm samples=32 dimensions=16 max_abs_error=0.000000017 tolerance=0.000010000 pass=true
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=16637 rows=16637 non_owned=0 orphans=0 graph_bytes=135864320 row_bytes=277266432 directory_bytes=540672 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=16756 rows=16756 non_owned=0 orphans=0 graph_bytes=137093120 row_bytes=279273472 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=16607 rows=16607 non_owned=0 orphans=0 graph_bytes=135569408 row_bytes=276783104 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=16637 rows=16637 non_owned=0 orphans=0 graph_bytes=135880704 row_bytes=277291008 directory_bytes=540672 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=16756 rows=16756 non_owned=0 orphans=0 graph_bytes=137093120 row_bytes=279273472 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=16607 rows=16607 non_owned=0 orphans=0 graph_bytes=135569408 row_bytes=276783104 directory_bytes=548864 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=50000
+[distann-multicluster] physical_remote_owner node=2 custom_scan=true pass=true expected_source_id=0002ac0d-7833-48cf-8ab0-b2bdbd872cda materialized_source_id=0002ac0d-7833-48cf-8ab0-b2bdbd872cda pinned_probe=returned_sample pinned_probe_output=0002ac0d-7833-48cf-8ab0-b2bdbd872cda owner_exact_probe=0002ac0d-7833-48cf-8ab0-b2bdbd872cda
+[distann-multicluster] physical_remote_owner node=3 custom_scan=true pass=true expected_source_id=00003e3b-9e53-4668-8200-ae85d21b4f5e materialized_source_id=00003e3b-9e53-4668-8200-ae85d21b4f5e pinned_probe=returned_sample pinned_probe_output=00003e3b-9e53-4668-8200-ae85d21b4f5e owner_exact_probe=00003e3b-9e53-4668-8200-ae85d21b4f5e
+[distann-multicluster] mid_insert_failure DIAG physical_insert_errored=true before_rows=500 after_rows=500 before_records=500 after_records=500 consistent=true pass=true
+[distann-multicluster] physical_update_replacement DIAG update_ok=true stable_vec_id=true before=Some((-2641035976082453728, 1, 1)) after=Some((-2641035976082453728, 2, 1)) pass=true
+[distann-multicluster] physical_mid_insert_failure pass=true
+[distann-multicluster] physical_bench_child args=--database postgres --host 127.0.0.1 --port 42000 --user postgres bench recall --prefix task179_physical_50k --profile ec_distann --k 10 --sweep 32 --queries-limit 200 --force-index --truth-cache-file /home/peter/.ecaz/clusters/task167-shipped-only-50k-20260822/ec_real_50k-truth.json --log-output /home/peter/dev/ecaz/reviews/task-167/047-shipped-only-50k/artifacts/final-suite/physical-50k-shipped-only/physical-production-recall.log --predictions-output /home/peter/dev/ecaz/reviews/task-167/047-shipped-only-50k/artifacts/final-suite/physical-50k-shipped-only/physical-production-predictions.json --session-guc ec_distann.beam_width=4 --session-guc ec_distann.hop_rounds=100 --session-guc ec_distann.candidate_heap_limit=32 --truth-corpus-file /home/peter/dev/ecaz/data/task111a_real50k/ec_real_50k_corpus.tsv --report-distann-crown-stats
+[distann-multicluster] physical_bench_child args=--database postgres --host 127.0.0.1 --port 42000 --user postgres bench latency --prefix task179_physical_50k --profile ec_distann --k 10 --sweep 32 --iterations 1 --warmup-iterations 0 --concurrency 1 --force-index --cache-state warm --log-output /home/peter/dev/ecaz/reviews/task-167/047-shipped-only-50k/artifacts/final-suite/physical-50k-shipped-only/physical-production-latency.log --session-guc ec_distann.beam_width=4 --session-guc ec_distann.hop_rounds=100 --session-guc ec_distann.candidate_heap_limit=32 --concurrency-sweep 1 --report-distann-crown-stats
+
+   0: [91mTask 167 post-insert exact recall failed for heldout: physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 maximum_degradation=0.007000: physical_benchmark_post_insert_exact_recall scale=50k phase=post_160_shipped_default_robust_prune_inserts population=heldout queries=200 top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots=2000 truth_distinct_keys=1998 truth_duplicate_slots=2 physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 physical_minus_fresh=-0.008611 allowed_deficit=0.007000 gate_source=packet_045_five_repeat_mean_deficit_plus_2sd_ceil_0_001 quality_gate_pass=false fresh_reloptions_matched=true heldout_query_set_matches_ordinary=true heldout_queries_dominate=true search_gucs_pinned=true diagnostic_candidate_mutation_excluded=true measurement_complete=true pass=false[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/dev/distann_multicluster.rs[0m:[35m3641[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
