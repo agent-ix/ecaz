@@ -1,28 +1,18 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation open; packet 043 reviewer findings are addressed by
-packets 044–049, but all four measured isolated 50k backlink candidates fail
-the fixed heldout quality gate. Packet 047's retained robust-prune deficit was
-`0.008611`, missing the `0.007000` band by `0.001611`; packet 051's
-append-when-room deficit was `0.010611` (miss `0.003611`); and packets 054 and
-057 each measured `0.009611` (miss `0.002611`) for conservative admission and
-the full-target pruned-backlink no-op respectively. Packet 057 recorded 702
-full-target prune rejections, while its inserted-neighborhood deficit passed
-at `0.008970`; the dominant heldout result nevertheless rejects the candidate.
-Packet 058 restores the retained robust-prune product/harness state. Packet
-059 is review-open for a materially different exact-tie correction: the
-physical backlink path now gives established neighbors the same tie priority
-as the pure/local and batch full-target paths, rather than letting a newly
-inserted exact-vector duplicate win solely because it occupied union ordinal
-zero. Focused exact-head tests pass; the candidate has no quality result yet.
-Packet 060 preregisters and audits its clean 50k gate, but execution is held
-until packet 059 receives outside review and any findings are processed. The
-threshold is unchanged; no merge, final scale matrix, or closeout is claimed.
-Required follow-ups are the outside-review verdict and packet 060 exact-runtime
-measurement; only a 50k pass permits isolated 10k/50k/100k recall, latency,
-and storage confirmation. Evidence: packets 047, 051, 054–060; reviewer
-source:
-`reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
+Status: implementation complete; final evidence open. Packet 059's outside
+review accepts the established-neighbor exact-tie correction as a correctness
+alignment and ends the backlink-candidate loop. The same review finds that the
+fixed `0.007` heldout gate was incorrectly applied across scales to a
+population outside FR-083-AC-4. Packet 061 replaces it with a per-scale,
+shipped-default-baseline-relative regression gate while retaining the hard
+inserted-neighborhood AC-4 and measurement-integrity gates; focused Task 167
+tests pass. Packet 060 is superseded unrun and must not execute. Remaining work
+is the final isolated 10k/50k/100k recall, latency, and storage matrix, with
+each scale's heldout deficit recorded as a disclosed characteristic, followed
+by outside closeout review and synchronized status. No merge or closeout is
+claimed. Evidence: packets 059–061; reviewer source:
+`reviews/task-167/059-established-tie-priority/feedback/2026-08-23-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
 and are not acceptance evidence.
