@@ -1799,7 +1799,10 @@ unsafe fn amend_backlink(
     // reverse edge can only perturb the established traversal graph. If a
     // concurrent tombstone left a stale neighbor, retain the existing cleanup
     // behavior rather than preserving the malformed slice.
-    if candidates.len() == count + 1 && !kept.contains(&new_vec_id) {
+    if count == usize::from(graph_degree)
+        && candidates.len() == count + 1
+        && !kept.contains(&new_vec_id)
+    {
         stage_counters::record_insert_work(DistannInsertWork::BacklinkPruneRejected, 1);
         return Ok(());
     }

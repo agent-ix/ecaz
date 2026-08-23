@@ -172,9 +172,10 @@ pub(super) struct DistannBacklinkTarget {
 /// back-edge amendment). If the neighbor has a free slot, the new node is simply
 /// appended (cheap, edge-preserving). If it is already at `max_degree`, the
 /// union of its current edges plus the new node is `robust_prune`d back to
-/// `max_degree` on exact distance — so a full neighbor keeps its most
-/// α-diverse edges rather than rejecting the backlink outright. Returns the
-/// amended out-edge vec_id list. Pure; the on-disk slice just writes this.
+/// `max_degree` on exact distance. If that prune excludes the proposed
+/// backlink, the full target remains logically unchanged; otherwise it keeps
+/// the selected α-diverse edges. Returns the resulting out-edge vec_id list.
+/// Pure; the on-disk slice just writes this.
 pub(super) fn plan_insert_backlink(
     target: &DistannBacklinkTarget,
     new_vec_id: u64,
