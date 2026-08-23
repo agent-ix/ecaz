@@ -1,20 +1,19 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
 Status: implementation open; packet 043 reviewer findings are addressed by
-packets 044–047, but the preregistered shipped-only 50k quality gate failed and
-blocks closeout. Packet 047 measured heldout exact distinct recall `0.848722`
-after 160 shipped robust-prune inserts versus `0.857333` for a fresh rebuild:
-deficit `0.008611`, exceeding the fixed `0.007000` band by `0.001611`. The
-rejected append-when-room candidate was excluded, reducing packet 045's
-contaminated `0.026250` deficit by `0.017639`; a residual shipped robust-prune
-quality loss was traced to a physical-path divergence from batch Vamana:
-under-capacity backlink targets were robust-pruned instead of edge-preserving
-append. Candidate `22c1e01c3` restores the batch/shared-planner invariant and
-packet 050 is review-open; its clean 50k before/after gate is pending. The
-threshold is unchanged. No merge or closeout claim. Required follow-ups are
-the decisive isolated 50k result and, if it passes, isolated 10k/50k/100k
-recall, latency, and storage confirmation. Evidence: packets 047 and 050;
-reviewer source:
+packets 044–049, but both isolated 50k backlink strategies fail the fixed
+heldout quality gate. Packet 047's shipped robust-prune-only deficit was
+`0.008611`, missing the `0.007000` band by `0.001611`. Packet 051's
+batch-consistent append-when-room candidate measured physical `0.846722`
+versus fresh `0.857333`, a `0.010611` deficit and `0.003611` gate miss. Its
+inserted-neighborhood population passed, but the dominant heldout result was
+`0.002000` worse than robust-prune-only, so candidate `22c1e01c3` is rejected
+and packet 050 is superseded by packet 051's measured disposition. The
+threshold is unchanged; no merge, final scale matrix, or closeout is claimed.
+Required follow-ups are to restore the pre-candidate shipped default, diagnose
+the remaining isolated physical-vs-fresh loss, clear the 50k branch point with
+a new candidate, and only then run isolated 10k/50k/100k recall, latency, and
+storage confirmation. Evidence: packets 047 and 051; reviewer source:
 `reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
