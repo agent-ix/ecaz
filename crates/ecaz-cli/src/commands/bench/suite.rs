@@ -3182,7 +3182,11 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
         let Some(body) = line.find(PREFIX).map(|idx| &line[idx + PREFIX.len()..]) else {
             continue;
         };
-        let body = body.trim();
+        // Failure diagnostics can wrap the original fixture line in a
+        // color-eyre ANSI span. The metric itself precedes the first escape;
+        // discard the presentation suffix so its final key/value remains
+        // parseable (for example `pass=false`).
+        let body = body.split('\u{1b}').next().unwrap_or(body).trim();
         // Physical benchmark child stderr is appended to the fixture summary
         // with the fixture prefix, so notices arrive as
         // `[distann-multicluster] [postgres notice] ...`. Keep accepting the
@@ -3239,6 +3243,32 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_recall ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_recall".into(), values));
+            }
+        } else if let Some(rest) =
+            body.strip_prefix("physical_benchmark_recall_instrument_calibration ")
+        {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push((
+                    "physical_benchmark_recall_instrument_calibration".into(),
+                    values,
+                ));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_post_insert_exact_recall ")
+        {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_post_insert_exact_recall".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_insert_throughput_ab ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_insert_throughput_ab".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_append_when_room_ab ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_append_when_room_ab".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_insert_work ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_insert_work".into(), values));
             }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_paired_recall ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
@@ -6872,6 +6902,39 @@ psql header noise\n\
             Some("false"),
             "a nonzero mismatch fails the identity threshold"
         );
+    }
+
+    #[test]
+    fn distann_task167_quality_and_insert_metrics_are_structured() {
+        let raw = "\
+[distann-multicluster] physical_benchmark_recall_instrument_calibration scale=50k ordinary_distinct_recall=0.954500 exact_scorer_distinct_recall=0.954500 absolute_delta=0.000000 pass=true\n\
+[distann-multicluster] physical_benchmark_insert_throughput_ab scale=50k physical_insert_mode=shipped_default_robust_prune physical_rows_per_second=0.224 control_rows_per_second=2.000 pass=true\n\
+[distann-multicluster] physical_benchmark_append_when_room_ab scale=50k append_enabled_over_disabled=1.003392 pass=true\n\
+[distann-multicluster] physical_benchmark_insert_work scale=50k metric=backlink_amendments inserts=160 value=5120 pass=true\n\
+   0: \u{1b}[91mTask 167 failed: [distann-multicluster] physical_benchmark_post_insert_exact_recall scale=50k population=heldout physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 physical_minus_fresh=-0.008611 allowed_deficit=0.007000 quality_gate_pass=false pass=false\u{1b}[0m\n";
+        let rows = parse_distann_multinode_rows(raw);
+
+        for metric in [
+            "physical_benchmark_recall_instrument_calibration",
+            "physical_benchmark_insert_throughput_ab",
+            "physical_benchmark_append_when_room_ab",
+            "physical_benchmark_insert_work",
+            "physical_benchmark_post_insert_exact_recall",
+        ] {
+            assert!(
+                rows.iter().any(|(candidate, _)| candidate == metric),
+                "missing Task 167 metric {metric}: {rows:?}"
+            );
+        }
+        let exact = rows
+            .iter()
+            .find(|(metric, _)| metric == "physical_benchmark_post_insert_exact_recall")
+            .expect("exact-recall row");
+        assert_eq!(
+            exact.1.get("quality_gate_pass").map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(exact.1.get("pass").map(String::as_str), Some("false"));
     }
 
     #[test]
