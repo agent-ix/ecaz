@@ -3179,7 +3179,13 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             }
             continue;
         }
-        let Some(body) = line.find(PREFIX).map(|idx| &line[idx + PREFIX.len()..]) else {
+        let body = if let Some(idx) = line.find(PREFIX) {
+            &line[idx + PREFIX.len()..]
+        } else if let Some(idx) = line.find("physical_benchmark_post_insert_exact_recall ") {
+            // A hard-gate error repeats the exact-recall metric after the
+            // color-eyre context but without the fixture prefix.
+            &line[idx..]
+        } else {
             continue;
         };
         // Failure diagnostics can wrap the original fixture line in a
@@ -6911,7 +6917,7 @@ psql header noise\n\
 [distann-multicluster] physical_benchmark_insert_throughput_ab scale=50k physical_insert_mode=shipped_default_robust_prune physical_rows_per_second=0.224 control_rows_per_second=2.000 pass=true\n\
 [distann-multicluster] physical_benchmark_append_when_room_ab scale=50k append_enabled_over_disabled=1.003392 pass=true\n\
 [distann-multicluster] physical_benchmark_insert_work scale=50k metric=backlink_amendments inserts=160 value=5120 pass=true\n\
-   0: \u{1b}[91mTask 167 failed: [distann-multicluster] physical_benchmark_post_insert_exact_recall scale=50k population=heldout physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 physical_minus_fresh=-0.008611 allowed_deficit=0.007000 quality_gate_pass=false pass=false\u{1b}[0m\n";
+   0: \u{1b}[91mTask 167 failed: physical_benchmark_post_insert_exact_recall scale=50k population=heldout physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 physical_minus_fresh=-0.008611 allowed_deficit=0.007000 quality_gate_pass=false pass=false\u{1b}[0m\n";
         let rows = parse_distann_multinode_rows(raw);
 
         for metric in [
