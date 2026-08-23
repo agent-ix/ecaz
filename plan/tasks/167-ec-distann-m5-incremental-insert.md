@@ -1,19 +1,28 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation and final evidence complete; packet 062 review-open;
-outside closeout pending. Packet 059's outside review accepts the
-established-neighbor exact-tie correction as a correctness alignment and ends
-the backlink-candidate loop. Packet 061 corrects the former fixed `0.007`
-heldout gate while retaining the hard inserted-neighborhood AC-4 and
-measurement-integrity gates; 14 focused Task 167 CLI tests pass. Packet 060 is
-superseded unrun and must not execute. Packet 062 supplies the final-SHA,
-isolated 10k/50k/100k recall, latency, and storage matrix: all three cells
-succeeded and all three inserted-neighborhood AC-4 deficits passed the 0.015
-band (`0.003762`, `0.014261`, `0.005663`); heldout is disclosed per scale in
-baseline-recording mode. No further candidate or benchmark run is requested.
-No closeout is claimed until outside review responds. Evidence: packets
-059–062; reviewer source:
-`reviews/task-167/059-established-tie-priority/feedback/2026-08-23-01-reviewer.md`;
+Status: complete — review-closed ACCEPT (2026-08-23); merge-ready pending
+operator approval, not merged. Outside review accepts packets 059 (physical
+backlink tie-order alignment), 061 (per-scale baseline-relative heldout gate,
+hard inserted-neighborhood AC-4 and measurement-integrity gates retained), and
+062 (final-SHA closeout matrix). FR-083-AC-4 passes at every required scale on
+one preregistered run at extension `3da8c572e`/release: inserted-neighborhood
+deficits `0.003762` / `0.014261` / `0.005663` against the `0.015` band, with
+ordinary recall `0.9990` / `0.9545` / `0.9295`, latency mean `15.20` / `20.70` /
+`17.00 ms`, and amplification `1.238533x` / `1.335333x` / `1.353813x` at
+10k/50k/100k. Packet 060 is retained as an immutable preregistration record and
+correctly never ran. Packets 044–058's four backlink candidates were measured,
+rejected and reverted; they carry no acceptance weight. Disclosed
+characteristics, not defects: (1) 100k heldout inverts — physical `0.805500`
+beats fresh `0.767000` by `+0.038500`, so the incremental-insert general-recall
+concern from packets 045–058 does not reproduce at 100k; (2) the 50k AC-4
+deficit uses 95% of a band derived from pre-`c3b01290b` 10k ordering, so any
+inheriting task should recalibrate from 062 rather than 045; (3) latency is
+non-monotonic in scale (50k mean exceeds 100k), three cells run sequentially on
+one host. No further candidate or benchmark run is requested. Evidence: packets
+059–062; reviewer sources:
+`reviews/task-167/059-established-tie-priority/feedback/2026-08-23-01-reviewer.md`
+and
+`reviews/task-167/062-final-sha-closeout-matrix/feedback/2026-08-23-01-reviewer.md`;
 final matrix: `reviews/task-167/062-final-sha-closeout-matrix/`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
