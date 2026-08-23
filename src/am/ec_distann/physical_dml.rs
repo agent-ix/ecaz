@@ -1794,6 +1794,15 @@ unsafe fn amend_backlink(
         alpha,
         usize::from(graph_degree),
     )?;
+    // The local ec_diskann incremental planner treats a pruned backlink as a
+    // no-op. Preserve the same contract here: rewriting without the proposed
+    // reverse edge can only perturb the established traversal graph. If a
+    // concurrent tombstone left a stale neighbor, retain the existing cleanup
+    // behavior rather than preserving the malformed slice.
+    if candidates.len() == count + 1 && !kept.contains(&new_vec_id) {
+        stage_counters::record_insert_work(DistannInsertWork::BacklinkPruneRejected, 1);
+        return Ok(());
+    }
     node.neighbor_vec_ids.fill(0);
     node.neighbor_codes.fill(0);
     node.neighbor_count = u16::try_from(kept.len())
