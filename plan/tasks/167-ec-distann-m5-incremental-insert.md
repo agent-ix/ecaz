@@ -15,11 +15,13 @@ physical backlink path now gives established neighbors the same tie priority
 as the pure/local and batch full-target paths, rather than letting a newly
 inserted exact-vector duplicate win solely because it occupied union ordinal
 zero. Focused exact-head tests pass; the candidate has no quality result yet.
-The threshold is unchanged; no merge, final scale matrix, or closeout is
-claimed. Required follow-ups are an outside-review verdict and a separately
-preregistered clean 50k gate; only a pass permits isolated 10k/50k/100k recall,
-latency, and storage confirmation. Evidence: packets 047, 051, 054–059;
-reviewer source:
+Packet 060 preregisters and audits its clean 50k gate, but execution is held
+until packet 059 receives outside review and any findings are processed. The
+threshold is unchanged; no merge, final scale matrix, or closeout is claimed.
+Required follow-ups are the outside-review verdict and packet 060 exact-runtime
+measurement; only a 50k pass permits isolated 10k/50k/100k recall, latency,
+and storage confirmation. Evidence: packets 047, 051, 054–060; reviewer
+source:
 `reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
