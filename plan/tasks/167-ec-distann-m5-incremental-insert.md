@@ -9,12 +9,17 @@ append-when-room deficit was `0.010611` (miss `0.003611`); and packets 054 and
 the full-target pruned-backlink no-op respectively. Packet 057 recorded 702
 full-target prune rejections, while its inserted-neighborhood deficit passed
 at `0.008970`; the dominant heldout result nevertheless rejects the candidate.
-Packet 058 restores the retained robust-prune product/harness state and is
-review-open. The threshold is unchanged; no merge, final scale matrix, or
-closeout is claimed. Required follow-ups are an outside-review verdict and
-diagnosis of a materially different isolated candidate; only a clean 50k pass
-permits isolated 10k/50k/100k recall, latency, and storage confirmation.
-Evidence: packets 047, 051, 054–058; reviewer source:
+Packet 058 restores the retained robust-prune product/harness state. Packet
+059 is review-open for a materially different exact-tie correction: the
+physical backlink path now gives established neighbors the same tie priority
+as the pure/local and batch full-target paths, rather than letting a newly
+inserted exact-vector duplicate win solely because it occupied union ordinal
+zero. Focused exact-head tests pass; the candidate has no quality result yet.
+The threshold is unchanged; no merge, final scale matrix, or closeout is
+claimed. Required follow-ups are an outside-review verdict and a separately
+preregistered clean 50k gate; only a pass permits isolated 10k/50k/100k recall,
+latency, and storage confirmation. Evidence: packets 047, 051, 054–059;
+reviewer source:
 `reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
