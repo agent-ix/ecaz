@@ -35,6 +35,26 @@
   and repeated audit:
   `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-167/054-conservative-admission-50k-gate/artifacts/task167-conservative-admission-50k-suite.json --log-file reviews/task-167/054-conservative-admission-50k-gate/artifacts/suite-run.log`.
 
+## Exact runtime
+
+- Runtime head: `80107d843e9f55d185f102455227be7d09648709`;
+  both the installed extension and release CLI embed this SHA with profile
+  `release`.
+- PG18 extension install command:
+  `cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features pg18 --no-default-features`.
+- Install result: passed. `install-extension.log` LF-normalized SHA-256:
+  `2e7f5d42831aab77f25db7f0ddf0f146039d1db126775aa2d6a752f98a375369`.
+- Installed `ecaz.so` SHA-256:
+  `d808fd6a2809e1a867cbe50bbdb965f5c6ab2b40875b3a40e4ae3f8badb7fd82`.
+- CLI build command: `cargo build -p ecaz-cli --release --no-default-features`.
+- Build result: passed with the pre-existing unrelated dead-code warning at
+  `commands/corpus/load.rs:190`. `build-cli.log` LF-normalized SHA-256:
+  `e22d2c41ae5b5a606d7b878cca69d107d9330ecbe9531203a8b5f99a78526c30`.
+- Release CLI SHA-256:
+  `17a1dbe23716a5eda3cb2094004b93bd82649bc4cb00384b0989ed6293f1020a`.
+- Exact-runtime audit result: passed, 1 step. Log SHA-256:
+  `52bc0d15827f5eee1ab8f6a8f44071f58ab9cafa192f5b63a231adb2cef55243`.
+
 ## Decision rule
 
 - If either fixed quality band fails, reject the candidate, skip the
