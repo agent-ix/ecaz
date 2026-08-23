@@ -3072,11 +3072,12 @@ async fn task199_no_replica_insert_throughput(
     Ok(())
 }
 
-/// Task 167 insert-throughput and backlink-strategy A/B. The shipped
-/// robust-prune-all arm is measured against the same-generation local control,
-/// then quality is gated before the rejected append-when-room candidate mutates
-/// the disposable physical fixture. Every trial uses a disjoint ID range, so no
-/// arm includes cleanup or tombstone work from another arm.
+/// Task 167 insert-throughput and backlink-strategy A/B. The candidate gives
+/// established neighbors priority over a proposed backlink on exact-distance
+/// ties; it is measured against the same-generation local control, then quality
+/// is gated before the rejected append-when-room control mutates the disposable
+/// physical fixture. Every trial uses a disjoint ID range, so no arm includes
+/// cleanup or tombstone work from another arm.
 const TASK167_AB_TRIALS: usize = 5;
 const TASK167_AB_ROWS_PER_TRIAL: usize = 32;
 const TASK167_AB_SAMPLE_ROWS: usize = TASK167_AB_TRIALS * TASK167_AB_ROWS_PER_TRIAL;
@@ -3210,7 +3211,7 @@ async fn task167_default_insert_throughput(
     }
     let ratio = shipped.rows_per_second / single.rows_per_second.max(f64::EPSILON);
     lines.push(format!(
-        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=shipped_default_robust_prune physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
+        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=candidate_default_established_tie_priority physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
         shipped.inserted_rows,
         shipped.rows_per_second,
         single.rows_per_second,
@@ -3236,7 +3237,7 @@ async fn task167_default_insert_throughput(
         }
         values.insert(metric.clone(), (value, mean));
         lines.push(format!(
-            "physical_benchmark_insert_work scale={scale} insert_mode=shipped_default_robust_prune metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
+            "physical_benchmark_insert_work scale={scale} insert_mode=candidate_default_established_tie_priority metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
         ));
     }
     let bound = i64::from(graph_degree) * expected_inserts;
@@ -3315,7 +3316,7 @@ async fn task167_append_when_room_diagnostic(
     let append_candidate_faster =
         append_ratio >= 1.0 && append_amendments <= baseline.backlink_amendments;
     lines.push(format!(
-        "physical_benchmark_backlink_strategy_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} shipped_robust_prune_rows_per_second={:.3} append_when_room_rows_per_second={:.3} append_when_room_over_shipped={append_ratio:.6} shipped_backlink_amendments={} append_when_room_backlink_amendments={append_amendments} shipped_backlink_no_room={} append_when_room_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture measurement_order=after_shipped_default_quality_gate candidate_graph_mutation_excluded_from_quality_gate=true candidate_faster={append_candidate_faster} pass=true",
+        "physical_benchmark_backlink_strategy_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} candidate_established_tie_rows_per_second={:.3} append_when_room_rows_per_second={:.3} append_when_room_over_candidate={append_ratio:.6} candidate_backlink_amendments={} append_when_room_backlink_amendments={append_amendments} candidate_backlink_no_room={} append_when_room_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture measurement_order=after_candidate_default_quality_gate control_graph_mutation_excluded_from_quality_gate=true control_faster={append_candidate_faster} pass=true",
         append_when_room.inserted_rows,
         baseline.measurement.rows_per_second,
         append_when_room.rows_per_second,
@@ -3610,7 +3611,7 @@ async fn task167_post_insert_exact_recall(
             allowed_deficit,
         );
         let line = format!(
-            "physical_benchmark_post_insert_exact_recall scale={scale} phase={graph_phase} population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} allowed_deficit={allowed_deficit:.6} gate_source=packet_045_five_repeat_mean_deficit_plus_2sd_ceil_0_001 quality_gate_pass={quality_gate_pass} fresh_reloptions_matched=true heldout_query_set_matches_ordinary=true heldout_queries_dominate=true search_gucs_pinned=true diagnostic_candidate_mutation_excluded=true excluded_backlink_strategy=append_when_room measurement_complete=true pass={quality_gate_pass}",
+            "physical_benchmark_post_insert_exact_recall scale={scale} phase={graph_phase} population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} allowed_deficit={allowed_deficit:.6} gate_source=packet_045_five_repeat_mean_deficit_plus_2sd_ceil_0_001 quality_gate_pass={quality_gate_pass} fresh_reloptions_matched=true heldout_query_set_matches_ordinary=true heldout_queries_dominate=true search_gucs_pinned=true diagnostic_control_mutation_excluded=true excluded_backlink_strategy=append_when_room measurement_complete=true pass={quality_gate_pass}",
             summary.queries,
             summary.truth_slots,
             summary.truth_distinct_keys,
@@ -7777,7 +7778,7 @@ async fn run_physical_benchmarks(
             &truth_corpus,
             &truth_queries,
             &search_guc_sql,
-            "post_160_shipped_default_robust_prune_inserts",
+            "post_160_candidate_default_established_tie_priority_inserts",
             &[2_000_000_i64],
         )
         .await?;
@@ -7785,7 +7786,7 @@ async fn run_physical_benchmarks(
         lines.extend(exact_recall_lines);
         if task167_quality_gate_failed {
             lines.push(format!(
-                "physical_benchmark_backlink_strategy_ab scale={scale} pass=skipped reason=shipped_default_quality_gate_failed candidate_mutation_excluded=true"
+                "physical_benchmark_backlink_strategy_ab scale={scale} pass=skipped reason=candidate_default_quality_gate_failed control_mutation_excluded=true"
             ));
         } else {
             task167_append_when_room_diagnostic(
@@ -7800,7 +7801,7 @@ async fn run_physical_benchmarks(
     }
     if task167_quality_gate_failed && args.materialization_correctness {
         lines.push(format!(
-            "physical_benchmark_materialization_correctness scale={scale} pass=skipped reason=shipped_default_quality_gate_failed"
+            "physical_benchmark_materialization_correctness scale={scale} pass=skipped reason=candidate_default_quality_gate_failed"
         ));
     } else if args.materialization_correctness {
         lines.extend(
@@ -8707,7 +8708,7 @@ async fn drive_physical_fixture(
             summary.push_str(&format!("[distann-multicluster] {line}\n"));
         }
         summary.push_str(
-            "[distann-multicluster] physical_quality_gate pass=false candidate_mutation_excluded=true post_gate_drills=skipped\n",
+            "[distann-multicluster] physical_quality_gate pass=false control_mutation_excluded=true post_gate_drills=skipped\n",
         );
         let summary_path = log_dir.join("distann-multinode-summary.log");
         fs::write(&summary_path, summary)
@@ -12296,7 +12297,7 @@ mod tests {
         let lines = vec![
             "physical_benchmark_post_insert_exact_recall population=inserted_neighborhood quality_gate_pass=true pass=true".to_owned(),
             "physical_benchmark_post_insert_exact_recall population=heldout physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 quality_gate_pass=false pass=false".to_owned(),
-            "physical_benchmark_backlink_strategy_ab pass=skipped reason=shipped_default_quality_gate_failed candidate_mutation_excluded=true".to_owned(),
+            "physical_benchmark_backlink_strategy_ab pass=skipped reason=candidate_default_quality_gate_failed control_mutation_excluded=true".to_owned(),
         ];
         let failure = task167_quality_gate_failure(&lines).expect("heldout gate must fail");
         assert!(failure.contains("population=heldout"));
