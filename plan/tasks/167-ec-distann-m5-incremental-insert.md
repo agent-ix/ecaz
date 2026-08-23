@@ -1,7 +1,7 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: complete — review-closed ACCEPT (2026-08-23); merge-ready pending
-operator approval, not merged. Outside review accepts packets 059 (physical
+Status: complete — review-closed ACCEPT (2026-08-23); operator-approved for
+merge. Outside review accepts packets 059 (physical
 backlink tie-order alignment), 061 (per-scale baseline-relative heldout gate,
 hard inserted-neighborhood AC-4 and measurement-integrity gates retained), and
 062 (final-SHA closeout matrix). FR-083-AC-4 passes at every required scale on
