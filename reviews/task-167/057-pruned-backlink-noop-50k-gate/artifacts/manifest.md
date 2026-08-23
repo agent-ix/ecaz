@@ -42,6 +42,28 @@
 - Report after completion or an expected quality-gate failed-step exit:
   `/home/peter/.cargo-target/release/ecaz bench suite report --manifest reviews/task-167/057-pruned-backlink-noop-50k-gate/artifacts/final-suite/suite-manifest.json --results-output reviews/task-167/057-pruned-backlink-noop-50k-gate/artifacts/final-suite/results.jsonl --log-file reviews/task-167/057-pruned-backlink-noop-50k-gate/artifacts/suite-report.log`.
 
+## Exact runtime
+
+- Runtime head: `13da0c545fe2600d330640e2c476f63b420bffb4`; both the
+  installed PG18 extension and release CLI were built from this clean head.
+- PG18 extension install command:
+  `cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features pg18 --no-default-features`.
+- Install result: passed. The optimized library build took `5m11s`, followed
+  by the required `pgrx_embed` SQL-generation build (`1m00s`).
+  `install-extension.log` LF-normalized SHA-256:
+  `7f94b661e66aafa057b6fada66b34076dbd13dec3b1f1c0839567883e060d8c4`.
+- Installed `ecaz.so` SHA-256:
+  `aa4d96190b10a474e29c24bfab4d73958f14a2863b28bf81a41d25e8b664db52`.
+- CLI build command: `cargo build -p ecaz-cli --release --no-default-features`.
+- Build result: passed in `10m47s`, with the pre-existing unrelated dead-code
+  warning at `commands/corpus/load.rs:190`. `build-cli.log` LF-normalized
+  SHA-256:
+  `1cf82367959bf7066a2ce6835e066f8d457a11fa13d6103211f4a4bd24806ad6`.
+- Release CLI SHA-256:
+  `d2a3a583408a52a67d99b4978a033e2c82137caba076538675521618f8efd2cb`.
+- Exact-runtime audit result: passed, 1 step. Log SHA-256:
+  `cdc6118948c73fd5ccc4fde9b50ad02afee5868378a7adeb9210edd7cbeb4c44`.
+
 ## Decision rule
 
 - If either fixed quality band fails, reject the candidate, skip the
