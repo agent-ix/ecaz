@@ -1784,10 +1784,10 @@ unsafe fn amend_backlink(
             source_vector,
         });
     }
-    // Full targets follow batch Vamana's re-prune rule. The same path also
-    // serves the explicit robust-prune-all diagnostic when a target has spare
-    // degree; production appends in that case above so existing edges are not
-    // removed before capacity is reached.
+    // The planner is vantage-point agnostic: reorder the union from the
+    // target's source vector using the same exact robust-prune metric as
+    // insertion. The shipped strategy uses this for free and full targets;
+    // append-when-room remains an explicit diagnostic candidate.
     let kept = select_insert_forward_neighbors(
         &candidate.source_vector,
         &candidates,

@@ -135,12 +135,11 @@ static ECDISTANN_DEBUG_FAIL_HOP_ROUND_GUC: GucSetting<i32> = GucSetting::<i32>::
 static ECDISTANN_DEBUG_MISSING_NODE_RECORD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FORCE_FRONTIER_RETRY_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
-// Match batch Vamana and the shared incremental planner: preserve existing
-// edges and append a backlink while the target is under capacity, then
-// robust-prune only a full target. The diagnostic toggle retains the
-// robust-prune-all control for attributed A/B measurement.
+// Packet 051 rejected the batch-consistent append-when-room candidate on the
+// dominant 50k heldout quality gate, so robust-prune-all remains the shipped
+// path. The toggle remains userset for attributed diagnostic measurement.
 static ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC: GucSetting<bool> =
-    GucSetting::<bool>::new(false);
+    GucSetting::<bool>::new(true);
 static ECDISTANN_DEBUG_RETRY_ATTRIBUTION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "pg_test")]
 static ECDISTANN_DEBUG_FAIL_CROWN_POPULATION_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
@@ -722,7 +721,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_bool_guc(
         c"ec_distann.debug_disable_append_when_room",
         c"Task 167 A/B control: disable free-capacity backlink append.",
-        c"When on, a backlink target with spare degree follows the robust-prune-all diagnostic control instead of the batch-consistent append path. Production defaults off.",
+        c"When on, a backlink target with spare degree follows robust-prune union instead of appending directly. Production defaults on because packet 051's isolated 50k heldout gate rejected append-when-room.",
         &ECDISTANN_DEBUG_DISABLE_APPEND_WHEN_ROOM_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -1407,8 +1406,8 @@ mod tests {
     }
 
     #[test]
-    fn distann_default_backlink_strategy_matches_batch_append_when_room() {
-        assert!(!super::debug_disable_append_when_room());
+    fn distann_default_backlink_strategy_retains_measured_robust_prune() {
+        assert!(super::debug_disable_append_when_room());
     }
 
     #[test]
