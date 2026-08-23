@@ -508,10 +508,14 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                             .value::<Vec<u8>>()
                             .map_err(|_| "EC_EPOCH_STATE: retire digest decode failed".to_owned())?
                             .ok_or_else(|| "EC_EPOCH_STATE: retire digest is NULL".to_owned())?,
-                        state: RetireDecisionState::parse(&row["decision_state"]
-                            .value::<String>()
-                            .map_err(|_| "EC_EPOCH_STATE: retire state decode failed".to_owned())?
-                            .ok_or_else(|| "EC_EPOCH_STATE: retire state is NULL".to_owned())?)?,
+                        state: RetireDecisionState::parse(
+                            &row["decision_state"]
+                                .value::<String>()
+                                .map_err(|_| {
+                                    "EC_EPOCH_STATE: retire state decode failed".to_owned()
+                                })?
+                                .ok_or_else(|| "EC_EPOCH_STATE: retire state is NULL".to_owned())?,
+                        )?,
                         xmin: row["decision_xmin"]
                             .value::<String>()
                             .map_err(|_| {
@@ -658,9 +662,7 @@ fn ec_distann_recover_epoch_retire(index_regclass: PgRelation, epoch_fingerprint
                         stored.build_id.into(),
                     ],
                 )
-                .map_err(|error| {
-                    format!("EC_EPOCH_STATE: head-sample reclaim failed: {error}")
-                })?;
+                .map_err(|error| format!("EC_EPOCH_STATE: head-sample reclaim failed: {error}"))?;
             Ok::<(), String>(())
         })?;
         let updated = Spi::connect_mut(|client| {

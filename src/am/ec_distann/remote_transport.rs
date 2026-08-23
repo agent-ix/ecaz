@@ -847,11 +847,9 @@ pub(crate) fn record_physical_insert_intent(
         let precommit_conninfo = endpoint.clone();
         let precommit_gid = gid.clone();
         pgrx::register_xact_callback(pgrx::PgXactCallbackEvent::PreCommit, move || {
-            if let Err(error) = mark_remote_physical_intent_precommit(
-                &precommit_conninfo,
-                node_id,
-                &precommit_gid,
-            ) {
+            if let Err(error) =
+                mark_remote_physical_intent_precommit(&precommit_conninfo, node_id, &precommit_gid)
+            {
                 pgrx::error!("{error}");
             }
         });
@@ -924,9 +922,7 @@ pub(crate) fn remote_physical_insert(
                     }
                 ))
                 .await
-                .map_err(|error| {
-                    format!("EC_REMOTE_WRITE: append A/B setting failed: {error}")
-                })?;
+                .map_err(|error| format!("EC_REMOTE_WRITE: append A/B setting failed: {error}"))?;
             let result = await_remote(
                 call_timeout(),
                 Some(client.cancel_token()),
@@ -1148,9 +1144,7 @@ pub(crate) fn remote_physical_backlink(
                     }
                 ))
                 .await
-                .map_err(|error| {
-                    format!("EC_REMOTE_WRITE: append A/B setting failed: {error}")
-                })?;
+                .map_err(|error| format!("EC_REMOTE_WRITE: append A/B setting failed: {error}"))?;
             let result = await_remote(
                 call_timeout(),
                 Some(client.cancel_token()),
@@ -2549,8 +2543,7 @@ async fn run_one_physical_materialize_raw(
                 }
                 Err(error) => break Err(error),
             }
-        }
-        ?
+        }?
     };
     #[cfg(feature = "distann-head-attribution-benchmark")]
     let rows = {
@@ -2585,8 +2578,7 @@ async fn run_one_physical_materialize_raw(
                 }
                 Err(error) => break Err(error),
             }
-        }
-        ?
+        }?
     };
     Ok((rows, started.elapsed()))
 }

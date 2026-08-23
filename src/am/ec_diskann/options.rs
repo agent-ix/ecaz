@@ -194,7 +194,9 @@ pub(super) fn current_prefilter_kind() -> PrefilterKind {
 }
 
 pub(super) fn current_beam_width() -> usize {
-    usize::try_from(ECDISKANN_BEAM_WIDTH_GUC.get()).unwrap_or(1).max(1)
+    usize::try_from(ECDISKANN_BEAM_WIDTH_GUC.get())
+        .unwrap_or(1)
+        .max(1)
 }
 
 pub(super) fn scan_profile_notice_enabled() -> bool {

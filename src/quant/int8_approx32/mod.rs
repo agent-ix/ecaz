@@ -97,9 +97,8 @@ mod tests {
     use crate::quant::prod::ProdQuantizer;
 
     fn assert_host_simd_isa(actual: crate::quant::isa::Isa) {
-        let expected = crate::quant::isa::select_highest_isa(
-            crate::quant::isa::HostIsaFeatures::detect(),
-        );
+        let expected =
+            crate::quant::isa::select_highest_isa(crate::quant::isa::HostIsaFeatures::detect());
         assert_eq!(
             actual, expected,
             "int8 differential test did not execute the host's preferred SIMD ISA"
@@ -136,8 +135,7 @@ mod tests {
 
         let block: &[&[u8]; BLOCK_WIDTH] = code_refs[..BLOCK_WIDTH].try_into().unwrap();
         let mut block_scores = vec![0.0; BLOCK_WIDTH];
-        let block_isa =
-            score_int8_approx_block32(&prepared, dimensions, block, &mut block_scores);
+        let block_isa = score_int8_approx_block32(&prepared, dimensions, block, &mut block_scores);
         assert_host_simd_isa(block_isa);
         for (score, code) in block_scores.iter().zip(code_refs[..BLOCK_WIDTH].iter()) {
             let reference = score_int8_approx_scalar(&prepared, dimensions, code);

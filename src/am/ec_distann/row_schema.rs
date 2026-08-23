@@ -49,7 +49,9 @@ pub(crate) struct ResolvedRowSchema {
     pub(crate) columns: Vec<ResolvedRowSchemaColumn>,
 }
 
-pub(crate) fn resolve_relation_schema(relation_oid: pg_sys::Oid) -> Result<ResolvedRowSchema, String> {
+pub(crate) fn resolve_relation_schema(
+    relation_oid: pg_sys::Oid,
+) -> Result<ResolvedRowSchema, String> {
     let rows = Spi::connect(|client| {
         client
             .select(

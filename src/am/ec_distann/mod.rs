@@ -11,27 +11,23 @@
 //! materialization (Tasks 162–179).
 
 mod ambuild;
-mod build_gate;
 mod build_coordinator;
+mod build_gate;
 mod coordinator_abandonment;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ambuild::read_metadata_from_index;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::ambuild::test_physical_capture_dead_callback_does_not_access_datums;
+pub(crate) use self::ambuild::{build_physical_graph_workspace, capture_physical_source_rows};
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::build_coordinator::build_session_lock_count_for_test;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::custom_scan::{
     exec_state_context_cleanups_for_test, reset_exec_state_context_cleanups_for_test,
 };
-#[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::ambuild::read_metadata_from_index;
-pub(crate) use self::ambuild::{
-    build_physical_graph_workspace, capture_physical_source_rows,
-};
-#[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::ambuild::{
-    test_physical_capture_dead_callback_does_not_access_datums,
-};
 mod canonical_wire;
-mod cost;
 mod coordinator_retirement;
+mod cost;
 mod crown_cache;
 mod custom_scan;
 mod dml;
@@ -53,18 +49,18 @@ mod head_cache;
 mod head_sample;
 mod identity;
 mod insert;
-mod lifecycle_wire;
 mod lifecycle_guard;
 mod lifecycle_state;
+mod lifecycle_wire;
 mod manifest_v2;
 mod node_registry;
 mod options;
 pub mod page;
 mod participant_lifecycle;
+mod physical_dml;
 pub(crate) mod placement;
 pub(crate) mod quantizer;
 pub(crate) mod reader;
-mod physical_dml;
 mod remote_endpoint;
 mod remote_transport;
 #[cfg(any(test, feature = "pg_test"))]
@@ -83,8 +79,8 @@ pub(crate) use self::scan_registry::{
 pub(crate) mod scan;
 mod shard_build;
 mod source_spool;
-mod traversal_replica;
 pub(crate) mod stage_counters;
+mod traversal_replica;
 pub mod tuple;
 
 pub(crate) fn quote_ident(identifier: &str) -> String {
@@ -92,14 +88,14 @@ pub(crate) fn quote_ident(identifier: &str) -> String {
 }
 
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::generation_catalog::extension_relation_name as catalog_relation_name;
-#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::coordinator_retirement::ensure_fingerprint_not_retiring as ensure_fingerprint_not_retiring_for_test;
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::generation_catalog::extension_relation_name as catalog_relation_name;
 pub use self::generation_descriptor::{
     roster_digest, DistannBuildOptions, DistannBuildSpec, DistannCodecArtifact,
-    DistannGenerationDescriptor, DistannHeadPolicy, DistannOwnerExpectation, DistannRosterEntry,
-    DistannHeadSizingAttestation,
-    DISTANN_BUILD_SPEC_VERSION, DISTANN_BUILD_SPEC_VERSION_OFFSET, DISTANN_CODEC_ARTIFACT_VERSION,
+    DistannGenerationDescriptor, DistannHeadPolicy, DistannHeadSizingAttestation,
+    DistannOwnerExpectation, DistannRosterEntry, DISTANN_BUILD_SPEC_VERSION,
+    DISTANN_BUILD_SPEC_VERSION_OFFSET, DISTANN_CODEC_ARTIFACT_VERSION,
     DISTANN_CODEC_ARTIFACT_VERSION_OFFSET, DISTANN_GENERATION_DESCRIPTOR_COORDINATOR_UUID_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_DIMENSIONS_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_FIXED_PREFIX_BYTES,
@@ -110,9 +106,12 @@ pub use self::generation_descriptor::{
     DISTANN_GENERATION_DESCRIPTOR_PLACEMENT_HASH_OFFSET,
     DISTANN_GENERATION_DESCRIPTOR_ROSTER_COUNT_OFFSET, DISTANN_GENERATION_DESCRIPTOR_VERSION,
     DISTANN_GENERATION_DESCRIPTOR_VERSION_OFFSET, DISTANN_GRAPH_RECORD_VERSION,
-    DISTANN_HANDOFF_WIRE_VERSION,
-    DISTANN_PHYSICAL_INDEX_FORMAT_VERSION, DISTANN_PLACEMENT_HASH_VERSION,
+    DISTANN_HANDOFF_WIRE_VERSION, DISTANN_PHYSICAL_INDEX_FORMAT_VERSION,
+    DISTANN_PLACEMENT_HASH_VERSION,
 };
+#[cfg(any(test, feature = "pg_test"))]
+pub(crate) use self::handoff_router::{DistannHandoffRouteIdentity, DistannStageAck};
+pub(crate) use self::handoff_wire::restore_owner_stream_hash_state;
 pub use self::handoff_wire::{
     owner_stream_digest, DistannHandoffBatch, DistannHandoffEntry, DistannHandoffShape,
     DISTANN_HANDOFF_BATCH_FIXED_PREFIX_BYTES, DISTANN_HANDOFF_ENTRY_FIXED_PREFIX_BYTES,
@@ -125,15 +124,11 @@ pub use self::handoff_wire::{
     DISTANN_OWNER_STREAM_HASH_STATE_VERSION_OFFSET,
 };
 #[cfg(any(test, feature = "pg_test"))]
-pub(crate) use self::handoff_router::{DistannHandoffRouteIdentity, DistannStageAck};
-pub(crate) use self::handoff_wire::restore_owner_stream_hash_state;
-#[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::identity::vec_id_from_source_identity;
 pub use self::lifecycle_wire::{
     DistannAbandonBindingAuditV1, DistannAbandonedBinding, DistannAbandonedBindingSetV1,
     DistannBuildCandidateV1, DistannCancelPublishAuditV1, DistannPublishedEpochIdentity,
-    DistannRetireDecisionV1,
-    DistannSuccessorActivationV1, DISTANN_ABANDONED_BINDING_ENTRY_BYTES,
+    DistannRetireDecisionV1, DistannSuccessorActivationV1, DISTANN_ABANDONED_BINDING_ENTRY_BYTES,
     DISTANN_ABANDONED_BINDING_SET_COUNT_OFFSET, DISTANN_ABANDONED_BINDING_SET_FIXED_PREFIX_BYTES,
     DISTANN_ABANDONED_BINDING_SET_VERSION, DISTANN_ABANDON_BINDING_AUDIT_COORDINATOR_UUID_OFFSET,
     DISTANN_ABANDON_BINDING_AUDIT_FIXED_PREFIX_BYTES,
@@ -143,13 +138,12 @@ pub use self::lifecycle_wire::{
     DISTANN_ABANDON_BINDING_AUDIT_VERSION, DISTANN_ABANDON_BINDING_AUDIT_VERSION_OFFSET,
     DISTANN_BUILD_CANDIDATE_BUILD_SPEC_LENGTH_OFFSET, DISTANN_BUILD_CANDIDATE_FIXED_PREFIX_BYTES,
     DISTANN_BUILD_CANDIDATE_REGISTRATION_DIGEST_OFFSET, DISTANN_BUILD_CANDIDATE_VERSION,
-    DISTANN_BUILD_CANDIDATE_VERSION_OFFSET, DISTANN_RETIRE_DECISION_COORDINATOR_UUID_OFFSET,
-    DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
+    DISTANN_BUILD_CANDIDATE_VERSION_OFFSET, DISTANN_CANCEL_PUBLISH_AUDIT_BUILD_ID_OFFSET,
     DISTANN_CANCEL_PUBLISH_AUDIT_COORDINATOR_UUID_OFFSET,
     DISTANN_CANCEL_PUBLISH_AUDIT_EPOCH_OFFSET,
     DISTANN_CANCEL_PUBLISH_AUDIT_FINGERPRINT_LENGTH_OFFSET,
     DISTANN_CANCEL_PUBLISH_AUDIT_FIXED_PREFIX_BYTES, DISTANN_CANCEL_PUBLISH_AUDIT_VERSION,
-    DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET,
+    DISTANN_CANCEL_PUBLISH_AUDIT_VERSION_OFFSET, DISTANN_RETIRE_DECISION_COORDINATOR_UUID_OFFSET,
     DISTANN_RETIRE_DECISION_EPOCH_OFFSET, DISTANN_RETIRE_DECISION_FINGERPRINT_LENGTH_OFFSET,
     DISTANN_RETIRE_DECISION_FIXED_PREFIX_BYTES, DISTANN_RETIRE_DECISION_TARGET_BUILD_ID_OFFSET,
     DISTANN_RETIRE_DECISION_VERSION, DISTANN_RETIRE_DECISION_VERSION_OFFSET,

@@ -1591,9 +1591,8 @@ mod tests {
         // A chain graph exposes few admissible frontier entries per
         // round, so the beam cannot widen flushes much here — but
         // batching rounds must never *increase* the flush count.
-        let flushes = |p: &FrontierProfile| {
-            p.flush_width_zero + p.flush_width_buckets.iter().sum::<usize>()
-        };
+        let flushes =
+            |p: &FrontierProfile| p.flush_width_zero + p.flush_width_buckets.iter().sum::<usize>();
         assert!(
             flushes(&profile) <= flushes(&sequential_profile),
             "batched rounds must not exceed the sequential flush count"

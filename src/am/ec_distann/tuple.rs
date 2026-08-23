@@ -152,9 +152,7 @@ impl DistannNodeTuple {
                 .iter()
                 .any(|byte| *byte != 0)
         {
-            return Err(
-                "distann physical node record has non-zero adjacency padding".to_owned(),
-            );
+            return Err("distann physical node record has non-zero adjacency padding".to_owned());
         }
         Ok(())
     }
@@ -233,13 +231,7 @@ impl DistannNodeTuple {
         expected_version: Option<u16>,
     ) -> Result<Self, String> {
         let mut out = Self::empty();
-        Self::decode_into_version(
-            input,
-            graph_degree_r,
-            code_len,
-            expected_version,
-            &mut out,
-        )?;
+        Self::decode_into_version(input, graph_degree_r, code_len, expected_version, &mut out)?;
         Ok(out)
     }
 
@@ -269,8 +261,7 @@ impl DistannNodeTuple {
         }
         if let Some(expected_version) = expected_version {
             let format_version = u16::from_le_bytes(
-                input[DISTANN_NODE_FORMAT_VERSION_OFFSET
-                    ..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+                input[DISTANN_NODE_FORMAT_VERSION_OFFSET..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
                     .try_into()
                     .expect("graph record version bytes"),
             );
@@ -387,8 +378,9 @@ impl DistannDirectoryTuple {
                 input[0]
             ));
         }
-        let entry_count =
-            usize::from(u16::from_le_bytes(input[2..4].try_into().expect("count bytes")));
+        let entry_count = usize::from(u16::from_le_bytes(
+            input[2..4].try_into().expect("count bytes"),
+        ));
         let expected = Self::encoded_len(entry_count);
         if input.len() != expected {
             return Err(format!(
@@ -536,9 +528,8 @@ impl DistannDeltaTuple {
 #[cfg(test)]
 mod tests {
     use super::{
-        DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE,
-        DISTANN_NODE_FORMAT_VERSION, DISTANN_NODE_FORMAT_VERSION_OFFSET,
-        DISTANN_NODE_HEADER_BYTES,
+        DistannDeltaTuple, DistannNodeTuple, DISTANN_FLAG_TOMBSTONE, DISTANN_NODE_FORMAT_VERSION,
+        DISTANN_NODE_FORMAT_VERSION_OFFSET, DISTANN_NODE_HEADER_BYTES,
     };
     use crate::storage::page::ItemPointer;
 
@@ -577,7 +568,13 @@ mod tests {
             search_code: (0..CODE_LEN as u8).collect(),
             neighbor_vec_ids: vec![101, 202, 303, 0],
             neighbor_codes: (0..R as usize * CODE_LEN)
-                .map(|offset| if offset < 3 * CODE_LEN { offset as u8 } else { 0 })
+                .map(|offset| {
+                    if offset < 3 * CODE_LEN {
+                        offset as u8
+                    } else {
+                        0
+                    }
+                })
                 .collect(),
         }
     }
@@ -603,8 +600,7 @@ mod tests {
             .expect("physical encode should succeed");
         assert_eq!(
             u16::from_le_bytes(
-                encoded[DISTANN_NODE_FORMAT_VERSION_OFFSET
-                    ..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
+                encoded[DISTANN_NODE_FORMAT_VERSION_OFFSET..DISTANN_NODE_FORMAT_VERSION_OFFSET + 2]
                     .try_into()
                     .unwrap()
             ),
@@ -697,16 +693,31 @@ mod tests {
                 offset_number: 2,
             },
             entries: vec![
-                (10, ItemPointer { block_number: 1, offset_number: 1 }),
-                (20, ItemPointer { block_number: 1, offset_number: 2 }),
-                (30, ItemPointer { block_number: 2, offset_number: 1 }),
+                (
+                    10,
+                    ItemPointer {
+                        block_number: 1,
+                        offset_number: 1,
+                    },
+                ),
+                (
+                    20,
+                    ItemPointer {
+                        block_number: 1,
+                        offset_number: 2,
+                    },
+                ),
+                (
+                    30,
+                    ItemPointer {
+                        block_number: 2,
+                        offset_number: 1,
+                    },
+                ),
             ],
         };
         let encoded = tuple.encode().expect("encode");
-        assert_eq!(
-            encoded.len(),
-            super::DistannDirectoryTuple::encoded_len(3)
-        );
+        assert_eq!(encoded.len(), super::DistannDirectoryTuple::encoded_len(3));
         let decoded = super::DistannDirectoryTuple::decode(&encoded).expect("decode");
         assert_eq!(decoded, tuple);
     }
@@ -719,12 +730,8 @@ mod tests {
             vector: vec![0.25, -0.5, 1.0, 0.0],
         };
         let encoded = tuple.encode();
-        assert_eq!(
-            encoded.len(),
-            super::DistannHeadSampleTuple::encoded_len(4)
-        );
-        let decoded =
-            super::DistannHeadSampleTuple::decode(&encoded, 4).expect("decode");
+        assert_eq!(encoded.len(), super::DistannHeadSampleTuple::encoded_len(4));
+        let decoded = super::DistannHeadSampleTuple::decode(&encoded, 4).expect("decode");
         assert_eq!(decoded, tuple);
         assert!(super::DistannHeadSampleTuple::decode(&encoded, 5).is_err());
     }

@@ -57,7 +57,10 @@ fn with_metadata_mut<T>(
     Ok(result)
 }
 
-fn read_metadata(index_oid: pg_sys::Oid, caller: &'static str) -> Result<DistannMetadataPage, String> {
+fn read_metadata(
+    index_oid: pg_sys::Oid,
+    caller: &'static str,
+) -> Result<DistannMetadataPage, String> {
     let guard = IndexRelationGuard::open(
         index_oid,
         pg_sys::AccessShareLock as pg_sys::LOCKMODE,
@@ -175,8 +178,8 @@ fn ec_distann_epoch_status(
         name!(in_flight_count, i64),
     ),
 > {
-    let metadata =
-        read_metadata(index_regclass, "ec_distann_epoch_status").unwrap_or_else(|e| pgrx::error!("{e}"));
+    let metadata = read_metadata(index_regclass, "ec_distann_epoch_status")
+        .unwrap_or_else(|e| pgrx::error!("{e}"));
     TableIterator::new(std::iter::once((
         epoch_state_name(metadata.epoch_state).to_owned(),
         metadata.active_epoch as i64,
@@ -192,9 +195,13 @@ fn ec_distann_epoch_status(
 fn ec_distann_debug_set_in_flight(index_regclass: pg_sys::Oid, count: i64) {
     let count = u32::try_from(count)
         .unwrap_or_else(|_| pgrx::error!("ec_distann_debug_set_in_flight: count out of range"));
-    with_metadata_mut(index_regclass, "ec_distann_debug_set_in_flight", |metadata| {
-        metadata.in_flight_count = count;
-        Ok(())
-    })
+    with_metadata_mut(
+        index_regclass,
+        "ec_distann_debug_set_in_flight",
+        |metadata| {
+            metadata.in_flight_count = count;
+            Ok(())
+        },
+    )
     .unwrap_or_else(|e| pgrx::error!("{e}"));
 }

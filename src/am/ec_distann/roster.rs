@@ -29,12 +29,9 @@ use pgrx::{GucContext, GucFlags, GucRegistry, GucSetting};
 
 use super::epoch::DistannEpochIdentity;
 use super::page::DistannMetadataPage;
-use super::placement::{
-    DistannPlacementDirectory, DistannRosterNode, DISTANN_PLACEMENT_HASH_V1,
-};
+use super::placement::{DistannPlacementDirectory, DistannRosterNode, DISTANN_PLACEMENT_HASH_V1};
 
-static ECDISTANN_ROSTER_GUC: GucSetting<Option<CString>> =
-    GucSetting::<Option<CString>>::new(None);
+static ECDISTANN_ROSTER_GUC: GucSetting<Option<CString>> = GucSetting::<Option<CString>>::new(None);
 static ECDISTANN_LOCAL_NODE_ID_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
 /// PostgreSQL int GUCs are 32-bit; epoch numbers at research scale fit easily.
 static ECDISTANN_EPOCH_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
@@ -123,9 +120,7 @@ pub(super) fn parse_roster(spec: &str) -> Result<Vec<ParsedRosterEntry>, String>
             continue;
         }
         let (id_str, conninfo) = entry.split_once('@').ok_or_else(|| {
-            format!(
-                "ec_distann.roster entry {index} ({entry:?}) must be `node_id@conninfo`"
-            )
+            format!("ec_distann.roster entry {index} ({entry:?}) must be `node_id@conninfo`")
         })?;
         let node_id: u32 = id_str.trim().parse().map_err(|_| {
             format!("ec_distann.roster entry {index} has non-numeric node_id {id_str:?}")
@@ -189,7 +184,11 @@ pub(super) fn placement_directory_for_epoch(
             DistannRosterNode {
                 node_id: entry.node_id,
                 is_local,
-                conninfo: if is_local { String::new() } else { entry.conninfo },
+                conninfo: if is_local {
+                    String::new()
+                } else {
+                    entry.conninfo
+                },
             }
         })
         .collect();

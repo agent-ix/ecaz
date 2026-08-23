@@ -825,7 +825,9 @@ pub(crate) fn build_benchmark_head_sample(
 /// u32 count then u64 vec_ids in sample order, all little-endian. This is the
 /// coordinator's entire head persistence under sharded storage — the sample
 /// table holds zero rows.
-pub(crate) fn encode_head_membership(entries: &[DistannHeadSampleEntry]) -> Result<Vec<u8>, String> {
+pub(crate) fn encode_head_membership(
+    entries: &[DistannHeadSampleEntry],
+) -> Result<Vec<u8>, String> {
     let count = u32::try_from(entries.len())
         .map_err(|_| "EC_HEAD_SAMPLE: membership count exceeds u32".to_owned())?;
     let mut blob = Vec::with_capacity(4 + entries.len() * 8);
@@ -1109,47 +1111,47 @@ pub(crate) fn load_head_sample(
             .collect::<Vec<_>>()
     } else {
         Spi::connect(|client| {
-        client
-            .select(
-                &format!(
-                    "SELECT sample_ordinal, vec_id, vector, neighbors FROM {rows}
+            client
+                .select(
+                    &format!(
+                        "SELECT sample_ordinal, vec_id, vector, neighbors FROM {rows}
                       WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
                         AND build_id = $3::uuid ORDER BY sample_ordinal"
-                ),
-                None,
-                &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
-            )
-            .map_err(|error| format!("EC_HEAD_SAMPLE: row lookup failed: {error}"))?
-            .enumerate()
-            .map(|(expected, row)| {
-                let ordinal = row["sample_ordinal"]
-                    .value::<i32>()?
-                    .ok_or("ordinal NULL")?;
-                if usize::try_from(ordinal).ok() != Some(expected) {
-                    return Err("head sample ordinals are not contiguous".into());
-                }
-                let vec_id = row["vec_id"].value::<i64>()?.ok_or("vec_id NULL")?;
-                // A NULL vector is a membership-only row: the landmark lives
-                // on its owner, and the coordinator keeps only the id.
-                let vector = row["vector"].value::<Vec<f32>>()?.unwrap_or_default();
-                let neighbors = row["neighbors"]
-                    .value::<Vec<i32>>()?
-                    .ok_or("neighbors NULL")?
-                    .into_iter()
-                    .map(|neighbor| {
-                        u32::try_from(neighbor).map_err(|_| "negative head graph neighbor")
-                    })
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok((
-                    DistannHeadSampleEntry {
-                        vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
-                        vector,
-                    },
-                    neighbors,
-                ))
-            })
-            .collect::<Result<Vec<_>, Box<dyn std::error::Error + Send + Sync>>>()
-            .map_err(|error| format!("EC_HEAD_SAMPLE: row decode failed: {error}"))
+                    ),
+                    None,
+                    &[index_oid.into(), logical_index_uuid.into(), build_id.into()],
+                )
+                .map_err(|error| format!("EC_HEAD_SAMPLE: row lookup failed: {error}"))?
+                .enumerate()
+                .map(|(expected, row)| {
+                    let ordinal = row["sample_ordinal"]
+                        .value::<i32>()?
+                        .ok_or("ordinal NULL")?;
+                    if usize::try_from(ordinal).ok() != Some(expected) {
+                        return Err("head sample ordinals are not contiguous".into());
+                    }
+                    let vec_id = row["vec_id"].value::<i64>()?.ok_or("vec_id NULL")?;
+                    // A NULL vector is a membership-only row: the landmark lives
+                    // on its owner, and the coordinator keeps only the id.
+                    let vector = row["vector"].value::<Vec<f32>>()?.unwrap_or_default();
+                    let neighbors = row["neighbors"]
+                        .value::<Vec<i32>>()?
+                        .ok_or("neighbors NULL")?
+                        .into_iter()
+                        .map(|neighbor| {
+                            u32::try_from(neighbor).map_err(|_| "negative head graph neighbor")
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
+                    Ok((
+                        DistannHeadSampleEntry {
+                            vec_id: u64::from_le_bytes(vec_id.to_le_bytes()),
+                            vector,
+                        },
+                        neighbors,
+                    ))
+                })
+                .collect::<Result<Vec<_>, Box<dyn std::error::Error + Send + Sync>>>()
+                .map_err(|error| format!("EC_HEAD_SAMPLE: row decode failed: {error}"))
         })?
     };
     if entries.len() != sample_count {
@@ -1678,14 +1680,8 @@ mod tests {
         let vectors = (0..vec_ids.len())
             .map(|node| vec![node as f32, 1.0])
             .collect::<Vec<_>>();
-        let sample = build_partition_union_head_sample(
-            &partitions,
-            4,
-            2,
-            &vec_ids,
-            &vectors,
-        )
-        .expect("partition union should build");
+        let sample = build_partition_union_head_sample(&partitions, 4, 2, &vec_ids, &vectors)
+            .expect("partition union should build");
         assert_eq!(
             sample
                 .entries
@@ -1707,14 +1703,8 @@ mod tests {
         let vectors = (0..vec_ids.len())
             .map(|node| vec![node as f32, 1.0])
             .collect::<Vec<_>>();
-        let sample = build_partition_union_head_sample(
-            &partitions,
-            8,
-            2,
-            &vec_ids,
-            &vectors,
-        )
-        .expect("partition union should build");
+        let sample = build_partition_union_head_sample(&partitions, 8, 2, &vec_ids, &vectors)
+            .expect("partition union should build");
         assert_eq!(sample.entries.len(), 8);
     }
 

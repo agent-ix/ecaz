@@ -79,9 +79,8 @@ impl DistannHandoffShape {
     pub(crate) fn from_descriptor(
         descriptor: &super::generation_descriptor::DistannGenerationDescriptor,
     ) -> Result<Self, String> {
-        let binding = super::quantizer::DistannCodecBinding::from_artifact(
-            &descriptor.codec_artifact,
-        )?;
+        let binding =
+            super::quantizer::DistannCodecBinding::from_artifact(&descriptor.codec_artifact)?;
         Self::new(
             binding.code_len(usize::from(descriptor.dimensions))?,
             usize::from(descriptor.graph_degree),

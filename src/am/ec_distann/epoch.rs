@@ -214,7 +214,10 @@ mod tests {
             let mut id = base_identity();
             mutate(&mut id);
             let changed = compute_epoch_fingerprint(&id, DISTANN_EPOCH_FINGERPRINT_V1);
-            assert_ne!(base, changed, "mutator {index} did not change the fingerprint");
+            assert_ne!(
+                base, changed,
+                "mutator {index} did not change the fingerprint"
+            );
             assert!(!fingerprints_match(&base, &changed));
         }
     }

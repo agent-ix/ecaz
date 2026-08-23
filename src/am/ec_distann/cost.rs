@@ -67,10 +67,9 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amcostestimate(
                 let constants = unsafe { current_planner_cost_constants() };
                 // Per-query work is BW x H expansions (NFR-019); model the
                 // search breadth as that product.
-                let ef_search = i32::try_from(
-                    options::current_beam_width() * options::current_hop_rounds(),
-                )
-                .unwrap_or(i32::MAX);
+                let ef_search =
+                    i32::try_from(options::current_beam_width() * options::current_hop_rounds())
+                        .unwrap_or(i32::MAX);
                 estimate_planner_cost(
                     PlannerCostInputs {
                         index_pages: index_pages_value,

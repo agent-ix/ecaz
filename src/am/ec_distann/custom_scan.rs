@@ -1069,7 +1069,9 @@ unsafe extern "C-unwind" fn custom_scan_access(
                         pg_sys::ExecClearTuple(state.frozen_row_slot);
                         visible = pg_sys::table_tuple_fetch_row_version(
                             context.row_relation().unwrap_or_else(|| {
-                                pgrx::error!("EC_GENERATION_MISSING: local hit has no local row tier")
+                                pgrx::error!(
+                                    "EC_GENERATION_MISSING: local hit has no local row tier"
+                                )
                             }),
                             &mut item,
                             latest.as_ptr(),
@@ -1126,9 +1128,10 @@ fn materialize_pending_physical_window(
     let remote_pairs = state.outputs[window_start..window_end]
         .iter()
         .filter_map(|output| match output {
-            CustomScanOutputRow::RemotePending { vec_id, owner_heap_tid } => {
-                Some((*vec_id, *owner_heap_tid))
-            }
+            CustomScanOutputRow::RemotePending {
+                vec_id,
+                owner_heap_tid,
+            } => Some((*vec_id, *owner_heap_tid)),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -1242,10 +1245,7 @@ fn take_materialized_remote_output_by_id(
         .iter()
         .take(previous_proven)
         .position(|output| {
-            output
-                .as_ref()
-                .and_then(materialized_remote_output_vec_id)
-                == Some(vec_id)
+            output.as_ref().and_then(materialized_remote_output_vec_id) == Some(vec_id)
         })?;
     previous_outputs.get_mut(position)?.take()
 }
@@ -1393,7 +1393,7 @@ unsafe fn run_search_and_build_outputs(
             Some(CustomScanOutputRow::Local(hit.heap_tid))
         } else {
             match payloads.get(&hit.vec_id) {
-                    Some(payload) if !payload.tuple_payload_missing => {
+                Some(payload) if !payload.tuple_payload_missing => {
                     Some(CustomScanOutputRow::Remote {
                         vec_id: hit.vec_id,
                         payload_nulls: payload.payload_nulls.clone(),
@@ -1443,8 +1443,9 @@ unsafe fn run_physical_generation_search(
         // (including head selection) is re-entered under that state.
         state.physical_generation = None;
         state.physical_generation = Some(
-            super::generation_read::PhysicalGenerationScan::open(state.index_oid)
-                .map_err(|error| super::expand_error::DistannExpandError::Internal(error.to_string()))?,
+            super::generation_read::PhysicalGenerationScan::open(state.index_oid).map_err(
+                |error| super::expand_error::DistannExpandError::Internal(error.to_string()),
+            )?,
         );
         let context = state
             .physical_generation
@@ -1754,10 +1755,12 @@ unsafe fn store_remote_payload(
                     pgrx::error!("EcDistannDistributedScan previous payload offset missing")
                 })
             };
-            let start = usize::try_from(start)
-                .unwrap_or_else(|_| pgrx::error!("EcDistannDistributedScan payload offset is negative"));
-            let end = usize::try_from(end)
-                .unwrap_or_else(|_| pgrx::error!("EcDistannDistributedScan payload offset is negative"));
+            let start = usize::try_from(start).unwrap_or_else(|_| {
+                pgrx::error!("EcDistannDistributedScan payload offset is negative")
+            });
+            let end = usize::try_from(end).unwrap_or_else(|_| {
+                pgrx::error!("EcDistannDistributedScan payload offset is negative")
+            });
             if start > end || end > payload_values.len() {
                 pgrx::error!("EcDistannDistributedScan packed payload offsets are invalid");
             }
@@ -1844,8 +1847,7 @@ unsafe extern "C-unwind" fn end_custom_scan(node: *mut pg_sys::CustomScanState) 
 #[cfg(test)]
 mod materialization_candidate_tests {
     use super::{
-        pending_materialization_window, take_materialized_remote_output_by_id,
-        CustomScanOutputRow,
+        pending_materialization_window, take_materialized_remote_output_by_id, CustomScanOutputRow,
     };
 
     #[test]

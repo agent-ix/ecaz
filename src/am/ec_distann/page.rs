@@ -270,7 +270,10 @@ impl DistannMetadataPage {
     }
 
     pub fn decode(input: &[u8]) -> Result<Self, String> {
-        if !matches!(input.len(), DISTANN_METADATA_BYTES | DISTANN_CONTROL_METADATA_BYTES) {
+        if !matches!(
+            input.len(),
+            DISTANN_METADATA_BYTES | DISTANN_CONTROL_METADATA_BYTES
+        ) {
             return Err(format!(
                 "distann metadata length mismatch: got {}, expected {DISTANN_METADATA_BYTES} or {DISTANN_CONTROL_METADATA_BYTES}",
                 input.len()
@@ -300,9 +303,7 @@ impl DistannMetadataPage {
 
         let flags = input[DISTANN_METADATA_FLAGS_OFFSET];
         match format_version {
-            INDEX_FORMAT_V1_DISTANN
-                if flags & !DISTANN_METADATA_FLAG_HEAD_PARTITION_UNION != 0 =>
-            {
+            INDEX_FORMAT_V1_DISTANN if flags & !DISTANN_METADATA_FLAG_HEAD_PARTITION_UNION != 0 => {
                 return Err(format!(
                     "invalid legacy distann metadata flags: got {flags:#04x}, expected zero or head-union marker"
                 ));
@@ -341,7 +342,9 @@ impl DistannMetadataPage {
             head_sample_head: ItemPointer::decode(&input[44..50])?,
             delta_buffer_head: ItemPointer::decode(&input[50..56])?,
             codec_subvector_count: u16::from_le_bytes(
-                input[56..58].try_into().expect("codec_subvector_count bytes"),
+                input[56..58]
+                    .try_into()
+                    .expect("codec_subvector_count bytes"),
             ),
             codec_subvector_dim: u16::from_le_bytes(
                 input[58..60].try_into().expect("codec_subvector_dim bytes"),
@@ -351,13 +354,9 @@ impl DistannMetadataPage {
             content_digest: u64::from_le_bytes(
                 input[72..80].try_into().expect("content_digest bytes"),
             ),
-            delta_count: u32::from_le_bytes(
-                input[80..84].try_into().expect("delta_count bytes"),
-            ),
+            delta_count: u32::from_le_bytes(input[80..84].try_into().expect("delta_count bytes")),
             epoch_state: input[DISTANN_METADATA_EPOCH_STATE_OFFSET],
-            active_epoch: u64::from_le_bytes(
-                input[85..93].try_into().expect("active_epoch bytes"),
-            ),
+            active_epoch: u64::from_le_bytes(input[85..93].try_into().expect("active_epoch bytes")),
             in_flight_count: u32::from_le_bytes(
                 input[93..97].try_into().expect("in_flight_count bytes"),
             ),
@@ -409,10 +408,9 @@ impl DistannMetadataPage {
 #[cfg(test)]
 mod tests {
     use super::{
-        DistannMetadataPage, DISTANN_CONTROL_METADATA_BYTES,
-        DISTANN_METADATA_BYTES, DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET,
-        DISTANN_NEIGHBOR_CODEC_GROUPED_PQ, DISTANN_NEIGHBOR_CODEC_RABITQ,
-        INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
+        DistannMetadataPage, DISTANN_CONTROL_METADATA_BYTES, DISTANN_METADATA_BYTES,
+        DISTANN_METADATA_LOGICAL_INDEX_UUID_OFFSET, DISTANN_NEIGHBOR_CODEC_GROUPED_PQ,
+        DISTANN_NEIGHBOR_CODEC_RABITQ, INDEX_FORMAT_V1_DISTANN, INDEX_FORMAT_V5_DISTANN_CONTROL,
     };
     use crate::storage::page::ItemPointer;
 
@@ -474,8 +472,7 @@ mod tests {
         let mut encoded = sample().encode();
         encoded[0] = 0xFF;
         encoded[1] = 0xFF;
-        let error =
-            DistannMetadataPage::decode(&encoded).expect_err("unknown version must fail");
+        let error = DistannMetadataPage::decode(&encoded).expect_err("unknown version must fail");
         assert!(error.contains("format version"));
     }
 
@@ -503,7 +500,10 @@ mod tests {
             u16::from_le_bytes(encoded[0..2].try_into().unwrap()),
             INDEX_FORMAT_V1_DISTANN
         );
-        assert_eq!(encoded, DistannMetadataPage::decode(&encoded).unwrap().encode());
+        assert_eq!(
+            encoded,
+            DistannMetadataPage::decode(&encoded).unwrap().encode()
+        );
     }
 
     #[test]
