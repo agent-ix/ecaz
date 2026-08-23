@@ -3272,6 +3272,10 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_append_when_room_ab".into(), values));
             }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_backlink_strategy_ab ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_backlink_strategy_ab".into(), values));
+            }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_insert_work ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_insert_work".into(), values));
@@ -6914,8 +6918,9 @@ psql header noise\n\
     fn distann_task167_quality_and_insert_metrics_are_structured() {
         let raw = "\
 [distann-multicluster] physical_benchmark_recall_instrument_calibration scale=50k ordinary_distinct_recall=0.954500 exact_scorer_distinct_recall=0.954500 absolute_delta=0.000000 pass=true\n\
-[distann-multicluster] physical_benchmark_insert_throughput_ab scale=50k physical_insert_mode=shipped_default_robust_prune physical_rows_per_second=0.224 control_rows_per_second=2.000 pass=true\n\
+[distann-multicluster] physical_benchmark_insert_throughput_ab scale=50k physical_insert_mode=shipped_default_append_when_room physical_rows_per_second=0.224 control_rows_per_second=2.000 pass=true\n\
 [distann-multicluster] physical_benchmark_append_when_room_ab scale=50k append_enabled_over_disabled=1.003392 pass=true\n\
+[distann-multicluster] physical_benchmark_backlink_strategy_ab scale=50k robust_prune_all_over_shipped=1.003392 pass=true\n\
 [distann-multicluster] physical_benchmark_insert_work scale=50k metric=backlink_amendments inserts=160 value=5120 pass=true\n\
    0: \u{1b}[91mTask 167 failed: physical_benchmark_post_insert_exact_recall scale=50k population=heldout physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 physical_minus_fresh=-0.008611 allowed_deficit=0.007000 quality_gate_pass=false pass=false\u{1b}[0m\n";
         let rows = parse_distann_multinode_rows(raw);
@@ -6924,6 +6929,7 @@ psql header noise\n\
             "physical_benchmark_recall_instrument_calibration",
             "physical_benchmark_insert_throughput_ab",
             "physical_benchmark_append_when_room_ab",
+            "physical_benchmark_backlink_strategy_ab",
             "physical_benchmark_insert_work",
             "physical_benchmark_post_insert_exact_recall",
         ] {

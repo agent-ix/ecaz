@@ -1493,13 +1493,8 @@ fn read_current_candidate(
     };
     if !visible {
         if let Some(latest) = RegisteredSnapshotGuard::latest() {
-            let (row_block, row_offset) =
-                pgrx::itemptr::item_pointer_get_both(row_tid);
-            pgrx::itemptr::item_pointer_set_all(
-                &mut raw_tid,
-                row_block,
-                row_offset,
-            );
+            let (row_block, row_offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
+            pgrx::itemptr::item_pointer_set_all(&mut raw_tid, row_block, row_offset);
             unsafe { pg_sys::ExecClearTuple(vector_slot.as_ptr()) };
             visible = unsafe {
                 pg_sys::table_tuple_fetch_row_version(
@@ -1789,9 +1784,10 @@ unsafe fn amend_backlink(
             source_vector,
         });
     }
-    // The planner is vantage-point agnostic: reorder the union from the
-    // target's source vector using the same exact robust-prune metric as
-    // insertion. This handles both free and full target degree uniformly.
+    // Full targets follow batch Vamana's re-prune rule. The same path also
+    // serves the explicit robust-prune-all diagnostic when a target has spare
+    // degree; production appends in that case above so existing edges are not
+    // removed before capacity is reached.
     let kept = select_insert_forward_neighbors(
         &candidate.source_vector,
         &candidates,
