@@ -8,9 +8,9 @@ seq: 1
 
 # Task 167 final-SHA closeout matrix
 
-Status: preregistered; exact-runtime build and execution pending. This is the
-single final closeout artifact requested after packets 059 and 061, not a new
-candidate experiment.
+Status: preregistered and exact runtime attested; execution pending. This is
+the single final closeout artifact requested after packets 059 and 061, not a
+new candidate experiment.
 
 The immutable suite config runs the final shipped insertion path once at each
 required real-corpus scale: 10k, 50k, and 100k. Every cell uses PG18, three
