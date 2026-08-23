@@ -1,0 +1,37 @@
+{
+  "name": "task167-batch-consistent-50k",
+  "schema_version": 1,
+  "artifact_dir": "reviews/task-167/051-batch-consistent-50k-gate/artifacts/final-suite",
+  "defaults": { "pg": 18 },
+  "thresholds": [],
+  "steps": [
+    {
+      "kind": "distann-local-multinode",
+      "name": "physical-50k-batch-consistent",
+      "tags": ["task167", "batch-consistent-backlink-quality", "ec_real_50k"],
+      "artifact_dir": "${artifact_dir}/physical-50k-batch-consistent",
+      "run_dir": "/home/peter/.ecaz/clusters/task167-batch-consistent-50k-20260822",
+      "nodes": 3,
+      "base_port": 42100,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "beam_width": 4,
+      "candidate_heap_limit": 32,
+      "hop_rounds": 100,
+      "queries": 200,
+      "top_k": 10,
+      "physical_benchmark": true,
+      "distann_stage_counters": false,
+      "benchmark_iterations": 1,
+      "benchmark_warmup_iterations": 0,
+      "benchmark_parity_queries": 200,
+      "benchmark_concurrency_sweep": [1],
+      "skip_single_benchmark": true,
+      "skip_fault_drills": true,
+      "skip_concurrency_drill": true,
+      "compact_artifacts": true,
+      "corpus_prefix": "ec_real_50k",
+      "staged_dir": "data/staged-current"
+    }
+  ]
+}
