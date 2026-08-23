@@ -3437,10 +3437,10 @@ fn task167_search_guc_sql(
 /// collapse exact duplicate rows, and each query divides by its own number of
 /// distinct exact-truth keys so duplicate ties cannot lower the metric ceiling.
 /// The population-specific non-inferiority thresholds are the variance-derived
-/// bands preregistered and measured in review packet 045. The suite step fails
-/// when either physical population trails its fresh rebuild by more than its
-/// fixed band. Missing rows, wrong plans, malformed truth, and other
-/// measurement-integrity failures also fail the step.
+/// bands preregistered and measured in review packet 045. Both population rows
+/// are returned even when one fails so the caller can write the packet summary
+/// before exiting nonzero. Missing rows, wrong plans, malformed truth, and
+/// other measurement-integrity failures still fail immediately.
 async fn task167_post_insert_exact_recall(
     coordinator: &tokio_postgres::Client,
     scale: &str,
@@ -3592,7 +3592,6 @@ async fn task167_post_insert_exact_recall(
     .wrap_err("running Task 167 fresh-rebuild exact-recall arm")?;
 
     let mut lines = Vec::new();
-    let mut failures = Vec::new();
     for population in ["inserted_neighborhood", "heldout"] {
         let summary = task167_exact_recall_summary(
             population,
@@ -3619,13 +3618,6 @@ async fn task167_post_insert_exact_recall(
             summary.fresh_recall,
             summary.physical_recall - summary.fresh_recall,
         );
-        if !quality_gate_pass {
-            failures.push(format!(
-                "Task 167 post-insert exact recall failed for {population}: physical_distinct_recall={:.6} fresh_distinct_recall={:.6} maximum_degradation={allowed_deficit:.6}: {line}",
-                summary.physical_recall,
-                summary.fresh_recall,
-            ));
-        }
         lines.push(line);
     }
 
@@ -3637,10 +3629,31 @@ async fn task167_post_insert_exact_recall(
         .batch_execute(&format!("DROP TABLE {fresh_table} CASCADE"))
         .await
         .wrap_err("dropping Task 167 post-insert fresh rebuild")?;
-    if !failures.is_empty() {
-        bail!("{}", failures.join("; "));
-    }
     Ok(lines)
+}
+
+fn task167_quality_gate_failure(lines: &[String]) -> Option<String> {
+    let failed = lines
+        .iter()
+        .filter(|line| {
+            line.starts_with("physical_benchmark_post_insert_exact_recall ")
+                && line.contains(" quality_gate_pass=false")
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    (!failed.is_empty()).then(|| {
+        format!(
+            "Task 167 post-insert exact recall failed its calibrated quality gate: {}",
+            failed.join("; ")
+        )
+    })
+}
+
+fn enforce_task167_quality_gate(lines: &[String]) -> Result<()> {
+    if let Some(failure) = task167_quality_gate_failure(lines) {
+        bail!(failure);
+    }
+    Ok(())
 }
 
 async fn task167_ann_predictions(
@@ -6070,6 +6083,7 @@ async fn run_physical_benchmarks(
         extension_preflight.nodes,
         args.stage_counter_only
     )];
+    let mut task167_quality_gate_failed = false;
     if let Some(attestation) = production_head_attestation {
         lines.push(attestation);
     }
@@ -7748,36 +7762,46 @@ async fn run_physical_benchmarks(
             .collect::<Vec<_>>()
             .join(";");
         let parity_query_count = args.benchmark_parity_queries.unwrap_or(args.queries);
-        lines.extend(
-            task167_post_insert_exact_recall(
-                coordinator,
-                scale,
-                &physical_corpus,
-                &roster,
-                args.graph_degree,
-                args.head_index_cap,
-                args.build_shards,
-                &args.head_construction,
-                &head_sizing_reloptions(args),
-                parity_query_count,
-                &truth_corpus,
-                &truth_queries,
-                &search_guc_sql,
-                "post_160_shipped_default_robust_prune_inserts",
-                &[2_000_000_i64],
-            )
-            .await?,
-        );
-        task167_append_when_room_diagnostic(
+        let exact_recall_lines = task167_post_insert_exact_recall(
             coordinator,
             scale,
             &physical_corpus,
-            default_insert_baseline,
-            &mut lines,
+            &roster,
+            args.graph_degree,
+            args.head_index_cap,
+            args.build_shards,
+            &args.head_construction,
+            &head_sizing_reloptions(args),
+            parity_query_count,
+            &truth_corpus,
+            &truth_queries,
+            &search_guc_sql,
+            "post_160_shipped_default_robust_prune_inserts",
+            &[2_000_000_i64],
         )
         .await?;
+        task167_quality_gate_failed = task167_quality_gate_failure(&exact_recall_lines).is_some();
+        lines.extend(exact_recall_lines);
+        if task167_quality_gate_failed {
+            lines.push(format!(
+                "physical_benchmark_append_when_room_ab scale={scale} pass=skipped reason=shipped_default_quality_gate_failed candidate_mutation_excluded=true"
+            ));
+        } else {
+            task167_append_when_room_diagnostic(
+                coordinator,
+                scale,
+                &physical_corpus,
+                default_insert_baseline,
+                &mut lines,
+            )
+            .await?;
+        }
     }
-    if args.materialization_correctness {
+    if task167_quality_gate_failed && args.materialization_correctness {
+        lines.push(format!(
+            "physical_benchmark_materialization_correctness scale={scale} pass=skipped reason=shipped_default_quality_gate_failed"
+        ));
+    } else if args.materialization_correctness {
         lines.extend(
             run_materialization_correctness(
                 coordinator,
@@ -8113,7 +8137,7 @@ async fn drive_reused_physical_fixture(
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
     fs::write(log_dir.join("distann-multinode-summary.log"), summary)?;
-    Ok(())
+    enforce_task167_quality_gate(&benchmark_lines)
 }
 
 async fn drive_physical_fixture(
@@ -8650,6 +8674,50 @@ async fn drive_physical_fixture(
     };
     for line in &benchmark_lines {
         crate::ecaz_println!("[distann-multicluster] {line}");
+    }
+    if let Some(failure) = task167_quality_gate_failure(&benchmark_lines) {
+        let mut summary = format!(
+            "physical_fixture owners={} coordinator_outside_roster={} source_rows={} quality_gate_pass=false\n",
+            owners.len(),
+            args.coordinator_outside_roster,
+            source_count,
+        );
+        for (phase, rows) in [("ready", &ready), ("published", &published)] {
+            for row in rows {
+                summary.push_str(&format!(
+                    "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}\n",
+                    row.node_id,
+                    row.state,
+                    row.records,
+                    row.rows,
+                    row.non_owned_live + row.non_owned_tombstones,
+                    row.orphan_records + row.orphan_rows,
+                    row.graph_bytes,
+                    row.row_bytes,
+                    row.directory_bytes,
+                    row.control_bytes,
+                ));
+            }
+        }
+        for line in &publish_fault_lines {
+            summary.push_str(&format!("[distann-multicluster] {line}\n"));
+        }
+        for line in &benchmark_lines {
+            summary.push_str(&format!("[distann-multicluster] {line}\n"));
+        }
+        summary.push_str(
+            "[distann-multicluster] physical_quality_gate pass=false candidate_mutation_excluded=true post_gate_drills=skipped\n",
+        );
+        let summary_path = log_dir.join("distann-multinode-summary.log");
+        fs::write(&summary_path, summary)
+            .wrap_err_with(|| format!("writing {}", summary_path.display()))?;
+        crate::ecaz_println!(
+            "[distann-multicluster] failed-gate summary written to {}",
+            summary_path.display()
+        );
+        drop(coordinator);
+        connection_task.abort();
+        bail!(failure);
     }
     let concurrency_table = if args.physical_benchmark {
         let corpus_prefix = args
@@ -12220,6 +12288,30 @@ mod tests {
         assert!(!task167_exact_recall_within_allowed_deficit(
             0.991, 0.999, 0.007
         ));
+    }
+
+    #[test]
+    fn task167_quality_gate_failure_retains_the_failed_population_row() {
+        let lines = vec![
+            "physical_benchmark_post_insert_exact_recall population=inserted_neighborhood quality_gate_pass=true pass=true".to_owned(),
+            "physical_benchmark_post_insert_exact_recall population=heldout physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 quality_gate_pass=false pass=false".to_owned(),
+            "physical_benchmark_append_when_room_ab pass=skipped reason=shipped_default_quality_gate_failed candidate_mutation_excluded=true".to_owned(),
+        ];
+        let failure = task167_quality_gate_failure(&lines).expect("heldout gate must fail");
+        assert!(failure.contains("population=heldout"));
+        assert!(failure.contains("physical_distinct_recall=0.848722"));
+        assert!(!failure.contains("population=inserted_neighborhood"));
+        assert!(enforce_task167_quality_gate(&lines).is_err());
+    }
+
+    #[test]
+    fn task167_quality_gate_accepts_two_passing_population_rows() {
+        let lines = vec![
+            "physical_benchmark_post_insert_exact_recall population=inserted_neighborhood quality_gate_pass=true pass=true".to_owned(),
+            "physical_benchmark_post_insert_exact_recall population=heldout quality_gate_pass=true pass=true".to_owned(),
+        ];
+        assert!(task167_quality_gate_failure(&lines).is_none());
+        enforce_task167_quality_gate(&lines).unwrap();
     }
 
     #[test]
