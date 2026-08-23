@@ -1,0 +1,158 @@
+Script started on 2026-08-22 18:51:56-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.93s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-1bc43c90c59d1f97)
+
+running 91 tests
+test commands::bench::suite::tests::artifact_dir_templates_rewrite_load_step_paths ... [32mok[m
+test commands::bench::suite::tests::artifact_dir_templates_rewrite_raw_step_paths ... [32mok[m
+test commands::bench::suite::tests::artifact_dir_supplies_default_spire_pipeline_log_output ... [32mok[m
+test commands::bench::suite::tests::artifact_dir_templates_rewrite_spire_pipeline_paths ... [32mok[m
+test commands::bench::suite::tests::distann_drop_extension_cleanup_is_structured ... [32mok[m
+test commands::bench::suite::tests::distann_benchmark_metrics_mode_rejects_heavy_instrumentation ... [32mok[m
+test commands::bench::suite::tests::distann_local_multinode_expands_production_trained_head ... [32mok[m
+test commands::bench::suite::tests::distann_local_multinode_expands_task183_stage_profile ... [32mok[m
+test commands::bench::suite::tests::distann_local_multinode_expands_seed_variants_on_one_fixture ... [31mFAILED[m
+test commands::bench::suite::tests::distann_local_multinode_expands_task183_training_policies ... [32mok[m
+test commands::bench::suite::tests::distann_local_multinode_rejects_out_of_range_head_index_cap ... [32mok[m
+test commands::bench::suite::tests::distann_local_multinode_rejects_out_of_range_search_shape ... [32mok[m
+test commands::bench::suite::tests::distann_materialization_correctness_is_suite_addressable_and_structured ... [32mok[m
+test commands::bench::suite::tests::distann_local_multinode_step_expands_head_index_cap ... [31mFAILED[m
+test commands::bench::suite::tests::distann_multinode_rows_parse_recall_identity_gate_and_drills ... [32mok[m
+test commands::bench::suite::tests::distann_multinode_recall_mismatch_sets_identity_not_ok ... [32mok[m
+test commands::bench::suite::tests::distann_nfr_021_classifies_unsharded_derived_relation_as_nonconforming ... [32mok[m
+test commands::bench::suite::tests::distann_nfr_021_hard_fails_a_reappearing_head_gap_and_accepts_zero_byte_relations ... [32mok[m
+test commands::bench::suite::tests::distann_nfr_021_normalizes_fixed_roster_owner_growth ... [32mok[m
+test commands::bench::suite::tests::distann_nfr_021_head_gap_clears_when_the_head_is_sharded ... [32mok[m
+test commands::bench::suite::tests::distann_nfr_021_fails_on_a_coordinator_resident_relation_that_is_not_a_known_gap ... [32mok[m
+test commands::bench::suite::tests::distann_nfr_021_rejects_nonconforming_decision_arm_before_measurement ... [32mok[m
+test commands::bench::suite::tests::distann_physical_paired_recall_is_structured ... [32mok[m
+test commands::bench::suite::tests::distann_physical_provenance_is_structured ... [32mok[m
+test commands::bench::suite::tests::distann_owner_plan_and_fixed_work_variants_are_suite_addressable ... [31mFAILED[m
+test commands::bench::suite::tests::distann_physical_scan_round_notice_is_structured_from_fixture_summary ... [32mok[m
+test commands::bench::suite::tests::distann_same_generation_attestations_are_structured ... [32mok[m
+test commands::bench::suite::tests::distann_physical_topology_and_gate_are_structured ... [32mok[m
+test commands::bench::suite::tests::distann_storage_ratio_is_mandatory_for_physical_steps ... [32mok[m
+test commands::bench::suite::tests::distann_task167_quality_and_insert_metrics_are_structured ... [32mok[m
+test commands::bench::suite::tests::distann_traversal_pair_with_implicit_search_shape_stays_pairable ... [31mFAILED[m
+test commands::bench::suite::tests::distann_variant_rejects_removed_owner_validation_selector ... [32mok[m
+test commands::bench::suite::tests::distann_traversal_replica_arm_cannot_be_a_decision_arm_or_claim_conformance ... [32mok[m
+test commands::bench::suite::tests::distann_variants_normalize_effective_search_shape ... [31mFAILED[m
+test commands::bench::suite::tests::evaluates_thresholds_against_result_rows ... [32mok[m
+test commands::bench::suite::tests::expands_chunked_load_without_corpus_query_paths ... [32mok[m
+test commands::bench::suite::tests::expands_comparator_with_vchord_engine_and_lists ... [32mok[m
+test commands::bench::suite::tests::expands_cross_am_with_inputs_and_log_output ... [32mok[m
+test commands::bench::suite::tests::expands_explain_with_connection_defaults ... [32mok[m
+test commands::bench::suite::tests::expands_latency_with_cache_state_label ... [32mok[m
+test commands::bench::suite::tests::expands_recall_with_defaults ... [32mok[m
+test commands::bench::suite::tests::expands_sidecar_rerank_with_variants ... [32mok[m
+test commands::bench::suite::tests::expands_spire_pipeline_with_production_profile ... [32mok[m
+test commands::bench::suite::tests::explain_sql_applies_session_gucs ... [32mok[m
+test commands::bench::suite::tests::explain_sql_can_enable_ivf_scratch_soa ... [32mok[m
+test commands::bench::suite::tests::explain_sql_uses_diskann_profile_guc_and_cost_snapshot ... [32mok[m
+test commands::bench::suite::tests::explain_sql_uses_spire_profile_gucs_and_cost_snapshot ... [32mok[m
+test commands::bench::suite::tests::explain_sql_uses_suite_fields ... [32mok[m
+test commands::bench::suite::tests::failed_distann_step_retains_primary_log_for_result_extraction ... [32mok[m
+test commands::bench::suite::tests::load_step_exposes_pgoptions_for_manifest_and_spawn ... [32mok[m
+test commands::bench::suite::tests::latency_result_rows_include_block_kernel_counter_lines ... [32mok[m
+test commands::bench::suite::tests::parallel_worker_counter_emits_result_row ... [32mok[m
+test commands::bench::suite::tests::parse_table_rows_resets_headers_between_same_width_tables ... [32mok[m
+test commands::bench::suite::tests::parses_comparator_table_and_summary_rows ... [32mok[m
+test commands::bench::suite::tests::parses_cross_am_result_table_for_thresholds ... [32mok[m
+test commands::bench::suite::tests::parses_distann_shard_build_notice ... [32mok[m
+test commands::bench::suite::tests::parses_ec_diskann_build_timing_rows ... [32mok[m
+test commands::bench::suite::tests::parses_ec_ivf_build_timing_rows ... [32mok[m
+test commands::bench::suite::tests::parses_explain_planner_cost_rows ... [32mok[m
+test commands::bench::suite::tests::parses_explain_planner_cost_rows_from_psql_aligned_output ... [32mok[m
+test commands::bench::suite::tests::parses_fetch_prepare_suite_config ... [32mok[m
+test commands::bench::suite::tests::parses_loader_build_memory_rows ... [32mok[m
+test commands::bench::suite::tests::parses_loader_timing_rows ... [32mok[m
+test commands::bench::suite::tests::parses_minimal_suite_config ... [32mok[m
+test commands::bench::suite::tests::parses_legacy_dry_run_alias ... [32mok[m
+test commands::bench::suite::tests::parses_parallel_workers_from_loader_timing_artifact ... [32mok[m
+test commands::bench::suite::tests::parses_recall_result_table ... [32mok[m
+test commands::bench::suite::tests::parses_storage_rows_with_raw_byte_fields ... [32mok[m
+test commands::bench::suite::tests::parses_nested_run_command ... [32mok[m
+test commands::bench::suite::tests::prefixes_child_commands_with_connection_flags ... [32mok[m
+test commands::bench::suite::tests::raw_suite_result_rows_are_structured ... [32mok[m
+test commands::bench::suite::tests::rejects_duplicate_step_names ... [32mok[m
+test commands::bench::suite::tests::rejects_unknown_profile_names ... [32mok[m
+test commands::bench::suite::tests::result_rows_include_suite_context_fields ... [32mok[m
+test commands::bench::suite::tests::shell_join_with_pgoptions_renders_environment_prefix ... [32mok[m
+test commands::bench::suite::tests::skips_thresholds_for_unselected_steps ... [32mok[m
+test commands::bench::suite::tests::spire_local_multinode_step_rejects_semicolon_reloptions ... [32mok[m
+test commands::bench::suite::tests::spire_pooling_gate_reports_not_justified_and_candidates ... [32mok[m
+test commands::bench::suite::tests::step_selection_requires_name_and_tag_matches ... [32mok[m
+test commands::bench::suite::tests::threshold_filters_select_matching_sweep_row ... [32mok[m
+test commands::bench::suite::tests::validates_cross_am_inputs_are_labeled_paths ... [32mok[m
+test commands::bench::suite::tests::distann_local_multinode_labels_and_expands_metrics_modes ... [32mok[m
+test commands::bench::suite::tests::distann_nfr_021_preregistration_is_manifested_and_labels_arm_rows ... [32mok[m
+test commands::bench::suite::tests::spire_local_multinode_step_tracks_bench_artifacts_when_enabled ... [32mok[m
+test commands::bench::suite::tests::spire_local_multinode_step_expands_local_four_instance_lane ... [32mok[m
+test commands::bench::suite::tests::load_step_pgoptions_flow_into_manifest_record ... [32mok[m
+test commands::bench::suite::tests::parses_task92_quant_axis_smoke_config ... [32mok[m
+test commands::bench::suite::tests::retired_kernel_cells_execute_and_emit_marker_row ... [32mok[m
+test commands::bench::suite::tests::quant_axis_rejects_unknown_kernel_status_marker ... [32mok[m
+test commands::bench::suite::tests::quant_axis_tags_flow_into_manifest_and_missing_kernel_marker ... [32mok[m
+test commands::bench::suite::tests::parses_task92_offpath_calibration_config ... [32mok[m
+
+failures:
+
+---- commands::bench::suite::tests::distann_local_multinode_expands_seed_variants_on_one_fixture stdout ----
+
+thread 'commands::bench::suite::tests::distann_local_multinode_expands_seed_variants_on_one_fixture' (872936) panicked at crates/ecaz-cli/src/commands/bench/suite.rs:8141:9:
+assertion failed: command.windows(2).any(|window|
+        {
+            window ==
+                ["--benchmark-seed-variant",
+                        "persisted-w32-s32:persisted_head:32:32:rabitq:0:off:4:100:off"]
+        })
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- commands::bench::suite::tests::distann_local_multinode_step_expands_head_index_cap stdout ----
+
+thread 'commands::bench::suite::tests::distann_local_multinode_step_expands_head_index_cap' (872942) panicked at crates/ecaz-cli/src/commands/bench/suite.rs:7436:9:
+assertion `left == right` failed
+  left: ["artifacts/cap-256/distann-multinode-summary.log", "artifacts/cap-256/physical-head-membership.json"]
+ right: ["artifacts/cap-256/distann-multinode-summary.log"]
+
+---- commands::bench::suite::tests::distann_owner_plan_and_fixed_work_variants_are_suite_addressable stdout ----
+
+thread 'commands::bench::suite::tests::distann_owner_plan_and_fixed_work_variants_are_suite_addressable' (872954) panicked at crates/ecaz-cli/src/commands/bench/suite.rs:8260:9:
+assertion failed: command.windows(2).any(|window|
+        {
+            window ==
+                ["--benchmark-seed-variant",
+                        "plan-off:persisted_head:32:32:rabitq:10:off:4:100:off"]
+        })
+
+---- commands::bench::suite::tests::distann_traversal_pair_with_implicit_search_shape_stays_pairable stdout ----
+
+thread 'commands::bench::suite::tests::distann_traversal_pair_with_implicit_search_shape_stays_pairable' (872963) panicked at crates/ecaz-cli/src/commands/bench/suite.rs:8368:13:
+assertion failed: command.windows(2).any(|window|
+        { window == ["--benchmark-seed-variant", expected] })
+
+---- commands::bench::suite::tests::distann_variants_normalize_effective_search_shape stdout ----
+
+thread 'commands::bench::suite::tests::distann_variants_normalize_effective_search_shape' (872966) panicked at crates/ecaz-cli/src/commands/bench/suite.rs:8318:9:
+assertion failed: command.windows(2).any(|window|
+        {
+            window ==
+                ["--benchmark-seed-variant",
+                        "production:persisted_head:32:32:rabitq:10:off:4:100:off"]
+        })
+
+
+failures:
+    commands::bench::suite::tests::distann_local_multinode_expands_seed_variants_on_one_fixture
+    commands::bench::suite::tests::distann_local_multinode_step_expands_head_index_cap
+    commands::bench::suite::tests::distann_owner_plan_and_fixed_work_variants_are_suite_addressable
+    commands::bench::suite::tests::distann_traversal_pair_with_implicit_search_shape_stays_pairable
+    commands::bench::suite::tests::distann_variants_normalize_effective_search_shape
+
+test result: [31mFAILED[m. 86 passed; 5 failed; 0 ignored; 0 measured; 418 filtered out; finished in 0.08s
+
+error: test failed, to rerun pass `-p ecaz-cli --bin ecaz`
+
+Script done on 2026-08-22 18:52:46-07:00 [COMMAND_EXIT_CODE="101"]
