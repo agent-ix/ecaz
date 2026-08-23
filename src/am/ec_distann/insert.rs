@@ -119,6 +119,30 @@ pub(crate) fn select_insert_forward_neighbors(
         .collect())
 }
 
+/// Re-prune an established target's neighbors with one proposed backlink.
+///
+/// Established neighbors deliberately precede the proposal. `robust_prune`
+/// breaks exact-distance ties by candidate ordinal, so this matches the
+/// full-target union order in batch Vamana and the mature local incremental
+/// path. A newly inserted exact-vector duplicate cannot evict an established
+/// edge solely because it was placed first in the temporary union.
+pub(crate) fn select_insert_backlink_neighbors(
+    target_source_vector: &[f32],
+    established: &[DistannForwardCandidate],
+    new_vec_id: u64,
+    new_source_vector: &[f32],
+    alpha: f32,
+    max_degree: usize,
+) -> Result<Vec<u64>, String> {
+    let mut union = Vec::with_capacity(established.len() + 1);
+    union.extend_from_slice(established);
+    union.push(DistannForwardCandidate {
+        vec_id: new_vec_id,
+        source_vector: new_source_vector.to_vec(),
+    });
+    select_insert_forward_neighbors(target_source_vector, &union, alpha, max_degree)
+}
+
 /// Rank candidate neighbors for an inserted vector by exact distance and keep
 /// the closest `limit`. The candidates come from the FR-080 head-sample region
 /// (full-precision vectors already persisted for graph seeding); for an index
@@ -201,12 +225,14 @@ pub(super) fn plan_insert_backlink(
     }
     // Full: re-prune the union (current edges + the new node) from the
     // neighbor's own vantage point.
-    let mut union = target.current_neighbors.clone();
-    union.push(DistannForwardCandidate {
-        vec_id: new_vec_id,
-        source_vector: new_source_vector.to_vec(),
-    });
-    select_insert_forward_neighbors(&target.source_vector, &union, alpha, max_degree)
+    select_insert_backlink_neighbors(
+        &target.source_vector,
+        &target.current_neighbors,
+        new_vec_id,
+        new_source_vector,
+        alpha,
+        max_degree,
+    )
 }
 
 /// A forward neighbor for an inserted node's record: its vec_id plus its
@@ -926,6 +952,31 @@ mod tests {
         assert!(kept.len() <= 3, "degree bound respected after re-prune");
         let uniq: std::collections::HashSet<u64> = kept.iter().copied().collect();
         assert_eq!(uniq.len(), kept.len(), "no duplicate edges");
+    }
+
+    #[test]
+    fn backlink_exact_tie_prefers_the_established_neighbor() {
+        let target_source = [0.0_f32, 1.0];
+        let established = vec![candidate(20, &[1.0, 0.0])];
+        let proposal_first = vec![candidate(999, &[1.0, 0.0]), candidate(20, &[1.0, 0.0])];
+        assert_eq!(
+            select_insert_forward_neighbors(&target_source, &proposal_first, 1.2, 1).unwrap(),
+            vec![999],
+            "candidate ordinal decides an exact-distance tie"
+        );
+        assert_eq!(
+            select_insert_backlink_neighbors(
+                &target_source,
+                &established,
+                999,
+                &[1.0, 0.0],
+                1.2,
+                1,
+            )
+            .unwrap(),
+            vec![20],
+            "the physical backlink path must retain the established tie winner"
+        );
     }
 
     #[test]

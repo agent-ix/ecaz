@@ -17,7 +17,9 @@ use crate::am::ec_diskann::{decode_heap_tid, ecvector_datum_to_vec};
 use crate::am::ec_distann::ambuild;
 use crate::am::ec_distann::generation_read::PhysicalGenerationScan;
 use crate::am::ec_distann::handoff::qualified_relation_name;
-use crate::am::ec_distann::insert::{select_insert_forward_neighbors, DistannForwardCandidate};
+use crate::am::ec_distann::insert::{
+    select_insert_backlink_neighbors, select_insert_forward_neighbors, DistannForwardCandidate,
+};
 use crate::am::ec_distann::options;
 use crate::am::ec_distann::stage_counters::{self, DistannInsertWork};
 use crate::am::ec_distann::tuple::DistannNodeTuple;
@@ -1745,11 +1747,7 @@ unsafe fn amend_backlink(
         return Ok(());
     }
     let original_node = node.clone();
-    let mut candidates = Vec::with_capacity(count + 1);
-    candidates.push(DistannForwardCandidate {
-        vec_id: new_vec_id,
-        source_vector: new_source_vector.to_vec(),
-    });
+    let mut established_candidates = Vec::with_capacity(count);
     for neighbor in &node.neighbor_vec_ids[..count] {
         let source_vector = if let Some(source_vector) = remote_vectors.get(neighbor) {
             source_vector.clone()
@@ -1779,7 +1777,7 @@ unsafe fn amend_backlink(
                 }
             }
         };
-        candidates.push(DistannForwardCandidate {
+        established_candidates.push(DistannForwardCandidate {
             vec_id: *neighbor,
             source_vector,
         });
@@ -1788,9 +1786,11 @@ unsafe fn amend_backlink(
     // target's source vector using the same exact robust-prune metric as
     // insertion. The shipped strategy uses this for free and full targets;
     // append-when-room remains an explicit diagnostic candidate.
-    let kept = select_insert_forward_neighbors(
+    let kept = select_insert_backlink_neighbors(
         &candidate.source_vector,
-        &candidates,
+        &established_candidates,
+        new_vec_id,
+        new_source_vector,
         alpha,
         usize::from(graph_degree),
     )?;
