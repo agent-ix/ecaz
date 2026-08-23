@@ -2535,13 +2535,18 @@ async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>>
         if let Some(row) = kernel_cell_result_row(manifest, step) {
             rows.push(row);
         }
-        if !matches!(step.status, Some(StepStatus::Succeeded)) {
+        let succeeded = matches!(step.status, Some(StepStatus::Succeeded));
+        let failed = matches!(step.status, Some(StepStatus::Failed));
+        if !succeeded && !failed {
             continue;
         }
-        if let Some(row) = parallel_worker_result_row(manifest, step) {
-            rows.push(row);
+        if succeeded {
+            if let Some(row) = parallel_worker_result_row(manifest, step) {
+                rows.push(row);
+            }
         }
-        for artifact in &step.expected_artifacts {
+        let artifacts = result_artifacts_for_step(step);
+        for artifact in &artifacts {
             let path = Path::new(artifact);
             let Ok(raw) = tokio::fs::read_to_string(path).await else {
                 continue;
@@ -2550,6 +2555,22 @@ async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>>
         }
     }
     Ok(rows)
+}
+
+fn result_artifacts_for_step(step: &StepRecord) -> Vec<String> {
+    let mut artifacts = step.expected_artifacts.clone();
+    // A hard-gated multinode child can fail before it writes its compact
+    // summary. Its primary --log-file still contains the emitted failing
+    // metric and integrity checkpoints, so retain those structured rows
+    // instead of producing an empty results.jsonl for the failed step.
+    if matches!(step.status, Some(StepStatus::Failed)) && step.kind == "distann-local-multinode" {
+        if let Some(log_file) = command_flag_value(&step.command, "--log-file") {
+            if !artifacts.contains(&log_file) {
+                artifacts.push(log_file);
+            }
+        }
+    }
+    artifacts
 }
 
 fn parallel_worker_result_row(manifest: &SuiteManifest, step: &StepRecord) -> Option<ResultRow> {
@@ -4707,8 +4728,7 @@ impl SuiteStep {
                                         && candidate.owner_payload_plan_cache
                                             == control.owner_payload_plan_cache
                                         && candidate.typed_locator == control.typed_locator
-                                        && candidate.traversal_replica
-                                            == control.traversal_replica
+                                        && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
                         });
@@ -4723,8 +4743,7 @@ impl SuiteStep {
                                             == control.owner_payload_plan_cache
                                         && candidate.typed_locator == control.typed_locator
                                         && candidate.packed_payload == control.packed_payload
-                                        && candidate.traversal_replica
-                                            == control.traversal_replica
+                                        && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
                         });
@@ -4970,55 +4989,55 @@ impl SuiteStep {
                 let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
                 if let Some(dir) = &step.artifact_dir {
                     artifacts.push(dir.join("distann-multinode-summary.log"));
-                if step.physical_benchmark {
-                    artifacts.extend([
-                        dir.join("physical-recall.log"),
-                        dir.join("physical-latency.log"),
-                        dir.join("single-recall.log"),
-                        dir.join("single-latency.log"),
-                    ]);
-                }
-                if step.gateway_trace {
-                    let variants = if step.benchmark_seed_variants.is_empty() {
-                        vec!["production".to_owned()]
-                    } else {
-                        step.benchmark_seed_variants
-                            .iter()
-                            .map(|variant| variant.name.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    artifacts.extend(variants.into_iter().map(|variant| {
-                        dir.join(format!("physical-{variant}-gateway-trace.json"))
-                    }));
-                }
-                if step.gateway_isolated_trace {
-                    let variants = if step.benchmark_seed_variants.is_empty() {
-                        vec!["production".to_owned()]
-                    } else {
-                        step.benchmark_seed_variants
-                            .iter()
-                            .map(|variant| variant.name.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    artifacts.extend(variants.into_iter().map(|variant| {
-                        dir.join(format!("physical-{variant}-gateway-isolated-trace.json"))
-                    }));
-                }
-                if step.gateway_head_candidate_trace {
-                    let variants = if step.benchmark_seed_variants.is_empty() {
-                        vec!["production".to_owned()]
-                    } else {
-                        step.benchmark_seed_variants
-                            .iter()
-                            .map(|variant| variant.name.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    artifacts.extend(variants.into_iter().map(|variant| {
-                        dir.join(format!(
-                            "physical-{variant}-gateway-head-candidate-trace.json"
-                        ))
-                    }));
-                }
+                    if step.physical_benchmark {
+                        artifacts.extend([
+                            dir.join("physical-recall.log"),
+                            dir.join("physical-latency.log"),
+                            dir.join("single-recall.log"),
+                            dir.join("single-latency.log"),
+                        ]);
+                    }
+                    if step.gateway_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!("physical-{variant}-gateway-trace.json"))
+                        }));
+                    }
+                    if step.gateway_isolated_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!("physical-{variant}-gateway-isolated-trace.json"))
+                        }));
+                    }
+                    if step.gateway_head_candidate_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!(
+                                "physical-{variant}-gateway-head-candidate-trace.json"
+                            ))
+                        }));
+                    }
                 }
                 artifacts
             }
@@ -5735,7 +5754,9 @@ fn expand_distann_local_multinode(
     push_opt_arg(
         &mut args,
         "--benchmark-parity-queries",
-        step.benchmark_parity_queries.map(|v| v.to_string()).as_deref(),
+        step.benchmark_parity_queries
+            .map(|v| v.to_string())
+            .as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -6980,8 +7001,7 @@ psql header noise\n\
         }));
         assert!(rows.iter().any(|(metric, values)| {
             metric == "physical_benchmark_head_membership"
-                && values.get("head_construction").map(String::as_str)
-                    == Some("partition_union")
+                && values.get("head_construction").map(String::as_str) == Some("partition_union")
                 && values.get("sample_count").map(String::as_str) == Some("4096")
         }));
         assert!(rows.iter().any(|(metric, values)| {
@@ -9297,6 +9317,45 @@ psql header noise\n\
         assert_eq!(
             parse_parallel_workers_from_load_artifact("[loader] copied corpus table x in 0.123s\n"),
             None
+        );
+    }
+
+    #[test]
+    fn failed_distann_step_retains_primary_log_for_result_extraction() {
+        let step = StepRecord {
+            name: "physical-50k".into(),
+            kind: "distann-local-multinode".into(),
+            command: vec![
+                "dev".into(),
+                "distann-multicluster".into(),
+                "local-multinode-pg18".into(),
+                "--log-file".into(),
+                "artifacts/physical-50k/distann-local-multinode.log".into(),
+            ],
+            selected: true,
+            quant: None,
+            isa: None,
+            kernel_status: None,
+            pgoptions: None,
+            tags: Vec::new(),
+            nfr_021_registrations: Vec::new(),
+            expected_artifacts: vec!["artifacts/physical-50k/distann-multinode-summary.log".into()],
+            status: Some(StepStatus::Failed),
+            started_at_unix_ms: Some(1),
+            finished_at_unix_ms: Some(2),
+            duration_ms: Some(1),
+            exit_code: Some(1),
+            parallel_workers_before: None,
+            parallel_workers_after: None,
+            parallel_workers_delta: None,
+        };
+
+        assert_eq!(
+            result_artifacts_for_step(&step),
+            vec![
+                "artifacts/physical-50k/distann-multinode-summary.log",
+                "artifacts/physical-50k/distann-local-multinode.log",
+            ]
         );
     }
 
