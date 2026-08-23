@@ -191,12 +191,8 @@ fn build_cache_entry(
         )
     };
     let head_seed = metadata.seed ^ DISTANN_HEAD_GRAPH_SEED_WRAP;
-    let head_entry = crate::am::approximate_medoid(
-        head_vectors.len(),
-        head_vectors.len(),
-        head_seed,
-        head_dist,
-    );
+    let head_entry =
+        crate::am::approximate_medoid(head_vectors.len(), head_vectors.len(), head_seed, head_dist);
     let (head_graph, _stats) = crate::am::build_vamana_graph_with_stats(
         head_vectors.len(),
         head_entry,

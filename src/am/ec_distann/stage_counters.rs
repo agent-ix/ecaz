@@ -638,7 +638,7 @@ pub(crate) fn insert_work_snapshot() -> (u64, Vec<DistannInsertWorkSnapshotRow>)
     (inserts, rows)
 }
 
-pub(crate) fn reset() {
+pub(crate) fn reset_stage_scoring() {
     SCANS.store(0, Ordering::Relaxed);
     for index in 0..STAGE_COUNT {
         STAGE_ELAPSED_NS[index].store(0, Ordering::Relaxed);
@@ -647,9 +647,18 @@ pub(crate) fn reset() {
     for counter in &MATERIALIZATION_WORK {
         counter.store(0, Ordering::Relaxed);
     }
+}
+
+pub(crate) fn reset_insert_work() {
     for counter in &INSERT_WORK {
         counter.store(0, Ordering::Relaxed);
     }
+}
+
+#[cfg(test)]
+fn reset() {
+    reset_stage_scoring();
+    reset_insert_work();
 }
 
 #[cfg(test)]
@@ -697,6 +706,34 @@ mod tests {
         let (inserts, work) = insert_work_snapshot();
         assert_eq!(inserts, 0);
         assert!(work.iter().all(|row| row.value == 0));
+    }
+
+    #[test]
+    fn stage_and_insert_resets_are_independent() {
+        reset();
+        record_scan();
+        record(DistannQueryStage::RemoteExpand, Duration::from_nanos(7));
+        record_work(DistannMaterializationWork::RemoteCandidatesRequested, 11);
+        record_insert_work(DistannInsertWork::InsertAttempts, 2);
+        record_insert_work(DistannInsertWork::ForwardNeighborsSelected, 5);
+
+        reset_stage_scoring();
+        assert_eq!(snapshot().0, 0);
+        assert!(snapshot()
+            .1
+            .iter()
+            .all(|row| row.samples == 0 && row.elapsed_ns == 0));
+        assert!(materialization_work_snapshot()
+            .1
+            .iter()
+            .all(|row| row.value == 0));
+        assert_eq!(insert_work_snapshot().0, 2);
+
+        record_scan();
+        record_insert_work(DistannInsertWork::InsertAttempts, 1);
+        reset_insert_work();
+        assert_eq!(insert_work_snapshot().0, 0);
+        assert_eq!(snapshot().0, 1);
     }
 
     #[test]

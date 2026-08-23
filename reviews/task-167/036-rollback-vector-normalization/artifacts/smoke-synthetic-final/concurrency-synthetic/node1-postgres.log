@@ -1,0 +1,16 @@
+2026-08-21 23:37:00.424 PDT [154015] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-21 23:37:00.436 PDT [154015] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-21 23:37:00.436 PDT [154015] LOG:  listening on IPv4 address "127.0.0.1", port 41600
+2026-08-21 23:37:00.447 PDT [154021] LOG:  database system was shut down at 2026-08-21 23:36:57 PDT
+2026-08-21 23:37:00.462 PDT [154015] LOG:  database system is ready to accept connections
+2026-08-21 23:37:04.107 PDT [154127] ERROR:  ec_distann physical aminsert failed: EC_FAULT_INJECTED: physical insert failed after graph append before backlinks
+2026-08-21 23:37:04.107 PDT [154127] STATEMENT:  SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,'00000000-0000-4000-8000-000000000501',(SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 4 - 1) AS d) raw) normalized), encode_to_ecvector((SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 4 - 1) AS d) raw) normalized), 4, 42));
+2026-08-21 23:37:04.747 PDT [154172] ERROR:  [EC_PLACEMENT] vec_id 0xb5c08057d4068baf belongs to roster ordinal 2, not 0
+2026-08-21 23:37:04.747 PDT [154172] STATEMENT:  SET ec_distann.roster='1@host=127.0.0.1 port=41600 dbname=postgres user=postgres options=-cstatement_timeout=3600000;2@host=127.0.0.1 port=41601 dbname=postgres user=postgres options=-cstatement_timeout=3600000;3@host=127.0.0.1 port=41602 dbname=postgres user=postgres options=-cstatement_timeout=3600000'; SET ec_distann.local_node_id=1; SELECT vec_id::text || '|' || COALESCE(array_to_string(neighbor_vec_ids, ','), '') FROM ec_distann_expand_physical_nodes('public.dm_idx'::regclass, decode('02004513c17020f508f810ddb918413c5435733efc2d2d5dbe41905e8ad757546a05', 'hex'), ARRAY[0,0,0,0]::real[], ARRAY[-5350135242608440401]::bigint[], NULL, NULL);
+2026-08-21 23:37:09.251 PDT [154015] LOG:  received fast shutdown request
+2026-08-21 23:37:09.256 PDT [154015] LOG:  aborting any active transactions
+2026-08-21 23:37:09.257 PDT [154015] LOG:  background worker "logical replication launcher" (PID 154024) exited with exit code 1
+2026-08-21 23:37:09.257 PDT [154019] LOG:  shutting down
+2026-08-21 23:37:09.261 PDT [154019] LOG:  checkpoint starting: shutdown immediate
+2026-08-21 23:37:09.649 PDT [154019] LOG:  checkpoint complete: wrote 675 buffers (4.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.017 s, sync=0.349 s, total=0.392 s; sync files=290, longest=0.009 s, average=0.002 s; distance=5854 kB, estimate=5854 kB; lsn=0/1D0C048, redo lsn=0/1D0C048
+2026-08-21 23:37:09.663 PDT [154015] LOG:  database system is shut down

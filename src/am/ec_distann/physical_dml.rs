@@ -17,7 +17,9 @@ use crate::am::ec_diskann::{decode_heap_tid, ecvector_datum_to_vec};
 use crate::am::ec_distann::ambuild;
 use crate::am::ec_distann::generation_read::PhysicalGenerationScan;
 use crate::am::ec_distann::handoff::qualified_relation_name;
-use crate::am::ec_distann::insert::{select_insert_forward_neighbors, DistannForwardCandidate};
+use crate::am::ec_distann::insert::{
+    select_insert_backlink_neighbors, select_insert_forward_neighbors, DistannForwardCandidate,
+};
 use crate::am::ec_distann::options;
 use crate::am::ec_distann::stage_counters::{self, DistannInsertWork};
 use crate::am::ec_distann::tuple::DistannNodeTuple;
@@ -1493,13 +1495,8 @@ fn read_current_candidate(
     };
     if !visible {
         if let Some(latest) = RegisteredSnapshotGuard::latest() {
-            let (row_block, row_offset) =
-                pgrx::itemptr::item_pointer_get_both(row_tid);
-            pgrx::itemptr::item_pointer_set_all(
-                &mut raw_tid,
-                row_block,
-                row_offset,
-            );
+            let (row_block, row_offset) = pgrx::itemptr::item_pointer_get_both(row_tid);
+            pgrx::itemptr::item_pointer_set_all(&mut raw_tid, row_block, row_offset);
             unsafe { pg_sys::ExecClearTuple(vector_slot.as_ptr()) };
             visible = unsafe {
                 pg_sys::table_tuple_fetch_row_version(
@@ -1750,11 +1747,7 @@ unsafe fn amend_backlink(
         return Ok(());
     }
     let original_node = node.clone();
-    let mut candidates = Vec::with_capacity(count + 1);
-    candidates.push(DistannForwardCandidate {
-        vec_id: new_vec_id,
-        source_vector: new_source_vector.to_vec(),
-    });
+    let mut established_candidates = Vec::with_capacity(count);
     for neighbor in &node.neighbor_vec_ids[..count] {
         let source_vector = if let Some(source_vector) = remote_vectors.get(neighbor) {
             source_vector.clone()
@@ -1784,17 +1777,20 @@ unsafe fn amend_backlink(
                 }
             }
         };
-        candidates.push(DistannForwardCandidate {
+        established_candidates.push(DistannForwardCandidate {
             vec_id: *neighbor,
             source_vector,
         });
     }
     // The planner is vantage-point agnostic: reorder the union from the
     // target's source vector using the same exact robust-prune metric as
-    // insertion. This handles both free and full target degree uniformly.
-    let kept = select_insert_forward_neighbors(
+    // insertion. The shipped strategy uses this for free and full targets;
+    // append-when-room remains an explicit diagnostic candidate.
+    let kept = select_insert_backlink_neighbors(
         &candidate.source_vector,
-        &candidates,
+        &established_candidates,
+        new_vec_id,
+        new_source_vector,
         alpha,
         usize::from(graph_degree),
     )?;

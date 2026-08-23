@@ -654,6 +654,13 @@ struct DistannLocalMultinodeStep {
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
     benchmark_parity_queries: Option<u32>,
+    /// Per-scale shipped-default heldout deficit used by Task 167's
+    /// baseline-relative regression gate. Must be paired with the physical
+    /// sample SD; omit both to record a baseline observation.
+    #[serde(default)]
+    task167_heldout_baseline_deficit: Option<f64>,
+    #[serde(default)]
+    task167_heldout_physical_sample_sd: Option<f64>,
     #[serde(default)]
     benchmark_backend_batch_size: Option<u32>,
     /// Run the Task 200 repeated coverage-call RSS regression in one backend
@@ -2535,13 +2542,18 @@ async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>>
         if let Some(row) = kernel_cell_result_row(manifest, step) {
             rows.push(row);
         }
-        if !matches!(step.status, Some(StepStatus::Succeeded)) {
+        let succeeded = matches!(step.status, Some(StepStatus::Succeeded));
+        let failed = matches!(step.status, Some(StepStatus::Failed));
+        if !succeeded && !failed {
             continue;
         }
-        if let Some(row) = parallel_worker_result_row(manifest, step) {
-            rows.push(row);
+        if succeeded {
+            if let Some(row) = parallel_worker_result_row(manifest, step) {
+                rows.push(row);
+            }
         }
-        for artifact in &step.expected_artifacts {
+        let artifacts = result_artifacts_for_step(step);
+        for artifact in &artifacts {
             let path = Path::new(artifact);
             let Ok(raw) = tokio::fs::read_to_string(path).await else {
                 continue;
@@ -2550,6 +2562,22 @@ async fn extract_result_rows(manifest: &SuiteManifest) -> Result<Vec<ResultRow>>
         }
     }
     Ok(rows)
+}
+
+fn result_artifacts_for_step(step: &StepRecord) -> Vec<String> {
+    let mut artifacts = step.expected_artifacts.clone();
+    // A hard-gated multinode child can fail before it writes its compact
+    // summary. Its primary --log-file still contains the emitted failing
+    // metric and integrity checkpoints, so retain those structured rows
+    // instead of producing an empty results.jsonl for the failed step.
+    if matches!(step.status, Some(StepStatus::Failed)) && step.kind == "distann-local-multinode" {
+        if let Some(log_file) = command_flag_value(&step.command, "--log-file") {
+            if !artifacts.contains(&log_file) {
+                artifacts.push(log_file);
+            }
+        }
+    }
+    artifacts
 }
 
 fn parallel_worker_result_row(manifest: &SuiteManifest, step: &StepRecord) -> Option<ResultRow> {
@@ -3158,10 +3186,20 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
             }
             continue;
         }
-        let Some(body) = line.find(PREFIX).map(|idx| &line[idx + PREFIX.len()..]) else {
+        let body = if let Some(idx) = line.find(PREFIX) {
+            &line[idx + PREFIX.len()..]
+        } else if let Some(idx) = line.find("physical_benchmark_post_insert_exact_recall ") {
+            // A hard-gate error repeats the exact-recall metric after the
+            // color-eyre context but without the fixture prefix.
+            &line[idx..]
+        } else {
             continue;
         };
-        let body = body.trim();
+        // Failure diagnostics can wrap the original fixture line in a
+        // color-eyre ANSI span. The metric itself precedes the first escape;
+        // discard the presentation suffix so its final key/value remains
+        // parseable (for example `pass=false`).
+        let body = body.split('\u{1b}').next().unwrap_or(body).trim();
         // Physical benchmark child stderr is appended to the fixture summary
         // with the fixture prefix, so notices arrive as
         // `[distann-multicluster] [postgres notice] ...`. Keep accepting the
@@ -3218,6 +3256,36 @@ fn parse_distann_multinode_rows(raw: &str) -> Vec<(String, BTreeMap<String, Stri
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_recall ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
                 rows.push(("physical_benchmark_recall".into(), values));
+            }
+        } else if let Some(rest) =
+            body.strip_prefix("physical_benchmark_recall_instrument_calibration ")
+        {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push((
+                    "physical_benchmark_recall_instrument_calibration".into(),
+                    values,
+                ));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_post_insert_exact_recall ")
+        {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_post_insert_exact_recall".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_insert_throughput_ab ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_insert_throughput_ab".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_append_when_room_ab ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_append_when_room_ab".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_backlink_strategy_ab ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_backlink_strategy_ab".into(), values));
+            }
+        } else if let Some(rest) = body.strip_prefix("physical_benchmark_insert_work ") {
+            if let Some(values) = parse_space_key_values(rest.trim()) {
+                rows.push(("physical_benchmark_insert_work".into(), values));
             }
         } else if let Some(rest) = body.strip_prefix("physical_benchmark_paired_recall ") {
             if let Some(values) = parse_space_key_values(rest.trim()) {
@@ -4488,6 +4556,36 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                match (
+                    step.task167_heldout_baseline_deficit,
+                    step.task167_heldout_physical_sample_sd,
+                ) {
+                    (None, None) => {}
+                    (Some(baseline), Some(sample_sd)) => {
+                        if !step.physical_benchmark {
+                            bail!(
+                                "distann-local-multinode step {:?} Task 167 heldout regression gate requires physical_benchmark",
+                                step.name
+                            )
+                        }
+                        if !baseline.is_finite() || baseline < 0.0 {
+                            bail!(
+                                "distann-local-multinode step {:?} Task 167 heldout baseline deficit must be finite and non-negative",
+                                step.name
+                            )
+                        }
+                        if !sample_sd.is_finite() || sample_sd < 0.0 {
+                            bail!(
+                                "distann-local-multinode step {:?} Task 167 heldout physical sample SD must be finite and non-negative",
+                                step.name
+                            )
+                        }
+                    }
+                    _ => bail!(
+                        "distann-local-multinode step {:?} Task 167 heldout regression gate requires both baseline deficit and physical sample SD",
+                        step.name
+                    ),
+                }
                 if step
                     .benchmark_concurrency_sweep
                     .iter()
@@ -4707,8 +4805,7 @@ impl SuiteStep {
                                         && candidate.owner_payload_plan_cache
                                             == control.owner_payload_plan_cache
                                         && candidate.typed_locator == control.typed_locator
-                                        && candidate.traversal_replica
-                                            == control.traversal_replica
+                                        && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
                         });
@@ -4723,8 +4820,7 @@ impl SuiteStep {
                                             == control.owner_payload_plan_cache
                                         && candidate.typed_locator == control.typed_locator
                                         && candidate.packed_payload == control.packed_payload
-                                        && candidate.traversal_replica
-                                            == control.traversal_replica
+                                        && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
                         });
@@ -4970,55 +5066,55 @@ impl SuiteStep {
                 let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
                 if let Some(dir) = &step.artifact_dir {
                     artifacts.push(dir.join("distann-multinode-summary.log"));
-                if step.physical_benchmark {
-                    artifacts.extend([
-                        dir.join("physical-recall.log"),
-                        dir.join("physical-latency.log"),
-                        dir.join("single-recall.log"),
-                        dir.join("single-latency.log"),
-                    ]);
-                }
-                if step.gateway_trace {
-                    let variants = if step.benchmark_seed_variants.is_empty() {
-                        vec!["production".to_owned()]
-                    } else {
-                        step.benchmark_seed_variants
-                            .iter()
-                            .map(|variant| variant.name.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    artifacts.extend(variants.into_iter().map(|variant| {
-                        dir.join(format!("physical-{variant}-gateway-trace.json"))
-                    }));
-                }
-                if step.gateway_isolated_trace {
-                    let variants = if step.benchmark_seed_variants.is_empty() {
-                        vec!["production".to_owned()]
-                    } else {
-                        step.benchmark_seed_variants
-                            .iter()
-                            .map(|variant| variant.name.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    artifacts.extend(variants.into_iter().map(|variant| {
-                        dir.join(format!("physical-{variant}-gateway-isolated-trace.json"))
-                    }));
-                }
-                if step.gateway_head_candidate_trace {
-                    let variants = if step.benchmark_seed_variants.is_empty() {
-                        vec!["production".to_owned()]
-                    } else {
-                        step.benchmark_seed_variants
-                            .iter()
-                            .map(|variant| variant.name.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    artifacts.extend(variants.into_iter().map(|variant| {
-                        dir.join(format!(
-                            "physical-{variant}-gateway-head-candidate-trace.json"
-                        ))
-                    }));
-                }
+                    if step.physical_benchmark {
+                        artifacts.extend([
+                            dir.join("physical-recall.log"),
+                            dir.join("physical-latency.log"),
+                            dir.join("single-recall.log"),
+                            dir.join("single-latency.log"),
+                        ]);
+                    }
+                    if step.gateway_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!("physical-{variant}-gateway-trace.json"))
+                        }));
+                    }
+                    if step.gateway_isolated_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!("physical-{variant}-gateway-isolated-trace.json"))
+                        }));
+                    }
+                    if step.gateway_head_candidate_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!(
+                                "physical-{variant}-gateway-head-candidate-trace.json"
+                            ))
+                        }));
+                    }
                 }
                 artifacts
             }
@@ -5735,7 +5831,23 @@ fn expand_distann_local_multinode(
     push_opt_arg(
         &mut args,
         "--benchmark-parity-queries",
-        step.benchmark_parity_queries.map(|v| v.to_string()).as_deref(),
+        step.benchmark_parity_queries
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--task167-heldout-baseline-deficit",
+        step.task167_heldout_baseline_deficit
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--task167-heldout-physical-sample-sd",
+        step.task167_heldout_physical_sample_sd
+            .map(|v| v.to_string())
+            .as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -6854,6 +6966,41 @@ psql header noise\n\
     }
 
     #[test]
+    fn distann_task167_quality_and_insert_metrics_are_structured() {
+        let raw = "\
+[distann-multicluster] physical_benchmark_recall_instrument_calibration scale=50k ordinary_distinct_recall=0.954500 exact_scorer_distinct_recall=0.954500 absolute_delta=0.000000 pass=true\n\
+[distann-multicluster] physical_benchmark_insert_throughput_ab scale=50k physical_insert_mode=shipped_default_established_tie_priority physical_rows_per_second=0.224 control_rows_per_second=2.000 pass=true\n\
+[distann-multicluster] physical_benchmark_append_when_room_ab scale=50k append_enabled_over_disabled=1.003392 pass=true\n\
+[distann-multicluster] physical_benchmark_backlink_strategy_ab scale=50k robust_prune_all_over_shipped=1.003392 pass=true\n\
+[distann-multicluster] physical_benchmark_insert_work scale=50k metric=backlink_amendments inserts=160 value=5120 pass=true\n\
+   0: \u{1b}[91mTask 167 failed: physical_benchmark_post_insert_exact_recall scale=50k population=heldout physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 physical_minus_fresh=-0.008611 allowed_deficit=0.007000 quality_gate_pass=false pass=false\u{1b}[0m\n";
+        let rows = parse_distann_multinode_rows(raw);
+
+        for metric in [
+            "physical_benchmark_recall_instrument_calibration",
+            "physical_benchmark_insert_throughput_ab",
+            "physical_benchmark_append_when_room_ab",
+            "physical_benchmark_backlink_strategy_ab",
+            "physical_benchmark_insert_work",
+            "physical_benchmark_post_insert_exact_recall",
+        ] {
+            assert!(
+                rows.iter().any(|(candidate, _)| candidate == metric),
+                "missing Task 167 metric {metric}: {rows:?}"
+            );
+        }
+        let exact = rows
+            .iter()
+            .find(|(metric, _)| metric == "physical_benchmark_post_insert_exact_recall")
+            .expect("exact-recall row");
+        assert_eq!(
+            exact.1.get("quality_gate_pass").map(String::as_str),
+            Some("false")
+        );
+        assert_eq!(exact.1.get("pass").map(String::as_str), Some("false"));
+    }
+
+    #[test]
     fn distann_same_generation_attestations_are_structured() {
         let raw = "[distann-multicluster] physical_benchmark_generation scale=100k variant=control arm=physical generation_identity=abcd generation_identity_kind=epoch_fingerprint build_shared=true same_generation=true\n[distann-multicluster] physical_benchmark_same_generation_recall scale=100k control=control candidate=candidate byte_identical=true\n";
         let rows = parse_distann_multinode_rows(raw);
@@ -6980,8 +7127,7 @@ psql header noise\n\
         }));
         assert!(rows.iter().any(|(metric, values)| {
             metric == "physical_benchmark_head_membership"
-                && values.get("head_construction").map(String::as_str)
-                    == Some("partition_union")
+                && values.get("head_construction").map(String::as_str) == Some("partition_union")
                 && values.get("sample_count").map(String::as_str) == Some("4096")
         }));
         assert!(rows.iter().any(|(metric, values)| {
@@ -7350,6 +7496,41 @@ psql header noise\n\
                 "artifacts/cap-256/distann-multinode-summary.log"
             )]
         );
+    }
+
+    #[test]
+    fn distann_task167_heldout_regression_gate_is_step_local_and_paired() {
+        let raw = r#"{
+          "name": "task167-heldout-gate",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "physical-50k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_50k",
+            "task167_heldout_baseline_deficit": 0.008611,
+            "task167_heldout_physical_sample_sd": 0.000224
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .windows(2)
+            .any(|window| { window == ["--task167-heldout-baseline-deficit", "0.008611"] }));
+        assert!(command
+            .windows(2)
+            .any(|window| { window == ["--task167-heldout-physical-sample-sd", "0.000224"] }));
+
+        let missing_sd = raw.replace(
+            ",\n            \"task167_heldout_physical_sample_sd\": 0.000224",
+            "",
+        );
+        let config: SuiteConfig = serde_json::from_str(&missing_sd).expect("suite parses");
+        let error = validate_config(&config).expect_err("unpaired baseline must fail");
+        assert!(error.to_string().contains("requires both baseline deficit"));
     }
 
     #[test]
@@ -9297,6 +9478,45 @@ psql header noise\n\
         assert_eq!(
             parse_parallel_workers_from_load_artifact("[loader] copied corpus table x in 0.123s\n"),
             None
+        );
+    }
+
+    #[test]
+    fn failed_distann_step_retains_primary_log_for_result_extraction() {
+        let step = StepRecord {
+            name: "physical-50k".into(),
+            kind: "distann-local-multinode".into(),
+            command: vec![
+                "dev".into(),
+                "distann-multicluster".into(),
+                "local-multinode-pg18".into(),
+                "--log-file".into(),
+                "artifacts/physical-50k/distann-local-multinode.log".into(),
+            ],
+            selected: true,
+            quant: None,
+            isa: None,
+            kernel_status: None,
+            pgoptions: None,
+            tags: Vec::new(),
+            nfr_021_registrations: Vec::new(),
+            expected_artifacts: vec!["artifacts/physical-50k/distann-multinode-summary.log".into()],
+            status: Some(StepStatus::Failed),
+            started_at_unix_ms: Some(1),
+            finished_at_unix_ms: Some(2),
+            duration_ms: Some(1),
+            exit_code: Some(1),
+            parallel_workers_before: None,
+            parallel_workers_after: None,
+            parallel_workers_delta: None,
+        };
+
+        assert_eq!(
+            result_artifacts_for_step(&step),
+            vec![
+                "artifacts/physical-50k/distann-multinode-summary.log",
+                "artifacts/physical-50k/distann-local-multinode.log",
+            ]
         );
     }
 

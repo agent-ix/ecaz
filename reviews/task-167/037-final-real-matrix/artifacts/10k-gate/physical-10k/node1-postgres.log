@@ -1,0 +1,17 @@
+2026-08-21 23:39:26.688 PDT [155850] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-21 23:39:26.701 PDT [155850] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-21 23:39:26.701 PDT [155850] LOG:  listening on IPv4 address "127.0.0.1", port 41570
+2026-08-21 23:39:26.711 PDT [155856] LOG:  database system was shut down at 2026-08-21 23:39:24 PDT
+2026-08-21 23:39:26.722 PDT [155850] LOG:  database system is ready to accept connections
+2026-08-21 23:41:30.552 PDT [155993] ERROR:  ec_distann physical aminsert failed: EC_FAULT_INJECTED: physical insert failed after graph append before backlinks
+2026-08-21 23:41:30.552 PDT [155993] STATEMENT:  SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,'00000000-0000-4000-8000-000000000501',(SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), encode_to_ecvector((SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), 4, 42));
+2026-08-21 23:41:57.207 PDT [156093] ERROR:  function ec_distann_stage_scoring_snapshot() does not exist at character 47
+2026-08-21 23:41:57.207 PDT [156093] HINT:  No function matches the given name and argument types. You might need to add explicit type casts.
+2026-08-21 23:41:57.207 PDT [156093] STATEMENT:  SELECT stage, scans, samples, elapsed_ns FROM ec_distann_stage_scoring_snapshot() ORDER BY stage
+2026-08-21 23:41:57.210 PDT [155850] LOG:  received fast shutdown request
+2026-08-21 23:41:57.221 PDT [155850] LOG:  aborting any active transactions
+2026-08-21 23:41:57.222 PDT [155850] LOG:  background worker "logical replication launcher" (PID 155859) exited with exit code 1
+2026-08-21 23:41:57.227 PDT [155854] LOG:  shutting down
+2026-08-21 23:41:57.231 PDT [155854] LOG:  checkpoint starting: shutdown immediate
+2026-08-21 23:41:57.861 PDT [155854] LOG:  checkpoint complete: wrote 9632 buffers (58.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 27 recycled; write=0.051 s, sync=0.466 s, total=0.635 s; sync files=320, longest=0.082 s, average=0.002 s; distance=438717 kB, estimate=438717 kB; lsn=0/1C3C3D00, redo lsn=0/1C3C3D00
+2026-08-21 23:41:57.887 PDT [155850] LOG:  database system is shut down

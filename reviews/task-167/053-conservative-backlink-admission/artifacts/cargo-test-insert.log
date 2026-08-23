@@ -1,0 +1,23 @@
+Script started on 2026-08-22 20:47:34-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 41.51s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-96331f57776cfc23)
+
+running 12 tests
+test am::ec_distann::insert::tests::backlink_idempotent_when_already_linked ... [32mok[m
+test am::ec_distann::insert::tests::backlink_rejects_free_capacity_candidate_that_would_displace_an_edge ... [32mok[m
+test am::ec_distann::insert::tests::backlink_admits_exact_equivalent_node_without_losing_existing_edge ... [32mok[m
+test am::ec_distann::insert::tests::backlink_admits_when_free_without_displacing_existing_edges ... [32mok[m
+test am::ec_distann::insert::tests::backlink_reprunes_when_full ... [32mok[m
+test am::ec_distann::insert::tests::build_node_tuple_rejects_bad_shape ... [32mok[m
+test am::ec_distann::insert::tests::exact_distance_keeps_positive_ip_pairs_distinct_for_robust_prune ... [32mok[m
+test am::ec_distann::insert::tests::build_node_tuple_round_trips_and_pads ... [32mok[m
+test am::ec_distann::insert::tests::rank_candidates_keeps_closest ... [32mok[m
+test am::ec_distann::insert::tests::select_rejects_bad_input ... [32mok[m
+test am::ec_distann::insert::tests::select_respects_degree_bound_and_returns_valid_vec_ids ... [32mok[m
+test am::ec_distann::insert::tests::exact_distance_matches_the_nonnegative_batch_build_metric ... [32mok[m
+
+test result: [32mok[m. 12 passed; 0 failed; 0 ignored; 0 measured; 2567 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-22 20:48:16-07:00 [COMMAND_EXIT_CODE="0"]

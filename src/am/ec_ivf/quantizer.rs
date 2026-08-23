@@ -449,10 +449,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -663,10 +660,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -883,10 +877,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -1144,10 +1135,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))
@@ -1249,10 +1237,7 @@ impl IvfQuantizer {
             (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::RaBitQ(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuant(_))
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitLut(_))
-            | (
-                IvfQuantizerProfile::RaBitQ,
-                IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_),
-            )
+            | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::TurboQuantNoQjl4BitInt8Approx(_))
             | (IvfQuantizerProfile::TurboQuant, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::RaBitQ, IvfPreparedQuery::PqFastScan { .. })
             | (IvfQuantizerProfile::PqFastScan { .. }, IvfPreparedQuery::TurboQuant(_))

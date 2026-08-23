@@ -1,0 +1,21 @@
+Task 167 final-SHA closeout matrix — cited result extract
+source: final-suite/results.jsonl
+suite: task167-final-sha-closeout-matrix
+runner_git_commit: a1fcad4eea07e9e787f7ed094d3fd78789c91bb1
+extension_git_sha: 3da8c572ec5a1034ef5563c661da201c8ad83efe
+extension_build_profile: release
+steps: completed=3 failed=0 skipped=0 stale=0
+
+10k ordinary: physical_distinct_recall=0.9990 physical_latency_mean_ms=15.20 physical_latency_p95_ms=17.50 cluster_graph_side_bytes=76095488 cluster_index_space_amplification=1.238533 physical_generation_bytes=242958336
+10k AC-4 inserted-neighborhood: physical=0.931920 fresh=0.935681 deficit=0.003762 allowed_deficit=0.015000 quality_gate_pass=true
+10k heldout baseline recording: physical=0.973000 fresh=0.974500 physical_minus_fresh=-0.001500 quality_gate_applied=false
+
+50k ordinary: physical_distinct_recall=0.9545 physical_latency_mean_ms=20.70 physical_latency_p95_ms=22.50 cluster_graph_side_bytes=410214400 cluster_index_space_amplification=1.335333 physical_generation_bytes=1243561984
+50k AC-4 inserted-neighborhood: physical=0.916791 fresh=0.931052 deficit=0.014261 allowed_deficit=0.015000 quality_gate_pass=true
+50k heldout baseline recording: physical=0.843722 fresh=0.857333 physical_minus_fresh=-0.013611 quality_gate_applied=false
+
+100k ordinary: physical_distinct_recall=0.9295 physical_latency_mean_ms=17.00 physical_latency_p95_ms=18.30 cluster_graph_side_bytes=831782912 cluster_index_space_amplification=1.353813 physical_generation_bytes=2498281472
+100k AC-4 inserted-neighborhood: physical=0.916419 fresh=0.922082 deficit=0.005663 allowed_deficit=0.015000 quality_gate_pass=true
+100k heldout baseline recording: physical=0.805500 fresh=0.767000 physical_minus_fresh=0.038500 quality_gate_applied=false
+
+Disposition: all three preregistered cells succeeded; inserted-neighborhood AC-4 passed at every scale; heldout is disclosed per scale without an absolute quality verdict.

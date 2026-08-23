@@ -166,7 +166,8 @@ fn derive_pushdown_limits(
             .then_with(|| left.vec_id.cmp(&right.vec_id))
     });
     let threshold = if candidate_heap_limit > 0 && live.len() >= candidate_heap_limit {
-        live.get(candidate_heap_limit - 1).map(|candidate| -candidate.dist)
+        live.get(candidate_heap_limit - 1)
+            .map(|candidate| -candidate.dist)
     } else {
         None
     };
@@ -407,11 +408,7 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
     let mut batch_origins: Vec<u32> = Vec::with_capacity(params.beam_width);
     for _round in 0..params.hop_rounds {
         let limits = if pushdown {
-            derive_pushdown_limits(
-                &beam,
-                &expanded,
-                params.candidate_heap_limit,
-            )
+            derive_pushdown_limits(&beam, &expanded, params.candidate_heap_limit)
         } else {
             PushdownLimits {
                 threshold: None,
@@ -517,7 +514,9 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
             .unwrap_or(0);
         let response_bytes = responses
             .iter()
-            .map(|response| usize::try_from(response.owner_response_bytes.max(0)).unwrap_or(usize::MAX))
+            .map(|response| {
+                usize::try_from(response.owner_response_bytes.max(0)).unwrap_or(usize::MAX)
+            })
             .sum();
         counters.rounds.push(DistannRoundCounters {
             round: counters.rounds_executed - 1,
@@ -550,10 +549,8 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                 responses.len(),
             );
         }
-        for ((requested, origin_mask), response) in batch
-            .iter()
-            .zip(batch_origins.iter())
-            .zip(responses.iter())
+        for ((requested, origin_mask), response) in
+            batch.iter().zip(batch_origins.iter()).zip(responses.iter())
         {
             if response.vec_id != *requested {
                 return Err(DistannExpandError::Internal(format!(
@@ -684,10 +681,9 @@ fn kth_exact_hit(hits: &mut [DistannScanHit], top_k: usize) -> DistannScanHit {
 mod tests {
     use super::{
         distann_orchestrated_search, distann_orchestrated_search_with_pushdown,
-        prune_and_limit_neighbor_batch, prune_and_limit_neighbors, run_scan_attempt_with_restart,
-        BeamCandidate, DistannExpandError, DistannExpandedNode, DistannNodeExpander,
-        DistannOrchestrationParams, DistannScanHit, DistannSeedCandidate,
-        retain_best_candidates,
+        prune_and_limit_neighbor_batch, prune_and_limit_neighbors, retain_best_candidates,
+        run_scan_attempt_with_restart, BeamCandidate, DistannExpandError, DistannExpandedNode,
+        DistannNodeExpander, DistannOrchestrationParams, DistannScanHit, DistannSeedCandidate,
     };
     use crate::storage::page::ItemPointer;
     use std::cell::Cell;
@@ -1027,12 +1023,8 @@ mod tests {
             vec_id: 1,
             dist: -1.0,
         }];
-        let (_, counters) = distann_orchestrated_search(
-            &seeds,
-            &mut expander,
-            params(256, 1, 1),
-        )
-        .expect("BW=256 should remain within the checked budget");
+        let (_, counters) = distann_orchestrated_search(&seeds, &mut expander, params(256, 1, 1))
+            .expect("BW=256 should remain within the checked budget");
         assert!(counters.records_expanded <= 256);
         assert_eq!(counters.rounds.len(), counters.rounds_executed);
     }
@@ -1104,8 +1096,14 @@ mod tests {
             (3, (-0.2, true, vec![])),
         ]);
         let seeds = [
-            DistannSeedCandidate { vec_id: 1, dist: -1.0 },
-            DistannSeedCandidate { vec_id: 10, dist: -0.5 },
+            DistannSeedCandidate {
+                vec_id: 1,
+                dist: -1.0,
+            },
+            DistannSeedCandidate {
+                vec_id: 10,
+                dist: -0.5,
+            },
         ];
         let params = DistannOrchestrationParams {
             beam_width: 2,
@@ -1137,14 +1135,13 @@ mod tests {
         assert_eq!(reference, candidate);
         assert!(counters.pushdown_rounds_with_threshold > 0);
         assert!(counters.neighbors_pruned > 0);
-        let (ids, _) = prune_and_limit_neighbors(
-            &[2, 3],
-            &[-0.9, -0.1],
-            Some(0.5),
-            Some(1),
-        )
-        .expect("aligned neighbor arrays");
-        assert_eq!(ids, vec![2], "the active bounded response prunes a neighbor");
+        let (ids, _) = prune_and_limit_neighbors(&[2, 3], &[-0.9, -0.1], Some(0.5), Some(1))
+            .expect("aligned neighbor arrays");
+        assert_eq!(
+            ids,
+            vec![2],
+            "the active bounded response prunes a neighbor"
+        );
     }
 
     #[test]

@@ -209,7 +209,9 @@ pub(crate) fn metadata_code_len(metadata: &DistannMetadataPage) -> Result<usize,
             usize::from(metadata.dimensions),
             DISTANN_TURBOQUANT_BITS,
         )),
-        other => Err(format!("ec_distann unsupported neighbor codec kind {other}")),
+        other => Err(format!(
+            "ec_distann unsupported neighbor codec kind {other}"
+        )),
     }
 }
 
@@ -249,14 +251,13 @@ impl DistannPreparedQuery {
         match metadata.neighbor_codec_kind {
             DISTANN_NEIGHBOR_CODEC_GROUPED_PQ => {
                 let flat_codebooks = flat_codebooks.ok_or_else(|| {
-                    "ec_distann grouped_pq query preparation requires the codebook chain"
-                        .to_owned()
+                    "ec_distann grouped_pq query preparation requires the codebook chain".to_owned()
                 })?;
                 let group_count = usize::from(metadata.codec_subvector_count);
                 let group_size = usize::from(metadata.codec_subvector_dim);
                 if group_count == 0 || group_size == 0 {
                     return Err(
-                        "ec_distann grouped_pq metadata is missing subvector parameters".to_owned()
+                        "ec_distann grouped_pq metadata is missing subvector parameters".to_owned(),
                     );
                 }
                 let rotated = crate::am::ec_diskann::scan_query::encode_query_srht(
@@ -326,8 +327,7 @@ impl DistannPreparedQuery {
                 })
             }
             DistannCodecArtifact::RaBitQ { seed, bits, .. } => {
-                let quantizer =
-                    RaBitQQuantizer::cached_seeded_srht_bits(dimensions, *seed, *bits)?;
+                let quantizer = RaBitQQuantizer::cached_seeded_srht_bits(dimensions, *seed, *bits)?;
                 Ok(Self::RaBitQ {
                     prepared: quantizer.prepare_estimator(raw_query),
                 })
@@ -401,35 +401,33 @@ impl DistannPreparedQuery {
                     out_scores,
                 )?;
             }
-            Self::RaBitQ { prepared } => {
-                match prepared.bits1_block_prepared(code_len) {
-                    Some(block_prepared) => {
-                        let mut batch = CandidateBatch::with_capacity(count);
-                        for slot in 0..count {
-                            batch.push(
-                                slot,
-                                CandidatePayload::new(
-                                    &codes[slot * code_len..(slot + 1) * code_len],
-                                    CandidateMeta::RaBitQ,
-                                ),
-                            )?;
-                        }
-                        score_rabitq_bits1_batch_for(
-                            CandidateBatchScoringSurface::Distann,
-                            block_prepared,
-                            &batch,
-                            out_scores,
+            Self::RaBitQ { prepared } => match prepared.bits1_block_prepared(code_len) {
+                Some(block_prepared) => {
+                    let mut batch = CandidateBatch::with_capacity(count);
+                    for slot in 0..count {
+                        batch.push(
+                            slot,
+                            CandidatePayload::new(
+                                &codes[slot * code_len..(slot + 1) * code_len],
+                                CandidateMeta::RaBitQ,
+                            ),
                         )?;
                     }
-                    None => {
-                        for slot in 0..count {
-                            out_scores[slot] = prepared.estimate_ip_scalar_only(
-                                &codes[slot * code_len..(slot + 1) * code_len],
-                            );
-                        }
+                    score_rabitq_bits1_batch_for(
+                        CandidateBatchScoringSurface::Distann,
+                        block_prepared,
+                        &batch,
+                        out_scores,
+                    )?;
+                }
+                None => {
+                    for slot in 0..count {
+                        out_scores[slot] = prepared.estimate_ip_scalar_only(
+                            &codes[slot * code_len..(slot + 1) * code_len],
+                        );
                     }
                 }
-            }
+            },
             Self::TurboQuant {
                 quantizer,
                 prepared,

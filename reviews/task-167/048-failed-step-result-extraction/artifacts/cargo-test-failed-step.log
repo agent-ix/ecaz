@@ -1,0 +1,11 @@
+Script started on 2026-08-22 18:53:05-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.17s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-1bc43c90c59d1f97)
+
+running 1 test
+test commands::bench::suite::tests::failed_distann_step_retains_primary_log_for_result_extraction ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 508 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-22 18:53:06-07:00 [COMMAND_EXIT_CODE="0"]

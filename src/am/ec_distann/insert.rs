@@ -45,11 +45,12 @@ pub(crate) struct DistannForwardCandidate {
     pub(crate) source_vector: Vec<f32>,
 }
 
-/// Exact `-inner_product` distance (the ec_distann rerank metric; smaller =
-/// closer), matching the build's `dist` closure so incrementally-inserted
-/// edges are selected on the same metric as the batch build.
+/// Nonnegative unit-vector inner-product distance used by the batch Vamana
+/// build. `robust_prune` requires a nonnegative distance for its alpha
+/// inequality; raw `-inner_product` preserves nearest-neighbor ordering but
+/// makes similar pairs negative and changes the prune decision.
 fn exact_distance(left: &[f32], right: &[f32]) -> f32 {
-    -crate::am::ec_diskann::source_inner_product(left, right)
+    crate::am::ec_diskann::source_inner_product_distance(left, right)
 }
 
 /// Select an inserted node's forward edges: `robust_prune` the candidate set
@@ -118,6 +119,30 @@ pub(crate) fn select_insert_forward_neighbors(
         .collect())
 }
 
+/// Re-prune an established target's neighbors with one proposed backlink.
+///
+/// Established neighbors deliberately precede the proposal. `robust_prune`
+/// breaks exact-distance ties by candidate ordinal, so this matches the
+/// full-target union order in batch Vamana and the mature local incremental
+/// path. A newly inserted exact-vector duplicate cannot evict an established
+/// edge solely because it was placed first in the temporary union.
+pub(crate) fn select_insert_backlink_neighbors(
+    target_source_vector: &[f32],
+    established: &[DistannForwardCandidate],
+    new_vec_id: u64,
+    new_source_vector: &[f32],
+    alpha: f32,
+    max_degree: usize,
+) -> Result<Vec<u64>, String> {
+    let mut union = Vec::with_capacity(established.len() + 1);
+    union.extend_from_slice(established);
+    union.push(DistannForwardCandidate {
+        vec_id: new_vec_id,
+        source_vector: new_source_vector.to_vec(),
+    });
+    select_insert_forward_neighbors(target_source_vector, &union, alpha, max_degree)
+}
+
 /// Rank candidate neighbors for an inserted vector by exact distance and keep
 /// the closest `limit`. The candidates come from the FR-080 head-sample region
 /// (full-precision vectors already persisted for graph seeding); for an index
@@ -143,8 +168,8 @@ pub(super) fn rank_insert_candidates(
         }
         scored.push((exact_distance(new_vector, &sample.1), sample));
     }
-    // A candidate that is the inserted vector itself (re-insert) is dropped: a
-    // node is never its own neighbor.
+    // Rank the sampled candidates deterministically by exact distance. Self
+    // exclusion is enforced by the caller's candidate population, not here.
     scored.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
     Ok(scored
         .into_iter()
@@ -200,12 +225,14 @@ pub(super) fn plan_insert_backlink(
     }
     // Full: re-prune the union (current edges + the new node) from the
     // neighbor's own vantage point.
-    let mut union = target.current_neighbors.clone();
-    union.push(DistannForwardCandidate {
-        vec_id: new_vec_id,
-        source_vector: new_source_vector.to_vec(),
-    });
-    select_insert_forward_neighbors(&target.source_vector, &union, alpha, max_degree)
+    select_insert_backlink_neighbors(
+        &target.source_vector,
+        &target.current_neighbors,
+        new_vec_id,
+        new_source_vector,
+        alpha,
+        max_degree,
+    )
 }
 
 /// A forward neighbor for an inserted node's record: its vec_id plus its
@@ -706,25 +733,43 @@ mod tests {
     }
 
     #[test]
-    fn simd_diff_exact_distance_is_shared_diskann_inner_product_negation() {
+    fn exact_distance_matches_the_nonnegative_batch_build_metric() {
         for dimensions in [1usize, 7, 8, 9, 31, 32, 33, 384, 1536] {
-            let left = (0..dimensions)
+            let mut left = (0..dimensions)
                 .map(|index| ((index * 17 + 3) as f32 * 0.03125).sin())
                 .collect::<Vec<_>>();
-            let right = (0..dimensions)
+            let mut right = (0..dimensions)
                 .map(|index| ((index * 11 + 5) as f32 * 0.0625).cos())
                 .collect::<Vec<_>>();
-            let shared = crate::am::ec_diskann::source_inner_product(&left, &right);
+            for vector in [&mut left, &mut right] {
+                let norm = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+                for value in vector {
+                    *value /= norm;
+                }
+            }
+            let shared = crate::am::ec_diskann::source_inner_product_distance(&left, &right);
             assert_eq!(
                 exact_distance(&left, &right).to_bits(),
-                (-shared).to_bits(),
+                shared.to_bits(),
                 "dimensions={dimensions}"
             );
+            assert!(exact_distance(&left, &right) >= 0.0);
         }
         eprintln!(
             "task36_distann source_inner_product_backend={}",
             crate::quant::simd_backend_name()
         );
+    }
+
+    #[test]
+    fn exact_distance_keeps_positive_ip_pairs_distinct_for_robust_prune() {
+        let identical = exact_distance(&[1.0, 0.0], &[1.0, 0.0]);
+        let similar = exact_distance(&[1.0, 0.0], &[0.8, 0.6]);
+        let orthogonal = exact_distance(&[1.0, 0.0], &[0.0, 1.0]);
+
+        assert_eq!(identical, 0.0);
+        assert!(similar > identical);
+        assert!(orthogonal > similar);
     }
 
     #[test]
@@ -907,6 +952,31 @@ mod tests {
         assert!(kept.len() <= 3, "degree bound respected after re-prune");
         let uniq: std::collections::HashSet<u64> = kept.iter().copied().collect();
         assert_eq!(uniq.len(), kept.len(), "no duplicate edges");
+    }
+
+    #[test]
+    fn backlink_exact_tie_prefers_the_established_neighbor() {
+        let target_source = [0.0_f32, 1.0];
+        let established = vec![candidate(20, &[1.0, 0.0])];
+        let proposal_first = vec![candidate(999, &[1.0, 0.0]), candidate(20, &[1.0, 0.0])];
+        assert_eq!(
+            select_insert_forward_neighbors(&target_source, &proposal_first, 1.2, 1).unwrap(),
+            vec![999],
+            "candidate ordinal decides an exact-distance tie"
+        );
+        assert_eq!(
+            select_insert_backlink_neighbors(
+                &target_source,
+                &established,
+                999,
+                &[1.0, 0.0],
+                1.2,
+                1,
+            )
+            .unwrap(),
+            vec![20],
+            "the physical backlink path must retain the established tie winner"
+        );
     }
 
     #[test]

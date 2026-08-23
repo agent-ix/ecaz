@@ -1,0 +1,11 @@
+Script started on 2026-08-22 20:48:28-07:00 [<not executed on terminal>]
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.14s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-96331f57776cfc23)
+
+running 1 test
+test am::ec_distann::stage_counters::tests::stage_and_insert_resets_are_independent ... [32mok[m
+
+test result: [32mok[m. 1 passed; 0 failed; 0 ignored; 0 measured; 2578 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-22 20:48:28-07:00 [COMMAND_EXIT_CODE="0"]

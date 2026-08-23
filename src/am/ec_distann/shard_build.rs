@@ -358,9 +358,8 @@ impl ShardSpool {
                 "ec_distann duplicate or invalid shard spool index {shard_index}"
             ));
         }
-        self.build_peak_completion_bytes = self
-            .build_peak_completion_bytes
-            .max(encoded.bytes.len());
+        self.build_peak_completion_bytes =
+            self.build_peak_completion_bytes.max(encoded.bytes.len());
         let mut io = ShardSpoolIo::create()?;
         io.write_all(&encoded.bytes);
         let shard_bytes = u64::try_from(encoded.bytes.len())
@@ -912,10 +911,7 @@ where
                 // A send failure means the backend is already unwinding; no
                 // PostgreSQL API or panic belongs on this worker thread.
                 if sender.send((shard_index, result)).is_err() {
-                    let _ = release_completion_bytes(
-                        &retained_completion_bytes,
-                        encoded_bytes,
-                    );
+                    let _ = release_completion_bytes(&retained_completion_bytes, encoded_bytes);
                     return;
                 }
             });
@@ -1748,9 +1744,8 @@ mod tests {
     }
 
     fn raw_entry(node: u32, neighbors: &[u32]) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(
-            DISTANN_SHARD_SPILL_HEADER_BYTES + std::mem::size_of_val(neighbors),
-        );
+        let mut bytes =
+            Vec::with_capacity(DISTANN_SHARD_SPILL_HEADER_BYTES + std::mem::size_of_val(neighbors));
         bytes.extend_from_slice(&node.to_le_bytes());
         bytes.extend_from_slice(&(neighbors.len() as u32).to_le_bytes());
         for &neighbor in neighbors {

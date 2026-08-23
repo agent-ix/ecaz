@@ -1,0 +1,20 @@
+2026-08-21 22:04:35.608 PDT [31403] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-21 22:04:35.620 PDT [31403] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-21 22:04:35.620 PDT [31403] LOG:  listening on IPv4 address "127.0.0.1", port 41600
+2026-08-21 22:04:35.626 PDT [31409] LOG:  database system was shut down at 2026-08-21 22:04:33 PDT
+2026-08-21 22:04:35.635 PDT [31403] LOG:  database system is ready to accept connections
+2026-08-21 22:04:37.278 PDT [31462] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 2.0852 at position 0
+2026-08-21 22:04:38.094 PDT [31462] ERROR:  relation "ec_distann_retry_attribution" does not exist at character 13
+2026-08-21 22:04:38.094 PDT [31462] QUERY:  INSERT INTO ec_distann_retry_attribution (backend_pid, node_id, served_epoch, missing_vec_id) VALUES (pg_backend_pid(), 1, 1, 5634183358188221185)
+2026-08-21 22:04:38.094 PDT [31462] STATEMENT:  SELECT count(*) FROM (
+	                     SELECT source_id FROM dm
+	                      ORDER BY embedding <#> (SELECT source FROM dm ORDER BY id LIMIT 1)
+	                      LIMIT 10
+	                 ) served
+2026-08-21 22:04:38.096 PDT [31403] LOG:  received fast shutdown request
+2026-08-21 22:04:38.102 PDT [31403] LOG:  aborting any active transactions
+2026-08-21 22:04:38.102 PDT [31403] LOG:  background worker "logical replication launcher" (PID 31412) exited with exit code 1
+2026-08-21 22:04:38.102 PDT [31407] LOG:  shutting down
+2026-08-21 22:04:38.106 PDT [31407] LOG:  checkpoint starting: shutdown immediate
+2026-08-21 22:04:38.456 PDT [31407] LOG:  checkpoint complete: wrote 616 buffers (3.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.012 s, sync=0.323 s, total=0.354 s; sync files=274, longest=0.007 s, average=0.002 s; distance=4896 kB, estimate=4896 kB; lsn=0/1C1C8D8, redo lsn=0/1C1C8D8
+2026-08-21 22:04:38.467 PDT [31403] LOG:  database system is shut down

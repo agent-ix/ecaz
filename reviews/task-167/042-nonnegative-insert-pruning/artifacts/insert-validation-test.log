@@ -1,0 +1,5 @@
+command: env CARGO_TARGET_DIR=/home/peter/.cargo-target cargo test -p ecaz am::ec_distann::insert::tests --lib --no-default-features --features pg18 --quiet
+
+running 10 tests
+..........
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 2566 filtered out; finished in 0.00s

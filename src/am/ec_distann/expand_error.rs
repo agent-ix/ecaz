@@ -100,7 +100,9 @@ impl DistannExpandError {
             .chars()
             .take_while(|character| character.is_ascii_hexdigit())
             .collect::<String>();
-        (!value.is_empty()).then(|| u64::from_str_radix(&value, 16).ok()).flatten()
+        (!value.is_empty())
+            .then(|| u64::from_str_radix(&value, 16).ok())
+            .flatten()
     }
 
     /// Raise as a PostgreSQL ERROR carrying the distinct SQLSTATE (endpoint

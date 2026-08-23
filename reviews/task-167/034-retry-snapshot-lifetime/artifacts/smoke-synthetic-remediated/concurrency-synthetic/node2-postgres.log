@@ -1,0 +1,14 @@
+2026-08-21 22:49:00.801 PDT [74090] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-21 22:49:00.812 PDT [74090] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-21 22:49:00.812 PDT [74090] LOG:  listening on IPv4 address "127.0.0.1", port 41601
+2026-08-21 22:49:00.822 PDT [74096] LOG:  database system was shut down at 2026-08-21 22:48:59 PDT
+2026-08-21 22:49:00.834 PDT [74090] LOG:  database system is ready to accept connections
+2026-08-21 22:49:06.972 PDT [74246] ERROR:  [EC_PLACEMENT] vec_id 0xb5c08057d4068baf belongs to roster ordinal 2, not 1
+2026-08-21 22:49:06.972 PDT [74246] STATEMENT:  SET ec_distann.roster='1@host=127.0.0.1 port=41600 dbname=postgres user=postgres options=-cstatement_timeout=3600000;2@host=127.0.0.1 port=41601 dbname=postgres user=postgres options=-cstatement_timeout=3600000;3@host=127.0.0.1 port=41602 dbname=postgres user=postgres options=-cstatement_timeout=3600000'; SET ec_distann.local_node_id=2; SELECT vec_id::text || '|' || COALESCE(array_to_string(neighbor_vec_ids, ','), '') FROM ec_distann_expand_physical_nodes('public.dm_idx'::regclass, decode('020033bcf489ec27ea1b7055182d6476c3a3889e1dfb61058275b08dc8fdee31902b', 'hex'), ARRAY[0,0,0,0]::real[], ARRAY[-5350135242608440401]::bigint[], NULL, NULL);
+2026-08-21 22:49:13.642 PDT [74090] LOG:  received fast shutdown request
+2026-08-21 22:49:13.650 PDT [74090] LOG:  aborting any active transactions
+2026-08-21 22:49:13.651 PDT [74090] LOG:  background worker "logical replication launcher" (PID 74099) exited with exit code 1
+2026-08-21 22:49:13.651 PDT [74094] LOG:  shutting down
+2026-08-21 22:49:13.654 PDT [74094] LOG:  checkpoint starting: shutdown immediate
+2026-08-21 22:49:14.097 PDT [74094] LOG:  checkpoint complete: wrote 470 buffers (2.9%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.012 s, sync=0.414 s, total=0.447 s; sync files=268, longest=0.007 s, average=0.002 s; distance=3947 kB, estimate=3947 kB; lsn=0/1B2F2A8, redo lsn=0/1B2F2A8
+2026-08-21 22:49:14.112 PDT [74090] LOG:  database system is shut down

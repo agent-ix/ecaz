@@ -1,0 +1,13 @@
+Script started on 2026-08-22 18:58:28-07:00 [<not executed on terminal>]
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 40.87s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-1bc43c90c59d1f97)
+
+running 2 tests
+test commands::dev::distann_multicluster::tests::task167_quality_gate_accepts_two_passing_population_rows ... [32mok[m
+test commands::dev::distann_multicluster::tests::task167_quality_gate_failure_retains_the_failed_population_row ... [32mok[m
+
+test result: [32mok[m. 2 passed; 0 failed; 0 ignored; 0 measured; 509 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-22 18:59:08-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,17 @@
+2026-08-21 23:15:22.911 PDT [145817] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-21 23:15:22.921 PDT [145817] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-21 23:15:22.921 PDT [145817] LOG:  listening on IPv4 address "127.0.0.1", port 41600
+2026-08-21 23:15:22.929 PDT [145823] LOG:  database system was shut down at 2026-08-21 23:15:20 PDT
+2026-08-21 23:15:22.938 PDT [145817] LOG:  database system is ready to accept connections
+2026-08-21 23:15:25.726 PDT [145921] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 2.0852 at position 0
+2026-08-21 23:15:26.468 PDT [145929] ERROR:  ec_distann physical aminsert failed: EC_FAULT_INJECTED: physical insert failed after graph append before backlinks
+2026-08-21 23:15:26.468 PDT [145929] STATEMENT:  SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,'00000000-0000-4000-8000-000000000501',(SELECT array_agg((sin(501 * 0.017 * (d + 1)) + cos(501 * 0.0031 * (d + 1)))::real)FROM generate_series(0, 4 - 1) d), encode_to_ecvector((SELECT array_agg((sin(501 * 0.017 * (d + 1)) + cos(501 * 0.0031 * (d + 1)))::real) FROM generate_series(0, 4 - 1) AS d), 4, 42));
+2026-08-21 23:15:27.105 PDT [145974] ERROR:  [EC_PLACEMENT] vec_id 0xb5c08057d4068baf belongs to roster ordinal 2, not 0
+2026-08-21 23:15:27.105 PDT [145974] STATEMENT:  SET ec_distann.roster='1@host=127.0.0.1 port=41600 dbname=postgres user=postgres options=-cstatement_timeout=3600000;2@host=127.0.0.1 port=41601 dbname=postgres user=postgres options=-cstatement_timeout=3600000;3@host=127.0.0.1 port=41602 dbname=postgres user=postgres options=-cstatement_timeout=3600000'; SET ec_distann.local_node_id=1; SELECT vec_id::text || '|' || COALESCE(array_to_string(neighbor_vec_ids, ','), '') FROM ec_distann_expand_physical_nodes('public.dm_idx'::regclass, decode('02001a6bb09eaa6072bcac324d179eb15572712e414dd803d59e19a335735542664f', 'hex'), ARRAY[0,0,0,0]::real[], ARRAY[-5350135242608440401]::bigint[], NULL, NULL);
+2026-08-21 23:15:31.659 PDT [145817] LOG:  received fast shutdown request
+2026-08-21 23:15:31.663 PDT [145817] LOG:  aborting any active transactions
+2026-08-21 23:15:31.664 PDT [145817] LOG:  background worker "logical replication launcher" (PID 145826) exited with exit code 1
+2026-08-21 23:15:31.664 PDT [145821] LOG:  shutting down
+2026-08-21 23:15:31.668 PDT [145821] LOG:  checkpoint starting: shutdown immediate
+2026-08-21 23:15:32.011 PDT [145821] LOG:  checkpoint complete: wrote 675 buffers (4.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.016 s, sync=0.310 s, total=0.348 s; sync files=290, longest=0.007 s, average=0.002 s; distance=5853 kB, estimate=5853 kB; lsn=0/1D0BBA8, redo lsn=0/1D0BBA8
+2026-08-21 23:15:32.025 PDT [145817] LOG:  database system is shut down

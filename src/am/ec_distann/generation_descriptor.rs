@@ -608,14 +608,18 @@ impl DistannHeadSizingAttestation {
             || ceiling < Self::MIN_CAPACITY
             || ceiling > Self::MAX_CAPACITY
         {
-            return Err("EC_HEAD_SIZING: head sampling law bounds are outside 16..=1048576".to_owned());
+            return Err(
+                "EC_HEAD_SIZING: head sampling law bounds are outside 16..=1048576".to_owned(),
+            );
         }
         if rate == 0.0 {
             return Err("EC_HEAD_SIZING: rate zero does not resolve a law capacity".to_owned());
         }
         let scaled = rate * captured_record_count as f64;
         if !scaled.is_finite() {
-            return Err("EC_HEAD_SIZING: rate multiplied by captured count is non-finite".to_owned());
+            return Err(
+                "EC_HEAD_SIZING: rate multiplied by captured count is non-finite".to_owned(),
+            );
         }
         let requested = scaled.ceil();
         let resolved = requested.clamp(floor as f64, ceiling as f64);

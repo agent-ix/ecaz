@@ -15,7 +15,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant};
@@ -88,11 +88,20 @@ pub struct LocalMultinodePg18Args {
     /// measurement. This warms backend-local head and transport caches.
     #[arg(long, default_value_t = 0)]
     pub benchmark_warmup_iterations: u32,
-    /// Query count for the post-insert fresh-rebuild parity sample. A value of
-    /// 48 measures the complete fixed inserted-neighborhood probe set without
-    /// repeating the expensive large-corpus parity arm over all recall queries.
+    /// Held-out query count for post-insert exact-ground-truth quality. An
+    /// additional fixed 48 queries cover inserted neighborhoods.
     #[arg(long)]
     pub benchmark_parity_queries: Option<u32>,
+    /// Shipped-default heldout deficit for this scale. When paired with
+    /// `--task167-heldout-physical-sample-sd`, the heldout row becomes a
+    /// baseline-relative regression gate. When both are omitted, the row is
+    /// a non-blocking baseline observation.
+    #[arg(long)]
+    pub task167_heldout_baseline_deficit: Option<f64>,
+    /// Sample standard deviation of the shipped-default physical heldout arm
+    /// at this scale. The regression band is baseline deficit + 2 * sample SD.
+    #[arg(long)]
+    pub task167_heldout_physical_sample_sd: Option<f64>,
     /// Reconnect a latency worker after this many timed queries. Zero keeps
     /// one backend for the whole arm; nonzero values bound backend-local
     /// memory during long physical-query diagnostics and replay the untimed
@@ -438,7 +447,12 @@ fn validate_extension_preflight(
             expected.build_profile
         );
     }
-    if expected.features.split(',').any(|feature| feature == "pg-test") && !allow_debug_extension {
+    if expected
+        .features
+        .split(',')
+        .any(|feature| feature == "pg-test")
+        && !allow_debug_extension
+    {
         bail!(
             "extension preflight rejected pg-test feature on node {} port {}: observed {}/{}/{}; install with --no-default-features --features pg18 for production evidence or explicitly allow a diagnostic build",
             expected.node_id,
@@ -454,9 +468,27 @@ fn validate_extension_preflight(
         nodes: observed.len(),
         debug_override: allow_debug_extension
             && (expected.build_profile != "release"
-                || expected.features.split(',').any(|feature| feature == "pg-test")),
+                || expected
+                    .features
+                    .split(',')
+                    .any(|feature| feature == "pg-test")),
         features: expected.features.clone(),
     })
+}
+
+fn validate_query_stage_counter_feature(requested: bool, features: &str) -> Result<()> {
+    if requested
+        && !features
+            .split(',')
+            .any(|feature| feature == "distann-head-attribution-benchmark")
+    {
+        bail!(
+            "--distann-stage-counters requires extension feature \
+             distann-head-attribution-benchmark; observed features {features}. \
+             Task 167 insert-work counters are collected independently"
+        );
+    }
+    Ok(())
 }
 
 async fn preflight_fixture_extensions(
@@ -1082,6 +1114,10 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         let extension_preflight =
             preflight_fixture_extensions(&psql, &socket_dir, &nodes, args.allow_debug_extension)
                 .await?;
+        validate_query_stage_counter_feature(
+            args.distann_stage_counters,
+            &extension_preflight.features,
+        )?;
 
         match mode {
             FixtureMode::Physical => {
@@ -1186,12 +1222,55 @@ fn insert_vector_expr(args: &LocalMultinodePg18Args, table: &str) -> String {
     if args.corpus_prefix.is_some() {
         format!("(SELECT source FROM {table} ORDER BY id LIMIT 1)")
     } else {
-        format!(
-            "(SELECT array_agg((sin(7 * 0.017 * (d + 1)) + cos(7 * 0.0031 * (d + 1)))::real) \
-             FROM generate_series(0, {} - 1) AS d)",
-            args.dim
-        )
+        synthetic_unit_vector_expr("7", args.dim)
     }
+}
+
+/// The `ecvector_distann_ip_ops` build/search distance assumes unit vectors.
+/// Keep the deterministic synthetic fixture on that same contract so an exact
+/// copied source is its own maximum-inner-product candidate.
+fn synthetic_unit_vector_expr(row: &str, dimensions: u32) -> String {
+    format!(
+        "(SELECT array_agg((component / norm)::real ORDER BY d) \
+           FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm \
+                   FROM (SELECT d, \
+                                (sin(({row}) * 0.017 * (d + 1)) + \
+                                 cos(({row}) * 0.0031 * (d + 1)))::double precision AS component \
+                           FROM generate_series(0, {dimensions} - 1) AS d) raw) normalized)"
+    )
+}
+
+/// Execute the synthetic generator in PostgreSQL and verify the contract the
+/// distance operator relies on. Keeping this as a live SQL preflight catches
+/// expression/type changes that a Rust string-shape assertion cannot.
+async fn preflight_synthetic_unit_norm(
+    coordinator: &tokio_postgres::Client,
+    dimensions: u32,
+) -> Result<f64> {
+    const SAMPLES: u32 = 32;
+    const MAX_ABS_ERROR: f64 = 1.0e-5;
+    let vector = synthetic_unit_vector_expr("g", dimensions);
+    let sql = format!(
+        "SELECT max(abs(sqrt(norm_sq) - 1.0))::double precision
+           FROM (
+             SELECT g, sum(component::double precision * component::double precision) AS norm_sq
+               FROM generate_series(1, {SAMPLES}) AS g
+               CROSS JOIN LATERAL unnest({vector}) AS component
+              GROUP BY g
+           ) norms"
+    );
+    let max_abs_error = coordinator
+        .query_one(&sql, &[])
+        .await
+        .wrap_err("running PostgreSQL synthetic unit-norm preflight")?
+        .get::<_, Option<f64>>(0)
+        .ok_or_else(|| eyre!("PostgreSQL synthetic unit-norm preflight returned no samples"))?;
+    if !max_abs_error.is_finite() || max_abs_error > MAX_ABS_ERROR {
+        bail!(
+            "PostgreSQL synthetic unit-norm preflight failed: dimensions={dimensions} samples={SAMPLES} max_abs_error={max_abs_error} tolerance={MAX_ABS_ERROR}"
+        );
+    }
+    Ok(max_abs_error)
 }
 
 /// Real staged-corpus load: COPY each 2-column TSV (`id\t[v1,v2,...]`) into a
@@ -1400,6 +1479,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
             args.queries
         )
     } else {
+        let synthetic_vector = synthetic_unit_vector_expr("g", args.dim);
         format!(
             "INSERT INTO dm (id, source_id, source, embedding)
              SELECT g,
@@ -1409,12 +1489,10 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
                     arr, encode_to_ecvector(arr, 4, 42)
                FROM (
                  SELECT g,
-                        (SELECT array_agg((sin(g * 0.017 * (d + 1)) +
-                                           cos(g * 0.0031 * (d + 1)))::real)
-                           FROM generate_series(0, {} - 1) AS d) AS arr
-                   FROM generate_series(1, {}) AS g
+                        {synthetic_vector} AS arr
+                   FROM generate_series(1, {rows}) AS g
                ) source_rows;",
-            args.dim, args.rows
+            rows = args.rows,
         )
     };
     let correctness_fixture = if coordinator && args.materialization_correctness {
@@ -1968,6 +2046,77 @@ fn paired_recall_line(
     Ok(format!(
         "physical_benchmark_paired_recall scale={scale} control=bw4-control candidate=bw8-candidate query_rows={query_count} trials={} candidate_wins={candidate_wins} control_wins={control_wins} ties={ties} candidate_minus_control_mean={mean_delta:.6} paired_bootstrap_ci95_low={low:.6} paired_bootstrap_ci95_high={high:.6}",
         query_count * k
+    ))
+}
+
+fn task167_pre_insert_recall_calibration_line(
+    scale: &str,
+    predictions_path: &Path,
+    truth_path: &Path,
+    ordinary_distinct_recall: f64,
+    k: usize,
+) -> Result<String> {
+    let predictions: PairedPredictionFile = serde_json::from_slice(&fs::read(predictions_path)?)
+        .wrap_err_with(|| {
+            format!(
+                "reading Task 167 pre-insert predictions {}",
+                predictions_path.display()
+            )
+        })?;
+    let truth: PairedTruthCache = serde_json::from_slice(&fs::read(truth_path)?)
+        .wrap_err_with(|| format!("reading Task 167 truth cache {}", truth_path.display()))?;
+    let sweep = predictions
+        .rows
+        .iter()
+        .find(|row| row.sweep_value == 32)
+        .ok_or_else(|| eyre!("Task 167 pre-insert predictions have no sweep 32"))?;
+    if k == 0
+        || truth.truth.ids.is_empty()
+        || predictions.query_ids.len() != truth.truth.ids.len()
+        || sweep.predictions.len() != truth.truth.ids.len()
+    {
+        bail!(
+            "Task 167 pre-insert calibration inputs are not aligned: query_ids={} predictions={} truth={} k={k}",
+            predictions.query_ids.len(),
+            sweep.predictions.len(),
+            truth.truth.ids.len(),
+        );
+    }
+    for (query_index, (truth, predicted)) in
+        truth.truth.ids.iter().zip(&sweep.predictions).enumerate()
+    {
+        let distinct_truth = truth.iter().take(k).copied().collect::<HashSet<_>>();
+        if truth.len() != k || distinct_truth.len() != k || predicted.len() != k {
+            bail!(
+                "Task 167 pre-insert calibration query {query_index} is not a full distinct recall@{k} row: truth={} distinct_truth={} predictions={}",
+                truth.len(),
+                distinct_truth.len(),
+                predicted.len(),
+            );
+        }
+    }
+    let exact_scorer_recall = truth
+        .truth
+        .ids
+        .iter()
+        .zip(&sweep.predictions)
+        .map(|(truth, predicted)| task167_distinct_recall(truth, predicted).0)
+        .sum::<f64>()
+        / truth.truth.ids.len() as f64;
+    // The ordinary bench table is rendered to four decimal places before it
+    // is parsed here. Half a displayed unit is therefore the strictest useful
+    // cross-instrument comparison tolerance.
+    const DISPLAY_TOLERANCE: f64 = 0.000_05;
+    let absolute_delta = (ordinary_distinct_recall - exact_scorer_recall).abs();
+    let pass = absolute_delta <= DISPLAY_TOLERANCE + f64::EPSILON;
+    if !pass {
+        bail!(
+            "Task 167 pre-insert recall instruments disagree: ordinary={ordinary_distinct_recall:.6} exact_scorer={exact_scorer_recall:.6} delta={absolute_delta:.6} tolerance={DISPLAY_TOLERANCE:.6}"
+        );
+    }
+    Ok(format!(
+        "physical_benchmark_recall_instrument_calibration scale={scale} phase=pre_incremental_insert graph_state=same predictions=same truth=same queries={} top_k={k} ordinary_distinct_recall={ordinary_distinct_recall:.6} exact_scorer_distinct_recall={exact_scorer_recall:.6} absolute_delta={absolute_delta:.6} tolerance={DISPLAY_TOLERANCE:.6} pass=true",
+        truth.truth.ids.len(),
     ))
 }
 
@@ -2933,30 +3082,51 @@ async fn task199_no_replica_insert_throughput(
     Ok(())
 }
 
-/// Task 167 insert-throughput A/B. Measure the same single-row incremental
-/// INSERT workload against the published physical owner-routed index and the
-/// same-generation local control index. The workload uses source vectors from
-/// the physical corpus and keeps each trial's IDs disjoint so the measured
-/// append path is not contaminated by cleanup/tombstone work.
+/// Task 167 insert-throughput and backlink-strategy A/B. The candidate gives
+/// established neighbors priority over a proposed backlink on exact-distance
+/// ties; it is measured against the same-generation local control, then quality
+/// is gated before the rejected append-when-room control mutates the disposable
+/// physical fixture. Every trial uses a disjoint ID range, so no arm includes
+/// cleanup or tombstone work from another arm.
+const TASK167_AB_TRIALS: usize = 5;
+const TASK167_AB_ROWS_PER_TRIAL: usize = 32;
+const TASK167_AB_SAMPLE_ROWS: usize = TASK167_AB_TRIALS * TASK167_AB_ROWS_PER_TRIAL;
+
+#[derive(Debug, Clone, Copy)]
+struct Task167InsertMeasurement {
+    rows_per_second: f64,
+    inserted_rows: usize,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Task167DefaultInsertBaseline {
+    measurement: Task167InsertMeasurement,
+    backlink_amendments: i64,
+    backlink_no_room: i64,
+}
+
+fn task167_insert_trial_items(
+    trial: usize,
+    rows_per_trial: usize,
+) -> impl Iterator<Item = (usize, usize)> {
+    (0..rows_per_trial).map(move |ordinal| (ordinal, trial * rows_per_trial + ordinal))
+}
+
 async fn measure_task167_insert_arm(
     coordinator: &tokio_postgres::Client,
     table: &str,
     physical_corpus: &str,
     physical: bool,
     id_base: i64,
-) -> Result<f64> {
-    const TRIALS: usize = 3;
-    // Keep the repeated arm bounded for the 50k/100k release matrix: every
-    // physical row performs graph search plus owner/backlink work, while five
-    // disjoint trials provide a less noisy median than the former 3x16 probe.
-    const ROWS_PER_TRIAL: usize = 16;
-    let mut trial_rows_per_second = Vec::with_capacity(TRIALS);
-    for trial in 0..TRIALS {
+    trials: usize,
+    rows_per_trial: usize,
+) -> Result<Task167InsertMeasurement> {
+    let mut trial_rows_per_second = Vec::with_capacity(trials);
+    let mut inserted_rows = 0;
+    for trial in 0..trials {
         let started = Instant::now();
-        for ordinal in 0..ROWS_PER_TRIAL {
-            let source_offset = trial * ROWS_PER_TRIAL + ordinal;
-            let id = id_base + trial as i64 * ROWS_PER_TRIAL as i64
-                + ordinal as i64;
+        for (ordinal, source_offset) in task167_insert_trial_items(trial, rows_per_trial) {
+            let id = id_base + trial as i64 * rows_per_trial as i64 + ordinal as i64;
             let sql = if physical {
                 format!(
                     "INSERT INTO {table} (id, source_id, source, embedding) \
@@ -2979,52 +3149,156 @@ async fn measure_task167_insert_arm(
                     "Task 167 {table} trial {trial} inserted {inserted} rows for ordinal {ordinal}"
                 );
             }
+            inserted_rows += usize::try_from(inserted).unwrap_or(usize::MAX);
         }
         let elapsed_ns = started.elapsed().as_nanos().max(1) as f64;
-        trial_rows_per_second.push(ROWS_PER_TRIAL as f64 * 1_000_000_000.0 / elapsed_ns);
+        trial_rows_per_second.push(rows_per_trial as f64 * 1_000_000_000.0 / elapsed_ns);
     }
     trial_rows_per_second.sort_by(f64::total_cmp);
-    Ok(trial_rows_per_second[TRIALS / 2])
+    Ok(Task167InsertMeasurement {
+        rows_per_second: trial_rows_per_second[trials / 2],
+        inserted_rows,
+    })
 }
 
-async fn task167_insert_throughput_ab(
+async fn task167_default_insert_throughput(
     coordinator: &tokio_postgres::Client,
     scale: &str,
     physical_corpus: &str,
     single_corpus: &str,
     graph_degree: u32,
-    capture_work: bool,
     lines: &mut Vec<String>,
-) -> Result<()> {
-    const ROWS_PER_TRIAL: usize = 32;
-    const TRIALS: usize = 5;
-    let single_rows_per_second = measure_task167_insert_arm(
+) -> Result<Task167DefaultInsertBaseline> {
+    let single = measure_task167_insert_arm(
         coordinator,
         single_corpus,
         physical_corpus,
         false,
         1_000_000,
+        TASK167_AB_TRIALS,
+        TASK167_AB_ROWS_PER_TRIAL,
     )
     .await?;
     coordinator
-        .batch_execute("SET ec_distann.debug_disable_append_when_room = on")
+        .batch_execute("RESET ec_distann.debug_disable_append_when_room")
         .await
-        .wrap_err("enable append-when-room A/B control")?;
-    if capture_work {
-        coordinator
-            .batch_execute("SELECT ec_distann_insert_work_reset()")
-            .await
-            .wrap_err("resetting Task 167 physical insert-work counters")?;
-    }
-    let physical_append_disabled_rows_per_second = measure_task167_insert_arm(
+        .wrap_err("selecting the shipped robust-prune insert strategy")?;
+    coordinator
+        .batch_execute("SELECT ec_distann_insert_work_reset()")
+        .await
+        .wrap_err("resetting Task 167 physical insert-work counters")?;
+    let shipped = measure_task167_insert_arm(
         coordinator,
         physical_corpus,
         physical_corpus,
         true,
         2_000_000,
+        TASK167_AB_TRIALS,
+        TASK167_AB_ROWS_PER_TRIAL,
     )
     .await?;
-    let append_disabled_work = coordinator
+    let shipped_work = coordinator
+        .query(
+            "SELECT metric, inserts, value, mean_per_insert
+               FROM ec_distann_insert_work_snapshot()
+              ORDER BY metric",
+            &[],
+        )
+        .await
+        .wrap_err("reading shipped-default Task 167 insert-work counters")?;
+    coordinator
+        .batch_execute("RESET ec_distann.debug_disable_append_when_room")
+        .await
+        .wrap_err("restoring the shipped robust-prune strategy")?;
+    if single.inserted_rows != TASK167_AB_SAMPLE_ROWS
+        || shipped.inserted_rows != TASK167_AB_SAMPLE_ROWS
+    {
+        bail!(
+            "Task 167 default insert measurement executed unexpected statement counts: single={} shipped={} preregistered={TASK167_AB_SAMPLE_ROWS}",
+            single.inserted_rows,
+            shipped.inserted_rows,
+        );
+    }
+    let ratio = shipped.rows_per_second / single.rows_per_second.max(f64::EPSILON);
+    lines.push(format!(
+        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=shipped_default_established_tie_priority physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
+        shipped.inserted_rows,
+        shipped.rows_per_second,
+        single.rows_per_second,
+    ));
+    let rows = shipped_work;
+    let expected_inserts = shipped.inserted_rows as i64;
+    if rows.len() != 8 {
+        bail!(
+            "Task 167 physical insert-work snapshot returned {} rows, expected 8",
+            rows.len()
+        );
+    }
+    let mut values = HashMap::new();
+    for row in rows {
+        let metric = row.get::<_, String>(0);
+        let inserts = row.get::<_, i64>(1);
+        let value = row.get::<_, i64>(2);
+        let mean = row.get::<_, f64>(3);
+        if inserts != expected_inserts {
+            bail!(
+                "Task 167 physical insert-work metric {metric} counted {inserts} attempts, expected {expected_inserts}"
+            );
+        }
+        values.insert(metric.clone(), (value, mean));
+        lines.push(format!(
+            "physical_benchmark_insert_work scale={scale} insert_mode=shipped_default_established_tie_priority metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
+        ));
+    }
+    let bound = i64::from(graph_degree) * expected_inserts;
+    for metric in ["forward_neighbors_selected", "backlink_amendments"] {
+        let (value, _) = values
+            .get(metric)
+            .copied()
+            .ok_or_else(|| eyre!("insert-work snapshot omitted {metric}"))?;
+        if value > bound {
+            bail!("Task 167 {metric} exceeded graph-degree bound: value={value} bound={bound}");
+        }
+    }
+    Ok(Task167DefaultInsertBaseline {
+        measurement: shipped,
+        backlink_amendments: values
+            .get("backlink_amendments")
+            .map(|(value, _)| *value)
+            .unwrap_or_default(),
+        backlink_no_room: values
+            .get("backlink_no_room")
+            .map(|(value, _)| *value)
+            .unwrap_or_default(),
+    })
+}
+
+async fn task167_append_when_room_diagnostic(
+    coordinator: &tokio_postgres::Client,
+    scale: &str,
+    physical_corpus: &str,
+    baseline: Task167DefaultInsertBaseline,
+    lines: &mut Vec<String>,
+) -> Result<()> {
+    coordinator
+        .batch_execute("SET ec_distann.debug_disable_append_when_room = off")
+        .await
+        .wrap_err("enable append-when-room A/B candidate")?;
+    coordinator
+        .batch_execute("SELECT ec_distann_insert_work_reset()")
+        .await
+        .wrap_err("reset append-when-room candidate counters")?;
+    let append_when_room = measure_task167_insert_arm(
+        coordinator,
+        physical_corpus,
+        physical_corpus,
+        true,
+        3_000_000,
+        TASK167_AB_TRIALS,
+        TASK167_AB_ROWS_PER_TRIAL,
+    )
+    .await?;
+    let append_work = coordinator
         .query(
             "SELECT metric, value FROM ec_distann_insert_work_snapshot() ORDER BY metric",
             &[],
@@ -3034,119 +3308,224 @@ async fn task167_insert_throughput_ab(
         .map(|row| (row.get::<_, String>(0), row.get::<_, i64>(1)))
         .collect::<HashMap<_, _>>();
     coordinator
-        .batch_execute("SET ec_distann.debug_disable_append_when_room = off")
+        .batch_execute("RESET ec_distann.debug_disable_append_when_room")
         .await
-        .wrap_err("enable append-when-room A/B candidate")?;
-    if capture_work {
-        coordinator
-            .batch_execute("SELECT ec_distann_insert_work_reset()")
-            .await
-            .wrap_err("reset append-when-room candidate counters")?;
+        .wrap_err("restoring the shipped robust-prune strategy")?;
+    if append_when_room.inserted_rows != TASK167_AB_SAMPLE_ROWS {
+        bail!(
+            "Task 167 append-when-room diagnostic inserted {} rows, expected {TASK167_AB_SAMPLE_ROWS}",
+            append_when_room.inserted_rows,
+        );
     }
-    let physical_rows_per_second = measure_task167_insert_arm(
-        coordinator,
-        physical_corpus,
-        physical_corpus,
-        true,
-        3_000_000,
-    )
-    .await?;
-    let append_enabled_work = coordinator
-        .query(
-            "SELECT metric, value FROM ec_distann_insert_work_snapshot() ORDER BY metric",
-            &[],
-        )
-        .await?
-        .into_iter()
-        .map(|row| (row.get::<_, String>(0), row.get::<_, i64>(1)))
-        .collect::<HashMap<_, _>>();
-    let ratio = physical_rows_per_second / single_rows_per_second.max(f64::EPSILON);
-    lines.push(format!(
-        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true",
-        TRIALS * ROWS_PER_TRIAL
-    ));
-    let append_ratio = physical_rows_per_second
-        / physical_append_disabled_rows_per_second.max(f64::EPSILON);
-    let disabled_amendments = append_disabled_work
+    let append_ratio =
+        append_when_room.rows_per_second / baseline.measurement.rows_per_second.max(f64::EPSILON);
+    let append_amendments = append_work
         .get("backlink_amendments")
         .copied()
         .unwrap_or_default();
-    let enabled_amendments = append_enabled_work
-        .get("backlink_amendments")
-        .copied()
-        .unwrap_or_default();
-    let append_ab_pass = append_ratio >= 1.0 && enabled_amendments <= disabled_amendments;
+    let append_candidate_faster =
+        append_ratio >= 1.0 && append_amendments <= baseline.backlink_amendments;
     lines.push(format!(
-        "physical_benchmark_append_when_room_ab scale={scale} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} sample_rows={} append_disabled_rows_per_second={physical_append_disabled_rows_per_second:.3} append_enabled_rows_per_second={physical_rows_per_second:.3} append_enabled_over_disabled={append_ratio:.6} disabled_backlink_amendments={disabled_amendments} enabled_backlink_amendments={enabled_amendments} disabled_backlink_no_room={} enabled_backlink_no_room={} comparison=sequential_same_fixture pass={append_ab_pass}",
-        TRIALS * ROWS_PER_TRIAL,
-        append_disabled_work.get("backlink_no_room").copied().unwrap_or_default(),
-        append_enabled_work.get("backlink_no_room").copied().unwrap_or_default(),
+        "physical_benchmark_backlink_strategy_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} shipped_default_established_tie_rows_per_second={:.3} append_when_room_rows_per_second={:.3} append_when_room_over_shipped_default={append_ratio:.6} shipped_default_backlink_amendments={} append_when_room_backlink_amendments={append_amendments} shipped_default_backlink_no_room={} append_when_room_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture measurement_order=after_shipped_default_quality_gate control_graph_mutation_excluded_from_quality_gate=true control_faster={append_candidate_faster} pass=true",
+        append_when_room.inserted_rows,
+        baseline.measurement.rows_per_second,
+        append_when_room.rows_per_second,
+        baseline.backlink_amendments,
+        baseline.backlink_no_room,
+        append_work.get("backlink_no_room").copied().unwrap_or_default(),
     ));
-    if capture_work {
-        let rows = coordinator
-            .query(
-                "SELECT metric, inserts, value, mean_per_insert
-                   FROM ec_distann_insert_work_snapshot()
-                  ORDER BY metric",
-                &[],
-            )
-            .await
-            .wrap_err("reading Task 167 physical insert-work counters")?;
-        let expected_inserts = (TRIALS * ROWS_PER_TRIAL) as i64;
-        if rows.len() != 8 {
-            bail!(
-                "Task 167 physical insert-work snapshot returned {} rows, expected 8",
-                rows.len()
-            );
-        }
-        let mut values = HashMap::new();
-        for row in rows {
-            let metric = row.get::<_, String>(0);
-            let inserts = row.get::<_, i64>(1);
-            let value = row.get::<_, i64>(2);
-            let mean = row.get::<_, f64>(3);
-            if inserts != expected_inserts {
-                bail!(
-                    "Task 167 physical insert-work metric {metric} counted {inserts} attempts, expected {expected_inserts}"
-                );
-            }
-            values.insert(metric.clone(), (value, mean));
-            lines.push(format!(
-                "physical_benchmark_insert_work scale={scale} metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} pass=true"
-            ));
-        }
-        let bound = i64::from(graph_degree) * expected_inserts;
-        for metric in ["forward_neighbors_selected", "backlink_amendments"] {
-            let (value, _) = values
-                .get(metric)
-                .copied()
-                .ok_or_else(|| eyre!("insert-work snapshot omitted {metric}"))?;
-            if value > bound {
-                bail!("Task 167 {metric} exceeded graph-degree bound: value={value} bound={bound}");
-            }
-        }
-    }
     Ok(())
 }
 
-/// Compare the post-insert physical generation with a fresh local rebuild
-/// over the same rows. The pre-insert single control is deliberately not used
-/// here: it cannot observe the rows added by the throughput arm. The append
-/// A/B uses duplicate source vectors, so matching raw row IDs would count
-/// arbitrary ANN tie-breaking as graph loss; compare source fingerprints.
-/// Keep the two insert arms separate: the disabled control uses the 2m id
-/// range and the enabled candidate uses the 3m range. A single fixed range
-/// would silently report only the control arm as Task 167 recall.
-async fn task167_post_insert_fresh_rebuild_parity(
+const TASK167_INSERTED_QUALITY_QUERIES: usize = 48;
+// Packet 045 preregistered this AC-4 inserted-neighborhood band from five
+// isolated 10k production repeats. Heldout is deliberately not represented by
+// a cross-scale constant: its regression band is supplied per suite step from
+// the shipped-default baseline at that scale.
+const TASK167_INSERTED_QUALITY_ALLOWED_DEFICIT: f64 = 0.015;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Task167HeldoutRegressionGate {
+    baseline_deficit: f64,
+    physical_sample_sd: f64,
+    allowed_deficit: f64,
+}
+
+fn task167_heldout_regression_gate(
+    baseline_deficit: Option<f64>,
+    physical_sample_sd: Option<f64>,
+) -> Result<Option<Task167HeldoutRegressionGate>> {
+    let (baseline_deficit, physical_sample_sd) = match (baseline_deficit, physical_sample_sd) {
+        (None, None) => return Ok(None),
+        (Some(baseline_deficit), Some(physical_sample_sd)) => {
+            (baseline_deficit, physical_sample_sd)
+        }
+        _ => bail!(
+            "Task 167 heldout regression gate requires both the per-scale baseline deficit and physical sample SD"
+        ),
+    };
+    if !baseline_deficit.is_finite() || baseline_deficit < 0.0 {
+        bail!("Task 167 heldout baseline deficit must be finite and non-negative");
+    }
+    if !physical_sample_sd.is_finite() || physical_sample_sd < 0.0 {
+        bail!("Task 167 heldout physical sample SD must be finite and non-negative");
+    }
+    let allowed_deficit = baseline_deficit + 2.0 * physical_sample_sd;
+    if !allowed_deficit.is_finite() {
+        bail!("Task 167 heldout regression band overflowed");
+    }
+    Ok(Some(Task167HeldoutRegressionGate {
+        baseline_deficit,
+        physical_sample_sd,
+        allowed_deficit,
+    }))
+}
+
+fn task167_search_guc_sql(
+    args: &LocalMultinodePg18Args,
+    production: &BenchmarkSeedVariant,
+    beam_width: u32,
+    candidate_heap_limit: u32,
+    hop_rounds: u32,
+) -> Result<String> {
+    let beam_width = production.beam_width.unwrap_or(beam_width);
+    let hop_rounds = production.hop_rounds.unwrap_or(hop_rounds);
+    let mut sql = format!(
+        "SET enable_seqscan = off;\
+         SET ec_distann.beam_width = {beam_width};\
+         SET ec_distann.candidate_heap_limit = {candidate_heap_limit};\
+         SET ec_distann.hop_rounds = {hop_rounds};\
+         SET ec_distann.top_k = {};",
+        args.top_k,
+    );
+    // Match the ordinary recall child's precedence: general caller-supplied
+    // assignments follow the base budgets, then the named variant controls
+    // below win if the same setting was supplied twice.
+    for assignment in &args.bench_session_gucs {
+        let (name, value) = assignment.split_once('=').ok_or_else(|| {
+            eyre!("Task 167 benchmark session GUC must be NAME=VALUE: {assignment:?}")
+        })?;
+        if name.is_empty()
+            || !name
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'_' || byte == b'.')
+            || value.is_empty()
+        {
+            bail!("Task 167 benchmark session GUC is not a safe NAME=VALUE assignment: {assignment:?}");
+        }
+        sql.push_str(&format!(" SET {name} = {value};"));
+    }
+    let strategy = production.strategy.replace('\'', "''");
+    sql.push_str(&format!(
+        " SET ec_distann.benchmark_seed_mode = '{strategy}';\
+          SET ec_distann.benchmark_head_search_width = {};\
+          SET ec_distann.benchmark_head_seed_count = {};\
+          SET ec_distann.benchmark_exact_neighbor = {};\
+          SET ec_distann.benchmark_materialization_batch_size = {};\
+          SET ec_distann.benchmark_owner_payload_plan_cache = {};\
+          SET ec_distann.benchmark_typed_locator = {};\
+          SET ec_distann.benchmark_packed_payload = {};\
+          SET ec_distann.benchmark_expanded_locator = {};\
+          SET ec_distann.allow_nonconforming_replica = {};\
+          SET ec_distann.sharded_head_search = {};\
+          SET ec_distann.head_replica_count = {};\
+          SET ec_distann.gateway_copy_capacity = {};\
+          SET ec_distann.crown_capacity = {};\
+          SET ec_distann.crown_width_pruning = {};\
+          SET ec_distann.fused_head_hop = {};",
+        production.head_search_width,
+        production.head_seed_count,
+        if production.neighbor_score_mode == "exact_neighbor" {
+            "on"
+        } else {
+            "off"
+        },
+        production.materialization_batch_size,
+        if production.owner_payload_plan_cache {
+            "on"
+        } else {
+            "off"
+        },
+        if production.typed_locator {
+            "on"
+        } else {
+            "off"
+        },
+        if production.packed_payload {
+            "on"
+        } else {
+            "off"
+        },
+        if production.expanded_locator {
+            "on"
+        } else {
+            "off"
+        },
+        if production.traversal_replica {
+            "on"
+        } else {
+            "off"
+        },
+        if args.local_head { "off" } else { "on" },
+        args.head_replica_count.unwrap_or(0),
+        args.gateway_copy_capacity.unwrap_or(0),
+        args.crown_capacity.unwrap_or(0),
+        if args.crown_width_pruning {
+            "on"
+        } else {
+            "off"
+        },
+        if args.fused_head_hop { "on" } else { "off" },
+    ));
+    Ok(sql)
+}
+
+/// Compare the post-insert physical generation and a reloption-matched fresh
+/// rebuild against the same brute-force fp32 ground truth. Pairwise ANN set
+/// overlap is deliberately not a correctness metric: independently built
+/// graphs may return different valid approximations. Source fingerprints
+/// collapse exact duplicate rows, and each query divides by its own number of
+/// distinct exact-truth keys so duplicate ties cannot lower the metric ceiling.
+/// The inserted-neighborhood population retains the AC-4 non-inferiority band
+/// preregistered in packet 045. Heldout is a scale-specific regression detector:
+/// a suite step either supplies its shipped-default baseline and physical-arm
+/// sample SD, or records a non-blocking baseline observation. Both population
+/// rows are returned even when an applied gate fails so the caller can write the
+/// packet summary before exiting nonzero. Missing rows, wrong plans, malformed
+/// truth, and other measurement-integrity failures still fail immediately.
+async fn task167_post_insert_exact_recall(
     coordinator: &tokio_postgres::Client,
     scale: &str,
     physical_corpus: &str,
-    physical_queries: &str,
     roster: &str,
     graph_degree: u32,
     head_index_cap: u32,
+    build_shards: u32,
+    head_construction: &str,
+    head_sizing: &str,
     query_count: u32,
-) -> Result<String> {
+    truth_corpus_path: &Path,
+    truth_queries_path: &Path,
+    search_guc_sql: &str,
+    graph_phase: &str,
+    inserted_id_bases: &[i64],
+    heldout_baseline_deficit: Option<f64>,
+    heldout_physical_sample_sd: Option<f64>,
+) -> Result<Vec<String>> {
+    if inserted_id_bases.is_empty() {
+        bail!("Task 167 exact-recall gate requires at least one inserted ID range");
+    }
+    let heldout_count = usize::try_from(query_count).unwrap_or(usize::MAX);
+    if heldout_count <= TASK167_INSERTED_QUALITY_QUERIES {
+        bail!(
+            "Task 167 exact-recall quality sample requires held-out queries to dominate: inserted={} heldout={heldout_count}",
+            TASK167_INSERTED_QUALITY_QUERIES,
+        );
+    }
+    let query_count = heldout_count + TASK167_INSERTED_QUALITY_QUERIES;
+    let heldout_gate =
+        task167_heldout_regression_gate(heldout_baseline_deficit, heldout_physical_sample_sd)?;
+
     let fresh_table = format!("task167_fresh_{scale}");
     let fresh_index = format!("{fresh_table}_idx");
     coordinator
@@ -3158,12 +3537,82 @@ async fn task167_post_insert_fresh_rebuild_parity(
              CREATE INDEX {fresh_index} ON {fresh_table}
                USING ec_distann (embedding ecvector_distann_ip_ops)
                WITH (distributed_control = false, graph_degree = {graph_degree}, head_index_cap = {head_index_cap},
-                     neighbor_code_format = 'rabitq');
+                     build_shards = {build_shards}, head_construction = '{head_construction}',
+                     neighbor_code_format = 'rabitq'{head_sizing});
              ANALYZE {fresh_table};"
         ))
         .await
         .wrap_err("building Task 167 post-insert fresh rebuild")?;
-    let roster = roster.replace('\'', "''");
+
+    let (mut corpus_ids, base_corpus) =
+        crate::commands::bench::recall::load_sources_tsv_file(truth_corpus_path)
+            .wrap_err("loading Task 167 exact-truth corpus")?;
+    if !corpus_ids.windows(2).all(|ids| ids[0] < ids[1]) {
+        bail!(
+            "Task 167 exact-truth corpus IDs must be strictly increasing to match INSERT ... ORDER BY id offsets"
+        );
+    }
+    if base_corpus.nrows() < TASK167_AB_SAMPLE_ROWS
+        || base_corpus.nrows() < TASK167_INSERTED_QUALITY_QUERIES
+    {
+        bail!(
+            "Task 167 exact-truth corpus has {} rows, expected at least {}",
+            base_corpus.nrows(),
+            TASK167_AB_SAMPLE_ROWS.max(TASK167_INSERTED_QUALITY_QUERIES),
+        );
+    }
+    let (_, heldout_queries) =
+        crate::commands::bench::recall::load_sources_tsv_file(truth_queries_path)
+            .wrap_err("loading Task 167 held-out exact-recall queries")?;
+    if heldout_queries.nrows() < heldout_count || heldout_queries.ncols() != base_corpus.ncols() {
+        bail!(
+            "Task 167 held-out query shape is {}x{}, expected at least {}x{}",
+            heldout_queries.nrows(),
+            heldout_queries.ncols(),
+            heldout_count,
+            base_corpus.ncols(),
+        );
+    }
+
+    let dimension = base_corpus.ncols();
+    let mut corpus_values = base_corpus
+        .as_slice()
+        .ok_or_else(|| eyre!("Task 167 base corpus is not contiguous"))?
+        .to_vec();
+    for id_base in inserted_id_bases {
+        for source_offset in 0..TASK167_AB_SAMPLE_ROWS {
+            corpus_ids.push(*id_base + source_offset as i64);
+            corpus_values.extend(base_corpus.row(source_offset).iter().copied());
+        }
+    }
+    let exact_corpus =
+        ndarray::Array2::from_shape_vec((corpus_ids.len(), dimension), corpus_values)?;
+
+    let mut query_populations = Vec::with_capacity(query_count);
+    let mut query_values = Vec::with_capacity(query_count * dimension);
+    for source_offset in 0..TASK167_INSERTED_QUALITY_QUERIES {
+        query_populations.push("inserted_neighborhood");
+        query_values.extend(base_corpus.row(source_offset).iter().copied());
+    }
+    for query_offset in 0..heldout_count {
+        query_populations.push("heldout");
+        query_values.extend(heldout_queries.row(query_offset).iter().copied());
+    }
+    let exact_queries = ndarray::Array2::from_shape_vec((query_count, dimension), query_values)?;
+
+    let truth =
+        crate::commands::bench::recall::brute_force_top_k(&exact_corpus, &exact_queries, 10);
+    let truth_indices = truth.indices;
+    let corpus_keys = exact_corpus
+        .outer_iter()
+        .map(|source| task167_source_fingerprint(source.as_slice().expect("contiguous row")))
+        .collect::<Vec<_>>();
+    let key_by_id = corpus_ids
+        .iter()
+        .copied()
+        .zip(corpus_keys.iter().copied())
+        .collect::<HashMap<_, _>>();
+
     let epoch = coordinator
         .query_one(
             "SELECT epoch
@@ -3174,83 +3623,107 @@ async fn task167_post_insert_fresh_rebuild_parity(
         .await
         .wrap_err("reading active epoch for Task 167 fresh-rebuild parity")?
         .get::<_, i64>(0);
-    coordinator
-        .batch_execute(&format!(
-            "SET enable_seqscan = off;
-             SET ec_distann.local_node_id = 1;
-             SET ec_distann.epoch = {epoch};
-             DROP TABLE IF EXISTS task167_parity_q, task167_parity_physical, task167_parity_fresh;
-             CREATE TEMP TABLE task167_parity_q AS
-               SELECT id AS qid, source AS v, 'append_disabled'::text AS arm
-                 FROM {physical_corpus}
-                WHERE id BETWEEN 2000000 AND 2000023
-                ORDER BY id;
-             INSERT INTO task167_parity_q
-               SELECT id AS qid, source AS v, 'corpus_query'::text AS arm FROM {physical_queries}
-                ORDER BY id LIMIT greatest({query_count} - 48, 0);
-             INSERT INTO task167_parity_q
-               SELECT id AS qid, source AS v, 'append_enabled'::text AS arm
-                 FROM {physical_corpus}
-                WHERE id BETWEEN 3000000 AND 3000023
-                ORDER BY id;
-             SET ec_distann.roster = '{roster}';
-             CREATE TEMP TABLE task167_parity_physical AS
-                   SELECT q.qid, q.arm, hit.id, md5(hit.source::text) AS hit_key
-                 FROM task167_parity_q q
-                 CROSS JOIN LATERAL (
-                   SELECT id, source FROM {physical_corpus}
-                    ORDER BY embedding <#> q.v LIMIT 10
-                 ) hit;
-             SET ec_distann.roster = '';
-             CREATE TEMP TABLE task167_parity_fresh AS
-                   SELECT q.qid, q.arm, hit.id, md5(hit.source::text) AS hit_key
-                 FROM task167_parity_q q
-                 CROSS JOIN LATERAL (
-                   SELECT id, source FROM {fresh_table}
-                    ORDER BY embedding <#> q.v LIMIT 10
-                 ) hit;"
-        ))
-        .await
-        .wrap_err("configuring Task 167 fresh-rebuild parity session")?;
-    let result = coordinator
-        .query_one(
-            "WITH per_query AS (
-                   SELECT q.qid, q.arm,
-                          (SELECT count(*)
-                             FROM (SELECT hit_key FROM task167_parity_physical WHERE qid = q.qid
-                                   INTERSECT
-                                   SELECT hit_key FROM task167_parity_fresh WHERE qid = q.qid) common)::double precision / 10.0 AS recall,
-                          (SELECT count(*) FROM task167_parity_physical WHERE qid = q.qid) AS physical_rows,
-                          (SELECT count(*) FROM task167_parity_fresh WHERE qid = q.qid) AS fresh_rows
-                     FROM task167_parity_q q
-                 )
-                 SELECT count(*)::bigint,
-                        avg(recall), min(recall), max(recall),
-                        count(*) FILTER (WHERE arm = 'append_disabled')::bigint,
-                        avg(recall) FILTER (WHERE arm = 'append_disabled'),
-                        count(*) FILTER (WHERE arm = 'append_enabled')::bigint,
-                        avg(recall) FILTER (WHERE arm = 'append_enabled'),
-                        count(*) FILTER (WHERE physical_rows = 10 AND fresh_rows = 10)::bigint
-                   FROM per_query;",
-            &[],
-        )
-        .await
-        .wrap_err("running Task 167 post-insert fresh-rebuild parity")?;
-    let queries = result.get::<_, i64>(0);
-    let recall = result.get::<_, Option<f64>>(1).unwrap_or(0.0);
-    let min_recall = result.get::<_, Option<f64>>(2).unwrap_or(0.0);
-    let max_recall = result.get::<_, Option<f64>>(3).unwrap_or(0.0);
-    let disabled_queries = result.get::<_, i64>(4);
-    let disabled_recall = result.get::<_, Option<f64>>(5).unwrap_or(0.0);
-    let enabled_queries = result.get::<_, i64>(6);
-    let enabled_recall = result.get::<_, Option<f64>>(7).unwrap_or(0.0);
-    let complete_rows = result.get::<_, i64>(8);
-    // The parity line is a correctness gate, not a descriptive metric. A
-    // post-insert graph that agrees with a fresh rebuild on fewer than 80% of
-    // the inserted-neighborhood queries is evidence of incremental graph
-    // quality loss and must not be reported as passing.
-    let parity_pass = enabled_recall >= 0.80 && recall >= 0.80;
-    let arm_delta = enabled_recall - disabled_recall;
+    let roster = roster.replace('\'', "''");
+    let physical_predictions = task167_ann_predictions(
+        coordinator,
+        physical_corpus,
+        &exact_queries,
+        &format!(
+            "{search_guc_sql} SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; SET ec_distann.epoch={epoch};"
+        ),
+        "EcDistannDistributedScan",
+    )
+    .await
+    .wrap_err("running Task 167 incremental physical exact-recall arm")?;
+    let fresh_predictions = task167_ann_predictions(
+        coordinator,
+        &fresh_table,
+        &exact_queries,
+        &format!(
+            "{search_guc_sql} SET ec_distann.roster=''; SET ec_distann.local_node_id=1; SET ec_distann.epoch=0;"
+        ),
+        "Index Scan",
+    )
+    .await
+    .wrap_err("running Task 167 fresh-rebuild exact-recall arm")?;
+
+    let mut lines = Vec::new();
+    for population in ["inserted_neighborhood", "heldout"] {
+        let summary = task167_exact_recall_summary(
+            population,
+            &query_populations,
+            &truth_indices,
+            &physical_predictions,
+            &fresh_predictions,
+            &corpus_keys,
+            &key_by_id,
+        )?;
+        let (allowed_deficit, baseline_deficit, physical_sample_sd, gate_mode, gate_source) =
+            match population {
+                "inserted_neighborhood" => (
+                    Some(TASK167_INSERTED_QUALITY_ALLOWED_DEFICIT),
+                    None,
+                    None,
+                    "ac4_absolute",
+                    "packet_045_inserted_neighborhood_band",
+                ),
+                "heldout" => match heldout_gate {
+                    Some(gate) => (
+                        Some(gate.allowed_deficit),
+                        Some(gate.baseline_deficit),
+                        Some(gate.physical_sample_sd),
+                        "baseline_relative",
+                        "suite_step_per_scale_baseline_plus_2sd",
+                    ),
+                    None => (
+                        None,
+                        None,
+                        None,
+                        "baseline_recording",
+                        "suite_step_baseline_observation",
+                    ),
+                },
+                _ => bail!("Task 167 exact-recall gate has no policy for {population}"),
+            };
+        let quality_gate_pass = allowed_deficit.map(|allowed_deficit| {
+            task167_exact_recall_within_allowed_deficit(
+                summary.physical_recall,
+                summary.fresh_recall,
+                allowed_deficit,
+            )
+        });
+        let step_pass = quality_gate_pass.unwrap_or(true);
+        let allowed_deficit = allowed_deficit
+            .map(|value| format!("{value:.6}"))
+            .unwrap_or_else(|| "not_applicable".to_owned());
+        let baseline_deficit = baseline_deficit
+            .map(|value| format!("{value:.6}"))
+            .unwrap_or_else(|| "not_recorded".to_owned());
+        let physical_sample_sd = physical_sample_sd
+            .map(|value| format!("{value:.6}"))
+            .unwrap_or_else(|| "not_recorded".to_owned());
+        let quality_gate_pass = quality_gate_pass
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "not_applied".to_owned());
+        let disposition = if population == "heldout" && heldout_gate.is_none() {
+            "disclosed_baseline_characteristic"
+        } else {
+            "gate_applied"
+        };
+        let line = format!(
+            "physical_benchmark_post_insert_exact_recall scale={scale} phase={graph_phase} population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} baseline_deficit={baseline_deficit} physical_sample_sd={physical_sample_sd} allowed_deficit={allowed_deficit} quality_gate_mode={gate_mode} quality_gate_source={gate_source} quality_gate_applied={} quality_gate_pass={quality_gate_pass} disposition={disposition} fresh_reloptions_matched=true heldout_query_set_matches_ordinary=true heldout_queries_dominate=true search_gucs_pinned=true diagnostic_control_mutation_excluded=true excluded_backlink_strategy=append_when_room measurement_complete=true pass={step_pass}",
+            summary.queries,
+            summary.truth_slots,
+            summary.truth_distinct_keys,
+            summary.truth_duplicate_slots,
+            summary.physical_recall,
+            summary.fresh_recall,
+            summary.physical_recall - summary.fresh_recall,
+            quality_gate_pass != "not_applied",
+        );
+        lines.push(line);
+    }
+
     coordinator
         .batch_execute("SET ec_distann.roster = ''")
         .await
@@ -3259,19 +3732,214 @@ async fn task167_post_insert_fresh_rebuild_parity(
         .batch_execute(&format!("DROP TABLE {fresh_table} CASCADE"))
         .await
         .wrap_err("dropping Task 167 post-insert fresh rebuild")?;
-    if queries != i64::from(query_count)
-        || disabled_queries != 24
-        || enabled_queries != 24
-        || complete_rows != queries
-    {
-        bail!(
-            "Task 167 fresh-rebuild parity returned incomplete query rows: queries={queries} expected={} disabled_queries={disabled_queries} enabled_queries={enabled_queries} complete_rows={complete_rows}",
-            query_count,
-        );
+    Ok(lines)
+}
+
+fn task167_quality_gate_failure(lines: &[String]) -> Option<String> {
+    let failed = lines
+        .iter()
+        .filter(|line| {
+            line.starts_with("physical_benchmark_post_insert_exact_recall ")
+                && line.contains(" quality_gate_pass=false")
+        })
+        .cloned()
+        .collect::<Vec<_>>();
+    (!failed.is_empty()).then(|| {
+        format!(
+            "Task 167 post-insert exact recall failed its calibrated quality gate: {}",
+            failed.join("; ")
+        )
+    })
+}
+
+fn enforce_task167_quality_gate(lines: &[String]) -> Result<()> {
+    if let Some(failure) = task167_quality_gate_failure(lines) {
+        bail!(failure);
+    }
+    Ok(())
+}
+
+async fn task167_ann_predictions(
+    coordinator: &tokio_postgres::Client,
+    table: &str,
+    queries: &ndarray::Array2<f32>,
+    setup_sql: &str,
+    required_plan_node: &str,
+) -> Result<Vec<Vec<i64>>> {
+    coordinator.batch_execute(setup_sql).await?;
+    let mut predictions = Vec::with_capacity(queries.nrows());
+    for (query_index, query) in queries.outer_iter().enumerate() {
+        let literal = task167_real_array_literal(
+            query
+                .as_slice()
+                .ok_or_else(|| eyre!("Task 167 query row is not contiguous"))?,
+        )?;
+        let sql = format!("SELECT id FROM {table} ORDER BY embedding <#> {literal} LIMIT 10");
+        if query_index == 0 {
+            let plan = coordinator
+                .query(&format!("EXPLAIN (FORMAT TEXT, COSTS OFF) {sql}"), &[])
+                .await?
+                .into_iter()
+                .map(|row| row.get::<_, String>(0))
+                .collect::<Vec<_>>()
+                .join("\n");
+            if !plan.contains(required_plan_node) {
+                bail!(
+                    "Task 167 exact-recall arm for {table} expected plan node {required_plan_node}: {plan}"
+                );
+            }
+        }
+        let ids = coordinator
+            .query(&sql, &[])
+            .await?
+            .into_iter()
+            .map(|row| row.get::<_, i64>(0))
+            .collect::<Vec<_>>();
+        if ids.len() != 10 {
+            bail!(
+                "Task 167 exact-recall arm for {table} query {query_index} returned {} rows, expected 10",
+                ids.len(),
+            );
+        }
+        predictions.push(ids);
+    }
+    Ok(predictions)
+}
+
+fn task167_real_array_literal(values: &[f32]) -> Result<String> {
+    if values.is_empty() || values.iter().any(|value| !value.is_finite()) {
+        bail!("Task 167 exact-recall query contains empty or non-finite source data");
     }
     Ok(format!(
-        "physical_benchmark_post_insert_fresh_rebuild scale={scale} physical_table={physical_corpus} fresh_rebuild=local_same_rows queries={queries} append_disabled_queries={disabled_queries} append_disabled_recall={disabled_recall:.6} append_enabled_queries={enabled_queries} append_enabled_recall={enabled_recall:.6} append_enabled_minus_disabled={arm_delta:.6} top_k=10 distinct_recall={recall:.6} min_distinct_recall={min_recall:.6} max_distinct_recall={max_recall:.6} comparison=physical_vs_fresh_source_fingerprint duplicate_ties_collapsed=true pass={parity_pass}",
+        "ARRAY[{}]::real[]",
+        values
+            .iter()
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>()
+            .join(",")
     ))
+}
+
+fn task167_source_fingerprint(source: &[f32]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    for value in source {
+        hasher.update(value.to_bits().to_le_bytes());
+    }
+    hasher.finalize().into()
+}
+
+fn task167_distinct_recall<K>(truth: &[K], predicted: &[K]) -> (f64, usize, usize)
+where
+    K: Copy + Eq + std::hash::Hash,
+{
+    let truth_slots = truth.len();
+    let truth = truth.iter().copied().collect::<HashSet<_>>();
+    let predicted = predicted.iter().copied().collect::<HashSet<_>>();
+    let distinct = truth.len();
+    let duplicate_slots = truth_slots.saturating_sub(distinct);
+    if distinct == 0 {
+        return (0.0, 0, duplicate_slots);
+    }
+    let hits = truth.intersection(&predicted).count();
+    (hits as f64 / distinct as f64, distinct, duplicate_slots)
+}
+
+#[derive(Debug)]
+struct Task167ExactRecallSummary {
+    queries: usize,
+    truth_slots: usize,
+    truth_distinct_keys: usize,
+    truth_duplicate_slots: usize,
+    physical_recall: f64,
+    fresh_recall: f64,
+}
+
+fn task167_exact_recall_summary(
+    population: &str,
+    populations: &[&str],
+    truth_indices: &[Vec<usize>],
+    physical_predictions: &[Vec<i64>],
+    fresh_predictions: &[Vec<i64>],
+    corpus_keys: &[[u8; 32]],
+    key_by_id: &HashMap<i64, [u8; 32]>,
+) -> Result<Task167ExactRecallSummary> {
+    let query_count = populations.len();
+    if truth_indices.len() != query_count
+        || physical_predictions.len() != query_count
+        || fresh_predictions.len() != query_count
+    {
+        bail!(
+            "Task 167 exact-recall input length mismatch: populations={query_count} truth={} physical={} fresh={}",
+            truth_indices.len(),
+            physical_predictions.len(),
+            fresh_predictions.len(),
+        );
+    }
+    let mut queries = 0;
+    let mut truth_slots = 0;
+    let mut truth_distinct_keys = 0;
+    let mut physical_recall = 0.0;
+    let mut fresh_recall = 0.0;
+    for query_index in 0..populations.len() {
+        if populations[query_index] != population {
+            continue;
+        }
+        let truth_keys = truth_indices[query_index]
+            .iter()
+            .map(|index| {
+                corpus_keys.get(*index).copied().ok_or_else(|| {
+                    eyre!("Task 167 exact truth returned out-of-range corpus row {index}")
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let physical_keys = physical_predictions[query_index]
+            .iter()
+            .map(|id| {
+                key_by_id
+                    .get(id)
+                    .copied()
+                    .ok_or_else(|| eyre!("Task 167 physical prediction returned unknown id {id}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let fresh_keys = fresh_predictions[query_index]
+            .iter()
+            .map(|id| {
+                key_by_id
+                    .get(id)
+                    .copied()
+                    .ok_or_else(|| eyre!("Task 167 fresh prediction returned unknown id {id}"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let (physical, distinct, _) = task167_distinct_recall(&truth_keys, &physical_keys);
+        let (fresh, fresh_distinct, _) = task167_distinct_recall(&truth_keys, &fresh_keys);
+        if fresh_distinct != distinct {
+            bail!("Task 167 exact-recall denominator drifted between arms");
+        }
+        queries += 1;
+        truth_slots += truth_keys.len();
+        truth_distinct_keys += distinct;
+        physical_recall += physical;
+        fresh_recall += fresh;
+    }
+    if queries == 0 {
+        bail!("Task 167 exact-recall population {population} has no queries");
+    }
+    Ok(Task167ExactRecallSummary {
+        queries,
+        truth_slots,
+        truth_distinct_keys,
+        truth_duplicate_slots: truth_slots.saturating_sub(truth_distinct_keys),
+        physical_recall: physical_recall / queries as f64,
+        fresh_recall: fresh_recall / queries as f64,
+    })
+}
+
+fn task167_exact_recall_within_allowed_deficit(
+    physical_recall: f64,
+    fresh_recall: f64,
+    allowed_deficit: f64,
+) -> bool {
+    fresh_recall - physical_recall <= allowed_deficit + f64::EPSILON
 }
 
 async fn retire_and_reclaim_traversal_replica(
@@ -5510,6 +6178,7 @@ async fn run_physical_benchmarks(
         extension_preflight.nodes,
         args.stage_counter_only
     )];
+    let mut task167_quality_gate_failed = false;
     if let Some(attestation) = production_head_attestation {
         lines.push(attestation);
     }
@@ -5917,6 +6586,7 @@ async fn run_physical_benchmarks(
     // not a scan-path selector GUC, the A/B boundary.
     benchmark_arms.sort_by_key(|arm| arm.9);
     let mut prediction_paths = std::collections::BTreeMap::<String, PathBuf>::new();
+    let mut physical_distinct_recall = std::collections::BTreeMap::<String, f64>::new();
     let mut same_generation_identity: Option<String> = None;
 
     for (
@@ -6154,6 +6824,7 @@ async fn run_physical_benchmarks(
             let mean_ms = benchmark_ms(&row[11])?;
             if arm == "physical" {
                 prediction_paths.insert(variant.to_owned(), predictions_output);
+                physical_distinct_recall.insert(variant.to_owned(), distinct_recall);
             }
             if arm == "physical" && args.gateway_trace {
                 let seed_strategy_sql = seed_strategy.replace('\'', "''");
@@ -7134,13 +7805,43 @@ async fn run_physical_benchmarks(
             "physical_benchmark_insert_throughput_ab scale={scale} pass=false reason=single_control_skipped"
         ));
     } else {
-        task167_insert_throughput_ab(
+        let production = seed_variants
+            .iter()
+            .find(|variant| variant.name == "production")
+            .ok_or_else(|| {
+                eyre!(
+                    "Task 167 exact-recall closeout requires a physical seed variant named production"
+                )
+            })?;
+        if !args.skip_recall {
+            let production_predictions = prediction_paths.get("production").ok_or_else(|| {
+                eyre!("Task 167 production recall arm produced no prediction artifact")
+            })?;
+            let ordinary_distinct_recall = physical_distinct_recall
+                .get("production")
+                .copied()
+                .ok_or_else(|| eyre!("Task 167 production recall arm produced no recall score"))?;
+            lines.push(task167_pre_insert_recall_calibration_line(
+                scale,
+                production_predictions,
+                &truth_cache,
+                ordinary_distinct_recall,
+                args.top_k as usize,
+            )?);
+        }
+        let search_guc_sql = task167_search_guc_sql(
+            args,
+            production,
+            beam_width,
+            candidate_heap_limit,
+            hop_rounds,
+        )?;
+        let default_insert_baseline = task167_default_insert_throughput(
             coordinator,
             scale,
             &physical_corpus,
             &single_corpus,
             args.graph_degree,
-            args.distann_stage_counters,
             &mut lines,
         )
         .await?;
@@ -7156,21 +7857,48 @@ async fn run_physical_benchmarks(
             .collect::<Vec<_>>()
             .join(";");
         let parity_query_count = args.benchmark_parity_queries.unwrap_or(args.queries);
-        lines.push(
-            task167_post_insert_fresh_rebuild_parity(
+        let exact_recall_lines = task167_post_insert_exact_recall(
+            coordinator,
+            scale,
+            &physical_corpus,
+            &roster,
+            args.graph_degree,
+            args.head_index_cap,
+            args.build_shards,
+            &args.head_construction,
+            &head_sizing_reloptions(args),
+            parity_query_count,
+            &truth_corpus,
+            &truth_queries,
+            &search_guc_sql,
+            "post_160_shipped_default_established_tie_priority_inserts",
+            &[2_000_000_i64],
+            args.task167_heldout_baseline_deficit,
+            args.task167_heldout_physical_sample_sd,
+        )
+        .await?;
+        task167_quality_gate_failed = task167_quality_gate_failure(&exact_recall_lines).is_some();
+        lines.extend(exact_recall_lines);
+        if task167_quality_gate_failed {
+            lines.push(format!(
+                "physical_benchmark_backlink_strategy_ab scale={scale} pass=skipped reason=candidate_default_quality_gate_failed control_mutation_excluded=true"
+            ));
+        } else {
+            task167_append_when_room_diagnostic(
                 coordinator,
                 scale,
                 &physical_corpus,
-                &physical_queries,
-                &roster,
-                args.graph_degree,
-                args.head_index_cap,
-                parity_query_count,
+                default_insert_baseline,
+                &mut lines,
             )
-            .await?,
-        );
+            .await?;
+        }
     }
-    if args.materialization_correctness {
+    if task167_quality_gate_failed && args.materialization_correctness {
+        lines.push(format!(
+            "physical_benchmark_materialization_correctness scale={scale} pass=skipped reason=candidate_default_quality_gate_failed"
+        ));
+    } else if args.materialization_correctness {
         lines.extend(
             run_materialization_correctness(
                 coordinator,
@@ -7506,7 +8234,7 @@ async fn drive_reused_physical_fixture(
         summary.push_str(&format!("[distann-multicluster] {line}\n"));
     }
     fs::write(log_dir.join("distann-multinode-summary.log"), summary)?;
-    Ok(())
+    enforce_task167_quality_gate(&benchmark_lines)
 }
 
 async fn drive_physical_fixture(
@@ -7558,6 +8286,11 @@ async fn drive_physical_fixture(
             .await
             .wrap_err("setting large-scale physical benchmark remote timeout")?;
     }
+    let synthetic_norm_error = preflight_synthetic_unit_norm(&coordinator, args.dim).await?;
+    crate::ecaz_println!(
+        "[distann-multicluster] physical_synthetic_unit_norm samples=32 dimensions={} max_abs_error={synthetic_norm_error:.9} tolerance=0.000010000 pass=true",
+        args.dim,
+    );
     let owners = if args.coordinator_outside_roster {
         &nodes[1..]
     } else {
@@ -8038,6 +8771,50 @@ async fn drive_physical_fixture(
     };
     for line in &benchmark_lines {
         crate::ecaz_println!("[distann-multicluster] {line}");
+    }
+    if let Some(failure) = task167_quality_gate_failure(&benchmark_lines) {
+        let mut summary = format!(
+            "physical_fixture owners={} coordinator_outside_roster={} source_rows={} quality_gate_pass=false\n",
+            owners.len(),
+            args.coordinator_outside_roster,
+            source_count,
+        );
+        for (phase, rows) in [("ready", &ready), ("published", &published)] {
+            for row in rows {
+                summary.push_str(&format!(
+                    "[distann-multicluster] physical_topology phase={phase} node={} state={} records={} rows={} non_owned={} orphans={} graph_bytes={} row_bytes={} directory_bytes={} control_bytes={}\n",
+                    row.node_id,
+                    row.state,
+                    row.records,
+                    row.rows,
+                    row.non_owned_live + row.non_owned_tombstones,
+                    row.orphan_records + row.orphan_rows,
+                    row.graph_bytes,
+                    row.row_bytes,
+                    row.directory_bytes,
+                    row.control_bytes,
+                ));
+            }
+        }
+        for line in &publish_fault_lines {
+            summary.push_str(&format!("[distann-multicluster] {line}\n"));
+        }
+        for line in &benchmark_lines {
+            summary.push_str(&format!("[distann-multicluster] {line}\n"));
+        }
+        summary.push_str(
+            "[distann-multicluster] physical_quality_gate pass=false control_mutation_excluded=true post_gate_drills=skipped\n",
+        );
+        let summary_path = log_dir.join("distann-multinode-summary.log");
+        fs::write(&summary_path, summary)
+            .wrap_err_with(|| format!("writing {}", summary_path.display()))?;
+        crate::ecaz_println!(
+            "[distann-multicluster] failed-gate summary written to {}",
+            summary_path.display()
+        );
+        drop(coordinator);
+        connection_task.abort();
+        bail!(failure);
     }
     let concurrency_table = if args.physical_benchmark {
         let corpus_prefix = args
@@ -9331,12 +10108,7 @@ async fn mid_insert_drill(
     args: &LocalMultinodePg18Args,
 ) -> bool {
     let dim = args.dim;
-    let source_expr = |g: &str| -> String {
-        format!(
-            "(SELECT array_agg((sin({g} * 0.017 * (d + 1)) + cos({g} * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) AS d)"
-        )
-    };
-    let vector_expr = |g: &str| format!("encode_to_ecvector({}, 4, 42)", source_expr(g));
+    let setup_source = synthetic_unit_vector_expr("g", dim);
     let setup = format!(
         "DROP TABLE IF EXISTS mi CASCADE; \
          CREATE TABLE mi (id bigint, source_id uuid NOT NULL, source real[], embedding ecvector({dim})); \
@@ -9344,8 +10116,7 @@ async fn mid_insert_drill(
          SELECT g, (substr(md5(g::text),1,8)||'-'||substr(md5(g::text),9,4)||'-4'||\
                     substr(md5(g::text),14,3)||'-8'||substr(md5(g::text),18,3)||'-'||\
                     substr(md5(g::text),21,12))::uuid, arr, encode_to_ecvector(arr, 4, 42) \
-           FROM (SELECT g, (SELECT array_agg((sin(g * 0.017 * (d + 1)) +\
-                         cos(g * 0.0031 * (d + 1)))::real) FROM generate_series(0, {dim} - 1) d) arr \
+           FROM (SELECT g, {setup_source} AS arr \
                    FROM generate_series(1, 500) g) rows; \
          CREATE INDEX mi_idx ON mi USING ec_distann (embedding ecvector_distann_ip_ops)\
            INCLUDE (source_id) WITH (distributed_control = true, source_identity = 'include', graph_degree = {gd}); \
@@ -9397,12 +10168,11 @@ async fn mid_insert_drill(
         .await;
         return false;
     }
+    let failed_source = synthetic_unit_vector_expr("501", dim);
     let insert = format!(
         "SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,\
          '00000000-0000-4000-8000-000000000501',\
-         (SELECT array_agg((sin(501 * 0.017 * (d + 1)) + cos(501 * 0.0031 * (d + 1)))::real)\
-          FROM generate_series(0, {dim} - 1) d), {vector});",
-        vector = vector_expr("501"),
+         {failed_source}, encode_to_ecvector({failed_source}, 4, 42));",
     );
     let insert_out = capture_psql_allow_error(psql, socket_dir, coord_port, &insert).await;
     let insert_errored = query_errored(&insert_out);
@@ -9481,10 +10251,10 @@ async fn mid_insert_drill(
                 };
                 let before_update =
                     capture_psql_allow_error(psql, socket_dir, coord_port, &version_probe()).await;
+                let update_source = synthetic_unit_vector_expr("1001", dim);
                 let update_sql = format!(
-                    "UPDATE mi SET source={}, embedding={} WHERE id=1;",
-                    source_expr("1001"),
-                    vector_expr("1001")
+                    "UPDATE mi SET source={update_source}, \
+                     embedding=encode_to_ecvector({update_source}, 4, 42) WHERE id=1;"
                 );
                 let update_output =
                     capture_psql_allow_error(psql, socket_dir, coord_port, &update_sql).await;
@@ -9566,9 +10336,10 @@ async fn physical_concurrency_drill(
     const SCANNERS: usize = 4;
     const WRITERS: usize = 2;
     const ITERATIONS: usize = 12;
-    let roster = roster.replace('\'', "''");
+    let roster = task167_retry_attribution_roster(roster)?.replace('\'', "''");
     let query_sql = format!(
-        "SET enable_seqscan=off; SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
+        "SET enable_seqscan=off; SET ec_distann.debug_retry_attribution=on; \
+         SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
          SELECT count(*) FROM (SELECT source_id FROM {table} \
           ORDER BY embedding <#> (SELECT source FROM {table} ORDER BY id LIMIT 1) \
           LIMIT {}) rows;",
@@ -9755,7 +10526,11 @@ async fn physical_concurrency_drill(
         .iter()
         .find(|(_, vec_id, _, _)| seed_neighbors.contains(vec_id))
         .map(|(_, _, signed_id, _)| *signed_id)
-        .or_else(|| shared_target_candidates.first().map(|(_, _, signed_id, _)| *signed_id));
+        .or_else(|| {
+            shared_target_candidates
+                .first()
+                .map(|(_, _, signed_id, _)| *signed_id)
+        });
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target seed_vec_id={} seed_neighbor_count={} seeded_target_signed_id={:?}",
         seed_signed_id,
@@ -9773,10 +10548,9 @@ async fn physical_concurrency_drill(
         shared_target_vec_id,
         shared_target_signed_id,
         shared_target_initial_neighbor_count,
-    )) =
-        shared_target_candidates
-            .into_iter()
-            .find(|(_, _, signed_id, _)| *signed_id == nearest_target_signed_id)
+    )) = shared_target_candidates
+        .into_iter()
+        .find(|(_, _, signed_id, _)| *signed_id == nearest_target_signed_id)
     else {
         crate::ecaz_println!(
             "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=nearest_target_owner_lookup_failed signed_vec_id={nearest_target_signed_id}"
@@ -9810,24 +10584,6 @@ async fn physical_concurrency_drill(
         return Ok(false);
     };
     let shared_target_source = source.to_owned();
-    let target_seed_id = 899_998_i64;
-    let target_seed_sql = format!(
-        "SET ec_distann.roster='{roster}'; SET ec_distann.local_node_id=1; \
-         WITH row_data AS (SELECT {target_seed_id}::bigint AS id, '{shared_target_source}'::real[] AS source) \
-         INSERT INTO {table} (id, source_id, source, embedding) \
-         SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
-                substr(md5(id::text),14,3)||'-8'||substr(md5(id::text),18,3)||'-'||\
-                substr(md5(id::text),21,12))::uuid, source, \
-                encode_to_ecvector(source, 4, 42) FROM row_data;"
-    );
-    let target_seed_output = run_capture(psql, socket_dir, coord_port, &target_seed_sql).await;
-    if !target_seed_output.status_ok {
-        crate::ecaz_println!(
-            "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=target_seed_insert_failed stderr={}",
-            compact_capture_error(&target_seed_output.stderr)
-        );
-        return Ok(false);
-    }
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target owner={} vec_id={} signed_vec_id={} source={}",
         shared_target_owner,
@@ -9842,14 +10598,14 @@ async fn physical_concurrency_drill(
             psql,
             socket_dir,
             owner.port,
-            "CREATE UNLOGGED TABLE IF NOT EXISTS ec_distann_retry_attribution (\
+            "CREATE UNLOGGED TABLE IF NOT EXISTS public.ec_distann_retry_attribution (\
                  backend_pid integer NOT NULL,\
                  node_id integer NOT NULL,\
                  served_epoch bigint NOT NULL,\
                  missing_vec_id bigint NOT NULL,\
                  recorded_at timestamptz NOT NULL DEFAULT clock_timestamp()\
              );\
-             TRUNCATE ec_distann_retry_attribution;\
+             TRUNCATE public.ec_distann_retry_attribution;\
              SELECT ec_distann_stage_scoring_reset();",
         )
         .await;
@@ -9864,7 +10620,7 @@ async fn physical_concurrency_drill(
     }
     // The attribution relation is created by fixture setup before this reset;
     // it is intentionally not touched while the 2PC wave is running.
-    let retry_snapshot_sql = "SELECT count(*) FROM ec_distann_retry_attribution;";
+    let retry_snapshot_sql = "SELECT count(*) FROM public.ec_distann_retry_attribution;";
     let parse_retry_count = |output: &str| {
         output
             .lines()
@@ -9879,12 +10635,21 @@ async fn physical_concurrency_drill(
         .collect::<HashSet<_>>();
 
     let mut tasks = Vec::with_capacity(SCANNERS + WRITERS);
+    let start_barrier = Arc::new(Barrier::new(SCANNERS + WRITERS));
+    let active_writers = Arc::new(AtomicUsize::new(WRITERS));
     for _ in 0..SCANNERS {
         let psql = psql.to_path_buf();
         let socket_dir = socket_dir.to_path_buf();
         let query_sql = query_sql.clone();
+        let start_barrier = Arc::clone(&start_barrier);
+        let active_writers = Arc::clone(&active_writers);
         tasks.push(tokio::spawn(async move {
-            for iteration in 0..ITERATIONS {
+            start_barrier.wait().await;
+            let max_iterations = ITERATIONS * 16;
+            for iteration in 0..max_iterations {
+                if iteration >= ITERATIONS && active_writers.load(Ordering::Acquire) == 0 {
+                    return true;
+                }
                 let output = run_capture(&psql, &socket_dir, coord_port, &query_sql).await;
                 if !output.status_ok {
                     crate::ecaz_println!(
@@ -9905,11 +10670,14 @@ async fn physical_concurrency_drill(
                     return false;
                 }
             }
-            true
+            crate::ecaz_println!(
+                "[distann-multicluster] physical_concurrent_insert_query DIAG role=scanner reason=writers_exceeded_scan_budget active_writers={}",
+                active_writers.load(Ordering::Acquire)
+            );
+            false
         }));
     }
 
-    let writer_barrier = Arc::new(Barrier::new(WRITERS));
     for writer in 0..WRITERS {
         let psql_insert = psql.to_path_buf();
         let socket_dir_insert = socket_dir.to_path_buf();
@@ -9917,8 +10685,11 @@ async fn physical_concurrency_drill(
         let insert_table = table.to_owned();
         let insert_vector = insert_vector.clone();
         let shared_target_source = shared_target_source.clone();
-        let writer_barrier = Arc::clone(&writer_barrier);
+        let start_barrier = Arc::clone(&start_barrier);
+        let active_writers = Arc::clone(&active_writers);
         tasks.push(tokio::spawn(async move {
+            start_barrier.wait().await;
+            let mut writer_ok = true;
             for iteration in 0..ITERATIONS {
                 let id = 900_000_i64
                     + base_rows as i64
@@ -9933,7 +10704,8 @@ async fn physical_concurrency_drill(
                 };
                 let writer_owner = writer + 2;
                 let insert_sql = format!(
-                    "SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id={writer_owner}; \
+                    "SET ec_distann.debug_retry_attribution=on; \
+                     SET ec_distann.roster='{insert_roster}'; SET ec_distann.local_node_id={writer_owner}; \
                      WITH row_data AS (SELECT {id}::bigint AS id, {source_expr}::real[] AS source) \
                      INSERT INTO {insert_table} (id, source_id, source, embedding) \
                      SELECT id, (substr(md5(id::text),1,8)||'-'||substr(md5(id::text),9,4)||'-4'||\
@@ -9941,9 +10713,6 @@ async fn physical_concurrency_drill(
                             substr(md5(id::text),21,12))::uuid, source, \
                             encode_to_ecvector(source, 4, 42) FROM row_data;"
                 );
-                if iteration == 0 {
-                    writer_barrier.wait().await;
-                }
                 let output =
                     run_capture(&psql_insert, &socket_dir_insert, coord_port, &insert_sql).await;
                 if !output.status_ok {
@@ -9951,10 +10720,12 @@ async fn physical_concurrency_drill(
                         "[distann-multicluster] physical_concurrent_insert_query DIAG role=writer writer={writer} iteration={iteration} id={id} stderr={}",
                         compact_capture_error(&output.stderr)
                     );
-                    return false;
+                    writer_ok = false;
+                    break;
                 }
             }
-            true
+            active_writers.fetch_sub(1, Ordering::Release);
+            writer_ok
         }));
     }
 
@@ -9990,8 +10761,8 @@ async fn physical_concurrency_drill(
     );
     let mut natural_retries_by_owner = Vec::new();
     for owner in owner_nodes {
-        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
-            .await;
+        let output =
+            capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql).await;
         natural_retries_by_owner.push((
             owner.node_id,
             parse_retry_count(&output),
@@ -10109,7 +10880,7 @@ async fn physical_concurrency_drill(
             psql,
             socket_dir,
             owner.port,
-            "TRUNCATE ec_distann_retry_attribution; \
+            "TRUNCATE public.ec_distann_retry_attribution; \
              SELECT ec_distann_stage_scoring_reset();",
         )
         .await;
@@ -10119,8 +10890,8 @@ async fn physical_concurrency_drill(
     let steady_query = run_capture(psql, socket_dir, coord_port, &query_sql).await;
     let mut steady_retries_by_owner = Vec::new();
     for owner in owner_nodes {
-        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
-            .await;
+        let output =
+            capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql).await;
         steady_retries_by_owner.push((
             owner.node_id,
             parse_retry_count(&output),
@@ -10359,6 +11130,28 @@ async fn physical_concurrency_drill(
         shared_target_owner
     );
     Ok(pass && forward_neighbor_check && retry_counter_ok)
+}
+
+fn task167_retry_attribution_roster(roster: &str) -> Result<String> {
+    roster
+        .split(';')
+        .map(|entry| {
+            let (conninfo, options) = entry.rsplit_once(" options=").ok_or_else(|| {
+                eyre!("Task 167 retry-attribution roster entry has no options: {entry}")
+            })?;
+            if options.is_empty()
+                || options
+                    .bytes()
+                    .any(|byte| byte.is_ascii_whitespace() || matches!(byte, b'\'' | b'"'))
+            {
+                bail!("Task 167 retry-attribution roster has unsafe options: {options}");
+            }
+            Ok(format!(
+                "{conninfo} options='{options} -cec_distann.debug_retry_attribution=on'"
+            ))
+        })
+        .collect::<Result<Vec<_>>>()
+        .map(|entries| entries.join(";"))
 }
 
 /// Commit one coordinator-routed physical insert against a non-local owner.
@@ -11426,6 +12219,13 @@ async fn capture_psql_allow_error(psql: &Path, socket_dir: &Path, port: u16, sql
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+
+    #[derive(Parser)]
+    struct TestLocalMultinodeArgs {
+        #[command(flatten)]
+        args: LocalMultinodePg18Args,
+    }
 
     fn provenance(
         node_id: u32,
@@ -11455,6 +12255,163 @@ mod tests {
         assert_eq!(preflight.build_profile, "release");
         assert_eq!(preflight.nodes, 3);
         assert!(!preflight.debug_override);
+    }
+
+    #[test]
+    fn task167_ab_work_items_match_the_preregistered_sample_size() {
+        let work = (0..TASK167_AB_TRIALS)
+            .flat_map(|trial| task167_insert_trial_items(trial, TASK167_AB_ROWS_PER_TRIAL))
+            .collect::<Vec<_>>();
+        assert_eq!(work.len(), TASK167_AB_SAMPLE_ROWS);
+        assert_eq!(work.first(), Some(&(0, 0)));
+        assert_eq!(work.last(), Some(&(TASK167_AB_ROWS_PER_TRIAL - 1, 159)));
+        assert_eq!(
+            work.iter()
+                .map(|(_, source_offset)| *source_offset)
+                .collect::<HashSet<_>>()
+                .len(),
+            TASK167_AB_SAMPLE_ROWS,
+        );
+    }
+
+    #[test]
+    fn task167_synthetic_vector_sql_has_stable_component_order() {
+        let expression = synthetic_unit_vector_expr("g", 4);
+        assert!(expression.contains("sqrt(sum(component * component) OVER ())"));
+        assert!(expression.contains("generate_series(0, 4 - 1)"));
+        assert!(expression.contains("(g) * 0.017"));
+        assert!(expression.contains("array_agg((component / norm)::real ORDER BY d)"));
+    }
+
+    #[test]
+    fn task167_production_insert_work_does_not_require_query_stage_feature() {
+        validate_query_stage_counter_feature(false, "pg18").unwrap();
+    }
+
+    #[test]
+    fn task167_query_stage_counters_reject_missing_benchmark_feature() {
+        let error = validate_query_stage_counter_feature(true, "pg18").unwrap_err();
+        let rendered = error.to_string();
+        assert!(rendered.contains("--distann-stage-counters"));
+        assert!(rendered.contains("distann-head-attribution-benchmark"));
+        assert!(rendered.contains("insert-work counters are collected independently"));
+    }
+
+    #[test]
+    fn task167_query_stage_counters_accept_benchmark_feature() {
+        validate_query_stage_counter_feature(true, "distann-head-attribution-benchmark,pg18")
+            .unwrap();
+    }
+
+    #[test]
+    fn task167_retry_attribution_is_explicitly_enabled_in_remote_options() {
+        let roster = "1@host=127.0.0.1 port=39710 options=-cstatement_timeout=3600000;2@host=127.0.0.1 port=39711 options=-cstatement_timeout=3600000";
+        let attributed = task167_retry_attribution_roster(roster).unwrap();
+        assert_eq!(
+            attributed,
+            "1@host=127.0.0.1 port=39710 options='-cstatement_timeout=3600000 -cec_distann.debug_retry_attribution=on';2@host=127.0.0.1 port=39711 options='-cstatement_timeout=3600000 -cec_distann.debug_retry_attribution=on'"
+        );
+    }
+
+    #[test]
+    fn task167_distinct_exact_recall_uses_the_distinct_truth_denominator() {
+        let truth = ["same", "same", "same", "b", "c", "d", "e", "f", "g", "h"];
+        let predicted = ["same", "b", "c", "d", "e", "f", "g", "h", "x", "y"];
+        let (recall, distinct, duplicate_slots) = task167_distinct_recall(&truth, &predicted);
+        assert_eq!(distinct, 8);
+        assert_eq!(duplicate_slots, 2);
+        assert!((recall - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn task167_exact_recall_pins_the_production_search_operating_point() {
+        let mut args = TestLocalMultinodeArgs::parse_from(["test"]).args;
+        args.top_k = 10;
+        args.bench_session_gucs = vec!["ec_distann.remote_statement_timeout_ms=12345".to_owned()];
+        let production = BenchmarkSeedVariant {
+            name: "production".to_owned(),
+            strategy: "persisted_head".to_owned(),
+            head_search_width: 32,
+            head_seed_count: 32,
+            neighbor_score_mode: "rabitq".to_owned(),
+            materialization_batch_size: 10,
+            owner_payload_plan_cache: false,
+            beam_width: None,
+            hop_rounds: None,
+            traversal_replica: false,
+            typed_locator: false,
+            packed_payload: false,
+            expanded_locator: false,
+        };
+        let sql = task167_search_guc_sql(&args, &production, 4, 32, 100).unwrap();
+        for pinned in [
+            "ec_distann.beam_width = 4",
+            "ec_distann.candidate_heap_limit = 32",
+            "ec_distann.hop_rounds = 100",
+            "ec_distann.top_k = 10",
+            "ec_distann.remote_statement_timeout_ms = 12345",
+            "ec_distann.benchmark_seed_mode = 'persisted_head'",
+            "ec_distann.benchmark_head_search_width = 32",
+            "ec_distann.benchmark_head_seed_count = 32",
+            "ec_distann.benchmark_materialization_batch_size = 10",
+            "ec_distann.sharded_head_search = on",
+            "ec_distann.crown_capacity = 0",
+        ] {
+            assert!(sql.contains(pinned), "missing pinned GUC: {pinned}");
+        }
+    }
+
+    #[test]
+    fn task167_heldout_regression_gate_is_per_scale_and_baseline_relative() {
+        assert_eq!(task167_heldout_regression_gate(None, None).unwrap(), None);
+        let gate = task167_heldout_regression_gate(Some(0.008611), Some(0.000224))
+            .unwrap()
+            .expect("configured gate");
+        assert_eq!(gate.baseline_deficit, 0.008611);
+        assert_eq!(gate.physical_sample_sd, 0.000224);
+        assert!((gate.allowed_deficit - 0.009059).abs() < f64::EPSILON);
+
+        assert!(task167_heldout_regression_gate(Some(0.008611), None).is_err());
+        assert!(task167_heldout_regression_gate(None, Some(0.000224)).is_err());
+        assert!(task167_heldout_regression_gate(Some(-0.1), Some(0.0)).is_err());
+        assert!(task167_heldout_regression_gate(Some(0.1), Some(f64::NAN)).is_err());
+    }
+
+    #[test]
+    fn task167_exact_recall_enforces_the_calibrated_band() {
+        assert!(task167_exact_recall_within_allowed_deficit(
+            0.992, 0.999, 0.007
+        ));
+        assert!(task167_exact_recall_within_allowed_deficit(
+            1.0, 0.999, 0.007
+        ));
+        assert!(!task167_exact_recall_within_allowed_deficit(
+            0.991, 0.999, 0.007
+        ));
+    }
+
+    #[test]
+    fn task167_quality_gate_failure_retains_the_failed_population_row() {
+        let lines = vec![
+            "physical_benchmark_post_insert_exact_recall population=inserted_neighborhood quality_gate_pass=true pass=true".to_owned(),
+            "physical_benchmark_post_insert_exact_recall population=heldout physical_distinct_recall=0.848722 fresh_distinct_recall=0.857333 quality_gate_pass=false pass=false".to_owned(),
+            "physical_benchmark_backlink_strategy_ab pass=skipped reason=candidate_default_quality_gate_failed control_mutation_excluded=true".to_owned(),
+        ];
+        let failure = task167_quality_gate_failure(&lines).expect("heldout gate must fail");
+        assert!(failure.contains("population=heldout"));
+        assert!(failure.contains("physical_distinct_recall=0.848722"));
+        assert!(!failure.contains("population=inserted_neighborhood"));
+        assert!(enforce_task167_quality_gate(&lines).is_err());
+    }
+
+    #[test]
+    fn task167_quality_gate_accepts_two_passing_population_rows() {
+        let lines = vec![
+            "physical_benchmark_post_insert_exact_recall population=inserted_neighborhood quality_gate_pass=true pass=true".to_owned(),
+            "physical_benchmark_post_insert_exact_recall population=heldout quality_gate_applied=false quality_gate_pass=not_applied disposition=disclosed_baseline_characteristic pass=true".to_owned(),
+        ];
+        assert!(task167_quality_gate_failure(&lines).is_none());
+        enforce_task167_quality_gate(&lines).unwrap();
     }
 
     #[test]

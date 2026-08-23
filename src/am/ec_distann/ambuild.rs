@@ -1007,16 +1007,16 @@ pub(crate) fn build_physical_graph_workspace(
         if shard_count >= 2 {
             let (graph, medoid, stats, head_partition_nodes) =
                 super::shard_build::build_sharded_graph(
-                &source_refs,
-                usize::from(dimensions),
-                graph_degree,
-                build_list_size,
-                options.alpha,
-                shard_count,
-                options.closure_epsilon,
-                options.head_index_cap as usize,
-                seed,
-            )?;
+                    &source_refs,
+                    usize::from(dimensions),
+                    graph_degree,
+                    build_list_size,
+                    options.alpha,
+                    shard_count,
+                    options.closure_epsilon,
+                    options.head_index_cap as usize,
+                    seed,
+                )?;
             pgrx::notice!(
                 "ec_distann physical sharded build: shards={} duplication_factor={:.4} \
                  shard_output_spill_bytes={} build_peak_completion_bytes={} \
@@ -1629,9 +1629,7 @@ unsafe fn flush_build_state(
     metadata.grouped_codebook_head = grouped_codebook_head;
     metadata.directory_head = directory_head;
     metadata.head_sample_head = head_sample_head;
-    if state.options.head_construction
-        == super::options::HeadConstruction::PartitionUnion
-    {
+    if state.options.head_construction == super::options::HeadConstruction::PartitionUnion {
         metadata.flags |= super::page::DISTANN_METADATA_FLAG_HEAD_PARTITION_UNION;
     }
     pgrx::notice!(
@@ -1737,9 +1735,8 @@ fn stage_head_sample_chain(
     let node_count = vec_ids.len();
     let cap = head_index_cap.min(node_count).max(1);
     let sample = if head_construction == super::options::HeadConstruction::PartitionUnion {
-        let partition_nodes = partition_nodes.ok_or_else(|| {
-            "EC_HEAD_SAMPLE: partition_union requires a sharded graph".to_owned()
-        })?;
+        let partition_nodes = partition_nodes
+            .ok_or_else(|| "EC_HEAD_SAMPLE: partition_union requires a sharded graph".to_owned())?;
         let vectors = source_refs.to_vec();
         super::head_sample::build_partition_union_head_sample(
             partition_nodes,
@@ -1749,7 +1746,10 @@ fn stage_head_sample_chain(
             &vectors,
         )?
     } else {
-        let vectors = source_refs.iter().map(|source| (*source).to_vec()).collect::<Vec<_>>();
+        let vectors = source_refs
+            .iter()
+            .map(|source| (*source).to_vec())
+            .collect::<Vec<_>>();
         super::head_sample::build_head_sample(
             graph,
             medoid,

@@ -1,0 +1,12 @@
+physical_fixture owners=3 coordinator_outside_roster=false source_rows=2000
+[distann-multicluster] physical_topology phase=ready node=1 state=Ready records=677 rows=677 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=114688 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=2 state=Ready records=650 rows=650 non_owned=0 orphans=0 graph_bytes=212992 row_bytes=106496 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=ready node=3 state=Ready records=673 rows=673 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=106496 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=1 state=Published records=677 rows=677 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=114688 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=2 state=Published records=650 rows=650 non_owned=0 orphans=0 graph_bytes=212992 row_bytes=106496 directory_bytes=40960 control_bytes=8192
+[distann-multicluster] physical_topology phase=published node=3 state=Published records=673 rows=673 non_owned=0 orphans=0 graph_bytes=221184 row_bytes=106496 directory_bytes=49152 control_bytes=8192
+[distann-multicluster] physical_serving pass=true rows=10 owners=3 source_rows=2000
+[distann-multicluster] physical_mid_insert_failure pass=true
+[distann-multicluster] physical_concurrent_insert_query pass=true
+[distann-multicluster] physical_routed_delete_vacuum pass=true
+[distann-multicluster] physical_topology_gate pass=true owners=3 remote_verified=2 source_rows=2000

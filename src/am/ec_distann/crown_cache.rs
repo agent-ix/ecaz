@@ -110,10 +110,15 @@ impl DistannCrownCache {
             return Err("EC_CROWN_POPULATION: selected crown entries are incomplete".to_owned());
         }
         let mut encoder = CanonicalEncoder::with_capacity(
-            34 + 4 + entries.iter().map(|entry| 12 + entry.search_code.len()).sum::<usize>(),
+            34 + 4
+                + entries
+                    .iter()
+                    .map(|entry| 12 + entry.search_code.len())
+                    .sum::<usize>(),
         );
         encoder.put_fixed(&epoch_fingerprint);
-        encoder.put_u32(u32::try_from(capacity).map_err(|_| "crown capacity exceeds u32".to_owned())?);
+        encoder
+            .put_u32(u32::try_from(capacity).map_err(|_| "crown capacity exceeds u32".to_owned())?);
         for entry in &entries {
             encoder.put_u64(entry.vec_id);
             encoder.put_len_prefixed(&entry.search_code)?;
@@ -127,16 +132,24 @@ impl DistannCrownCache {
         })
     }
 
-    pub(crate) fn capacity(&self) -> usize { self.capacity }
-    pub(crate) fn len(&self) -> usize { self.entries.len() }
+    pub(crate) fn capacity(&self) -> usize {
+        self.capacity
+    }
+    pub(crate) fn len(&self) -> usize {
+        self.entries.len()
+    }
     pub(crate) fn resident_bytes(&self) -> usize {
         self.entries
             .iter()
             .map(|entry| 8usize.saturating_add(entry.search_code.len()))
             .sum()
     }
-    pub(crate) fn selection_digest(&self) -> [u8; 32] { self.selection_digest }
-    pub(crate) fn epoch_fingerprint(&self) -> [u8; 34] { self.epoch_fingerprint }
+    pub(crate) fn selection_digest(&self) -> [u8; 32] {
+        self.selection_digest
+    }
+    pub(crate) fn epoch_fingerprint(&self) -> [u8; 34] {
+        self.epoch_fingerprint
+    }
     pub(crate) fn contains(&self, vec_id: u64) -> bool {
         self.entries.iter().any(|entry| entry.vec_id == vec_id)
     }
@@ -184,7 +197,9 @@ static FUSED_FIRST_ROUND_REQUESTED_IDS: AtomicU64 = AtomicU64::new(0);
 pub(crate) fn record_seeds_served(count: usize) {
     CROWN_SEEDS_SERVED.fetch_add(count as u64, Ordering::Relaxed);
 }
-pub(crate) fn record_fallback() { CROWN_FALLBACKS.fetch_add(1, Ordering::Relaxed); }
+pub(crate) fn record_fallback() {
+    CROWN_FALLBACKS.fetch_add(1, Ordering::Relaxed);
+}
 pub(crate) fn record_population(cache: &DistannCrownCache) {
     CROWN_ENTRIES.store(cache.len() as u64, Ordering::Relaxed);
     CROWN_RESIDENT_BYTES.store(cache.resident_bytes() as u64, Ordering::Relaxed);
@@ -210,7 +225,9 @@ pub(crate) fn record_width_pruned_shards(count: usize) {
 pub(crate) fn record_width_pruning_activation() {
     CROWN_WIDTH_PRUNING_ACTIVATIONS.fetch_add(1, Ordering::Relaxed);
 }
-pub(crate) fn record_fused_head_hop() { FUSED_HEAD_HOPS.fetch_add(1, Ordering::Relaxed); }
+pub(crate) fn record_fused_head_hop() {
+    FUSED_HEAD_HOPS.fetch_add(1, Ordering::Relaxed);
+}
 pub(crate) fn record_fused_first_round_requested_ids(count: usize) {
     FUSED_FIRST_ROUND_REQUESTED_IDS.fetch_add(count as u64, Ordering::Relaxed);
 }
@@ -239,11 +256,9 @@ fn ec_distann_crown_stats() -> TableIterator<
         i64::try_from(CROWN_SEEDS_SERVED.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
         i64::try_from(CROWN_FALLBACKS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
         i64::try_from(CROWN_WIDTH_PRUNED_SHARDS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
-        i64::try_from(CROWN_WIDTH_PRUNING_ACTIVATIONS.load(Ordering::Relaxed))
-            .unwrap_or(i64::MAX),
+        i64::try_from(CROWN_WIDTH_PRUNING_ACTIVATIONS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
         i64::try_from(FUSED_HEAD_HOPS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
-        i64::try_from(FUSED_FIRST_ROUND_REQUESTED_IDS.load(Ordering::Relaxed))
-            .unwrap_or(i64::MAX),
+        i64::try_from(FUSED_FIRST_ROUND_REQUESTED_IDS.load(Ordering::Relaxed)).unwrap_or(i64::MAX),
     ))
 }
 
@@ -264,19 +279,34 @@ mod tests {
     #[test]
     fn selection_is_deterministic_and_capacity_bounded() {
         let members = vec![90, 10, 70, 30, 50];
-        assert_eq!(DistannCrownCache::select_member_ids(&members, 3), vec![10, 30, 70]);
-        assert_eq!(DistannCrownCache::select_member_ids(&members, 99), vec![10, 30, 50, 70, 90]);
+        assert_eq!(
+            DistannCrownCache::select_member_ids(&members, 3),
+            vec![10, 30, 70]
+        );
+        assert_eq!(
+            DistannCrownCache::select_member_ids(&members, 99),
+            vec![10, 30, 50, 70, 90]
+        );
     }
 
     #[test]
     fn population_requires_the_complete_selected_set() {
         let fp = [7; 34];
         let selected = vec![10, 20];
-        let missing = vec![DistannCrownEntry { vec_id: 10, search_code: vec![1, 2] }];
+        let missing = vec![DistannCrownEntry {
+            vec_id: 10,
+            search_code: vec![1, 2],
+        }];
         assert!(DistannCrownCache::from_entries(2, fp, &selected, missing).is_err());
         let complete = vec![
-            DistannCrownEntry { vec_id: 10, search_code: vec![1, 2] },
-            DistannCrownEntry { vec_id: 20, search_code: vec![3, 4] },
+            DistannCrownEntry {
+                vec_id: 10,
+                search_code: vec![1, 2],
+            },
+            DistannCrownEntry {
+                vec_id: 20,
+                search_code: vec![3, 4],
+            },
         ];
         let cache = DistannCrownCache::from_entries(2, fp, &selected, complete).unwrap();
         assert_eq!(cache.len(), 2);
@@ -287,17 +317,23 @@ mod tests {
     fn selection_digest_binds_epoch_capacity_and_codes_only_entries() {
         let selected = [10, 20];
         let entries = vec![
-            DistannCrownEntry { vec_id: 10, search_code: vec![1, 2] },
-            DistannCrownEntry { vec_id: 20, search_code: vec![3, 4] },
+            DistannCrownEntry {
+                vec_id: 10,
+                search_code: vec![1, 2],
+            },
+            DistannCrownEntry {
+                vec_id: 20,
+                search_code: vec![3, 4],
+            },
         ];
-        let first = DistannCrownCache::from_entries(2, [7; 34], &selected, entries.clone())
-            .unwrap();
-        let identical = DistannCrownCache::from_entries(2, [7; 34], &selected, entries.clone())
-            .unwrap();
-        let next_epoch = DistannCrownCache::from_entries(2, [8; 34], &selected, entries.clone())
-            .unwrap();
-        let next_capacity = DistannCrownCache::from_entries(3, [7; 34], &selected, entries)
-            .unwrap();
+        let first =
+            DistannCrownCache::from_entries(2, [7; 34], &selected, entries.clone()).unwrap();
+        let identical =
+            DistannCrownCache::from_entries(2, [7; 34], &selected, entries.clone()).unwrap();
+        let next_epoch =
+            DistannCrownCache::from_entries(2, [8; 34], &selected, entries.clone()).unwrap();
+        let next_capacity =
+            DistannCrownCache::from_entries(3, [7; 34], &selected, entries).unwrap();
         assert_eq!(first.selection_digest(), identical.selection_digest());
         assert_ne!(first.selection_digest(), next_epoch.selection_digest());
         assert_ne!(first.selection_digest(), next_capacity.selection_digest());

@@ -1,0 +1,12 @@
+Task 167 packet 057 pruned-backlink no-op 50k decision lines
+
+suite_status=failed_at_preregistered_quality_gate duration_ms=2158191
+pre_insert_ordinary_distinct_recall=0.954500 exact_scorer_distinct_recall=0.954500 absolute_delta=0.000000
+physical_insert_mode=candidate_default_pruned_backlink_noop physical_rows_per_second=0.222 control_rows_per_second=0.423
+backlink_amendments=4418 backlink_prune_rejected=702 inserts=160 counter_scope=coordinator_backend remote_owner_work_included=false
+inserted_neighborhood_physical_distinct_recall=0.922082 fresh_distinct_recall=0.931052 deficit=0.008970 allowed_deficit=0.015000 pass=true
+heldout_physical_distinct_recall=0.847722 fresh_distinct_recall=0.857333 deficit=0.009611 allowed_deficit=0.007000 pass=false excess_deficit=0.002611
+control_mutation_excluded=true excluded_backlink_strategy=append_when_room post_gate_drills=skipped
+comparison_packet_054_conservative_admission_deficit=0.009611 delta=0.000000
+comparison_packet_047_robust_prune_deficit=0.008611 candidate_minus_retained=0.001000
+disposition=rejected_no_final_scale_matrix

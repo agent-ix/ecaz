@@ -81,8 +81,7 @@ pub(crate) fn read_directory_from_relation(
     let mut entries = Vec::with_capacity(expected_entries);
     let mut cursor = head_tid;
     while cursor != ItemPointer::INVALID {
-        let raw =
-            read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann directory chunk")?;
+        let raw = read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann directory chunk")?;
         let tuple = DistannDirectoryTuple::decode(&raw)?;
         entries.extend_from_slice(&tuple.entries);
         cursor = tuple.next_tid;
@@ -115,8 +114,7 @@ pub(crate) fn read_head_samples_from_relation(
     let mut samples = Vec::new();
     let mut cursor = head_tid;
     while cursor != ItemPointer::INVALID {
-        let raw =
-            read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann head sample")?;
+        let raw = read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann head sample")?;
         let tuple = DistannHeadSampleTuple::decode(&raw, dimensions)?;
         cursor = tuple.next_tid;
         samples.push(tuple);
@@ -169,8 +167,7 @@ pub(crate) fn read_grouped_codebooks_from_relation(
     let mut cursor = head_tid;
     let mut group_index = 0_usize;
     while cursor != ItemPointer::INVALID {
-        let raw =
-            read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann codebook tuple")?;
+        let raw = read_raw_tuple_bytes_from_relation(handle, cursor, "ec_distann codebook tuple")?;
         let tuple = crate::am::VamanaCodebookTuple::decode(&raw, centroid_count)?;
         if usize::from(tuple.group_index) != group_index {
             return Err(format!(
@@ -201,9 +198,12 @@ pub(crate) fn read_node(
     graph_degree_r: u16,
     code_len: usize,
 ) -> Result<DistannNodeTuple, String> {
-    let page = chain
-        .get_page(tid.block_number)
-        .ok_or_else(|| format!("ec_distann node block {} not materialized", tid.block_number))?;
+    let page = chain.get_page(tid.block_number).ok_or_else(|| {
+        format!(
+            "ec_distann node block {} not materialized",
+            tid.block_number
+        )
+    })?;
     let raw = page.raw_tuple(tid)?;
     if raw.first().copied() != Some(DISTANN_NODE_TAG) {
         return Err(format!(

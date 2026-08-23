@@ -3507,8 +3507,12 @@ where
         "ec_ivf posting entry block sequence",
         |buffer, block_number| {
             let decode_started = std::time::Instant::now();
-            let result =
-                visit_all_ivf_posting_entries_from_buffer(buffer, block_number, payload_len, visitor);
+            let result = visit_all_ivf_posting_entries_from_buffer(
+                buffer,
+                block_number,
+                payload_len,
+                visitor,
+            );
             decode_elapsed += decode_started.elapsed();
             result
         },

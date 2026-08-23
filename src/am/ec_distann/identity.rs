@@ -43,8 +43,7 @@ pub(crate) fn vec_id_from_source_identity(identity: &[u8; 16]) -> u64 {
 
 /// vec_id for a heap TID (local mode; single-node posture only).
 pub(crate) fn vec_id_from_local_heap_tid(heap_tid: ItemPointer) -> u64 {
-    let packed =
-        (u64::from(heap_tid.block_number) << 16) | u64::from(heap_tid.offset_number);
+    let packed = (u64::from(heap_tid.block_number) << 16) | u64::from(heap_tid.offset_number);
     fmix64(packed ^ DISTANN_VEC_ID_DOMAIN_LOCAL)
 }
 

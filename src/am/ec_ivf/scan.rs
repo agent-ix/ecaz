@@ -1191,9 +1191,8 @@ unsafe fn candidate_dedup_map(
     capacity: usize,
 ) -> *mut CandidateDedupPool {
     if opaque.candidate_dedup.is_null() {
-        opaque.candidate_dedup = Box::into_raw(Box::new(CandidateDedupPool::with_capacity(
-            capacity,
-        )));
+        opaque.candidate_dedup =
+            Box::into_raw(Box::new(CandidateDedupPool::with_capacity(capacity)));
         return opaque.candidate_dedup;
     }
 
@@ -1692,7 +1691,8 @@ unsafe fn materialize_probe_candidates(
     // pure `pre_rerank_candidate_limit` / `ranked_collect_limit` helpers take it
     // as a parameter so they never touch pgrx GUC FFI off-thread.
     let effective_rerank_width =
-        super::options::resolve_scan_rerank_width(index_options.rerank_width).effective_rerank_width;
+        super::options::resolve_scan_rerank_width(index_options.rerank_width)
+            .effective_rerank_width;
     let mut running_top = bound_pruning_active
         .then(|| pre_rerank_candidate_limit(index_options, effective_rerank_width))
         .flatten()
@@ -1944,7 +1944,9 @@ unsafe fn materialize_probe_candidates(
         // the rerank helper validates whether heap_f32 state is present
         // before use.
         let rerank_started = should_record_exact_rerank.then(Instant::now);
-        unsafe { rerank_probe_candidates(scan, index_options, opaque, centroid_scores, candidates) };
+        unsafe {
+            rerank_probe_candidates(scan, index_options, opaque, centroid_scores, candidates)
+        };
         if let Some(rerank_started) = rerank_started {
             record_stage_elapsed(
                 opaque,
@@ -2511,7 +2513,10 @@ fn ranked_collect_limit(
         index_options.rerank.v1_effective(),
         super::options::RerankMode::HeapF32
     ) {
-        Some(pre_rerank_candidate_limit(index_options, effective_rerank_width).unwrap_or(candidate_len))
+        Some(
+            pre_rerank_candidate_limit(index_options, effective_rerank_width)
+                .unwrap_or(candidate_len),
+        )
     } else {
         None
     }
@@ -5408,7 +5413,9 @@ mod tests {
         let mut stream = Vec::new();
         let mut state = 0x2545F4914F6CDD1D_u64;
         for i in 0..10_000_u32 {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             let block = (state >> 33) as u32 % 512;
             let offset = 1 + ((state >> 17) as u16 % 128);
             let score = ((state >> 40) as f32) / 1e6 - 8.0;
@@ -5446,7 +5453,11 @@ mod tests {
             for (left, right) in from_pool.iter().zip(from_reference.iter()) {
                 assert_eq!(left.heap_tid, right.heap_tid, "limit {limit:?}");
                 assert_eq!(left.rerank_tid, right.rerank_tid, "limit {limit:?}");
-                assert_eq!(left.score.to_bits(), right.score.to_bits(), "limit {limit:?}");
+                assert_eq!(
+                    left.score.to_bits(),
+                    right.score.to_bits(),
+                    "limit {limit:?}"
+                );
             }
         }
     }
@@ -5495,7 +5506,9 @@ mod tests {
         let mut stream = Vec::with_capacity(CANDIDATES);
         let mut state = 0x9E3779B97F4A7C15_u64;
         for i in 0..CANDIDATES as u64 {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             // Unique tids so the map holds the full candidate count.
             let block = (i / 291) as u32;
             let offset = 1 + (i % 291) as u16;
@@ -5530,7 +5543,12 @@ mod tests {
         let map_ref = &map;
         let map_walk = time_ns(
             "map walk only (values -> black_box)",
-            Box::new(move || map_ref.values().map(|c| c.heap_tid.offset_number as usize).sum()),
+            Box::new(move || {
+                map_ref
+                    .values()
+                    .map(|c| c.heap_tid.offset_number as usize)
+                    .sum()
+            }),
         );
         let ranked_len = |ranked: RankedProbeCandidates| match ranked {
             RankedProbeCandidates::Sorted(candidates) => candidates.len(),

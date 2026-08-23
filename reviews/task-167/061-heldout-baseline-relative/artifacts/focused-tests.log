@@ -1,0 +1,26 @@
+Script started on 2026-08-23 08:44:26-07:00 [<not executed on terminal>]
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz)
+   Compiling ecaz-cli v0.1.0 (/home/peter/dev/ecaz/crates/ecaz-cli)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 47.63s
+     Running unittests src/main.rs (/home/peter/.cargo-target/debug/deps/ecaz-1bc43c90c59d1f97)
+
+running 14 tests
+test commands::dev::distann_multicluster::tests::task167_exact_recall_enforces_the_calibrated_band ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_ab_work_items_match_the_preregistered_sample_size ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_distinct_exact_recall_uses_the_distinct_truth_denominator ... [32mok(B[m
+test commands::bench::suite::tests::distann_task167_quality_and_insert_metrics_are_structured ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_heldout_regression_gate_is_per_scale_and_baseline_relative ... [32mok(B[m
+test commands::bench::suite::tests::distann_task167_heldout_regression_gate_is_step_local_and_paired ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_production_insert_work_does_not_require_query_stage_feature ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_quality_gate_accepts_two_passing_population_rows ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_quality_gate_failure_retains_the_failed_population_row ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_query_stage_counters_accept_benchmark_feature ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_query_stage_counters_reject_missing_benchmark_feature ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_retry_attribution_is_explicitly_enabled_in_remote_options ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_synthetic_vector_sql_has_stable_component_order ... [32mok(B[m
+test commands::dev::distann_multicluster::tests::task167_exact_recall_pins_the_production_search_operating_point ... [32mok(B[m
+
+test result: [32mok(B[m. 14 passed; 0 failed; 0 ignored; 0 measured; 498 filtered out; finished in 0.00s
+
+
+Script done on 2026-08-23 08:45:16-07:00 [COMMAND_EXIT_CODE="0"]

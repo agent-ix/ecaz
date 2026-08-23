@@ -1,0 +1,32 @@
+Task 167 packet 043 decision-grade result extract
+Run: 2026-08-22T10:28:48-07:00 through 2026-08-22T13:17:00-07:00
+Suite: task167-exact-recall-disposition-real-matrix
+Config SHA-256: 10612eafe98409b33137b893735ff18ff99ce95974221abb6ff130c25cfc0676
+CLI: ddf5dbdce2bace098650678aef5b39713b1ebd9a/release
+Extension: 01da3574498fcd30cef6b29e14cf4ca7f3872326/release
+Runner result: physical-10k=succeeded physical-50k=succeeded physical-100k=succeeded
+
+Exact fp32 post-insert recall (physical / fresh / delta)
+10k inserted_neighborhood: 0.940600 / 0.954985 / -0.014385; distinct truth keys=266; duplicate slots=214; within_reference_band=false
+10k heldout:               0.974342 / 0.977632 / -0.003289; distinct truth keys=1520; duplicate slots=0; within_reference_band=false
+50k inserted_neighborhood: 0.952257 / 0.940972 / +0.011285; distinct truth keys=349; duplicate slots=131; within_reference_band=true
+50k heldout:               0.853289 / 0.879276 / -0.025987; distinct truth keys=1516; duplicate slots=4; within_reference_band=false
+100k inserted_neighborhood: 0.933160 / 0.936632 / -0.003472; distinct truth keys=353; duplicate slots=127; within_reference_band=false
+100k heldout:               0.802632 / 0.808553 / -0.005921; distinct truth keys=1520; duplicate slots=0; within_reference_band=false
+All exact rows: truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints reference_band=0.002000 fresh_reloptions_matched=true heldout_queries_dominate=true measurement_complete=true disposition=outside_review
+
+Ordinary production recall / latency / storage
+10k: physical distinct recall=0.9990; latency mean/p50/p95=17.50/17.10/19.80 ms; physical generation=242958336 bytes; graph side=76095488 bytes; amplification=1.238533
+50k: physical distinct recall=0.9535; latency mean/p50/p95=20.40/20.60/22.30 ms; physical generation=1243553792 bytes; graph side=410206208 bytes; amplification=1.335307
+100k: physical distinct recall=0.9280; latency mean/p50/p95=19.50/19.20/21.00 ms; physical generation=2498248704 bytes; graph side=831766528 bytes; amplification=1.353787
+
+Sequential single-row insert A/B
+10k: physical=0.394 rows/s control=2.296 rows/s physical/control=0.171724 pass=true; append-disabled=0.404 append-enabled=0.394 enabled/disabled=0.975741 pass=false
+50k: physical=0.219 rows/s control=0.410 rows/s physical/control=0.534592 pass=true; append-disabled=0.220 append-enabled=0.219 enabled/disabled=0.997529 pass=false
+100k: physical=0.148 rows/s control=0.213 rows/s physical/control=0.694012 pass=true; append-disabled=0.149 append-enabled=0.148 enabled/disabled=0.993053 pass=false
+Each arm: five trials x 32 rows = 160 rows; comparison=sequential_same_fixture. The append comparison's pass=false is an honest performance result, not a suite-process failure.
+
+Integrity and concurrency
+10k: physical_concurrent_insert_query=true routed_delete_vacuum=true topology_gate=true owners=3 source_rows=10000
+50k: physical_concurrent_insert_query=true routed_delete_vacuum=true topology_gate=true owners=3 source_rows=50000
+100k: physical_concurrent_insert_query=true routed_delete_vacuum=true topology_gate=true owners=3 source_rows=100000; natural 2PC retries=23; saturated shared target=true

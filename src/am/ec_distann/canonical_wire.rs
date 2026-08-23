@@ -20,19 +20,12 @@ pub(crate) fn fixed_bytes<const N: usize>(
     code: &str,
     field: &str,
 ) -> Result<[u8; N], String> {
-    bytes.try_into().map_err(|bytes: Vec<u8>| {
-        format!(
-            "{code}: {field} is {} bytes, expected {N}",
-            bytes.len()
-        )
-    })
+    bytes
+        .try_into()
+        .map_err(|bytes: Vec<u8>| format!("{code}: {field} is {} bytes, expected {N}", bytes.len()))
 }
 
-pub(crate) fn fixed_digest(
-    bytes: Vec<u8>,
-    code: &str,
-    field: &str,
-) -> Result<[u8; 32], String> {
+pub(crate) fn fixed_digest(bytes: Vec<u8>, code: &str, field: &str) -> Result<[u8; 32], String> {
     fixed_bytes(bytes, code, field)
 }
 

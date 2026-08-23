@@ -155,7 +155,7 @@ unsafe extern "C-unwind" fn ec_distann_ambulkdelete(
                 callback,
                 callback_state,
             )
-                .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
+            .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
             let stats = ec_distann_noop_vacuum_stats((*info).index, stats)
                 .unwrap_or_else(|e| pgrx::error!("ec_distann ambulkdelete failed: {e}"));
             if !stats.is_null() {
