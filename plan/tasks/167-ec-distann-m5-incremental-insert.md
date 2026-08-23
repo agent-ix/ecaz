@@ -1,8 +1,8 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
 Status: implementation open; packet 043 reviewer findings are addressed by
-packets 044–049, but both isolated 50k backlink strategies fail the fixed
-heldout quality gate. Packet 047's shipped robust-prune-only deficit was
+packets 044–049, but both measured isolated 50k backlink strategies fail the
+fixed heldout quality gate. Packet 047's shipped robust-prune-only deficit was
 `0.008611`, missing the `0.007000` band by `0.001611`. Packet 051's
 batch-consistent append-when-room candidate measured physical `0.846722`
 versus fresh `0.857333`, a `0.010611` deficit and `0.003611` gate miss. Its
@@ -10,11 +10,14 @@ inserted-neighborhood population passed, but the dominant heldout result was
 `0.002000` worse than robust-prune-only, so candidate `22c1e01c3` is rejected
 and packet 050 is superseded by packet 051's measured disposition. The
 threshold is unchanged; no merge, final scale matrix, or closeout is claimed.
-Packet 052 restores the pre-candidate shipped default and is review-open.
-Required follow-ups are to diagnose the remaining isolated physical-vs-fresh
-loss, clear the 50k branch point with a new candidate, and only then run
-isolated 10k/50k/100k recall, latency, and storage confirmation. Evidence:
-packets 047, 051, and 052; reviewer source:
+Packet 052 restores the pre-candidate shipped default. Packet 053 introduces a
+review-open conservative admission candidate that robust-prunes the backlink
+union but mutates a target with spare capacity only when every existing edge
+and the new backlink survive; its focused tests pass, but it has no benchmark
+verdict yet. Required follow-ups are to run its separately preregistered clean
+50k branch-point gate and, only if that passes, isolated 10k/50k/100k recall,
+latency, and storage confirmation. Evidence: packets 047, 051, 052, and 053;
+reviewer source:
 `reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
