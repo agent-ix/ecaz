@@ -20,7 +20,7 @@
 - Command: `cargo test -p ecaz-cli task167_ --no-default-features`.
 - Result: passed; 10 passed, 0 failed, 497 filtered out.
 - SHA-256:
-  `f97ff4f3bf55724bb548e421fbdd38aad50909342146b8c0ce7d3dd3e49021de`.
+  `e7d48febb9874fb602ebad210dfc53f6bd0f7b178349812495f221ef6317143a`.
 
 ### `ecaz-cli-check.log`
 
@@ -28,7 +28,7 @@
 - Result: passed; one pre-existing unrelated dead-code warning at
   `crates/ecaz-cli/src/commands/corpus/load.rs:190`.
 - SHA-256:
-  `47419e44d7242d3ac8539608b0b57bfbddcf2574082651a61215b31ea267e077`.
+  `2432c188210d1e2875a4a4f06391fe3659b4fde1df11a0ea76747cc6e8e2417a`.
 
 No corpus data, PostgreSQL operational logs, cluster state, truth cache, or
 polling output is included.
