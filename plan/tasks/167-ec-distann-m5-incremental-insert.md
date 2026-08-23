@@ -1,21 +1,20 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
 Status: implementation open; packet 043 reviewer findings are addressed by
-packets 044–049, but all three measured isolated 50k spare-capacity backlink
-strategies fail the fixed heldout quality gate. Packet 047's retained
-robust-prune-all deficit was `0.008611`, missing the `0.007000` band by
-`0.001611`; packet 051's append-when-room deficit was `0.010611` (miss
-`0.003611`); and packet 054's conservative-admission deficit was `0.009611`
-(miss `0.002611`). Candidate `4826e9644` is rejected and packet 055 restores
-the retained robust-prune default. Packet 056 is review-open for a materially
-different, full-target-only candidate: when robust-prune rejects a proposed
-backlink, preserve the established target adjacency rather than rewriting it
-without the reverse edge. Focused exact-head tests pass; the candidate has no
-quality result yet. The threshold is unchanged; no merge, final scale matrix,
-or closeout is claimed. Required follow-ups are an outside-review verdict, a
-separately-preregistered clean 50k gate, and—only if that passes—isolated
-10k/50k/100k recall, latency, and storage confirmation. Evidence: packets 047,
-051, 054–056; reviewer source:
+packets 044–049, but all four measured isolated 50k backlink candidates fail
+the fixed heldout quality gate. Packet 047's retained robust-prune deficit was
+`0.008611`, missing the `0.007000` band by `0.001611`; packet 051's
+append-when-room deficit was `0.010611` (miss `0.003611`); and packets 054 and
+057 each measured `0.009611` (miss `0.002611`) for conservative admission and
+the full-target pruned-backlink no-op respectively. Packet 057 recorded 702
+full-target prune rejections, while its inserted-neighborhood deficit passed
+at `0.008970`; the dominant heldout result nevertheless rejects the candidate.
+Packet 058 restores the retained robust-prune product/harness state and is
+review-open. The threshold is unchanged; no merge, final scale matrix, or
+closeout is claimed. Required follow-ups are an outside-review verdict and
+diagnosis of a materially different isolated candidate; only a clean 50k pass
+permits isolated 10k/50k/100k recall, latency, and storage confirmation.
+Evidence: packets 047, 051, 054–058; reviewer source:
 `reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
