@@ -1,18 +1,17 @@
 # Task 167: ec_distann M5 — Incremental Distributed Insert (Committed Scope)
 
-Status: implementation and required 10k/50k/100k evidence complete; packets
-040–043 review-open on PR 77; outside reviewer disposition pending, with no
-merge or closeout claim. Packet 041 replaced the defective pairwise ANN-overlap
-gate; packet 042 fixed incremental pruning to use the batch path's nonnegative
-distance; packet 043 completed exact fp32 physical-vs-fresh measurements with
-distinct-key denominators, a 48/152 inserted/heldout split, matched fresh
-reloptions, and no unsupported hard process gate. Inserted deltas are
-`-0.014385 / +0.011285 / -0.003472` and heldout deltas are
-`-0.003289 / -0.025987 / -0.005921` at 10k/50k/100k. The real same-fixture
-append-enabled/disabled throughput ratios are
-`0.975741 / 0.997529 / 0.993053` (`pass=false` at every scale). Concurrency,
-routed delete/vacuum, UPDATE, rollback, owner placement, storage, and topology
-evidence landed. Packets 027–030 are explicitly superseded by this round.
+Status: implementation open; packet 043 reviewer findings are addressed by
+packets 044–047, but the preregistered shipped-only 50k quality gate failed and
+blocks closeout. Packet 047 measured heldout exact distinct recall `0.848722`
+after 160 shipped robust-prune inserts versus `0.857333` for a fresh rebuild:
+deficit `0.008611`, exceeding the fixed `0.007000` band by `0.001611`. The
+rejected append-when-room candidate was excluded, reducing packet 045's
+contaminated `0.026250` deficit by `0.017639`; a residual shipped robust-prune
+quality loss remains under diagnosis. The threshold is unchanged. Packets 046
+and 047 are review-open; no merge or closeout claim. Required follow-ups are a
+corrective robust-prune checkpoint and isolated 10k/50k/100k recall, latency,
+and storage confirmation. Evidence: packet 047; reviewer source:
+`reviews/task-167/043-exact-recall-disposition/feedback/2026-08-22-01-reviewer.md`.
 PR: `https://github.com/agent-ix/ecaz/pull/77`.
 REQUESTED on 2026-08-12; packet 025 claims were superseded by reviewer feedback
 and are not acceptance evidence.
