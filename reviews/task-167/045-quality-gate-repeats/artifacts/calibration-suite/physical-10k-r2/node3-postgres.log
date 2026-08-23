@@ -1,0 +1,20 @@
+2026-08-22 15:23:12.243 PDT [729809] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-22 15:23:12.258 PDT [729809] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-22 15:23:12.258 PDT [729809] LOG:  listening on IPv4 address "127.0.0.1", port 41912
+2026-08-22 15:23:12.269 PDT [729815] LOG:  database system was shut down at 2026-08-22 15:23:11 PDT
+2026-08-22 15:23:12.281 PDT [729809] LOG:  database system is ready to accept connections
+2026-08-22 15:24:12.451 PDT [730172] LOG:  skipping analyze of "_ecdz_row_17779_71717171717141718171717171717171" --- lock not available
+2026-08-22 15:24:12.451 PDT [730172] LOG:  skipping analyze of "_ecdz_graph_17779_71717171717141718171717171717171" --- lock not available
+2026-08-22 15:28:12.940 PDT [729813] LOG:  checkpoint starting: time
+2026-08-22 15:32:42.307 PDT [729813] LOG:  checkpoint complete: wrote 10661 buffers (65.1%), wrote 4 SLRU buffers; 0 WAL file(s) added, 0 removed, 5 recycled; write=269.109 s, sync=0.182 s, total=269.367 s; sync files=291, longest=0.008 s, average=0.001 s; distance=74914 kB, estimate=74914 kB; lsn=0/7170E50, redo lsn=0/607D0A8
+2026-08-22 15:33:12.288 PDT [729813] LOG:  checkpoint starting: time
+2026-08-22 15:34:24.335 PDT [729813] LOG:  checkpoint complete: wrote 719 buffers (4.4%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=71.969 s, sync=0.041 s, total=72.047 s; sync files=22, longest=0.007 s, average=0.002 s; distance=18628 kB, estimate=69286 kB; lsn=0/7FA1188, redo lsn=0/72AE130
+2026-08-22 15:38:12.133 PDT [729813] LOG:  checkpoint starting: time
+2026-08-22 15:41:15.111 PDT [729809] LOG:  received fast shutdown request
+2026-08-22 15:41:15.116 PDT [729809] LOG:  aborting any active transactions
+2026-08-22 15:41:15.117 PDT [729809] LOG:  background worker "logical replication launcher" (PID 729818) exited with exit code 1
+2026-08-22 15:41:15.149 PDT [729813] LOG:  checkpoint complete: wrote 1903 buffers (11.6%), wrote 4 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=182.963 s, sync=0.021 s, total=183.017 s; sync files=25, longest=0.009 s, average=0.001 s; distance=24514 kB, estimate=64808 kB; lsn=0/97C5260, redo lsn=0/8A9EC90
+2026-08-22 15:41:15.149 PDT [729813] LOG:  shutting down
+2026-08-22 15:41:15.153 PDT [729813] LOG:  checkpoint starting: shutdown immediate
+2026-08-22 15:41:15.207 PDT [729813] LOG:  checkpoint complete: wrote 819 buffers (5.0%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=0.013 s, sync=0.019 s, total=0.059 s; sync files=17, longest=0.010 s, average=0.002 s; distance=13465 kB, estimate=59674 kB; lsn=0/97C52D8, redo lsn=0/97C52D8
+2026-08-22 15:41:15.230 PDT [729809] LOG:  database system is shut down

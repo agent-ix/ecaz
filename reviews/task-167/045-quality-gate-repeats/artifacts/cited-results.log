@@ -1,0 +1,55 @@
+Task 167 quality-gate calibration results
+runtime head: 7e25cb71606da43889b42bf4ba6de2e201eb8852
+suite: task167-quality-gate-calibration
+status: 6/6 steps succeeded
+
+Scorer calibration (same graph, predictions, truth, and 200-query set):
+10k r1 ordinary=0.999000 exact=0.999000 absolute_delta=0.000000 pass=true
+10k r2 ordinary=0.999000 exact=0.999000 absolute_delta=0.000000 pass=true
+10k r3 ordinary=0.999000 exact=0.999000 absolute_delta=0.000000 pass=true
+10k r4 ordinary=0.999000 exact=0.999000 absolute_delta=0.000000 pass=true
+10k r5 ordinary=0.999000 exact=0.999000 absolute_delta=0.000000 pass=true
+50k repeat ordinary=0.954500 exact=0.954500 absolute_delta=0.000000 pass=true
+
+10k inserted-neighborhood population (physical, fresh, fresh-physical):
+r1 0.940600 0.954985 0.014385
+r2 0.940600 0.954985 0.014385
+r3 0.940600 0.954985 0.014385
+r4 0.940600 0.954985 0.014385
+r5 0.940600 0.954985 0.014385
+physical sample_sd=0.000000 mean_deficit=0.014385
+preregistered_formula=max(0,mean_deficit)+2*sample_sd=0.014385
+derived_band=ceil_0.001(0.014385)=0.015
+all_baseline_repeats_within_derived_band=true
+fresh_deterministic_to_six_decimals=true
+
+10k heldout population (physical, fresh, fresh-physical):
+r1 0.973500 0.979000 0.005500
+r2 0.973500 0.979000 0.005500
+r3 0.973000 0.979000 0.006000
+r4 0.973500 0.979000 0.005500
+r5 0.973500 0.979000 0.005500
+physical_mean=0.973400 physical_sample_sd=0.000223607 mean_deficit=0.005600
+preregistered_formula=max(0,mean_deficit)+2*sample_sd=0.006047214
+derived_band=ceil_0.001(0.006047214)=0.007
+all_baseline_repeats_within_derived_band=true
+fresh_deterministic_to_six_decimals=true
+
+50k repeated heldout observation:
+inserted_neighborhood physical=0.949653 fresh=0.940972 physical_minus_fresh=0.008681
+heldout physical=0.843000 fresh=0.869250 physical_minus_fresh=-0.026250
+heldout_allowed_deficit=0.007000
+heldout_excess_deficit=0.019250
+heldout_within_derived_band=false
+prior_packet_043_heldout_physical_minus_fresh=-0.025987
+anomaly_reproduced=true
+
+Append-when-room diagnostic throughput ratios (enabled/disabled):
+10k r1=0.977275 r2=0.979137 r3=1.054862 r4=1.000437 r5=0.969802
+50k repeat=1.003392
+disposition=no_consistent_win_keep_shortcut_disabled_by_default
+
+Source artifacts:
+- calibration-suite/results.jsonl
+- calibration-suite/suite-manifest.json
+- calibration-suite/<step>/distann-multinode-summary.log

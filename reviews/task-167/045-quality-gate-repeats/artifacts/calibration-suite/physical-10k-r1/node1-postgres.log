@@ -1,0 +1,23 @@
+2026-08-22 15:04:24.638 PDT [685871] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-22 15:04:24.651 PDT [685871] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-22 15:04:24.651 PDT [685871] LOG:  listening on IPv4 address "127.0.0.1", port 41900
+2026-08-22 15:04:24.661 PDT [685877] LOG:  database system was shut down at 2026-08-22 15:04:22 PDT
+2026-08-22 15:04:24.673 PDT [685871] LOG:  database system is ready to accept connections
+2026-08-22 15:06:35.598 PDT [686711] ERROR:  ec_distann physical aminsert failed: EC_FAULT_INJECTED: physical insert failed after graph append before backlinks
+2026-08-22 15:06:35.598 PDT [686711] STATEMENT:  SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,'00000000-0000-4000-8000-000000000501',(SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), encode_to_ecvector((SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), 4, 42));
+2026-08-22 15:09:24.875 PDT [685875] LOG:  checkpoint starting: time
+2026-08-22 15:11:14.243 PDT [685875] LOG:  checkpoint complete: wrote 664 buffers (4.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 27 recycled; write=109.081 s, sync=0.121 s, total=109.369 s; sync files=328, longest=0.006 s, average=0.001 s; distance=445617 kB, estimate=445617 kB; lsn=0/1D1D13D0, redo lsn=0/1CA80D58
+2026-08-22 15:14:24.071 PDT [685875] LOG:  checkpoint starting: time
+2026-08-22 15:17:13.437 PDT [685875] LOG:  checkpoint complete: wrote 1300 buffers (7.9%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 1 recycled; write=169.282 s, sync=0.046 s, total=169.366 s; sync files=34, longest=0.008 s, average=0.002 s; distance=20153 kB, estimate=403071 kB; lsn=0/1EBF3768, redo lsn=0/1DE2F340
+2026-08-22 15:19:24.385 PDT [685875] LOG:  checkpoint starting: time
+2026-08-22 15:21:41.048 PDT [685875] LOG:  checkpoint complete: wrote 1158 buffers (7.1%), wrote 2 SLRU buffers; 0 WAL file(s) added, 0 removed, 2 recycled; write=136.581 s, sync=0.045 s, total=136.663 s; sync files=31, longest=0.008 s, average=0.002 s; distance=19662 kB, estimate=364730 kB; lsn=0/1FF2ADB8, redo lsn=0/1F162BB0
+2026-08-22 15:23:06.683 PDT [729599] ERROR:  canceling autovacuum task
+2026-08-22 15:23:06.683 PDT [729599] CONTEXT:  while scanning block 3677 of relation "pg_toast.pg_toast_83267"
+	automatic vacuum of table "postgres.pg_toast.pg_toast_83267"
+2026-08-22 15:23:07.453 PDT [685871] LOG:  received fast shutdown request
+2026-08-22 15:23:07.458 PDT [685871] LOG:  aborting any active transactions
+2026-08-22 15:23:07.459 PDT [685871] LOG:  background worker "logical replication launcher" (PID 685880) exited with exit code 1
+2026-08-22 15:23:07.483 PDT [685875] LOG:  shutting down
+2026-08-22 15:23:07.507 PDT [685875] LOG:  checkpoint starting: shutdown immediate
+2026-08-22 15:23:07.781 PDT [685875] LOG:  checkpoint complete: wrote 198 buffers (1.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 23 recycled; write=0.012 s, sync=0.165 s, total=0.299 s; sync files=53, longest=0.138 s, average=0.004 s; distance=382278 kB, estimate=382278 kB; lsn=0/366B44F8, redo lsn=0/366B44F8
+2026-08-22 15:23:07.809 PDT [685871] LOG:  database system is shut down

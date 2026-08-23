@@ -48,3 +48,30 @@
 - The exact runtime repeated the six-step audit successfully.
   `suite-audit-runtime.log` SHA-256:
   `cfb28f3b554838389d6cdac0ce6eefe72dc222acdca2d80bc10a7906d183c422`.
+
+## Completed run
+
+- Run timestamp: `2026-08-22` (same runtime session as the attestation above).
+- Run command:
+  `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-167/045-quality-gate-repeats/artifacts/task167-quality-gate-calibration-suite.json --log-file reviews/task-167/045-quality-gate-repeats/artifacts/suite-run.log`.
+- Result: all six isolated steps succeeded. The suite runner used one index per
+  table; no shared-table measurement surface was used.
+- Suite log SHA-256:
+  `63c2d4c6f6d8ab3e3b5c1634c8afae2f1410f27fd9de0e7af7da2e721a6e4d8a`.
+- Suite manifest SHA-256:
+  `d63df1591ddae61d40982d030949d9c95bdf01ca4205b7519ac9a14c35904391`.
+- Structured results SHA-256:
+  `e329631884b1ccf299a6e0cbb50ed028f23a93b08cff5567f8cbb3d719885851`.
+- Compact cited-results artifact: `cited-results.log`. Its values are derived
+  directly from `results.jsonl` and each step's `distann-multinode-summary.log`.
+- 10k derived inserted-neighborhood band: `0.015`; every repeat passed.
+- 10k derived heldout band: `0.007`; every repeat passed.
+- 50k repeated heldout result: physical `0.843000`, fresh `0.869250`, deficit
+  `0.026250`; failed the fixed `0.007` heldout band by `0.019250`.
+- Same-state scorer calibration: absolute delta `0.000000` for all five 10k
+  repeats and the 50k repeat.
+- Append-when-room disposition: no consistent throughput win; shortcut remains
+  disabled by default.
+- Cluster run directories were external under
+  `/home/peter/.ecaz/clusters/task167-closeout-20260822-*`; they are disposable
+  runtime state and are not review evidence.
