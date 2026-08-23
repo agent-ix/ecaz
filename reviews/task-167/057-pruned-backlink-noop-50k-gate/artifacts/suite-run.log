@@ -1,0 +1,12 @@
+[suite:task167-pruned-backlink-noop-50k] wrote reviews/task-167/057-pruned-backlink-noop-50k-gate/artifacts/final-suite/suite-manifest.json
+[suite:task167-pruned-backlink-noop-50k] physical-50k-pruned-backlink-noop -> --database tqvector_bench dev distann-multicluster local-multinode-pg18 --pg 18 --artifact-dir reviews/task-167/057-pruned-backlink-noop-50k-gate/artifacts/final-suite/physical-50k-pruned-backlink-noop --run-dir /home/peter/.ecaz/clusters/task167-pruned-backlink-noop-50k-20260822 --log-file reviews/task-167/057-pruned-backlink-noop-50k-gate/artifacts/final-suite/physical-50k-pruned-backlink-noop/distann-local-multinode.log --nodes 3 --physical-benchmark --skip-single-benchmark --skip-concurrency-drill --benchmark-iterations 1 --benchmark-concurrency-sweep 1 --benchmark-warmup-iterations 0 --benchmark-parity-queries 200 --base-port 42400 --graph-degree 32 --head-index-cap 4096 --beam-width 4 --candidate-heap-limit 32 --hop-rounds 100 --queries 200 --top-k 10 --skip-fault-drills --corpus-prefix ec_real_50k --staged-dir data/staged-current
+[suite:task167-pruned-backlink-noop-50k] wrote reviews/task-167/057-pruned-backlink-noop-50k-gate/artifacts/final-suite/suite-manifest.json
+[suite:task167-pruned-backlink-noop-50k] wrote reviews/task-167/057-pruned-backlink-noop-50k-gate/artifacts/final-suite/suite-manifest.json
+
+   0: [91msuite step "physical-50k-pruned-backlink-noop" failed with exit code 1; rerun with --continue-on-error to keep going[0m
+
+Location:
+   [35mcrates/ecaz-cli/src/commands/bench/suite.rs[0m:[35m1348[0m
+
+Backtrace omitted. Run with RUST_BACKTRACE=1 environment variable to display it.
+Run with RUST_BACKTRACE=full to include source snippets.
