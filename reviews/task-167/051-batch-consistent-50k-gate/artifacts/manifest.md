@@ -33,3 +33,25 @@
 - Run after an exact-runtime PG18 release install, release CLI build, and
   repeated audit:
   `/home/peter/.cargo-target/release/ecaz bench suite run --config reviews/task-167/051-batch-consistent-50k-gate/artifacts/task167-batch-consistent-50k-suite.json --log-file reviews/task-167/051-batch-consistent-50k-gate/artifacts/suite-run.log`.
+
+## Exact runtime
+
+- Runtime head: `383423fa5edd71ef5fd8d317823032da712a173d`;
+  both installed extension and release CLI embed this SHA with profile
+  `release`.
+- PG18 extension install command:
+  `cargo pgrx install --release --pg-config /home/peter/.pgrx/18.3/pgrx-install/bin/pg_config --features pg18 --no-default-features`.
+- Install result: passed. `install-extension.log` committed LF-normalized
+  SHA-256:
+  `289019fbe76f0b234a014cc571cc31152e38ff301c4088ce213d3c6401f278a8`.
+- Installed `ecaz.so` SHA-256:
+  `6d6900c25be5d25916be382d1b16afbfb29448e9f2548170cae3bc3066b72385`.
+- CLI build command: `cargo build -p ecaz-cli --release --no-default-features`.
+- Build result: passed with the pre-existing unrelated dead-code warning at
+  `commands/corpus/load.rs:190`. `build-cli.log` committed LF-normalized
+  SHA-256:
+  `64fcbfd5f805bb489000b3367e6e7dac1e015ce846a3d57b28f7996412afd206`.
+- Release CLI SHA-256:
+  `893d29d782d8699b5340e7bb65940a120c3d3d8b27c856d2c98b3a68eb451174`.
+- Exact-runtime audit result: passed, 1 step. Log SHA-256:
+  `d939548ad01858e6fd71102f88034830ac44930bec282d067fc95d7607239e7f`.
