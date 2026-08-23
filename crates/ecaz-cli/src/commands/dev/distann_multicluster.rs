@@ -92,6 +92,16 @@ pub struct LocalMultinodePg18Args {
     /// additional fixed 48 queries cover inserted neighborhoods.
     #[arg(long)]
     pub benchmark_parity_queries: Option<u32>,
+    /// Shipped-default heldout deficit for this scale. When paired with
+    /// `--task167-heldout-physical-sample-sd`, the heldout row becomes a
+    /// baseline-relative regression gate. When both are omitted, the row is
+    /// a non-blocking baseline observation.
+    #[arg(long)]
+    pub task167_heldout_baseline_deficit: Option<f64>,
+    /// Sample standard deviation of the shipped-default physical heldout arm
+    /// at this scale. The regression band is baseline deficit + 2 * sample SD.
+    #[arg(long)]
+    pub task167_heldout_physical_sample_sd: Option<f64>,
     /// Reconnect a latency worker after this many timed queries. Zero keeps
     /// one backend for the whole arm; nonzero values bound backend-local
     /// memory during long physical-query diagnostics and replay the untimed
@@ -3211,7 +3221,7 @@ async fn task167_default_insert_throughput(
     }
     let ratio = shipped.rows_per_second / single.rows_per_second.max(f64::EPSILON);
     lines.push(format!(
-        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=candidate_default_established_tie_priority physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
+        "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_insert_mode=shipped_default_established_tie_priority physical_rows_per_second={:.3} control_rows_per_second={:.3} physical_over_control={ratio:.6} pass=true",
         shipped.inserted_rows,
         shipped.rows_per_second,
         single.rows_per_second,
@@ -3237,7 +3247,7 @@ async fn task167_default_insert_throughput(
         }
         values.insert(metric.clone(), (value, mean));
         lines.push(format!(
-            "physical_benchmark_insert_work scale={scale} insert_mode=candidate_default_established_tie_priority metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
+            "physical_benchmark_insert_work scale={scale} insert_mode=shipped_default_established_tie_priority metric={metric} inserts={inserts} value={value} mean_per_insert={mean:.6} graph_degree={graph_degree} counter_scope=coordinator_backend remote_owner_work_included=false pass=true"
         ));
     }
     let bound = i64::from(graph_degree) * expected_inserts;
@@ -3316,7 +3326,7 @@ async fn task167_append_when_room_diagnostic(
     let append_candidate_faster =
         append_ratio >= 1.0 && append_amendments <= baseline.backlink_amendments;
     lines.push(format!(
-        "physical_benchmark_backlink_strategy_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} candidate_established_tie_rows_per_second={:.3} append_when_room_rows_per_second={:.3} append_when_room_over_candidate={append_ratio:.6} candidate_backlink_amendments={} append_when_room_backlink_amendments={append_amendments} candidate_backlink_no_room={} append_when_room_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture measurement_order=after_candidate_default_quality_gate control_graph_mutation_excluded_from_quality_gate=true control_faster={append_candidate_faster} pass=true",
+        "physical_benchmark_backlink_strategy_ab scale={scale} trials={TASK167_AB_TRIALS} rows_per_trial={TASK167_AB_ROWS_PER_TRIAL} sample_rows={} shipped_default_established_tie_rows_per_second={:.3} append_when_room_rows_per_second={:.3} append_when_room_over_shipped_default={append_ratio:.6} shipped_default_backlink_amendments={} append_when_room_backlink_amendments={append_amendments} shipped_default_backlink_no_room={} append_when_room_backlink_no_room={} counter_scope=coordinator_backend remote_owner_work_included=false comparison=sequential_same_fixture measurement_order=after_shipped_default_quality_gate control_graph_mutation_excluded_from_quality_gate=true control_faster={append_candidate_faster} pass=true",
         append_when_room.inserted_rows,
         baseline.measurement.rows_per_second,
         append_when_room.rows_per_second,
@@ -3328,10 +3338,48 @@ async fn task167_append_when_room_diagnostic(
 }
 
 const TASK167_INSERTED_QUALITY_QUERIES: usize = 48;
-// Packet 045 preregistered mean deficit + 2 sample standard deviations,
-// rounded up to the next 0.001, from five isolated 10k production repeats.
+// Packet 045 preregistered this AC-4 inserted-neighborhood band from five
+// isolated 10k production repeats. Heldout is deliberately not represented by
+// a cross-scale constant: its regression band is supplied per suite step from
+// the shipped-default baseline at that scale.
 const TASK167_INSERTED_QUALITY_ALLOWED_DEFICIT: f64 = 0.015;
-const TASK167_HELDOUT_QUALITY_ALLOWED_DEFICIT: f64 = 0.007;
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct Task167HeldoutRegressionGate {
+    baseline_deficit: f64,
+    physical_sample_sd: f64,
+    allowed_deficit: f64,
+}
+
+fn task167_heldout_regression_gate(
+    baseline_deficit: Option<f64>,
+    physical_sample_sd: Option<f64>,
+) -> Result<Option<Task167HeldoutRegressionGate>> {
+    let (baseline_deficit, physical_sample_sd) = match (baseline_deficit, physical_sample_sd) {
+        (None, None) => return Ok(None),
+        (Some(baseline_deficit), Some(physical_sample_sd)) => {
+            (baseline_deficit, physical_sample_sd)
+        }
+        _ => bail!(
+            "Task 167 heldout regression gate requires both the per-scale baseline deficit and physical sample SD"
+        ),
+    };
+    if !baseline_deficit.is_finite() || baseline_deficit < 0.0 {
+        bail!("Task 167 heldout baseline deficit must be finite and non-negative");
+    }
+    if !physical_sample_sd.is_finite() || physical_sample_sd < 0.0 {
+        bail!("Task 167 heldout physical sample SD must be finite and non-negative");
+    }
+    let allowed_deficit = baseline_deficit + 2.0 * physical_sample_sd;
+    if !allowed_deficit.is_finite() {
+        bail!("Task 167 heldout regression band overflowed");
+    }
+    Ok(Some(Task167HeldoutRegressionGate {
+        baseline_deficit,
+        physical_sample_sd,
+        allowed_deficit,
+    }))
+}
 
 fn task167_search_guc_sql(
     args: &LocalMultinodePg18Args,
@@ -3438,11 +3486,13 @@ fn task167_search_guc_sql(
 /// graphs may return different valid approximations. Source fingerprints
 /// collapse exact duplicate rows, and each query divides by its own number of
 /// distinct exact-truth keys so duplicate ties cannot lower the metric ceiling.
-/// The population-specific non-inferiority thresholds are the variance-derived
-/// bands preregistered and measured in review packet 045. Both population rows
-/// are returned even when one fails so the caller can write the packet summary
-/// before exiting nonzero. Missing rows, wrong plans, malformed truth, and
-/// other measurement-integrity failures still fail immediately.
+/// The inserted-neighborhood population retains the AC-4 non-inferiority band
+/// preregistered in packet 045. Heldout is a scale-specific regression detector:
+/// a suite step either supplies its shipped-default baseline and physical-arm
+/// sample SD, or records a non-blocking baseline observation. Both population
+/// rows are returned even when an applied gate fails so the caller can write the
+/// packet summary before exiting nonzero. Missing rows, wrong plans, malformed
+/// truth, and other measurement-integrity failures still fail immediately.
 async fn task167_post_insert_exact_recall(
     coordinator: &tokio_postgres::Client,
     scale: &str,
@@ -3459,6 +3509,8 @@ async fn task167_post_insert_exact_recall(
     search_guc_sql: &str,
     graph_phase: &str,
     inserted_id_bases: &[i64],
+    heldout_baseline_deficit: Option<f64>,
+    heldout_physical_sample_sd: Option<f64>,
 ) -> Result<Vec<String>> {
     if inserted_id_bases.is_empty() {
         bail!("Task 167 exact-recall gate requires at least one inserted ID range");
@@ -3471,6 +3523,8 @@ async fn task167_post_insert_exact_recall(
         );
     }
     let query_count = heldout_count + TASK167_INSERTED_QUALITY_QUERIES;
+    let heldout_gate =
+        task167_heldout_regression_gate(heldout_baseline_deficit, heldout_physical_sample_sd)?;
 
     let fresh_table = format!("task167_fresh_{scale}");
     let fresh_index = format!("{fresh_table}_idx");
@@ -3604,14 +3658,60 @@ async fn task167_post_insert_exact_recall(
             &corpus_keys,
             &key_by_id,
         )?;
-        let allowed_deficit = task167_exact_recall_allowed_deficit(population)?;
-        let quality_gate_pass = task167_exact_recall_within_allowed_deficit(
-            summary.physical_recall,
-            summary.fresh_recall,
-            allowed_deficit,
-        );
+        let (allowed_deficit, baseline_deficit, physical_sample_sd, gate_mode, gate_source) =
+            match population {
+                "inserted_neighborhood" => (
+                    Some(TASK167_INSERTED_QUALITY_ALLOWED_DEFICIT),
+                    None,
+                    None,
+                    "ac4_absolute",
+                    "packet_045_inserted_neighborhood_band",
+                ),
+                "heldout" => match heldout_gate {
+                    Some(gate) => (
+                        Some(gate.allowed_deficit),
+                        Some(gate.baseline_deficit),
+                        Some(gate.physical_sample_sd),
+                        "baseline_relative",
+                        "suite_step_per_scale_baseline_plus_2sd",
+                    ),
+                    None => (
+                        None,
+                        None,
+                        None,
+                        "baseline_recording",
+                        "suite_step_baseline_observation",
+                    ),
+                },
+                _ => bail!("Task 167 exact-recall gate has no policy for {population}"),
+            };
+        let quality_gate_pass = allowed_deficit.map(|allowed_deficit| {
+            task167_exact_recall_within_allowed_deficit(
+                summary.physical_recall,
+                summary.fresh_recall,
+                allowed_deficit,
+            )
+        });
+        let step_pass = quality_gate_pass.unwrap_or(true);
+        let allowed_deficit = allowed_deficit
+            .map(|value| format!("{value:.6}"))
+            .unwrap_or_else(|| "not_applicable".to_owned());
+        let baseline_deficit = baseline_deficit
+            .map(|value| format!("{value:.6}"))
+            .unwrap_or_else(|| "not_recorded".to_owned());
+        let physical_sample_sd = physical_sample_sd
+            .map(|value| format!("{value:.6}"))
+            .unwrap_or_else(|| "not_recorded".to_owned());
+        let quality_gate_pass = quality_gate_pass
+            .map(|value| value.to_string())
+            .unwrap_or_else(|| "not_applied".to_owned());
+        let disposition = if population == "heldout" && heldout_gate.is_none() {
+            "disclosed_baseline_characteristic"
+        } else {
+            "gate_applied"
+        };
         let line = format!(
-            "physical_benchmark_post_insert_exact_recall scale={scale} phase={graph_phase} population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} allowed_deficit={allowed_deficit:.6} gate_source=packet_045_five_repeat_mean_deficit_plus_2sd_ceil_0_001 quality_gate_pass={quality_gate_pass} fresh_reloptions_matched=true heldout_query_set_matches_ordinary=true heldout_queries_dominate=true search_gucs_pinned=true diagnostic_control_mutation_excluded=true excluded_backlink_strategy=append_when_room measurement_complete=true pass={quality_gate_pass}",
+            "physical_benchmark_post_insert_exact_recall scale={scale} phase={graph_phase} population={population} queries={} top_k=10 truth=brute_force_fp32 denominator=per_query_distinct_exact_source_fingerprints truth_slots={} truth_distinct_keys={} truth_duplicate_slots={} physical_distinct_recall={:.6} fresh_distinct_recall={:.6} physical_minus_fresh={:.6} baseline_deficit={baseline_deficit} physical_sample_sd={physical_sample_sd} allowed_deficit={allowed_deficit} quality_gate_mode={gate_mode} quality_gate_source={gate_source} quality_gate_applied={} quality_gate_pass={quality_gate_pass} disposition={disposition} fresh_reloptions_matched=true heldout_query_set_matches_ordinary=true heldout_queries_dominate=true search_gucs_pinned=true diagnostic_control_mutation_excluded=true excluded_backlink_strategy=append_when_room measurement_complete=true pass={step_pass}",
             summary.queries,
             summary.truth_slots,
             summary.truth_distinct_keys,
@@ -3619,6 +3719,7 @@ async fn task167_post_insert_exact_recall(
             summary.physical_recall,
             summary.fresh_recall,
             summary.physical_recall - summary.fresh_recall,
+            quality_gate_pass != "not_applied",
         );
         lines.push(line);
     }
@@ -3831,14 +3932,6 @@ fn task167_exact_recall_summary(
         physical_recall: physical_recall / queries as f64,
         fresh_recall: fresh_recall / queries as f64,
     })
-}
-
-fn task167_exact_recall_allowed_deficit(population: &str) -> Result<f64> {
-    match population {
-        "inserted_neighborhood" => Ok(TASK167_INSERTED_QUALITY_ALLOWED_DEFICIT),
-        "heldout" => Ok(TASK167_HELDOUT_QUALITY_ALLOWED_DEFICIT),
-        _ => bail!("Task 167 exact-recall gate has no calibrated band for {population}"),
-    }
 }
 
 fn task167_exact_recall_within_allowed_deficit(
@@ -7778,8 +7871,10 @@ async fn run_physical_benchmarks(
             &truth_corpus,
             &truth_queries,
             &search_guc_sql,
-            "post_160_candidate_default_established_tie_priority_inserts",
+            "post_160_shipped_default_established_tie_priority_inserts",
             &[2_000_000_i64],
+            args.task167_heldout_baseline_deficit,
+            args.task167_heldout_physical_sample_sd,
         )
         .await?;
         task167_quality_gate_failed = task167_quality_gate_failure(&exact_recall_lines).is_some();
@@ -12267,16 +12362,19 @@ mod tests {
     }
 
     #[test]
-    fn task167_exact_recall_uses_population_specific_calibrated_bands() {
-        assert_eq!(
-            task167_exact_recall_allowed_deficit("inserted_neighborhood").unwrap(),
-            0.015
-        );
-        assert_eq!(
-            task167_exact_recall_allowed_deficit("heldout").unwrap(),
-            0.007
-        );
-        assert!(task167_exact_recall_allowed_deficit("unknown").is_err());
+    fn task167_heldout_regression_gate_is_per_scale_and_baseline_relative() {
+        assert_eq!(task167_heldout_regression_gate(None, None).unwrap(), None);
+        let gate = task167_heldout_regression_gate(Some(0.008611), Some(0.000224))
+            .unwrap()
+            .expect("configured gate");
+        assert_eq!(gate.baseline_deficit, 0.008611);
+        assert_eq!(gate.physical_sample_sd, 0.000224);
+        assert!((gate.allowed_deficit - 0.009059).abs() < f64::EPSILON);
+
+        assert!(task167_heldout_regression_gate(Some(0.008611), None).is_err());
+        assert!(task167_heldout_regression_gate(None, Some(0.000224)).is_err());
+        assert!(task167_heldout_regression_gate(Some(-0.1), Some(0.0)).is_err());
+        assert!(task167_heldout_regression_gate(Some(0.1), Some(f64::NAN)).is_err());
     }
 
     #[test]
@@ -12310,7 +12408,7 @@ mod tests {
     fn task167_quality_gate_accepts_two_passing_population_rows() {
         let lines = vec![
             "physical_benchmark_post_insert_exact_recall population=inserted_neighborhood quality_gate_pass=true pass=true".to_owned(),
-            "physical_benchmark_post_insert_exact_recall population=heldout quality_gate_pass=true pass=true".to_owned(),
+            "physical_benchmark_post_insert_exact_recall population=heldout quality_gate_applied=false quality_gate_pass=not_applied disposition=disclosed_baseline_characteristic pass=true".to_owned(),
         ];
         assert!(task167_quality_gate_failure(&lines).is_none());
         enforce_task167_quality_gate(&lines).unwrap();

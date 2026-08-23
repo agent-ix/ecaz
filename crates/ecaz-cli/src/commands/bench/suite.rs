@@ -654,6 +654,13 @@ struct DistannLocalMultinodeStep {
     benchmark_warmup_iterations: Option<u32>,
     #[serde(default)]
     benchmark_parity_queries: Option<u32>,
+    /// Per-scale shipped-default heldout deficit used by Task 167's
+    /// baseline-relative regression gate. Must be paired with the physical
+    /// sample SD; omit both to record a baseline observation.
+    #[serde(default)]
+    task167_heldout_baseline_deficit: Option<f64>,
+    #[serde(default)]
+    task167_heldout_physical_sample_sd: Option<f64>,
     #[serde(default)]
     benchmark_backend_batch_size: Option<u32>,
     /// Run the Task 200 repeated coverage-call RSS regression in one backend
@@ -4549,6 +4556,36 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                match (
+                    step.task167_heldout_baseline_deficit,
+                    step.task167_heldout_physical_sample_sd,
+                ) {
+                    (None, None) => {}
+                    (Some(baseline), Some(sample_sd)) => {
+                        if !step.physical_benchmark {
+                            bail!(
+                                "distann-local-multinode step {:?} Task 167 heldout regression gate requires physical_benchmark",
+                                step.name
+                            )
+                        }
+                        if !baseline.is_finite() || baseline < 0.0 {
+                            bail!(
+                                "distann-local-multinode step {:?} Task 167 heldout baseline deficit must be finite and non-negative",
+                                step.name
+                            )
+                        }
+                        if !sample_sd.is_finite() || sample_sd < 0.0 {
+                            bail!(
+                                "distann-local-multinode step {:?} Task 167 heldout physical sample SD must be finite and non-negative",
+                                step.name
+                            )
+                        }
+                    }
+                    _ => bail!(
+                        "distann-local-multinode step {:?} Task 167 heldout regression gate requires both baseline deficit and physical sample SD",
+                        step.name
+                    ),
+                }
                 if step
                     .benchmark_concurrency_sweep
                     .iter()
@@ -5800,6 +5837,20 @@ fn expand_distann_local_multinode(
     );
     push_opt_arg(
         &mut args,
+        "--task167-heldout-baseline-deficit",
+        step.task167_heldout_baseline_deficit
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--task167-heldout-physical-sample-sd",
+        step.task167_heldout_physical_sample_sd
+            .map(|v| v.to_string())
+            .as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
         "--benchmark-backend-batch-size",
         step.benchmark_backend_batch_size
             .map(|v| v.to_string())
@@ -6918,7 +6969,7 @@ psql header noise\n\
     fn distann_task167_quality_and_insert_metrics_are_structured() {
         let raw = "\
 [distann-multicluster] physical_benchmark_recall_instrument_calibration scale=50k ordinary_distinct_recall=0.954500 exact_scorer_distinct_recall=0.954500 absolute_delta=0.000000 pass=true\n\
-[distann-multicluster] physical_benchmark_insert_throughput_ab scale=50k physical_insert_mode=candidate_default_established_tie_priority physical_rows_per_second=0.224 control_rows_per_second=2.000 pass=true\n\
+[distann-multicluster] physical_benchmark_insert_throughput_ab scale=50k physical_insert_mode=shipped_default_established_tie_priority physical_rows_per_second=0.224 control_rows_per_second=2.000 pass=true\n\
 [distann-multicluster] physical_benchmark_append_when_room_ab scale=50k append_enabled_over_disabled=1.003392 pass=true\n\
 [distann-multicluster] physical_benchmark_backlink_strategy_ab scale=50k robust_prune_all_over_shipped=1.003392 pass=true\n\
 [distann-multicluster] physical_benchmark_insert_work scale=50k metric=backlink_amendments inserts=160 value=5120 pass=true\n\
@@ -7445,6 +7496,41 @@ psql header noise\n\
                 "artifacts/cap-256/distann-multinode-summary.log"
             )]
         );
+    }
+
+    #[test]
+    fn distann_task167_heldout_regression_gate_is_step_local_and_paired() {
+        let raw = r#"{
+          "name": "task167-heldout-gate",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "physical-50k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_50k",
+            "task167_heldout_baseline_deficit": 0.008611,
+            "task167_heldout_physical_sample_sd": 0.000224
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .windows(2)
+            .any(|window| { window == ["--task167-heldout-baseline-deficit", "0.008611"] }));
+        assert!(command
+            .windows(2)
+            .any(|window| { window == ["--task167-heldout-physical-sample-sd", "0.000224"] }));
+
+        let missing_sd = raw.replace(
+            ",\n            \"task167_heldout_physical_sample_sd\": 0.000224",
+            "",
+        );
+        let config: SuiteConfig = serde_json::from_str(&missing_sd).expect("suite parses");
+        let error = validate_config(&config).expect_err("unpaired baseline must fail");
+        assert!(error.to_string().contains("requires both baseline deficit"));
     }
 
     #[test]
