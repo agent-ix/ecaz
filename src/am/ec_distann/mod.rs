@@ -60,6 +60,7 @@ mod manifest_v2;
 mod node_registry;
 mod options;
 pub mod page;
+mod payload_projection;
 mod participant_lifecycle;
 pub(crate) mod placement;
 pub(crate) mod quantizer;

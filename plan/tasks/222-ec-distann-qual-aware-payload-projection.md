@@ -50,22 +50,32 @@ columns cannot be reconstructed correctly by all-column shipping.
 
 - Before deriving a mask, capture `EXPLAIN (VERBOSE)` and emitted tree/attnum
   evidence for the standard latency query. Record its actual executor target
-  list, including resjunk entries, rather than inferring requirements from the
-  visible SQL projection.
-- Derive the mask at plan time in `plan_custom_path`, before serializing it into
-  the `CustomScan`. The complete derivation inputs are exactly:
-  `plan.targetlist` (the callback `tlist`), `plan.qual` (the extracted callback
-  `clauses`), and `custom_exprs[0]` (the ORDER BY query-value expression).
-  There is no separate recheck tree: EPQ and multi-window qual rejection both
-  re-evaluate `plan.qual`. Assert that `custom_exprs[0]` is Const/Param-only and
-  contains no relation Var; fail closed to all columns if that invariant ever
-  changes.
+  list, including the ordering expression injected above the CustomPath, rather
+  than inferring requirements from the visible SQL projection. PG18 can invoke
+  `plan_custom_path` with a NIL callback `tlist` under `CP_IGNORE_TLIST`, then
+  replace the projection-capable CustomScan's `plan.targetlist` afterward; the
+  callback `tlist` is therefore not the final derivation surface.
+- Split derivation at the two points that hold the required facts. At plan time
+  in `plan_custom_path`, mechanically prove or reject the ordering-only
+  exemption from the original Query/pathkeys context and serialize only that
+  proof (indexed heap attnum plus distance operator) into `custom_private`.
+  At `begin_custom_scan`, derive the typed mask from the now-final three trees:
+  `plan.targetlist`, `plan.qual`, and `custom_exprs[0]` (the ORDER BY query-value
+  expression), applying the serialized exemption only to the one matching
+  injected ordering expression. When the exact mask omits that vector, replace
+  the proven-unused expression with a typed NULL and rebuild the scan projection
+  during `BeginCustomScan`; merely leaving the expression to evaluate against
+  an unshipped NULL vector is unsafe. There is no separate recheck tree: EPQ and
+  multi-window qual rejection both re-evaluate `plan.qual`. Assert that
+  `custom_exprs[0]` is Const/Param-only and contains no relation Var; fail
+  closed to all columns if that invariant ever changes.
 - Export the result as a typed reusable API, not logic embedded in
   `build_payload_metadata`: `Exact(attnums)` versus
   `AllColumns(FallbackReason)`. Preserve the distinction even when an exact
   wide query names every live attribute, because Tasks 223 and 229 may consume
-  only a proved-exact mask. Serialize the variant and sorted, deduplicated heap
-  attnums into the plan so executor startup only resolves column I/O metadata.
+  only a proved-exact mask. Retain the sorted, deduplicated runtime value in
+  executor state so payload metadata and future Task 223/229 selectors consume
+  the same typed result rather than re-deriving it.
 - Include every positive base-relation Var in non-ordering target expressions
   and `plan.qual`. A whole-row Var (`varattno == 0`) or any tree/Var whose use
   cannot be proved selects `AllColumns(reason)`. A relation system-column Var
