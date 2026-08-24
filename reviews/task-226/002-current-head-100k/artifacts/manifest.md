@@ -1,6 +1,10 @@
 # Task 226 packet 002 artifact manifest
 
-- Source / runner SHA: `97fee7ced35bde4d7f6f768520ab9074b9ad37b6`
+- Current source / extension SHA for the next run:
+  `c85196ce841c1cbcea187dbefb3c10430fb611be`
+- Suite runner binary SHA: `b54f321a579ccdac1535aedc4e3387f78811b0af`
+  (the post-preregistration corrections touch extension/runtime code, not the
+  suite command expansion)
 - Task bucket / packet: `reviews/task-226/002-current-head-100k/`
 - Lane: three-owner physical PG18 release extension, fixed 4,096 persisted
   sharded head, `ec_real_100k`, 200 held-out queries, top-k 10, L32, H100,
@@ -30,6 +34,9 @@
 - `pre-guard-failure.md`: decisive pre-measurement baseline failure and the
   already-landed production guard cherry-picked as `c51e74c5e`; no fixture
   workaround or measurement claim.
+- `pre-snapshot-guard-failure.md`: published-topology, pre-measurement
+  PostgreSQL assertion diagnosis and the existing snapshot-ownership fix
+  cherry-picked as `c85196ce8`; no arm measurement or gate claim.
 
 No benchmark result is claimed yet. Successful suite manifests, normalized
 results, direct logs, compact summaries, decision lines, commands, timestamps,

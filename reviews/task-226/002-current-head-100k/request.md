@@ -31,3 +31,14 @@ publication: production retry code assumed the Task 167-only diagnostic table
 `c9c9628eb` was cherry-picked unchanged as `c51e74c5e`; the failed fixture was
 deleted and no test-only table workaround was introduced. See
 `artifacts/pre-guard-failure.md`. No BW8 result is claimed from that launch.
+
+The next fresh launch reached valid published topology and passed the serving
+smoke, then PostgreSQL aborted the first benchmark-table ANN query on the
+`subtrans.c:169` visibility assertion. Stack mapping identified an existing
+snapshot-lifetime defect: traversal retained a raw refreshed-snapshot pointer
+after its registration guard dropped. Existing upstream correction
+`15f7fcf5f` was cherry-picked unchanged as `c85196ce8`; it keeps retry-refreshed
+snapshots owned across traversal and does not replace the normal query
+snapshot on an ordinary successful hop. See
+`artifacts/pre-snapshot-guard-failure.md`. This launch also produced no arm
+measurement or gate value, and its stopped 6.6 GB fixture was removed.
