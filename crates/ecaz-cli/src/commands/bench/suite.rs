@@ -635,6 +635,10 @@ struct DistannLocalMultinodeStep {
     /// Production benchmark suites must leave this false.
     #[serde(default)]
     allow_debug_extension: bool,
+    /// Route extension-owned coordinator-to-owner traffic through the
+    /// fixture's verify-full mutual-TLS identity.
+    #[serde(default)]
+    secure_remote_transport: bool,
     #[serde(default)]
     pg: Option<u16>,
     #[serde(default)]
@@ -4077,6 +4081,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.secure_remote_transport && step.reuse_fixture {
+                    bail!(
+                        "distann-local-multinode step {:?} cannot combine secure_remote_transport with reuse_fixture",
+                        step.name
+                    )
+                }
                 if step.build_shards.is_some_and(|value| value > 4096) {
                     bail!(
                         "distann-local-multinode step {:?} must set build_shards in 0..=4096",
@@ -5659,6 +5669,9 @@ fn expand_distann_local_multinode(
     }
     if step.allow_debug_extension {
         args.push("--allow-debug-extension".into());
+    }
+    if step.secure_remote_transport {
+        args.push("--secure-remote-transport".into());
     }
     if step.physical_benchmark {
         args.push("--physical-benchmark".into());
@@ -7350,6 +7363,25 @@ psql header noise\n\
                 "artifacts/cap-256/distann-multinode-summary.log"
             )]
         );
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_secure_remote_transport() {
+        let raw = r#"{
+          "name": "distann-secure-transport",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "tls",
+            "secure_remote_transport": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command.contains(&"--secure-remote-transport".into()));
     }
 
     #[test]

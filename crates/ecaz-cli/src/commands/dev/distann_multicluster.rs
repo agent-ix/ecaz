@@ -11,7 +11,10 @@ use ecaz_fault_injection::ProviderMode;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::fs;
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{
@@ -300,6 +303,11 @@ pub struct LocalMultinodePg18Args {
     /// post-publish validation lane.
     #[arg(long, default_value_t = false)]
     pub read_rpc_fault_matrix: bool,
+    /// Force every extension-owned coordinator-to-owner connection through a
+    /// fixture-local verify-full mutual-TLS identity. Operator/setup traffic
+    /// remains an explicit loopback-only plaintext control path.
+    #[arg(long, default_value_t = false)]
+    pub secure_remote_transport: bool,
     /// Skip the expensive concurrent insert/query drill after the benchmark
     /// matrix. Used for large-scale measurement arms when the dedicated
     /// bounded concurrency gate is run separately.
@@ -375,6 +383,15 @@ struct Node {
     port: u16,
     data_dir: PathBuf,
     log_file: PathBuf,
+}
+
+#[derive(Debug)]
+struct SecureRemoteTransportFixture {
+    ca_cert: PathBuf,
+    client_cert: PathBuf,
+    client_key: PathBuf,
+    server_cert: PathBuf,
+    server_key: PathBuf,
 }
 
 #[derive(Debug)]
@@ -556,6 +573,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.read_rpc_fault_matrix && (args.physical_benchmark || args.reuse_fixture) {
         bail!("--read-rpc-fault-matrix cannot be combined with benchmark or reused-fixture mode");
+    }
+    if args.secure_remote_transport && mode != FixtureMode::Physical {
+        bail!("--secure-remote-transport requires the physical fixture");
+    }
+    if args.secure_remote_transport && args.reuse_fixture {
+        bail!("--secure-remote-transport cannot reuse a prior fixture");
     }
     if args.remote_socket_fault.is_some() && !args.coordinator_outside_roster && args.nodes < 2 {
         bail!("--remote-socket-fault requires at least one remote owner");
@@ -875,6 +898,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     };
     let pg_ctl = pgbin.join("pg_ctl");
     let psql = pgbin.join("psql");
+    if args.secure_remote_transport {
+        require_ssl_enabled_postgres(&pgbin).await?;
+    }
 
     let run_dir = args
         .run_dir
@@ -946,6 +972,11 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             log_file: log_dir.join(format!("node{}-postgres.log", k + 1)),
         })
         .collect();
+    let secure_transport_fixture = if args.secure_remote_transport {
+        Some(prepare_secure_remote_transport_fixture(&run_dir).await?)
+    } else {
+        None
+    };
     let remote_fault_marker = log_dir.join("distann-remote-socket-fault.marker");
     let remote_fault_arm = log_dir.join("distann-remote-socket-fault.arm");
     if args.remote_socket_fault.is_some() {
@@ -966,7 +997,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     crate::ecaz_println!("[distann-multicluster] repo={}", repo_root.display());
     crate::ecaz_println!("[distann-multicluster] pgbin={}", pgbin.display());
     crate::ecaz_println!(
-        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} graph_degree={} build_shards={} head_index_cap={}",
+        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} secure_remote_transport={} base_port={} rows={} dim={} graph_degree={} build_shards={} head_index_cap={}",
         match mode {
             FixtureMode::Physical => "physical",
             FixtureMode::ReplicatedServingControl => "replicated-serving-control",
@@ -974,6 +1005,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         args.nodes,
         instance_count,
         args.coordinator_outside_roster,
+        args.secure_remote_transport,
         args.base_port,
         args.rows,
         args.dim,
@@ -1018,7 +1050,16 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         run_status(command)
             .await
             .wrap_err_with(|| format!("initdb node {}", node.node_id))?;
+        if let Some(fixture) = secure_transport_fixture.as_ref() {
+            configure_node_secure_transport(node, fixture)
+                .wrap_err_with(|| format!("configuring TLS on node {}", node.node_id))?;
+        }
     }
+    let secure_transport_startup_options = if secure_transport_fixture.is_some() {
+        " -c ssl=on -c ssl_ca_file=root.crt"
+    } else {
+        ""
+    };
     for node in &nodes {
         let mut command = Command::new(&pg_ctl);
         command
@@ -1030,20 +1071,24 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             .arg("-o")
             .arg(format!(
                 "-p {} -c listen_addresses=127.0.0.1 -c unix_socket_directories='' \
-                 -c shared_preload_libraries=ecaz -c max_prepared_transactions=32{}",
-                node.port, physical_benchmark_startup_options
+                 -c shared_preload_libraries=ecaz -c max_prepared_transactions=32{}{}",
+                node.port, physical_benchmark_startup_options, secure_transport_startup_options
             ))
             .arg("start")
             .stdout(Stdio::null())
             .stderr(Stdio::inherit());
         for target in &nodes {
+            let base_remote_conninfo = match secure_transport_fixture.as_ref() {
+                Some(fixture) => secure_remote_conninfo(target.port, fixture)?,
+                None => conninfo(&socket_dir, target.port),
+            };
             let remote_conninfo = if args.physical_benchmark {
                 format!(
                     "{} options=-cstatement_timeout=3600000",
-                    conninfo(&socket_dir, target.port)
+                    base_remote_conninfo
                 )
             } else {
-                conninfo(&socket_dir, target.port)
+                base_remote_conninfo
             };
             command.env(
                 format!("EC_SPIRE_REMOTE_CONNINFO_DISTANN_NODE_{}", target.node_id),
@@ -1088,9 +1133,31 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
                 }
             }
         }
-        run_status(command)
+        match command.status().await {
+            Ok(status) if status.success() => {}
+            Ok(_) => bail!(
+                "start node {} failed; examine {}",
+                node.node_id,
+                node.log_file.display()
+            ),
+            Err(_) => bail!("could not launch pg_ctl for node {}", node.node_id),
+        }
+    }
+
+    if secure_transport_fixture.is_some() {
+        for node in &nodes {
+            run_psql_file(
+                &psql,
+                &socket_dir,
+                node.port,
+                "CREATE ROLE distann_rpc LOGIN SUPERUSER",
+            )
             .await
-            .wrap_err_with(|| format!("start node {}", node.node_id))?;
+            .wrap_err_with(|| format!("creating TLS client role on node {}", node.node_id))?;
+        }
+        crate::ecaz_println!(
+            "[distann-multicluster] secure_remote_transport status=ready tls=verify-full client_auth=certificate plaintext_role=reject"
+        );
     }
 
     let result = async {
@@ -1163,6 +1230,197 @@ fn conninfo(_socket_dir: &Path, port: u16) -> String {
         "host=127.0.0.1 port={} dbname=postgres user=postgres sslmode=disable",
         port,
     )
+}
+
+fn quote_conninfo_path(path: &Path) -> Result<String> {
+    let value = path
+        .to_str()
+        .ok_or_else(|| eyre!("TLS fixture path is not valid UTF-8"))?;
+    Ok(format!(
+        "'{}'",
+        value.replace('\\', "\\\\").replace('\'', "\\'")
+    ))
+}
+
+fn secure_remote_conninfo(
+    port: u16,
+    fixture: &SecureRemoteTransportFixture,
+) -> Result<String> {
+    Ok(format!(
+        "host=127.0.0.1 port={port} dbname=postgres user=distann_rpc \
+         sslmode=verify-full sslrootcert={} sslcert={} sslkey={} channel_binding=prefer",
+        quote_conninfo_path(&fixture.ca_cert)?,
+        quote_conninfo_path(&fixture.client_cert)?,
+        quote_conninfo_path(&fixture.client_key)?,
+    ))
+}
+
+async fn run_openssl(label: &str, args: Vec<OsString>) -> Result<()> {
+    let mut command = Command::new("openssl");
+    command
+        .args(args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    run_status(command)
+        .await
+        .wrap_err_with(|| format!("generating Task 236 TLS fixture {label}"))
+}
+
+async fn require_ssl_enabled_postgres(pgbin: &Path) -> Result<()> {
+    let output = Command::new(pgbin.join("pg_config"))
+        .arg("--configure")
+        .output()
+        .await
+        .wrap_err("checking PG18 TLS build support")?;
+    if !output.status.success()
+        || !String::from_utf8_lossy(&output.stdout).contains("--with-openssl")
+    {
+        bail!(
+            "--secure-remote-transport requires a PG18 build configured with --with-openssl"
+        );
+    }
+    Ok(())
+}
+
+async fn generate_leaf_certificate(
+    tls_dir: &Path,
+    stem: &str,
+    subject: &str,
+    extended_key_usage: &str,
+    subject_alt_name: Option<&str>,
+    ca_cert: &Path,
+    ca_key: &Path,
+) -> Result<(PathBuf, PathBuf)> {
+    let key = tls_dir.join(format!("{stem}.key"));
+    let csr = tls_dir.join(format!("{stem}.csr"));
+    let cert = tls_dir.join(format!("{stem}.crt"));
+    let extensions = tls_dir.join(format!("{stem}.ext"));
+    let mut extension_body = format!(
+        "basicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage={extended_key_usage}\n"
+    );
+    if let Some(subject_alt_name) = subject_alt_name {
+        extension_body.push_str(&format!("subjectAltName={subject_alt_name}\n"));
+    }
+    fs::write(&extensions, extension_body)?;
+    run_openssl(
+        &format!("{stem} request"),
+        vec![
+            "req".into(),
+            "-newkey".into(),
+            "rsa:2048".into(),
+            "-sha256".into(),
+            "-nodes".into(),
+            "-subj".into(),
+            subject.into(),
+            "-keyout".into(),
+            key.as_os_str().to_owned(),
+            "-out".into(),
+            csr.as_os_str().to_owned(),
+        ],
+    )
+    .await?;
+    run_openssl(
+        &format!("{stem} certificate"),
+        vec![
+            "x509".into(),
+            "-req".into(),
+            "-sha256".into(),
+            "-days".into(),
+            "2".into(),
+            "-in".into(),
+            csr.as_os_str().to_owned(),
+            "-CA".into(),
+            ca_cert.as_os_str().to_owned(),
+            "-CAkey".into(),
+            ca_key.as_os_str().to_owned(),
+            "-CAcreateserial".into(),
+            "-extfile".into(),
+            extensions.as_os_str().to_owned(),
+            "-out".into(),
+            cert.as_os_str().to_owned(),
+        ],
+    )
+    .await?;
+    #[cfg(unix)]
+    fs::set_permissions(&key, fs::Permissions::from_mode(0o600))?;
+    Ok((cert, key))
+}
+
+async fn prepare_secure_remote_transport_fixture(
+    run_dir: &Path,
+) -> Result<SecureRemoteTransportFixture> {
+    let tls_dir = run_dir.join("task236-tls");
+    fs::create_dir_all(&tls_dir)?;
+    let ca_cert = tls_dir.join("ca.crt");
+    let ca_key = tls_dir.join("ca.key");
+    run_openssl(
+        "certificate authority",
+        vec![
+            "req".into(),
+            "-x509".into(),
+            "-newkey".into(),
+            "rsa:2048".into(),
+            "-sha256".into(),
+            "-nodes".into(),
+            "-days".into(),
+            "2".into(),
+            "-subj".into(),
+            "/CN=ECAZ Task 236 fixture CA".into(),
+            "-keyout".into(),
+            ca_key.as_os_str().to_owned(),
+            "-out".into(),
+            ca_cert.as_os_str().to_owned(),
+        ],
+    )
+    .await?;
+    #[cfg(unix)]
+    fs::set_permissions(&ca_key, fs::Permissions::from_mode(0o600))?;
+    let (server_cert, server_key) = generate_leaf_certificate(
+        &tls_dir,
+        "server",
+        "/CN=127.0.0.1",
+        "serverAuth",
+        Some("IP:127.0.0.1"),
+        &ca_cert,
+        &ca_key,
+    )
+    .await?;
+    let (client_cert, client_key) = generate_leaf_certificate(
+        &tls_dir,
+        "distann-rpc-client",
+        "/CN=distann_rpc",
+        "clientAuth",
+        None,
+        &ca_cert,
+        &ca_key,
+    )
+    .await?;
+    Ok(SecureRemoteTransportFixture {
+        ca_cert,
+        client_cert,
+        client_key,
+        server_cert,
+        server_key,
+    })
+}
+
+fn configure_node_secure_transport(
+    node: &Node,
+    fixture: &SecureRemoteTransportFixture,
+) -> Result<()> {
+    fs::copy(&fixture.server_cert, node.data_dir.join("server.crt"))?;
+    let server_key = node.data_dir.join("server.key");
+    fs::copy(&fixture.server_key, &server_key)?;
+    fs::copy(&fixture.ca_cert, node.data_dir.join("root.crt"))?;
+    #[cfg(unix)]
+    fs::set_permissions(&server_key, fs::Permissions::from_mode(0o600))?;
+    fs::write(
+        node.data_dir.join("pg_hba.conf"),
+        "hostssl all distann_rpc 127.0.0.1/32 cert\n\
+         hostnossl all distann_rpc 127.0.0.1/32 reject\n\
+         host all postgres 127.0.0.1/32 trust\n",
+    )?;
+    Ok(())
 }
 
 /// The identical, deterministic corpus + index setup run on every node.
@@ -11887,6 +12145,34 @@ async fn capture_psql_allow_error(psql: &Path, socket_dir: &Path, port: u16, sql
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secure_remote_conninfo_requires_verify_full_and_client_identity() {
+        let fixture = SecureRemoteTransportFixture {
+            ca_cert: "/cluster/tls/ca.crt".into(),
+            client_cert: "/cluster/tls/client.crt".into(),
+            client_key: "/cluster/tls/client.key".into(),
+            server_cert: "/cluster/tls/server.crt".into(),
+            server_key: "/cluster/tls/server.key".into(),
+        };
+        let rendered = secure_remote_conninfo(39710, &fixture).unwrap();
+        assert!(rendered.contains("host=127.0.0.1 port=39710"));
+        assert!(rendered.contains("user=distann_rpc"));
+        assert!(rendered.contains("sslmode=verify-full"));
+        assert!(rendered.contains("sslrootcert='/cluster/tls/ca.crt'"));
+        assert!(rendered.contains("sslcert='/cluster/tls/client.crt'"));
+        assert!(rendered.contains("sslkey='/cluster/tls/client.key'"));
+        assert!(rendered.contains("channel_binding=prefer"));
+        assert!(!rendered.contains("sslmode=disable"));
+    }
+
+    #[test]
+    fn conninfo_path_quoting_escapes_secret_path_delimiters() {
+        assert_eq!(
+            quote_conninfo_path(Path::new("/cluster/ca's\\root.crt")).unwrap(),
+            "'/cluster/ca\\'s\\\\root.crt'"
+        );
+    }
 
     fn provenance(
         node_id: u32,
