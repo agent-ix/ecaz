@@ -1,7 +1,9 @@
 # Task 236: ec_distann Secure Transport and Secret Resolution
 
-Status: **proposed — production security hardening before Task 228**
-(2026-08-23). Priority: P0 transport security.
+Status: **plan and connection inventory complete; packet 001 review-open;
+shared connector implementation pending** (2026-08-24; packet:
+`reviews/task-236/001-plan-and-connection-inventory/`). Priority: P0 transport
+security before Task 228.
 
 ## Why
 
