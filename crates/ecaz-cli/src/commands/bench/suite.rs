@@ -667,6 +667,10 @@ struct DistannLocalMultinodeStep {
     /// the configured evaluation query slice.
     #[serde(default)]
     query_trace: bool,
+    /// Task 227 persisted-graph structure and seed-reachability diagnostic for
+    /// physical owners plus the monolithic control.
+    #[serde(default)]
+    graph_diagnostic: bool,
     /// Task 185 feature-only isolated attribution for every returned seed
     /// position. This is intentionally more expensive than gateway_trace.
     #[serde(default)]
@@ -4593,6 +4597,18 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.graph_diagnostic && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} graph_diagnostic requires physical_benchmark",
+                        step.name
+                    )
+                }
+                if step.graph_diagnostic && step.skip_single_control {
+                    bail!(
+                        "distann-local-multinode step {:?} graph_diagnostic requires the monolithic control",
+                        step.name
+                    )
+                }
                 if step.gateway_isolated_trace && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} gateway_isolated_trace requires physical_benchmark",
@@ -4984,6 +5000,9 @@ impl SuiteStep {
                                     dir.join(format!("physical-{variant}-query-trace.json"))
                                 }));
                             }
+                            if step.graph_diagnostic {
+                                artifacts.push(dir.join("physical-graph-diagnostic.json"));
+                            }
                             if step.gateway_isolated_trace {
                                 let variants = if step.benchmark_seed_variants.is_empty() {
                                     vec!["production".to_owned()]
@@ -5082,6 +5101,9 @@ impl SuiteStep {
                                 "physical-{variant}-gateway-head-candidate-trace.json"
                             ))
                         }));
+                    }
+                    if step.graph_diagnostic {
+                        artifacts.push(dir.join("physical-graph-diagnostic.json"));
                     }
                 }
                 artifacts
@@ -5732,6 +5754,9 @@ fn expand_distann_local_multinode(
     }
     if step.query_trace {
         args.push("--query-trace".into());
+    }
+    if step.graph_diagnostic {
+        args.push("--graph-diagnostic".into());
     }
     if step.gateway_isolated_trace {
         args.push("--gateway-isolated-trace".into());
@@ -8206,6 +8231,54 @@ psql header noise\n\
         assert!(error
             .to_string()
             .contains("query_trace requires physical_benchmark"));
+    }
+
+    #[test]
+    fn distann_graph_diagnostic_is_suite_addressable() {
+        let raw = r#"{
+          "name": "distann-graph-diagnostic",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "graph-100k",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_100k",
+            "artifact_dir": "reviews/task-227/004-graph-diagnostics/artifacts/run",
+            "graph_diagnostic": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .iter()
+            .any(|argument| argument == "--graph-diagnostic"));
+        assert!(config.steps[0]
+            .expected_artifacts()
+            .iter()
+            .any(|artifact| artifact.ends_with("physical-graph-diagnostic.json")));
+    }
+
+    #[test]
+    fn distann_graph_diagnostic_requires_monolithic_control() {
+        let raw = r#"{
+          "name": "distann-graph-diagnostic-invalid",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "graph-without-control",
+            "physical_benchmark": true,
+            "graph_diagnostic": true,
+            "skip_single_control": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("graph diagnostic needs control");
+        assert!(error
+            .to_string()
+            .contains("graph_diagnostic requires the monolithic control"));
     }
 
     #[test]
