@@ -8444,6 +8444,46 @@ fn benchmark_log_value(line: &str, key: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+fn reuse_provenance_runtime_shape(
+    benchmark_seed_variants: &[String],
+    seed_strategy: Option<&str>,
+    head_search_width: Option<u32>,
+    head_seed_count: Option<u32>,
+    neighbor_score_mode: Option<&str>,
+    beam_width: u32,
+) -> Result<(String, u32, u32, String)> {
+    let matrix_provenance = if benchmark_seed_variants.is_empty() {
+        None
+    } else {
+        parse_benchmark_seed_variants(benchmark_seed_variants)?
+            .into_iter()
+            .next()
+    };
+    let seed = matrix_provenance
+        .as_ref()
+        .map(|variant| variant.strategy.as_str())
+        .or(seed_strategy)
+        .unwrap_or("head_sample_exact")
+        .to_owned();
+    let head_width = matrix_provenance
+        .as_ref()
+        .map(|variant| variant.head_search_width)
+        .or(head_search_width)
+        .unwrap_or((beam_width * 2).max(32));
+    let head_count = matrix_provenance
+        .as_ref()
+        .map(|variant| variant.head_seed_count)
+        .or(head_seed_count)
+        .unwrap_or(head_width);
+    let neighbor = matrix_provenance
+        .as_ref()
+        .map(|variant| variant.neighbor_score_mode.as_str())
+        .or(neighbor_score_mode)
+        .unwrap_or("rabitq")
+        .to_owned();
+    Ok((seed, head_width, head_count, neighbor))
+}
+
 fn distann_vec_id_from_source_identity(identity: &[u8; 16]) -> i64 {
     let low = u64::from_le_bytes(identity[..8].try_into().expect("identity low bytes"));
     let high = u64::from_le_bytes(identity[8..].try_into().expect("identity high bytes"));
@@ -8538,10 +8578,15 @@ async fn validate_reused_physical_fixture(
         fs::read_to_string(corpus_path)?.lines().count() as i64
     };
     let beam_width = args.beam_width.unwrap_or(4);
-    let expected_seed = args.seed_strategy.as_deref().unwrap_or("head_sample_exact");
-    let expected_head_width = args.head_search_width.unwrap_or((beam_width * 2).max(32));
-    let expected_head_count = args.head_seed_count.unwrap_or(expected_head_width);
-    let expected_neighbor = args.neighbor_score_mode.as_deref().unwrap_or("rabitq");
+    let (expected_seed, expected_head_width, expected_head_count, expected_neighbor) =
+        reuse_provenance_runtime_shape(
+            &args.benchmark_seed_variants,
+            args.seed_strategy.as_deref(),
+            args.head_search_width,
+            args.head_seed_count,
+            args.neighbor_score_mode.as_deref(),
+            beam_width,
+        )?;
     let expected_head_cap = args.head_index_cap.to_string();
     let expected_head_width = expected_head_width.to_string();
     let expected_head_count = expected_head_count.to_string();
@@ -8585,7 +8630,7 @@ async fn validate_reused_physical_fixture(
         ),
         (
             "seed_strategy",
-            expected_seed,
+            expected_seed.as_str(),
             benchmark_log_value(build, "seed_strategy"),
         ),
         (
@@ -8600,7 +8645,7 @@ async fn validate_reused_physical_fixture(
         ),
         (
             "neighbor_score_mode",
-            expected_neighbor,
+            expected_neighbor.as_str(),
             benchmark_log_value(build, "neighbor_score_mode"),
         ),
         (
@@ -13133,6 +13178,27 @@ mod tests {
             parse_benchmark_seed_variants(&["eager:persisted_head:32:32:rabitq:0".to_owned()])
                 .expect("explicit eager variant parses");
         assert_eq!(eager[0].materialization_batch_size, 0);
+    }
+
+    #[test]
+    fn reuse_provenance_uses_the_first_registered_matrix_variant() {
+        let variants = [
+            "control:persisted_head:32:31:rabitq:10".to_owned(),
+            "oracle:owner_scan:64:63:exact_neighbor:10".to_owned(),
+        ];
+        let observed = reuse_provenance_runtime_shape(
+            &variants,
+            Some("owner_scan"),
+            Some(99),
+            Some(98),
+            Some("exact_neighbor"),
+            4,
+        )
+        .expect("matrix provenance resolves");
+        assert_eq!(
+            observed,
+            ("persisted_head".to_owned(), 32, 31, "rabitq".to_owned())
+        );
     }
 
     #[test]
