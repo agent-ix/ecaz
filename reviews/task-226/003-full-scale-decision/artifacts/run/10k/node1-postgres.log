@@ -1,0 +1,15 @@
+2026-08-24 02:19:03.309 PDT [1090344] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 02:19:03.320 PDT [1090344] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 02:19:03.320 PDT [1090344] LOG:  listening on IPv4 address "127.0.0.1", port 43120
+2026-08-24 02:19:03.329 PDT [1090350] LOG:  database system was shut down at 2026-08-24 02:19:00 PDT
+2026-08-24 02:19:03.340 PDT [1090344] LOG:  database system is ready to accept connections
+2026-08-24 02:21:12.054 PDT [1093064] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-08-24 02:21:12.817 PDT [1093154] ERROR:  ec_distann physical aminsert failed: EC_FAULT_INJECTED: physical insert failed after graph append before backlinks
+2026-08-24 02:21:12.817 PDT [1093154] STATEMENT:  SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,'00000000-0000-4000-8000-000000000501',(SELECT array_agg((sin(501 * 0.017 * (d + 1)) + cos(501 * 0.0031 * (d + 1)))::real)FROM generate_series(0, 16 - 1) d), encode_to_ecvector((SELECT array_agg((sin(501 * 0.017 * (d + 1)) + cos(501 * 0.0031 * (d + 1)))::real) FROM generate_series(0, 16 - 1) AS d), 4, 42));
+2026-08-24 02:21:46.363 PDT [1090344] LOG:  received fast shutdown request
+2026-08-24 02:21:46.368 PDT [1090344] LOG:  aborting any active transactions
+2026-08-24 02:21:46.369 PDT [1090344] LOG:  background worker "logical replication launcher" (PID 1090353) exited with exit code 1
+2026-08-24 02:21:46.387 PDT [1090348] LOG:  shutting down
+2026-08-24 02:21:46.392 PDT [1090348] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 02:21:46.806 PDT [1090348] LOG:  checkpoint complete: wrote 15086 buffers (92.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 13 recycled; write=0.078 s, sync=0.282 s, total=0.419 s; sync files=315, longest=0.097 s, average=0.001 s; distance=211993 kB, estimate=211993 kB; lsn=0/E65AB50, redo lsn=0/E65AB50
+2026-08-24 02:21:46.830 PDT [1090344] LOG:  database system is shut down
