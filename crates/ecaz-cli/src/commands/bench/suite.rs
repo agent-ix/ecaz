@@ -663,6 +663,10 @@ struct DistannLocalMultinodeStep {
     /// Task 185 feature-only physical seed gateway/basin provenance.
     #[serde(default)]
     gateway_trace: bool,
+    /// Task 227 bounded per-query traversal/frontier/exact-result trace over
+    /// the configured evaluation query slice.
+    #[serde(default)]
+    query_trace: bool,
     /// Task 185 feature-only isolated attribution for every returned seed
     /// position. This is intentionally more expensive than gateway_trace.
     #[serde(default)]
@@ -4583,6 +4587,12 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.query_trace && !step.physical_benchmark {
+                    bail!(
+                        "distann-local-multinode step {:?} query_trace requires physical_benchmark",
+                        step.name
+                    )
+                }
                 if step.gateway_isolated_trace && !step.physical_benchmark {
                     bail!(
                         "distann-local-multinode step {:?} gateway_isolated_trace requires physical_benchmark",
@@ -4737,8 +4747,7 @@ impl SuiteStep {
                                         && candidate.owner_payload_plan_cache
                                             == control.owner_payload_plan_cache
                                         && candidate.typed_locator == control.typed_locator
-                                        && candidate.traversal_replica
-                                            == control.traversal_replica
+                                        && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
                         });
@@ -4753,8 +4762,7 @@ impl SuiteStep {
                                             == control.owner_payload_plan_cache
                                         && candidate.typed_locator == control.typed_locator
                                         && candidate.packed_payload == control.packed_payload
-                                        && candidate.traversal_replica
-                                            == control.traversal_replica
+                                        && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
                         });
@@ -4963,6 +4971,19 @@ impl SuiteStep {
                                     dir.join(format!("physical-{variant}-gateway-trace.json"))
                                 }));
                             }
+                            if step.query_trace {
+                                let variants = if step.benchmark_seed_variants.is_empty() {
+                                    vec!["production".to_owned()]
+                                } else {
+                                    step.benchmark_seed_variants
+                                        .iter()
+                                        .map(|variant| variant.name.clone())
+                                        .collect::<Vec<_>>()
+                                };
+                                artifacts.extend(variants.into_iter().map(|variant| {
+                                    dir.join(format!("physical-{variant}-query-trace.json"))
+                                }));
+                            }
                             if step.gateway_isolated_trace {
                                 let variants = if step.benchmark_seed_variants.is_empty() {
                                     vec!["production".to_owned()]
@@ -5000,55 +5021,68 @@ impl SuiteStep {
                 let mut artifacts: Vec<PathBuf> = step.log_file.iter().cloned().collect();
                 if let Some(dir) = &step.artifact_dir {
                     artifacts.push(dir.join("distann-multinode-summary.log"));
-                if step.physical_benchmark {
-                    artifacts.extend([
-                        dir.join("physical-recall.log"),
-                        dir.join("physical-latency.log"),
-                        dir.join("single-recall.log"),
-                        dir.join("single-latency.log"),
-                    ]);
-                }
-                if step.gateway_trace {
-                    let variants = if step.benchmark_seed_variants.is_empty() {
-                        vec!["production".to_owned()]
-                    } else {
-                        step.benchmark_seed_variants
-                            .iter()
-                            .map(|variant| variant.name.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    artifacts.extend(variants.into_iter().map(|variant| {
-                        dir.join(format!("physical-{variant}-gateway-trace.json"))
-                    }));
-                }
-                if step.gateway_isolated_trace {
-                    let variants = if step.benchmark_seed_variants.is_empty() {
-                        vec!["production".to_owned()]
-                    } else {
-                        step.benchmark_seed_variants
-                            .iter()
-                            .map(|variant| variant.name.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    artifacts.extend(variants.into_iter().map(|variant| {
-                        dir.join(format!("physical-{variant}-gateway-isolated-trace.json"))
-                    }));
-                }
-                if step.gateway_head_candidate_trace {
-                    let variants = if step.benchmark_seed_variants.is_empty() {
-                        vec!["production".to_owned()]
-                    } else {
-                        step.benchmark_seed_variants
-                            .iter()
-                            .map(|variant| variant.name.clone())
-                            .collect::<Vec<_>>()
-                    };
-                    artifacts.extend(variants.into_iter().map(|variant| {
-                        dir.join(format!(
-                            "physical-{variant}-gateway-head-candidate-trace.json"
-                        ))
-                    }));
-                }
+                    if step.physical_benchmark {
+                        artifacts.extend([
+                            dir.join("physical-recall.log"),
+                            dir.join("physical-latency.log"),
+                            dir.join("single-recall.log"),
+                            dir.join("single-latency.log"),
+                        ]);
+                    }
+                    if step.gateway_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!("physical-{variant}-gateway-trace.json"))
+                        }));
+                    }
+                    if step.query_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!("physical-{variant}-query-trace.json"))
+                        }));
+                    }
+                    if step.gateway_isolated_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!("physical-{variant}-gateway-isolated-trace.json"))
+                        }));
+                    }
+                    if step.gateway_head_candidate_trace {
+                        let variants = if step.benchmark_seed_variants.is_empty() {
+                            vec!["production".to_owned()]
+                        } else {
+                            step.benchmark_seed_variants
+                                .iter()
+                                .map(|variant| variant.name.clone())
+                                .collect::<Vec<_>>()
+                        };
+                        artifacts.extend(variants.into_iter().map(|variant| {
+                            dir.join(format!(
+                                "physical-{variant}-gateway-head-candidate-trace.json"
+                            ))
+                        }));
+                    }
                 }
                 artifacts
             }
@@ -5696,6 +5730,9 @@ fn expand_distann_local_multinode(
     if step.gateway_trace {
         args.push("--gateway-trace".into());
     }
+    if step.query_trace {
+        args.push("--query-trace".into());
+    }
     if step.gateway_isolated_trace {
         args.push("--gateway-isolated-trace".into());
     }
@@ -5765,7 +5802,9 @@ fn expand_distann_local_multinode(
     push_opt_arg(
         &mut args,
         "--benchmark-parity-queries",
-        step.benchmark_parity_queries.map(|v| v.to_string()).as_deref(),
+        step.benchmark_parity_queries
+            .map(|v| v.to_string())
+            .as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -7015,8 +7054,7 @@ psql header noise\n\
         }));
         assert!(rows.iter().any(|(metric, values)| {
             metric == "physical_benchmark_head_membership"
-                && values.get("head_construction").map(String::as_str)
-                    == Some("partition_union")
+                && values.get("head_construction").map(String::as_str) == Some("partition_union")
                 && values.get("sample_count").map(String::as_str) == Some("4096")
         }));
         assert!(rows.iter().any(|(metric, values)| {
@@ -8109,9 +8147,11 @@ psql header noise\n\
             "kind": "distann-local-multinode",
             "name": "diagnostic-rows-201-400",
             "physical_benchmark": true,
+            "artifact_dir": "reviews/task-227/003-query-trace/artifacts/run",
             "corpus_prefix": "ec_real_100k",
             "queries": 200,
-            "query_offset": 200
+            "query_offset": 200,
+            "query_trace": true
           }]
         }"#;
         let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
@@ -8125,6 +8165,11 @@ psql header noise\n\
         assert!(command
             .windows(2)
             .any(|window| window == ["--query-offset", "200"]));
+        assert!(command.iter().any(|argument| argument == "--query-trace"));
+        let artifacts = config.steps[0].expected_artifacts();
+        assert!(artifacts
+            .iter()
+            .any(|artifact| { artifact.ends_with("physical-production-query-trace.json") }));
     }
 
     #[test]
@@ -8143,6 +8188,24 @@ psql header noise\n\
         assert!(error
             .to_string()
             .contains("query_offset requires corpus_prefix"));
+    }
+
+    #[test]
+    fn distann_query_trace_requires_physical_benchmark() {
+        let raw = r#"{
+          "name": "distann-query-trace-invalid",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "synthetic-trace",
+            "query_trace": true
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("trace needs physical benchmark");
+        assert!(error
+            .to_string()
+            .contains("query_trace requires physical_benchmark"));
     }
 
     #[test]

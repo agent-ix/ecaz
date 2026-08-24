@@ -5,9 +5,9 @@
 //! the shared scan registry, and adapts those relations to the existing FR-081
 //! orchestration seam.
 
-use std::cell::RefCell;
 #[cfg(feature = "pg_test")]
 use std::cell::Cell;
+use std::cell::RefCell;
 use std::collections::{HashMap, VecDeque};
 use std::ptr;
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -269,8 +269,9 @@ fn recent_remote_insert_intent(
     if node_ids.is_empty() {
         return Ok(false);
     }
-    let epoch = i64::try_from(epoch)
-        .map_err(|_| DistannExpandError::Internal("physical intent epoch exceeds int8".to_owned()))?;
+    let epoch = i64::try_from(epoch).map_err(|_| {
+        DistannExpandError::Internal("physical intent epoch exceeds int8".to_owned())
+    })?;
     let node_ids = node_ids.join(",");
     let vec_ids = vec_ids
         .iter()
@@ -303,16 +304,11 @@ fn recent_remote_insert_intent(
 /// reports a missing key. This is the narrowly scoped admission predicate for
 /// the complementary directory/index visibility race; it does not weaken the
 /// typed `OwnedRecordMissing` contract for an absent graph tuple.
-fn current_graph_tuple_exists(
-    graph_relid: pg_sys::Oid,
-    vec_id: u64,
-) -> Option<bool> {
+fn current_graph_tuple_exists(graph_relid: pg_sys::Oid, vec_id: u64) -> Option<bool> {
     let relation = super::handoff::qualified_relation_name(graph_relid).ok()?;
     let signed_id = i64::from_le_bytes(vec_id.to_le_bytes());
     Spi::get_one_with_args::<bool>(
-        &format!(
-            "SELECT EXISTS (SELECT 1 FROM {relation} WHERE vec_id = $1 AND is_current)"
-        ),
+        &format!("SELECT EXISTS (SELECT 1 FROM {relation} WHERE vec_id = $1 AND is_current)"),
         &[signed_id.into()],
     )
     .ok()
@@ -343,12 +339,7 @@ fn visibility_retry_allowed(
     Ok(current_graph_tuple_exists(generation.graph_store_relid, missing_vec_id).unwrap_or(false))
 }
 
-fn record_retry_attribution(
-    epoch: u64,
-    node_ids: &[u32],
-    vec_ids: &[u64],
-    missing_vec_id: u64,
-) {
+fn record_retry_attribution(epoch: u64, node_ids: &[u32], vec_ids: &[u64], missing_vec_id: u64) {
     // This unlogged relation belongs to the Task 167 fixture, not the
     // extension schema. Production retries must remain correct when the
     // diagnostic surface is absent: attempting the INSERT directly turns a
@@ -435,14 +426,7 @@ where
         )
     };
     let Err(error @ DistannExpandError::OwnedRecordMissing(_)) = initial else {
-        return initial.map(|records| {
-            (
-                records,
-                graph_relation,
-                directory_relation,
-                None,
-            )
-        });
+        return initial.map(|records| (records, graph_relation, directory_relation, None));
     };
     let Some(missing_vec_id) = error.owned_record_missing_vec_id() else {
         return Err(error);
@@ -486,7 +470,12 @@ where
                     return Err(next);
                 };
                 last_error = next;
-                if !visibility_retry_allowed(index_oid, generation, intent_node_ids, missing_vec_id)? {
+                if !visibility_retry_allowed(
+                    index_oid,
+                    generation,
+                    intent_node_ids,
+                    missing_vec_id,
+                )? {
                     return Err(last_error);
                 }
                 graph_relation = Some(next_graph_relation);
@@ -1334,19 +1323,25 @@ impl RetainedGenerationScan {
 
     fn row_relation_ref(&self) -> Result<&HeapRelationGuard, DistannExpandError> {
         self.row_relation.as_ref().ok_or_else(|| {
-            DistannExpandError::Internal("retained row-tier relation is temporarily released".to_owned())
+            DistannExpandError::Internal(
+                "retained row-tier relation is temporarily released".to_owned(),
+            )
         })
     }
 
     fn graph_relation_ref(&self) -> Result<&HeapRelationGuard, DistannExpandError> {
         self.graph_relation.as_ref().ok_or_else(|| {
-            DistannExpandError::Internal("retained graph-store relation is temporarily released".to_owned())
+            DistannExpandError::Internal(
+                "retained graph-store relation is temporarily released".to_owned(),
+            )
         })
     }
 
     fn directory_relation_ref(&self) -> Result<&IndexRelationGuard, DistannExpandError> {
         self.directory_relation.as_ref().ok_or_else(|| {
-            DistannExpandError::Internal("retained graph-directory relation is temporarily released".to_owned())
+            DistannExpandError::Internal(
+                "retained graph-directory relation is temporarily released".to_owned(),
+            )
         })
     }
 
@@ -1419,8 +1414,8 @@ impl RetainedGenerationScan {
                     "could not allocate traversal replica graph slot".to_owned(),
                 )
             })?;
-        let row_slot =
-            TupleTableSlotGuard::single_for_heap_guard(self.row_relation_ref()?).ok_or_else(|| {
+        let row_slot = TupleTableSlotGuard::single_for_heap_guard(self.row_relation_ref()?)
+            .ok_or_else(|| {
                 DistannExpandError::Internal(
                     "could not allocate traversal replica row slot".to_owned(),
                 )
@@ -1653,15 +1648,21 @@ impl RetainedGenerationScan {
             query,
         )?;
         let graph_relation = self.graph_relation.take().ok_or_else(|| {
-            DistannExpandError::Internal("retained graph-store relation is temporarily released".to_owned())
+            DistannExpandError::Internal(
+                "retained graph-store relation is temporarily released".to_owned(),
+            )
         })?;
         let directory_relation = self.directory_relation.take().ok_or_else(|| {
-            DistannExpandError::Internal("retained graph directory is temporarily released".to_owned())
+            DistannExpandError::Internal(
+                "retained graph directory is temporarily released".to_owned(),
+            )
         })?;
         let (result, graph_relation, directory_relation) = {
-            let slot =
-                TupleTableSlotGuard::single_for_heap_guard(self.row_relation_ref()?).ok_or_else(|| {
-                    DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
+            let slot = TupleTableSlotGuard::single_for_heap_guard(self.row_relation_ref()?)
+                .ok_or_else(|| {
+                    DistannExpandError::Internal(
+                        "could not allocate retained row-tier slot".to_owned(),
+                    )
                 })?;
             let mut expander = GenerationExpander {
                 index_oid: self.index_oid,
@@ -1682,8 +1683,13 @@ impl RetainedGenerationScan {
                 .iter()
                 .copied()
                 .collect::<std::collections::HashSet<_>>();
-            let result = expander.expand_nodes_masked(vec_ids, code_threshold, candidate_limit, &skip);
-            (result, expander.graph_relation.take(), expander.directory_relation.take())
+            let result =
+                expander.expand_nodes_masked(vec_ids, code_threshold, candidate_limit, &skip);
+            (
+                result,
+                expander.graph_relation.take(),
+                expander.directory_relation.take(),
+            )
         };
         self.graph_relation = graph_relation;
         self.directory_relation = directory_relation;
@@ -1793,10 +1799,14 @@ impl RetainedGenerationScan {
                     .map(RegisteredSnapshotGuard::as_ptr)
                     .unwrap_or(snapshot);
                 let graph_relation = self.graph_relation.take().ok_or_else(|| {
-                    DistannExpandError::Internal("retained graph-store relation is temporarily released".to_owned())
+                    DistannExpandError::Internal(
+                        "retained graph-store relation is temporarily released".to_owned(),
+                    )
                 })?;
                 let directory_relation = self.directory_relation.take().ok_or_else(|| {
-                    DistannExpandError::Internal("retained graph directory is temporarily released".to_owned())
+                    DistannExpandError::Internal(
+                        "retained graph directory is temporarily released".to_owned(),
+                    )
                 })?;
                 let (owned, graph_relation, directory_relation) = {
                     let slot = TupleTableSlotGuard::single_for_heap_guard(self.row_relation_ref()?)
@@ -1993,15 +2003,21 @@ impl RetainedGenerationScan {
             .map(RegisteredSnapshotGuard::as_ptr)
             .unwrap_or(snapshot);
         let graph_relation = self.graph_relation.take().ok_or_else(|| {
-            DistannExpandError::Internal("retained graph-store relation is temporarily released".to_owned())
+            DistannExpandError::Internal(
+                "retained graph-store relation is temporarily released".to_owned(),
+            )
         })?;
         let directory_relation = self.directory_relation.take().ok_or_else(|| {
-            DistannExpandError::Internal("retained graph directory is temporarily released".to_owned())
+            DistannExpandError::Internal(
+                "retained graph directory is temporarily released".to_owned(),
+            )
         })?;
         let (exported, graph_relation, directory_relation) = {
             let slot = TupleTableSlotGuard::single_for_heap_guard(self.row_relation_ref()?)
                 .ok_or_else(|| {
-                    DistannExpandError::Internal("could not allocate retained row-tier slot".to_owned())
+                    DistannExpandError::Internal(
+                        "could not allocate retained row-tier slot".to_owned(),
+                    )
                 })?;
             let expander = GenerationExpander {
                 index_oid: self.index_oid,
@@ -2022,14 +2038,21 @@ impl RetainedGenerationScan {
             for node in &nodes {
                 exported.push((node.vec_id, expander.local_source_vector(node)?));
             }
-            (exported, expander.graph_relation, expander.directory_relation)
+            (
+                exported,
+                expander.graph_relation,
+                expander.directory_relation,
+            )
         };
         self.graph_relation = graph_relation;
         self.directory_relation = directory_relation;
         Ok(exported)
     }
 
-    fn resolve_nodes(&mut self, vec_ids: &[u64]) -> Result<Vec<DistannNodeTuple>, DistannExpandError> {
+    fn resolve_nodes(
+        &mut self,
+        vec_ids: &[u64],
+    ) -> Result<Vec<DistannNodeTuple>, DistannExpandError> {
         self.validate_ownership(vec_ids)?;
         if vec_ids.is_empty() {
             return Ok(Vec::new());
@@ -2052,10 +2075,14 @@ impl RetainedGenerationScan {
         let row_relation = self.row_relation.take();
         drop(row_relation);
         let graph_relation = self.graph_relation.take().ok_or_else(|| {
-            DistannExpandError::Internal("retained graph-store relation is temporarily released".to_owned())
+            DistannExpandError::Internal(
+                "retained graph-store relation is temporarily released".to_owned(),
+            )
         })?;
         let directory_relation = self.directory_relation.take().ok_or_else(|| {
-            DistannExpandError::Internal("retained graph-directory relation is temporarily released".to_owned())
+            DistannExpandError::Internal(
+                "retained graph-directory relation is temporarily released".to_owned(),
+            )
         })?;
         let graph_relid = self.generation.graph_store_relid;
         let directory_relid = self.generation.directory_relid;
@@ -2070,11 +2097,12 @@ impl RetainedGenerationScan {
             graph_relation,
             directory_relation,
             move || {
-                let graph_relation = HeapRelationGuard::try_access_share(graph_relid).ok_or_else(|| {
-                    DistannExpandError::GenerationMissing(
-                        "retained graph-store relation is absent during retry".to_owned(),
-                    )
-                })?;
+                let graph_relation =
+                    HeapRelationGuard::try_access_share(graph_relid).ok_or_else(|| {
+                        DistannExpandError::GenerationMissing(
+                            "retained graph-store relation is absent during retry".to_owned(),
+                        )
+                    })?;
                 let directory_relation = IndexRelationGuard::try_access_share(directory_relid)
                     .ok_or_else(|| {
                         DistannExpandError::GenerationMissing(
@@ -3373,6 +3401,143 @@ fn ec_distann_physical_seed_gateway_trace_benchmark(
         i32::try_from(collection.counters.records_expanded).unwrap_or(i32::MAX),
         i32::try_from(collection.counters.rounds_executed).unwrap_or(i32::MAX),
     ))
+}
+
+/// Task 227 residual-attribution trace. This is a benchmark-only, bounded,
+/// read-only replay of the ordinary physical search. Stable vector ids are
+/// rendered as fixed-width hexadecimal strings so JSON consumers never lose
+/// precision. The production access method never activates this trace.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_query_trace_benchmark(
+    index_regclass: PgRelation,
+    query: Vec<f32>,
+    top_k: i32,
+) -> pgrx::JsonB {
+    let top_k = usize::try_from(top_k)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("query trace top_k must be in 1..=4096"));
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    physical_query_trace_benchmark_impl(index_oid, query, top_k, None)
+}
+
+/// Participant-side form used by PG18 callback coverage and distributed
+/// diagnostics when the coordinator's immutable epoch fingerprint is already
+/// known. Participant catalogs intentionally do not install an active pointer.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_query_trace_at_fingerprint_benchmark(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    query: Vec<f32>,
+    top_k: i32,
+) -> pgrx::JsonB {
+    let top_k = usize::try_from(top_k)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("query trace top_k must be in 1..=4096"));
+    let fingerprint: [u8; 34] = epoch_fingerprint
+        .try_into()
+        .unwrap_or_else(|value: Vec<u8>| {
+            pgrx::error!(
+                "query trace epoch_fingerprint must be 34 bytes, got {}",
+                value.len()
+            )
+        });
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    physical_query_trace_benchmark_impl(index_oid, query, top_k, Some(fingerprint))
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn physical_query_trace_benchmark_impl(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    top_k: usize,
+    requested_fingerprint: Option<[u8; 34]>,
+) -> pgrx::JsonB {
+    let index_guard = IndexRelationGuard::try_access_share(index_oid)
+        .unwrap_or_else(|| pgrx::error!("query trace could not open index relation"));
+    let source_attnum = super::routine::indexed_ecvector_attnum(index_guard.as_ptr())
+        .unwrap_or_else(|error| {
+            pgrx::error!("query trace source column resolution failed: {error}")
+        });
+    // SAFETY: SQL function execution has an active snapshot; the relation
+    // guard remains live for the duration of the physical search.
+    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if snapshot.is_null() {
+        pgrx::error!("query trace has no active snapshot");
+    }
+    let mut scan = match requested_fingerprint {
+        Some(fingerprint) => PhysicalGenerationScan::open_at_fingerprint(index_oid, fingerprint),
+        None => PhysicalGenerationScan::open(index_oid),
+    }
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let logical_index_uuid = Uuid::from_bytes(scan.descriptor.coordinator_logical_index_uuid);
+    let build_id = scan.build_id;
+    let fingerprint = hex::encode(scan.fingerprint);
+    let (result, trace) = super::stage_counters::with_seed_trace(|| {
+        scan.search(snapshot, source_attnum, &query, top_k)
+    });
+    result.unwrap_or_else(|error| pgrx::error!("{error}"));
+
+    let rounds = trace
+        .rounds
+        .iter()
+        .map(|round| {
+            serde_json::json!({
+                "round": round.round,
+                "requested_ids": query_trace_ids(&round.requested_ids),
+                "returned_ids": query_trace_ids(&round.returned_ids),
+                "exact_input_ids": query_trace_ids(&round.exact_input_ids),
+                "exact_input_dists": round.exact_input_dists,
+                "retained_ids": query_trace_ids(&round.retained_ids),
+                "retained_code_dists": round.retained_code_dists,
+                "code_threshold": round.code_threshold,
+                "candidate_limit": round.candidate_limit,
+                "heap_saturated": round.heap_saturated,
+                "frontier_stable": round.frontier_stable,
+                "frontier_score_gap": round.frontier_score_gap,
+                "convergence_gap": round.convergence_gap,
+                "owner_ordinals": round.owner_ordinals,
+                "owner_request_counts": round.owner_request_counts,
+                "owner_fanout": round.owner_ordinals.len(),
+                "request_bytes": round.request_bytes,
+                "response_bytes": round.response_bytes,
+            })
+        })
+        .collect::<Vec<_>>();
+    pgrx::JsonB(serde_json::json!({
+        "schema": "ec_distann_query_trace_v1",
+        "logical_index_uuid": logical_index_uuid.to_string(),
+        "build_id": build_id.to_string(),
+        "epoch_fingerprint": fingerprint,
+        "locator_limit": super::stage_counters::DISTANN_QUERY_TRACE_LOCATOR_LIMIT,
+        "truncated": trace.truncated,
+        "seed_ids": query_trace_ids(&trace.seed_ids),
+        "seed_code_dists": trace.seed_code_dists,
+        "seed_expanded_counts": trace.seed_expanded_counts,
+        "seed_hit_counts": trace.seed_hit_counts,
+        "expanded_live_ids": query_trace_ids(&trace.hit_ids),
+        "expanded_origin_masks": trace.hit_origin_masks,
+        "expanded_unique": trace.expanded_unique,
+        "expanded_overlap": trace.expanded_overlap,
+        "rounds": rounds,
+        "exact_rerank_ids": query_trace_ids(&trace.exact_rerank_ids),
+        "exact_rerank_dists": trace.exact_rerank_dists,
+        "final_ids": query_trace_ids(&trace.final_ids),
+        "final_dists": trace.final_dists,
+        "rounds_executed": trace.rounds_executed,
+        "early_exit": trace.early_exit,
+        "beam_exhausted": trace.beam_exhausted,
+    }))
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn query_trace_ids(ids: &[u64]) -> Vec<String> {
+    ids.iter().map(|vec_id| format!("{vec_id:016x}")).collect()
 }
 
 /// Task 185 candidate-level attribution. This repeats the same physical scan
@@ -5773,6 +5938,16 @@ impl PhysicalMultiOwnerExpander<'_> {
             self.descriptor.placement_hash_version,
         );
         #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::seed_trace_owner_fanout(
+            &buckets
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, bucket)| {
+                    (!bucket.is_empty()).then_some((ordinal, bucket.len()))
+                })
+                .collect::<Vec<_>>(),
+        );
+        #[cfg(feature = "distann-head-attribution-benchmark")]
         super::stage_counters::record(
             super::stage_counters::DistannQueryStage::TraversalCoordinatorPartition,
             partition_started.elapsed(),
@@ -6171,10 +6346,7 @@ impl GenerationExpander<'_> {
         #[cfg(feature = "distann-head-attribution-benchmark")]
         let graph_started = Instant::now();
         let missing = |vec_id| {
-            let graph_tuple = current_graph_tuple_exists(
-                self.generation.graph_store_relid,
-                vec_id,
-            );
+            let graph_tuple = current_graph_tuple_exists(self.generation.graph_store_relid, vec_id);
             let owner_ordinal = super::placement::owning_node(
                 vec_id,
                 self.descriptor.roster.len(),
@@ -6223,11 +6395,12 @@ impl GenerationExpander<'_> {
             graph_relation,
             directory_relation,
             move || {
-                let graph_relation = HeapRelationGuard::try_access_share(graph_relid).ok_or_else(|| {
-                    DistannExpandError::GenerationMissing(
-                        "local graph-store relation is absent during retry".to_owned(),
-                    )
-                })?;
+                let graph_relation =
+                    HeapRelationGuard::try_access_share(graph_relid).ok_or_else(|| {
+                        DistannExpandError::GenerationMissing(
+                            "local graph-store relation is absent during retry".to_owned(),
+                        )
+                    })?;
                 let directory_relation = IndexRelationGuard::try_access_share(directory_relid)
                     .ok_or_else(|| {
                         DistannExpandError::GenerationMissing(

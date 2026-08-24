@@ -113,6 +113,10 @@ pub struct LocalMultinodePg18Args {
     /// compact JSON trace per physical seed variant under --artifact-dir.
     #[arg(long, default_value_t = false)]
     pub gateway_trace: bool,
+    /// Task 227 benchmark-only per-query traversal/frontier/exact-result trace
+    /// over the selected evaluation query slice.
+    #[arg(long, default_value_t = false)]
+    pub query_trace: bool,
     /// Task 185 benchmark-only isolated attribution for each returned seed
     /// position. This is intentionally more expensive than gateway_trace.
     #[arg(long, default_value_t = false)]
@@ -443,7 +447,12 @@ fn validate_extension_preflight(
             expected.build_profile
         );
     }
-    if expected.features.split(',').any(|feature| feature == "pg-test") && !allow_debug_extension {
+    if expected
+        .features
+        .split(',')
+        .any(|feature| feature == "pg-test")
+        && !allow_debug_extension
+    {
         bail!(
             "extension preflight rejected pg-test feature on node {} port {}: observed {}/{}/{}; install with --no-default-features --features pg18 for production evidence or explicitly allow a diagnostic build",
             expected.node_id,
@@ -459,7 +468,10 @@ fn validate_extension_preflight(
         nodes: observed.len(),
         debug_override: allow_debug_extension
             && (expected.build_profile != "release"
-                || expected.features.split(',').any(|feature| feature == "pg-test")),
+                || expected
+                    .features
+                    .split(',')
+                    .any(|feature| feature == "pg-test")),
         features: expected.features.clone(),
     })
 }
@@ -572,6 +584,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.gateway_trace && !args.physical_benchmark {
         bail!("--gateway-trace requires --physical-benchmark");
+    }
+    if args.query_trace && !args.physical_benchmark {
+        bail!("--query-trace requires --physical-benchmark");
     }
     if args.gateway_isolated_trace && !args.physical_benchmark {
         bail!("--gateway-isolated-trace requires --physical-benchmark");
@@ -1418,8 +1433,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
              INSERT INTO dm_queries
              SELECT id, translate(vec, '[]', '{{}}')::real[]
                FROM dmq_stage ORDER BY id OFFSET {} LIMIT {};",
-            args.query_offset,
-            args.queries
+            args.query_offset, args.queries
         )
     } else {
         format!(
@@ -2977,8 +2991,7 @@ async fn measure_task167_insert_arm(
         let started = Instant::now();
         for ordinal in 0..ROWS_PER_TRIAL {
             let source_offset = trial * ROWS_PER_TRIAL + ordinal;
-            let id = id_base + trial as i64 * ROWS_PER_TRIAL as i64
-                + ordinal as i64;
+            let id = id_base + trial as i64 * ROWS_PER_TRIAL as i64 + ordinal as i64;
             let sql = if physical {
                 format!(
                     "INSERT INTO {table} (id, source_id, source, embedding) \
@@ -3087,8 +3100,8 @@ async fn task167_insert_throughput_ab(
         "physical_benchmark_insert_throughput_ab scale={scale} physical_table={physical_corpus} control_table={single_corpus} trials={TRIALS} rows_per_trial={ROWS_PER_TRIAL} sample_rows={} workload=single_row_insert physical_rows_per_second={physical_rows_per_second:.3} control_rows_per_second={single_rows_per_second:.3} physical_over_control={ratio:.6} pass=true",
         TRIALS * ROWS_PER_TRIAL
     ));
-    let append_ratio = physical_rows_per_second
-        / physical_append_disabled_rows_per_second.max(f64::EPSILON);
+    let append_ratio =
+        physical_rows_per_second / physical_append_disabled_rows_per_second.max(f64::EPSILON);
     let disabled_amendments = append_disabled_work
         .get("backlink_amendments")
         .copied()
@@ -5257,9 +5270,7 @@ fn query_slice_sha256(bytes: &[u8], offset: u32, limit: u32) -> Result<String> {
         selected += 1;
     }
     if selected != limit {
-        bail!(
-            "query slice is short: offset={offset} requested={limit} selected={selected}"
-        );
+        bail!("query slice is short: offset={offset} requested={limit} selected={selected}");
     }
     Ok(hex::encode(hasher.finalize()))
 }
@@ -5424,6 +5435,19 @@ async fn run_physical_benchmarks(
             "gateway attribution requires an extension built with distann-head-attribution-benchmark"
         );
     }
+    if args.query_trace
+        && !coordinator
+            .query_one(
+                "SELECT to_regprocedure('ec_distann_physical_query_trace_benchmark(regclass,real[],integer)') IS NOT NULL",
+                &[],
+            )
+            .await?
+            .get::<_, bool>(0)
+    {
+        bail!(
+            "query trace requires an extension built with distann-head-attribution-benchmark"
+        );
+    }
     if args.head_policy.is_some() && !has_head_policy_provenance {
         bail!("Task 181 head policy requires extension head-policy provenance helper");
     }
@@ -5534,8 +5558,7 @@ async fn run_physical_benchmarks(
         std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_queries.tsv")))?;
     let query_bytes = std::fs::read(&truth_queries)?;
     let query_sha256 = hex::encode(Sha256::digest(&query_bytes));
-    let query_slice_sha256 =
-        query_slice_sha256(&query_bytes, args.query_offset, args.queries)?;
+    let query_slice_sha256 = query_slice_sha256(&query_bytes, args.query_offset, args.queries)?;
     let query_start = args.query_offset + 1;
     let query_end = args.query_offset + args.queries;
     let truth_cache = nodes[0]
@@ -6273,6 +6296,79 @@ async fn run_physical_benchmarks(
                 })?;
                 lines.push(format!(
                     "physical_benchmark_gateway_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_201_400 queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
+                    args.queries,
+                    args.top_k,
+                    trace_path.display()
+                ));
+            }
+            if arm == "physical" && args.query_trace {
+                let seed_strategy_sql = seed_strategy.replace('\'', "''");
+                coordinator
+                    .batch_execute(&format!(
+                        "SET ec_distann.beam_width = {arm_beam_width};\n\
+                         SET ec_distann.hop_rounds = {arm_hop_rounds};\n\
+                         SET ec_distann.candidate_heap_limit = {candidate_heap_limit};\n\
+                         SET ec_distann.benchmark_seed_mode = '{seed_strategy_sql}';\n\
+                         SET ec_distann.benchmark_head_search_width = {head_search_width};\n\
+                         SET ec_distann.benchmark_head_seed_count = {head_seed_count};\n\
+                         SET ec_distann.benchmark_exact_neighbor = {};\n\
+                         SET ec_distann.sharded_head_search = {};",
+                        if neighbor_score_mode == "exact_neighbor" {
+                            "on"
+                        } else {
+                            "off"
+                        },
+                        if args.sharded_head { "on" } else { "off" },
+                    ))
+                    .await
+                    .wrap_err("configuring coordinator for Task 227 query trace")?;
+                let trace_json = coordinator
+                    .query_one(
+                        &format!(
+                            "WITH traces AS (
+                                 SELECT q.id::bigint AS query_id,
+                                        ec_distann_physical_query_trace_benchmark(
+                                            'dm_idx'::regclass, q.source, {}
+                                        ) AS trace
+                                   FROM dm_queries q
+                                  ORDER BY q.id
+                                  LIMIT {}
+                             )
+                             SELECT jsonb_build_object(
+                                 'schema', 'ec_distann_query_trace_file_v1',
+                                 'query_prefix', 'rows_{}_{}',
+                                 'query_offset', {},
+                                 'queries', count(*),
+                                 'query_file_sha256', '{}',
+                                 'query_slice_sha256', '{}',
+                                 'traces', COALESCE(jsonb_agg(
+                                     jsonb_build_object(
+                                         'query_id', query_id,
+                                         'trace', trace
+                                     ) ORDER BY query_id
+                                 ), '[]'::jsonb)
+                             )::text
+                               FROM traces",
+                            args.top_k,
+                            args.queries,
+                            query_start,
+                            query_end,
+                            args.query_offset,
+                            query_sha256,
+                            query_slice_sha256,
+                        ),
+                        &[],
+                    )
+                    .await
+                    .wrap_err("collecting Task 227 query traces")?
+                    .get::<_, String>(0);
+                let trace_path = log_dir.join(format!("{arm}-{variant}-query-trace.json"));
+                fs::write(&trace_path, &trace_json).wrap_err_with(|| {
+                    format!("writing Task 227 query trace {}", trace_path.display())
+                })?;
+                lines.push(format!(
+                    "physical_benchmark_query_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_{query_start}_{query_end} query_offset={} queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} query_file_sha256={query_sha256} query_slice_sha256={query_slice_sha256} output={}",
+                    args.query_offset,
                     args.queries,
                     args.top_k,
                     trace_path.display()
@@ -9825,7 +9921,11 @@ async fn physical_concurrency_drill(
         .iter()
         .find(|(_, vec_id, _, _)| seed_neighbors.contains(vec_id))
         .map(|(_, _, signed_id, _)| *signed_id)
-        .or_else(|| shared_target_candidates.first().map(|(_, _, signed_id, _)| *signed_id));
+        .or_else(|| {
+            shared_target_candidates
+                .first()
+                .map(|(_, _, signed_id, _)| *signed_id)
+        });
     crate::ecaz_println!(
         "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target seed_vec_id={} seed_neighbor_count={} seeded_target_signed_id={:?}",
         seed_signed_id,
@@ -9843,10 +9943,9 @@ async fn physical_concurrency_drill(
         shared_target_vec_id,
         shared_target_signed_id,
         shared_target_initial_neighbor_count,
-    )) =
-        shared_target_candidates
-            .into_iter()
-            .find(|(_, _, signed_id, _)| *signed_id == nearest_target_signed_id)
+    )) = shared_target_candidates
+        .into_iter()
+        .find(|(_, _, signed_id, _)| *signed_id == nearest_target_signed_id)
     else {
         crate::ecaz_println!(
             "[distann-multicluster] physical_concurrent_insert_query DIAG role=shared_target reason=nearest_target_owner_lookup_failed signed_vec_id={nearest_target_signed_id}"
@@ -10060,8 +10159,8 @@ async fn physical_concurrency_drill(
     );
     let mut natural_retries_by_owner = Vec::new();
     for owner in owner_nodes {
-        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
-            .await;
+        let output =
+            capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql).await;
         natural_retries_by_owner.push((
             owner.node_id,
             parse_retry_count(&output),
@@ -10189,8 +10288,8 @@ async fn physical_concurrency_drill(
     let steady_query = run_capture(psql, socket_dir, coord_port, &query_sql).await;
     let mut steady_retries_by_owner = Vec::new();
     for owner in owner_nodes {
-        let output = capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql)
-            .await;
+        let output =
+            capture_psql_allow_error(psql, socket_dir, owner.port, retry_snapshot_sql).await;
         steady_retries_by_owner.push((
             owner.node_id,
             parse_retry_count(&output),

@@ -166,7 +166,8 @@ fn derive_pushdown_limits(
             .then_with(|| left.vec_id.cmp(&right.vec_id))
     });
     let threshold = if candidate_heap_limit > 0 && live.len() >= candidate_heap_limit {
-        live.get(candidate_heap_limit - 1).map(|candidate| -candidate.dist)
+        live.get(candidate_heap_limit - 1)
+            .map(|candidate| -candidate.dist)
     } else {
         None
     };
@@ -380,7 +381,10 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
     let mut enqueued: HashSet<u64> = HashSet::with_capacity(beam_capacity);
     #[cfg(feature = "distann-head-attribution-benchmark")]
     super::stage_counters::seed_trace_start(
-        &seeds.iter().map(|seed| seed.vec_id).collect::<Vec<_>>(),
+        &seeds
+            .iter()
+            .map(|seed| (seed.vec_id, seed.dist))
+            .collect::<Vec<_>>(),
     );
     let mut origins: HashMap<u64, u32> = HashMap::with_capacity(beam_capacity);
     for (seed_index, seed) in seeds.iter().enumerate() {
@@ -407,11 +411,7 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
     let mut batch_origins: Vec<u32> = Vec::with_capacity(params.beam_width);
     for _round in 0..params.hop_rounds {
         let limits = if pushdown {
-            derive_pushdown_limits(
-                &beam,
-                &expanded,
-                params.candidate_heap_limit,
-            )
+            derive_pushdown_limits(&beam, &expanded, params.candidate_heap_limit)
         } else {
             PushdownLimits {
                 threshold: None,
@@ -476,6 +476,14 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
             )));
         }
 
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::seed_trace_round_start(
+            counters.rounds_executed,
+            &batch,
+            limits.threshold,
+            limits.candidate_limit,
+        );
+
         if limits.threshold.is_some() {
             counters.pushdown_rounds_with_threshold += 1;
             #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -496,6 +504,20 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                 batch.len()
             )));
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let trace_returned_ids = responses
+            .iter()
+            .map(|response| response.vec_id)
+            .collect::<Vec<_>>();
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        let trace_exact_inputs = responses
+            .iter()
+            .filter_map(|response| {
+                (!response.is_tombstone)
+                    .then(|| response.exact_dist.map(|dist| (response.vec_id, dist)))
+                    .flatten()
+            })
+            .collect::<Vec<_>>();
         counters.rounds_executed += 1;
         let owner_times = responses
             .iter()
@@ -517,7 +539,9 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
             .unwrap_or(0);
         let response_bytes = responses
             .iter()
-            .map(|response| usize::try_from(response.owner_response_bytes.max(0)).unwrap_or(usize::MAX))
+            .map(|response| {
+                usize::try_from(response.owner_response_bytes.max(0)).unwrap_or(usize::MAX)
+            })
             .sum();
         counters.rounds.push(DistannRoundCounters {
             round: counters.rounds_executed - 1,
@@ -550,10 +574,8 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
                 responses.len(),
             );
         }
-        for ((requested, origin_mask), response) in batch
-            .iter()
-            .zip(batch_origins.iter())
-            .zip(responses.iter())
+        for ((requested, origin_mask), response) in
+            batch.iter().zip(batch_origins.iter()).zip(responses.iter())
         {
             if response.vec_id != *requested {
                 return Err(DistannExpandError::Internal(format!(
@@ -632,6 +654,46 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
         if pushdown {
             retain_best_candidates(&mut beam, params.candidate_heap_limit);
         }
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        {
+            let mut retained = beam
+                .iter()
+                .filter(|candidate| !expanded.contains(&candidate.vec_id))
+                .map(|candidate| (candidate.vec_id, candidate.dist))
+                .collect::<Vec<_>>();
+            retained.sort_unstable_by(|left, right| {
+                left.1
+                    .total_cmp(&right.1)
+                    .then_with(|| left.0.cmp(&right.0))
+            });
+            let kth_exact_dist = if hits.len() >= params.top_k {
+                let mut exact = hits
+                    .iter()
+                    .map(|hit| (hit.vec_id, hit.exact_dist))
+                    .collect::<Vec<_>>();
+                exact.sort_unstable_by(|left, right| {
+                    left.1
+                        .total_cmp(&right.1)
+                        .then_with(|| left.0.cmp(&right.0))
+                });
+                exact.get(params.top_k - 1).map(|(_, dist)| *dist)
+            } else {
+                None
+            };
+            let round = counters
+                .rounds
+                .last()
+                .expect("completed traversal round has counters");
+            super::stage_counters::seed_trace_round_finish(
+                &trace_returned_ids,
+                &trace_exact_inputs,
+                &retained,
+                params.candidate_heap_limit,
+                kth_exact_dist,
+                round.request_bytes,
+                round.response_bytes,
+            );
+        }
     }
 
     if counters.records_expanded > expansion_budget {
@@ -646,6 +708,17 @@ fn distann_orchestrated_search_with_pushdown<E: DistannNodeExpander>(
             .total_cmp(&right.exact_dist)
             .then_with(|| left.vec_id.cmp(&right.vec_id))
     });
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    super::stage_counters::seed_trace_terminal(
+        &hits
+            .iter()
+            .map(|hit| (hit.vec_id, hit.exact_dist))
+            .collect::<Vec<_>>(),
+        params.top_k,
+        counters.rounds_executed,
+        counters.early_exit,
+        counters.beam_exhausted,
+    );
     Ok((hits, counters))
 }
 
@@ -684,10 +757,9 @@ fn kth_exact_hit(hits: &mut [DistannScanHit], top_k: usize) -> DistannScanHit {
 mod tests {
     use super::{
         distann_orchestrated_search, distann_orchestrated_search_with_pushdown,
-        prune_and_limit_neighbor_batch, prune_and_limit_neighbors, run_scan_attempt_with_restart,
-        BeamCandidate, DistannExpandError, DistannExpandedNode, DistannNodeExpander,
-        DistannOrchestrationParams, DistannScanHit, DistannSeedCandidate,
-        retain_best_candidates,
+        prune_and_limit_neighbor_batch, prune_and_limit_neighbors, retain_best_candidates,
+        run_scan_attempt_with_restart, BeamCandidate, DistannExpandError, DistannExpandedNode,
+        DistannNodeExpander, DistannOrchestrationParams, DistannScanHit, DistannSeedCandidate,
     };
     use crate::storage::page::ItemPointer;
     use std::cell::Cell;
@@ -850,6 +922,18 @@ mod tests {
         assert_eq!(trace.expanded_unique, 3);
         assert_eq!(trace.expanded_overlap, 1);
         assert!(trace.hit_origin_masks.contains(&3));
+        assert_eq!(trace.seed_code_dists, vec![-0.9, -0.8]);
+        assert_eq!(trace.rounds.len(), 2);
+        assert_eq!(trace.rounds[0].requested_ids, vec![1, 2]);
+        assert_eq!(trace.rounds[0].returned_ids, vec![1, 2]);
+        assert_eq!(trace.rounds[0].exact_input_ids, vec![1, 2]);
+        assert_eq!(trace.rounds[0].retained_ids, vec![3]);
+        assert_eq!(trace.rounds[1].requested_ids, vec![3]);
+        assert_eq!(trace.exact_rerank_ids, vec![1, 2, 3]);
+        assert_eq!(trace.final_ids, vec![1, 2, 3]);
+        assert_eq!(trace.rounds_executed, 2);
+        assert!(trace.beam_exhausted);
+        assert!(!trace.truncated);
     }
 
     #[test]
@@ -1027,12 +1111,8 @@ mod tests {
             vec_id: 1,
             dist: -1.0,
         }];
-        let (_, counters) = distann_orchestrated_search(
-            &seeds,
-            &mut expander,
-            params(256, 1, 1),
-        )
-        .expect("BW=256 should remain within the checked budget");
+        let (_, counters) = distann_orchestrated_search(&seeds, &mut expander, params(256, 1, 1))
+            .expect("BW=256 should remain within the checked budget");
         assert!(counters.records_expanded <= 256);
         assert_eq!(counters.rounds.len(), counters.rounds_executed);
     }
@@ -1104,8 +1184,14 @@ mod tests {
             (3, (-0.2, true, vec![])),
         ]);
         let seeds = [
-            DistannSeedCandidate { vec_id: 1, dist: -1.0 },
-            DistannSeedCandidate { vec_id: 10, dist: -0.5 },
+            DistannSeedCandidate {
+                vec_id: 1,
+                dist: -1.0,
+            },
+            DistannSeedCandidate {
+                vec_id: 10,
+                dist: -0.5,
+            },
         ];
         let params = DistannOrchestrationParams {
             beam_width: 2,
@@ -1137,14 +1223,13 @@ mod tests {
         assert_eq!(reference, candidate);
         assert!(counters.pushdown_rounds_with_threshold > 0);
         assert!(counters.neighbors_pruned > 0);
-        let (ids, _) = prune_and_limit_neighbors(
-            &[2, 3],
-            &[-0.9, -0.1],
-            Some(0.5),
-            Some(1),
-        )
-        .expect("aligned neighbor arrays");
-        assert_eq!(ids, vec![2], "the active bounded response prunes a neighbor");
+        let (ids, _) = prune_and_limit_neighbors(&[2, 3], &[-0.9, -0.1], Some(0.5), Some(1))
+            .expect("aligned neighbor arrays");
+        assert_eq!(
+            ids,
+            vec![2],
+            "the active bounded response prunes a neighbor"
+        );
     }
 
     #[test]
