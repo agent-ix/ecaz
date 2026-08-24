@@ -295,6 +295,11 @@ pub struct LocalMultinodePg18Args {
     /// (expensive at scale) per-drill re-setups.
     #[arg(long, default_value_t = false)]
     pub skip_fault_drills: bool,
+    /// Task 234 diagnostic-only matrix for the five bounded read RPCs. Requires
+    /// a pg_test extension build, four physical owners, and runs as the sole
+    /// post-publish validation lane.
+    #[arg(long, default_value_t = false)]
+    pub read_rpc_fault_matrix: bool,
     /// Skip the expensive concurrent insert/query drill after the benchmark
     /// matrix. Used for large-scale measurement arms when the dedicated
     /// bounded concurrency gate is run separately.
@@ -538,6 +543,19 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.remote_socket_fault.is_some() && mode != FixtureMode::Physical {
         bail!("--remote-socket-fault requires the physical fixture");
+    }
+    if args.read_rpc_fault_matrix && mode != FixtureMode::Physical {
+        bail!("--read-rpc-fault-matrix requires the physical fixture");
+    }
+    if args.read_rpc_fault_matrix
+        && (args.nodes < 4 || args.coordinator_outside_roster || !args.allow_debug_extension)
+    {
+        bail!(
+            "--read-rpc-fault-matrix requires at least four owner nodes, an in-roster coordinator, and --allow-debug-extension"
+        );
+    }
+    if args.read_rpc_fault_matrix && (args.physical_benchmark || args.reuse_fixture) {
+        bail!("--read-rpc-fault-matrix cannot be combined with benchmark or reused-fixture mode");
     }
     if args.remote_socket_fault.is_some() && !args.coordinator_outside_roster && args.nodes < 2 {
         bail!("--remote-socket-fault requires at least one remote owner");
@@ -7509,6 +7527,416 @@ async fn drive_reused_physical_fixture(
     Ok(())
 }
 
+const TASK234_READ_RPCS: [&str; 5] = [
+    "physical_head_search",
+    "crown_code_export",
+    "gateway_routing_export",
+    "head_shard_export",
+    "head_shard_import",
+];
+
+#[derive(Debug)]
+struct Task234ReadSnapshot {
+    batch_total: i64,
+    batch_successes: i64,
+    batch_failures: i64,
+    pooled_connections: i64,
+    prepared_statements: i64,
+}
+
+fn task234_remote_endpoint(rpc: &str) -> &'static str {
+    match rpc {
+        "physical_head_search" => "ec_distann_head_search_physical",
+        "crown_code_export" => "ec_distann_crown_code_export",
+        "gateway_routing_export" => "ec_distann_gateway_routing_export",
+        "head_shard_export" => "ec_distann_head_shard_export",
+        "head_shard_import" => "ec_distann_head_shard_import",
+        _ => "ec_distann_task234_unknown_rpc",
+    }
+}
+
+fn task234_is_batch_rpc(rpc: &str) -> bool {
+    matches!(
+        rpc,
+        "physical_head_search" | "crown_code_export" | "gateway_routing_export"
+    )
+}
+
+async fn task234_set_remote_delay(
+    psql: &Path,
+    socket_dir: &Path,
+    node: &Node,
+    rpc: Option<&str>,
+) -> Result<()> {
+    let sql = match rpc {
+        Some(rpc) => format!(
+            "ALTER DATABASE postgres SET ec_distann.debug_read_rpc_delay = '{rpc}';
+             ALTER DATABASE postgres SET ec_distann.debug_read_rpc_delay_ms = 5000;"
+        ),
+        None => "ALTER DATABASE postgres RESET ec_distann.debug_read_rpc_delay;
+                 ALTER DATABASE postgres RESET ec_distann.debug_read_rpc_delay_ms;"
+            .to_owned(),
+    };
+    run_psql_file(psql, socket_dir, node.port, &sql).await
+}
+
+async fn task234_fault_client(
+    socket_dir: &Path,
+    coordinator: &Node,
+    remote_timeout_ms: u64,
+    local_timeout_ms: Option<u64>,
+) -> Result<(
+    Arc<tokio_postgres::Client>,
+    tokio::task::JoinHandle<Result<(), tokio_postgres::Error>>,
+)> {
+    let (client, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, coordinator.port), tokio_postgres::NoTls)
+            .await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let client = Arc::new(client);
+    client
+        .batch_execute(&format!(
+            "SET ec_distann.remote_statement_timeout_ms = {remote_timeout_ms};
+             SET ec_distann.gateway_copy_capacity = 0;
+             SET ec_distann.crown_capacity = 0;
+             SET statement_timeout = {};",
+            local_timeout_ms.unwrap_or(0)
+        ))
+        .await?;
+    Ok((client, connection_task))
+}
+
+async fn task234_probe(
+    client: &tokio_postgres::Client,
+    rpc: &str,
+    target_node_id: u32,
+) -> Result<i64, tokio_postgres::Error> {
+    client
+        .query_one(
+            "SELECT ec_distann_test_read_rpc_probe(
+                 'public.dm_idx'::regclass::oid, $1::text, $2::integer)",
+            &[&rpc, &i32::try_from(target_node_id).unwrap_or(i32::MAX)],
+        )
+        .await
+        .map(|row| row.get(0))
+}
+
+async fn task234_snapshot(client: &tokio_postgres::Client) -> Result<Task234ReadSnapshot> {
+    let row = client
+        .query_one("SELECT * FROM ec_distann_test_read_rpc_snapshot()", &[])
+        .await?;
+    Ok(Task234ReadSnapshot {
+        batch_total: row.get(0),
+        batch_successes: row.get(1),
+        batch_failures: row.get(2),
+        pooled_connections: row.get(3),
+        prepared_statements: row.get(4),
+    })
+}
+
+fn task234_error_text(error: &tokio_postgres::Error) -> String {
+    error
+        .as_db_error()
+        .map(|error| error.message().to_owned())
+        .unwrap_or_else(|| error.to_string())
+}
+
+async fn task234_wait_remote_backend(
+    socket_dir: &Path,
+    node: &Node,
+    rpc: &str,
+) -> Result<i32> {
+    let (client, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls).await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let pattern = format!("%{}%", task234_remote_endpoint(rpc));
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if let Some(row) = client
+            .query_opt(
+                "SELECT pid FROM pg_stat_activity
+                  WHERE pid <> pg_backend_pid() AND state = 'active' AND query LIKE $1
+                  ORDER BY pid LIMIT 1",
+                &[&pattern],
+            )
+            .await?
+        {
+            connection_task.abort();
+            return Ok(row.get(0));
+        }
+        if Instant::now() >= deadline {
+            connection_task.abort();
+            bail!("Task 234 {rpc} remote endpoint did not become active");
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+async fn task234_remote_work_drained(
+    socket_dir: &Path,
+    node: &Node,
+    rpc: &str,
+) -> Result<bool> {
+    let (client, connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls).await?;
+    let connection_task = tokio::spawn(async move { connection.await });
+    let pattern = format!("%{}%", task234_remote_endpoint(rpc));
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let active = client
+            .query_one(
+                "SELECT count(*) FROM pg_stat_activity
+                  WHERE pid <> pg_backend_pid() AND state = 'active' AND query LIKE $1",
+                &[&pattern],
+            )
+            .await?
+            .get::<_, i64>(0);
+        if active == 0 {
+            connection_task.abort();
+            return Ok(true);
+        }
+        if Instant::now() >= deadline {
+            connection_task.abort();
+            return Ok(false);
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+}
+
+fn task234_validate_failure(
+    rpc: &str,
+    fault: &str,
+    error: &tokio_postgres::Error,
+    elapsed: Duration,
+    snapshot: &Task234ReadSnapshot,
+    expect_safe_reuse: bool,
+) -> Result<String> {
+    let error_text = task234_error_text(error);
+    let category_ok = match fault {
+        "remote_statement_timeout" => error_text.contains("EC_REMOTE_STATEMENT_TIMEOUT"),
+        "local_query_cancel" => error_text.contains("canceling statement due to user request"),
+        "local_statement_timeout" => error_text.contains("statement timeout"),
+        "remote_backend_termination" => {
+            error_text.contains("EC_REMOTE_BACKEND_TERMINATED")
+                || error_text.contains("EC_REMOTE_TRANSPORT_RESET")
+        }
+        "connection_reset" => error_text.contains("EC_REMOTE_TRANSPORT_RESET"),
+        _ => false,
+    };
+    let upper_ms = if matches!(fault, "remote_backend_termination" | "connection_reset") {
+        5_000
+    } else {
+        2_000
+    };
+    let elapsed_ms = elapsed.as_millis();
+    if !category_ok || elapsed_ms > upper_ms {
+        bail!(
+            "Task 234 {rpc}/{fault} failed category or elapsed bound: elapsed_ms={elapsed_ms} error={error_text}"
+        );
+    }
+    if task234_is_batch_rpc(rpc)
+        && fault == "remote_statement_timeout"
+        && !(snapshot.batch_total >= 2
+            && snapshot.batch_successes >= 1
+            && snapshot.batch_failures >= 1)
+    {
+        bail!(
+            "Task 234 {rpc}/{fault} did not prove a successful sibling before fail-closed normalization: {snapshot:?}"
+        );
+    }
+    if !task234_is_batch_rpc(rpc)
+        && !(snapshot.batch_total == 1
+            && snapshot.batch_successes == 0
+            && snapshot.batch_failures == 1)
+    {
+        bail!("Task 234 {rpc}/{fault} single-call snapshot is invalid: {snapshot:?}");
+    }
+    if expect_safe_reuse && snapshot.pooled_connections == 0 {
+        bail!("Task 234 {rpc}/{fault} evicted a safely completed remote timeout session");
+    }
+    if !expect_safe_reuse
+        && matches!(fault, "local_query_cancel" | "local_statement_timeout")
+        && snapshot.pooled_connections != 0
+    {
+        bail!("Task 234 {rpc}/{fault} retained ambiguous pooled state: {snapshot:?}");
+    }
+    if matches!(fault, "remote_backend_termination" | "connection_reset")
+        && if task234_is_batch_rpc(rpc) {
+            snapshot.pooled_connections >= snapshot.batch_total
+        } else {
+            snapshot.pooled_connections != 0
+        }
+    {
+        bail!("Task 234 {rpc}/{fault} failed to evict the ambiguous owner session: {snapshot:?}");
+    }
+    Ok(format!(
+        "task234_read_rpc rpc={rpc} fault={fault} pass=true elapsed_ms={elapsed_ms} batch_total={} batch_successes={} batch_failures={} pooled_connections={} prepared_statements={} category={}",
+        snapshot.batch_total,
+        snapshot.batch_successes,
+        snapshot.batch_failures,
+        snapshot.pooled_connections,
+        snapshot.prepared_statements,
+        error_text.split_whitespace().next().unwrap_or("unknown")
+    ))
+}
+
+async fn task234_assert_retry(
+    client: &tokio_postgres::Client,
+    rpc: &str,
+    target_node_id: u32,
+) -> Result<i64> {
+    let started = Instant::now();
+    let rows = task234_probe(client, rpc, target_node_id)
+        .await
+        .wrap_err_with(|| format!("Task 234 {rpc} clean retry failed"))?;
+    if rows <= 0 || started.elapsed() > Duration::from_secs(5) {
+        bail!(
+            "Task 234 {rpc} clean retry violated row or elapsed bound: rows={rows} elapsed={:?}",
+            started.elapsed()
+        );
+    }
+    Ok(rows)
+}
+
+async fn run_read_rpc_fault_matrix(
+    pg_ctl: &Path,
+    psql: &Path,
+    socket_dir: &Path,
+    nodes: &[Node],
+) -> Result<Vec<String>> {
+    let coordinator = &nodes[0];
+    let target = &nodes[1];
+    let mut lines = Vec::new();
+    for rpc in TASK234_READ_RPCS {
+        for fault in [
+            "remote_statement_timeout",
+            "local_query_cancel",
+            "local_statement_timeout",
+            "remote_backend_termination",
+            "connection_reset",
+        ] {
+            task234_set_remote_delay(psql, socket_dir, target, Some(rpc)).await?;
+            let (client, connection_task) = task234_fault_client(
+                socket_dir,
+                coordinator,
+                if fault == "remote_statement_timeout" {
+                    100
+                } else {
+                    5_000
+                },
+                (fault == "local_statement_timeout").then_some(500),
+            )
+            .await?;
+            let started = Instant::now();
+            let outcome = match fault {
+                "remote_statement_timeout" | "local_statement_timeout" => {
+                    task234_probe(&client, rpc, target.node_id).await
+                }
+                "local_query_cancel" => {
+                    let coordinator_pid = client
+                        .query_one("SELECT pg_backend_pid()", &[])
+                        .await?
+                        .get::<_, i32>(0);
+                    let probe_client = Arc::clone(&client);
+                    let rpc_owned = rpc.to_owned();
+                    let target_node_id = target.node_id;
+                    let probe = tokio::spawn(async move {
+                        task234_probe(&probe_client, &rpc_owned, target_node_id).await
+                    });
+                    let _ = task234_wait_remote_backend(socket_dir, target, rpc).await?;
+                    let (cancel, cancel_connection) = tokio_postgres::connect(
+                        &conninfo(socket_dir, coordinator.port),
+                        tokio_postgres::NoTls,
+                    )
+                    .await?;
+                    let cancel_task = tokio::spawn(async move { cancel_connection.await });
+                    let cancelled = cancel
+                        .query_one("SELECT pg_cancel_backend($1)", &[&coordinator_pid])
+                        .await?
+                        .get::<_, bool>(0);
+                    cancel_task.abort();
+                    if !cancelled {
+                        bail!("Task 234 {rpc} coordinator backend rejected pg_cancel_backend");
+                    }
+                    probe.await?
+                }
+                "remote_backend_termination" => {
+                    let probe_client = Arc::clone(&client);
+                    let rpc_owned = rpc.to_owned();
+                    let target_node_id = target.node_id;
+                    let probe = tokio::spawn(async move {
+                        task234_probe(&probe_client, &rpc_owned, target_node_id).await
+                    });
+                    let remote_pid = task234_wait_remote_backend(socket_dir, target, rpc).await?;
+                    let (killer, killer_connection) = tokio_postgres::connect(
+                        &conninfo(socket_dir, target.port),
+                        tokio_postgres::NoTls,
+                    )
+                    .await?;
+                    let killer_task = tokio::spawn(async move { killer_connection.await });
+                    let terminated = killer
+                        .query_one("SELECT pg_terminate_backend($1)", &[&remote_pid])
+                        .await?
+                        .get::<_, bool>(0);
+                    killer_task.abort();
+                    if !terminated {
+                        bail!("Task 234 {rpc} remote backend rejected termination");
+                    }
+                    probe.await?
+                }
+                "connection_reset" => {
+                    let probe_client = Arc::clone(&client);
+                    let rpc_owned = rpc.to_owned();
+                    let target_node_id = target.node_id;
+                    let probe = tokio::spawn(async move {
+                        task234_probe(&probe_client, &rpc_owned, target_node_id).await
+                    });
+                    let _ = task234_wait_remote_backend(socket_dir, target, rpc).await?;
+                    let mut stop = Command::new(pg_ctl);
+                    stop.arg("-D")
+                        .arg(&target.data_dir)
+                        .arg("-m")
+                        .arg("immediate")
+                        .arg("stop")
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::inherit());
+                    run_status(stop).await?;
+                    let probe_outcome = probe.await?;
+                    restart_physical_node(pg_ctl, socket_dir, target, nodes).await?;
+                    probe_outcome
+                }
+                _ => unreachable!(),
+            };
+            let elapsed = started.elapsed();
+            if fault == "local_statement_timeout" {
+                client.batch_execute("SET statement_timeout = 0").await?;
+            }
+            task234_set_remote_delay(psql, socket_dir, target, None).await?;
+            let error = outcome
+                .err()
+                .ok_or_else(|| color_eyre::eyre::eyre!("Task 234 {rpc}/{fault} returned partial/success rows"))?;
+            let snapshot = task234_snapshot(&client).await?;
+            let drained = task234_remote_work_drained(socket_dir, target, rpc).await?;
+            if !drained {
+                bail!("Task 234 {rpc}/{fault} leaked remote backend work");
+            }
+            let mut line = task234_validate_failure(
+                rpc,
+                fault,
+                &error,
+                elapsed,
+                &snapshot,
+                fault == "remote_statement_timeout",
+            )?;
+            let retry_rows = task234_assert_retry(&client, rpc, target.node_id).await?;
+            line.push_str(&format!(" remote_work_drained=true retry_rows={retry_rows}"));
+            lines.push(line);
+            connection_task.abort();
+        }
+    }
+    Ok(lines)
+}
+
 async fn drive_physical_fixture(
     args: &LocalMultinodePg18Args,
     pg_ctl: &Path,
@@ -7519,6 +7947,14 @@ async fn drive_physical_fixture(
     extension_preflight: &ExtensionPreflight,
     enospc_fixture: Option<&Task199EnospcFixture>,
 ) -> Result<()> {
+    if args.read_rpc_fault_matrix
+        && !extension_preflight
+            .features
+            .split(',')
+            .any(|feature| feature == "pg-test")
+    {
+        bail!("--read-rpc-fault-matrix requires an extension built with the pg_test feature");
+    }
     crate::ecaz_println!(
         "[distann-multicluster] physical_setup_start rows={} nodes={}",
         args.rows,
@@ -7686,6 +8122,7 @@ async fn drive_physical_fixture(
         ))
         .await?;
     let publish_fault_lines = if !args.skip_fault_drills
+        && !args.read_rpc_fault_matrix
         && !args.physical_benchmark
         && !args.coordinator_outside_roster
         && owners.len() >= 3
@@ -7770,6 +8207,19 @@ async fn drive_physical_fixture(
     );
     if !serving_ok {
         bail!("physical serving returned {served} rows, expected {query_limit}");
+    }
+    if args.read_rpc_fault_matrix {
+        let lines = run_read_rpc_fault_matrix(pg_ctl, psql, socket_dir, nodes).await?;
+        let body = lines.join("\n") + "\n";
+        fs::write(log_dir.join("task234-read-rpc-fault-matrix.log"), &body)?;
+        for line in &lines {
+            crate::ecaz_println!("[distann-multicluster] {line}");
+        }
+        crate::ecaz_println!(
+            "[distann-multicluster] Task 234 read RPC fault matrix PASS cells={}",
+            lines.len()
+        );
+        return Ok(());
     }
     if args.remote_insert_probe {
         let remote_insert_ok = physical_remote_insert_probe(
