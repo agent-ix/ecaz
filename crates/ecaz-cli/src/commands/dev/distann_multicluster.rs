@@ -6351,6 +6351,68 @@ async fn run_physical_benchmarks(
 
     let single_build_ms = if args.stage_counter_only || args.skip_single_control {
         0
+    } else if args.reuse_fixture {
+        let relations = coordinator
+            .query_one(
+                &format!(
+                    "SELECT to_regclass('{single_corpus}') IS NOT NULL,
+                            to_regclass('{single_queries}') IS NOT NULL,
+                            to_regclass('{single_index}') IS NOT NULL"
+                ),
+                &[],
+            )
+            .await?;
+        if !(relations.get::<_, bool>(0)
+            && relations.get::<_, bool>(1)
+            && relations.get::<_, bool>(2))
+        {
+            bail!(
+                "--reuse-fixture is missing the attested monolithic control relations"
+            );
+        }
+        let counts = coordinator
+            .query_one(
+                &format!(
+                    "SELECT (SELECT count(*)::bigint FROM {single_corpus}),
+                            (SELECT count(*)::bigint FROM {single_queries})"
+                ),
+                &[],
+            )
+            .await?;
+        let expected_source_count = published.iter().map(|row| row.records).sum::<i64>();
+        let single_source_count = counts.get::<_, i64>(0);
+        let single_query_count = counts.get::<_, i64>(1);
+        if single_source_count != expected_source_count
+            || single_query_count != i64::from(args.queries)
+        {
+            bail!(
+                "--reuse-fixture monolithic control count mismatch: expected source/query {}/{}, observed {}/{}",
+                expected_source_count,
+                args.queries,
+                single_source_count,
+                single_query_count
+            );
+        }
+        let reloptions = coordinator
+            .query_one(
+                &format!(
+                    "SELECT coalesce(array_to_string(reloptions, ','), '')
+                       FROM pg_class WHERE oid = '{single_index}'::regclass"
+                ),
+                &[],
+            )
+            .await?
+            .get::<_, String>(0)
+            .replace(' ', "");
+        if !reloptions.contains(&format!("graph_degree={}", args.graph_degree))
+            || !reloptions.contains(&format!("head_index_cap={}", args.head_index_cap))
+            || !reloptions.contains("neighbor_code_format=rabitq")
+        {
+            bail!(
+                "--reuse-fixture monolithic control reloptions mismatch: {reloptions}"
+            );
+        }
+        0
     } else {
         let single_started = Instant::now();
         let head_sizing = head_sizing_reloptions(args);
