@@ -1,6 +1,7 @@
 # Task 234: ec_distann Read RPC Deadline and Cancellation Parity
 
-Status: **proposed — production hardening before Task 228** (2026-08-23).
+Status: **entry inventory complete; packet 001 review-open; wrapper
+implementation pending — production hardening before Task 228** (2026-08-24).
 Priority: P0 distributed-read correctness/operations.
 
 ## Why
@@ -8,10 +9,11 @@ Priority: P0 distributed-read correctness/operations.
 The common async transport gives expansion, materialization, lifecycle calls,
 connection setup, session setup, and prepared-statement setup a client-side
 deadline, remote `statement_timeout`, PostgreSQL interrupt polling, and a
-best-effort remote cancel token. Four read/control RPCs still bypass that
+best-effort remote cancel token. Five read/control RPCs still bypass that
 wrapper with bare awaits:
 
 - sharded physical head search;
+- crown-code export;
 - gateway-routing export;
 - head-shard export; and
 - head-shard import.
@@ -45,7 +47,7 @@ partial or stale results.
 
 ### P1 — Unified read await contract
 
-- Replace all bare async query/query-one awaits in the four named RPCs with the
+- Replace all bare async query/query-one awaits in the five named RPCs with the
   common bounded await path or a shared typed refinement of it.
 - Apply nonzero client deadline and remote `statement_timeout` to every call,
   and retain the existing nonzero connect deadline.
@@ -72,7 +74,7 @@ partial or stale results.
 
 ### P3 — Validation
 
-- Add deterministic PG18 multinode faults for all four RPCs: stalled remote
+- Add deterministic PG18 multinode faults for all five RPCs: stalled remote
   statement, local `pg_cancel_backend`, local `statement_timeout`, remote
   backend termination, connection reset, and one sibling owner succeeding
   while another fails.

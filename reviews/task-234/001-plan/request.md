@@ -12,9 +12,10 @@ seq: 01
 
 This packet requests review of Task 234 at planning checkpoint `dd3e37078`.
 
-FR-081's Task-214 F9 gap identifies four distributed read/control calls that
-still use bare awaits: physical head search, gateway-routing export,
-head-shard export, and head-shard import. The task brings them under the same
+FR-081's Task-214 F9 gap originally identified four distributed read/control
+calls that still use bare awaits. The entry inventory found a fifth:
+crown-code export. Physical head search, crown-code export, gateway-routing
+export, head-shard export, and head-shard import all move under the same
 nonzero client deadline, remote statement timeout, PostgreSQL interrupt,
 bounded cancel-token delivery, and fail-closed aggregation contract used by
 expansion and materialization.
@@ -31,3 +32,9 @@ connection-eviction rule, no-partial-result invariant, and fault matrix. Task
 outcomes need different recovery semantics.
 
 This is planning-only. No tests were run.
+
+The task-local call-site inventory is
+`artifacts/remote-callsite-inventory.md`. It separates already-bounded read
+paths, the five Task 234 gaps, Task 235 transaction/write awaits, and
+synchronous libpq callbacks so the structural acceptance scan has an explicit
+allowlist instead of relying on the original four-call statement.
