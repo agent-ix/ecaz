@@ -118,18 +118,22 @@ async fn cancel_remote_query(cancel: RemoteCancel) {
     }
 }
 
-fn remote_db_error_detail(error: &tokio_postgres::Error) -> String {
-    let Some(db) = error.as_db_error() else {
-        return error.to_string();
-    };
-    let mut detail = format!("sqlstate={} message={}", db.code().code(), db.message());
-    if let Some(value) = db.detail() {
-        detail.push_str(&format!(" detail={value}"));
-    }
-    if let Some(value) = db.hint() {
-        detail.push_str(&format!(" hint={value}"));
-    }
-    detail
+fn remote_db_error_category(error: &tokio_postgres::Error) -> String {
+    error
+        .as_db_error()
+        .map(|db| format!("remote_sqlstate_{}", db.code().code()))
+        .unwrap_or_else(|| "connection_reset".to_owned())
+}
+
+fn owned_record_vec_id(message: &str) -> Option<u64> {
+    let value = message.split_once("vec_id ")?.1.trim_start_matches("0x");
+    let value = value
+        .chars()
+        .take_while(|character| character.is_ascii_hexdigit())
+        .collect::<String>();
+    (!value.is_empty())
+        .then(|| u64::from_str_radix(&value, 16).ok())
+        .flatten()
 }
 
 const POSTGRES_INTERRUPT_POLL_MS: u64 = 5;
@@ -212,10 +216,16 @@ fn classify_remote_read_error(
     if let Some(db) = error.as_db_error() {
         let code = db.code().code();
         if db.message().contains("EC_RECORD_MISSING") {
-            return DistannExpandError::OwnedRecordMissing(format!(
-                "ec_distann remote {context} failed: {}",
-                db.message()
-            ));
+            let message = owned_record_vec_id(db.message())
+                .map(|vec_id| {
+                    format!(
+                        "ec_distann remote {context} reported owned record missing for vec_id 0x{vec_id:016x}"
+                    )
+                })
+                .unwrap_or_else(|| {
+                    format!("ec_distann remote {context} reported an owned record missing")
+                });
+            return DistannExpandError::OwnedRecordMissing(message);
         }
         if code == "57014" {
             let kind = if db.message().contains("statement timeout") {
@@ -225,24 +235,23 @@ fn classify_remote_read_error(
             };
             return DistannExpandError::remote_read(
                 kind,
-                format!("ec_distann remote {context} failed: {}", db.message()),
+                format!("ec_distann remote {context} was cancelled"),
             );
         }
         if matches!(code, "57P01" | "57P02" | "57P03") {
             return DistannExpandError::remote_read(
                 DistannRemoteReadErrorKind::RemoteBackendTerminated,
-                format!("ec_distann remote {context} failed: {}", db.message()),
+                format!("ec_distann remote {context} backend terminated"),
             );
         }
         return DistannExpandError::from_wire_sqlstate(
             Some(code),
-            format!("ec_distann remote {context} failed: {}", db.message()),
+            format!("ec_distann remote {context} failed with SQLSTATE {code}"),
         );
     }
-    let detail = error.to_string();
     DistannExpandError::remote_read(
         DistannRemoteReadErrorKind::TransportReset,
-        format!("ec_distann remote {context} transport failed: {detail}"),
+        format!("ec_distann remote {context} transport reset"),
     )
 }
 
@@ -1040,7 +1049,7 @@ async fn record_remote_physical_intent(
         )
         .await
         .map(|_| ())
-        .map_err(|error| format!("EC_REMOTE_WRITE: intent record failed: {error}"))
+        .map_err(|_| "EC_REMOTE_WRITE remote_sql_failure: intent record failed".to_owned())
 }
 
 async fn mark_remote_physical_intent(
@@ -1056,7 +1065,7 @@ async fn mark_remote_physical_intent(
         )
         .await
         .map(|_| ())
-        .map_err(|error| format!("EC_REMOTE_WRITE: intent state update failed: {error}"))
+        .map_err(|_| "EC_REMOTE_WRITE remote_sql_failure: intent state update failed".to_owned())
 }
 
 fn quote_sql_literal(value: &str) -> String {
@@ -1120,7 +1129,9 @@ fn mark_remote_physical_intent_precommit(
             ),
             &[],
         )
-        .map_err(|error| format!("EC_REMOTE_WRITE: pre-commit intent update failed: {error}"))?;
+        .map_err(|_| {
+            "EC_REMOTE_WRITE remote_sql_failure: pre-commit intent update failed".to_owned()
+        })?;
     if updated != 1 {
         return Err(format!(
             "EC_REMOTE_WRITE: pre-commit intent update affected {updated} rows for {gid}"
@@ -1150,7 +1161,9 @@ fn mark_physical_intent_terminal(
             ),
             &[],
         )
-        .map_err(|error| format!("EC_REMOTE_WRITE: terminal intent update failed: {error}"))?;
+        .map_err(|_| {
+            "EC_REMOTE_WRITE remote_sql_failure: terminal intent update failed".to_owned()
+        })?;
     Ok(())
 }
 
@@ -1186,7 +1199,9 @@ fn record_physical_insert_intent_row(
                 &i64::from_le_bytes(tracked_vec_id.to_le_bytes()),
             ],
         )
-        .map_err(|error| format!("EC_REMOTE_WRITE: pre-planning intent record failed: {error}"))?;
+        .map_err(|_| {
+            "EC_REMOTE_WRITE remote_sql_failure: pre-planning intent record failed".to_owned()
+        })?;
     Ok(())
 }
 
@@ -1297,8 +1312,8 @@ pub(crate) fn remote_physical_insert(
                 Some(request.vec_id),
             )
             .await?;
-            client.batch_execute("BEGIN").await.map_err(|error| {
-                format!("EC_REMOTE_WRITE: physical insert begin failed: {error}")
+            client.batch_execute("BEGIN").await.map_err(|_| {
+                "EC_REMOTE_WRITE remote_sql_failure: physical insert begin failed".to_owned()
             })?;
             client
                 .batch_execute(&format!(
@@ -1310,8 +1325,8 @@ pub(crate) fn remote_physical_insert(
                     }
                 ))
                 .await
-                .map_err(|error| {
-                    format!("EC_REMOTE_WRITE: append A/B setting failed: {error}")
+                .map_err(|_| {
+                    "EC_REMOTE_WRITE remote_sql_failure: append A/B setting failed".to_owned()
                 })?;
             let result = await_remote(
                 call_timeout(),
@@ -1344,8 +1359,9 @@ pub(crate) fn remote_physical_insert(
                             quote_sql_literal(&prepared_gid)
                         ))
                         .await
-                        .map_err(|error| {
-                            format!("EC_REMOTE_WRITE: physical insert prepare failed: {error}")
+                        .map_err(|_| {
+                            "EC_REMOTE_WRITE remote_sql_failure: physical insert prepare failed"
+                                .to_owned()
                         })?;
                     mark_remote_physical_intent(&client, &prepared_gid, "prepare_acked").await?;
                     let intent_conninfo = request.conninfo.to_owned();
@@ -1386,8 +1402,8 @@ pub(crate) fn remote_physical_insert(
                 Err(RemoteAwaitError::Remote(error)) => {
                     let _ = client.batch_execute("ROLLBACK").await;
                     Err(format!(
-                        "EC_REMOTE_WRITE: physical insert failed: {}",
-                        remote_db_error_detail(&error)
+                        "EC_REMOTE_WRITE remote_sql_failure: physical insert failed: {}",
+                        remote_db_error_category(&error)
                     ))
                 }
                 Err(RemoteAwaitError::TimedOut) => {
@@ -1453,8 +1469,8 @@ pub(crate) fn remote_physical_tombstone(
             .map_err(|error| error.to_string())?;
             let pooled = &state.connections[&key];
             let client = &pooled.client;
-            client.batch_execute("BEGIN").await.map_err(|error| {
-                format!("EC_DELETE_ROUTE: remote tombstone begin failed: {error}")
+            client.batch_execute("BEGIN").await.map_err(|_| {
+                "EC_DELETE_ROUTE remote_sql_failure: remote tombstone begin failed".to_owned()
             })?;
             let result = await_remote(
                 call_timeout(),
@@ -1473,14 +1489,14 @@ pub(crate) fn remote_physical_tombstone(
             )
             .await;
             match result {
-                Ok(_) => client.batch_execute("COMMIT").await.map_err(|error| {
-                    format!("EC_DELETE_ROUTE: remote tombstone commit failed: {error}")
+                Ok(_) => client.batch_execute("COMMIT").await.map_err(|_| {
+                    "EC_DELETE_ROUTE remote_sql_failure: remote tombstone commit failed".to_owned()
                 }),
                 Err(RemoteAwaitError::Remote(error)) => {
                     let _ = client.batch_execute("ROLLBACK").await;
                     Err(format!(
-                        "EC_DELETE_ROUTE: remote tombstone failed: {}",
-                        remote_db_error_detail(&error)
+                        "EC_DELETE_ROUTE remote_sql_failure: remote tombstone failed: {}",
+                        remote_db_error_category(&error)
                     ))
                 }
                 Err(RemoteAwaitError::TimedOut) => {
@@ -1533,7 +1549,9 @@ pub(crate) fn remote_physical_backlink(
             client
                 .batch_execute("BEGIN")
                 .await
-                .map_err(|error| format!("EC_REMOTE_WRITE: backlink begin failed: {error}"))?;
+                .map_err(|_| {
+                    "EC_REMOTE_WRITE remote_sql_failure: backlink begin failed".to_owned()
+                })?;
             client
                 .batch_execute(&format!(
                     "SET ec_distann.debug_disable_append_when_room = {}",
@@ -1544,8 +1562,8 @@ pub(crate) fn remote_physical_backlink(
                     }
                 ))
                 .await
-                .map_err(|error| {
-                    format!("EC_REMOTE_WRITE: append A/B setting failed: {error}")
+                .map_err(|_| {
+                    "EC_REMOTE_WRITE remote_sql_failure: append A/B setting failed".to_owned()
                 })?;
             let result = await_remote(
                 call_timeout(),
@@ -1575,8 +1593,8 @@ pub(crate) fn remote_physical_backlink(
                             quote_sql_literal(&prepared_gid)
                         ))
                         .await
-                        .map_err(|error| {
-                            format!("EC_REMOTE_WRITE: backlink prepare failed: {error}")
+                        .map_err(|_| {
+                            "EC_REMOTE_WRITE remote_sql_failure: backlink prepare failed".to_owned()
                         })?;
                     mark_remote_physical_intent(&client, &prepared_gid, "prepare_acked").await?;
                     let intent_conninfo = request.conninfo.to_owned();
@@ -1617,8 +1635,8 @@ pub(crate) fn remote_physical_backlink(
                 Err(RemoteAwaitError::Remote(error)) => {
                     let _ = client.batch_execute("ROLLBACK").await;
                     Err(format!(
-                        "EC_REMOTE_WRITE: backlink failed: {}",
-                        remote_db_error_detail(&error)
+                        "EC_REMOTE_WRITE remote_sql_failure: backlink failed: {}",
+                        remote_db_error_category(&error)
                     ))
                 }
                 Err(RemoteAwaitError::TimedOut) => {
@@ -1643,10 +1661,12 @@ fn physical_intent_state_remote(
             "SELECT intent_state FROM ec_distann_remote_prepared_xact_intent WHERE gid = $1",
             &[&gid],
         )
-        .map_err(|error| format!("EC_REMOTE_WRITE: intent lookup failed: {error}"))?
+        .map_err(|_| "EC_REMOTE_WRITE remote_sql_failure: intent lookup failed".to_owned())?
         .map(|row| {
             row.try_get::<_, String>("intent_state")
-                .map_err(|error| format!("EC_REMOTE_WRITE: intent state decode failed: {error}"))
+                .map_err(|_| {
+                    "EC_REMOTE_WRITE remote_decode_failure: intent state decode failed".to_owned()
+                })
         })
         .transpose()
 }
@@ -1660,7 +1680,9 @@ fn coordinator_xid_is_live(xid: u64) -> Result<bool, String> {
           WHERE backend_xid::text = $1 OR backend_xmin::text = $1)",
         &[xid.to_string().into()],
     )
-    .map_err(|error| format!("EC_REMOTE_WRITE: coordinator xid liveness lookup failed: {error}"))?
+    .map_err(|_| {
+        "EC_REMOTE_WRITE local_sql_failure: coordinator xid liveness lookup failed".to_owned()
+    })?
     .ok_or_else(|| "EC_REMOTE_WRITE: coordinator xid liveness lookup returned NULL".to_owned())
 }
 
@@ -1686,12 +1708,16 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
               ORDER BY prepared, gid",
             &[],
         )
-        .map_err(|error| format!("EC_REMOTE_WRITE: prepared transaction scan failed: {error}"))?;
+        .map_err(|_| {
+            "EC_REMOTE_WRITE remote_sql_failure: prepared transaction scan failed".to_owned()
+        })?;
     let mut results = Vec::with_capacity(prepared_rows.len());
     for row in prepared_rows {
         let gid = row
             .try_get::<_, String>("gid")
-            .map_err(|error| format!("EC_REMOTE_WRITE: prepared gid decode failed: {error}"))?;
+            .map_err(|_| {
+                "EC_REMOTE_WRITE remote_decode_failure: prepared gid decode failed".to_owned()
+            })?;
         let Some(parts) = parse_physical_prepared_gid(&gid) else {
             results.push(format!("{gid}:unparseable:skipped"));
             continue;
@@ -1736,8 +1762,9 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
                                 &final_state,
                             ],
                         )
-                        .map_err(|error| {
-                            format!("EC_REMOTE_WRITE: intent reconciliation failed: {error}")
+                        .map_err(|_| {
+                            "EC_REMOTE_WRITE remote_sql_failure: intent reconciliation failed"
+                                .to_owned()
                         })?;
                 } else {
                     client
@@ -1746,14 +1773,15 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
                              SET intent_state = $2, updated_at = clock_timestamp() WHERE gid = $1",
                             &[&gid, &final_state],
                         )
-                        .map_err(|error| {
-                            format!("EC_REMOTE_WRITE: intent reconciliation failed: {error}")
+                        .map_err(|_| {
+                            "EC_REMOTE_WRITE remote_sql_failure: intent reconciliation failed"
+                                .to_owned()
                         })?;
                 }
                 results.push(format!("{gid}:{intent}:{}", final_state));
             }
-            Err(error) => results.push(format!(
-                "{gid}:{intent}:{}_failed:{error}",
+            Err(_) => results.push(format!(
+                "{gid}:{intent}:{}_failed:remote_sql_failure",
                 if commit { "commit" } else { "rollback" }
             )),
         }
@@ -1781,11 +1809,11 @@ fn lifecycle_connection_key(conninfo: &str) -> RemotePoolKey {
 }
 
 fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
-    let detail = error
+    let category = error
         .as_db_error()
-        .map(|db| db.message().to_owned())
-        .unwrap_or_else(|| error.to_string());
-    format!("EC_BUILD_INCOMPLETE: remote {context} failed: {detail}")
+        .map(|db| format!("remote_sqlstate_{}", db.code().code()))
+        .unwrap_or_else(|| "connection_reset".to_owned());
+    format!("EC_BUILD_INCOMPLETE: remote {context} failed: {category}")
 }
 
 #[cfg(feature = "distann-head-attribution-benchmark")]
@@ -3702,10 +3730,10 @@ async fn run_one_remote(
         .collect::<Result<Vec<_>, DistannExpandError>>()
 }
 
-fn row_err(error: tokio_postgres::Error) -> DistannExpandError {
-    DistannExpandError::Internal(format!(
-        "ec_distann remote transport row decode failed: {error}"
-    ))
+fn row_err(_error: tokio_postgres::Error) -> DistannExpandError {
+    DistannExpandError::Internal(
+        "ec_distann remote transport row decode failed: remote_decode_failure".to_owned(),
+    )
 }
 
 // Same `$1::text::regclass::oid` name→oid trick as EXPAND_SQL: the coordinator
@@ -4318,6 +4346,16 @@ mod tests {
                 "error leaked {forbidden}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn owned_record_wire_detail_extracts_only_bounded_vec_id() {
+        let remote = "[EC_RECORD_MISSING] vec_id 0xdeadbeef password=do-not-forward";
+        assert_eq!(owned_record_vec_id(remote), Some(0xdead_beef));
+        let sanitized = owned_record_vec_id(remote)
+            .map(|vec_id| format!("owned record missing for vec_id 0x{vec_id:016x}"))
+            .expect("vec id should parse");
+        assert!(!sanitized.contains("do-not-forward"));
     }
 
     #[test]
