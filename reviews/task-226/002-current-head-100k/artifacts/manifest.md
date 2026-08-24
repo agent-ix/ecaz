@@ -1,10 +1,12 @@
 # Task 226 packet 002 artifact manifest
 
-- Current source / extension SHA for the next run:
+- Snapshot-lifetime code correction SHA:
   `c85196ce841c1cbcea187dbefb3c10430fb611be`
 - Suite runner binary SHA: `b54f321a579ccdac1535aedc4e3387f78811b0af`
   (the post-preregistration corrections touch extension/runtime code, not the
   suite command expansion)
+- The clean release extension execution-head SHA will be recorded from the
+  successful run's unanimous release-profile preflight.
 - Task bucket / packet: `reviews/task-226/002-current-head-100k/`
 - Lane: three-owner physical PG18 release extension, fixed 4,096 persisted
   sharded head, `ec_real_100k`, 200 held-out queries, top-k 10, L32, H100,
