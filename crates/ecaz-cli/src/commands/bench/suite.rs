@@ -4093,12 +4093,12 @@ impl SuiteStep {
                 }
                 if step.tls_security_matrix
                     && (!step.secure_remote_transport
-                        || step.nodes.unwrap_or(3) < 2
+                        || step.nodes.unwrap_or(3) < 3
                         || step.coordinator_outside_roster
                         || !step.allow_debug_extension)
                 {
                     bail!(
-                        "distann-local-multinode step {:?} TLS security matrix requires secure_remote_transport, at least two owner nodes, an in-roster coordinator, and allow_debug_extension",
+                        "distann-local-multinode step {:?} TLS security matrix requires secure_remote_transport, at least three owner nodes, an in-roster coordinator, and allow_debug_extension",
                         step.name
                     )
                 }
@@ -7407,7 +7407,7 @@ psql header noise\n\
             "secure_remote_transport": true,
             "tls_security_matrix": true,
             "allow_debug_extension": true,
-            "nodes": 2,
+            "nodes": 3,
             "artifact_dir": "artifacts/tls"
           }]
         }"#;

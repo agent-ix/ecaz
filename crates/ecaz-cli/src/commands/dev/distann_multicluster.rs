@@ -596,12 +596,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.tls_security_matrix
         && (!args.secure_remote_transport
-            || args.nodes < 2
+            || args.nodes < 3
             || args.coordinator_outside_roster
             || !args.allow_debug_extension)
     {
         bail!(
-            "--tls-security-matrix requires --secure-remote-transport, at least two owner nodes, an in-roster coordinator, and --allow-debug-extension"
+            "--tls-security-matrix requires --secure-remote-transport, at least three owner nodes, an in-roster coordinator, and --allow-debug-extension"
         );
     }
     if args.tls_security_matrix && (args.physical_benchmark || args.reuse_fixture) {
