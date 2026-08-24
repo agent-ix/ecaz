@@ -4,14 +4,17 @@
 //! node per hop round (FR-079/FR-081) over a per-backend, per-conninfo pooled
 //! `tokio-postgres` connection — the same connect/spawn shape as the SPIRE
 //! remote transport (`ec_spire/.../tls.rs`), reduced to the M2 essentials
-//! (NoTls loopback substrate, ADR-085 D2). Each call first sets the target
+//! connection. Task 236 routes production endpoints through the shared rustls
+//! connector; explicit `sslmode=disable` is accepted only for loopback fixture
+//! endpoints. Each call first sets the target
 //! node's roster/epoch/local_node_id on the session so the endpoint validates
 //! ownership for that node — this is what makes the single-instance loopback
 //! "two-node" fixture behave like two nodes, and is a redundant no-op against a
 //! correctly-configured real node.
 //!
-//! TLS / connection-secret handling (NFR-014) is deferred to the productionizing
-//! pass; M2's gate substrate is loopback multi-instance.
+//! The resolved secret is still supplied by the catalog-backed route layer;
+//! later Task 236 slices remove raw conninfo from pool keys and the legacy
+//! session roster representation.
 
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
@@ -27,8 +30,11 @@ use pgrx::Spi;
 #[cfg(feature = "pg_test")]
 use pgrx::{name, pg_extern};
 use tokio_postgres::types::ToSql;
-use tokio_postgres::{Client, NoTls, Row, Statement};
+use tokio_postgres::{Client, Row, Statement};
 
+use crate::am::common::remote_postgres_tls::{
+    parse_remote_conninfo, ParsedRemoteConninfo, RemoteTlsConfig, RemoteTlsPolicy,
+};
 use crate::storage::page::ItemPointer;
 use crate::storage::relation::index_heap_relation_oid_handle;
 use crate::storage::relation_guard::{HeapRelationGuard, IndexRelationGuard};
@@ -58,6 +64,19 @@ enum RemoteAwaitError<E> {
     Interrupted,
 }
 
+struct RemoteCancel {
+    token: tokio_postgres::CancelToken,
+    tls_config: RemoteTlsConfig,
+}
+
+async fn cancel_remote_query(cancel: RemoteCancel) {
+    if cancel.tls_config.no_tls() {
+        let _ = cancel.token.cancel_query(tokio_postgres::NoTls).await;
+    } else if let Ok(connector) = cancel.tls_config.connector() {
+        let _ = cancel.token.cancel_query(connector).await;
+    }
+}
+
 fn remote_db_error_detail(error: &tokio_postgres::Error) -> String {
     let Some(db) = error.as_db_error() else {
         return error.to_string();
@@ -77,7 +96,7 @@ const REMOTE_CANCEL_DELIVERY_TIMEOUT_MS: u64 = 100;
 
 async fn await_remote<T, E>(
     timeout: Duration,
-    cancel_token: Option<tokio_postgres::CancelToken>,
+    cancel: Option<RemoteCancel>,
     future: impl Future<Output = Result<T, E>>,
 ) -> Result<T, RemoteAwaitError<E>> {
     let remote = tokio::time::timeout(timeout, future);
@@ -90,13 +109,13 @@ async fn await_remote<T, E>(
         },
         futures_util::future::Either::Right(((), _)) => {
             mark_transport_interrupt_observed();
-            if let Some(cancel_token) = cancel_token {
+            if let Some(cancel) = cancel {
                 // Best-effort graceful cancellation is deliberately short. If
                 // delivery stalls, with_transport_state drops the pooled
                 // clients/driver tasks before CHECK_FOR_INTERRUPTS raises.
                 let _ = tokio::time::timeout(
                     Duration::from_millis(REMOTE_CANCEL_DELIVERY_TIMEOUT_MS),
-                    cancel_token.cancel_query(NoTls),
+                    cancel_remote_query(cancel),
                 )
                 .await;
             }
@@ -107,13 +126,18 @@ async fn await_remote<T, E>(
 
 async fn await_remote_read<T>(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     future: impl Future<Output = Result<T, tokio_postgres::Error>>,
 ) -> Result<T, RemoteAwaitError<tokio_postgres::Error>> {
     if postgres_interrupt_pending() {
         mark_transport_interrupt_observed();
         return Err(RemoteAwaitError::Interrupted);
     }
-    let result = await_remote(call_timeout(), Some(client.cancel_token()), future).await;
+    let cancel = RemoteCancel {
+        token: client.cancel_token(),
+        tls_config: tls_config.clone(),
+    };
+    let result = await_remote(call_timeout(), Some(cancel), future).await;
     match result {
         Ok(value) if postgres_interrupt_pending() => {
             mark_transport_interrupt_observed();
@@ -125,9 +149,13 @@ async fn await_remote_read<T>(
             // owner stopped executing it. Bound the cancel delivery attempt;
             // the caller evicts this pooled connection regardless because the
             // protocol/session completion remains ambiguous.
+            let cancel = RemoteCancel {
+                token: client.cancel_token(),
+                tls_config: tls_config.clone(),
+            };
             let _ = tokio::time::timeout(
                 Duration::from_millis(REMOTE_CANCEL_DELIVERY_TIMEOUT_MS),
-                client.cancel_token().cancel_query(NoTls),
+                cancel_remote_query(cancel),
             )
             .await;
             Err(RemoteAwaitError::TimedOut)
@@ -197,23 +225,25 @@ fn classify_remote_read_await(
 
 async fn read_query(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     context: &str,
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, DistannExpandError> {
     classify_remote_read_await(
         context,
-        await_remote_read(client, client.query(sql, params)).await,
+        await_remote_read(client, tls_config, client.query(sql, params)).await,
     )
 }
 
 async fn read_query_one(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     context: &str,
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Row, DistannExpandError> {
-    let rows = read_query(client, context, sql, params).await?;
+    let rows = read_query(client, tls_config, context, sql, params).await?;
     if rows.len() != 1 {
         return Err(DistannExpandError::Internal(format!(
             "ec_distann remote {context} returned {} rows, expected one",
@@ -267,21 +297,29 @@ fn call_timeout() -> Duration {
 fn parse_remote_config(
     conninfo: &str,
     error_prefix: &str,
-) -> Result<tokio_postgres::Config, String> {
-    let mut config = conninfo.parse::<tokio_postgres::Config>().map_err(|_| {
-        format!("{error_prefix}: could not parse participant connection descriptor")
+) -> Result<(ParsedRemoteConninfo, tokio_postgres::Config), String> {
+    let parsed = parse_remote_conninfo(conninfo, RemoteTlsPolicy::DistannSecure).map_err(|error| {
+        format!("{error_prefix}: {}", error.category())
     })?;
+    let mut config = parsed
+        .base_conninfo()
+        .parse::<tokio_postgres::Config>()
+        .map_err(|_| {
+            format!("{error_prefix}: could not parse participant connection descriptor")
+        })?;
     config.connect_timeout(connect_timeout());
-    Ok(config)
+    Ok((parsed, config))
 }
 
 async fn configure_remote_statement_timeout(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     error_prefix: &str,
 ) -> Result<(), DistannExpandError> {
     let timeout = super::options::remote_statement_timeout_ms().to_string();
     match await_remote_read(
         client,
+        tls_config,
         client.query_one(
             "SELECT set_config('statement_timeout', $1, false)",
             &[&timeout],
@@ -307,13 +345,17 @@ async fn configure_remote_statement_timeout(
 
 async fn lifecycle_query(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     context: &str,
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, String> {
     match await_remote(
         call_timeout(),
-        Some(client.cancel_token()),
+        Some(RemoteCancel {
+            token: client.cancel_token(),
+            tls_config: tls_config.clone(),
+        }),
         client.query(sql, params),
     )
     .await
@@ -331,13 +373,17 @@ async fn lifecycle_query(
 
 async fn lifecycle_query_one(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     context: &str,
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Row, String> {
     match await_remote(
         call_timeout(),
-        Some(client.cancel_token()),
+        Some(RemoteCancel {
+            token: client.cancel_token(),
+            tls_config: tls_config.clone(),
+        }),
         client.query_one(sql, params),
     )
     .await
@@ -355,20 +401,22 @@ async fn lifecycle_query_one(
 
 async fn physical_query(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     statement: &Statement,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, DistannExpandError> {
     classify_remote_read_await(
         "physical generation RPC",
-        await_remote_read(client, client.query(statement, params)).await,
+        await_remote_read(client, tls_config, client.query(statement, params)).await,
     )
 }
 
 async fn prepare_physical_statement(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     sql: &'static str,
 ) -> Result<Statement, DistannExpandError> {
-    match await_remote_read(client, client.prepare(sql)).await {
+    match await_remote_read(client, tls_config, client.prepare(sql)).await {
         Ok(statement) => Ok(statement),
         Err(RemoteAwaitError::Remote(error)) => {
             Err(classify_remote_read_error("statement preparation", error))
@@ -399,7 +447,13 @@ async fn ensure_physical_statements(
     let prepared = join_owner_futures(
         stale
             .iter()
-            .map(|key| prepare_physical_statement(&connections[key].client, sql)),
+            .map(|key| {
+                prepare_physical_statement(
+                    &connections[key].client,
+                    &connections[key].tls_config,
+                    sql,
+                )
+            }),
     )
     .await;
     let mut first_error = None;
@@ -498,25 +552,34 @@ fn finalize_read_call<T>(
 
 async fn scan_query(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     context: &str,
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, DistannExpandError> {
-    read_query(client, context, sql, params).await
+    read_query(client, tls_config, context, sql, params).await
 }
 
 async fn open_remote_connection(
     conninfo: &str,
     error_prefix: &str,
-) -> Result<(Client, tokio::task::JoinHandle<()>), DistannExpandError> {
-    let config = parse_remote_config(conninfo, error_prefix).map_err(DistannExpandError::Internal)?;
-    let (client, connection) =
-        match await_remote(connect_timeout(), None, config.connect(NoTls)).await {
+) -> Result<(Client, tokio::task::JoinHandle<()>, RemoteTlsConfig), DistannExpandError> {
+    let (parsed, config) =
+        parse_remote_config(conninfo, error_prefix).map_err(DistannExpandError::Internal)?;
+    let tls_config = parsed.tls_config().clone();
+    let (client, task) = if tls_config.no_tls() {
+        let (client, connection) = match await_remote(
+            connect_timeout(),
+            None,
+            config.connect(tokio_postgres::NoTls),
+        )
+        .await
+        {
             Ok(connection) => connection,
-            Err(RemoteAwaitError::Remote(error)) => {
+            Err(RemoteAwaitError::Remote(_)) => {
                 return Err(DistannExpandError::remote_read(
                     DistannRemoteReadErrorKind::TransportReset,
-                    format!("{error_prefix}: could not connect to participant: {error}"),
+                    format!("{error_prefix}: could not establish participant transport"),
                 ));
             }
             Err(RemoteAwaitError::TimedOut) => {
@@ -532,22 +595,63 @@ async fn open_remote_connection(
                 ));
             }
         };
-    let task = tokio::spawn(async move {
-        let _ = connection.await;
-    });
-    if let Err(error) = configure_remote_statement_timeout(&client, error_prefix).await {
+        let task = tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        (client, task)
+    } else {
+        let connector = tls_config.connector().map_err(|error| {
+            DistannExpandError::Internal(format!("{error_prefix}: {}", error.category()))
+        })?;
+        let (client, connection) = match await_remote(
+            connect_timeout(),
+            None,
+            config.connect(connector),
+        )
+        .await
+        {
+            Ok(connection) => connection,
+            Err(RemoteAwaitError::Remote(_)) => {
+                return Err(DistannExpandError::remote_read(
+                    DistannRemoteReadErrorKind::TransportReset,
+                    format!("{error_prefix}: secure participant connection failed"),
+                ));
+            }
+            Err(RemoteAwaitError::TimedOut) => {
+                return Err(DistannExpandError::remote_read(
+                    DistannRemoteReadErrorKind::ConnectTimeout,
+                    format!("{error_prefix}: secure participant connection timed out"),
+                ));
+            }
+            Err(RemoteAwaitError::Interrupted) => {
+                return Err(DistannExpandError::remote_read(
+                    DistannRemoteReadErrorKind::LocalInterrupt,
+                    format!("{error_prefix}: secure participant connection interrupted"),
+                ));
+            }
+        };
+        let task = tokio::spawn(async move {
+            let _ = connection.await;
+        });
+        (client, task)
+    };
+    if let Err(error) =
+        configure_remote_statement_timeout(&client, &tls_config, error_prefix).await
+    {
         task.abort();
         return Err(error);
     }
-    Ok((client, task))
+    Ok((client, task, tls_config))
 }
 
 async fn configure_scan_identity(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     identity: &(String, String, String),
 ) -> Result<(), DistannExpandError> {
     match await_remote_read(
         client,
+        tls_config,
         client.query(SESSION_SETUP_SQL, &[&identity.0, &identity.1, &identity.2]),
     )
     .await
@@ -594,24 +698,25 @@ async fn ensure_pooled_connections(
     let mut first_error = None;
     for ((key, _), opened) in missing.into_iter().zip(opened) {
         match opened {
-            Ok((client, task)) => ready.push((key, client, task)),
+            Ok((client, task, tls_config)) => ready.push((key, client, task, tls_config)),
             Err(error) if first_error.is_none() => first_error = Some(error),
             Err(_) => {}
         }
     }
     if let Some(error) = first_error {
-        for (_, client, task) in ready {
+        for (_, client, task, _) in ready {
             task.abort();
             drop(client);
         }
         return Err(error);
     }
-    for (key, client, task) in ready {
+    for (key, client, task, tls_config) in ready {
         connections.insert(
             key,
             PooledConnection {
                 client,
                 task,
+                tls_config,
                 applied_identity: None,
                 applied_statement_timeout_ms: super::options::remote_statement_timeout_ms(),
                 prepared_statements: HashMap::new(),
@@ -633,7 +738,13 @@ async fn ensure_pooled_connections(
     let refreshed = join_owner_futures(
         stale
             .iter()
-            .map(|key| configure_remote_statement_timeout(&connections[key].client, error_prefix)),
+            .map(|key| {
+                configure_remote_statement_timeout(
+                    &connections[key].client,
+                    &connections[key].tls_config,
+                    error_prefix,
+                )
+            }),
     )
     .await;
     let mut refreshed_keys = Vec::with_capacity(stale.len());
@@ -692,7 +803,13 @@ async fn ensure_scan_sessions(
     let configured = join_owner_futures(
         stale
             .iter()
-            .map(|(key, identity)| configure_scan_identity(&connections[key].client, identity)),
+            .map(|(key, identity)| {
+                configure_scan_identity(
+                    &connections[key].client,
+                    &connections[key].tls_config,
+                    identity,
+                )
+            }),
     )
     .await;
     let mut configured_sessions = Vec::with_capacity(stale.len());
@@ -1083,7 +1200,8 @@ pub(crate) fn remote_physical_insert(
             )
             .await
             .map_err(|error| error.to_string())?;
-            let client = &state.connections[&key].client;
+            let pooled = &state.connections[&key];
+            let client = &pooled.client;
             let prepared_gid = physical_insert_prepared_gid(
                 request.index_oid,
                 request.target_node_id,
@@ -1117,7 +1235,10 @@ pub(crate) fn remote_physical_insert(
                 })?;
             let result = await_remote(
                 call_timeout(),
-                Some(client.cancel_token()),
+                Some(RemoteCancel {
+                    token: client.cancel_token(),
+                    tls_config: pooled.tls_config.clone(),
+                }),
                 client.query_one(
                     PHYSICAL_INSERT_SQL,
                     &[
@@ -1250,13 +1371,17 @@ pub(crate) fn remote_physical_tombstone(
             )
             .await
             .map_err(|error| error.to_string())?;
-            let client = &state.connections[&key].client;
+            let pooled = &state.connections[&key];
+            let client = &pooled.client;
             client.batch_execute("BEGIN").await.map_err(|error| {
                 format!("EC_DELETE_ROUTE: remote tombstone begin failed: {error}")
             })?;
             let result = await_remote(
                 call_timeout(),
-                Some(client.cancel_token()),
+                Some(RemoteCancel {
+                    token: client.cancel_token(),
+                    tls_config: pooled.tls_config.clone(),
+                }),
                 client.query_one(
                     PHYSICAL_TOMBSTONE_SQL,
                     &[
@@ -1308,7 +1433,8 @@ pub(crate) fn remote_physical_backlink(
             )
             .await
             .map_err(|error| error.to_string())?;
-            let client = &state.connections[&key].client;
+            let pooled = &state.connections[&key];
+            let client = &pooled.client;
             let prepared_gid = physical_insert_prepared_gid(
                 request.index_oid,
                 request.target_node_id,
@@ -1343,7 +1469,10 @@ pub(crate) fn remote_physical_backlink(
                 })?;
             let result = await_remote(
                 call_timeout(),
-                Some(client.cancel_token()),
+                Some(RemoteCancel {
+                    token: client.cancel_token(),
+                    tls_config: pooled.tls_config.clone(),
+                }),
                 client.query_one(
                     PHYSICAL_BACKLINK_SQL,
                     &[
@@ -1555,7 +1684,7 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
 async fn lifecycle_client<'a>(
     connections: &'a mut HashMap<String, PooledConnection>,
     conninfo: &str,
-) -> Result<&'a Client, String> {
+) -> Result<&'a PooledConnection, String> {
     let key = lifecycle_connection_key(conninfo);
     ensure_pooled_connections(
         connections,
@@ -1564,7 +1693,7 @@ async fn lifecycle_client<'a>(
     )
     .await
     .map_err(|error| error.to_string())?;
-    Ok(&connections[&key].client)
+    Ok(&connections[&key])
 }
 
 fn lifecycle_connection_key(conninfo: &str) -> String {
@@ -1657,6 +1786,7 @@ pub(crate) fn remote_physical_seed_batch(
                 let pooled = &connections[&conn_keys[index]];
                 run_one_physical_seed(
                     &pooled.client,
+                    &pooled.tls_config,
                     &pooled.prepared_statements[PHYSICAL_SEED_SQL],
                     request,
                 )
@@ -1671,11 +1801,13 @@ pub(crate) fn remote_physical_seed_batch(
 #[cfg(feature = "distann-head-attribution-benchmark")]
 async fn run_one_physical_seed(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     statement: &Statement,
     request: &DistannPhysicalSeedRequest<'_>,
 ) -> Result<Vec<DistannSeedCandidate>, DistannExpandError> {
     let rows = physical_query(
         client,
+        tls_config,
         statement,
         &[
             &request.index_regclass,
@@ -1731,6 +1863,7 @@ pub(crate) fn remote_traversal_replica_chunk(
                 let pooled = &connections[&conn_key];
                 physical_query(
                     &pooled.client,
+                    &pooled.tls_config,
                     &pooled.prepared_statements[TRAVERSAL_REPLICA_CHUNK_SQL],
                     &[
                         &request.index_regclass,
@@ -1842,6 +1975,7 @@ pub(crate) fn remote_physical_head_search_batch(
                 let pooled = &connections[&conn_keys[index]];
                 run_one_physical_head_search(
                     &pooled.client,
+                    &pooled.tls_config,
                     &pooled.prepared_statements[PHYSICAL_HEAD_SEARCH_SQL],
                     request,
                     &wire_ids[index],
@@ -1859,6 +1993,7 @@ pub(crate) fn remote_physical_head_search_batch(
 
 async fn run_one_physical_head_search(
     client: &tokio_postgres::Client,
+    tls_config: &RemoteTlsConfig,
     statement: &tokio_postgres::Statement,
     request: &DistannPhysicalHeadRequest<'_>,
     wire_ids: &[i64],
@@ -1867,6 +2002,7 @@ async fn run_one_physical_head_search(
         "physical head search",
         await_remote_read(
             client,
+            tls_config,
             client.query(
                 statement,
                 &[
@@ -1944,6 +2080,7 @@ pub(crate) fn remote_crown_code_batch(
             let futures = requests.iter().enumerate().map(|(index, request)| {
                 run_one_crown_code(
                     &connections[&conn_keys[index]].client,
+                    &connections[&conn_keys[index]].tls_config,
                     request,
                     &wire_ids[index],
                 )
@@ -1960,11 +2097,13 @@ pub(crate) fn remote_crown_code_batch(
 
 async fn run_one_crown_code(
     client: &tokio_postgres::Client,
+    tls_config: &RemoteTlsConfig,
     request: &DistannCrownCodeRequest<'_>,
     wire_ids: &[i64],
 ) -> Result<Vec<super::crown_cache::DistannCrownEntry>, DistannExpandError> {
     let rows = read_query(
         client,
+        tls_config,
         "crown-code export",
         "SELECT vec_id, search_code FROM ec_distann_crown_code_export($1::text::regclass, $2::bytea, $3::bigint[])",
         &[&request.index_regclass, &request.epoch_fingerprint, &wire_ids],
@@ -2028,6 +2167,7 @@ pub(crate) fn remote_gateway_routing_batch(
                 let pooled = &connections[&conn_keys[index]];
                 run_one_gateway_routing(
                     &pooled.client,
+                    &pooled.tls_config,
                     &pooled.prepared_statements[GATEWAY_ROUTING_SQL],
                     request,
                     &wire_ids[index],
@@ -2045,6 +2185,7 @@ pub(crate) fn remote_gateway_routing_batch(
 
 async fn run_one_gateway_routing(
     client: &tokio_postgres::Client,
+    tls_config: &RemoteTlsConfig,
     statement: &tokio_postgres::Statement,
     request: &DistannGatewayRoutingRequest<'_>,
     wire_ids: &[i64],
@@ -2053,6 +2194,7 @@ async fn run_one_gateway_routing(
         "gateway routing export",
         await_remote_read(
             client,
+            tls_config,
             client.query(
                 statement,
                 &[
@@ -2109,6 +2251,7 @@ pub(crate) fn remote_head_shard_export(
             .await?;
             let result = read_query(
                 &connections[&key].client,
+                &connections[&key].tls_config,
                 "head-shard export",
                 "SELECT vec_id, vector FROM ec_distann_head_shard_export(
                      $1::text::regclass, $2::bytea, $3::bigint[])",
@@ -2161,6 +2304,7 @@ pub(crate) fn remote_head_shard_import(
             .await?;
             let result = read_query_one(
                 &connections[&key].client,
+                &connections[&key].tls_config,
                 "head-shard import",
                 "SELECT ec_distann_head_shard_import(
                      $1::text::regclass, $2::bytea, $3::integer,
@@ -2317,6 +2461,7 @@ pub(crate) fn remote_physical_expand_batch(
                 let pooled = &connections[&conn_keys[index]];
                 run_one_physical_expand(
                     &pooled.client,
+                    &pooled.tls_config,
                     &pooled.prepared_statements[PHYSICAL_EXPAND_SQL],
                     request,
                     wire_queries[index],
@@ -2383,6 +2528,7 @@ pub(crate) fn remote_physical_expand_batch(
 
 async fn run_one_physical_expand(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     statement: &Statement,
     request: &DistannPhysicalExpandRequest<'_>,
     wire_query: &[f32],
@@ -2396,6 +2542,7 @@ async fn run_one_physical_expand(
         let loop_result = loop {
             let result = physical_query(
                 client,
+                tls_config,
                 statement,
                 &[
                     &request.index_regclass,
@@ -2628,6 +2775,7 @@ pub(crate) fn remote_physical_materialize_batch(
                 let pooled = &connections[&conn_keys[index]];
                 run_one_physical_materialize_raw(
                     &pooled.client,
+                    &pooled.tls_config,
                     &pooled.prepared_statements[PHYSICAL_MATERIALIZE_SQL],
                     request,
                     &wire_ids[index],
@@ -2702,6 +2850,7 @@ pub(crate) fn remote_physical_materialize_batch(
 
 async fn run_one_physical_materialize_raw(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     statement: &Statement,
     request: &DistannPhysicalMaterializeRequest<'_>,
     wire_ids: &[i64],
@@ -2715,6 +2864,7 @@ async fn run_one_physical_materialize_raw(
         loop {
             let result = physical_query(
                 client,
+                tls_config,
                 statement,
                 &[
                     &request.index_regclass,
@@ -2745,6 +2895,7 @@ async fn run_one_physical_materialize_raw(
         loop {
             let result = physical_query(
                 client,
+                tls_config,
                 statement,
                 &[
                     &request.index_regclass,
@@ -2851,9 +3002,10 @@ pub(crate) fn remote_begin_epoch_handoff(request: RemoteHandoffBegin<'_>) -> Res
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, request.conninfo).await?;
+            let pooled = lifecycle_client(connections, request.conninfo).await?;
             lifecycle_query(
-                client,
+                &pooled.client,
+                &pooled.tls_config,
                 "handoff begin",
                 "SELECT state FROM ec_distann_begin_epoch_handoff(
                          $1::text::regclass, $2::bigint, $3::text::uuid,
@@ -2891,9 +3043,10 @@ pub(crate) fn remote_stage_epoch_batch(
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo).await?;
+            let pooled = lifecycle_client(connections, conninfo).await?;
             let row = lifecycle_query_one(
-                client,
+                &pooled.client,
+                &pooled.tls_config,
                 "handoff stage",
                 "SELECT accepted_record_count, cumulative_record_count,
                             cumulative_owner_digest
@@ -2942,9 +3095,10 @@ pub(crate) fn remote_seal_epoch_handoff(
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo).await?;
+            let pooled = lifecycle_client(connections, conninfo).await?;
             let row = lifecycle_query_one(
-                client,
+                &pooled.client,
+                &pooled.tls_config,
                 "handoff seal",
                 "SELECT ec_distann_seal_epoch_handoff(
                          $1::text::regclass, $2::text::uuid, $3::bigint,
@@ -2974,9 +3128,10 @@ pub(crate) fn remote_abort_epoch_handoff(
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo).await?;
+            let pooled = lifecycle_client(connections, conninfo).await?;
             lifecycle_query(
-                client,
+                &pooled.client,
+                &pooled.tls_config,
                 "handoff abort",
                 "SELECT ec_distann_abort_epoch_handoff(
                          $1::text::regclass, $2::text::uuid)",
@@ -3001,9 +3156,10 @@ pub(crate) fn remote_publish_epoch(
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo).await?;
+            let pooled = lifecycle_client(connections, conninfo).await?;
             let row = lifecycle_query_one(
-                client,
+                &pooled.client,
+                &pooled.tls_config,
                 "epoch publish",
                 "SELECT ec_distann_publish_epoch(
                          $1::text::regclass, $2::text::uuid, $3::bytea,
@@ -3034,9 +3190,10 @@ pub(crate) fn remote_mark_epoch_retired(
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo).await?;
+            let pooled = lifecycle_client(connections, conninfo).await?;
             lifecycle_query(
-                client,
+                &pooled.client,
+                &pooled.tls_config,
                 "predecessor retirement",
                 "SELECT ec_distann_mark_epoch_retired(
                          $1::text::regclass, $2::bytea, $3::bytea)",
@@ -3060,9 +3217,10 @@ pub(crate) fn remote_apply_epoch_retire(
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo).await?;
+            let pooled = lifecycle_client(connections, conninfo).await?;
             lifecycle_query(
-                client,
+                &pooled.client,
+                &pooled.tls_config,
                 "epoch retire apply",
                 "SELECT ec_distann_apply_epoch_retire(
                          $1::text::regclass, $2::bytea, $3::bytea)",
@@ -3086,9 +3244,10 @@ pub(crate) fn remote_reclaim_cancelled_generation(
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo).await?;
+            let pooled = lifecycle_client(connections, conninfo).await?;
             lifecycle_query(
-                client,
+                &pooled.client,
+                &pooled.tls_config,
                 "cancelled generation reclaim",
                 "SELECT ec_distann_reclaim_cancelled_generation(
                          $1::text::regclass, $2::bytea, $3::bytea)",
@@ -3130,6 +3289,9 @@ pub(super) struct DistannRemoteExpandRequest<'a> {
 struct PooledConnection {
     client: Client,
     task: tokio::task::JoinHandle<()>,
+    /// Connector configuration used by both the query stream and PostgreSQL's
+    /// out-of-band cancellation connection.
+    tls_config: RemoteTlsConfig,
     /// Reviewer 006-P3: the (roster, local_node_id, epoch) last applied to this
     /// pooled session via `set_config`. The expand hot path skips the setup
     /// round-trip when it is unchanged, and re-applies (epoch-aware) on a
@@ -3255,9 +3417,10 @@ pub(crate) fn remote_timeout_probe_for_test(
             connections,
         } = state;
         runtime.block_on(async {
-            let client = lifecycle_client(connections, conninfo).await?;
+            let pooled = lifecycle_client(connections, conninfo).await?;
             lifecycle_query(
-                client,
+                &pooled.client,
+                &pooled.tls_config,
                 "timeout probe",
                 "SELECT pg_sleep($1::double precision)",
                 &[&sleep_seconds],
@@ -3372,8 +3535,13 @@ pub(super) fn remote_expand_batch(
             // Fire all owners concurrently and await the whole set (expand only —
             // the session identity is already applied above).
             let futures = requests.iter().enumerate().map(|(index, request)| {
-                let client = &connections[&conn_keys[index]].client;
-                run_one_remote(client, request, &vec_ids_i64[index])
+                let pooled = &connections[&conn_keys[index]];
+                run_one_remote(
+                    &pooled.client,
+                    &pooled.tls_config,
+                    request,
+                    &vec_ids_i64[index],
+                )
             });
             let results = futures_util::future::join_all(futures).await;
             Ok::<_, DistannExpandError>(finalize_read_batch(
@@ -3396,11 +3564,13 @@ pub(super) fn remote_expand_batch(
 /// caller (006-P3), so the per-hop hot path is a single round trip.
 async fn run_one_remote(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     request: &DistannRemoteExpandRequest<'_>,
     vec_ids_i64: &[i64],
 ) -> Result<Vec<DistannExpandedNode>, DistannExpandError> {
     let rows = scan_query(
         client,
+        tls_config,
         "expand call",
         EXPAND_SQL,
         &[
@@ -3556,8 +3726,15 @@ pub(super) fn remote_materialize_row_payloads_batch(
             ensure_scan_sessions(connections, &sessions).await?;
 
             let futures = requests.iter().enumerate().map(|(index, request)| {
-                let client = &connections[&conn_keys[index]].client;
-                run_one_materialize(client, request, &vec_ids_i64[index], &columns, &sends)
+                let pooled = &connections[&conn_keys[index]];
+                run_one_materialize(
+                    &pooled.client,
+                    &pooled.tls_config,
+                    request,
+                    &vec_ids_i64[index],
+                    &columns,
+                    &sends,
+                )
             });
             let results = futures_util::future::join_all(futures).await;
             Ok::<_, DistannExpandError>(finalize_read_batch(
@@ -3576,6 +3753,7 @@ pub(super) fn remote_materialize_row_payloads_batch(
 
 async fn run_one_materialize(
     client: &Client,
+    tls_config: &RemoteTlsConfig,
     request: &DistannRemoteMaterializeRequest<'_>,
     vec_ids_i64: &[i64],
     payload_columns: &[String],
@@ -3583,6 +3761,7 @@ async fn run_one_materialize(
 ) -> Result<Vec<DistannMaterializedRow>, DistannExpandError> {
     let rows = scan_query(
         client,
+        tls_config,
         "row-payload call",
         MATERIALIZE_ROW_PAYLOADS_SQL,
         &[
@@ -4008,7 +4187,7 @@ mod tests {
 
     #[test]
     fn parsed_remote_config_has_nonzero_connect_timeout() {
-        let config =
+        let (_, config) =
             parse_remote_config("host=127.0.0.1 port=5432 dbname=postgres", "test transport")
                 .expect("conninfo should parse");
         assert_eq!(

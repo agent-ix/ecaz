@@ -1159,7 +1159,10 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
 
 /// libpq conninfo for a node over the shared socket dir.
 fn conninfo(_socket_dir: &Path, port: u16) -> String {
-    format!("host=127.0.0.1 port={} dbname=postgres user=postgres", port,)
+    format!(
+        "host=127.0.0.1 port={} dbname=postgres user=postgres sslmode=disable",
+        port,
+    )
 }
 
 /// The identical, deterministic corpus + index setup run on every node.
