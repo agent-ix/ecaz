@@ -25,6 +25,7 @@ use tokio::sync::{Barrier, Mutex};
 use crate::commands::bench::latency::{monitor_backend_memory, rss_slope_kb_per_second};
 
 use super::distann_graph_diagnostic::{analyze_graph, GraphNode, GraphSeedSet};
+use super::distann_residual_attribution::{classify_residuals, ResidualAttributionInputs};
 use super::support::{
     default_cluster_root, find_pgrx_install, repo_root, resolve_pgrx_home, run_status,
 };
@@ -122,6 +123,10 @@ pub struct LocalMultinodePg18Args {
     /// diagnostic for every physical owner and the monolithic control.
     #[arg(long, default_value_t = false)]
     pub graph_diagnostic: bool,
+    /// Task 227 join of query traces and persisted graph reachability to exact
+    /// truth. Requires the registered five diagnostic variants.
+    #[arg(long, default_value_t = false)]
+    pub residual_attribution: bool,
     /// Task 185 benchmark-only isolated attribution for each returned seed
     /// position. This is intentionally more expensive than gateway_trace.
     #[arg(long, default_value_t = false)]
@@ -595,6 +600,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.graph_diagnostic && !args.physical_benchmark {
         bail!("--graph-diagnostic requires --physical-benchmark");
+    }
+    if args.residual_attribution && (!args.query_trace || !args.graph_diagnostic) {
+        bail!("--residual-attribution requires --query-trace and --graph-diagnostic");
+    }
+    if args.residual_attribution && (args.skip_recall || args.stage_counter_only) {
+        bail!("--residual-attribution requires per-variant recall predictions");
     }
     if args.gateway_isolated_trace && !args.physical_benchmark {
         bail!("--gateway-isolated-trace requires --physical-benchmark");
@@ -5460,6 +5471,51 @@ async fn run_physical_benchmarks(
     } else {
         parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
     };
+    if args.residual_attribution {
+        if corpus_contract_is_not_frozen(args) {
+            bail!(
+                "--residual-attribution requires ec_real_100k, q200, offset 0/200, k10, head4096, and L32"
+            );
+        }
+        let required = [
+            ("prod-bw4-rabitq", "persisted_head", 4, "rabitq"),
+            ("task226-bw8-rabitq", "persisted_head", 8, "rabitq"),
+            (
+                "prod-bw4-exact-neighbor",
+                "persisted_head",
+                4,
+                "exact_neighbor",
+            ),
+            ("owner-bw4-rabitq", "owner_scan", 4, "rabitq"),
+            (
+                "owner-bw4-exact-neighbor",
+                "owner_scan",
+                4,
+                "exact_neighbor",
+            ),
+        ];
+        for (name, strategy, expected_beam, score_mode) in required {
+            let variant = seed_variants
+                .iter()
+                .find(|variant| variant.name == name)
+                .ok_or_else(|| eyre!("--residual-attribution is missing variant {name}"))?;
+            if variant.strategy != strategy
+                || variant.beam_width.unwrap_or(beam_width) != expected_beam
+                || variant.hop_rounds.unwrap_or(hop_rounds) != 100
+                || variant.neighbor_score_mode != score_mode
+                || variant.head_search_width != 32
+                || variant.head_seed_count != 32
+                || variant.materialization_batch_size != 10
+                || variant.owner_payload_plan_cache
+                || variant.traversal_replica
+                || variant.typed_locator
+                || variant.packed_payload
+                || variant.expanded_locator
+            {
+                bail!("--residual-attribution variant {name} violates its frozen shape");
+            }
+        }
+    }
     let explicit_seed_controls = args.seed_strategy.is_some()
         || args.head_search_width.is_some()
         || args.head_seed_count.is_some()
@@ -6125,6 +6181,7 @@ async fn run_physical_benchmarks(
     // not a scan-path selector GUC, the A/B boundary.
     benchmark_arms.sort_by_key(|arm| arm.9);
     let mut prediction_paths = std::collections::BTreeMap::<String, PathBuf>::new();
+    let mut query_trace_paths = std::collections::BTreeMap::<String, PathBuf>::new();
     let mut same_generation_identity: Option<String> = None;
 
     for (
@@ -6464,7 +6521,7 @@ async fn run_physical_benchmarks(
                                         ec_distann_physical_query_trace_benchmark(
                                             'dm_idx'::regclass, q.source, {}
                                         ) AS trace
-                                   FROM dm_queries q
+                                   FROM {physical_queries} q
                                   ORDER BY q.id
                                   LIMIT {}
                              )
@@ -6500,6 +6557,7 @@ async fn run_physical_benchmarks(
                 fs::write(&trace_path, &trace_json).wrap_err_with(|| {
                     format!("writing Task 227 query trace {}", trace_path.display())
                 })?;
+                query_trace_paths.insert(variant.to_owned(), trace_path.clone());
                 lines.push(format!(
                     "physical_benchmark_query_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_{query_start}_{query_end} query_offset={} queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} query_file_sha256={query_sha256} query_slice_sha256={query_slice_sha256} output={}",
                     args.query_offset,
@@ -7206,6 +7264,7 @@ async fn run_physical_benchmarks(
             head_ids.len()
         );
     }
+    let mut attribution_graph_nodes = None;
     if args.graph_diagnostic {
         if args.skip_single_control {
             bail!("--graph-diagnostic requires the monolithic control");
@@ -7316,7 +7375,7 @@ async fn run_physical_benchmarks(
                 &monolithic_graph,
                 &[GraphSeedSet {
                     name: "physical_persisted_head".to_owned(),
-                    vec_ids: head_vec_ids,
+                    vec_ids: head_vec_ids.clone(),
                 }],
             ),
         });
@@ -7330,6 +7389,9 @@ async fn run_physical_benchmarks(
             seed_sets.len(),
             path.display()
         ));
+        if args.residual_attribution {
+            attribution_graph_nodes = Some(physical_graph);
+        }
     }
     let logical_id_by_vec_id = coordinator
         .query(
@@ -7346,6 +7408,46 @@ async fn run_physical_benchmarks(
             Ok((distann_vec_id_from_source_identity(&identity), logical_id))
         })
         .collect::<Result<HashMap<_, _>>>()?;
+    if args.residual_attribution {
+        let attribution = classify_residuals(ResidualAttributionInputs {
+            query_offset: args.query_offset,
+            query_file_sha256: &query_sha256,
+            query_slice_sha256: &query_slice_sha256,
+            top_k: args.top_k as usize,
+            truth_cache_path: &truth_cache,
+            prediction_paths: &prediction_paths,
+            query_trace_paths: &query_trace_paths,
+            graph_nodes: attribution_graph_nodes
+                .as_deref()
+                .expect("residual attribution requires graph diagnostic"),
+            logical_id_by_vec_id: &logical_id_by_vec_id,
+        })?;
+        let rows_path = log_dir.join("physical-residual-attribution.jsonl");
+        let features_path = log_dir.join("physical-residual-query-features.jsonl");
+        let summary_path = log_dir.join("physical-residual-attribution-summary.json");
+        fs::write(&rows_path, attribution.jsonl()?)
+            .wrap_err_with(|| format!("writing {}", rows_path.display()))?;
+        fs::write(&features_path, attribution.query_features_jsonl()?)
+            .wrap_err_with(|| format!("writing {}", features_path.display()))?;
+        fs::write(&summary_path, attribution.summary_json()?)
+            .wrap_err_with(|| format!("writing {}", summary_path.display()))?;
+        lines.push(format!(
+            "physical_benchmark_residual_attribution scale={scale} queries={} missed_truth_neighbors={} unknown_truth_neighbors={} reconciliation_pass={} rows_output={} query_features_output={} summary_output={}",
+            args.queries,
+            attribution.missed_truth_neighbors(),
+            attribution.unknown_truth_neighbors(),
+            attribution.reconciliation_pass(),
+            rows_path.display(),
+            features_path.display(),
+            summary_path.display(),
+        ));
+        if !attribution.reconciliation_pass() {
+            bail!(
+                "Task 227 residual attribution has {} unknown truth neighbors; artifacts were written but reconciliation failed",
+                attribution.unknown_truth_neighbors()
+            );
+        }
+    }
     let logical_head_ids = head_ids
         .iter()
         .map(|vec_id| {
@@ -7598,6 +7700,16 @@ async fn run_physical_benchmarks(
         ));
     }
     Ok(lines)
+}
+
+fn corpus_contract_is_not_frozen(args: &LocalMultinodePg18Args) -> bool {
+    args.corpus_prefix.as_deref() != Some("ec_real_100k")
+        || args.coordinator_outside_roster
+        || args.queries != 200
+        || !matches!(args.query_offset, 0 | 200)
+        || args.top_k != 10
+        || args.head_index_cap != 4096
+        || args.candidate_heap_limit.unwrap_or(32) != 32
 }
 
 fn benchmark_log_value(line: &str, key: &str) -> Option<String> {
