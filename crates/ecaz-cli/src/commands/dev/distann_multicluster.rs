@@ -7931,6 +7931,11 @@ async fn run_read_rpc_fault_matrix(
                 &snapshot,
                 fault == "remote_statement_timeout",
             )?;
+            if fault == "remote_statement_timeout" {
+                client
+                    .batch_execute("SET ec_distann.remote_statement_timeout_ms = 10000")
+                    .await?;
+            }
             let retry_rows = task234_assert_retry(&client, rpc, target.node_id).await?;
             line.push_str(&format!(" remote_work_drained=true retry_rows={retry_rows}"));
             lines.push(line);
