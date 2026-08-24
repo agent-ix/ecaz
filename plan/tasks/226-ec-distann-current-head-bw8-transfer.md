@@ -1,7 +1,11 @@
 # Task 226: ec_distann Current-Head BW8 Transfer Screen
 
-Status: **plan refined; packet 001 review-open; isolated 100k screen pending**
-(2026-08-23). Priority: P0 recall/latency.
+Status: **implementation/evidence complete; packets 002/003 review-open;
+USEFUL CANDIDATE — POLICY REVIEW; default unchanged** (2026-08-24). The
+registered gate passes at 10k, 50k, and 100k, but 50k/100k p99 regressions are
+carried to outside policy review. Evidence:
+`reviews/task-226/002-current-head-100k/` and
+`reviews/task-226/003-full-scale-decision/`. Priority: P0 recall/latency.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 TRAV-31. This is a changed-premise transfer test, not a rerun of Task 215's
