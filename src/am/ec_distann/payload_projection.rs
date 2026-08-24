@@ -1,6 +1,6 @@
+use std::{collections::BTreeSet, ffi::c_void};
+
 use pgrx::pg_sys;
-use std::collections::BTreeSet;
-use std::ffi::c_void;
 
 use crate::am::common::pg_ptr::{pg_list as cs_pg_list, pg_ref as cs_pg_ref};
 
@@ -13,6 +13,7 @@ pub(crate) enum PayloadFallbackReason {
     UnprovedExpression,
     QueryValueRelationVar,
     VisibilityCheckRequiresPayload,
+    BenchmarkControl,
 }
 
 impl PayloadFallbackReason {
@@ -22,6 +23,7 @@ impl PayloadFallbackReason {
             Self::UnprovedExpression => "unproved_expression",
             Self::QueryValueRelationVar => "query_value_relation_var",
             Self::VisibilityCheckRequiresPayload => "visibility_check_requires_payload",
+            Self::BenchmarkControl => "benchmark_control",
         }
     }
 }
@@ -184,9 +186,9 @@ unsafe fn is_ordering_only_target(
     false
 }
 
-/// Replace the one proven-unused ordering projection with a typed NULL. The
-/// upper Limit shares this target list but does not project or consume the junk
-/// value; avoiding evaluation is required when its vector is not transported.
+/// Replace exactly one finalized ordering-only target on an executor-local plan
+/// copy. The same matcher drives mask derivation and the rewrite, preserving the
+/// invariant that an omitted vector is never evaluated by the projection.
 pub(crate) unsafe fn elide_ordering_only_target(
     target_list: *mut pg_sys::List,
     query_value: *mut pg_sys::Expr,
@@ -195,7 +197,12 @@ pub(crate) unsafe fn elide_ordering_only_target(
     let mut matching = cs_pg_list::<pg_sys::TargetEntry>(target_list)
         .iter_ptr()
         .filter_map(|entry| cs_pg_ref(entry).map(|entry_ref| (entry, entry_ref)))
-        .filter(|(_, entry)| is_ordering_only_target(entry, proof, query_value))
+        .filter(|(_, entry)| {
+            if !entry.resjunk || entry.ressortgroupref == 0 || entry.expr.is_null() {
+                return false;
+            }
+            is_ordering_only_target(entry, proof, query_value)
+        })
         .map(|(entry, _)| entry)
         .collect::<Vec<_>>();
     if matching.len() != 1 {
