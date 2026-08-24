@@ -8657,7 +8657,7 @@ async fn run_task236_tls_security_matrix(
     )?;
     coordinator
         .query_one(
-            "SELECT tests.ec_distann_test_set_conninfo_secret($1::text, $2::text)",
+            "SELECT public.ec_distann_test_set_conninfo_secret($1::text, $2::text)",
             &[&"DISTANN_NODE_2", &rotated],
         )
         .await?;
