@@ -32,10 +32,13 @@ owner rows are 16,637 + 16,756 + 16,607 = 50,000, with zero non-owned rows
 and zero orphans. Both variants share generation identity
 `02009db2e9614fad3e1f49dd0db38b8126c11046dea65817768b44071d0ae800b983`.
 
-The registered rule passes at 10k, 50k, and 100k, so the final disposition is
-`USEFUL CANDIDATE — POLICY REVIEW`. The candidate is recall-neutral with
+The registered rule passes at 10k, 50k, and 100k, so the measured disposition
+is `USEFUL NON-DEFAULT CONFIGURATION — EVIDENCE REVIEW-OPEN`. The candidate is recall-neutral with
 better latency at 10k and improves recall within the registered mean/p95
 envelope at 50k and 100k. It is not an unqualified Pareto win: p99 regresses
 7.14% at 50k (19.60 to 21.00 ms) and 5.08% at 100k (19.70 to 20.70 ms).
-No default policy change is authorized without outside review of that tail
-tradeoff.
+Task 219's review-closed policy retains recall-equivalence for the shipped
+interactive default, so this recall-changing point cannot become the default
+through Task 226. An explicit product-policy ruling would be required to
+reopen that decision; packet review here validates the evidence and supported
+non-default disposition, including the tail tradeoff.

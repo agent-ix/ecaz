@@ -73,5 +73,7 @@ Command:
 - Tail caveat: p99 regresses 7.14% at 50k and 5.08% at 100k, so the candidate
   remains policy-review gated despite passing the registered mean/p95 rule.
 
-Disposition: `USEFUL CANDIDATE — POLICY REVIEW`; no default change in this
-packet. Both external fixtures were removed after evidence capture.
+Disposition: `USEFUL NON-DEFAULT CONFIGURATION — EVIDENCE REVIEW-OPEN`. Task
+219's review-closed recall-equivalence policy retains BW4 as the shipped
+interactive default; Task 226 does not reopen it. Both external fixtures were
+removed after evidence capture.

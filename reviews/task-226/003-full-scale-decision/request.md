@@ -44,9 +44,11 @@ All scales pass the registered rule:
   with 95% CI `[+0.008000, +0.026500]`; mean improves 16.40 to 16.20 ms and
   p95 regresses 4.21% to 19.80 ms — branch (b).
 
-The disposition is `USEFUL CANDIDATE — POLICY REVIEW`, not an automatic
-default change. Although the registered gates pass, p99 regresses 7.14% at
-50k and 5.08% at 100k. Please review the preregistered arithmetic,
-same-generation provenance, storage/topology conformance, and whether that
-tail tradeoff is acceptable for the interactive default. The compact evidence
+The disposition is `USEFUL NON-DEFAULT CONFIGURATION — EVIDENCE REVIEW-OPEN`.
+Task 219 is review-closed with recall-equivalence retained for the shipped
+interactive default; because BW8 changes recall at 50k/100k, Task 226 cannot
+promote it without an explicit product-policy ruling. In addition, p99
+regresses 7.14% at 50k and 5.08% at 100k. Please review the preregistered
+arithmetic, same-generation provenance, storage/topology conformance, and the
+supported non-default disposition with that tail caveat. The compact evidence
 index is `artifacts/decision-summary.md`.
