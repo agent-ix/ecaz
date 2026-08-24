@@ -8341,7 +8341,7 @@ async fn task234_probe(
 ) -> Result<i64, tokio_postgres::Error> {
     client
         .query_one(
-            "SELECT ec_distann_test_read_rpc_probe(
+            "SELECT tests.ec_distann_test_read_rpc_probe(
                  'public.dm_idx'::regclass::oid, $1::text, $2::integer)",
             &[&rpc, &i32::try_from(target_node_id).unwrap_or(i32::MAX)],
         )
@@ -8351,7 +8351,10 @@ async fn task234_probe(
 
 async fn task234_snapshot(client: &tokio_postgres::Client) -> Result<Task234ReadSnapshot> {
     let row = client
-        .query_one("SELECT * FROM ec_distann_test_read_rpc_snapshot()", &[])
+        .query_one(
+            "SELECT * FROM tests.ec_distann_test_read_rpc_snapshot()",
+            &[],
+        )
         .await?;
     Ok(Task234ReadSnapshot {
         batch_total: row.get(0),
