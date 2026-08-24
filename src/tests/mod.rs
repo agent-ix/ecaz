@@ -35,6 +35,58 @@
         ))
     }
 
+    #[pg_extern]
+    fn ec_distann_test_remote_tls_probe(
+        conninfo: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(connection_status, String),
+            name!(ssl, bool),
+            name!(tls_version, String),
+            name!(category, String),
+        ),
+    > {
+        let mut client = match crate::am::common::remote_postgres_tls::connect_remote_postgres(
+            &conninfo,
+            crate::am::common::remote_postgres_tls::RemoteTlsPolicy::DistannSecure,
+            std::time::Duration::from_secs(2),
+            2_000,
+        ) {
+            Ok(client) => client,
+            Err(error) => {
+                return TableIterator::once((
+                    "connect_failed".to_owned(),
+                    false,
+                    String::new(),
+                    error.category().to_owned(),
+                ));
+            }
+        };
+        let row = match client.query_one(
+            "SELECT ssl, coalesce(version, '') \
+               FROM pg_stat_ssl \
+              WHERE pid = pg_backend_pid()",
+            &[],
+        ) {
+            Ok(row) => row,
+            Err(_) => {
+                return TableIterator::once((
+                    "probe_failed".to_owned(),
+                    false,
+                    String::new(),
+                    "secure_session_setup_failed".to_owned(),
+                ));
+            }
+        };
+        TableIterator::once((
+            "connected".to_owned(),
+            row.try_get::<_, bool>(0).unwrap_or(false),
+            row.try_get::<_, String>(1).unwrap_or_default(),
+            String::new(),
+        ))
+    }
+
     struct ScopedEnvVar {
         key: &'static str,
         previous: Option<std::ffi::OsString>,
