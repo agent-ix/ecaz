@@ -349,6 +349,25 @@ fn record_retry_attribution(
     vec_ids: &[u64],
     missing_vec_id: u64,
 ) {
+    // This unlogged relation belongs to diagnostic fixtures, not the
+    // extension schema. Production retries must remain correct when the
+    // attribution surface is absent.
+    // Do not use SPI for this existence check: retries run inside the index
+    // scan's active snapshot, where opening a nested SPI query can perturb
+    // transaction visibility even when the diagnostic relation is absent.
+    // SAFETY: both names are static nul-terminated strings and these catalog
+    // lookups do not retain borrowed backend memory.
+    let relation_exists = unsafe {
+        let namespace_oid = pg_sys::get_namespace_oid(c"public".as_ptr(), true);
+        namespace_oid != pg_sys::InvalidOid
+            && pg_sys::get_relname_relid(
+                c"ec_distann_retry_attribution".as_ptr(),
+                namespace_oid,
+            ) != pg_sys::InvalidOid
+    };
+    if !relation_exists {
+        return;
+    }
     let node_id = vec_ids
         .iter()
         .position(|vec_id| *vec_id == missing_vec_id)
@@ -358,7 +377,7 @@ fn record_retry_attribution(
         return;
     };
     let _ = Spi::run(&format!(
-        "INSERT INTO ec_distann_retry_attribution \
+        "INSERT INTO public.ec_distann_retry_attribution \
          (backend_pid, node_id, served_epoch, missing_vec_id) VALUES \
          (pg_backend_pid(), {node_id}, {epoch}, {})",
         i64::from_le_bytes(missing_vec_id.to_le_bytes())
