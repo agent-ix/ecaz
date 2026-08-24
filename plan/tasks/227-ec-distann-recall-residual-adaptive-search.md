@@ -1,7 +1,7 @@
 # Task 227: ec_distann Recall Residual and Adaptive Search
 
-Status: **plan refined; packet 001 review-open** (2026-08-24). Priority:
-P1 recall.
+Status: **P0 query slicing implemented; packets 001/002 review-open; query
+trace and graph diagnostics pending** (2026-08-24). Priority: P1 recall.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 GRAPH-10, GRAPH-17, GRAPH-18, and TRAV-16 through TRAV-19.
@@ -210,10 +210,12 @@ Do not label a benchmark winner a shipped default or persisted-format change.
 ## Required review packets
 
 1. `reviews/task-227/001-plan/`
-2. `reviews/task-227/002-diagnostic-tooling/`
-3. `reviews/task-227/003-query-level-attribution/`
-4. `reviews/task-227/004-adaptive-candidate/` (only after a reliable signal)
-5. `reviews/task-227/005-full-scale-decision/` (only after a useful 100k screen)
+2. `reviews/task-227/002-query-slicing/`
+3. `reviews/task-227/003-query-trace/`
+4. `reviews/task-227/004-graph-diagnostics/`
+5. `reviews/task-227/005-query-level-attribution/`
+6. `reviews/task-227/006-adaptive-candidate/` (only after a reliable signal)
+7. `reviews/task-227/007-full-scale-decision/` (only after a useful 100k screen)
 
 ## References
 
