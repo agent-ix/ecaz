@@ -1711,6 +1711,7 @@ impl RetainedGenerationScan {
                 row_relation: self.row_relation_ref()?,
                 slot: &slot,
                 snapshot,
+                retry_snapshot: None,
                 source_attnum: self.source_attnum,
                 query,
                 prepared: &prepared,
@@ -1852,6 +1853,7 @@ impl RetainedGenerationScan {
                         row_relation: self.row_relation_ref()?,
                         slot: &slot,
                         snapshot,
+                        retry_snapshot: None,
                         source_attnum: self.source_attnum,
                         query,
                         prepared: &prepared,
@@ -2049,6 +2051,7 @@ impl RetainedGenerationScan {
                 row_relation: self.row_relation_ref()?,
                 slot: &slot,
                 snapshot,
+                retry_snapshot: None,
                 source_attnum: self.source_attnum,
                 query: &empty_query,
                 prepared: &prepared,
@@ -5082,6 +5085,7 @@ impl PhysicalGenerationScan {
                 row_relation,
                 slot,
                 snapshot,
+                retry_snapshot: None,
                 source_attnum,
                 query,
                 prepared: &prepared,
@@ -6253,6 +6257,9 @@ struct GenerationExpander<'a> {
     row_relation: &'a HeapRelationGuard,
     slot: &'a TupleTableSlotGuard<'a>,
     snapshot: pg_sys::Snapshot,
+    /// A graph lookup can refresh visibility between hop rounds. Keep the
+    /// registered snapshot alive while `self.snapshot` points at it.
+    retry_snapshot: Option<RegisteredSnapshotGuard>,
     source_attnum: i32,
     query: &'a [f32],
     prepared: &'a DistannPreparedQuery,
@@ -6488,8 +6495,8 @@ impl GenerationExpander<'_> {
         };
         self.graph_relation = Some(graph_relation);
         self.directory_relation = Some(directory_relation);
-        let retry_snapshot = Some(retry_snapshot);
-        if let Some(snapshot) = retry_snapshot.as_ref() {
+        self.retry_snapshot = Some(retry_snapshot);
+        if let Some(snapshot) = self.retry_snapshot.as_ref() {
             self.snapshot = snapshot.as_ptr();
         }
         #[cfg(feature = "distann-head-attribution-benchmark")]
