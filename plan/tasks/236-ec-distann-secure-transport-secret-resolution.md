@@ -1,8 +1,9 @@
 # Task 236: ec_distann Secure Transport and Secret Resolution
 
-Status: **plan and connection inventory complete; packet 001 review-open;
-shared connector implementation pending** (2026-08-24; packet:
-`reviews/task-236/001-plan-and-connection-inventory/`). Priority: P0 transport
+Status: **shared secure connector implementation complete; packet 002
+review-open; PG18 TLS/mTLS/rotation matrix and security closeout pending**
+(2026-08-24; packet:
+`reviews/task-236/002-shared-secure-connector/`). Priority: P0 transport
 security before Task 228.
 
 ## Why
