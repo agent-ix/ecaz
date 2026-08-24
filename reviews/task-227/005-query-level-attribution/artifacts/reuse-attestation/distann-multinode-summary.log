@@ -1,0 +1,8 @@
+# Derived fixture-reuse attestation for the stopped diagnostic rows 201--400 fixture.
+# Sources: ../run/suite-manifest.json,
+#          ../run/diagnostic-rows-201-400/physical-graph-diagnostic.json,
+#          ../run/diagnostic-rows-201-400/physical-prod-bw4-rabitq-query-trace.json.
+# The reuse path also verifies live reloptions, row count, extension provenance,
+# and physical generation topology before executing a benchmark arm.
+physical_benchmark_provenance scale=100k stage_counter_only=false query_offset=200 query_rows=200 query_slice_sha256=a12a81111d586e78165a950962aa8667e2f95e700159fe86d83bba2b49a5ece9 corpus_prefix=ec_real_100k query_sha256=a7cbec6fc44f6c148234538f61339d00d2f10646febc8f667dcbe75d9cf41782 extension_git_sha=9187e82618f228beb9bbf7f9810fb2d6c767a951 extension_build_profile=release
+physical_benchmark_build scale=100k variant=prod-bw4-rabitq seed_strategy=persisted_head head_index_cap=4096 head_search_width=32 head_seed_count=32 neighbor_score_mode=rabitq stored_neighbor_code_format=rabitq build_shared=true generation_identity=0200797e7ccf2576a229d4af60cdb23e1ffed5854a032066f2d37c623436b810c210 graph_degree=32 owners=3

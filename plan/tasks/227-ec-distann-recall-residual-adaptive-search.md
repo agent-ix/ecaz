@@ -1,7 +1,11 @@
 # Task 227: ec_distann Recall Residual and Adaptive Search
 
-Status: **P0 diagnostic tooling implemented; packets 001--004 review-open;
-query-level attribution pending** (2026-08-24). Priority: P1 recall.
+Status: **implementation/evidence complete; packet 005 review-open; NO RELIABLE
+SIGNAL — STOP before blind evaluation and runtime candidate** (2026-08-24).
+All 141 diagnostic-slice misses reconcile as `budget_frontier`, Task 189's
+same-seed codec trigger is false, and none of the seven preregistered rules
+passes eligibility. Evidence: `reviews/task-227/005-query-level-attribution/`.
+Priority: P1 recall.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
 GRAPH-10, GRAPH-17, GRAPH-18, and TRAV-16 through TRAV-19.

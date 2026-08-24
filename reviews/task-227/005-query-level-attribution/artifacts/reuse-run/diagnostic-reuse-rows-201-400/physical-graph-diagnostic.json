@@ -1,0 +1,416 @@
+{
+  "monolithic": {
+    "aggregate": {
+      "adjacency_sha256": "1992bf22705693a1791de632f3d60401e8f8218d675f4903ae955aa0f037e07f",
+      "articulation_candidate_count": 0,
+      "articulation_candidate_ids": [],
+      "bridge_candidate_count": 0,
+      "bridge_candidate_edges": [],
+      "directed_edges": 3101447,
+      "duplicate_edges": 0,
+      "in_degree": {
+        "max": 2929,
+        "min": 0,
+        "p50": 27,
+        "p95": 66,
+        "p99": 93,
+        "zero": 11
+      },
+      "invalid_edges": 0,
+      "largest_strongly_connected_component": 99989,
+      "largest_weak_component": 100000,
+      "live_nodes": 100000,
+      "local_edges": 3101447,
+      "out_degree": {
+        "max": 32,
+        "min": 4,
+        "p50": 32,
+        "p95": 32,
+        "p99": 32,
+        "zero": 0
+      },
+      "owner_ordinal": null,
+      "remote_edges": 0,
+      "self_edges": 0,
+      "stitch_edges": 0,
+      "stored_nodes": 100000,
+      "strongly_connected_components": 12,
+      "tombstones": 0,
+      "weak_components": 1
+    },
+    "owners": [
+      {
+        "adjacency_sha256": "1992bf22705693a1791de632f3d60401e8f8218d675f4903ae955aa0f037e07f",
+        "articulation_candidate_count": 0,
+        "articulation_candidate_ids": [],
+        "bridge_candidate_count": 0,
+        "bridge_candidate_edges": [],
+        "directed_edges": 3101447,
+        "duplicate_edges": 0,
+        "in_degree": {
+          "max": 2929,
+          "min": 0,
+          "p50": 27,
+          "p95": 66,
+          "p99": 93,
+          "zero": 11
+        },
+        "invalid_edges": 0,
+        "largest_strongly_connected_component": 99989,
+        "largest_weak_component": 100000,
+        "live_nodes": 100000,
+        "local_edges": 3101447,
+        "out_degree": {
+          "max": 32,
+          "min": 4,
+          "p50": 32,
+          "p95": 32,
+          "p99": 32,
+          "zero": 0
+        },
+        "owner_ordinal": 0,
+        "remote_edges": 0,
+        "self_edges": 0,
+        "stitch_edges": 0,
+        "stored_nodes": 100000,
+        "strongly_connected_components": 12,
+        "tombstones": 0,
+        "weak_components": 1
+      }
+    ],
+    "schema": "ec_distann_graph_diagnostic_v1",
+    "seed_reachability": [
+      {
+        "configured_seeds": 4096,
+        "live_seeds": 0,
+        "missing_seeds": 4096,
+        "name": "physical_persisted_head",
+        "reachable_fraction": 0.0,
+        "reachable_live_nodes": 0,
+        "unreachable_live_nodes": 100000
+      }
+    ],
+    "stitch_definition": "persisted cross-owner directed edge"
+  },
+  "monolithic_control": {
+    "identity_kind": "adjacency_sha256",
+    "index_bytes": 854810624,
+    "index_name": "task179_single_100k_idx",
+    "parameters": {
+      "distributed_control": false,
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "neighbor_code_format": "rabitq"
+    },
+    "source_bytes": 2519785472
+  },
+  "physical": {
+    "aggregate": {
+      "adjacency_sha256": "4a3bb45619f5532f0d492c7b5b239318d04a19289773addc58c349c4de325a4e",
+      "articulation_candidate_count": 0,
+      "articulation_candidate_ids": [],
+      "bridge_candidate_count": 0,
+      "bridge_candidate_edges": [],
+      "directed_edges": 3101447,
+      "duplicate_edges": 0,
+      "in_degree": {
+        "max": 2929,
+        "min": 0,
+        "p50": 27,
+        "p95": 66,
+        "p99": 93,
+        "zero": 11
+      },
+      "invalid_edges": 0,
+      "largest_strongly_connected_component": 99989,
+      "largest_weak_component": 100000,
+      "live_nodes": 100000,
+      "local_edges": 1034247,
+      "out_degree": {
+        "max": 32,
+        "min": 4,
+        "p50": 32,
+        "p95": 32,
+        "p99": 32,
+        "zero": 0
+      },
+      "owner_ordinal": null,
+      "remote_edges": 2067200,
+      "self_edges": 0,
+      "stitch_edges": 2067200,
+      "stored_nodes": 100000,
+      "strongly_connected_components": 12,
+      "tombstones": 0,
+      "weak_components": 1
+    },
+    "owners": [
+      {
+        "adjacency_sha256": "d42a8db9c171baf90e88bc433f3ab9a3f4fc1680afe60848876e3693d0c35571",
+        "articulation_candidate_count": 4,
+        "articulation_candidate_ids": [
+          "38b75e0dc73cc7e8",
+          "d82c6a95ff9bcc20",
+          "de0651942bbd7e4a",
+          "f52478f22b293135"
+        ],
+        "bridge_candidate_count": 4,
+        "bridge_candidate_edges": [
+          [
+            "2326fa2b31464b30",
+            "f52478f22b293135"
+          ],
+          [
+            "38b75e0dc73cc7e8",
+            "5da3d74dab522fc7"
+          ],
+          [
+            "b0e390c6d0c877da",
+            "d82c6a95ff9bcc20"
+          ],
+          [
+            "b34a1289eca63668",
+            "de0651942bbd7e4a"
+          ]
+        ],
+        "directed_edges": 1029990,
+        "duplicate_edges": 0,
+        "in_degree": {
+          "max": 2929,
+          "min": 0,
+          "p50": 27,
+          "p95": 66,
+          "p99": 92,
+          "zero": 5
+        },
+        "invalid_edges": 0,
+        "largest_strongly_connected_component": 33107,
+        "largest_weak_component": 33194,
+        "live_nodes": 33195,
+        "local_edges": 344589,
+        "out_degree": {
+          "max": 32,
+          "min": 7,
+          "p50": 32,
+          "p95": 32,
+          "p99": 32,
+          "zero": 0
+        },
+        "owner_ordinal": 0,
+        "remote_edges": 685401,
+        "self_edges": 0,
+        "stitch_edges": 685401,
+        "stored_nodes": 33195,
+        "strongly_connected_components": 88,
+        "tombstones": 0,
+        "weak_components": 2
+      },
+      {
+        "adjacency_sha256": "69fe0f31b3d5038882a330c3e184338bdd1da0c737396fa587bbe9bd00aa34fe",
+        "articulation_candidate_count": 4,
+        "articulation_candidate_ids": [
+          "122e509015fce8cb",
+          "5429c1a9ad50adf7",
+          "670b2ff3e82c8190",
+          "d31aaf7f58918387"
+        ],
+        "bridge_candidate_count": 4,
+        "bridge_candidate_edges": [
+          [
+            "0e1159cff886ae6c",
+            "122e509015fce8cb"
+          ],
+          [
+            "5429c1a9ad50adf7",
+            "d0d8174242b313aa"
+          ],
+          [
+            "670b2ff3e82c8190",
+            "8d8df7fd53d0e0c4"
+          ],
+          [
+            "d31aaf7f58918387",
+            "fd5f26012de8edd6"
+          ]
+        ],
+        "directed_edges": 1036368,
+        "duplicate_edges": 0,
+        "in_degree": {
+          "max": 421,
+          "min": 0,
+          "p50": 26,
+          "p95": 66,
+          "p99": 92,
+          "zero": 4
+        },
+        "invalid_edges": 0,
+        "largest_strongly_connected_component": 33330,
+        "largest_weak_component": 33431,
+        "live_nodes": 33432,
+        "local_edges": 345063,
+        "out_degree": {
+          "max": 32,
+          "min": 7,
+          "p50": 32,
+          "p95": 32,
+          "p99": 32,
+          "zero": 0
+        },
+        "owner_ordinal": 1,
+        "remote_edges": 691305,
+        "self_edges": 0,
+        "stitch_edges": 691305,
+        "stored_nodes": 33432,
+        "strongly_connected_components": 100,
+        "tombstones": 0,
+        "weak_components": 2
+      },
+      {
+        "adjacency_sha256": "b13e0a15b7482df730e71f28ab6b0d4bdcd04647dc299a1ee9d00898973689be",
+        "articulation_candidate_count": 11,
+        "articulation_candidate_ids": [
+          "04532b1e8d67511a",
+          "067a1d3697c29c41",
+          "1bf7d0421eb5f643",
+          "3c356e043b34dbad",
+          "4eabee81f39d60c7",
+          "7bf87d188c4c2181",
+          "8ddb7db7ede63afa",
+          "94c3a42e75b2dccd",
+          "b05ebfef255858dd",
+          "cc053d1377764682",
+          "d54b498e84d6301f"
+        ],
+        "bridge_candidate_count": 11,
+        "bridge_candidate_edges": [
+          [
+            "04532b1e8d67511a",
+            "c28838c671b0db72"
+          ],
+          [
+            "067a1d3697c29c41",
+            "08bb5626b780605c"
+          ],
+          [
+            "1bf7d0421eb5f643",
+            "1df7079372b7b720"
+          ],
+          [
+            "269b14736a09c182",
+            "3c356e043b34dbad"
+          ],
+          [
+            "3a5ba4e63421683e",
+            "d54b498e84d6301f"
+          ],
+          [
+            "4eabee81f39d60c7",
+            "7bf87d188c4c2181"
+          ],
+          [
+            "76bbce63da8d75a0",
+            "8ddb7db7ede63afa"
+          ],
+          [
+            "7bf87d188c4c2181",
+            "e10dc1ae1a49216c"
+          ],
+          [
+            "94c3a42e75b2dccd",
+            "fa540496eb3451cc"
+          ],
+          [
+            "b05ebfef255858dd",
+            "fd762172bc34ca40"
+          ],
+          [
+            "cc053d1377764682",
+            "d02d68ec68082987"
+          ]
+        ],
+        "directed_edges": 1035089,
+        "duplicate_edges": 0,
+        "in_degree": {
+          "max": 543,
+          "min": 0,
+          "p50": 27,
+          "p95": 66,
+          "p99": 93,
+          "zero": 2
+        },
+        "invalid_edges": 0,
+        "largest_strongly_connected_component": 33263,
+        "largest_weak_component": 33372,
+        "live_nodes": 33373,
+        "local_edges": 344595,
+        "out_degree": {
+          "max": 32,
+          "min": 4,
+          "p50": 32,
+          "p95": 32,
+          "p99": 32,
+          "zero": 0
+        },
+        "owner_ordinal": 2,
+        "remote_edges": 690494,
+        "self_edges": 0,
+        "stitch_edges": 690494,
+        "stored_nodes": 33373,
+        "strongly_connected_components": 109,
+        "tombstones": 0,
+        "weak_components": 2
+      }
+    ],
+    "schema": "ec_distann_graph_diagnostic_v1",
+    "seed_reachability": [
+      {
+        "configured_seeds": 4096,
+        "live_seeds": 4096,
+        "missing_seeds": 0,
+        "name": "persisted_head",
+        "reachable_fraction": 1.0,
+        "reachable_live_nodes": 100000,
+        "unreachable_live_nodes": 0
+      },
+      {
+        "configured_seeds": 1343,
+        "live_seeds": 1343,
+        "missing_seeds": 0,
+        "name": "persisted_head_owner_0",
+        "reachable_fraction": 0.99994,
+        "reachable_live_nodes": 99994,
+        "unreachable_live_nodes": 6
+      },
+      {
+        "configured_seeds": 1368,
+        "live_seeds": 1368,
+        "missing_seeds": 0,
+        "name": "persisted_head_owner_1",
+        "reachable_fraction": 0.99993,
+        "reachable_live_nodes": 99993,
+        "unreachable_live_nodes": 7
+      },
+      {
+        "configured_seeds": 1385,
+        "live_seeds": 1385,
+        "missing_seeds": 0,
+        "name": "persisted_head_owner_2",
+        "reachable_fraction": 0.99991,
+        "reachable_live_nodes": 99991,
+        "unreachable_live_nodes": 9
+      }
+    ],
+    "stitch_definition": "persisted cross-owner directed edge"
+  },
+  "physical_generation": {
+    "identity": "0200797e7ccf2576a229d4af60cdb23e1ffed5854a032066f2d37c623436b810c210",
+    "identity_kind": "epoch_fingerprint",
+    "parameters": {
+      "graph_degree": 32,
+      "head_index_cap": 4096,
+      "neighbor_code_format": "rabitq",
+      "owners": 3
+    }
+  },
+  "scale": "100k",
+  "schema": "ec_distann_graph_diagnostic_file_v1"
+}
