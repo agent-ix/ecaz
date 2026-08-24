@@ -14,6 +14,27 @@
             .unwrap_or_else(|error| error.raise())
     }
 
+    #[pg_extern]
+    fn ec_distann_test_read_rpc_snapshot() -> TableIterator<
+        'static,
+        (
+            name!(batch_total, i64),
+            name!(batch_successes, i64),
+            name!(batch_failures, i64),
+            name!(pooled_connections, i64),
+            name!(prepared_statements, i64),
+        ),
+    > {
+        let snapshot = crate::am::ec_distann::read_transport_snapshot_for_test();
+        TableIterator::once((
+            snapshot.batch_total,
+            snapshot.batch_successes,
+            snapshot.batch_failures,
+            snapshot.pooled_connections,
+            snapshot.prepared_statements,
+        ))
+    }
+
     struct ScopedEnvVar {
         key: &'static str,
         previous: Option<std::ffi::OsString>,
