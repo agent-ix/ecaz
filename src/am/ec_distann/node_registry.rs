@@ -8,7 +8,11 @@
 
 use pgrx::datum::Uuid;
 use pgrx::{pg_extern, pg_sys, PgRelation, Spi};
+use sha2::{Digest, Sha256};
 
+use crate::am::common::remote_postgres_tls::{
+    remote_security_fingerprint, RemoteTlsPolicy,
+};
 use super::canonical_wire::{fixed_digest, is_rfc4122_v4_uuid};
 use super::generation_catalog::extension_relation_name;
 use super::generation_descriptor::{
@@ -73,14 +77,85 @@ pub(crate) fn validate_canonical_index_locator(value: &str) -> Result<(), String
     Ok(())
 }
 
-pub(crate) fn resolve_conninfo_secret(conninfo_secret_name: &str) -> Result<String, String> {
+#[derive(Clone)]
+pub(crate) struct ResolvedConninfoSecret {
+    raw_conninfo: String,
+    secret_identity_fingerprint: [u8; 32],
+    security_fingerprint: [u8; 32],
+}
+
+impl std::fmt::Debug for ResolvedConninfoSecret {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ResolvedConninfoSecret")
+            .field(
+                "secret_identity_fingerprint",
+                &hex::encode(self.secret_identity_fingerprint),
+            )
+            .field(
+                "security_fingerprint",
+                &hex::encode(self.security_fingerprint),
+            )
+            .finish_non_exhaustive()
+    }
+}
+
+impl ResolvedConninfoSecret {
+    pub(crate) fn conninfo(&self) -> &str {
+        &self.raw_conninfo
+    }
+
+    pub(crate) fn secret_identity_fingerprint(&self) -> [u8; 32] {
+        self.secret_identity_fingerprint
+    }
+
+    pub(crate) fn security_fingerprint(&self) -> [u8; 32] {
+        self.security_fingerprint
+    }
+}
+
+pub(crate) fn resolve_conninfo_secret(
+    conninfo_secret_name: &str,
+) -> Result<ResolvedConninfoSecret, String> {
     validate_secret_reference(conninfo_secret_name)?;
     let key = crate::am::spire_remote_conninfo_secret_provider_lookup_key(conninfo_secret_name)
-        .map_err(|_| "EC_NODE_DESCRIPTOR: conninfo secret reference is invalid".to_owned())?;
-    match std::env::var(key) {
-        Ok(value) if !value.is_empty() => Ok(value),
-        Ok(_) => Err("EC_NODE_DESCRIPTOR: conninfo secret resolved to an empty value".to_owned()),
-        Err(_) => Err("EC_NODE_DESCRIPTOR: conninfo secret is unavailable".to_owned()),
+        .map_err(|_| {
+            "EC_NODE_DESCRIPTOR secret_invalid: conninfo secret reference is invalid".to_owned()
+        })?;
+    let raw_conninfo = match std::env::var(key) {
+        Ok(value) if !value.is_empty() => value,
+        Ok(_) => {
+            return Err(
+                "EC_NODE_DESCRIPTOR secret_empty: conninfo secret resolved to an empty value"
+                    .to_owned(),
+            )
+        }
+        Err(_) => {
+            return Err(
+                "EC_NODE_DESCRIPTOR secret_missing: conninfo secret is unavailable".to_owned(),
+            )
+        }
+    };
+    Ok(resolved_conninfo_secret(
+        conninfo_secret_name,
+        raw_conninfo,
+    ))
+}
+
+fn resolved_conninfo_secret(
+    conninfo_secret_name: &str,
+    raw_conninfo: String,
+) -> ResolvedConninfoSecret {
+    let mut identity_hasher = Sha256::new();
+    identity_hasher.update(b"ecaz-distann-secret-identity-v1\0");
+    identity_hasher.update(conninfo_secret_name.as_bytes());
+    ResolvedConninfoSecret {
+        security_fingerprint: remote_security_fingerprint(
+            &raw_conninfo,
+            RemoteTlsPolicy::DistannSecure,
+        ),
+        raw_conninfo,
+        secret_identity_fingerprint: identity_hasher.finalize().into(),
     }
 }
 
@@ -507,7 +582,7 @@ fn ec_distann_register_node_descriptor(
             local_control_identity(&remote_index_regclass)?
         } else {
             remote_control_identity(
-                &conninfo,
+                conninfo.conninfo(),
                 &remote_index_regclass,
                 u32::try_from(node_id).expect("positive i32 fits u32"),
             )?
@@ -693,4 +768,30 @@ fn ec_distann_unregister_node_descriptor(index_regclass: PgRelation, roster_ordi
         increment_registry_revision(index_oid, logical_index_uuid, revision)
     })();
     result.unwrap_or_else(|error| pgrx::error!("{error}"));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolved_secret_separates_identity_rotation_and_redacts_debug() {
+        let first = resolved_conninfo_secret(
+            "DISTANN_NODE_TWO",
+            "host=db.example user=alice password=first sslmode=require".to_owned(),
+        );
+        let rotated = resolved_conninfo_secret(
+            "DISTANN_NODE_TWO",
+            "host=db.example user=alice password=second sslmode=require".to_owned(),
+        );
+        assert_eq!(
+            first.secret_identity_fingerprint(),
+            rotated.secret_identity_fingerprint()
+        );
+        assert_ne!(first.security_fingerprint(), rotated.security_fingerprint());
+        let debug = format!("{first:?}");
+        for forbidden in ["DISTANN_NODE_TWO", "db.example", "alice", "first"] {
+            assert!(!debug.contains(forbidden));
+        }
+    }
 }

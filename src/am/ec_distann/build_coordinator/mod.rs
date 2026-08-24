@@ -1040,7 +1040,7 @@ fn recover_predecessor_retirement(
         } else {
             let conninfo = super::node_registry::resolve_conninfo_secret(secret_name)?;
             super::remote_transport::remote_mark_epoch_retired(
-                &conninfo,
+                conninfo.conninfo(),
                 remote_index_regclass,
                 activation_bytes,
                 activation_digest,

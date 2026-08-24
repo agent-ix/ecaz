@@ -1075,11 +1075,11 @@ pub(crate) fn physical_owner_routes(
                         .map_err(|_| "EC_NODE_DESCRIPTOR: node id is negative".to_owned())?,
                     is_local,
                     remote_index_regclass,
-                    roster_conninfo: roster_conninfo.clone(),
+                    roster_conninfo: roster_conninfo.conninfo().to_owned(),
                     conninfo: if is_local {
                         None
                     } else {
-                        Some(roster_conninfo)
+                        Some(roster_conninfo.conninfo().to_owned())
                     },
                 })
             })
