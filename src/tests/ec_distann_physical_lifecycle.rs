@@ -4070,6 +4070,20 @@ fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
     // HeapTupleSatisfiesMVCC, CLOBBER_FREED_MEMORY bytes on the stack). The
     // forcing GUC is the only way to reach that path deterministically, and
     // nothing exercised it before this test.
+    // A forced retry also drives the Task 167 retry-attribution INSERT, and this
+    // branch predates the production guard that makes that relation optional.
+    // The projection-contract path creates it; create it here too so the block
+    // is self-contained in both callers rather than inheriting one's fixture.
+    client
+        .batch_execute(
+            "CREATE UNLOGGED TABLE IF NOT EXISTS public.ec_distann_retry_attribution (
+                 backend_pid int NOT NULL,
+                 node_id int NOT NULL,
+                 served_epoch bigint NOT NULL,
+                 missing_vec_id bigint NOT NULL
+             )",
+        )
+        .expect("retry attribution sink should exist before a forced retry");
     client
         .batch_execute("SET ec_distann.debug_force_frontier_retry = on")
         .expect("forced frontier retry should be settable");

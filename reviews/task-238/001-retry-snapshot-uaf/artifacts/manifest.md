@@ -74,6 +74,37 @@ and intentional, and the block asserts both that the forced retry returns rows
 identical to the known-good baseline and that traversal continues afterwards
 against a live snapshot.
 
+## Reviewer-introduced regression, caught and fixed (2026-08-24)
+
+The regression block landed in `f019d0fd5` runs inside
+`run_distann_three_owner_physical_handoff`, which **two** `pg_test` entry
+points call. Only `test_distann_payload_projection_contract` was run before
+committing. The sibling `test_distann_three_owner_physical_handoff` then
+failed, and the three runs below establish attribution unambiguously:
+
+| tree | result | artifact |
+| --- | --- | --- |
+| `a3898ff43` (before the block) | ok, 1 passed, 243.43s | `pg18-sibling-handoff-baseline-a3898ff43.log` |
+| `f019d0fd5` (block as first committed) | FAILED | `pg18-sibling-handoff-broken-f019d0fd5.log` |
+| with the sink fix | ok, 1 passed, 263.36s | `pg18-sibling-handoff-fixed.log` |
+
+Cause: forcing a retry also drives the Task 167 retry-attribution `INSERT`,
+and this branch predates main's guard making `ec_distann_retry_attribution`
+optional. The projection-contract path creates that relation as a fixture
+hack; the sibling path does not, so the block borrowed a fixture it did not
+own and hit
+`relation "ec_distann_retry_attribution" does not exist` (SQLSTATE 42P01).
+
+Fix: the block now creates the sink itself with `CREATE UNLOGGED TABLE IF NOT
+EXISTS`, so it is self-contained in both callers and a no-op where the
+relation already exists. Landed as a follow-up commit rather than an amend,
+because `f019d0fd5` was already pushed to a shared branch.
+
+**Standing issue this exposes:** the missing production guard has now been
+worked around twice in this file — once by the coder, once here. The durable
+fix is rebasing the branch on `main` rather than a third fixture hack. Recorded
+in `reviews/task-222/004-full-scale-decision/feedback/2026-08-24-01-reviewer.md`.
+
 ## Correction to the blast-radius note in the task file
 
 `plan/tasks/238-...md` says the retry path is entered when "a read races a
