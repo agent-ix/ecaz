@@ -8496,6 +8496,72 @@ fn task236_validate_tls_probe(
     ))
 }
 
+async fn task236_secret_exposure_probe(client: &tokio_postgres::Client) -> Result<String> {
+    let row = client
+        .query_one(
+            "SELECT
+                 (SELECT count(*) FROM public.ec_distann_node_descriptor
+                   WHERE endpoint_identity LIKE ANY (ARRAY['%host=%', '%sslcert=%', '%sslkey=%'])
+                      OR remote_index_regclass LIKE ANY (ARRAY['%host=%', '%sslcert=%', '%sslkey=%'])),
+                 (SELECT count(*) FROM public.ec_distann_generation
+                   WHERE encode(generation_descriptor, 'escape') LIKE ANY (
+                       ARRAY['%host=%', '%sslcert=%', '%sslkey=%', '%BEGIN PRIVATE KEY%']
+                   ))",
+            &[],
+        )
+        .await?;
+    let descriptor_leaks = row.get::<_, i64>(0);
+    let generation_leaks = row.get::<_, i64>(1);
+    let explain = client
+        .query(
+            "EXPLAIN (FORMAT TEXT, COSTS OFF)
+             SELECT source_id FROM dm
+              ORDER BY embedding <#> (SELECT source FROM dm ORDER BY id LIMIT 1)
+              LIMIT 10",
+            &[],
+        )
+        .await?
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let status = client
+        .query(
+            "SELECT row_to_json(status)::text
+               FROM ec_distann_epoch_topology(
+                   'public.dm_idx'::regclass,
+                   (SELECT epoch_fingerprint FROM ec_distann_active_epoch
+                     WHERE index_oid = 'public.dm_idx'::regclass::oid)
+               ) status",
+            &[],
+        )
+        .await?
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let forbidden = [
+        "host=",
+        "sslcert=",
+        "sslkey=",
+        "BEGIN PRIVATE KEY",
+        "DISTANN_NODE_",
+    ];
+    let explain_status_leaks = forbidden
+        .iter()
+        .filter(|marker| explain.contains(**marker) || status.contains(**marker))
+        .count();
+    if descriptor_leaks != 0 || generation_leaks != 0 || explain_status_leaks != 0 {
+        bail!(
+            "Task 236 secret exposure probe failed: descriptors={descriptor_leaks} generations={generation_leaks} explain_status={explain_status_leaks}"
+        );
+    }
+    Ok(
+        "tls_security secret_exposure pass=true descriptor_leaks=0 generation_leaks=0 explain_status_leaks=0"
+            .to_owned(),
+    )
+}
+
 async fn run_task236_tls_security_matrix(
     coordinator: &tokio_postgres::Client,
     target: &Node,
@@ -8504,6 +8570,7 @@ async fn run_task236_tls_security_matrix(
     remote_fault_marker: &Path,
 ) -> Result<Vec<String>> {
     let valid = secure_remote_conninfo(target.port, fixture)?;
+    let mut lines = vec![task236_secret_exposure_probe(coordinator).await?];
     let cells = [
         ("valid_verify_full", valid.clone(), true, ""),
         (
@@ -8603,7 +8670,7 @@ async fn run_task236_tls_security_matrix(
             "tls_option_unsupported",
         ),
     ];
-    let mut lines = Vec::with_capacity(cells.len() + 3);
+    lines.reserve(cells.len() + 3);
     for (cell, conninfo, expect_success, category) in cells {
         let probe = task236_tls_probe(coordinator, &conninfo).await?;
         lines.push(task236_validate_tls_probe(
