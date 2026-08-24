@@ -122,6 +122,10 @@ pub struct LocalMultinodePg18Args {
     /// compact JSON trace per physical seed variant under --artifact-dir.
     #[arg(long, default_value_t = false)]
     pub gateway_trace: bool,
+    /// Task 227 benchmark-only per-query traversal/frontier/exact-result trace
+    /// over the selected evaluation query slice.
+    #[arg(long, default_value_t = false)]
+    pub query_trace: bool,
     /// Task 185 benchmark-only isolated attribution for each returned seed
     /// position. This is intentionally more expensive than gateway_trace.
     #[arg(long, default_value_t = false)]
@@ -604,6 +608,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.gateway_trace && !args.physical_benchmark {
         bail!("--gateway-trace requires --physical-benchmark");
+    }
+    if args.query_trace && !args.physical_benchmark {
+        bail!("--query-trace requires --physical-benchmark");
     }
     if args.gateway_isolated_trace && !args.physical_benchmark {
         bail!("--gateway-isolated-trace requires --physical-benchmark");
@@ -1497,8 +1504,7 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
              INSERT INTO dm_queries
              SELECT id, translate(vec, '[]', '{{}}')::real[]
                FROM dmq_stage ORDER BY id OFFSET {} LIMIT {};",
-            args.query_offset,
-            args.queries
+            args.query_offset, args.queries
         )
     } else {
         let synthetic_vector = synthetic_unit_vector_expr("g", args.dim);
@@ -5925,9 +5931,7 @@ fn query_slice_sha256(bytes: &[u8], offset: u32, limit: u32) -> Result<String> {
         selected += 1;
     }
     if selected != limit {
-        bail!(
-            "query slice is short: offset={offset} requested={limit} selected={selected}"
-        );
+        bail!("query slice is short: offset={offset} requested={limit} selected={selected}");
     }
     Ok(hex::encode(hasher.finalize()))
 }
@@ -6092,6 +6096,19 @@ async fn run_physical_benchmarks(
             "gateway attribution requires an extension built with distann-head-attribution-benchmark"
         );
     }
+    if args.query_trace
+        && !coordinator
+            .query_one(
+                "SELECT to_regprocedure('ec_distann_physical_query_trace_benchmark(regclass,real[],integer)') IS NOT NULL",
+                &[],
+            )
+            .await?
+            .get::<_, bool>(0)
+    {
+        bail!(
+            "query trace requires an extension built with distann-head-attribution-benchmark"
+        );
+    }
     if args.head_policy.is_some() && !has_head_policy_provenance {
         bail!("Task 181 head policy requires extension head-policy provenance helper");
     }
@@ -6202,8 +6219,7 @@ async fn run_physical_benchmarks(
         std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_queries.tsv")))?;
     let query_bytes = std::fs::read(&truth_queries)?;
     let query_sha256 = hex::encode(Sha256::digest(&query_bytes));
-    let query_slice_sha256 =
-        query_slice_sha256(&query_bytes, args.query_offset, args.queries)?;
+    let query_slice_sha256 = query_slice_sha256(&query_bytes, args.query_offset, args.queries)?;
     let query_start = args.query_offset + 1;
     let query_end = args.query_offset + args.queries;
     let truth_cache = nodes[0]
@@ -6944,6 +6960,79 @@ async fn run_physical_benchmarks(
                 })?;
                 lines.push(format!(
                     "physical_benchmark_gateway_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_201_400 queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} output={}",
+                    args.queries,
+                    args.top_k,
+                    trace_path.display()
+                ));
+            }
+            if arm == "physical" && args.query_trace {
+                let seed_strategy_sql = seed_strategy.replace('\'', "''");
+                coordinator
+                    .batch_execute(&format!(
+                        "SET ec_distann.beam_width = {arm_beam_width};\n\
+                         SET ec_distann.hop_rounds = {arm_hop_rounds};\n\
+                         SET ec_distann.candidate_heap_limit = {candidate_heap_limit};\n\
+                         SET ec_distann.benchmark_seed_mode = '{seed_strategy_sql}';\n\
+                         SET ec_distann.benchmark_head_search_width = {head_search_width};\n\
+                         SET ec_distann.benchmark_head_seed_count = {head_seed_count};\n\
+                         SET ec_distann.benchmark_exact_neighbor = {};\n\
+                         SET ec_distann.sharded_head_search = {};",
+                        if neighbor_score_mode == "exact_neighbor" {
+                            "on"
+                        } else {
+                            "off"
+                        },
+                        if args.sharded_head { "on" } else { "off" },
+                    ))
+                    .await
+                    .wrap_err("configuring coordinator for Task 227 query trace")?;
+                let trace_json = coordinator
+                    .query_one(
+                        &format!(
+                            "WITH traces AS (
+                                 SELECT q.id::bigint AS query_id,
+                                        ec_distann_physical_query_trace_benchmark(
+                                            'dm_idx'::regclass, q.source, {}
+                                        ) AS trace
+                                   FROM dm_queries q
+                                  ORDER BY q.id
+                                  LIMIT {}
+                             )
+                             SELECT jsonb_build_object(
+                                 'schema', 'ec_distann_query_trace_file_v1',
+                                 'query_prefix', 'rows_{}_{}',
+                                 'query_offset', {},
+                                 'queries', count(*),
+                                 'query_file_sha256', '{}',
+                                 'query_slice_sha256', '{}',
+                                 'traces', COALESCE(jsonb_agg(
+                                     jsonb_build_object(
+                                         'query_id', query_id,
+                                         'trace', trace
+                                     ) ORDER BY query_id
+                                 ), '[]'::jsonb)
+                             )::text
+                               FROM traces",
+                            args.top_k,
+                            args.queries,
+                            query_start,
+                            query_end,
+                            args.query_offset,
+                            query_sha256,
+                            query_slice_sha256,
+                        ),
+                        &[],
+                    )
+                    .await
+                    .wrap_err("collecting Task 227 query traces")?
+                    .get::<_, String>(0);
+                let trace_path = log_dir.join(format!("{arm}-{variant}-query-trace.json"));
+                fs::write(&trace_path, &trace_json).wrap_err_with(|| {
+                    format!("writing Task 227 query trace {}", trace_path.display())
+                })?;
+                lines.push(format!(
+                    "physical_benchmark_query_trace scale={scale} variant={variant} arm={arm} query_prefix=rows_{query_start}_{query_end} query_offset={} queries={} top_k={} beam_width={arm_beam_width} candidate_heap_limit={candidate_heap_limit} hop_rounds={arm_hop_rounds} seed_strategy={seed_strategy} head_search_width={head_search_width} head_seed_count={head_seed_count} neighbor_score_mode={neighbor_score_mode} query_file_sha256={query_sha256} query_slice_sha256={query_slice_sha256} output={}",
+                    args.query_offset,
                     args.queries,
                     args.top_k,
                     trace_path.display()

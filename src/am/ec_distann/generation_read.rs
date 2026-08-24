@@ -3406,6 +3406,143 @@ fn ec_distann_physical_seed_gateway_trace_benchmark(
     ))
 }
 
+/// Task 227 residual-attribution trace. This is a benchmark-only, bounded,
+/// read-only replay of the ordinary physical search. Stable vector ids are
+/// rendered as fixed-width hexadecimal strings so JSON consumers never lose
+/// precision. The production access method never activates this trace.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_query_trace_benchmark(
+    index_regclass: PgRelation,
+    query: Vec<f32>,
+    top_k: i32,
+) -> pgrx::JsonB {
+    let top_k = usize::try_from(top_k)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("query trace top_k must be in 1..=4096"));
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    physical_query_trace_benchmark_impl(index_oid, query, top_k, None)
+}
+
+/// Participant-side form used by PG18 callback coverage and distributed
+/// diagnostics when the coordinator's immutable epoch fingerprint is already
+/// known. Participant catalogs intentionally do not install an active pointer.
+#[cfg(feature = "distann-head-attribution-benchmark")]
+#[pg_extern(volatile, parallel_restricted)]
+fn ec_distann_physical_query_trace_at_fingerprint_benchmark(
+    index_regclass: PgRelation,
+    epoch_fingerprint: Vec<u8>,
+    query: Vec<f32>,
+    top_k: i32,
+) -> pgrx::JsonB {
+    let top_k = usize::try_from(top_k)
+        .ok()
+        .filter(|value| (1..=4096).contains(value))
+        .unwrap_or_else(|| pgrx::error!("query trace top_k must be in 1..=4096"));
+    let fingerprint: [u8; 34] = epoch_fingerprint
+        .try_into()
+        .unwrap_or_else(|value: Vec<u8>| {
+            pgrx::error!(
+                "query trace epoch_fingerprint must be 34 bytes, got {}",
+                value.len()
+            )
+        });
+    let index_oid = index_regclass.oid();
+    drop(index_regclass);
+    physical_query_trace_benchmark_impl(index_oid, query, top_k, Some(fingerprint))
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn physical_query_trace_benchmark_impl(
+    index_oid: pg_sys::Oid,
+    query: Vec<f32>,
+    top_k: usize,
+    requested_fingerprint: Option<[u8; 34]>,
+) -> pgrx::JsonB {
+    let index_guard = IndexRelationGuard::try_access_share(index_oid)
+        .unwrap_or_else(|| pgrx::error!("query trace could not open index relation"));
+    let source_attnum = super::routine::indexed_ecvector_attnum(index_guard.as_ptr())
+        .unwrap_or_else(|error| {
+            pgrx::error!("query trace source column resolution failed: {error}")
+        });
+    // SAFETY: SQL function execution has an active snapshot; the relation
+    // guard remains live for the duration of the physical search.
+    let snapshot = unsafe { pg_sys::GetActiveSnapshot() };
+    if snapshot.is_null() {
+        pgrx::error!("query trace has no active snapshot");
+    }
+    let mut scan = match requested_fingerprint {
+        Some(fingerprint) => PhysicalGenerationScan::open_at_fingerprint(index_oid, fingerprint),
+        None => PhysicalGenerationScan::open(index_oid),
+    }
+    .unwrap_or_else(|error| pgrx::error!("{error}"));
+    let logical_index_uuid = Uuid::from_bytes(scan.descriptor.coordinator_logical_index_uuid);
+    let build_id = scan.build_id;
+    let fingerprint = hex::encode(scan.fingerprint);
+    let (result, trace) = super::stage_counters::with_seed_trace(|| {
+        scan.search(snapshot, source_attnum, &query, top_k)
+    });
+    result.unwrap_or_else(|error| pgrx::error!("{error}"));
+
+    let rounds = trace
+        .rounds
+        .iter()
+        .map(|round| {
+            serde_json::json!({
+                "round": round.round,
+                "requested_ids": query_trace_ids(&round.requested_ids),
+                "returned_ids": query_trace_ids(&round.returned_ids),
+                "exact_input_ids": query_trace_ids(&round.exact_input_ids),
+                "exact_input_dists": round.exact_input_dists,
+                "retained_ids": query_trace_ids(&round.retained_ids),
+                "retained_code_dists": round.retained_code_dists,
+                "code_threshold": round.code_threshold,
+                "candidate_limit": round.candidate_limit,
+                "heap_saturated": round.heap_saturated,
+                "frontier_stable": round.frontier_stable,
+                "frontier_score_gap": round.frontier_score_gap,
+                "convergence_gap": round.convergence_gap,
+                "owner_ordinals": round.owner_ordinals,
+                "owner_request_counts": round.owner_request_counts,
+                "owner_fanout": round.owner_ordinals.len(),
+                "request_bytes": round.request_bytes,
+                "response_bytes": round.response_bytes,
+            })
+        })
+        .collect::<Vec<_>>();
+    pgrx::JsonB(serde_json::json!({
+        "schema": "ec_distann_query_trace_v1",
+        "logical_index_uuid": logical_index_uuid.to_string(),
+        "build_id": build_id.to_string(),
+        "epoch_fingerprint": fingerprint,
+        "locator_limit": super::stage_counters::DISTANN_QUERY_TRACE_LOCATOR_LIMIT,
+        "truncated": trace.truncated,
+        "seed_ids": query_trace_ids(&trace.seed_ids),
+        "seed_code_dists": trace.seed_code_dists,
+        "seed_expanded_counts": trace.seed_expanded_counts,
+        "seed_hit_counts": trace.seed_hit_counts,
+        "expanded_live_ids": query_trace_ids(&trace.hit_ids),
+        "expanded_origin_masks": trace.hit_origin_masks,
+        "expanded_unique": trace.expanded_unique,
+        "expanded_overlap": trace.expanded_overlap,
+        "rounds": rounds,
+        "exact_rerank_ids": query_trace_ids(&trace.exact_rerank_ids),
+        "exact_rerank_dists": trace.exact_rerank_dists,
+        "final_ids": query_trace_ids(&trace.final_ids),
+        "final_dists": trace.final_dists,
+        "rounds_executed": trace.rounds_executed,
+        "early_exit": trace.early_exit,
+        "beam_exhausted": trace.beam_exhausted,
+    }))
+}
+
+#[cfg(feature = "distann-head-attribution-benchmark")]
+fn query_trace_ids(ids: &[u64]) -> Vec<String> {
+    ids.iter().map(|vec_id| format!("{vec_id:016x}")).collect()
+}
+
 /// Task 185 candidate-level attribution. This repeats the same physical scan
 /// with exactly one member of the control's returned seed list. It isolates a
 /// candidate's bounded traversal contribution from the ordering/competition
@@ -5802,6 +5939,16 @@ impl PhysicalMultiOwnerExpander<'_> {
             vec_ids,
             self.routes.len(),
             self.descriptor.placement_hash_version,
+        );
+        #[cfg(feature = "distann-head-attribution-benchmark")]
+        super::stage_counters::seed_trace_owner_fanout(
+            &buckets
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, bucket)| {
+                    (!bucket.is_empty()).then_some((ordinal, bucket.len()))
+                })
+                .collect::<Vec<_>>(),
         );
         #[cfg(feature = "distann-head-attribution-benchmark")]
         super::stage_counters::record(
