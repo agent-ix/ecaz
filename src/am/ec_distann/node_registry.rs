@@ -15,6 +15,7 @@ use super::generation_descriptor::{
     validate_endpoint_identity, validate_roster, DistannRosterEntry,
 };
 use super::generation_store::{control_compatibility_digest, open_control_index};
+use super::remote_transport::connect_distann_postgres;
 
 struct ControlRegistrationIdentity {
     logical_index_uuid: Uuid,
@@ -255,7 +256,7 @@ fn remote_control_identity(
     remote_index_regclass: &str,
     node_id: u32,
 ) -> Result<ControlRegistrationIdentity, String> {
-    let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+    let mut client = connect_distann_postgres(
         conninfo,
         node_id,
         "ec_distann node registration",

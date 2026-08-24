@@ -22,6 +22,8 @@ pub(crate) const REMOTE_TLS_PLAINTEXT_FORBIDDEN: &str = "plaintext_forbidden";
 pub(crate) const REMOTE_TLS_CA_LOAD_FAILED: &str = "ca_load_failed";
 pub(crate) const REMOTE_TLS_CLIENT_CERT_LOAD_FAILED: &str = "client_cert_load_failed";
 pub(crate) const REMOTE_TLS_CLIENT_KEY_LOAD_FAILED: &str = "client_key_load_failed";
+pub(crate) const REMOTE_TLS_CONNECT_FAILED: &str = "secure_connect_failed";
+pub(crate) const REMOTE_TLS_SESSION_SETUP_FAILED: &str = "secure_session_setup_failed";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RemoteTlsPolicy {
@@ -187,6 +189,41 @@ pub(crate) fn parse_remote_conninfo(
     };
     validate_policy(&parsed, policy)?;
     Ok(parsed)
+}
+
+/// Open a blocking PostgreSQL connection under an explicit transport policy.
+///
+/// Error values are intentionally categorical: neither the descriptor nor a
+/// driver error (which can contain endpoint or credential material) crosses
+/// the boundary to callers.
+pub(crate) fn connect_remote_postgres(
+    conninfo: &str,
+    policy: RemoteTlsPolicy,
+    connect_timeout: std::time::Duration,
+    statement_timeout_ms: u64,
+) -> Result<postgres::Client, RemoteTlsError> {
+    let parsed = parse_remote_conninfo(conninfo, policy)?;
+    let mut config = parsed
+        .base_conninfo()
+        .parse::<postgres::Config>()
+        .map_err(|_| conninfo_error())?;
+    if !connect_timeout.is_zero() {
+        config.connect_timeout(connect_timeout);
+    }
+    let mut client = if parsed.tls_config().no_tls() {
+        config
+            .connect(postgres::NoTls)
+            .map_err(|_| connect_error())?
+    } else {
+        let connector = parsed.tls_config().connector()?;
+        config.connect(connector).map_err(|_| connect_error())?
+    };
+    if statement_timeout_ms > 0 {
+        client
+            .batch_execute(&format!("SET statement_timeout = {statement_timeout_ms}"))
+            .map_err(|_| session_setup_error())?;
+    }
+    Ok(client)
 }
 
 fn default_tls_config(policy: RemoteTlsPolicy) -> RemoteTlsConfig {
@@ -568,6 +605,20 @@ fn client_key_error() -> RemoteTlsError {
     RemoteTlsError::new(
         REMOTE_TLS_CLIENT_KEY_LOAD_FAILED,
         "the TLS client private key could not be loaded safely",
+    )
+}
+
+fn connect_error() -> RemoteTlsError {
+    RemoteTlsError::new(
+        REMOTE_TLS_CONNECT_FAILED,
+        "the secure remote PostgreSQL connection could not be established",
+    )
+}
+
+fn session_setup_error() -> RemoteTlsError {
+    RemoteTlsError::new(
+        REMOTE_TLS_SESSION_SETUP_FAILED,
+        "the secure remote PostgreSQL session could not be configured",
     )
 }
 

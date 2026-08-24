@@ -33,7 +33,8 @@ use tokio_postgres::types::ToSql;
 use tokio_postgres::{Client, Row, Statement};
 
 use crate::am::common::remote_postgres_tls::{
-    parse_remote_conninfo, ParsedRemoteConninfo, RemoteTlsConfig, RemoteTlsPolicy,
+    connect_remote_postgres, parse_remote_conninfo, ParsedRemoteConninfo, RemoteTlsConfig,
+    RemoteTlsPolicy,
 };
 use crate::storage::page::ItemPointer;
 use crate::storage::relation::index_heap_relation_oid_handle;
@@ -292,6 +293,25 @@ fn call_timeout() -> Duration {
     // client deadline is a bounded fallback if cancellation or transport
     // delivery stalls.
     Duration::from_millis(super::options::remote_statement_timeout_ms().saturating_add(5_000))
+}
+
+pub(super) fn connect_distann_postgres(
+    conninfo: &str,
+    node_id: u32,
+    context: &str,
+) -> Result<postgres::Client, String> {
+    connect_remote_postgres(
+        conninfo,
+        RemoteTlsPolicy::DistannSecure,
+        connect_timeout(),
+        super::options::remote_statement_timeout_ms(),
+    )
+    .map_err(|error| {
+        format!(
+            "EC_REMOTE_TRANSPORT: {context} failed for node_id {node_id}: {}",
+            error.category()
+        )
+    })
 }
 
 fn parse_remote_config(
@@ -989,7 +1009,7 @@ fn resolve_physical_insert_prepared(conninfo: String, node_id: u32, gid: String,
     } else {
         "ec_distann physical insert remote prepared rollback callback"
     };
-    let Ok(mut client) = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+    let Ok(mut client) = connect_distann_postgres(
         &conninfo, node_id, context,
     ) else {
         return;
@@ -1026,7 +1046,7 @@ fn mark_remote_physical_intent_precommit(
     node_id: u32,
     gid: &str,
 ) -> Result<(), String> {
-    let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+    let mut client = connect_distann_postgres(
         conninfo,
         node_id,
         "ec_distann physical insert pre-commit intent",
@@ -1055,7 +1075,7 @@ fn mark_physical_intent_terminal(
     gid: &str,
     state: &str,
 ) -> Result<(), String> {
-    let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+    let mut client = connect_distann_postgres(
         conninfo,
         node_id,
         "ec_distann physical insert local intent terminal state",
@@ -1082,7 +1102,7 @@ fn record_physical_insert_intent_row(
     gid: &str,
     tracked_vec_id: u64,
 ) -> Result<(), String> {
-    let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+    let mut client = connect_distann_postgres(
         conninfo,
         node_id,
         "ec_distann physical insert pre-planning intent",
@@ -1593,7 +1613,7 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
     node_id: u32,
     index_oid: pg_sys::Oid,
 ) -> Result<Vec<String>, String> {
-    let mut client = crate::am::spire_remote_search_libpq_connect_with_session_timeouts(
+    let mut client = connect_distann_postgres(
         conninfo,
         node_id,
         "ec_distann physical prepared transaction reaper",
