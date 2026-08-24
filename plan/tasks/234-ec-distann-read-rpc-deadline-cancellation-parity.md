@@ -1,9 +1,9 @@
 # Task 234: ec_distann Read RPC Deadline and Cancellation Parity
 
-Status: **wrapper/call-site implementation complete; packet 002 review-open;
-PG18 multinode fault matrix pending — production hardening before Task 228**
-(2026-08-24). Evidence:
-`reviews/task-234/002-wrapper-and-callsite-parity/`.
+Status: **implementation and 25-cell PG18 fault matrix complete; packet 003
+review-open; outside acceptance and packet 004 closeout pending — production
+hardening before Task 228** (2026-08-24). Evidence:
+`reviews/task-234/003-pg18-fault-matrix/`.
 Priority: P0 distributed-read correctness/operations.
 
 ## Why
