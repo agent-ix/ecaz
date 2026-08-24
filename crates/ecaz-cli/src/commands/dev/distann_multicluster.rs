@@ -308,6 +308,11 @@ pub struct LocalMultinodePg18Args {
     /// remains an explicit loopback-only plaintext control path.
     #[arg(long, default_value_t = false)]
     pub secure_remote_transport: bool,
+    /// Task 236 diagnostic-only TLS and secret-rotation matrix. Requires a
+    /// pg_test extension build and secure remote transport, and runs as the
+    /// sole post-publish validation lane.
+    #[arg(long, default_value_t = false)]
+    pub tls_security_matrix: bool,
     /// Skip the expensive concurrent insert/query drill after the benchmark
     /// matrix. Used for large-scale measurement arms when the dedicated
     /// bounded concurrency gate is run separately.
@@ -390,6 +395,15 @@ struct SecureRemoteTransportFixture {
     ca_cert: PathBuf,
     client_cert: PathBuf,
     client_key: PathBuf,
+    rotated_client_cert: PathBuf,
+    rotated_client_key: PathBuf,
+    wrong_ca_cert: PathBuf,
+    incorrect_client_cert: PathBuf,
+    incorrect_client_key: PathBuf,
+    expired_client_cert: PathBuf,
+    expired_client_key: PathBuf,
+    future_client_cert: PathBuf,
+    future_client_key: PathBuf,
     server_cert: PathBuf,
     server_key: PathBuf,
 }
@@ -579,6 +593,19 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.secure_remote_transport && args.reuse_fixture {
         bail!("--secure-remote-transport cannot reuse a prior fixture");
+    }
+    if args.tls_security_matrix
+        && (!args.secure_remote_transport
+            || args.nodes < 2
+            || args.coordinator_outside_roster
+            || !args.allow_debug_extension)
+    {
+        bail!(
+            "--tls-security-matrix requires --secure-remote-transport, at least two owner nodes, an in-roster coordinator, and --allow-debug-extension"
+        );
+    }
+    if args.tls_security_matrix && (args.physical_benchmark || args.reuse_fixture) {
+        bail!("--tls-security-matrix cannot be combined with benchmark or reused-fixture mode");
     }
     if args.remote_socket_fault.is_some() && !args.coordinator_outside_roster && args.nodes < 2 {
         bail!("--remote-socket-fault requires at least one remote owner");
@@ -979,7 +1006,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     };
     let remote_fault_marker = log_dir.join("distann-remote-socket-fault.marker");
     let remote_fault_arm = log_dir.join("distann-remote-socket-fault.arm");
-    if args.remote_socket_fault.is_some() {
+    if args.remote_socket_fault.is_some() || args.tls_security_matrix {
         let provider = ecaz_fault_injection::provider_library_path()
             .filter(|path| !path.contains("not built"))
             .ok_or_else(|| {
@@ -1060,6 +1087,13 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     } else {
         ""
     };
+    let listen_addresses = if secure_transport_fixture.is_some() {
+        // The second loopback address exists solely to prove verify-full
+        // hostname rejection against a reachable server certificate.
+        "127.0.0.1,127.0.0.2"
+    } else {
+        "127.0.0.1"
+    };
     for node in &nodes {
         let mut command = Command::new(&pg_ctl);
         command
@@ -1070,9 +1104,12 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             .arg(&node.log_file)
             .arg("-o")
             .arg(format!(
-                "-p {} -c listen_addresses=127.0.0.1 -c unix_socket_directories='' \
+                "-p {} -c listen_addresses={} -c unix_socket_directories='' \
                  -c shared_preload_libraries=ecaz -c max_prepared_transactions=32{}{}",
-                node.port, physical_benchmark_startup_options, secure_transport_startup_options
+                node.port,
+                listen_addresses,
+                physical_benchmark_startup_options,
+                secure_transport_startup_options
             ))
             .arg("start")
             .stdout(Stdio::null())
@@ -1096,7 +1133,10 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
             );
         }
         if node.node_id == 1 {
-            if let Some(fault) = args.remote_socket_fault {
+            if let Some(fault) = args
+                .remote_socket_fault
+                .or(args.tls_security_matrix.then_some(RemoteSocketFaultArg::Reset))
+            {
                 let peer = format!("tcp:127.0.0.1:{}", nodes[1].port);
                 let marker = remote_fault_marker.display().to_string();
                 let arm_file = remote_fault_arm.display().to_string();
@@ -1191,6 +1231,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
                         log_dir.as_path(),
                         &extension_preflight,
                         enospc_fixture.as_ref(),
+                        secure_transport_fixture.as_ref(),
+                        &remote_fault_arm,
+                        &remote_fault_marker,
                     )
                     .await
                 }
@@ -1246,12 +1289,35 @@ fn secure_remote_conninfo(
     port: u16,
     fixture: &SecureRemoteTransportFixture,
 ) -> Result<String> {
+    secure_remote_conninfo_with(
+        "127.0.0.1",
+        port,
+        "verify-full",
+        &fixture.ca_cert,
+        Some((&fixture.client_cert, &fixture.client_key)),
+    )
+}
+
+fn secure_remote_conninfo_with(
+    host: &str,
+    port: u16,
+    sslmode: &str,
+    ca_cert: &Path,
+    client_identity: Option<(&Path, &Path)>,
+) -> Result<String> {
+    let client_identity = match client_identity {
+        Some((cert, key)) => format!(
+            " sslcert={} sslkey={}",
+            quote_conninfo_path(cert)?,
+            quote_conninfo_path(key)?
+        ),
+        None => String::new(),
+    };
     Ok(format!(
-        "host=127.0.0.1 port={port} dbname=postgres user=distann_rpc \
-         sslmode=verify-full sslrootcert={} sslcert={} sslkey={} channel_binding=prefer",
-        quote_conninfo_path(&fixture.ca_cert)?,
-        quote_conninfo_path(&fixture.client_cert)?,
-        quote_conninfo_path(&fixture.client_key)?,
+        "host={host} port={port} dbname=postgres user=distann_rpc \
+         sslmode={sslmode} sslrootcert={}{} channel_binding=prefer",
+        quote_conninfo_path(ca_cert)?,
+        client_identity,
     ))
 }
 
@@ -1346,6 +1412,89 @@ async fn generate_leaf_certificate(
     Ok((cert, key))
 }
 
+async fn generate_dated_client_certificate(
+    tls_dir: &Path,
+    stem: &str,
+    start_date: &str,
+    end_date: &str,
+    ca_cert: &Path,
+    ca_key: &Path,
+) -> Result<(PathBuf, PathBuf)> {
+    let key = tls_dir.join(format!("{stem}.key"));
+    let csr = tls_dir.join(format!("{stem}.csr"));
+    let cert = tls_dir.join(format!("{stem}.crt"));
+    let extensions = tls_dir.join(format!("{stem}.ext"));
+    fs::write(
+        &extensions,
+        "[task236_client]\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=clientAuth\n",
+    )?;
+    run_openssl(
+        &format!("{stem} request"),
+        vec![
+            "req".into(),
+            "-newkey".into(),
+            "rsa:2048".into(),
+            "-sha256".into(),
+            "-nodes".into(),
+            "-subj".into(),
+            "/CN=distann_rpc".into(),
+            "-keyout".into(),
+            key.as_os_str().to_owned(),
+            "-out".into(),
+            csr.as_os_str().to_owned(),
+        ],
+    )
+    .await?;
+
+    let ca_config = tls_dir.join("dated-client-ca.cnf");
+    let ca_database = tls_dir.join("dated-client-ca-index.txt");
+    let ca_serial = tls_dir.join("dated-client-ca-serial");
+    let ca_new_certs = tls_dir.join("dated-client-ca-newcerts");
+    fs::create_dir_all(&ca_new_certs)?;
+    if !ca_database.exists() {
+        fs::write(&ca_database, "")?;
+    }
+    if !ca_serial.exists() {
+        fs::write(&ca_serial, "1000\n")?;
+    }
+    fs::write(
+        &ca_config,
+        format!(
+            "[ca]\ndefault_ca=task236_ca\n[task236_ca]\ndatabase={}\nnew_certs_dir={}\ncertificate={}\nprivate_key={}\nserial={}\ndefault_md=sha256\npolicy=task236_policy\ncopy_extensions=copy\nunique_subject=no\n[task236_policy]\ncommonName=supplied\n",
+            ca_database.display(),
+            ca_new_certs.display(),
+            ca_cert.display(),
+            ca_key.display(),
+            ca_serial.display(),
+        ),
+    )?;
+    run_openssl(
+        &format!("{stem} dated certificate"),
+        vec![
+            "ca".into(),
+            "-batch".into(),
+            "-config".into(),
+            ca_config.as_os_str().to_owned(),
+            "-startdate".into(),
+            start_date.into(),
+            "-enddate".into(),
+            end_date.into(),
+            "-extfile".into(),
+            extensions.as_os_str().to_owned(),
+            "-extensions".into(),
+            "task236_client".into(),
+            "-in".into(),
+            csr.as_os_str().to_owned(),
+            "-out".into(),
+            cert.as_os_str().to_owned(),
+        ],
+    )
+    .await?;
+    #[cfg(unix)]
+    fs::set_permissions(&key, fs::Permissions::from_mode(0o600))?;
+    Ok((cert, key))
+}
+
 async fn prepare_secure_remote_transport_fixture(
     run_dir: &Path,
 ) -> Result<SecureRemoteTransportFixture> {
@@ -1395,10 +1544,81 @@ async fn prepare_secure_remote_transport_fixture(
         &ca_key,
     )
     .await?;
+    let (rotated_client_cert, rotated_client_key) = generate_leaf_certificate(
+        &tls_dir,
+        "distann-rpc-client-rotated",
+        "/CN=distann_rpc",
+        "clientAuth",
+        None,
+        &ca_cert,
+        &ca_key,
+    )
+    .await?;
+    let wrong_ca_cert = tls_dir.join("wrong-ca.crt");
+    let wrong_ca_key = tls_dir.join("wrong-ca.key");
+    run_openssl(
+        "untrusted certificate authority",
+        vec![
+            "req".into(),
+            "-x509".into(),
+            "-newkey".into(),
+            "rsa:2048".into(),
+            "-sha256".into(),
+            "-nodes".into(),
+            "-days".into(),
+            "2".into(),
+            "-subj".into(),
+            "/CN=ECAZ Task 236 untrusted CA".into(),
+            "-keyout".into(),
+            wrong_ca_key.as_os_str().to_owned(),
+            "-out".into(),
+            wrong_ca_cert.as_os_str().to_owned(),
+        ],
+    )
+    .await?;
+    #[cfg(unix)]
+    fs::set_permissions(&wrong_ca_key, fs::Permissions::from_mode(0o600))?;
+    let (incorrect_client_cert, incorrect_client_key) = generate_leaf_certificate(
+        &tls_dir,
+        "incorrect-client",
+        "/CN=not_distann_rpc",
+        "clientAuth",
+        None,
+        &ca_cert,
+        &ca_key,
+    )
+    .await?;
+    let (expired_client_cert, expired_client_key) = generate_dated_client_certificate(
+        &tls_dir,
+        "expired-client",
+        "20000101000000Z",
+        "20000102000000Z",
+        &ca_cert,
+        &ca_key,
+    )
+    .await?;
+    let (future_client_cert, future_client_key) = generate_dated_client_certificate(
+        &tls_dir,
+        "future-client",
+        "20990101000000Z",
+        "20990102000000Z",
+        &ca_cert,
+        &ca_key,
+    )
+    .await?;
     Ok(SecureRemoteTransportFixture {
         ca_cert,
         client_cert,
         client_key,
+        rotated_client_cert,
+        rotated_client_key,
+        wrong_ca_cert,
+        incorrect_client_cert,
+        incorrect_client_key,
+        expired_client_cert,
+        expired_client_key,
+        future_client_cert,
+        future_client_key,
         server_cert,
         server_key,
     })
@@ -8206,6 +8426,279 @@ async fn run_read_rpc_fault_matrix(
     Ok(lines)
 }
 
+#[derive(Debug)]
+struct Task236TlsProbe {
+    connection_status: String,
+    ssl: bool,
+    tls_version: String,
+    category: String,
+}
+
+async fn task236_tls_probe(
+    client: &tokio_postgres::Client,
+    conninfo: &str,
+) -> Result<Task236TlsProbe> {
+    let row = client
+        .query_one(
+            "SELECT connection_status, ssl, tls_version, category
+               FROM tests.ec_distann_test_remote_tls_probe($1::text)",
+            &[&conninfo],
+        )
+        .await?;
+    Ok(Task236TlsProbe {
+        connection_status: row.get(0),
+        ssl: row.get(1),
+        tls_version: row.get(2),
+        category: row.get(3),
+    })
+}
+
+fn task236_validate_tls_probe(
+    cell: &str,
+    probe: &Task236TlsProbe,
+    expect_success: bool,
+    expected_category: &str,
+) -> Result<String> {
+    let passed = if expect_success {
+        probe.connection_status == "connected"
+            && probe.ssl
+            && probe.tls_version.starts_with("TLSv")
+            && probe.category.is_empty()
+    } else {
+        probe.connection_status == "connect_failed"
+            && !probe.ssl
+            && probe.tls_version.is_empty()
+            && probe.category == expected_category
+    };
+    if !passed {
+        bail!(
+            "Task 236 TLS cell {cell} failed its sanitized contract: status={} ssl={} tls_version={} category={}",
+            probe.connection_status,
+            probe.ssl,
+            probe.tls_version,
+            probe.category
+        );
+    }
+    Ok(format!(
+        "tls_security cell={cell} pass=true status={} ssl={} tls_version={} category={}",
+        probe.connection_status,
+        probe.ssl,
+        if probe.tls_version.is_empty() {
+            "none"
+        } else {
+            &probe.tls_version
+        },
+        if probe.category.is_empty() {
+            "none"
+        } else {
+            &probe.category
+        },
+    ))
+}
+
+async fn run_task236_tls_security_matrix(
+    coordinator: &tokio_postgres::Client,
+    target: &Node,
+    fixture: &SecureRemoteTransportFixture,
+    remote_fault_arm: &Path,
+    remote_fault_marker: &Path,
+) -> Result<Vec<String>> {
+    let valid = secure_remote_conninfo(target.port, fixture)?;
+    let cells = [
+        ("valid_verify_full", valid.clone(), true, ""),
+        (
+            "wrong_ca",
+            secure_remote_conninfo_with(
+                "127.0.0.1",
+                target.port,
+                "verify-full",
+                &fixture.wrong_ca_cert,
+                Some((&fixture.client_cert, &fixture.client_key)),
+            )?,
+            false,
+            "secure_connect_failed",
+        ),
+        (
+            "wrong_hostname",
+            secure_remote_conninfo_with(
+                "127.0.0.2",
+                target.port,
+                "verify-full",
+                &fixture.ca_cert,
+                Some((&fixture.client_cert, &fixture.client_key)),
+            )?,
+            false,
+            "secure_connect_failed",
+        ),
+        (
+            "missing_client_certificate",
+            secure_remote_conninfo_with(
+                "127.0.0.1",
+                target.port,
+                "verify-full",
+                &fixture.ca_cert,
+                None,
+            )?,
+            false,
+            "secure_connect_failed",
+        ),
+        (
+            "incorrect_client_certificate",
+            secure_remote_conninfo_with(
+                "127.0.0.1",
+                target.port,
+                "verify-full",
+                &fixture.ca_cert,
+                Some((
+                    &fixture.incorrect_client_cert,
+                    &fixture.incorrect_client_key,
+                )),
+            )?,
+            false,
+            "secure_connect_failed",
+        ),
+        (
+            "expired_client_certificate",
+            secure_remote_conninfo_with(
+                "127.0.0.1",
+                target.port,
+                "verify-full",
+                &fixture.ca_cert,
+                Some((&fixture.expired_client_cert, &fixture.expired_client_key)),
+            )?,
+            false,
+            "secure_connect_failed",
+        ),
+        (
+            "not_yet_valid_client_certificate",
+            secure_remote_conninfo_with(
+                "127.0.0.1",
+                target.port,
+                "verify-full",
+                &fixture.ca_cert,
+                Some((&fixture.future_client_cert, &fixture.future_client_key)),
+            )?,
+            false,
+            "secure_connect_failed",
+        ),
+        (
+            "plaintext_disabled_remote",
+            format!(
+                "host=127.0.0.1 port={} dbname=postgres user=distann_rpc sslmode=disable",
+                target.port
+            ),
+            false,
+            "secure_connect_failed",
+        ),
+        (
+            "unsupported_sslmode",
+            secure_remote_conninfo_with(
+                "127.0.0.1",
+                target.port,
+                "prefer",
+                &fixture.ca_cert,
+                Some((&fixture.client_cert, &fixture.client_key)),
+            )?,
+            false,
+            "tls_option_unsupported",
+        ),
+    ];
+    let mut lines = Vec::with_capacity(cells.len() + 3);
+    for (cell, conninfo, expect_success, category) in cells {
+        let probe = task236_tls_probe(coordinator, &conninfo).await?;
+        lines.push(task236_validate_tls_probe(
+            cell,
+            &probe,
+            expect_success,
+            category,
+        )?);
+    }
+
+    fs::write(remote_fault_arm, "")
+        .wrap_err_with(|| format!("arming {}", remote_fault_arm.display()))?;
+    let reset_probe = task236_tls_probe(coordinator, &valid).await;
+    fs::remove_file(remote_fault_arm)
+        .wrap_err_with(|| format!("disarming {}", remote_fault_arm.display()))?;
+    let reset_probe = reset_probe?;
+    let marker_content = fs::read_to_string(remote_fault_marker)
+        .wrap_err_with(|| format!("reading {}", remote_fault_marker.display()))?;
+    let expected_target = format!("target=tcp:127.0.0.1:{}", target.port);
+    if !marker_content.lines().any(|line| {
+        line.contains("fault=1")
+            && line.contains("mode=socket-reset")
+            && line.contains(&expected_target)
+    }) {
+        bail!("Task 236 handshake reset emitted no exact-peer provider event");
+    }
+    lines.push(task236_validate_tls_probe(
+        "connection_reset_during_handshake",
+        &reset_probe,
+        false,
+        "secure_connect_failed",
+    )?);
+    let recovered = task236_tls_probe(coordinator, &valid).await?;
+    lines.push(task236_validate_tls_probe(
+        "connection_reset_recovery",
+        &recovered,
+        true,
+        "",
+    )?);
+
+    let _ = task234_probe(coordinator, "physical_head_search", target.node_id)
+        .await
+        .wrap_err("priming Task 236 pre-rotation pooled session")?;
+    let before_rotation = task234_snapshot(coordinator).await?;
+    let rotated = secure_remote_conninfo_with(
+        "127.0.0.1",
+        target.port,
+        "verify-full",
+        &fixture.ca_cert,
+        Some((&fixture.rotated_client_cert, &fixture.rotated_client_key)),
+    )?;
+    coordinator
+        .query_one(
+            "SELECT tests.ec_distann_test_set_conninfo_secret($1::text, $2::text)",
+            &[&"DISTANN_NODE_2", &rotated],
+        )
+        .await?;
+    let handshake_started = Instant::now();
+    let rotated_rows = task234_probe(coordinator, "physical_head_search", target.node_id)
+        .await
+        .wrap_err("probing Task 236 rotated credential")?;
+    let handshake_ms = handshake_started.elapsed().as_millis();
+    let after_rotation = task234_snapshot(coordinator).await?;
+    let pooled_started = Instant::now();
+    let pooled_rows = task234_probe(coordinator, "physical_head_search", target.node_id)
+        .await
+        .wrap_err("probing Task 236 pooled rotated credential")?;
+    let pooled_ms = pooled_started.elapsed().as_millis();
+    let after_reuse = task234_snapshot(coordinator).await?;
+    if rotated_rows <= 0
+        || pooled_rows <= 0
+        || after_rotation.pooled_connections != before_rotation.pooled_connections
+        || after_reuse.pooled_connections != after_rotation.pooled_connections
+    {
+        bail!(
+            "Task 236 secret rotation violated pool replacement: before={} rotated={} reused={} rotated_rows={} pooled_rows={}",
+            before_rotation.pooled_connections,
+            after_rotation.pooled_connections,
+            after_reuse.pooled_connections,
+            rotated_rows,
+            pooled_rows,
+        );
+    }
+    lines.push(format!(
+        "tls_security cell=rotated_secret pass=true pool_before={} pool_after={} pool_reused={} handshake_ms={} pooled_ms={} rows={}",
+        before_rotation.pooled_connections,
+        after_rotation.pooled_connections,
+        after_reuse.pooled_connections,
+        handshake_ms,
+        pooled_ms,
+        pooled_rows,
+    ));
+    Ok(lines)
+}
+
 async fn drive_physical_fixture(
     args: &LocalMultinodePg18Args,
     pg_ctl: &Path,
@@ -8215,14 +8708,17 @@ async fn drive_physical_fixture(
     log_dir: &Path,
     extension_preflight: &ExtensionPreflight,
     enospc_fixture: Option<&Task199EnospcFixture>,
+    secure_transport_fixture: Option<&SecureRemoteTransportFixture>,
+    remote_fault_arm: &Path,
+    remote_fault_marker: &Path,
 ) -> Result<()> {
-    if args.read_rpc_fault_matrix
+    if (args.read_rpc_fault_matrix || args.tls_security_matrix)
         && !extension_preflight
             .features
             .split(',')
             .any(|feature| feature == "pg-test")
     {
-        bail!("--read-rpc-fault-matrix requires an extension built with the pg_test feature");
+        bail!("the requested diagnostic matrix requires an extension built with the pg_test feature");
     }
     crate::ecaz_println!(
         "[distann-multicluster] physical_setup_start rows={} nodes={}",
@@ -8476,6 +8972,43 @@ async fn drive_physical_fixture(
     );
     if !serving_ok {
         bail!("physical serving returned {served} rows, expected {query_limit}");
+    }
+    if args.tls_security_matrix {
+        let remote_insert_ok = physical_remote_insert_probe(
+            psql,
+            socket_dir,
+            nodes[0].port,
+            args,
+            nodes,
+            owners.len(),
+        )
+        .await?;
+        crate::ecaz_println!(
+            "[distann-multicluster] tls_security dml_remote_insert pass={remote_insert_ok}"
+        );
+        if !remote_insert_ok {
+            bail!("Task 236 secure remote insert probe did not commit on a remote owner");
+        }
+        let fixture = secure_transport_fixture
+            .ok_or_else(|| eyre!("Task 236 TLS matrix has no secure transport fixture"))?;
+        let lines = run_task236_tls_security_matrix(
+            &coordinator,
+            &nodes[1],
+            fixture,
+            remote_fault_arm,
+            remote_fault_marker,
+        )
+        .await?;
+        let body = lines.join("\n") + "\n";
+        fs::write(log_dir.join("task236-tls-security-matrix.log"), &body)?;
+        for line in &lines {
+            crate::ecaz_println!("[distann-multicluster] {line}");
+        }
+        crate::ecaz_println!(
+            "[distann-multicluster] Task 236 TLS security matrix PASS cells={}",
+            lines.len()
+        );
+        return Ok(());
     }
     if args.read_rpc_fault_matrix {
         let lines = run_read_rpc_fault_matrix(pg_ctl, psql, socket_dir, nodes).await?;
@@ -12152,6 +12685,15 @@ mod tests {
             ca_cert: "/cluster/tls/ca.crt".into(),
             client_cert: "/cluster/tls/client.crt".into(),
             client_key: "/cluster/tls/client.key".into(),
+            rotated_client_cert: "/cluster/tls/client-rotated.crt".into(),
+            rotated_client_key: "/cluster/tls/client-rotated.key".into(),
+            wrong_ca_cert: "/cluster/tls/wrong-ca.crt".into(),
+            incorrect_client_cert: "/cluster/tls/client-incorrect.crt".into(),
+            incorrect_client_key: "/cluster/tls/client-incorrect.key".into(),
+            expired_client_cert: "/cluster/tls/client-expired.crt".into(),
+            expired_client_key: "/cluster/tls/client-expired.key".into(),
+            future_client_cert: "/cluster/tls/client-future.crt".into(),
+            future_client_key: "/cluster/tls/client-future.key".into(),
             server_cert: "/cluster/tls/server.crt".into(),
             server_key: "/cluster/tls/server.key".into(),
         };
