@@ -781,6 +781,10 @@ struct DistannLocalMultinodeStep {
     same_generation_recall_pair: Option<String>,
     #[serde(default)]
     queries: Option<u32>,
+    /// Zero-based row offset into the staged query TSV. The fixture loads only
+    /// `queries` rows starting here and records the exact slice digest.
+    #[serde(default)]
+    query_offset: Option<u32>,
     #[serde(default)]
     top_k: Option<u32>,
     #[serde(default)]
@@ -4099,6 +4103,32 @@ impl SuiteStep {
                         step.name
                     )
                 }
+                if step.queries == Some(0) {
+                    bail!(
+                        "distann-local-multinode step {:?} must set queries >= 1",
+                        step.name
+                    )
+                }
+                if step.query_offset.unwrap_or(0) > 0 && step.corpus_prefix.is_none() {
+                    bail!(
+                        "distann-local-multinode step {:?} query_offset requires corpus_prefix",
+                        step.name
+                    )
+                }
+                if step.query_offset.unwrap_or(0) > 0 && step.reuse_fixture {
+                    bail!(
+                        "distann-local-multinode step {:?} query_offset cannot combine with reuse_fixture",
+                        step.name
+                    )
+                }
+                if let (Some(offset), Some(queries)) = (step.query_offset, step.queries) {
+                    offset.checked_add(queries).ok_or_else(|| {
+                        eyre!(
+                            "distann-local-multinode step {:?} query_offset + queries overflows u32",
+                            step.name
+                        )
+                    })?;
+                }
                 if step
                     .head_index_cap
                     .is_some_and(|value| !(16..=1_048_576).contains(&value))
@@ -5935,6 +5965,11 @@ fn expand_distann_local_multinode(
         &mut args,
         "--queries",
         step.queries.map(|v| v.to_string()).as_deref(),
+    );
+    push_opt_arg(
+        &mut args,
+        "--query-offset",
+        step.query_offset.map(|v| v.to_string()).as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -8063,6 +8098,51 @@ psql header noise\n\
                     "owner-oracle:owner_scan:32:32:rabitq:10:off:4:100:off",
                 ]
         }));
+    }
+
+    #[test]
+    fn distann_local_multinode_expands_staged_query_slice() {
+        let raw = r#"{
+          "name": "distann-query-slice",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "diagnostic-rows-201-400",
+            "physical_benchmark": true,
+            "corpus_prefix": "ec_real_100k",
+            "queries": 200,
+            "query_offset": 200
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        validate_config(&config).expect("suite validates");
+        let command = config.steps[0]
+            .expand(&config.defaults, &conn())
+            .expect("step expands");
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--queries", "200"]));
+        assert!(command
+            .windows(2)
+            .any(|window| window == ["--query-offset", "200"]));
+    }
+
+    #[test]
+    fn distann_query_slice_requires_real_corpus() {
+        let raw = r#"{
+          "name": "distann-query-slice-invalid",
+          "schema_version": 1,
+          "steps": [{
+            "kind": "distann-local-multinode",
+            "name": "synthetic-offset",
+            "query_offset": 200
+          }]
+        }"#;
+        let config: SuiteConfig = serde_json::from_str(raw).expect("suite parses");
+        let error = validate_config(&config).expect_err("offset needs staged corpus");
+        assert!(error
+            .to_string()
+            .contains("query_offset requires corpus_prefix"));
     }
 
     #[test]
