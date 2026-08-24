@@ -6378,6 +6378,70 @@ fn test_distann_query_trace_callback() {
     );
 }
 
+#[cfg(feature = "pg_test")]
+#[pg_test]
+fn test_distann_graph_diagnostic_chunks() {
+    let fixture = create_distann_participant_lifecycle_fixture_with_rows(
+        "ec_distann_graph_diag_physical",
+        0x6c,
+        2,
+    );
+    publish_distann_participant(&fixture);
+    let fingerprint_hex = hex::encode(&fixture.fingerprint);
+    let physical = Spi::get_two::<i64, bool>(&format!(
+        "SELECT count(*)::bigint,
+                bool_and(owner_ordinal = 0 AND cardinality(neighbor_vec_ids) <= 256)
+           FROM ec_distann_physical_graph_diagnostic_chunk_benchmark(
+               '{}'::regclass, decode('{}', 'hex'), NULL, 4096
+           )",
+        fixture.generation.index_name, fingerprint_hex
+    ))
+    .expect("physical graph diagnostic should stream");
+    assert_eq!(physical, (Some(2), Some(true)));
+
+    Spi::run(
+        "CREATE TABLE ec_distann_graph_diag_mono_source (
+             id bigint,
+             embedding ecvector(4) NOT NULL
+         );
+         INSERT INTO ec_distann_graph_diag_mono_source VALUES
+             (1, encode_to_ecvector(ARRAY[1.0, 0.0, 0.0, 0.0], 4, 42)),
+             (2, encode_to_ecvector(ARRAY[0.0, 1.0, 0.0, 0.0], 4, 42));
+         CREATE INDEX ec_distann_graph_diag_mono_idx
+             ON ec_distann_graph_diag_mono_source
+             USING ec_distann (embedding ecvector_distann_ip_ops)
+             WITH (graph_degree = 4, neighbor_code_format = 'rabitq')",
+    )
+    .expect("monolithic graph diagnostic fixture should build");
+    let first = Spi::get_one::<i64>(
+        "SELECT vec_id
+           FROM ec_distann_graph_diagnostic_chunk_benchmark(
+               'ec_distann_graph_diag_mono_idx'::regclass, NULL, 1
+           )",
+    )
+    .expect("first monolithic graph diagnostic chunk should stream")
+    .expect("first monolithic graph diagnostic row should exist");
+    let second = Spi::get_one::<i64>(&format!(
+        "SELECT vec_id
+           FROM ec_distann_graph_diagnostic_chunk_benchmark(
+               'ec_distann_graph_diag_mono_idx'::regclass, {first}, 1
+           )"
+    ))
+    .expect("second monolithic graph diagnostic chunk should stream")
+    .expect("second monolithic graph diagnostic row should exist");
+    assert_ne!(first, second, "monolithic pagination must advance");
+    assert_eq!(
+        Spi::get_one::<i64>(
+            "SELECT count(*)::bigint
+               FROM ec_distann_graph_diagnostic_chunk_benchmark(
+                   'ec_distann_graph_diag_mono_idx'::regclass, NULL, 4096
+               )",
+        )
+        .expect("complete monolithic graph diagnostic should stream"),
+        Some(2)
+    );
+}
+
 #[pg_test]
 fn test_distann_participant_publish_status_replay_and_conflict() {
     let fixture =

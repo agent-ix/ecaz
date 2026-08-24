@@ -24,6 +24,7 @@ use tokio::sync::{Barrier, Mutex};
 
 use crate::commands::bench::latency::{monitor_backend_memory, rss_slope_kb_per_second};
 
+use super::distann_graph_diagnostic::{analyze_graph, GraphNode, GraphSeedSet};
 use super::support::{
     default_cluster_root, find_pgrx_install, repo_root, resolve_pgrx_home, run_status,
 };
@@ -126,6 +127,10 @@ pub struct LocalMultinodePg18Args {
     /// over the selected evaluation query slice.
     #[arg(long, default_value_t = false)]
     pub query_trace: bool,
+    /// Task 227 read-only persisted-graph structure and seed-reachability
+    /// diagnostic for every physical owner and the monolithic control.
+    #[arg(long, default_value_t = false)]
+    pub graph_diagnostic: bool,
     /// Task 185 benchmark-only isolated attribution for each returned seed
     /// position. This is intentionally more expensive than gateway_trace.
     #[arg(long, default_value_t = false)]
@@ -611,6 +616,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.query_trace && !args.physical_benchmark {
         bail!("--query-trace requires --physical-benchmark");
+    }
+    if args.graph_diagnostic && !args.physical_benchmark {
+        bail!("--graph-diagnostic requires --physical-benchmark");
     }
     if args.gateway_isolated_trace && !args.physical_benchmark {
         bail!("--gateway-isolated-trace requires --physical-benchmark");
@@ -5936,6 +5944,119 @@ fn query_slice_sha256(bytes: &[u8], offset: u32, limit: u32) -> Result<String> {
     Ok(hex::encode(hasher.finalize()))
 }
 
+async fn fetch_physical_graph_diagnostic_nodes(
+    socket_dir: &Path,
+    nodes: &[Node],
+    epoch_fingerprint: &[u8],
+) -> Result<Vec<GraphNode>> {
+    const CHUNK_ROWS: i32 = 4096;
+    let epoch_fingerprint = epoch_fingerprint.to_vec();
+    let mut graph = Vec::new();
+    for (expected_owner, node) in nodes.iter().enumerate() {
+        let (client, connection) =
+            tokio_postgres::connect(&conninfo(socket_dir, node.port), tokio_postgres::NoTls)
+                .await
+                .wrap_err_with(|| {
+                    format!("connecting to graph diagnostic owner {}", node.node_id)
+                })?;
+        let connection_task = tokio::spawn(connection);
+        let mut after = None::<i64>;
+        loop {
+            let rows = client
+                .query(
+                    "SELECT owner_ordinal, vec_id, is_tombstone, neighbor_vec_ids
+                       FROM ec_distann_physical_graph_diagnostic_chunk_benchmark(
+                           'public.dm_idx'::regclass, $1::bytea, $2::bigint, $3::integer
+                       )",
+                    &[&epoch_fingerprint, &after, &CHUNK_ROWS],
+                )
+                .await
+                .wrap_err_with(|| format!("streaming graph diagnostic owner {}", node.node_id))?;
+            if rows.is_empty() {
+                break;
+            }
+            let previous = after;
+            for row in rows {
+                let owner_ordinal = row.get::<_, i32>(0);
+                if owner_ordinal != i32::try_from(expected_owner).unwrap_or(i32::MAX) {
+                    connection_task.abort();
+                    bail!(
+                        "graph diagnostic owner {} returned ordinal {owner_ordinal}, expected {expected_owner}",
+                        node.node_id
+                    );
+                }
+                let signed_id = row.get::<_, i64>(1);
+                after = Some(signed_id);
+                graph.push(GraphNode {
+                    owner_ordinal: u32::try_from(owner_ordinal)
+                        .wrap_err("negative graph diagnostic owner ordinal")?,
+                    vec_id: u64::from_le_bytes(signed_id.to_le_bytes()),
+                    tombstone: row.get(2),
+                    neighbors: row
+                        .get::<_, Vec<i64>>(3)
+                        .into_iter()
+                        .map(|neighbor| u64::from_le_bytes(neighbor.to_le_bytes()))
+                        .collect(),
+                });
+            }
+            if after == previous {
+                connection_task.abort();
+                bail!(
+                    "graph diagnostic owner {} pagination did not advance",
+                    node.node_id
+                );
+            }
+        }
+        connection_task.abort();
+    }
+    Ok(graph)
+}
+
+async fn fetch_monolithic_graph_diagnostic_nodes(
+    coordinator: &tokio_postgres::Client,
+    single_index: &str,
+) -> Result<Vec<GraphNode>> {
+    const CHUNK_ROWS: i32 = 4096;
+    let mut graph = Vec::new();
+    let mut after = None::<i64>;
+    loop {
+        let rows = coordinator
+            .query(
+                &format!(
+                    "SELECT owner_ordinal, vec_id, is_tombstone, neighbor_vec_ids
+                       FROM ec_distann_graph_diagnostic_chunk_benchmark(
+                           '{single_index}'::regclass, $1::bigint, $2::integer
+                       )"
+                ),
+                &[&after, &CHUNK_ROWS],
+            )
+            .await
+            .wrap_err("streaming monolithic graph diagnostic")?;
+        if rows.is_empty() {
+            break;
+        }
+        let previous = after;
+        for row in rows {
+            let signed_id = row.get::<_, i64>(1);
+            after = Some(signed_id);
+            graph.push(GraphNode {
+                owner_ordinal: 0,
+                vec_id: u64::from_le_bytes(signed_id.to_le_bytes()),
+                tombstone: row.get(2),
+                neighbors: row
+                    .get::<_, Vec<i64>>(3)
+                    .into_iter()
+                    .map(|neighbor| u64::from_le_bytes(neighbor.to_le_bytes()))
+                    .collect(),
+            });
+        }
+        if after == previous {
+            bail!("monolithic graph diagnostic pagination did not advance");
+        }
+    }
+    Ok(graph)
+}
+
 async fn run_physical_benchmarks(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
@@ -6107,6 +6228,19 @@ async fn run_physical_benchmarks(
     {
         bail!(
             "query trace requires an extension built with distann-head-attribution-benchmark"
+        );
+    }
+    if args.graph_diagnostic
+        && !coordinator
+            .query_one(
+                "SELECT to_regprocedure('ec_distann_physical_graph_diagnostic_chunk_benchmark(regclass,bytea,bigint,integer)') IS NOT NULL AND to_regprocedure('ec_distann_graph_diagnostic_chunk_benchmark(regclass,bigint,integer)') IS NOT NULL",
+                &[],
+            )
+            .await?
+            .get::<_, bool>(0)
+    {
+        bail!(
+            "graph diagnostic requires an extension built with distann-head-attribution-benchmark"
         );
     }
     if args.head_policy.is_some() && !has_head_policy_provenance {
@@ -7735,6 +7869,131 @@ async fn run_physical_benchmarks(
             "persisted head membership count={} does not match sample_count={head_sample_count}",
             head_ids.len()
         );
+    }
+    if args.graph_diagnostic {
+        if args.skip_single_control {
+            bail!("--graph-diagnostic requires the monolithic control");
+        }
+        let epoch_fingerprint = coordinator
+            .query_one(
+                "SELECT epoch_fingerprint
+                   FROM ec_distann_active_epoch
+                  WHERE index_oid = 'dm_idx'::regclass::oid",
+                &[],
+            )
+            .await
+            .wrap_err("reading graph diagnostic epoch fingerprint")?
+            .get::<_, Vec<u8>>(0);
+        let physical_graph =
+            fetch_physical_graph_diagnostic_nodes(socket_dir, nodes, &epoch_fingerprint).await?;
+        let mut physical_ids = HashSet::with_capacity(physical_graph.len());
+        if let Some(duplicate) = physical_graph
+            .iter()
+            .find(|node| !physical_ids.insert(node.vec_id))
+        {
+            bail!(
+                "graph diagnostic streamed duplicate physical vec_id {:016x}",
+                duplicate.vec_id
+            );
+        }
+        for (owner, topology) in published.iter().enumerate() {
+            let observed = physical_graph
+                .iter()
+                .filter(|node| node.owner_ordinal as usize == owner)
+                .count();
+            let expected = usize::try_from(topology.records).unwrap_or(usize::MAX);
+            if observed != expected {
+                bail!(
+                    "graph diagnostic owner {owner} streamed {observed} records, expected {expected}"
+                );
+            }
+        }
+        let monolithic_graph =
+            fetch_monolithic_graph_diagnostic_nodes(coordinator, &single_index).await?;
+        let mut monolithic_ids = HashSet::with_capacity(monolithic_graph.len());
+        if let Some(duplicate) = monolithic_graph
+            .iter()
+            .find(|node| !monolithic_ids.insert(node.vec_id))
+        {
+            bail!(
+                "graph diagnostic streamed duplicate monolithic vec_id {:016x}",
+                duplicate.vec_id
+            );
+        }
+        let expected_monolithic = usize::try_from(raw_vector_rows).unwrap_or(usize::MAX);
+        if monolithic_graph.len() != expected_monolithic {
+            bail!(
+                "monolithic graph diagnostic streamed {} records, expected {expected_monolithic}",
+                monolithic_graph.len()
+            );
+        }
+        let head_vec_ids = head_ids
+            .iter()
+            .map(|vec_id| u64::from_le_bytes(vec_id.to_le_bytes()))
+            .collect::<Vec<_>>();
+        let mut seed_sets = vec![GraphSeedSet {
+            name: "persisted_head".to_owned(),
+            vec_ids: head_vec_ids.clone(),
+        }];
+        for owner in 0..nodes.len() {
+            let owner_ids = physical_graph
+                .iter()
+                .filter(|node| node.owner_ordinal as usize == owner)
+                .map(|node| node.vec_id)
+                .collect::<HashSet<_>>();
+            seed_sets.push(GraphSeedSet {
+                name: format!("persisted_head_owner_{owner}"),
+                vec_ids: head_vec_ids
+                    .iter()
+                    .filter(|vec_id| owner_ids.contains(vec_id))
+                    .copied()
+                    .collect(),
+            });
+        }
+        let artifact = serde_json::json!({
+            "schema": "ec_distann_graph_diagnostic_file_v1",
+            "scale": scale,
+            "physical_generation": {
+                "identity_kind": "epoch_fingerprint",
+                "identity": hex::encode(&epoch_fingerprint),
+                "parameters": {
+                    "owners": nodes.len(),
+                    "graph_degree": args.graph_degree,
+                    "head_index_cap": args.head_index_cap,
+                    "neighbor_code_format": "rabitq",
+                },
+            },
+            "monolithic_control": {
+                "index_name": single_index,
+                "identity_kind": "adjacency_sha256",
+                "parameters": {
+                    "graph_degree": args.graph_degree,
+                    "head_index_cap": args.head_index_cap,
+                    "neighbor_code_format": "rabitq",
+                    "distributed_control": false,
+                },
+                "index_bytes": single_index_bytes,
+                "source_bytes": single_source_bytes,
+            },
+            "physical": analyze_graph(&physical_graph, &seed_sets),
+            "monolithic": analyze_graph(
+                &monolithic_graph,
+                &[GraphSeedSet {
+                    name: "physical_persisted_head".to_owned(),
+                    vec_ids: head_vec_ids,
+                }],
+            ),
+        });
+        let path = log_dir.join("physical-graph-diagnostic.json");
+        fs::write(&path, serde_json::to_vec_pretty(&artifact)?)
+            .wrap_err_with(|| format!("writing {}", path.display()))?;
+        lines.push(format!(
+            "physical_benchmark_graph_diagnostic scale={scale} physical_records={} monolithic_records={} seed_sets={} output={}",
+            physical_graph.len(),
+            monolithic_graph.len(),
+            seed_sets.len(),
+            path.display()
+        ));
     }
     let logical_id_by_vec_id = coordinator
         .query(
