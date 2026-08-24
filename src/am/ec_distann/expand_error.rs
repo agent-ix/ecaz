@@ -11,6 +11,40 @@
 
 use pgrx::PgSqlErrorCode;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DistannRemoteReadErrorKind {
+    ConnectTimeout,
+    ClientDeadline,
+    RemoteStatementTimeout,
+    LocalInterrupt,
+    RemoteQueryCancelled,
+    RemoteBackendTerminated,
+    TransportReset,
+}
+
+impl DistannRemoteReadErrorKind {
+    fn category(self) -> &'static str {
+        match self {
+            Self::ConnectTimeout => "EC_REMOTE_CONNECT_TIMEOUT",
+            Self::ClientDeadline => "EC_REMOTE_READ_DEADLINE",
+            Self::RemoteStatementTimeout => "EC_REMOTE_STATEMENT_TIMEOUT",
+            Self::LocalInterrupt => "EC_LOCAL_QUERY_CANCELLED",
+            Self::RemoteQueryCancelled => "EC_REMOTE_QUERY_CANCELLED",
+            Self::RemoteBackendTerminated => "EC_REMOTE_BACKEND_TERMINATED",
+            Self::TransportReset => "EC_REMOTE_TRANSPORT_RESET",
+        }
+    }
+
+    fn requires_connection_eviction(self) -> bool {
+        !matches!(
+            self,
+            Self::ConnectTimeout
+                | Self::RemoteStatementTimeout
+                | Self::RemoteQueryCancelled
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum DistannExpandError {
     /// FR-082: caller epoch ≠ this node's active epoch. RETRIABLE.
@@ -27,6 +61,10 @@ pub(crate) enum DistannExpandError {
     GenerationMissing(String),
     /// Ordinary bad input (dimension mismatch, malformed fingerprint, …).
     BadInput(String),
+    /// Typed coordinator-to-owner read failure. Task 237 owns the final
+    /// SQL-visible vocabulary; Task 234 preserves the internal failure class
+    /// so cancellation and pool disposition never depend on message parsing.
+    RemoteRead(DistannRemoteReadErrorKind, String),
     /// Internal invariant violation (should not happen behind validation).
     Internal(String),
 }
@@ -42,6 +80,7 @@ impl DistannExpandError {
             Self::VectorMissing(_) => PgSqlErrorCode::ERRCODE_INDEX_CORRUPTED,
             Self::GenerationMissing(_) => PgSqlErrorCode::ERRCODE_UNDEFINED_OBJECT,
             Self::BadInput(_) => PgSqlErrorCode::ERRCODE_INVALID_PARAMETER_VALUE,
+            Self::RemoteRead(_, _) => PgSqlErrorCode::ERRCODE_INTERNAL_ERROR,
             Self::Internal(_) => PgSqlErrorCode::ERRCODE_INTERNAL_ERROR,
         }
     }
@@ -56,6 +95,7 @@ impl DistannExpandError {
             Self::VectorMissing(_) => "XX002",
             Self::GenerationMissing(_) => "42704",
             Self::BadInput(_) => "22023",
+            Self::RemoteRead(_, _) => "XX000",
             Self::Internal(_) => "XX000",
         }
     }
@@ -75,6 +115,7 @@ impl DistannExpandError {
             Self::VectorMissing(_) => "EC_VECTOR_MISSING",
             Self::GenerationMissing(_) => "EC_GENERATION_MISSING",
             Self::BadInput(_) => "EC_BAD_INPUT",
+            Self::RemoteRead(kind, _) => kind.category(),
             Self::Internal(_) => "EC_INTERNAL",
         }
     }
@@ -87,8 +128,20 @@ impl DistannExpandError {
             | Self::VectorMissing(m)
             | Self::GenerationMissing(m)
             | Self::BadInput(m)
+            | Self::RemoteRead(_, m)
             | Self::Internal(m) => m,
         }
+    }
+
+    pub(crate) fn remote_read(
+        kind: DistannRemoteReadErrorKind,
+        message: impl Into<String>,
+    ) -> Self {
+        Self::RemoteRead(kind, message.into())
+    }
+
+    pub(crate) fn requires_connection_eviction(&self) -> bool {
+        matches!(self, Self::RemoteRead(kind, _) if kind.requires_connection_eviction())
     }
 
     pub(crate) fn owned_record_missing_vec_id(&self) -> Option<u64> {
@@ -196,5 +249,24 @@ mod tests {
         let unknown = DistannExpandError::from_wire_sqlstate(None, "x".into());
         assert_eq!(unknown.category(), "EC_INTERNAL");
         assert!(!unknown.is_retriable());
+    }
+
+    #[test]
+    fn remote_read_classes_are_typed_and_define_pool_disposition() {
+        let cases = [
+            (DistannRemoteReadErrorKind::ConnectTimeout, false),
+            (DistannRemoteReadErrorKind::ClientDeadline, true),
+            (DistannRemoteReadErrorKind::RemoteStatementTimeout, false),
+            (DistannRemoteReadErrorKind::LocalInterrupt, true),
+            (DistannRemoteReadErrorKind::RemoteQueryCancelled, false),
+            (DistannRemoteReadErrorKind::RemoteBackendTerminated, true),
+            (DistannRemoteReadErrorKind::TransportReset, true),
+        ];
+        for (kind, evict) in cases {
+            let error = DistannExpandError::remote_read(kind, "probe");
+            assert_eq!(error.requires_connection_eviction(), evict);
+            assert_ne!(error.category(), "EC_INTERNAL");
+            assert!(!error.is_retriable());
+        }
     }
 }

@@ -37,7 +37,7 @@ use crate::storage::slot_guard::TupleTableSlotGuard;
 use super::ambuild::read_metadata_from_index_handle;
 use super::epoch::{compute_epoch_fingerprint, DISTANN_EPOCH_FINGERPRINT_V1};
 use super::expand::LocalNodeExpander;
-use super::expand_error::DistannExpandError;
+use super::expand_error::{DistannExpandError, DistannRemoteReadErrorKind};
 use super::head_cache::cached_index_entry;
 use super::placement::{group_by_owning_node, DistannPlacementDirectory};
 use super::quantizer::{metadata_code_len, DistannPreparedQuery};
@@ -105,6 +105,124 @@ async fn await_remote<T, E>(
     }
 }
 
+async fn await_remote_read<T>(
+    client: &Client,
+    future: impl Future<Output = Result<T, tokio_postgres::Error>>,
+) -> Result<T, RemoteAwaitError<tokio_postgres::Error>> {
+    if postgres_interrupt_pending() {
+        mark_transport_interrupt_observed();
+        return Err(RemoteAwaitError::Interrupted);
+    }
+    let result = await_remote(call_timeout(), Some(client.cancel_token()), future).await;
+    match result {
+        Ok(value) if postgres_interrupt_pending() => {
+            mark_transport_interrupt_observed();
+            drop(value);
+            Err(RemoteAwaitError::Interrupted)
+        }
+        Err(RemoteAwaitError::TimedOut) => {
+            // Dropping a tokio-postgres query future does not prove that the
+            // owner stopped executing it. Bound the cancel delivery attempt;
+            // the caller evicts this pooled connection regardless because the
+            // protocol/session completion remains ambiguous.
+            let _ = tokio::time::timeout(
+                Duration::from_millis(REMOTE_CANCEL_DELIVERY_TIMEOUT_MS),
+                client.cancel_token().cancel_query(NoTls),
+            )
+            .await;
+            Err(RemoteAwaitError::TimedOut)
+        }
+        other => other,
+    }
+}
+
+fn classify_remote_read_error(
+    context: &str,
+    error: tokio_postgres::Error,
+) -> DistannExpandError {
+    if let Some(db) = error.as_db_error() {
+        let code = db.code().code();
+        if db.message().contains("EC_RECORD_MISSING") {
+            return DistannExpandError::OwnedRecordMissing(format!(
+                "ec_distann remote {context} failed: {}",
+                db.message()
+            ));
+        }
+        if code == "57014" {
+            let kind = if db.message().contains("statement timeout") {
+                DistannRemoteReadErrorKind::RemoteStatementTimeout
+            } else {
+                DistannRemoteReadErrorKind::RemoteQueryCancelled
+            };
+            return DistannExpandError::remote_read(
+                kind,
+                format!("ec_distann remote {context} failed: {}", db.message()),
+            );
+        }
+        if matches!(code, "57P01" | "57P02" | "57P03") {
+            return DistannExpandError::remote_read(
+                DistannRemoteReadErrorKind::RemoteBackendTerminated,
+                format!("ec_distann remote {context} failed: {}", db.message()),
+            );
+        }
+        return DistannExpandError::from_wire_sqlstate(
+            Some(code),
+            format!("ec_distann remote {context} failed: {}", db.message()),
+        );
+    }
+    let detail = error.to_string();
+    DistannExpandError::remote_read(
+        DistannRemoteReadErrorKind::TransportReset,
+        format!("ec_distann remote {context} transport failed: {detail}"),
+    )
+}
+
+fn classify_remote_read_await(
+    context: &str,
+    result: Result<Vec<Row>, RemoteAwaitError<tokio_postgres::Error>>,
+) -> Result<Vec<Row>, DistannExpandError> {
+    match result {
+        Ok(rows) => Ok(rows),
+        Err(RemoteAwaitError::Remote(error)) => Err(classify_remote_read_error(context, error)),
+        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::remote_read(
+            DistannRemoteReadErrorKind::ClientDeadline,
+            format!("ec_distann remote {context} exceeded the client deadline"),
+        )),
+        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::remote_read(
+            DistannRemoteReadErrorKind::LocalInterrupt,
+            format!("ec_distann remote {context} interrupted locally"),
+        )),
+    }
+}
+
+async fn read_query(
+    client: &Client,
+    context: &str,
+    sql: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Result<Vec<Row>, DistannExpandError> {
+    classify_remote_read_await(
+        context,
+        await_remote_read(client, client.query(sql, params)).await,
+    )
+}
+
+async fn read_query_one(
+    client: &Client,
+    context: &str,
+    sql: &str,
+    params: &[&(dyn ToSql + Sync)],
+) -> Result<Row, DistannExpandError> {
+    let rows = read_query(client, context, sql, params).await?;
+    if rows.len() != 1 {
+        return Err(DistannExpandError::Internal(format!(
+            "ec_distann remote {context} returned {} rows, expected one",
+            rows.len()
+        )));
+    }
+    Ok(rows.into_iter().next().expect("one remote row checked"))
+}
+
 async fn postgres_interrupt_signal() {
     loop {
         if postgres_interrupt_pending() {
@@ -160,11 +278,10 @@ fn parse_remote_config(
 async fn configure_remote_statement_timeout(
     client: &Client,
     error_prefix: &str,
-) -> Result<(), String> {
+) -> Result<(), DistannExpandError> {
     let timeout = super::options::remote_statement_timeout_ms().to_string();
-    match await_remote(
-        call_timeout(),
-        Some(client.cancel_token()),
+    match await_remote_read(
+        client,
         client.query_one(
             "SELECT set_config('statement_timeout', $1, false)",
             &[&timeout],
@@ -173,14 +290,17 @@ async fn configure_remote_statement_timeout(
     .await
     {
         Ok(_) => Ok(()),
-        Err(RemoteAwaitError::Remote(error)) => Err(format!(
-            "{error_prefix}: could not configure participant statement timeout: {error}"
+        Err(RemoteAwaitError::Remote(error)) => Err(classify_remote_read_error(
+            "statement-timeout setup",
+            error,
         )),
-        Err(RemoteAwaitError::TimedOut) => Err(format!(
-            "{error_prefix}: participant statement-timeout setup timed out"
+        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::remote_read(
+            DistannRemoteReadErrorKind::ClientDeadline,
+            format!("{error_prefix}: participant statement-timeout setup timed out"),
         )),
-        Err(RemoteAwaitError::Interrupted) => Err(format!(
-            "{error_prefix}: participant statement-timeout setup interrupted"
+        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::remote_read(
+            DistannRemoteReadErrorKind::LocalInterrupt,
+            format!("{error_prefix}: participant statement-timeout setup interrupted"),
         )),
     }
 }
@@ -238,42 +358,28 @@ async fn physical_query(
     statement: &Statement,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, DistannExpandError> {
-    match await_remote(
-        call_timeout(),
-        Some(client.cancel_token()),
-        client.query(statement, params),
+    classify_remote_read_await(
+        "physical generation RPC",
+        await_remote_read(client, client.query(statement, params)).await,
     )
-    .await
-    {
-        Ok(rows) => Ok(rows),
-        Err(RemoteAwaitError::Remote(error)) => Err(classify_physical_read_error(error)),
-        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::Internal(
-            "physical generation RPC timed out".to_owned(),
-        )),
-        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::Internal(
-            "physical generation RPC interrupted".to_owned(),
-        )),
-    }
 }
 
 async fn prepare_physical_statement(
     client: &Client,
     sql: &'static str,
 ) -> Result<Statement, DistannExpandError> {
-    match await_remote(
-        call_timeout(),
-        Some(client.cancel_token()),
-        client.prepare(sql),
-    )
-    .await
-    {
+    match await_remote_read(client, client.prepare(sql)).await {
         Ok(statement) => Ok(statement),
-        Err(RemoteAwaitError::Remote(error)) => Err(classify_physical_read_error(error)),
-        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::Internal(
-            "physical generation statement preparation timed out".to_owned(),
+        Err(RemoteAwaitError::Remote(error)) => {
+            Err(classify_remote_read_error("statement preparation", error))
+        }
+        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::remote_read(
+            DistannRemoteReadErrorKind::ClientDeadline,
+            "ec_distann remote statement preparation exceeded the client deadline",
         )),
-        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::Internal(
-            "physical generation statement preparation interrupted".to_owned(),
+        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::remote_read(
+            DistannRemoteReadErrorKind::LocalInterrupt,
+            "ec_distann remote statement preparation interrupted locally",
         )),
     }
 }
@@ -296,12 +402,28 @@ async fn ensure_physical_statements(
             .map(|key| prepare_physical_statement(&connections[key].client, sql)),
     )
     .await;
+    let mut first_error = None;
     for (key, statement) in stale.into_iter().zip(prepared) {
-        connections
-            .get_mut(&key)
-            .expect("pooled connection disappeared during statement preparation")
-            .prepared_statements
-            .insert(sql, statement?);
+        match statement {
+            Ok(statement) => {
+                connections
+                    .get_mut(&key)
+                    .expect("pooled connection disappeared during statement preparation")
+                    .prepared_statements
+                    .insert(sql, statement);
+            }
+            Err(error) => {
+                if error.requires_connection_eviction() {
+                    connections.remove(&key);
+                }
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
+    }
+    if let Some(error) = first_error {
+        return Err(error);
     }
     Ok(())
 }
@@ -314,59 +436,83 @@ where
     futures_util::future::join_all(futures).await
 }
 
+fn finalize_read_batch<T>(
+    connections: &mut HashMap<String, PooledConnection>,
+    conn_keys: &[String],
+    results: Vec<Result<T, DistannExpandError>>,
+) -> Vec<Result<T, DistannExpandError>> {
+    debug_assert_eq!(conn_keys.len(), results.len());
+    let first_error = results
+        .iter()
+        .find_map(|result| result.as_ref().err().cloned());
+    let evictions = results
+        .iter()
+        .enumerate()
+        .filter_map(|(index, result)| {
+            result
+                .as_ref()
+                .err()
+                .filter(|error| error.requires_connection_eviction())
+                .map(|_| conn_keys[index].clone())
+        })
+        .collect::<HashSet<_>>();
+    for key in evictions {
+        connections.remove(&key);
+    }
+    if let Some(error) = first_error {
+        return results.into_iter().map(|_| Err(error.clone())).collect();
+    }
+    results
+}
+
+fn finalize_read_call<T>(
+    connections: &mut HashMap<String, PooledConnection>,
+    conn_key: &str,
+    result: Result<T, DistannExpandError>,
+) -> Result<T, DistannExpandError> {
+    if result
+        .as_ref()
+        .err()
+        .is_some_and(|error| error.requires_connection_eviction())
+    {
+        connections.remove(conn_key);
+    }
+    result
+}
+
 async fn scan_query(
     client: &Client,
     context: &str,
     sql: &str,
     params: &[&(dyn ToSql + Sync)],
 ) -> Result<Vec<Row>, DistannExpandError> {
-    match await_remote(
-        call_timeout(),
-        Some(client.cancel_token()),
-        client.query(sql, params),
-    )
-    .await
-    {
-        Ok(rows) => Ok(rows),
-        Err(RemoteAwaitError::Remote(error)) => {
-            let code = error.code().map(|state| state.code().to_owned());
-            let detail = error
-                .as_db_error()
-                .map(|db| db.message().to_owned())
-                .unwrap_or_else(|| error.to_string());
-            Err(DistannExpandError::from_wire_sqlstate(
-                code.as_deref(),
-                format!("ec_distann remote {context} failed: {detail}"),
-            ))
-        }
-        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::Internal(format!(
-            "ec_distann remote {context} timed out"
-        ))),
-        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::Internal(format!(
-            "ec_distann remote {context} interrupted"
-        ))),
-    }
+    read_query(client, context, sql, params).await
 }
 
 async fn open_remote_connection(
     conninfo: &str,
     error_prefix: &str,
-) -> Result<(Client, tokio::task::JoinHandle<()>), String> {
-    let config = parse_remote_config(conninfo, error_prefix)?;
+) -> Result<(Client, tokio::task::JoinHandle<()>), DistannExpandError> {
+    let config = parse_remote_config(conninfo, error_prefix).map_err(DistannExpandError::Internal)?;
     let (client, connection) =
         match await_remote(connect_timeout(), None, config.connect(NoTls)).await {
             Ok(connection) => connection,
             Err(RemoteAwaitError::Remote(error)) => {
-                return Err(format!(
-                    "{error_prefix}: could not connect to participant: {error}"
+                return Err(DistannExpandError::remote_read(
+                    DistannRemoteReadErrorKind::TransportReset,
+                    format!("{error_prefix}: could not connect to participant: {error}"),
                 ));
             }
             Err(RemoteAwaitError::TimedOut) => {
-                return Err(format!("{error_prefix}: participant connection timed out"));
+                return Err(DistannExpandError::remote_read(
+                    DistannRemoteReadErrorKind::ConnectTimeout,
+                    format!("{error_prefix}: participant connection timed out"),
+                ));
             }
             Err(RemoteAwaitError::Interrupted) => {
-                return Err(format!(
-                    "{error_prefix}: participant connection interrupted"
+                return Err(DistannExpandError::remote_read(
+                    DistannRemoteReadErrorKind::LocalInterrupt,
+                    format!("{error_prefix}: participant connection interrupted"),
                 ));
             }
         };
@@ -383,30 +529,25 @@ async fn open_remote_connection(
 async fn configure_scan_identity(
     client: &Client,
     identity: &(String, String, String),
-) -> Result<(), String> {
-    match await_remote(
-        call_timeout(),
-        Some(client.cancel_token()),
+) -> Result<(), DistannExpandError> {
+    match await_remote_read(
+        client,
         client.query(SESSION_SETUP_SQL, &[&identity.0, &identity.1, &identity.2]),
     )
     .await
     {
         Ok(_) => Ok(()),
         Err(RemoteAwaitError::Remote(error)) => {
-            let detail = error
-                .as_db_error()
-                .map(|db| db.message().to_owned())
-                .unwrap_or_else(|| error.to_string());
-            Err(format!(
-                "ec_distann remote transport session setup failed: {detail}"
-            ))
+            Err(classify_remote_read_error("session setup", error))
         }
-        Err(RemoteAwaitError::TimedOut) => {
-            Err("ec_distann remote transport session setup timed out".to_owned())
-        }
-        Err(RemoteAwaitError::Interrupted) => {
-            Err("ec_distann remote transport session setup interrupted".to_owned())
-        }
+        Err(RemoteAwaitError::TimedOut) => Err(DistannExpandError::remote_read(
+            DistannRemoteReadErrorKind::ClientDeadline,
+            "ec_distann remote transport session setup timed out",
+        )),
+        Err(RemoteAwaitError::Interrupted) => Err(DistannExpandError::remote_read(
+            DistannRemoteReadErrorKind::LocalInterrupt,
+            "ec_distann remote transport session setup interrupted",
+        )),
     }
 }
 
@@ -414,7 +555,7 @@ async fn ensure_pooled_connections(
     connections: &mut HashMap<String, PooledConnection>,
     specs: &[(String, &str)],
     error_prefix: &str,
-) -> Result<(), String> {
+) -> Result<(), DistannExpandError> {
     let mut seen = HashSet::with_capacity(specs.len());
     let missing = specs
         .iter()
@@ -479,10 +620,25 @@ async fn ensure_pooled_connections(
             .map(|key| configure_remote_statement_timeout(&connections[key].client, error_prefix)),
     )
     .await;
-    for result in refreshed {
-        result?;
+    let mut refreshed_keys = Vec::with_capacity(stale.len());
+    let mut first_error = None;
+    for (key, result) in stale.into_iter().zip(refreshed) {
+        match result {
+            Ok(()) => refreshed_keys.push(key),
+            Err(error) => {
+                if error.requires_connection_eviction() {
+                    connections.remove(&key);
+                }
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
     }
-    for key in stale {
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+    for key in refreshed_keys {
         connections
             .get_mut(&key)
             .expect("pooled connection disappeared during timeout refresh")
@@ -494,7 +650,7 @@ async fn ensure_pooled_connections(
 async fn ensure_scan_sessions(
     connections: &mut HashMap<String, PooledConnection>,
     sessions: &[(String, &str, (String, String, String))],
-) -> Result<(), String> {
+) -> Result<(), DistannExpandError> {
     let specs = sessions
         .iter()
         .map(|(key, conninfo, _)| (key.clone(), *conninfo))
@@ -505,10 +661,10 @@ async fn ensure_scan_sessions(
     for (key, _, identity) in sessions {
         if let Some(previous) = identities.insert(key.clone(), identity.clone()) {
             if previous != *identity {
-                return Err(
+                return Err(DistannExpandError::Internal(
                     "ec_distann remote transport assigned conflicting identities to one session"
                         .to_owned(),
-                );
+                ));
             }
         }
     }
@@ -523,10 +679,25 @@ async fn ensure_scan_sessions(
             .map(|(key, identity)| configure_scan_identity(&connections[key].client, identity)),
     )
     .await;
-    for result in configured {
-        result?;
+    let mut configured_sessions = Vec::with_capacity(stale.len());
+    let mut first_error = None;
+    for ((key, identity), result) in stale.into_iter().zip(configured) {
+        match result {
+            Ok(()) => configured_sessions.push((key, identity)),
+            Err(error) => {
+                if error.requires_connection_eviction() {
+                    connections.remove(&key);
+                }
+                if first_error.is_none() {
+                    first_error = Some(error);
+                }
+            }
+        }
     }
-    for (key, identity) in stale {
+    if let Some(error) = first_error {
+        return Err(error);
+    }
+    for (key, identity) in configured_sessions {
         connections
             .get_mut(&key)
             .expect("pooled connection disappeared during identity setup")
@@ -892,7 +1063,8 @@ pub(crate) fn remote_physical_insert(
                 &mut state.connections,
                 &[(key.clone(), request.conninfo, identity)],
             )
-            .await?;
+            .await
+            .map_err(|error| error.to_string())?;
             let client = &state.connections[&key].client;
             let prepared_gid = physical_insert_prepared_gid(
                 request.index_oid,
@@ -1056,7 +1228,8 @@ pub(crate) fn remote_physical_tombstone(
                 &mut state.connections,
                 &[(key.clone(), request.conninfo, identity)],
             )
-            .await?;
+            .await
+            .map_err(|error| error.to_string())?;
             let client = &state.connections[&key].client;
             client.batch_execute("BEGIN").await.map_err(|error| {
                 format!("EC_DELETE_ROUTE: remote tombstone begin failed: {error}")
@@ -1113,7 +1286,8 @@ pub(crate) fn remote_physical_backlink(
                 &mut state.connections,
                 &[(key.clone(), request.conninfo, identity)],
             )
-            .await?;
+            .await
+            .map_err(|error| error.to_string())?;
             let client = &state.connections[&key].client;
             let prepared_gid = physical_insert_prepared_gid(
                 request.index_oid,
@@ -1366,7 +1540,8 @@ async fn lifecycle_client<'a>(
         &[(key.clone(), conninfo)],
         "EC_BUILD_INCOMPLETE",
     )
-    .await?;
+    .await
+    .map_err(|error| error.to_string())?;
     Ok(&connections[&key].client)
 }
 
@@ -1454,8 +1629,7 @@ pub(crate) fn remote_physical_seed_batch(
                 .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
                 .collect::<Vec<_>>();
             ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
-                .await
-                .map_err(DistannExpandError::Internal)?;
+                .await?;
             ensure_physical_statements(connections, &conn_keys, PHYSICAL_SEED_SQL).await?;
             let futures = requests.iter().enumerate().map(|(index, request)| {
                 let pooled = &connections[&conn_keys[index]];
@@ -1465,7 +1639,8 @@ pub(crate) fn remote_physical_seed_batch(
                     request,
                 )
             });
-            Ok(join_owner_futures(futures).await)
+            let results = join_owner_futures(futures).await;
+            Ok(finalize_read_batch(connections, &conn_keys, results))
         })
     });
     outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect())
@@ -1523,26 +1698,28 @@ pub(crate) fn remote_traversal_replica_chunk(
                 &[(conn_key.clone(), request.conninfo)],
                 "EC_BUILD_INCOMPLETE",
             )
-            .await
-            .map_err(DistannExpandError::Internal)?;
+            .await?;
             ensure_physical_statements(
                 connections,
                 std::slice::from_ref(&conn_key),
                 TRAVERSAL_REPLICA_CHUNK_SQL,
             )
             .await?;
-            let pooled = &connections[&conn_key];
-            let rows = physical_query(
-                &pooled.client,
-                &pooled.prepared_statements[TRAVERSAL_REPLICA_CHUNK_SQL],
-                &[
-                    &request.index_regclass,
-                    &request.epoch_fingerprint,
-                    &request.after_vec_id,
-                    &request.limit,
-                ],
-            )
-            .await?;
+            let result = {
+                let pooled = &connections[&conn_key];
+                physical_query(
+                    &pooled.client,
+                    &pooled.prepared_statements[TRAVERSAL_REPLICA_CHUNK_SQL],
+                    &[
+                        &request.index_regclass,
+                        &request.epoch_fingerprint,
+                        &request.after_vec_id,
+                        &request.limit,
+                    ],
+                )
+                .await
+            };
+            let rows = finalize_read_call(connections, &conn_key, result)?;
             rows.into_iter()
                 .map(|row| {
                     let owner_ordinal: i32 = row.try_get(0).map_err(row_err)?;
@@ -1637,8 +1814,7 @@ pub(crate) fn remote_physical_head_search_batch(
                 .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
                 .collect::<Vec<_>>();
             ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
-                .await
-                .map_err(DistannExpandError::Internal)?;
+                .await?;
             ensure_physical_statements(connections, &conn_keys, PHYSICAL_HEAD_SEARCH_SQL).await?;
             let futures = requests.iter().enumerate().map(|(index, request)| {
                 let pooled = &connections[&conn_keys[index]];
@@ -1649,7 +1825,8 @@ pub(crate) fn remote_physical_head_search_batch(
                     &wire_ids[index],
                 )
             });
-            Ok(join_owner_futures(futures).await)
+            let results = join_owner_futures(futures).await;
+            Ok(finalize_read_batch(connections, &conn_keys, results))
         })
     });
     match outcome {
@@ -1664,25 +1841,27 @@ async fn run_one_physical_head_search(
     request: &DistannPhysicalHeadRequest<'_>,
     wire_ids: &[i64],
 ) -> Result<Vec<super::scan::DistannSeedCandidate>, DistannExpandError> {
-    let rows = client
-        .query(
-            statement,
-            &[
-                &request.index_regclass,
-                &request.epoch_fingerprint,
-                &request.query,
-                &wire_ids,
-                &request.search_width,
-                &request.seed_count,
-                &request.build_list_size,
-                &request.alpha,
-                &request.head_policy,
-            ],
+    let rows = classify_remote_read_await(
+        "physical head search",
+        await_remote_read(
+            client,
+            client.query(
+                statement,
+                &[
+                    &request.index_regclass,
+                    &request.epoch_fingerprint,
+                    &request.query,
+                    &wire_ids,
+                    &request.search_width,
+                    &request.seed_count,
+                    &request.build_list_size,
+                    &request.alpha,
+                    &request.head_policy,
+                ],
+            ),
         )
-        .await
-        .map_err(|error| {
-            DistannExpandError::Internal(format!("ec_distann remote head search failed: {error}"))
-        })?;
+        .await,
+    )?;
     Ok(rows
         .into_iter()
         .map(|row| super::scan::DistannSeedCandidate {
@@ -1739,8 +1918,7 @@ pub(crate) fn remote_crown_code_batch(
                 .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
                 .collect::<Vec<_>>();
             ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
-                .await
-                .map_err(DistannExpandError::Internal)?;
+                .await?;
             let futures = requests.iter().enumerate().map(|(index, request)| {
                 run_one_crown_code(
                     &connections[&conn_keys[index]].client,
@@ -1748,7 +1926,8 @@ pub(crate) fn remote_crown_code_batch(
                     &wire_ids[index],
                 )
             });
-            Ok(join_owner_futures(futures).await)
+            let results = join_owner_futures(futures).await;
+            Ok(finalize_read_batch(connections, &conn_keys, results))
         })
     });
     match outcome {
@@ -1762,13 +1941,13 @@ async fn run_one_crown_code(
     request: &DistannCrownCodeRequest<'_>,
     wire_ids: &[i64],
 ) -> Result<Vec<super::crown_cache::DistannCrownEntry>, DistannExpandError> {
-    let rows = client
-        .query(
-            "SELECT vec_id, search_code FROM ec_distann_crown_code_export($1::text::regclass, $2::bytea, $3::bigint[])",
-            &[&request.index_regclass, &request.epoch_fingerprint, &wire_ids],
-        )
-        .await
-        .map_err(|error| DistannExpandError::Internal(format!("ec_distann crown export failed: {error}")))?;
+    let rows = read_query(
+        client,
+        "crown-code export",
+        "SELECT vec_id, search_code FROM ec_distann_crown_code_export($1::text::regclass, $2::bytea, $3::bigint[])",
+        &[&request.index_regclass, &request.epoch_fingerprint, &wire_ids],
+    )
+    .await?;
     rows.into_iter()
         .map(|row| {
             Ok(super::crown_cache::DistannCrownEntry {
@@ -1821,8 +2000,7 @@ pub(crate) fn remote_gateway_routing_batch(
                 .map(|(index, request)| (conn_keys[index].clone(), request.conninfo))
                 .collect::<Vec<_>>();
             ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
-                .await
-                .map_err(DistannExpandError::Internal)?;
+                .await?;
             ensure_physical_statements(connections, &conn_keys, GATEWAY_ROUTING_SQL).await?;
             let futures = requests.iter().enumerate().map(|(index, request)| {
                 let pooled = &connections[&conn_keys[index]];
@@ -1833,7 +2011,8 @@ pub(crate) fn remote_gateway_routing_batch(
                     &wire_ids[index],
                 )
             });
-            Ok(join_owner_futures(futures).await)
+            let results = join_owner_futures(futures).await;
+            Ok(finalize_read_batch(connections, &conn_keys, results))
         })
     });
     match outcome {
@@ -1848,21 +2027,21 @@ async fn run_one_gateway_routing(
     request: &DistannGatewayRoutingRequest<'_>,
     wire_ids: &[i64],
 ) -> Result<Vec<super::gateway_copy::DistannGatewayCopy>, DistannExpandError> {
-    let rows = client
-        .query(
-            statement,
-            &[
-                &request.index_regclass,
-                &request.epoch_fingerprint,
-                &wire_ids,
-            ],
+    let rows = classify_remote_read_await(
+        "gateway routing export",
+        await_remote_read(
+            client,
+            client.query(
+                statement,
+                &[
+                    &request.index_regclass,
+                    &request.epoch_fingerprint,
+                    &wire_ids,
+                ],
+            ),
         )
-        .await
-        .map_err(|error| {
-            DistannExpandError::Internal(format!(
-                "ec_distann remote gateway routing export failed: {error}"
-            ))
-        })?;
+        .await,
+    )?;
     rows.into_iter()
         .map(|row| {
             let vec_id: i64 = row.try_get(0).map_err(row_err)?;
@@ -1905,19 +2084,16 @@ pub(crate) fn remote_head_shard_export(
                 &[(key.clone(), conninfo)],
                 "EC_BUILD_INCOMPLETE",
             )
-            .await
-            .map_err(DistannExpandError::Internal)?;
-            let rows = connections[&key]
-                .client
-                .query(
-                    "SELECT vec_id, vector FROM ec_distann_head_shard_export(
-                         $1::text::regclass, $2::bytea, $3::bigint[])",
-                    &[&index_regclass, &epoch_fingerprint, &wire],
-                )
-                .await
-                .map_err(|error| {
-                    DistannExpandError::Internal(format!("head shard export failed: {error}"))
-                })?;
+            .await?;
+            let result = read_query(
+                &connections[&key].client,
+                "head-shard export",
+                "SELECT vec_id, vector FROM ec_distann_head_shard_export(
+                     $1::text::regclass, $2::bytea, $3::bigint[])",
+                &[&index_regclass, &epoch_fingerprint, &wire],
+            )
+            .await;
+            let rows = finalize_read_call(connections, &key, result)?;
             Ok(rows
                 .into_iter()
                 .map(|row| {
@@ -1960,27 +2136,24 @@ pub(crate) fn remote_head_shard_import(
                 &[(key.clone(), conninfo)],
                 "EC_BUILD_INCOMPLETE",
             )
-            .await
-            .map_err(DistannExpandError::Internal)?;
-            let row = connections[&key]
-                .client
-                .query_one(
-                    "SELECT ec_distann_head_shard_import(
-                         $1::text::regclass, $2::bytea, $3::integer,
-                         $4::bigint[], $5::real[], $6::integer)",
-                    &[
-                        &index_regclass,
-                        &epoch_fingerprint,
-                        &shard_ordinal,
-                        &ids,
-                        &flat,
-                        &dimensions,
-                    ],
-                )
-                .await
-                .map_err(|error| {
-                    DistannExpandError::Internal(format!("head shard import failed: {error}"))
-                })?;
+            .await?;
+            let result = read_query_one(
+                &connections[&key].client,
+                "head-shard import",
+                "SELECT ec_distann_head_shard_import(
+                     $1::text::regclass, $2::bytea, $3::integer,
+                     $4::bigint[], $5::real[], $6::integer)",
+                &[
+                    &index_regclass,
+                    &epoch_fingerprint,
+                    &shard_ordinal,
+                    &ids,
+                    &flat,
+                    &dimensions,
+                ],
+            )
+            .await;
+            let row = finalize_read_call(connections, &key, result)?;
             Ok(row.get::<_, i64>(0))
         })
     })
@@ -2042,8 +2215,7 @@ pub(crate) fn remote_physical_expand_batch(
             #[cfg(feature = "distann-head-attribution-benchmark")]
             let connection_started = std::time::Instant::now();
             ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
-                .await
-                .map_err(DistannExpandError::Internal)?;
+                .await?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
             let statements_prepared = conn_keys
                 .iter()
@@ -2181,7 +2353,7 @@ pub(crate) fn remote_physical_expand_batch(
                         .physical_query_digest = Some(*requests[index].query_digest);
                 }
             }
-            Ok(results)
+            Ok(finalize_read_batch(connections, &conn_keys, results))
         })
     });
     outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect())
@@ -2423,8 +2595,7 @@ pub(crate) fn remote_physical_materialize_batch(
             #[cfg(feature = "distann-head-attribution-benchmark")]
             let connection_started = std::time::Instant::now();
             ensure_pooled_connections(connections, &specs, "EC_BUILD_INCOMPLETE")
-                .await
-                .map_err(DistannExpandError::Internal)?;
+                .await?;
             ensure_physical_statements(connections, &conn_keys, PHYSICAL_MATERIALIZE_SQL).await?;
             #[cfg(feature = "distann-head-attribution-benchmark")]
             super::stage_counters::record(
@@ -2452,7 +2623,7 @@ pub(crate) fn remote_physical_materialize_batch(
                 super::stage_counters::DistannQueryStage::MaterializeRequestWait,
                 wait_started.elapsed(),
             );
-            Ok(rows)
+            Ok(finalize_read_batch(connections, &conn_keys, rows))
         })
     });
     let raw = outcome.unwrap_or_else(|error| requests.iter().map(|_| Err(error.clone())).collect());
@@ -2634,23 +2805,6 @@ fn nonnegative_i64_to_u64(value: i64) -> Result<u64, DistannExpandError> {
             "physical owner returned negative materialization telemetry".to_owned(),
         )
     })
-}
-
-fn classify_physical_read_error(error: tokio_postgres::Error) -> DistannExpandError {
-    let code = error.code().map(|state| state.code().to_owned());
-    let detail = error
-        .as_db_error()
-        .map(|db| db.message().to_owned())
-        .unwrap_or_else(|| error.to_string());
-    if detail.contains("EC_RECORD_MISSING") {
-        return DistannExpandError::OwnedRecordMissing(format!(
-            "physical generation RPC failed: {detail}"
-        ));
-    }
-    DistannExpandError::from_wire_sqlstate(
-        code.as_deref(),
-        format!("physical generation RPC failed: {detail}"),
-    )
 }
 
 pub(crate) struct RemoteHandoffBegin<'a> {
@@ -3149,17 +3303,19 @@ pub(super) fn remote_expand_batch(
                 let client = &connections[&conn_keys[index]].client;
                 run_one_remote(client, request, &vec_ids_i64[index])
             });
-            Ok::<_, String>(futures_util::future::join_all(futures).await)
+            let results = futures_util::future::join_all(futures).await;
+            Ok::<_, DistannExpandError>(finalize_read_batch(
+                connections,
+                &conn_keys,
+                results,
+            ))
         })
     });
 
     match outcome {
         Ok(results) => results,
         // A connect/parse failure (or runtime init failure) fails all uniformly.
-        Err(message) => requests
-            .iter()
-            .map(|_| Err(DistannExpandError::Internal(message.clone())))
-            .collect(),
+        Err(error) => requests.iter().map(|_| Err(error.clone())).collect(),
     }
 }
 
@@ -3331,16 +3487,18 @@ pub(super) fn remote_materialize_row_payloads_batch(
                 let client = &connections[&conn_keys[index]].client;
                 run_one_materialize(client, request, &vec_ids_i64[index], &columns, &sends)
             });
-            Ok::<_, String>(futures_util::future::join_all(futures).await)
+            let results = futures_util::future::join_all(futures).await;
+            Ok::<_, DistannExpandError>(finalize_read_batch(
+                connections,
+                &conn_keys,
+                results,
+            ))
         })
     });
 
     match outcome {
         Ok(results) => results,
-        Err(message) => requests
-            .iter()
-            .map(|_| Err(DistannExpandError::Internal(message.clone())))
-            .collect(),
+        Err(error) => requests.iter().map(|_| Err(error.clone())).collect(),
     }
 }
 
@@ -3734,6 +3892,45 @@ mod tests {
         assert!(
             started.elapsed() < Duration::from_millis(230),
             "three owner futures ran serially instead of concurrently"
+        );
+    }
+
+    #[test]
+    fn read_batch_failure_is_uniform_and_deterministic() {
+        let mut connections = HashMap::new();
+        let keys = vec!["owner-1".to_owned(), "owner-2".to_owned(), "owner-3".to_owned()];
+        let results = vec![
+            Ok(11_u8),
+            Err(DistannExpandError::remote_read(
+                DistannRemoteReadErrorKind::ClientDeadline,
+                "owner 2 deadline",
+            )),
+            Err(DistannExpandError::remote_read(
+                DistannRemoteReadErrorKind::RemoteBackendTerminated,
+                "owner 3 terminated",
+            )),
+        ];
+        let normalized = finalize_read_batch(&mut connections, &keys, results);
+        assert_eq!(normalized.len(), 3);
+        assert!(normalized.into_iter().all(|result| {
+            result
+                .expect_err("a sibling failure must fail every result")
+                .category()
+                == "EC_REMOTE_READ_DEADLINE"
+        }));
+    }
+
+    #[test]
+    fn successful_read_batch_preserves_request_order() {
+        let mut connections = HashMap::new();
+        let keys = vec!["owner-1".to_owned(), "owner-2".to_owned()];
+        let normalized = finalize_read_batch(&mut connections, &keys, vec![Ok(11_u8), Ok(22)]);
+        assert_eq!(
+            normalized
+                .into_iter()
+                .collect::<Result<Vec<_>, DistannExpandError>>()
+                .expect("all-success batch"),
+            vec![11, 22]
         );
     }
 
