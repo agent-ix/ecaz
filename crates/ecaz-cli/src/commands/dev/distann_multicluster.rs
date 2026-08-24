@@ -610,9 +610,6 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     if args.query_offset > 0 && args.corpus_prefix.is_none() {
         bail!("--query-offset requires --corpus-prefix");
     }
-    if args.query_offset > 0 && args.reuse_fixture {
-        bail!("--query-offset cannot combine with --reuse-fixture");
-    }
     if args.distann_stage_counters && !args.physical_benchmark {
         bail!("--distann-stage-counters requires --physical-benchmark");
     }
@@ -8520,13 +8517,17 @@ async fn validate_reused_physical_fixture(
         .ok_or_else(|| color_eyre::eyre::eyre!("reuse log has no physical build line"))?;
     let expected_sha = &extension_preflight.git_sha;
     let expected_profile = &extension_preflight.build_profile;
-    let expected_query_sha = {
+    let (expected_query_sha, expected_query_slice_sha) = {
         let staged_dir = args
             .staged_dir
             .clone()
             .unwrap_or(repo_root()?.join("data/staged-current"));
         let query_path = fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_queries.tsv")))?;
-        hex::encode(Sha256::digest(fs::read(query_path)?))
+        let query_bytes = fs::read(query_path)?;
+        (
+            hex::encode(Sha256::digest(&query_bytes)),
+            query_slice_sha256(&query_bytes, args.query_offset, args.queries)?,
+        )
     };
     let expected_source_count = {
         let staged_dir = args
@@ -8544,6 +8545,7 @@ async fn validate_reused_physical_fixture(
     let expected_head_cap = args.head_index_cap.to_string();
     let expected_head_width = expected_head_width.to_string();
     let expected_head_count = expected_head_count.to_string();
+    let expected_query_offset = args.query_offset.to_string();
     let checks = [
         ("scale", scale, benchmark_log_value(provenance, "scale")),
         (
@@ -8555,6 +8557,16 @@ async fn validate_reused_physical_fixture(
             "query_sha256",
             expected_query_sha.as_str(),
             benchmark_log_value(provenance, "query_sha256"),
+        ),
+        (
+            "query_offset",
+            expected_query_offset.as_str(),
+            benchmark_log_value(provenance, "query_offset"),
+        ),
+        (
+            "query_slice_sha256",
+            expected_query_slice_sha.as_str(),
+            benchmark_log_value(provenance, "query_slice_sha256"),
         ),
         (
             "extension_git_sha",
@@ -12800,6 +12812,20 @@ mod tests {
     fn diagnostic_replays_match_the_shipped_sharded_head_default() {
         assert_eq!(diagnostic_sharded_head_search_setting(false), "on");
         assert_eq!(diagnostic_sharded_head_search_setting(true), "off");
+    }
+
+    #[test]
+    fn reuse_provenance_exposes_the_exact_query_slice_identity() {
+        let line = "physical_benchmark_provenance scale=100k query_offset=200 \
+                    query_slice_sha256=a12a8111 corpus_prefix=ec_real_100k";
+        assert_eq!(
+            benchmark_log_value(line, "query_offset").as_deref(),
+            Some("200")
+        );
+        assert_eq!(
+            benchmark_log_value(line, "query_slice_sha256").as_deref(),
+            Some("a12a8111")
+        );
     }
 
     fn provenance(
