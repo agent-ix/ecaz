@@ -8097,10 +8097,35 @@ async fn validate_reused_physical_fixture(
         fs::read_to_string(corpus_path)?.lines().count() as i64
     };
     let beam_width = args.beam_width.unwrap_or(4);
-    let expected_seed = args.seed_strategy.as_deref().unwrap_or("head_sample_exact");
-    let expected_head_width = args.head_search_width.unwrap_or((beam_width * 2).max(32));
-    let expected_head_count = args.head_seed_count.unwrap_or(expected_head_width);
-    let expected_neighbor = args.neighbor_score_mode.as_deref().unwrap_or("rabitq");
+    let reuse_variant = if args.benchmark_seed_variants.is_empty() {
+        None
+    } else {
+        parse_benchmark_seed_variants(&args.benchmark_seed_variants)?
+            .into_iter()
+            .next()
+    };
+    let expected_seed = args
+        .seed_strategy
+        .clone()
+        .or_else(|| reuse_variant.as_ref().map(|variant| variant.strategy.clone()))
+        .unwrap_or_else(|| "head_sample_exact".to_owned());
+    let expected_head_width = args
+        .head_search_width
+        .or_else(|| reuse_variant.as_ref().map(|variant| variant.head_search_width))
+        .unwrap_or((beam_width * 2).max(32));
+    let expected_head_count = args
+        .head_seed_count
+        .or_else(|| reuse_variant.as_ref().map(|variant| variant.head_seed_count))
+        .unwrap_or(expected_head_width);
+    let expected_neighbor = args
+        .neighbor_score_mode
+        .clone()
+        .or_else(|| {
+            reuse_variant
+                .as_ref()
+                .map(|variant| variant.neighbor_score_mode.clone())
+        })
+        .unwrap_or_else(|| "rabitq".to_owned());
     let expected_head_cap = args.head_index_cap.to_string();
     let expected_head_width = expected_head_width.to_string();
     let expected_head_count = expected_head_count.to_string();
@@ -8133,7 +8158,7 @@ async fn validate_reused_physical_fixture(
         ),
         (
             "seed_strategy",
-            expected_seed,
+            expected_seed.as_str(),
             benchmark_log_value(build, "seed_strategy"),
         ),
         (
@@ -8148,7 +8173,7 @@ async fn validate_reused_physical_fixture(
         ),
         (
             "neighbor_score_mode",
-            expected_neighbor,
+            expected_neighbor.as_str(),
             benchmark_log_value(build, "neighbor_score_mode"),
         ),
         (
