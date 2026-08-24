@@ -6584,14 +6584,32 @@ async fn run_physical_benchmarks(
                 let trace_json = coordinator
                     .query_one(
                         &format!(
-                            "WITH traces AS (
+                            "WITH raw_traces AS (
                                  SELECT q.id::bigint AS query_id,
                                         ec_distann_physical_query_trace_benchmark(
-                                            'dm_idx'::regclass, q.source, {}
+                                            'dm_idx'::regclass, q.source, 32
                                         ) AS trace
                                    FROM {physical_queries} q
                                   ORDER BY q.id
                                   LIMIT {}
+                             ), traces AS (
+                                 SELECT query_id,
+                                        jsonb_set(
+                                            jsonb_set(
+                                                trace,
+                                                '{{final_ids}}',
+                                                jsonb_path_query_array(
+                                                    trace,
+                                                    '$.final_ids[0 to {}]'
+                                                )
+                                            ),
+                                            '{{final_dists}}',
+                                            jsonb_path_query_array(
+                                                trace,
+                                                '$.final_dists[0 to {}]'
+                                            )
+                                        ) AS trace
+                                   FROM raw_traces
                              )
                              SELECT jsonb_build_object(
                                  'schema', 'ec_distann_query_trace_file_v1',
@@ -6608,8 +6626,9 @@ async fn run_physical_benchmarks(
                                  ), '[]'::jsonb)
                              )::text
                                FROM traces",
-                            args.top_k,
                             args.queries,
+                            args.top_k.saturating_sub(1),
+                            args.top_k.saturating_sub(1),
                             query_start,
                             query_end,
                             args.query_offset,
