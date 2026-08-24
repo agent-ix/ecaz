@@ -547,6 +547,14 @@ fn finalize_read_batch<T>(
     results: Vec<Result<T, DistannExpandError>>,
 ) -> Vec<Result<T, DistannExpandError>> {
     debug_assert_eq!(conn_keys.len(), results.len());
+    #[cfg(feature = "pg_test")]
+    LAST_READ_BATCH_OUTCOME.with(|outcome| {
+        *outcome.borrow_mut() = ReadBatchOutcome {
+            total: results.len(),
+            successes: results.iter().filter(|result| result.is_ok()).count(),
+            failures: results.iter().filter(|result| result.is_err()).count(),
+        };
+    });
     let first_error = results
         .iter()
         .find_map(|result| result.as_ref().err().cloned());
@@ -575,6 +583,14 @@ fn finalize_read_call<T>(
     conn_key: &RemotePoolKey,
     result: Result<T, DistannExpandError>,
 ) -> Result<T, DistannExpandError> {
+    #[cfg(feature = "pg_test")]
+    LAST_READ_BATCH_OUTCOME.with(|outcome| {
+        *outcome.borrow_mut() = ReadBatchOutcome {
+            total: 1,
+            successes: usize::from(result.is_ok()),
+            failures: usize::from(result.is_err()),
+        };
+    });
     if result
         .as_ref()
         .err()
@@ -3380,39 +3396,21 @@ pub(crate) struct ReadTransportSnapshot {
     pub(crate) prepared_statements: i64,
 }
 
+#[cfg(feature = "pg_test")]
+#[derive(Debug, Default, Clone, Copy)]
+struct ReadBatchOutcome {
+    total: usize,
+    successes: usize,
+    failures: usize,
+}
+
 thread_local! {
     static DISTANN_TRANSPORT_STATE: RefCell<Option<DistannTransportState>> =
         const { RefCell::new(None) };
     static DISTANN_TRANSPORT_INTERRUPT_OBSERVED: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Test-only pool census reused by the Task 236 credential-rotation matrix.
-/// Batch outcome fields remain zero because Task 234's production read-batch
-/// normalization is intentionally not part of this integration.
-#[cfg(feature = "pg_test")]
-pub(crate) fn read_transport_snapshot_for_test() -> ReadTransportSnapshot {
-    let (pooled_connections, prepared_statements) = DISTANN_TRANSPORT_STATE.with(|cell| {
-        let state = cell.borrow();
-        let Some(state) = state.as_ref() else {
-            return (0, 0);
-        };
-        (
-            state.connections.len(),
-            state
-                .connections
-                .values()
-                .map(|connection| connection.prepared_statements.len())
-                .sum(),
-        )
-    });
-    let to_i64 = |value: usize| i64::try_from(value).unwrap_or(i64::MAX);
-    ReadTransportSnapshot {
-        batch_total: 0,
-        batch_successes: 0,
-        batch_failures: 0,
-        pooled_connections: to_i64(pooled_connections),
-        prepared_statements: to_i64(prepared_statements),
-    }
+    #[cfg(feature = "pg_test")]
+    static LAST_READ_BATCH_OUTCOME: RefCell<ReadBatchOutcome> =
+        RefCell::new(ReadBatchOutcome::default());
 }
 
 fn mark_transport_interrupt_observed() {
@@ -3497,6 +3495,33 @@ pub(crate) fn remote_timeout_probe_for_test(
             Ok(())
         })
     })
+}
+
+#[cfg(feature = "pg_test")]
+pub(crate) fn read_transport_snapshot_for_test() -> ReadTransportSnapshot {
+    let outcome = LAST_READ_BATCH_OUTCOME.with(|outcome| *outcome.borrow());
+    let (pooled_connections, prepared_statements) = DISTANN_TRANSPORT_STATE.with(|cell| {
+        let state = cell.borrow();
+        let Some(state) = state.as_ref() else {
+            return (0, 0);
+        };
+        (
+            state.connections.len(),
+            state
+                .connections
+                .values()
+                .map(|connection| connection.prepared_statements.len())
+                .sum(),
+        )
+    });
+    let to_i64 = |value: usize| i64::try_from(value).unwrap_or(i64::MAX);
+    ReadTransportSnapshot {
+        batch_total: to_i64(outcome.total),
+        batch_successes: to_i64(outcome.successes),
+        batch_failures: to_i64(outcome.failures),
+        pooled_connections: to_i64(pooled_connections),
+        prepared_statements: to_i64(prepared_statements),
+    }
 }
 
 // `$1::text::regclass::oid` forces PG to infer $1 as text (the coordinator
