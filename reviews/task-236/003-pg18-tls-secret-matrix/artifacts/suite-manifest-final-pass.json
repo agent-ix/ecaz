@@ -1,0 +1,74 @@
+{
+  "suite": "task236-pg18-tls-secret-matrix",
+  "schema_version": 1,
+  "config": "reviews/task-236/003-pg18-tls-secret-matrix/artifacts/task236-tls-security-suite.json",
+  "config_sha256": "0e518e915a32f633a6a50fc83c2822748c88e13ef0feff3d0230b86507d23b9b",
+  "dry_run": false,
+  "generated_at_unix_ms": 1787611958805,
+  "runner_git_commit": "45f895d68fb208f6b3cfe4d8b0fdd17d04c6b3db",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "pg18-tls-secret-matrix",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--pgbin",
+        "/home/peter/.ecaz/toolchains/pg18-ssl/bin",
+        "--artifact-dir",
+        "reviews/task-236/003-pg18-tls-secret-matrix/artifacts/run-final-pass/fixture",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task236-tls-secret-matrix",
+        "--log-file",
+        "reviews/task-236/003-pg18-tls-secret-matrix/artifacts/run-final-pass/fixture.log",
+        "--nodes",
+        "3",
+        "--allow-debug-extension",
+        "--secure-remote-transport",
+        "--tls-security-matrix",
+        "--base-port",
+        "43920",
+        "--rows",
+        "2000",
+        "--dim",
+        "32",
+        "--graph-degree",
+        "32",
+        "--queries",
+        "20",
+        "--top-k",
+        "10"
+      ],
+      "selected": true,
+      "tags": [
+        "task236",
+        "pg18",
+        "tls",
+        "mtls",
+        "secret-rotation",
+        "metrics_mode=benchmark"
+      ],
+      "expected_artifacts": [
+        "reviews/task-236/003-pg18-tls-secret-matrix/artifacts/run-final-pass/fixture.log",
+        "reviews/task-236/003-pg18-tls-secret-matrix/artifacts/run-final-pass/fixture/task236-tls-security-matrix.log"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1787611958827,
+      "finished_at_unix_ms": 1787611972836,
+      "duration_ms": 14008,
+      "exit_code": 0
+    }
+  ]
+}

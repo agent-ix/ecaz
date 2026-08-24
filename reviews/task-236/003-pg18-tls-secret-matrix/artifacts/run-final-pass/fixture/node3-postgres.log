@@ -1,0 +1,21 @@
+2026-08-24 15:52:43.248 PDT [2201372] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 15:52:43.264 PDT [2201372] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 15:52:43.264 PDT [2201372] LOG:  listening on IPv4 address "127.0.0.1", port 43922
+2026-08-24 15:52:43.268 PDT [2201372] LOG:  listening on IPv4 address "127.0.0.2", port 43922
+2026-08-24 15:52:43.273 PDT [2201378] LOG:  database system was shut down at 2026-08-24 15:52:42 PDT
+2026-08-24 15:52:43.285 PDT [2201372] LOG:  database system is ready to accept connections
+2026-08-24 15:52:50.494 PDT [2201433] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:50.494 PDT [2201433] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:50.495 PDT [2201434] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:50.495 PDT [2201434] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:50.496 PDT [2201442] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:50.496 PDT [2201442] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:51.127 PDT [2201415] LOG:  SSL error: unexpected eof while reading
+2026-08-24 15:52:51.127 PDT [2201415] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 15:52:52.231 PDT [2201372] LOG:  received fast shutdown request
+2026-08-24 15:52:52.251 PDT [2201372] LOG:  aborting any active transactions
+2026-08-24 15:52:52.253 PDT [2201372] LOG:  background worker "logical replication launcher" (PID 2201381) exited with exit code 1
+2026-08-24 15:52:52.253 PDT [2201376] LOG:  shutting down
+2026-08-24 15:52:52.258 PDT [2201376] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 15:52:52.731 PDT [2201376] LOG:  checkpoint complete: wrote 626 buffers (3.8%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=0.014 s, sync=0.442 s, total=0.478 s; sync files=272, longest=0.009 s, average=0.002 s; distance=5337 kB, estimate=5337 kB; lsn=0/1C8AB08, redo lsn=0/1C8AB08
+2026-08-24 15:52:52.745 PDT [2201372] LOG:  database system is shut down
