@@ -1,6 +1,6 @@
 # Task 227: ec_distann Recall Residual and Adaptive Search
 
-Status: **plan refined; packet 001 request pending** (2026-08-24). Priority:
+Status: **plan refined; packet 001 review-open** (2026-08-24). Priority:
 P1 recall.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidates
