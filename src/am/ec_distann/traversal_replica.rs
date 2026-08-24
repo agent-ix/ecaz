@@ -1454,9 +1454,8 @@ fn loopback_connection_config() -> Result<postgres::Config, String> {
                 "EC_REPLICA_CONTROL: replica_control_password_file must be absolute".to_owned(),
             );
         }
-        let metadata = fs::metadata(path).map_err(|error| {
-            format!("EC_REPLICA_CONTROL: password-file metadata failed: {error}")
-        })?;
+        let metadata = fs::metadata(path)
+            .map_err(|_| "EC_REPLICA_CONTROL: password-file metadata failed".to_owned())?;
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -1468,7 +1467,7 @@ fn loopback_connection_config() -> Result<postgres::Config, String> {
             }
         }
         let password = fs::read_to_string(path)
-            .map_err(|error| format!("EC_REPLICA_CONTROL: password-file read failed: {error}"))?;
+            .map_err(|_| "EC_REPLICA_CONTROL: password-file read failed".to_owned())?;
         let password = password.trim_end_matches(['\r', '\n']);
         if password.is_empty()
             || password.len() > 1024
@@ -1499,11 +1498,15 @@ fn mark_stale_in_side_transaction(
     let stale_function = super::generation_catalog::extension_relation_name(
         "ec_distann_mark_traversal_replica_stale",
     )?;
-    let mut client = loopback_connection_config()?
-        .connect(postgres::NoTls)
-        .map_err(|error| {
-            format!("EC_REPLICA_INVALIDATION: dedicated coordinator connection failed: {error}")
-        })?;
+    let mut client = crate::am::common::remote_postgres_tls::connect_loopback_postgres(
+        loopback_connection_config()?,
+    )
+    .map_err(|error| {
+        format!(
+            "EC_REPLICA_INVALIDATION: dedicated coordinator connection failed: {}",
+            error.category()
+        )
+    })?;
     let row = client
         .query_one(
             &format!(
@@ -1521,23 +1524,25 @@ fn mark_stale_in_side_transaction(
                 &reason,
             ],
         )
-        .map_err(|error| {
-            format!("EC_REPLICA_INVALIDATION: dedicated coordinator transaction failed: {error}")
+        .map_err(|_| {
+            "EC_REPLICA_INVALIDATION: dedicated coordinator transaction failed".to_owned()
         })?;
     Ok(row.get::<_, bool>(0))
 }
 
 fn preflight_control_connection() -> Result<(), String> {
-    let mut client = loopback_connection_config()?
-        .connect(postgres::NoTls)
-        .map_err(|error| {
-            format!(
-                "EC_REPLICA_CONTROL: dedicated extension-owner connection preflight failed: {error}"
-            )
-        })?;
+    let mut client = crate::am::common::remote_postgres_tls::connect_loopback_postgres(
+        loopback_connection_config()?,
+    )
+    .map_err(|error| {
+        format!(
+            "EC_REPLICA_CONTROL: dedicated extension-owner connection preflight failed: {}",
+            error.category()
+        )
+    })?;
     client
         .simple_query("SELECT 1")
-        .map_err(|error| format!("EC_REPLICA_CONTROL: bounded preflight query failed: {error}"))?;
+        .map_err(|_| "EC_REPLICA_CONTROL: bounded preflight query failed".to_owned())?;
     Ok(())
 }
 

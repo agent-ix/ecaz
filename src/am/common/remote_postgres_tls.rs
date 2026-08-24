@@ -243,6 +243,32 @@ pub(crate) fn connect_remote_postgres(
     Ok(client)
 }
 
+/// The sole plaintext exception for PostgreSQL side transactions that dial
+/// back into the current server. The caller must set an explicit host; an
+/// omitted host is rejected even though libpq would normally imply a socket.
+pub(crate) fn connect_loopback_postgres(
+    config: postgres::Config,
+) -> Result<postgres::Client, RemoteTlsError> {
+    validate_loopback_plaintext_config(&config)?;
+    config
+        .connect(postgres::NoTls)
+        .map_err(|_| connect_error())
+}
+
+fn validate_loopback_plaintext_config(
+    config: &postgres::Config,
+) -> Result<(), RemoteTlsError> {
+    if config.get_hosts().is_empty()
+        || config.get_hosts().iter().any(|host| !is_loopback_host(host))
+    {
+        return Err(RemoteTlsError::new(
+            REMOTE_TLS_PLAINTEXT_FORBIDDEN,
+            "the plaintext side-transaction connector requires an explicit loopback endpoint",
+        ));
+    }
+    Ok(())
+}
+
 fn default_tls_config(policy: RemoteTlsPolicy) -> RemoteTlsConfig {
     RemoteTlsConfig {
         sslmode: match policy {
@@ -792,5 +818,21 @@ mod tests {
         .expect("rotated conninfo should parse");
         assert_eq!(first.endpoint_fingerprint(), rotated.endpoint_fingerprint());
         assert_ne!(first.security_fingerprint(), rotated.security_fingerprint());
+    }
+
+    #[test]
+    fn plaintext_side_transaction_gate_requires_explicit_loopback() {
+        let mut loopback = postgres::Config::new();
+        loopback.host("127.0.0.1");
+        validate_loopback_plaintext_config(&loopback).expect("loopback must be allowed");
+
+        let mut remote = postgres::Config::new();
+        remote.host("db.example");
+        let error = validate_loopback_plaintext_config(&remote)
+            .expect_err("remote plaintext must be rejected");
+        assert_eq!(error.category(), REMOTE_TLS_PLAINTEXT_FORBIDDEN);
+
+        let implicit = postgres::Config::new();
+        assert!(validate_loopback_plaintext_config(&implicit).is_err());
     }
 }
