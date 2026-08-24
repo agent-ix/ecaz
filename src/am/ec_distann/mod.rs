@@ -71,6 +71,8 @@ mod remote_endpoint;
 mod remote_transport;
 #[cfg(any(test, feature = "pg_test"))]
 pub(crate) use self::remote_transport::remote_timeout_probe_for_test;
+#[cfg(feature = "pg_test")]
+pub(crate) use self::remote_transport::read_transport_snapshot_for_test;
 mod roster;
 mod routine;
 mod row_schema;

@@ -2618,6 +2618,12 @@ fn maybe_delay_read_rpc_for_test(rpc: &str) {
     let Some(delay_ms) = super::options::debug_read_rpc_delay_ms(rpc) else {
         return;
     };
+    thread_local! {
+        static DELAY_USED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if DELAY_USED.with(|used| used.replace(true)) {
+        return;
+    }
     let delay_seconds = delay_ms as f64 / 1_000.0;
     Spi::run(&format!("SELECT pg_sleep({delay_seconds})")).unwrap_or_else(|error| {
         DistannExpandError::Internal(format!(
