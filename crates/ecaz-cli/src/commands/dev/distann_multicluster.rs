@@ -292,6 +292,11 @@ pub struct LocalMultinodePg18Args {
     /// Query count for the recall comparison.
     #[arg(long, default_value_t = 50)]
     pub queries: u32,
+    /// Zero-based row offset into the staged query TSV. The fixture loads only
+    /// this exact slice, keeping recall, latency, and trace artifacts aligned
+    /// without copying query data into a review packet.
+    #[arg(long, default_value_t = 0)]
+    pub query_offset: u32,
     /// top-k for the recall comparison.
     #[arg(long, default_value_t = 10)]
     pub top_k: u32,
@@ -581,6 +586,18 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     }
     if args.physical_benchmark && args.corpus_prefix.is_none() {
         bail!("--physical-benchmark requires --corpus-prefix");
+    }
+    if args.queries == 0 {
+        bail!("--queries must be at least 1");
+    }
+    args.query_offset
+        .checked_add(args.queries)
+        .ok_or_else(|| eyre!("--query-offset + --queries overflows u32"))?;
+    if args.query_offset > 0 && args.corpus_prefix.is_none() {
+        bail!("--query-offset requires --corpus-prefix");
+    }
+    if args.query_offset > 0 && args.reuse_fixture {
+        bail!("--query-offset cannot combine with --reuse-fixture");
     }
     if args.distann_stage_counters && !args.physical_benchmark {
         bail!("--distann-stage-counters requires --physical-benchmark");
@@ -980,7 +997,7 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
     crate::ecaz_println!("[distann-multicluster] repo={}", repo_root.display());
     crate::ecaz_println!("[distann-multicluster] pgbin={}", pgbin.display());
     crate::ecaz_println!(
-        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} graph_degree={} build_shards={} head_index_cap={}",
+        "[distann-multicluster] mode={} owners={} instances={} coordinator_outside_roster={} base_port={} rows={} dim={} graph_degree={} build_shards={} head_index_cap={} query_offset={} queries={}",
         match mode {
             FixtureMode::Physical => "physical",
             FixtureMode::ReplicatedServingControl => "replicated-serving-control",
@@ -993,7 +1010,9 @@ async fn run_local_multinode_pg18(args: &LocalMultinodePg18Args, mode: FixtureMo
         args.dim,
         args.graph_degree,
         args.build_shards,
-        args.head_index_cap
+        args.head_index_cap,
+        args.query_offset,
+        args.queries,
     );
 
     // initdb + start + extension on every node. Reuse deliberately skips
@@ -1201,6 +1220,7 @@ fn build_setup_sql(args: &LocalMultinodePg18Args) -> Result<String> {
             Ok(real_setup_sql(
                 &corpus_path,
                 &queries_path,
+                args.query_offset,
                 args.queries,
                 args.graph_degree,
                 args.head_index_cap,
@@ -1282,6 +1302,7 @@ async fn preflight_synthetic_unit_norm(
 fn real_setup_sql(
     corpus_path: &Path,
     queries_path: &Path,
+    query_offset: u32,
     queries_limit: u32,
     gd: u32,
     head_index_cap: u32,
@@ -1311,7 +1332,7 @@ fn real_setup_sql(
          COPY dmq_stage (id, vec) FROM '{queries}' WITH (FORMAT text, DELIMITER E'\\t');\n\
          INSERT INTO dm_queries\n\
            SELECT id, translate(vec, '[]', '{{}}')::real[]\n\
-           FROM dmq_stage ORDER BY id LIMIT {queries_limit};\n\
+           FROM dmq_stage ORDER BY id OFFSET {query_offset} LIMIT {queries_limit};\n\
          DROP TABLE dmq_stage;\n\
          CREATE INDEX dm_idx ON dm USING ec_distann (embedding ecvector_distann_ip_ops)\n\
            WITH (graph_degree = {gd}, head_index_cap = {head_index_cap},
@@ -1475,7 +1496,8 @@ fn physical_setup_sql(args: &LocalMultinodePg18Args, coordinator: bool) -> Resul
              COPY dmq_stage (id, vec) FROM '{queries}' WITH (FORMAT text, DELIMITER E'\\t');
              INSERT INTO dm_queries
              SELECT id, translate(vec, '[]', '{{}}')::real[]
-               FROM dmq_stage ORDER BY id LIMIT {};",
+               FROM dmq_stage ORDER BY id OFFSET {} LIMIT {};",
+            args.query_offset,
             args.queries
         )
     } else {
@@ -5889,6 +5911,27 @@ async fn run_coverage_memory_regression(
     Ok(line)
 }
 
+fn query_slice_sha256(bytes: &[u8], offset: u32, limit: u32) -> Result<String> {
+    let offset = usize::try_from(offset).wrap_err("query offset exceeds usize")?;
+    let limit = usize::try_from(limit).wrap_err("query limit exceeds usize")?;
+    let mut hasher = Sha256::new();
+    let mut selected = 0usize;
+    for line in bytes
+        .split_inclusive(|byte| *byte == b'\n')
+        .skip(offset)
+        .take(limit)
+    {
+        hasher.update(line);
+        selected += 1;
+    }
+    if selected != limit {
+        bail!(
+            "query slice is short: offset={offset} requested={limit} selected={selected}"
+        );
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
 async fn run_physical_benchmarks(
     args: &LocalMultinodePg18Args,
     coordinator: &tokio_postgres::Client,
@@ -6157,7 +6200,12 @@ async fn run_physical_benchmarks(
         std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_corpus.tsv")))?;
     let truth_queries =
         std::fs::canonicalize(staged_dir.join(format!("{corpus_prefix}_queries.tsv")))?;
-    let query_sha256 = hex::encode(Sha256::digest(std::fs::read(&truth_queries)?));
+    let query_bytes = std::fs::read(&truth_queries)?;
+    let query_sha256 = hex::encode(Sha256::digest(&query_bytes));
+    let query_slice_sha256 =
+        query_slice_sha256(&query_bytes, args.query_offset, args.queries)?;
+    let query_start = args.query_offset + 1;
+    let query_end = args.query_offset + args.queries;
     let truth_cache = nodes[0]
         .data_dir
         .parent()
@@ -6174,9 +6222,11 @@ async fn run_physical_benchmarks(
         "postgres".to_owned(),
     ];
     let mut lines = vec![format!(
-        "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true stage_counter_only={}",
+        "physical_benchmark_provenance scale={scale} extension_git_sha={expected_sha} extension_build_profile={expected_profile} nodes={} unanimous=true stage_counter_only={} query_offset={} query_rows={} query_slice_sha256={query_slice_sha256}",
         extension_preflight.nodes,
-        args.stage_counter_only
+        args.stage_counter_only,
+        args.query_offset,
+        args.queries,
     )];
     let mut task167_quality_gate_failed = false;
     if let Some(attestation) = production_head_attestation {
@@ -6200,7 +6250,8 @@ async fn run_physical_benchmarks(
         "training_prefix=none training_queries=0 training_file_sha256=none training_slice_sha256=none".to_owned()
     };
     lines.push(format!(
-        "physical_benchmark_landmark scale={scale} head_policy={attested_head_policy} evaluation_prefix=rows_1_200 evaluation_queries={} evaluation_query_sha256={query_sha256} {training_provenance} deterministic=true sample_cap={} construction_ms={build_ms}",
+        "physical_benchmark_landmark scale={scale} head_policy={attested_head_policy} evaluation_prefix=rows_{query_start}_{query_end} evaluation_query_offset={} evaluation_queries={} evaluation_query_sha256={query_sha256} evaluation_slice_sha256={query_slice_sha256} {training_provenance} deterministic=true sample_cap={} construction_ms={build_ms}",
+        args.query_offset,
         args.queries,
         args.head_index_cap,
     ));
@@ -7915,7 +7966,8 @@ async fn run_physical_benchmarks(
     }
     for line in &mut lines {
         line.push_str(&format!(
-            " corpus_prefix={corpus_prefix} query_sha256={query_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}"
+            " corpus_prefix={corpus_prefix} query_sha256={query_sha256} query_offset={} query_slice_sha256={query_slice_sha256} extension_git_sha={expected_sha} extension_build_profile={expected_profile}",
+            args.query_offset
         ));
     }
     Ok(lines)
@@ -8273,6 +8325,24 @@ async fn drive_physical_fixture(
         .await?
         .trim()
         .parse::<i64>()?;
+    if args.corpus_prefix.is_some() {
+        let query_count = capture_psql(
+            psql,
+            socket_dir,
+            nodes[0].port,
+            "SELECT count(*) FROM dm_queries",
+        )
+        .await?
+        .trim()
+        .parse::<u32>()?;
+        if query_count != args.queries {
+            bail!(
+                "staged query slice is short: offset={} requested={} loaded={query_count}",
+                args.query_offset,
+                args.queries
+            );
+        }
+    }
 
     let coordinator_conninfo = conninfo(socket_dir, nodes[0].port);
     let (coordinator, connection) =
@@ -12225,6 +12295,37 @@ mod tests {
     struct TestLocalMultinodeArgs {
         #[command(flatten)]
         args: LocalMultinodePg18Args,
+    }
+
+    #[test]
+    fn query_slice_digest_preserves_exact_selected_line_bytes() {
+        let digest = query_slice_sha256(b"a\nb\nc\nd\n", 1, 2).expect("slice hashes");
+        assert_eq!(
+            digest,
+            "bb9ead4c391dab4c05bd498dafac47a54f8b212625f2124a911202cc6ea61d27"
+        );
+    }
+
+    #[test]
+    fn query_slice_digest_rejects_short_slice() {
+        let error = query_slice_sha256(b"a\nb\n", 1, 2).expect_err("slice is short");
+        assert!(error.to_string().contains("selected=1"));
+    }
+
+    #[test]
+    fn real_setup_sql_loads_only_the_requested_query_slice() {
+        let sql = real_setup_sql(
+            Path::new("/staged/corpus.tsv"),
+            Path::new("/staged/queries.tsv"),
+            200,
+            200,
+            32,
+            4096,
+            1,
+            "stitched_bfs",
+            "",
+        );
+        assert!(sql.contains("ORDER BY id OFFSET 200 LIMIT 200"));
     }
 
     fn provenance(
