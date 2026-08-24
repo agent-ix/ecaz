@@ -3122,6 +3122,7 @@ fn ec_distann_head_shard_export(
     epoch_fingerprint: Vec<u8>,
     member_vec_ids: Vec<i64>,
 ) -> TableIterator<'static, (name!(vec_id, i64), name!(vector, Vec<f32>))> {
+    maybe_delay_read_rpc_for_test("head_shard_export");
     let members = member_vec_ids
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
@@ -3159,6 +3160,7 @@ fn ec_distann_gateway_routing_export(
         name!(neighbor_codes, Vec<u8>),
     ),
 > {
+    maybe_delay_read_rpc_for_test("gateway_routing_export");
     let members = member_vec_ids
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
@@ -3196,6 +3198,7 @@ fn ec_distann_crown_code_export(
     epoch_fingerprint: Vec<u8>,
     member_vec_ids: Vec<i64>,
 ) -> TableIterator<'static, (name!(vec_id, i64), name!(search_code, Vec<u8>))> {
+    maybe_delay_read_rpc_for_test("crown_code_export");
     let members = member_vec_ids
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
@@ -3374,6 +3377,7 @@ fn ec_distann_head_shard_import(
     flat_vectors: Vec<f32>,
     dimensions: i32,
 ) -> i64 {
+    maybe_delay_read_rpc_for_test("head_shard_import");
     let dims = usize::try_from(dimensions).unwrap_or(0);
     if dims == 0 || flat_vectors.len() != vec_ids.len().saturating_mul(dims) {
         DistannExpandError::BadInput(
@@ -3410,6 +3414,7 @@ fn ec_distann_head_search_physical(
     alpha: f32,
     head_policy: i32,
 ) -> TableIterator<'static, (name!(vec_id, i64), name!(dist, f32))> {
+    maybe_delay_read_rpc_for_test("physical_head_search");
     let query_digest = physical_query_digest(&query)
         .map_err(DistannExpandError::BadInput)
         .unwrap_or_else(|error| error.raise());
