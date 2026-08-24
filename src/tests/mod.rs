@@ -1,6 +1,19 @@
     use super::*;
     use std::sync::{Mutex, OnceLock};
 
+    #[pg_extern]
+    fn ec_distann_test_read_rpc_probe(
+        index_oid: pg_sys::Oid,
+        rpc: String,
+        target_node_id: i32,
+    ) -> i64 {
+        let target_node_id = u32::try_from(target_node_id).unwrap_or_else(|_| {
+            pgrx::error!("Task 234 read RPC probe target node id must be non-negative")
+        });
+        crate::am::ec_distann::read_rpc_probe_for_test(index_oid, &rpc, target_node_id)
+            .unwrap_or_else(|error| error.raise())
+    }
+
     struct ScopedEnvVar {
         key: &'static str,
         previous: Option<std::ffi::OsString>,

@@ -123,6 +123,11 @@ static ECDISTANN_REMOTE_STATEMENT_TIMEOUT_MS_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(ECDISTANN_DEFAULT_REMOTE_STATEMENT_TIMEOUT_MS);
 static ECDISTANN_REPLICA_CONTROL_PASSWORD_FILE_GUC: GucSetting<Option<CString>> =
     GucSetting::<Option<CString>>::new(None);
+#[cfg(feature = "pg_test")]
+static ECDISTANN_DEBUG_READ_RPC_DELAY_GUC: GucSetting<Option<CString>> =
+    GucSetting::<Option<CString>>::new(None);
+#[cfg(feature = "pg_test")]
+static ECDISTANN_DEBUG_READ_RPC_DELAY_MS_GUC: GucSetting<i32> = GucSetting::<i32>::new(0);
 
 /// NFR-020 fault-injection hook (debug only): when >= 0, an ec_distann scan
 /// raises an error at the start of the hop round with this 0-based index, after
@@ -632,6 +637,26 @@ pub(super) fn register_gucs() {
         GucContext::Sighup,
         GucFlags::default(),
     );
+    #[cfg(feature = "pg_test")]
+    GucRegistry::define_string_guc(
+        c"ec_distann.debug_read_rpc_delay",
+        c"Task 234 test fault: delay one named owner-side read RPC.",
+        c"Accepted nonempty values are physical_head_search, crown_code_export, gateway_routing_export, head_shard_export, and head_shard_import. This GUC exists only in pg_test builds.",
+        &ECDISTANN_DEBUG_READ_RPC_DELAY_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "pg_test")]
+    GucRegistry::define_int_guc(
+        c"ec_distann.debug_read_rpc_delay_ms",
+        c"Task 234 test fault delay in milliseconds.",
+        c"A positive value parks the RPC selected by ec_distann.debug_read_rpc_delay. This GUC exists only in pg_test builds.",
+        &ECDISTANN_DEBUG_READ_RPC_DELAY_MS_GUC,
+        0,
+        60_000,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
     #[cfg(feature = "distann-head-attribution-benchmark")]
     GucRegistry::define_string_guc(
         c"ec_distann.benchmark_seed_mode",
@@ -800,6 +825,19 @@ pub(super) fn debug_fail_crown_population() -> bool {
     }
     #[cfg(not(feature = "pg_test"))]
     false
+}
+
+#[cfg(feature = "pg_test")]
+pub(super) fn debug_read_rpc_delay_ms(rpc: &str) -> Option<u64> {
+    let selected = ECDISTANN_DEBUG_READ_RPC_DELAY_GUC
+        .get()
+        .map(|value| value.to_string_lossy().into_owned())?;
+    if selected.trim() != rpc {
+        return None;
+    }
+    u64::try_from(ECDISTANN_DEBUG_READ_RPC_DELAY_MS_GUC.get())
+        .ok()
+        .filter(|delay| *delay > 0)
 }
 
 pub(super) fn materialization_batch_size() -> usize {
