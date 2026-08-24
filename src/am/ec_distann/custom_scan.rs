@@ -14,22 +14,24 @@
 //! Single-node / empty roster is not eligible here — those queries stay on the
 //! local AM `amgettuple` path.
 
-use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, Spi};
-use std::ffi::c_void;
-use std::ptr;
 #[cfg(feature = "distann-head-attribution-benchmark")]
 use std::time::Instant;
+use std::{ffi::c_void, ptr};
 
+use pgrx::{pg_guard, pg_sys, FromDatum, PgBox, Spi};
+
+use super::{
+    payload_projection::{
+        append_ordering_proof_plan_private, derive_payload_attribute_mask,
+        elide_ordering_only_target, ordering_proof_from_plan_private, relation_var_attno,
+        OrderingOnlyProof, PayloadAttributeMask,
+    },
+    placement::owning_node,
+};
 use crate::am::common::{
     heap_slot::TupleSlotWriter,
     pg_ptr::{pg_list as cs_pg_list, pg_ref as cs_pg_ref},
 };
-
-use super::payload_projection::{
-    append_ordering_proof_plan_private, derive_payload_attribute_mask, elide_ordering_only_target,
-    ordering_proof_from_plan_private, relation_var_attno, OrderingOnlyProof, PayloadAttributeMask,
-};
-use super::placement::owning_node;
 
 const CUSTOM_SCAN_NAME: &core::ffi::CStr = c"EcDistannDistributedScan";
 const EC_DISTANN_AM_NAME: &core::ffi::CStr = c"ec_distann";
@@ -831,7 +833,7 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     _eflags: core::ffi::c_int,
 ) {
     register_exec_state_cleanup(node.cast::<DistannCustomScanExecState>(), estate);
-    let custom_scan = (*node).ss.ps.plan.cast::<pg_sys::CustomScan>();
+    let mut custom_scan = (*node).ss.ps.plan.cast::<pg_sys::CustomScan>();
     if custom_scan.is_null() {
         pgrx::error!("EcDistannDistributedScan BeginCustomScan missing plan");
     }
@@ -849,29 +851,58 @@ unsafe extern "C-unwind" fn begin_custom_scan(
     let query_expr = exprs
         .get_ptr(0)
         .unwrap_or_else(|| pgrx::error!("EcDistannDistributedScan plan missing ORDER BY query"));
-    let payload_mask = payload_mask_for_custom_scan(custom_scan, query_expr);
-    if let PayloadAttributeMask::Exact(attnums) = &payload_mask {
-        let ordering_only = ordering_proof_from_plan_private(
-            (*custom_scan).custom_private,
-            (*custom_scan).scan.scanrelid,
-        )
-        .unwrap_or_else(|error| pgrx::error!("EcDistannDistributedScan {error}"));
-        if let Some(proof) =
-            ordering_only.filter(|proof| attnums.binary_search(&proof.relation_attnum).is_err())
-        {
-            if !elide_ordering_only_target((*custom_scan).scan.plan.targetlist, query_expr, proof) {
-                pgrx::error!(
-                    "EcDistannDistributedScan exact mask omitted ordering attribute without one elidable projection"
+    let mut payload_mask = payload_mask_for_custom_scan(custom_scan, query_expr);
+    let ordering_only = ordering_proof_from_plan_private(
+        (*custom_scan).custom_private,
+        (*custom_scan).scan.scanrelid,
+    )
+    .unwrap_or_else(|error| pgrx::error!("EcDistannDistributedScan {error}"));
+    let wants_elision = ordering_only.is_some_and(|proof| {
+        payload_mask
+            .exact_attnums()
+            .is_some_and(|attnums| attnums.binary_search(&proof.relation_attnum).is_err())
+    });
+    if wants_elision {
+        let mut projection_elided = false;
+        let old_context = pg_sys::MemoryContextSwitchTo((*estate).es_query_cxt);
+        let copied_scan =
+            pg_sys::palloc(std::mem::size_of::<pg_sys::CustomScan>()).cast::<pg_sys::CustomScan>();
+        ptr::copy_nonoverlapping(custom_scan, copied_scan, 1);
+        (*copied_scan).scan.plan.targetlist =
+            pg_sys::copyObjectImpl((*custom_scan).scan.plan.targetlist.cast())
+                .cast::<pg_sys::List>();
+        pg_sys::MemoryContextSwitchTo(old_context);
+        if let (Some(copied_scan_ref), Some(proof)) = (cs_pg_ref(copied_scan), ordering_only) {
+            let copied_mask = payload_mask_for_custom_scan(copied_scan, query_expr);
+            let copied_wants_elision = copied_mask
+                .exact_attnums()
+                .is_some_and(|attnums| attnums.binary_search(&proof.relation_attnum).is_err());
+            if copied_wants_elision
+                && elide_ordering_only_target(
+                    copied_scan_ref.scan.plan.targetlist,
+                    query_expr,
+                    proof,
+                )
+            {
+                custom_scan = copied_scan;
+                payload_mask = copied_mask;
+                (*node).ss.ps.plan = copied_scan.cast::<pg_sys::Plan>();
+                pg_sys::ExecAssignScanProjectionInfoWithVarno(
+                    &mut (*node).ss,
+                    i32::try_from((*custom_scan).scan.scanrelid).unwrap_or_else(|_| {
+                        pgrx::error!("EcDistannDistributedScan scanrelid exceeds int")
+                    }),
                 );
+                projection_elided = true;
             }
-            // ExecInitCustomScan built this projection before BeginCustomScan.
-            // Rebuild it from the shared target list after replacing the
-            // proven-unused ordering expression with a typed NULL.
-            pg_sys::ExecAssignScanProjectionInfoWithVarno(
-                &mut (*node).ss,
-                i32::try_from((*custom_scan).scan.scanrelid).unwrap_or_else(|_| {
-                    pgrx::error!("EcDistannDistributedScan scanrelid exceeds int")
-                }),
+        }
+        if !projection_elided {
+            payload_mask = derive_payload_attribute_mask(
+                (*custom_scan).scan.scanrelid,
+                (*custom_scan).scan.plan.targetlist,
+                (*custom_scan).scan.plan.qual,
+                query_expr,
+                None,
             );
         }
     }
@@ -1004,6 +1035,11 @@ unsafe fn payload_mask_for_custom_scan(
 ) -> PayloadAttributeMask {
     if custom_scan.is_null() {
         pgrx::error!("EcDistannDistributedScan missing plan for payload mask derivation");
+    }
+    if !super::options::payload_projection_enabled() {
+        return PayloadAttributeMask::AllColumns(
+            super::payload_projection::PayloadFallbackReason::BenchmarkControl,
+        );
     }
     let scan_relid = (*custom_scan).scan.scanrelid;
     let ordering_only = ordering_proof_from_plan_private((*custom_scan).custom_private, scan_relid)
@@ -1245,7 +1281,9 @@ unsafe extern "C-unwind" fn custom_scan_access(
                         pg_sys::ExecClearTuple(state.frozen_row_slot);
                         visible = pg_sys::table_tuple_fetch_row_version(
                             context.row_relation().unwrap_or_else(|| {
-                                pgrx::error!("EC_GENERATION_MISSING: local hit has no local row tier")
+                                pgrx::error!(
+                                    "EC_GENERATION_MISSING: local hit has no local row tier"
+                                )
                             }),
                             &mut item,
                             latest.as_ptr(),
@@ -1302,9 +1340,10 @@ fn materialize_pending_physical_window(
     let remote_pairs = state.outputs[window_start..window_end]
         .iter()
         .filter_map(|output| match output {
-            CustomScanOutputRow::RemotePending { vec_id, owner_heap_tid } => {
-                Some((*vec_id, *owner_heap_tid))
-            }
+            CustomScanOutputRow::RemotePending {
+                vec_id,
+                owner_heap_tid,
+            } => Some((*vec_id, *owner_heap_tid)),
             _ => None,
         })
         .collect::<Vec<_>>();
@@ -1418,10 +1457,7 @@ fn take_materialized_remote_output_by_id(
         .iter()
         .take(previous_proven)
         .position(|output| {
-            output
-                .as_ref()
-                .and_then(materialized_remote_output_vec_id)
-                == Some(vec_id)
+            output.as_ref().and_then(materialized_remote_output_vec_id) == Some(vec_id)
         })?;
     previous_outputs.get_mut(position)?.take()
 }
@@ -1619,8 +1655,9 @@ unsafe fn run_physical_generation_search(
         // (including head selection) is re-entered under that state.
         state.physical_generation = None;
         state.physical_generation = Some(
-            super::generation_read::PhysicalGenerationScan::open(state.index_oid)
-                .map_err(|error| super::expand_error::DistannExpandError::Internal(error.to_string()))?,
+            super::generation_read::PhysicalGenerationScan::open(state.index_oid).map_err(
+                |error| super::expand_error::DistannExpandError::Internal(error.to_string()),
+            )?,
         );
         let context = state
             .physical_generation
@@ -1930,10 +1967,12 @@ unsafe fn store_remote_payload(
                     pgrx::error!("EcDistannDistributedScan previous payload offset missing")
                 })
             };
-            let start = usize::try_from(start)
-                .unwrap_or_else(|_| pgrx::error!("EcDistannDistributedScan payload offset is negative"));
-            let end = usize::try_from(end)
-                .unwrap_or_else(|_| pgrx::error!("EcDistannDistributedScan payload offset is negative"));
+            let start = usize::try_from(start).unwrap_or_else(|_| {
+                pgrx::error!("EcDistannDistributedScan payload offset is negative")
+            });
+            let end = usize::try_from(end).unwrap_or_else(|_| {
+                pgrx::error!("EcDistannDistributedScan payload offset is negative")
+            });
             if start > end || end > payload_values.len() {
                 pgrx::error!("EcDistannDistributedScan packed payload offsets are invalid");
             }

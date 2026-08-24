@@ -1,28 +1,29 @@
-use std::ffi::CString;
-use std::mem::{offset_of, size_of};
-use std::ptr;
+use std::{
+    ffi::CString,
+    mem::{offset_of, size_of},
+    ptr,
+};
 
 use pgrx::{pg_sys, GucContext, GucFlags, GucRegistry, GucSetting};
 
-use crate::am::common::callback::pg_am_callback;
-
 use super::{
+    generation_descriptor::DistannHeadSizingAttestation,
     page::{
         DISTANN_NEIGHBOR_CODEC_GROUPED_PQ, DISTANN_NEIGHBOR_CODEC_RABITQ,
         DISTANN_NEIGHBOR_CODEC_TURBOQUANT,
     },
     ECDISTANN_DEFAULT_ALPHA, ECDISTANN_DEFAULT_BEAM_WIDTH, ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
-    ECDISTANN_DEFAULT_BUILD_SHARDS, ECDISTANN_DEFAULT_CLOSURE_EPSILON,
-    ECDISTANN_DEFAULT_GRAPH_DEGREE, ECDISTANN_DEFAULT_HEAD_INDEX_CAP, ECDISTANN_DEFAULT_HOP_ROUNDS,
-    ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT, ECDISTANN_DEFAULT_TOP_K, ECDISTANN_MAX_ALPHA,
-    ECDISTANN_MAX_BEAM_WIDTH, ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT,
-    ECDISTANN_MAX_BUILD_LIST_SIZE, ECDISTANN_MAX_BUILD_SHARDS, ECDISTANN_MAX_CLOSURE_EPSILON,
+    ECDISTANN_DEFAULT_BUILD_SHARDS, ECDISTANN_DEFAULT_CANDIDATE_HEAP_LIMIT,
+    ECDISTANN_DEFAULT_CLOSURE_EPSILON, ECDISTANN_DEFAULT_GRAPH_DEGREE,
+    ECDISTANN_DEFAULT_HEAD_INDEX_CAP, ECDISTANN_DEFAULT_HOP_ROUNDS, ECDISTANN_DEFAULT_TOP_K,
+    ECDISTANN_MAX_ALPHA, ECDISTANN_MAX_BEAM_WIDTH, ECDISTANN_MAX_BUILD_LIST_SIZE,
+    ECDISTANN_MAX_BUILD_SHARDS, ECDISTANN_MAX_CANDIDATE_HEAP_LIMIT, ECDISTANN_MAX_CLOSURE_EPSILON,
     ECDISTANN_MAX_GRAPH_DEGREE, ECDISTANN_MAX_HEAD_INDEX_CAP, ECDISTANN_MAX_HOP_ROUNDS,
     ECDISTANN_MAX_TOP_K, ECDISTANN_MIN_ALPHA, ECDISTANN_MIN_BUILD_LIST_SIZE,
     ECDISTANN_MIN_BUILD_SHARDS, ECDISTANN_MIN_CLOSURE_EPSILON, ECDISTANN_MIN_GRAPH_DEGREE,
     ECDISTANN_MIN_HEAD_INDEX_CAP,
 };
-use super::generation_descriptor::DistannHeadSizingAttestation;
+use crate::am::common::callback::pg_am_callback;
 
 /// FR-081 beam width BW: frontier candidates expanded per hop round.
 static ECDISTANN_BEAM_WIDTH_GUC: GucSetting<i32> =
@@ -37,8 +38,7 @@ static ECDISTANN_CANDIDATE_HEAP_LIMIT_GUC: GucSetting<i32> =
 /// non-conforming accelerator that serves traversal from a coordinator-resident
 /// copy of every owner's graph record and full-precision vector. Default off —
 /// the sharded owner path is the default (Task 210 P1).
-static ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC: GucSetting<bool> =
-    GucSetting::<bool>::new(false);
+static ECDISTANN_ALLOW_NONCONFORMING_REPLICA_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 
 /// NFR-021 clause 3: search the FR-080 head as roster shards, so no node holds
 /// the whole head (Task 210 P2a). A/B-able against the coordinator-local head.
@@ -100,14 +100,13 @@ static ECDISTANN_BENCHMARK_MATERIALIZATION_BATCH_SIZE_GUC: GucSetting<i32> =
 static ECDISTANN_BENCHMARK_OWNER_PAYLOAD_PLAN_CACHE_GUC: GucSetting<bool> =
     GucSetting::<bool>::new(false);
 #[cfg(feature = "distann-head-attribution-benchmark")]
-static ECDISTANN_BENCHMARK_TYPED_LOCATOR_GUC: GucSetting<bool> =
-    GucSetting::<bool>::new(false);
+static ECDISTANN_BENCHMARK_TYPED_LOCATOR_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "distann-head-attribution-benchmark")]
-static ECDISTANN_BENCHMARK_PACKED_PAYLOAD_GUC: GucSetting<bool> =
-    GucSetting::<bool>::new(false);
+static ECDISTANN_BENCHMARK_PACKED_PAYLOAD_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
 #[cfg(feature = "distann-head-attribution-benchmark")]
-static ECDISTANN_BENCHMARK_EXPANDED_LOCATOR_GUC: GucSetting<bool> =
-    GucSetting::<bool>::new(false);
+static ECDISTANN_BENCHMARK_EXPANDED_LOCATOR_GUC: GucSetting<bool> = GucSetting::<bool>::new(false);
+#[cfg(feature = "distann-head-attribution-benchmark")]
+static ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC: GucSetting<bool> = GucSetting::<bool>::new(true);
 #[cfg(feature = "distann-head-attribution-benchmark")]
 static ECDISTANN_BENCHMARK_TRAVERSAL_REPLICA_FAIL_BATCH_GUC: GucSetting<i32> =
     GucSetting::<i32>::new(-1);
@@ -359,7 +358,9 @@ impl EcDistannOptions {
         let ceiling = u32::try_from(self.head_cap_ceiling)
             .map_err(|_| "EC_HEAD_SIZING: head_cap_ceiling is outside the v1 domain".to_owned())?;
         if !self.head_sampling_rate.is_finite() || self.head_sampling_rate < 0.0 {
-            return Err("EC_HEAD_SIZING: head_sampling_rate must be finite and non-negative".to_owned());
+            return Err(
+                "EC_HEAD_SIZING: head_sampling_rate must be finite and non-negative".to_owned(),
+            );
         }
         if floor < DistannHeadSizingAttestation::MIN_CAPACITY
             || floor > DistannHeadSizingAttestation::MAX_CAPACITY
@@ -367,7 +368,9 @@ impl EcDistannOptions {
             || ceiling > DistannHeadSizingAttestation::MAX_CAPACITY
             || floor > ceiling
         {
-            return Err("EC_HEAD_SIZING: head sampling law bounds are outside 16..=1048576".to_owned());
+            return Err(
+                "EC_HEAD_SIZING: head sampling law bounds are outside 16..=1048576".to_owned(),
+            );
         }
         Ok(())
     }
@@ -381,8 +384,9 @@ impl EcDistannOptions {
         let floor = self.head_cap_floor as u32;
         let ceiling = self.head_cap_ceiling as u32;
         if self.head_sampling_rate == 0.0 {
-            let explicit = u32::try_from(self.head_index_cap)
-                .map_err(|_| "EC_HEAD_SIZING: explicit head_index_cap is out of range".to_owned())?;
+            let explicit = u32::try_from(self.head_index_cap).map_err(|_| {
+                "EC_HEAD_SIZING: explicit head_index_cap is out of range".to_owned()
+            })?;
             if trained_policy && explicit != 4096 {
                 return Err("EC_HEAD_TRAINING: trained head policy requires cap 4096".to_owned());
             }
@@ -395,7 +399,9 @@ impl EcDistannOptions {
             captured_record_count,
         )?;
         if trained_policy && resolved != 4096 {
-            return Err("EC_HEAD_TRAINING: trained head policy requires resolved cap 4096".to_owned());
+            return Err(
+                "EC_HEAD_TRAINING: trained head policy requires resolved cap 4096".to_owned(),
+            );
         }
         Ok((
             resolved,
@@ -515,6 +521,15 @@ pub(super) fn register_gucs() {
         c"Task 221 benchmark-only expanded owner locator arm.",
         c"Carry the owner row-tier TID from physical expansion to payload materialization, skipping the owner directory lookup.",
         &ECDISTANN_BENCHMARK_EXPANDED_LOCATOR_GUC,
+        GucContext::Userset,
+        GucFlags::default(),
+    );
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    GucRegistry::define_bool_guc(
+        c"ec_distann.benchmark_payload_projection",
+        c"Task 222 benchmark-only payload projection arm.",
+        c"On uses the production exact/fail-closed attribute mask. Off forces the historical all-column payload control. This GUC is absent from normal production builds.",
+        &ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC,
         GucContext::Userset,
         GucFlags::default(),
     );
@@ -846,6 +861,15 @@ pub(super) fn benchmark_expanded_locator() -> bool {
     }
     #[cfg(not(feature = "distann-head-attribution-benchmark"))]
     false
+}
+
+pub(super) fn payload_projection_enabled() -> bool {
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    {
+        return ECDISTANN_BENCHMARK_PAYLOAD_PROJECTION_GUC.get();
+    }
+    #[cfg(not(feature = "distann-head-attribution-benchmark"))]
+    true
 }
 
 pub(super) fn benchmark_traversal_replica_fail_batch() -> Option<usize> {
@@ -1184,7 +1208,9 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
         pg_sys::add_local_int_reloption(
             &mut relopts,
             b"head_cap_floor\0".as_ptr().cast(),
-            b"FR-088 lower bound for the resolved head sampling law.\0".as_ptr().cast(),
+            b"FR-088 lower bound for the resolved head sampling law.\0"
+                .as_ptr()
+                .cast(),
             ECDISTANN_DEFAULT_HEAD_INDEX_CAP,
             i32::MIN,
             i32::MAX,
@@ -1193,7 +1219,9 @@ pub(super) unsafe extern "C-unwind" fn ec_distann_amoptions(
         pg_sys::add_local_int_reloption(
             &mut relopts,
             b"head_cap_ceiling\0".as_ptr().cast(),
-            b"FR-088 upper bound for the resolved head sampling law.\0".as_ptr().cast(),
+            b"FR-088 upper bound for the resolved head sampling law.\0"
+                .as_ptr()
+                .cast(),
             ECDISTANN_MAX_HEAD_INDEX_CAP,
             i32::MIN,
             i32::MAX,
@@ -1319,12 +1347,12 @@ impl EcDistannReloptionsView {
                 .unwrap_or_else(|e| pgrx::error!("{e}")),
             None => DistannSourceIdentityProvider::None,
         };
-        let head_construction = match self.read_string_reloption(
-            reloptions.head_construction_offset,
-            "head_construction",
-        ) {
-            Some(value) => HeadConstruction::parse_reloption(&value)
-                .unwrap_or_else(|e| pgrx::error!("{e}")),
+        let head_construction = match self
+            .read_string_reloption(reloptions.head_construction_offset, "head_construction")
+        {
+            Some(value) => {
+                HeadConstruction::parse_reloption(&value).unwrap_or_else(|e| pgrx::error!("{e}"))
+            }
             None => HeadConstruction::DEFAULT,
         };
 

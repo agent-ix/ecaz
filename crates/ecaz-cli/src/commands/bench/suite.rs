@@ -4,19 +4,24 @@
 //! keeps the expansion visible in a manifest, then optionally executes each
 //! selected step in sequence.
 
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    io::Write,
+    path::{Path, PathBuf},
+    process::ExitStatus,
+    time::{Instant, SystemTime, UNIX_EPOCH},
+};
+
 use clap::{Args, Subcommand};
 use color_eyre::eyre::{bail, eyre, Context, ContextCompat, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap, HashSet};
-use std::io::Write;
-use std::path::{Path, PathBuf};
-use std::process::ExitStatus;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tokio::process::Command;
 
-use crate::profiles::{self, IndexProfile};
-use crate::psql::ConnectionOptions;
+use crate::{
+    profiles::{self, IndexProfile},
+    psql::ConnectionOptions,
+};
 
 #[derive(Args, Debug)]
 pub struct SuiteArgs {
@@ -493,6 +498,10 @@ struct SpireLocalMultinodeStep {
 /// real PG18 instances, validates Ready/Published topology on every owner, and
 /// exercises cross-process serving. The historical replicated-serving control
 /// has a separate explicit dev subcommand and is not topology evidence.
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct DistannBenchmarkSeedVariant {
@@ -526,6 +535,10 @@ struct DistannBenchmarkSeedVariant {
     /// Task 221 MAT-22 benchmark-only expanded owner row locator arm.
     #[serde(default)]
     expanded_locator: bool,
+    /// Task 222 benchmark-only all-column/projected payload A/B. Existing
+    /// configs default to the production projected path.
+    #[serde(default = "default_true")]
+    payload_projection: bool,
     /// NFR-022 pre-registration for a decision-bearing arm. Repeated
     /// registrations use the same id across the 10k/50k/100k steps.
     #[serde(default)]
@@ -4667,6 +4680,10 @@ impl SuiteStep {
                                 candidate.owner_payload_plan_cache == Some(true)
                                     && candidate.materialization_batch_size
                                         == control.materialization_batch_size
+                                    && candidate.typed_locator == control.typed_locator
+                                    && candidate.packed_payload == control.packed_payload
+                                    && candidate.expanded_locator == control.expanded_locator
+                                    && candidate.payload_projection == control.payload_projection
                                     && same_search(control, candidate)
                             })
                     });
@@ -4676,6 +4693,10 @@ impl SuiteStep {
                                 candidate.materialization_batch_size == 10
                                     && candidate.owner_payload_plan_cache
                                         == control.owner_payload_plan_cache
+                                    && candidate.typed_locator == control.typed_locator
+                                    && candidate.packed_payload == control.packed_payload
+                                    && candidate.expanded_locator == control.expanded_locator
+                                    && candidate.payload_projection == control.payload_projection
                                     && same_search(control, candidate)
                             })
                     });
@@ -4687,6 +4708,10 @@ impl SuiteStep {
                                         == control.materialization_batch_size
                                     && candidate.owner_payload_plan_cache
                                         == control.owner_payload_plan_cache
+                                    && candidate.typed_locator == control.typed_locator
+                                    && candidate.packed_payload == control.packed_payload
+                                    && candidate.expanded_locator == control.expanded_locator
+                                    && candidate.payload_projection == control.payload_projection
                                     && candidate.seed_strategy == control.seed_strategy
                                     && candidate.head_search_width == control.head_search_width
                                     && candidate.head_seed_count == control.head_seed_count
@@ -4707,8 +4732,10 @@ impl SuiteStep {
                                         && candidate.owner_payload_plan_cache
                                             == control.owner_payload_plan_cache
                                         && candidate.typed_locator == control.typed_locator
-                                        && candidate.traversal_replica
-                                            == control.traversal_replica
+                                        && candidate.expanded_locator == control.expanded_locator
+                                        && candidate.payload_projection
+                                            == control.payload_projection
+                                        && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
                         });
@@ -4723,8 +4750,23 @@ impl SuiteStep {
                                             == control.owner_payload_plan_cache
                                         && candidate.typed_locator == control.typed_locator
                                         && candidate.packed_payload == control.packed_payload
-                                        && candidate.traversal_replica
-                                            == control.traversal_replica
+                                        && candidate.traversal_replica == control.traversal_replica
+                                        && same_search(control, candidate)
+                                })
+                        });
+                    let has_payload_projection_pair =
+                        step.benchmark_seed_variants.iter().any(|control| {
+                            !control.payload_projection
+                                && step.benchmark_seed_variants.iter().any(|candidate| {
+                                    candidate.payload_projection
+                                        && candidate.materialization_batch_size
+                                            == control.materialization_batch_size
+                                        && candidate.owner_payload_plan_cache
+                                            == control.owner_payload_plan_cache
+                                        && candidate.typed_locator == control.typed_locator
+                                        && candidate.packed_payload == control.packed_payload
+                                        && candidate.expanded_locator == control.expanded_locator
+                                        && candidate.traversal_replica == control.traversal_replica
                                         && same_search(control, candidate)
                                 })
                         });
@@ -4733,9 +4775,10 @@ impl SuiteStep {
                         && !has_traversal_pair
                         && !has_packed_payload_pair
                         && !has_expanded_locator_pair
+                        && !has_payload_projection_pair
                     {
                         bail!(
-                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan off/on, eager/lazy10, or owner/replica pair",
+                            "distann-local-multinode step {:?} materialization_correctness requires an isolated owner-plan, eager/lazy10, owner/replica, packed-payload, expanded-locator, or payload-projection pair",
                             step.name
                         )
                     }
@@ -5735,7 +5778,9 @@ fn expand_distann_local_multinode(
     push_opt_arg(
         &mut args,
         "--benchmark-parity-queries",
-        step.benchmark_parity_queries.map(|v| v.to_string()).as_deref(),
+        step.benchmark_parity_queries
+            .map(|v| v.to_string())
+            .as_deref(),
     );
     push_opt_arg(
         &mut args,
@@ -5893,7 +5938,7 @@ fn expand_distann_local_multinode(
     }
     for variant in &step.benchmark_seed_variants {
         let encoded = format!(
-            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}{}{}",
+            "{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}",
             variant.name,
             variant.seed_strategy,
             variant.head_search_width,
@@ -5913,15 +5958,16 @@ fn expand_distann_local_multinode(
                 "off"
             },
             if variant.typed_locator { "on" } else { "off" },
-            if variant.packed_payload || variant.expanded_locator {
-                format!(":{}", if variant.packed_payload { "on" } else { "off" })
-            } else {
-                String::new()
-            },
+            if variant.packed_payload { "on" } else { "off" },
             if variant.expanded_locator {
-                ":on".to_owned()
+                "on"
             } else {
-                String::new()
+                "off"
+            },
+            if variant.payload_projection {
+                "on"
+            } else {
+                "off"
             },
         );
         push_arg(&mut args, "--benchmark-seed-variant", &encoded);
@@ -6721,8 +6767,9 @@ async fn has_missing_artifact(step: &StepRecord) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use clap::Parser;
+
+    use super::*;
 
     #[derive(Parser, Debug)]
     struct SuiteOnly {
@@ -6980,8 +7027,7 @@ psql header noise\n\
         }));
         assert!(rows.iter().any(|(metric, values)| {
             metric == "physical_benchmark_head_membership"
-                && values.get("head_construction").map(String::as_str)
-                    == Some("partition_union")
+                && values.get("head_construction").map(String::as_str) == Some("partition_union")
                 && values.get("sample_count").map(String::as_str) == Some("4096")
         }));
         assert!(rows.iter().any(|(metric, values)| {
