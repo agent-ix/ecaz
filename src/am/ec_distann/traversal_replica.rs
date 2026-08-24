@@ -772,7 +772,7 @@ fn build_traversal_replica(index_oid: pg_sys::Oid) -> Result<Vec<u8>, String> {
                 )
                 .map_err(|error| error.to_string())?
             } else {
-                let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                let conninfo = route.conninfo().ok_or_else(|| {
                     format!(
                         "EC_NODE_DESCRIPTOR: replica owner {ordinal} has no connection descriptor"
                     )

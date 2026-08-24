@@ -80,6 +80,7 @@ pub(crate) fn validate_canonical_index_locator(value: &str) -> Result<(), String
 #[derive(Clone)]
 pub(crate) struct ResolvedConninfoSecret {
     raw_conninfo: String,
+    secret_reference: Option<String>,
     secret_identity_fingerprint: [u8; 32],
     security_fingerprint: [u8; 32],
 }
@@ -112,6 +113,22 @@ impl ResolvedConninfoSecret {
     pub(crate) fn security_fingerprint(&self) -> [u8; 32] {
         self.security_fingerprint
     }
+
+    pub(crate) fn secret_reference(&self) -> Option<&str> {
+        self.secret_reference.as_deref()
+    }
+
+    pub(crate) fn from_legacy_conninfo(raw_conninfo: String) -> Self {
+        resolved_conninfo_secret(None, raw_conninfo)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn from_test_secret_reference(
+        secret_reference: &str,
+        raw_conninfo: String,
+    ) -> Self {
+        resolved_conninfo_secret(Some(secret_reference), raw_conninfo)
+    }
 }
 
 pub(crate) fn resolve_conninfo_secret(
@@ -137,23 +154,27 @@ pub(crate) fn resolve_conninfo_secret(
         }
     };
     Ok(resolved_conninfo_secret(
-        conninfo_secret_name,
+        Some(conninfo_secret_name),
         raw_conninfo,
     ))
 }
 
 fn resolved_conninfo_secret(
-    conninfo_secret_name: &str,
+    conninfo_secret_name: Option<&str>,
     raw_conninfo: String,
 ) -> ResolvedConninfoSecret {
     let mut identity_hasher = Sha256::new();
     identity_hasher.update(b"ecaz-distann-secret-identity-v1\0");
-    identity_hasher.update(conninfo_secret_name.as_bytes());
+    match conninfo_secret_name {
+        Some(name) => identity_hasher.update(name.as_bytes()),
+        None => identity_hasher.update(raw_conninfo.as_bytes()),
+    }
     ResolvedConninfoSecret {
         security_fingerprint: remote_security_fingerprint(
             &raw_conninfo,
             RemoteTlsPolicy::DistannSecure,
         ),
+        secret_reference: conninfo_secret_name.map(str::to_owned),
         raw_conninfo,
         secret_identity_fingerprint: identity_hasher.finalize().into(),
     }
@@ -777,11 +798,11 @@ mod tests {
     #[test]
     fn resolved_secret_separates_identity_rotation_and_redacts_debug() {
         let first = resolved_conninfo_secret(
-            "DISTANN_NODE_TWO",
+            Some("DISTANN_NODE_TWO"),
             "host=db.example user=alice password=first sslmode=require".to_owned(),
         );
         let rotated = resolved_conninfo_secret(
-            "DISTANN_NODE_TWO",
+            Some("DISTANN_NODE_TWO"),
             "host=db.example user=alice password=second sslmode=require".to_owned(),
         );
         assert_eq!(
@@ -789,6 +810,7 @@ mod tests {
             rotated.secret_identity_fingerprint()
         );
         assert_ne!(first.security_fingerprint(), rotated.security_fingerprint());
+        assert_eq!(first.secret_reference(), Some("DISTANN_NODE_TWO"));
         let debug = format!("{first:?}");
         for forbidden in ["DISTANN_NODE_TWO", "db.example", "alice", "first"] {
             assert!(!debug.contains(forbidden));

@@ -6,10 +6,10 @@
 //! hand-off. The three GUCs are:
 //!
 //! - `ec_distann.roster` — placement-ordered node list, one entry per node as
-//!   `node_id@conninfo`, entries separated by `;`. The `conninfo` is a libpq
-//!   connection string (may contain spaces and `=`, but not `@` or `;`). An
-//!   empty roster is the single-node degenerate case (the coordinator owns
-//!   every vec_id, no remote calls).
+//!   `node_id@endpoint`, entries separated by `;`. Catalog-backed production
+//!   sessions use `secret:NAME` endpoints; raw libpq connection strings remain
+//!   a legacy local-fixture input only. An empty roster is the single-node
+//!   degenerate case (the coordinator owns every vec_id, no remote calls).
 //! - `ec_distann.local_node_id` — this instance's node id; the roster entry
 //!   with this id is the local node (expanded in-process, no round trip).
 //! - `ec_distann.epoch` — the active epoch number, part of the FR-082
@@ -43,7 +43,7 @@ pub(super) fn register_gucs() {
     GucRegistry::define_string_guc(
         c"ec_distann.roster",
         c"FR-078 placement-ordered node roster for multi-node ec_distann scans.",
-        c"Entries `node_id@conninfo` separated by `;`, in placement order (owning-node index order). Empty = single-node (the coordinator owns every vec_id). M2 operator config; M3 replaces it with the persisted epoch manifest.",
+        c"Entries `node_id@endpoint` separated by `;`, in placement order. Production endpoints are `secret:NAME`; raw conninfo is legacy local-fixture compatibility only. Empty = single-node.",
         &ECDISTANN_ROSTER_GUC,
         GucContext::Userset,
         GucFlags::default(),
@@ -99,7 +99,8 @@ pub(super) fn current_roster_spec() -> String {
         .unwrap_or_default()
 }
 
-/// One parsed roster entry: `(node_id, conninfo)`.
+/// One parsed roster entry: `(node_id, endpoint)`; the endpoint is either a
+/// `secret:NAME` reference or a legacy local-fixture conninfo.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct ParsedRosterEntry {
     pub(super) node_id: u32,
