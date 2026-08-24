@@ -1,0 +1,16 @@
+Script started on 2026-08-24 04:25:00-07:00 [<not executed on terminal>]
+   Compiling ring v0.17.14
+   Compiling rustls v0.23.43
+   Compiling rustls-webpki v0.103.15
+   Compiling tokio-rustls v0.26.4
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task227-recall-residual-adaptive)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 18s
+     Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-75f48d065754bf4b)
+
+running 1 test
+test am::ec_distann::stage_counters::tests::query_trace_is_bounded_and_resets_between_operations ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2577 filtered out; finished in 0.01s
+
+
+Script done on 2026-08-24 04:26:19-07:00 [COMMAND_EXIT_CODE="0"]
