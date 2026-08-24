@@ -1,9 +1,12 @@
 # Task 226: ec_distann Current-Head BW8 Transfer Screen
 
 Status: **implementation/evidence complete; packets 002/003 review-open;
-USEFUL CANDIDATE — POLICY REVIEW; default unchanged** (2026-08-24). The
+USEFUL NON-DEFAULT CONFIGURATION; Task 219 retains the BW4 default**
+(2026-08-24). The
 registered gate passes at 10k, 50k, and 100k, but 50k/100k p99 regressions are
-carried to outside policy review. Evidence:
+carried to outside evidence review. Because recall changes at 50k/100k, Task
+219's review-closed recall-equivalence policy requires an explicit product
+ruling before any default reconsideration. Evidence:
 `reviews/task-226/002-current-head-100k/` and
 `reviews/task-226/003-full-scale-decision/`. Priority: P0 recall/latency.
 
