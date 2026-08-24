@@ -33,8 +33,8 @@ use tokio_postgres::types::ToSql;
 use tokio_postgres::{Client, Row, Statement};
 
 use crate::am::common::remote_postgres_tls::{
-    connect_remote_postgres, parse_remote_conninfo, ParsedRemoteConninfo, RemoteTlsConfig,
-    RemoteTlsPolicy,
+    connect_remote_postgres, parse_remote_conninfo, remote_security_fingerprint,
+    ParsedRemoteConninfo, RemoteTlsConfig, RemoteTlsPolicy,
 };
 use crate::storage::page::ItemPointer;
 use crate::storage::relation::index_heap_relation_oid_handle;
@@ -68,6 +68,46 @@ enum RemoteAwaitError<E> {
 struct RemoteCancel {
     token: tokio_postgres::CancelToken,
     tls_config: RemoteTlsConfig,
+}
+
+#[derive(Clone, PartialEq, Eq, Hash)]
+struct RemotePoolKey {
+    work_identity: String,
+    security_fingerprint: [u8; 32],
+}
+
+impl std::fmt::Debug for RemotePoolKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RemotePoolKey")
+            .field("work_identity", &self.work_identity)
+            .field(
+                "security_fingerprint",
+                &hex::encode(self.security_fingerprint),
+            )
+            .finish()
+    }
+}
+
+fn remote_pool_key(work_identity: String, conninfo: &str) -> RemotePoolKey {
+    RemotePoolKey {
+        work_identity,
+        security_fingerprint: remote_security_fingerprint(
+            conninfo,
+            RemoteTlsPolicy::DistannSecure,
+        ),
+    }
+}
+
+fn pool_entry_is_superseded(
+    existing_key: &RemotePoolKey,
+    existing_endpoint_fingerprint: &[u8; 32],
+    replacement_key: &RemotePoolKey,
+    replacement_endpoint_fingerprint: &[u8; 32],
+) -> bool {
+    existing_key != replacement_key
+        && existing_key.work_identity == replacement_key.work_identity
+        && existing_endpoint_fingerprint == replacement_endpoint_fingerprint
 }
 
 async fn cancel_remote_query(cancel: RemoteCancel) {
@@ -453,8 +493,8 @@ async fn prepare_physical_statement(
 }
 
 async fn ensure_physical_statements(
-    connections: &mut HashMap<String, PooledConnection>,
-    conn_keys: &[String],
+    connections: &mut HashMap<RemotePoolKey, PooledConnection>,
+    conn_keys: &[RemotePoolKey],
     sql: &'static str,
 ) -> Result<(), DistannExpandError> {
     let mut seen = HashSet::with_capacity(conn_keys.len());
@@ -511,8 +551,8 @@ where
 }
 
 fn finalize_read_batch<T>(
-    connections: &mut HashMap<String, PooledConnection>,
-    conn_keys: &[String],
+    connections: &mut HashMap<RemotePoolKey, PooledConnection>,
+    conn_keys: &[RemotePoolKey],
     results: Vec<Result<T, DistannExpandError>>,
 ) -> Vec<Result<T, DistannExpandError>> {
     debug_assert_eq!(conn_keys.len(), results.len());
@@ -548,8 +588,8 @@ fn finalize_read_batch<T>(
 }
 
 fn finalize_read_call<T>(
-    connections: &mut HashMap<String, PooledConnection>,
-    conn_key: &str,
+    connections: &mut HashMap<RemotePoolKey, PooledConnection>,
+    conn_key: &RemotePoolKey,
     result: Result<T, DistannExpandError>,
 ) -> Result<T, DistannExpandError> {
     #[cfg(feature = "pg_test")]
@@ -583,10 +623,19 @@ async fn scan_query(
 async fn open_remote_connection(
     conninfo: &str,
     error_prefix: &str,
-) -> Result<(Client, tokio::task::JoinHandle<()>, RemoteTlsConfig), DistannExpandError> {
+) -> Result<
+    (
+        Client,
+        tokio::task::JoinHandle<()>,
+        RemoteTlsConfig,
+        [u8; 32],
+    ),
+    DistannExpandError,
+> {
     let (parsed, config) =
         parse_remote_config(conninfo, error_prefix).map_err(DistannExpandError::Internal)?;
     let tls_config = parsed.tls_config().clone();
+    let endpoint_fingerprint = parsed.endpoint_fingerprint();
     let (client, task) = if tls_config.no_tls() {
         let (client, connection) = match await_remote(
             connect_timeout(),
@@ -661,7 +710,7 @@ async fn open_remote_connection(
         task.abort();
         return Err(error);
     }
-    Ok((client, task, tls_config))
+    Ok((client, task, tls_config, endpoint_fingerprint))
 }
 
 async fn configure_scan_identity(
@@ -692,8 +741,8 @@ async fn configure_scan_identity(
 }
 
 async fn ensure_pooled_connections(
-    connections: &mut HashMap<String, PooledConnection>,
-    specs: &[(String, &str)],
+    connections: &mut HashMap<RemotePoolKey, PooledConnection>,
+    specs: &[(RemotePoolKey, &str)],
     error_prefix: &str,
 ) -> Result<(), DistannExpandError> {
     let mut seen = HashSet::with_capacity(specs.len());
@@ -718,25 +767,36 @@ async fn ensure_pooled_connections(
     let mut first_error = None;
     for ((key, _), opened) in missing.into_iter().zip(opened) {
         match opened {
-            Ok((client, task, tls_config)) => ready.push((key, client, task, tls_config)),
+            Ok((client, task, tls_config, endpoint_fingerprint)) => {
+                ready.push((key, client, task, tls_config, endpoint_fingerprint))
+            }
             Err(error) if first_error.is_none() => first_error = Some(error),
             Err(_) => {}
         }
     }
     if let Some(error) = first_error {
-        for (_, client, task, _) in ready {
+        for (_, client, task, _, _) in ready {
             task.abort();
             drop(client);
         }
         return Err(error);
     }
-    for (key, client, task, tls_config) in ready {
+    for (key, client, task, tls_config, endpoint_fingerprint) in ready {
+        connections.retain(|existing_key, pooled| {
+            !pool_entry_is_superseded(
+                existing_key,
+                &pooled.endpoint_fingerprint,
+                &key,
+                &endpoint_fingerprint,
+            )
+        });
         connections.insert(
             key,
             PooledConnection {
                 client,
                 task,
                 tls_config,
+                endpoint_fingerprint,
                 applied_identity: None,
                 applied_statement_timeout_ms: super::options::remote_statement_timeout_ms(),
                 prepared_statements: HashMap::new(),
@@ -795,8 +855,8 @@ async fn ensure_pooled_connections(
 }
 
 async fn ensure_scan_sessions(
-    connections: &mut HashMap<String, PooledConnection>,
-    sessions: &[(String, &str, (String, String, String))],
+    connections: &mut HashMap<RemotePoolKey, PooledConnection>,
+    sessions: &[(RemotePoolKey, &str, (String, String, String))],
 ) -> Result<(), DistannExpandError> {
     let specs = sessions
         .iter()
@@ -1206,7 +1266,7 @@ pub(crate) fn record_physical_insert_intent(
 pub(crate) fn remote_physical_insert(
     request: &DistannRemotePhysicalInsertRequest<'_>,
 ) -> Result<(), String> {
-    let key = format!("{}\u{1}{}", request.conninfo, request.target_node_id);
+    let key = remote_pool_key(format!("dml:{}", request.target_node_id), request.conninfo);
     let identity = (
         request.roster_spec.to_owned(),
         request.target_node_id.to_string(),
@@ -1377,7 +1437,7 @@ const PHYSICAL_TOMBSTONE_SQL: &str = "SELECT ec_distann_apply_physical_tombstone
 pub(crate) fn remote_physical_tombstone(
     request: &DistannRemotePhysicalTombstoneRequest<'_>,
 ) -> Result<(), String> {
-    let key = format!("{}\u{1}{}", request.conninfo, request.target_node_id);
+    let key = remote_pool_key(format!("dml:{}", request.target_node_id), request.conninfo);
     let identity = (
         request.roster_spec.to_owned(),
         request.target_node_id.to_string(),
@@ -1439,7 +1499,7 @@ pub(crate) fn remote_physical_tombstone(
 pub(crate) fn remote_physical_backlink(
     request: &DistannRemotePhysicalBacklinkRequest<'_>,
 ) -> Result<(), String> {
-    let key = format!("{}\u{1}{}", request.conninfo, request.target_node_id);
+    let key = remote_pool_key(format!("dml:{}", request.target_node_id), request.conninfo);
     let identity = (
         request.roster_spec.to_owned(),
         request.target_node_id.to_string(),
@@ -1702,7 +1762,7 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
 }
 
 async fn lifecycle_client<'a>(
-    connections: &'a mut HashMap<String, PooledConnection>,
+    connections: &'a mut HashMap<RemotePoolKey, PooledConnection>,
     conninfo: &str,
 ) -> Result<&'a PooledConnection, String> {
     let key = lifecycle_connection_key(conninfo);
@@ -1716,8 +1776,8 @@ async fn lifecycle_client<'a>(
     Ok(&connections[&key])
 }
 
-fn lifecycle_connection_key(conninfo: &str) -> String {
-    format!("lifecycle\u{1}{conninfo}")
+fn lifecycle_connection_key(conninfo: &str) -> RemotePoolKey {
+    remote_pool_key("lifecycle".to_owned(), conninfo)
 }
 
 fn remote_error(context: &str, error: tokio_postgres::Error) -> String {
@@ -3312,6 +3372,10 @@ struct PooledConnection {
     /// Connector configuration used by both the query stream and PostgreSQL's
     /// out-of-band cancellation connection.
     tls_config: RemoteTlsConfig,
+    /// Stable endpoint identity excluding credentials and TLS policy. A new
+    /// credential generation for the same work identity evicts the old pool
+    /// entry on its next use.
+    endpoint_fingerprint: [u8; 32],
     /// Reviewer 006-P3: the (roster, local_node_id, epoch) last applied to this
     /// pooled session via `set_config`. The expand hot path skips the setup
     /// round-trip when it is unchanged, and re-applies (epoch-aware) on a
@@ -3337,7 +3401,7 @@ impl Drop for PooledConnection {
 
 struct DistannTransportState {
     runtime: tokio::runtime::Runtime,
-    connections: HashMap<String, PooledConnection>,
+    connections: HashMap<RemotePoolKey, PooledConnection>,
 }
 
 #[cfg(feature = "pg_test")]
@@ -3512,15 +3576,20 @@ pub(super) fn remote_expand_batch(
         .iter()
         .map(|request| request.target_node_id.to_string())
         .collect();
-    // 007-P1/021-P2: pool by (conninfo, target_node_id), not conninfo alone. Two
-    // logical owners that share one physical conninfo (the loopback/logical-shard
-    // topology) MUST get separate pooled sessions — otherwise the second owner's
-    // `local_node_id` set_config overwrites the first, and the concurrent expands
-    // launched below run under the wrong node identity. The real 3-node fixture
-    // gives each node a distinct port (distinct conninfo) so it was masked there.
-    let conn_keys: Vec<String> = requests
+    // 007-P1/021-P2: pool by (redacted credential/policy fingerprint,
+    // target_node_id), not endpoint alone. Two logical owners that share one
+    // physical endpoint (the loopback/logical-shard topology) MUST get separate
+    // pooled sessions — otherwise the second owner's `local_node_id` set_config
+    // overwrites the first, and the concurrent expands launched below run under
+    // the wrong node identity.
+    let conn_keys: Vec<RemotePoolKey> = requests
         .iter()
-        .map(|request| format!("{}\u{1}{}", request.conninfo, request.target_node_id))
+        .map(|request| {
+            remote_pool_key(
+                format!("scan:{}", request.target_node_id),
+                request.conninfo,
+            )
+        })
         .collect();
     let epoch_strs: Vec<String> = requests
         .iter()
@@ -3710,10 +3779,15 @@ pub(super) fn remote_materialize_row_payloads_batch(
         .iter()
         .map(|request| request.target_node_id.to_string())
         .collect();
-    // 007-P1/021-P2: pool by (conninfo, target_node_id) — see the expand batch.
-    let conn_keys: Vec<String> = requests
+    // 007-P1/021-P2: use the redacted credential/owner key described above.
+    let conn_keys: Vec<RemotePoolKey> = requests
         .iter()
-        .map(|request| format!("{}\u{1}{}", request.conninfo, request.target_node_id))
+        .map(|request| {
+            remote_pool_key(
+                format!("materialize:{}", request.target_node_id),
+                request.conninfo,
+            )
+        })
         .collect();
     let epoch_strs: Vec<String> = requests
         .iter()
@@ -4169,7 +4243,14 @@ mod tests {
     #[test]
     fn read_batch_failure_is_uniform_and_deterministic() {
         let mut connections = HashMap::new();
-        let keys = vec!["owner-1".to_owned(), "owner-2".to_owned(), "owner-3".to_owned()];
+        let keys = (1..=3)
+            .map(|owner| {
+                remote_pool_key(
+                    format!("owner-{owner}"),
+                    &format!("host=127.0.0.1 port=543{owner} sslmode=disable"),
+                )
+            })
+            .collect::<Vec<_>>();
         let results = vec![
             Ok(11_u8),
             Err(DistannExpandError::remote_read(
@@ -4194,7 +4275,14 @@ mod tests {
     #[test]
     fn successful_read_batch_preserves_request_order() {
         let mut connections = HashMap::new();
-        let keys = vec!["owner-1".to_owned(), "owner-2".to_owned()];
+        let keys = (1..=2)
+            .map(|owner| {
+                remote_pool_key(
+                    format!("owner-{owner}"),
+                    &format!("host=127.0.0.1 port=543{owner} sslmode=disable"),
+                )
+            })
+            .collect::<Vec<_>>();
         let normalized = finalize_read_batch(&mut connections, &keys, vec![Ok(11_u8), Ok(22)]);
         assert_eq!(
             normalized
@@ -4230,6 +4318,36 @@ mod tests {
                 "error leaked {forbidden}: {error}"
             );
         }
+    }
+
+    #[test]
+    fn pool_key_changes_on_rotation_without_exposing_conninfo() {
+        let first = remote_pool_key(
+            "scan:2".to_owned(),
+            "host=db.example user=alice password=first sslmode=require",
+        );
+        let rotated = remote_pool_key(
+            "scan:2".to_owned(),
+            "host=db.example user=alice password=second sslmode=require",
+        );
+        assert_ne!(first, rotated);
+        let debug = format!("{first:?}");
+        for forbidden in ["db.example", "alice", "first"] {
+            assert!(!debug.contains(forbidden));
+        }
+        let endpoint = [7_u8; 32];
+        assert!(pool_entry_is_superseded(
+            &first,
+            &endpoint,
+            &rotated,
+            &endpoint,
+        ));
+        assert!(!pool_entry_is_superseded(
+            &first,
+            &endpoint,
+            &rotated,
+            &[8_u8; 32],
+        ));
     }
 
     #[test]

@@ -87,6 +87,7 @@ impl fmt::Debug for RemoteTlsConfig {
 pub(crate) struct ParsedRemoteConninfo {
     base_conninfo: String,
     tls_config: RemoteTlsConfig,
+    endpoint_fingerprint: [u8; 32],
     security_fingerprint: [u8; 32],
 }
 
@@ -95,6 +96,7 @@ impl fmt::Debug for ParsedRemoteConninfo {
         formatter
             .debug_struct("ParsedRemoteConninfo")
             .field("tls_config", &self.tls_config)
+            .field("endpoint_fingerprint", &hex::encode(self.endpoint_fingerprint))
             .field("security_fingerprint", &hex::encode(self.security_fingerprint))
             .finish_non_exhaustive()
     }
@@ -174,6 +176,10 @@ impl ParsedRemoteConninfo {
     pub(crate) fn security_fingerprint(&self) -> [u8; 32] {
         self.security_fingerprint
     }
+
+    pub(crate) fn endpoint_fingerprint(&self) -> [u8; 32] {
+        self.endpoint_fingerprint
+    }
 }
 
 pub(crate) fn parse_remote_conninfo(
@@ -189,6 +195,17 @@ pub(crate) fn parse_remote_conninfo(
     };
     validate_policy(&parsed, policy)?;
     Ok(parsed)
+}
+
+pub(crate) fn remote_security_fingerprint(
+    conninfo: &str,
+    policy: RemoteTlsPolicy,
+) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update(b"ecaz-remote-postgres-security-v1\0");
+    hasher.update([policy as u8]);
+    hasher.update(conninfo.as_bytes());
+    hasher.finalize().into()
 }
 
 /// Open a blocking PostgreSQL connection under an explicit transport policy.
@@ -303,17 +320,26 @@ fn build_parsed(
     tls_config: RemoteTlsConfig,
     policy: RemoteTlsPolicy,
 ) -> Result<ParsedRemoteConninfo, RemoteTlsError> {
-    base_conninfo
+    let config = base_conninfo
         .parse::<tokio_postgres::Config>()
         .map_err(|_| conninfo_error())?;
-    let mut hasher = Sha256::new();
-    hasher.update(b"ecaz-remote-postgres-security-v1\0");
-    hasher.update([policy as u8]);
-    hasher.update(conninfo.as_bytes());
+    let mut endpoint_hasher = Sha256::new();
+    endpoint_hasher.update(b"ecaz-remote-postgres-endpoint-v1\0");
+    for host in config.get_hosts() {
+        endpoint_hasher.update(format!("{host:?}").as_bytes());
+        endpoint_hasher.update([0]);
+    }
+    for port in config.get_ports() {
+        endpoint_hasher.update(port.to_le_bytes());
+    }
+    if let Some(dbname) = config.get_dbname() {
+        endpoint_hasher.update(dbname.as_bytes());
+    }
     Ok(ParsedRemoteConninfo {
         base_conninfo,
         tls_config,
-        security_fingerprint: hasher.finalize().into(),
+        endpoint_fingerprint: endpoint_hasher.finalize().into(),
+        security_fingerprint: remote_security_fingerprint(conninfo, policy),
     })
 }
 
@@ -764,6 +790,7 @@ mod tests {
             RemoteTlsPolicy::DistannSecure,
         )
         .expect("rotated conninfo should parse");
+        assert_eq!(first.endpoint_fingerprint(), rotated.endpoint_fingerprint());
         assert_ne!(first.security_fingerprint(), rotated.security_fingerprint());
     }
 }
