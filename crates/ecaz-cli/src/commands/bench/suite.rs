@@ -4126,12 +4126,6 @@ impl SuiteStep {
                         step.name
                     )
                 }
-                if step.query_offset.unwrap_or(0) > 0 && step.reuse_fixture {
-                    bail!(
-                        "distann-local-multinode step {:?} query_offset cannot combine with reuse_fixture",
-                        step.name
-                    )
-                }
                 if let (Some(offset), Some(queries)) = (step.query_offset, step.queries) {
                     offset.checked_add(queries).ok_or_else(|| {
                         eyre!(
@@ -8268,6 +8262,8 @@ psql header noise\n\
             "corpus_prefix": "ec_real_100k",
             "queries": 200,
             "query_offset": 200,
+            "reuse_fixture": true,
+            "reuse_provenance_dir": "reviews/task-227/003-query-trace/artifacts/prior",
             "query_trace": true
           }]
         }"#;
@@ -8282,6 +8278,14 @@ psql header noise\n\
         assert!(command
             .windows(2)
             .any(|window| window == ["--query-offset", "200"]));
+        assert!(command.iter().any(|argument| argument == "--reuse-fixture"));
+        assert!(command.windows(2).any(|window| {
+            window
+                == [
+                    "--reuse-provenance-dir",
+                    "reviews/task-227/003-query-trace/artifacts/prior",
+                ]
+        }));
         assert!(command.iter().any(|argument| argument == "--query-trace"));
         let artifacts = config.steps[0].expected_artifacts();
         assert!(artifacts
