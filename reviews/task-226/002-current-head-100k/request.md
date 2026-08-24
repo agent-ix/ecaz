@@ -24,3 +24,10 @@ The numerical ADVANCE/TRADE/STOP rule is recorded in the Task 226 file at
 `d42d01e32`. The checked-in SuiteConfig is
 `artifacts/task226-current-head-bw8-100k.json`; audit and expanded-command
 evidence will be added before either long run.
+
+The first launch exposed a pre-measurement baseline defect after generation
+publication: production retry code assumed the Task 167-only diagnostic table
+`ec_distann_retry_attribution` existed. The already-landed upstream guard
+`c9c9628eb` was cherry-picked unchanged as `c51e74c5e`; the failed fixture was
+deleted and no test-only table workaround was introduced. See
+`artifacts/pre-guard-failure.md`. No BW8 result is claimed from that launch.

@@ -27,6 +27,9 @@
   traversal/locator fields and contain no payload-projection axis.
 - `request.md` and the Task 226 file at `d42d01e32`: numerical
   ADVANCE/TRADE/STOP rule recorded before measurement.
+- `pre-guard-failure.md`: decisive pre-measurement baseline failure and the
+  already-landed production guard cherry-picked as `c51e74c5e`; no fixture
+  workaround or measurement claim.
 
 No benchmark result is claimed yet. Successful suite manifests, normalized
 results, direct logs, compact summaries, decision lines, commands, timestamps,
