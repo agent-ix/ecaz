@@ -3676,7 +3676,7 @@ fn ec_distann_physical_query_trace_at_fingerprint_benchmark(
 fn physical_query_trace_benchmark_impl(
     index_oid: pg_sys::Oid,
     query: Vec<f32>,
-    top_k: usize,
+    result_limit: usize,
     requested_fingerprint: Option<[u8; 34]>,
 ) -> pgrx::JsonB {
     let index_guard = IndexRelationGuard::try_access_share(index_oid)
@@ -3699,10 +3699,16 @@ fn physical_query_trace_benchmark_impl(
     let logical_index_uuid = Uuid::from_bytes(scan.descriptor.coordinator_logical_index_uuid);
     let build_id = scan.build_id;
     let fingerprint = hex::encode(scan.fingerprint);
-    let (result, trace) = super::stage_counters::with_seed_trace(|| {
-        scan.search(snapshot, source_attnum, &query, top_k)
+    let effective_top_k = super::options::current_top_k().max(result_limit);
+    let (result, mut trace) = super::stage_counters::with_seed_trace(|| {
+        scan.search(snapshot, source_attnum, &query, effective_top_k)
     });
     result.unwrap_or_else(|error| pgrx::error!("{error}"));
+    // The ordinary scan explores to the ec_distann.top_k quality bar, then
+    // PostgreSQL's LIMIT consumes only the requested result count. Preserve
+    // the full exact-rerank input while reporting the same final result prefix
+    // that the executor returns.
+    trace.truncate_final_results(result_limit);
 
     let rounds = trace
         .rounds

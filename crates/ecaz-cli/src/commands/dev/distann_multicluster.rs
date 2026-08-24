@@ -6566,6 +6566,7 @@ async fn run_physical_benchmarks(
                         "SET ec_distann.beam_width = {arm_beam_width};\n\
                          SET ec_distann.hop_rounds = {arm_hop_rounds};\n\
                          SET ec_distann.candidate_heap_limit = {candidate_heap_limit};\n\
+                         SET ec_distann.top_k = 32;\n\
                          SET ec_distann.benchmark_seed_mode = '{seed_strategy_sql}';\n\
                          SET ec_distann.benchmark_head_search_width = {head_search_width};\n\
                          SET ec_distann.benchmark_head_seed_count = {head_seed_count};\n\

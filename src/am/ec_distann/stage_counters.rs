@@ -477,6 +477,11 @@ impl DistannSeedTrace {
         self.truncated |= captured < requested;
         captured
     }
+
+    pub(crate) fn truncate_final_results(&mut self, result_limit: usize) {
+        self.final_ids.truncate(result_limit);
+        self.final_dists.truncate(result_limit);
+    }
 }
 
 thread_local! {
@@ -995,5 +1000,17 @@ mod tests {
         assert_eq!(second.seed_code_dists, vec![-0.7]);
         assert!(!second.truncated);
         assert!(second.rounds.is_empty());
+    }
+
+    #[cfg(feature = "distann-head-attribution-benchmark")]
+    #[test]
+    fn query_trace_preserves_rerank_input_when_final_results_are_truncated() {
+        let (_, mut trace) = with_seed_trace(|| {
+            seed_trace_terminal(&[(1, -0.9), (2, -0.8), (3, -0.7)], 3, 1, false, true);
+        });
+        trace.truncate_final_results(2);
+        assert_eq!(trace.exact_rerank_ids, vec![1, 2, 3]);
+        assert_eq!(trace.final_ids, vec![1, 2]);
+        assert_eq!(trace.final_dists, vec![-0.9, -0.8]);
     }
 }
