@@ -1,0 +1,532 @@
+[Thread debugging using libthread_db enabled]
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+0x00007e1ab22e574a in clock_nanosleep () from /lib/x86_64-linux-gnu/libc.so.6
+
+Program received signal SIGSEGV, Segmentation fault.
+pg_lfind32_one_by_one_helper (nelem=2139062143, base=0x7f7f7f7f7f7f7f7f, key=2430) at ../../../../src/include/port/pg_lfind.h:94
+94			if (key == base[i])
+
+Thread 1 (Thread 0x7e1ab2c95740 (LWP 880607) "postgres"):
+#0  pg_lfind32_one_by_one_helper (nelem=2139062143, base=0x7f7f7f7f7f7f7f7f, key=2430) at ../../../../src/include/port/pg_lfind.h:94
+        i = 0
+#1  pg_lfind32 (nelem=2139062143, base=0x7f7f7f7f7f7f7f7f, key=2430) at ../../../../src/include/port/pg_lfind.h:170
+        i = 0
+        keys = <optimized out>
+        nelem_per_iteration = 16
+        tail_idx = 2139062128
+        nelem_per_vector = 4
+        assert_result = <optimized out>
+        i = <optimized out>
+        keys = <optimized out>
+        nelem_per_vector = <optimized out>
+        nelem_per_iteration = <optimized out>
+        tail_idx = <optimized out>
+        assert_result = <optimized out>
+#2  XidInMVCCSnapshot (xid=2430, snapshot=snapshot@entry=0x5ca75c46e100) at snapmgr.c:1959
+No locals.
+#3  0x00005ca7377b2be3 in HeapTupleSatisfiesMVCC (buffer=2399, snapshot=0x5ca75c46e100, htup=0x5ca75c622348) at heapam_visibility.c:1080
+        tuple = 0x7e1aa37e6660
+        tuple = <optimized out>
+        xvac = <optimized out>
+        xvac = <optimized out>
+        xmax = <optimized out>
+        xmax = <optimized out>
+#4  HeapTupleSatisfiesVisibility (htup=htup@entry=0x5ca75c622348, snapshot=snapshot@entry=0x5ca75c46e100, buffer=buffer@entry=2399) at heapam_visibility.c:1781
+No locals.
+#5  0x00005ca7377a5bed in heap_hot_search_buffer (tid=tid@entry=0x5ca75c622130, relation=0x7e1ab2159068, buffer=<optimized out>, snapshot=snapshot@entry=0x5ca75c46e100, heapTuple=heapTuple@entry=0x5ca75c622348, all_dead=all_dead@entry=0x7ffc4f19c547, first_call=true) at heapam.c:1805
+        lp = 0x7e1aa37e504c
+        page = 0x7e1aa37e5000 ""
+        prev_xmax = <optimized out>
+        blkno = 0
+        offnum = 14
+        at_chain_start = <optimized out>
+        valid = <optimized out>
+        skip = false
+        vistest = 0x0
+#6  0x00005ca7377afc89 in heapam_index_fetch_tuple (scan=0x5ca75c555f38, tid=0x5ca75c622130, snapshot=0x5ca75c46e100, slot=0x5ca75c6222f8, call_again=0x5ca75c622136, all_dead=0x7ffc4f19c547) at heapam_handler.c:146
+        hscan = 0x5ca75c555f38
+        bslot = 0x5ca75c6222f8
+        got_heap_tuple = <optimized out>
+#7  0x00005ca7377c41ad in table_index_fetch_tuple (all_dead=0x7ffc4f19c547, call_again=0x5ca75c622136, slot=<optimized out>, snapshot=<optimized out>, tid=0x5ca75c622130, scan=<optimized out>) at ../../../../src/include/access/tableam.h:1220
+        __func__ = "table_index_fetch_tuple"
+        __errno_location = <optimized out>
+#8  index_fetch_heap (scan=0x5ca75c6220c8, slot=<optimized out>) at indexam.c:684
+        all_dead = true
+        found = <optimized out>
+#9  0x00005ca7377c427b in index_getnext_slot (scan=0x5ca75c6220c8, direction=ForwardScanDirection, slot=0x5ca75c6222f8) at indexam.c:744
+No locals.
+#10 0x00007e1aaec84ce4 in pgrx_pg_sys::include::pg18::index_getnext_slot::{closure#0} () at /home/peter/.cargo-target/debug/build/pgrx-pg-sys-421a1dea02204e12/out/pg18.rs:35379
+        arg_scan = <error reading variable arg_scan (Cannot access memory at address 0x7f7f7f7f7f7f7f7f)>
+        arg_direction = <error reading variable arg_direction (Cannot access memory at address 0x7f7f7f7f7f7f7f8f)>
+        arg_slot = <error reading variable arg_slot (Cannot access memory at address 0x7f7f7f7f7f7f7f87)>
+#11 0x00007e1aacc82697 in pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::{closure#0}<bool, pgrx_pg_sys::include::pg18::index_getnext_slot::{closure_env#0}> (jump_buffer=0x7ffc4f19c688) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/ffi.rs:180
+        f = pgrx_pg_sys::include::pg18::index_getnext_slot::{closure_env#0} {arg_scan: 0x5ca75c6220c8, arg_direction: 1, arg_slot: 0x5ca75c6222f8}
+        result = core::mem::maybe_uninit::MaybeUninit<bool> {uninit: (), value: core::mem::manually_drop::ManuallyDrop<bool> {value: core::mem::maybe_dangling::MaybeDangling<bool> (false)}}
+#12 0x00007e1aadfa06fa in cee_scape::asm_based::call_with_sigsetjmp::call_from_c_to_rust<pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::{closure_env#0}<bool, pgrx_pg_sys::include::pg18::index_getnext_slot::{closure_env#0}>> (jbuf=0x7ffc4f19c688, closure_env_ptr=0x7ffc4f19c9d0) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:186
+No locals.
+#13 0x00007e1aadf952cd in cee_scape::asm_based::call_with_sigsetjmp<pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::{closure_env#0}<bool, pgrx_pg_sys::include::pg18::index_getnext_slot::{closure_env#0}>> (savemask=false, callback=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:65
+        c2r = 0x5ca75c3ee85800
+        sigsetjmp = 0x5ca75c3ee8580000
+        closure_env_ptr = 0x7ffc4f19c9d0
+        jbuf_ptr = 0x7ffc4f19c688
+        ret = 32282
+        jbuf = cee_scape::glibc_compat::SigJmpBufFields {__jmp_buf: cee_scape::glibc_compat::JmpBufFields {_buf: [1, 11998119357021483176, 140721635575432, 140721635576272, 138653053093488, 138653122007144, 6447324868674515112, 6536053529277296808], _neither_send_nor_sync: core::marker::PhantomData<*const u8>}, __mask_was_saved: 0, __saved_mask: libc::unix::linux_like::linux::gnu::b64::sigset_t {__val: [0 <repeats 16 times>]}}
+        savemask = 0
+#14 0x00007e1aaccf9969 in pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl<bool, pgrx_pg_sys::include::pg18::index_getnext_slot::{closure_env#0}> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/ffi.rs:174
+        result = core::mem::maybe_uninit::MaybeUninit<bool> {uninit: (), value: core::mem::manually_drop::ManuallyDrop<bool> {value: core::mem::maybe_dangling::MaybeDangling<bool> (false)}}
+        prev_error_context_stack = 0x7ffc4f1ab6f0
+        prev_exception_stack = 0x7ffc4f1a7dc8
+        caller_memxct = 0x5ca75c553f50
+#15 pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary<bool, pgrx_pg_sys::include::pg18::index_getnext_slot::{closure_env#0}> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/ffi.rs:154
+No locals.
+#16 pgrx_pg_sys::include::pg18::index_getnext_slot (arg_scan=0x5ca75c6220c8, arg_direction=1, arg_slot=0x5ca75c6222f8) at /home/peter/.cargo-target/debug/build/pgrx-pg-sys-421a1dea02204e12/out/pg18.rs:35379
+No locals.
+#17 0x00007e1aae9c1921 in ecaz::am::ec_distann::generation_read::lookup_graph_nodes<ecaz::am::ec_distann::generation_read::{impl#5}::expand_nodes_masked::{closure_env#0}> (graph_relation=0x7ffc4f19d788, directory_relation=0x7ffc4f19d798, snapshot=0x5ca75c46e100, vec_ids=..., graph_degree=4, code_len=13, missing=...) at src/am/ec_distann/generation_read.rs:222
+        scan_key = pgrx_pg_sys::include::pg18::ScanKeyData {sk_flags: 0, sk_attno: 1, sk_strategy: 3, sk_subtype: pgrx_pg_sys::submodules::oids::Oid (0), sk_collation: pgrx_pg_sys::submodules::oids::Oid (950), sk_func: pgrx_pg_sys::include::pg18::FmgrInfo {fn_addr: core::option::Option<unsafe extern "C-unwind" fn(*mut pgrx_pg_sys::include::pg18::FunctionCallInfoBaseData) -> pgrx_pg_sys::submodules::datum::Datum>::Some(0x5ca737ba98d0 <int8eq>), fn_oid: pgrx_pg_sys::submodules::oids::Oid (467), fn_nargs: 2, fn_strict: true, fn_retset: false, fn_stats: 2, fn_extra: 0x0, fn_mcxt: 0x5ca75c553f50, fn_expr: 0x0}, sk_argument: pgrx_pg_sys::submodules::datum::Datum (0xdb5927c5c6940b20)}
+        stored_id = -2641035976082453728
+        vec_id = 0x5ca75c5c8b50
+        iter = core::slice::iter::Iter<u64> {ptr: core::ptr::non_null::NonNull<u64> {pointer: 0x5ca75c5c8b58}, end_or_len: 0x5ca75c5c8b58, _marker: core::marker::PhantomData<&u64>}
+        records = std::collections::hash::map::HashMap<u64, ecaz::am::ec_distann::tuple::DistannNodeTuple, std::hash::random::RandomState, alloc::alloc::Global> {base: hashbrown::map::HashMap<u64, ecaz::am::ec_distann::tuple::DistannNodeTuple, std::hash::random::RandomState, alloc::alloc::Global> {hash_builder: std::hash::random::RandomState {k0: 6559600098639783193, k1: 2383200132605580163}, table: hashbrown::raw::RawTable<(u64, ecaz::am::ec_distann::tuple::DistannNodeTuple), alloc::alloc::Global> {table: hashbrown::raw::RawTableInner {bucket_mask: 3, ctrl: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c512a00}, growth_left: 3, items: 0}, alloc: alloc::alloc::Global, marker: core::marker::PhantomData<(u64, ecaz::am::ec_distann::tuple::DistannNodeTuple)>}}}
+        slot = ecaz::storage::slot_guard::TupleTableSlotGuard {slot: 0x5ca75c6222f8, _relation: core::marker::PhantomData<&pgrx_pg_sys::include::pg18::RelationData>}
+        scan = ecaz::storage::scan_guard::IndexScanGuard {scan: 0x5ca75c6220c8, _heap_relation: core::marker::PhantomData<&ecaz::storage::relation_guard::HeapRelationGuard>, _index_relation: core::marker::PhantomData<&ecaz::storage::relation_guard::IndexRelationGuard>, _snapshot: core::marker::PhantomData<&ecaz::storage::snapshot_guard::ActiveSnapshotGuard>}
+#18 0x00007e1aae9ddc49 in ecaz::am::ec_distann::generation_read::lookup_graph_nodes_with_reopened_intent_retry<ecaz::am::ec_distann::generation_read::{impl#5}::expand_nodes_masked::{closure_env#0}, ecaz::am::ec_distann::generation_read::{impl#5}::expand_nodes_masked::{closure_env#4}> (index_oid=..., generation=0x5ca75c5548b0, snapshot=0x5ca75c46e100, vec_ids=..., intent_node_ids=..., graph_degree=4, code_len=13, graph_relation=..., directory_relation=..., open_relations=..., missing=...) at src/am/ec_distann/generation_read.rs:418
+        forced = false
+#19 0x00007e1aace5ec81 in ecaz::am::ec_distann::generation_read::GenerationExpander::expand_nodes_masked (self=0x7ffc4f1a3950, vec_ids=..., code_threshold=..., candidate_limit=..., skip_neighbors=0x7ffc4f19e6f8) at src/am/ec_distann/generation_read.rs:6197
+        intent_node_ids = alloc::vec::Vec<u32, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<u32, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c58bfb0}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (1), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<u32>}, len: 1}
+        directory_relid = pgrx_pg_sys::submodules::oids::Oid (359505)
+        graph_relid = pgrx_pg_sys::submodules::oids::Oid (359493)
+        directory_relation = ecaz::storage::relation_guard::IndexRelationGuard {relation: 0x7e1ab21596a8, lockmode: 1}
+        graph_relation = ecaz::storage::relation_guard::HeapRelationGuard {relation: 0x7e1ab2159068, lockmode: 1}
+        missing = ecaz::am::ec_distann::generation_read::{impl#5}::expand_nodes_masked::{closure_env#0} {_ref__self__index_oid: 0x7ffc4f1a39c8, _ref__self__generation: 0x5ca75c5548b0, _ref__self__descriptor: 0x5ca75c5caca0}
+        graph_started = std::time::Instant (std::sys::pal::unix::time::Instant {t: std::sys::pal::unix::time::Timespec {tv_sec: 38754, tv_nsec: core::num::niche_types::Nanoseconds (465963734)}})
+#20 0x00007e1aace5d536 in ecaz::am::ec_distann::generation_read::{impl#6}::expand_nodes (self=0x7ffc4f1a3950, vec_ids=..., code_threshold=..., candidate_limit=...) at src/am/ec_distann/generation_read.rs:6324
+No locals.
+#21 0x00007e1aace82f10 in ecaz::am::ec_distann::generation_read::PhysicalMultiOwnerExpander::expand_nodes_raw (self=0x7ffc4f1a3940, vec_ids=..., code_threshold=..., candidate_limit=...) at src/am/ec_distann/generation_read.rs:5784
+        local_started = std::time::Instant (std::sys::pal::unix::time::Instant {t: std::sys::pal::unix::time::Timespec {tv_sec: 38754, tv_nsec: core::num::niche_types::Nanoseconds (465961653)}})
+        owned = alloc::vec::Vec<u64, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<u64, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c5c8b50}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (1), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<u64>}, len: 1}
+        ordinal = 0
+        bucket = 0x5ca75c621000
+        iter = core::iter::adapters::enumerate::Enumerate<core::slice::iter::Iter<alloc::vec::Vec<(usize, u64), alloc::alloc::Global>>> {iter: core::slice::iter::Iter<alloc::vec::Vec<(usize, u64), alloc::alloc::Global>> {ptr: core::ptr::non_null::NonNull<alloc::vec::Vec<(usize, u64), alloc::alloc::Global>> {pointer: 0x5ca75c621018}, end_or_len: 0x5ca75c621048, _marker: core::marker::PhantomData<&alloc::vec::Vec<(usize, u64), alloc::alloc::Global>>}, count: 1}
+        remote_work = alloc::vec::Vec<(usize, alloc::vec::Vec<u64, alloc::alloc::Global>, alloc::vec::Vec<bool, alloc::alloc::Global>, alloc::vec::Vec<u64, alloc::alloc::Global>), alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<(usize, alloc::vec::Vec<u64, alloc::alloc::Global>, alloc::vec::Vec<bool, alloc::alloc::Global>, alloc::vec::Vec<u64, alloc::alloc::Global>), alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x8}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (0), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<(usize, alloc::vec::Vec<u64, alloc::alloc::Global>, alloc::vec::Vec<bool, alloc::alloc::Global>, alloc::vec::Vec<u64, alloc::alloc::Global>)>}, len: 0}
+        ordered = alloc::vec::Vec<core::option::Option<ecaz::am::ec_distann::scan::DistannExpandedNode>, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<core::option::Option<ecaz::am::ec_distann::scan::DistannExpandedNode>, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c52f770}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (1), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<core::option::Option<ecaz::am::ec_distann::scan::DistannExpandedNode>>}, len: 1}
+        buckets = alloc::vec::Vec<alloc::vec::Vec<(usize, u64), alloc::alloc::Global>, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<alloc::vec::Vec<(usize, u64), alloc::alloc::Global>, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c621000}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (3), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<alloc::vec::Vec<(usize, u64), alloc::alloc::Global>>}, len: 3}
+        partition_started = std::time::Instant (std::sys::pal::unix::time::Instant {t: std::sys::pal::unix::time::Timespec {tv_sec: 38754, tv_nsec: core::num::niche_types::Nanoseconds (465945549)}})
+#22 0x00007e1aace5d911 in ecaz::am::ec_distann::generation_read::{impl#3}::expand_nodes (self=0x7ffc4f1a3940, vec_ids=..., code_threshold=..., candidate_limit=...) at src/am/ec_distann/generation_read.rs:5938
+        neighbor_ids = alloc::vec::Vec<u64, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<u64, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c5c66c0}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (1), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<u64>}, len: 1}
+        expanded = alloc::vec::Vec<ecaz::am::ec_distann::scan::DistannExpandedNode, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<ecaz::am::ec_distann::scan::DistannExpandedNode, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c624830}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (15), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<ecaz::am::ec_distann::scan::DistannExpandedNode>}, len: 15}
+#23 0x00007e1aaf628327 in ecaz::am::ec_distann::scan::distann_orchestrated_search_with_pushdown<ecaz::am::ec_distann::generation_read::PhysicalMultiOwnerExpander> (seeds=..., expander=0x7ffc4f1a3940, params=..., pushdown=true) at src/am/ec_distann/scan.rs:487
+        best_unvisited = core::option::Option<ecaz::am::ec_distann::scan::BeamCandidate>::Some(ecaz::am::ec_distann::scan::BeamCandidate {dist: -873, vec_id: 9802783927308593264, origin_mask: 1})
+        limits = ecaz::am::ec_distann::scan::PushdownLimits {threshold: core::option::Option<f32>::None, candidate_limit: 256}
+        _round = 0
+        iter = core::ops::range::Range<usize> {start: 1, end: 100}
+        batch_origins = alloc::vec::Vec<u32, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<u32, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c50ac40}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (32), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<u32>}, len: 15}
+        batch = alloc::vec::Vec<u64, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<u64, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c5c46b0}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (32), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<u64>}, len: 15}
+        hits = alloc::vec::Vec<ecaz::am::ec_distann::scan::DistannScanHit, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<ecaz::am::ec_distann::scan::DistannScanHit, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x8}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (0), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<ecaz::am::ec_distann::scan::DistannScanHit>}, len: 0}
+        expanded = std::collections::hash::set::HashSet<u64, std::hash::random::RandomState, alloc::alloc::Global> {base: hashbrown::set::HashSet<u64, std::hash::random::RandomState, alloc::alloc::Global> {map: hashbrown::map::HashMap<u64, (), std::hash::random::RandomState, alloc::alloc::Global> {hash_builder: std::hash::random::RandomState {k0: 6559600098639783186, k1: 2383200132605580163}, table: hashbrown::raw::RawTable<(u64, ()), alloc::alloc::Global> {table: hashbrown::raw::RawTableInner {bucket_mask: 0, ctrl: core::ptr::non_null::NonNull<u8> {pointer: 0x7e1aac3d8190}, growth_left: 0, items: 0}, alloc: alloc::alloc::Global, marker: core::marker::PhantomData<(u64, ())>}}}}
+        origins = std::collections::hash::map::HashMap<u64, u32, std::hash::random::RandomState, alloc::alloc::Global> {base: hashbrown::map::HashMap<u64, u32, std::hash::random::RandomState, alloc::alloc::Global> {hash_builder: std::hash::random::RandomState {k0: 6559600098639783185, k1: 2383200132605580163}, table: hashbrown::raw::RawTable<(u64, u32), alloc::alloc::Global> {table: hashbrown::raw::RawTableInner {bucket_mask: 32767, ctrl: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c77fbb0}, growth_left: 28657, items: 15}, alloc: alloc::alloc::Global, marker: core::marker::PhantomData<(u64, u32)>}}}
+        enqueued = std::collections::hash::set::HashSet<u64, std::hash::random::RandomState, alloc::alloc::Global> {base: hashbrown::set::HashSet<u64, std::hash::random::RandomState, alloc::alloc::Global> {map: hashbrown::map::HashMap<u64, (), std::hash::random::RandomState, alloc::alloc::Global> {hash_builder: std::hash::random::RandomState {k0: 6559600098639783184, k1: 2383200132605580163}, table: hashbrown::raw::RawTable<(u64, ()), alloc::alloc::Global> {table: hashbrown::raw::RawTableInner {bucket_mask: 32767, ctrl: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c6f7b90}, growth_left: 28657, items: 15}, alloc: alloc::alloc::Global, marker: core::marker::PhantomData<(u64, ())>}}}}
+        beam = alloc::collections::binary_heap::BinaryHeap<ecaz::am::ec_distann::scan::BeamCandidate, alloc::alloc::Global> {data: alloc::vec::Vec<ecaz::am::ec_distann::scan::BeamCandidate, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<ecaz::am::ec_distann::scan::BeamCandidate, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c653a90}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (25615), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<ecaz::am::ec_distann::scan::BeamCandidate>}, len: 0}}
+        beam_capacity = 25615
+        expansion_budget = 3200
+        counters = ecaz::am::ec_distann::scan::DistannScanCounters {rounds_executed: 0, records_expanded: 0, neighbors_code_scored: 0, neighbors_pruned: 0, pushdown_rounds_with_threshold: 0, early_exit: false, beam_exhausted: false, rounds: alloc::vec::Vec<ecaz::am::ec_distann::scan::DistannRoundCounters, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<ecaz::am::ec_distann::scan::DistannRoundCounters, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x8}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (0), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<ecaz::am::ec_distann::scan::DistannRoundCounters>}, len: 0}}
+#24 0x00007e1aaf6244da in ecaz::am::ec_distann::scan::distann_orchestrated_search<ecaz::am::ec_distann::generation_read::PhysicalMultiOwnerExpander> (seeds=..., expander=0x7ffc4f1a3940, params=...) at src/am/ec_distann/scan.rs:347
+No locals.
+#25 0x00007e1aace6e477 in ecaz::am::ec_distann::generation_read::PhysicalGenerationScan::search_with_seed_candidates (self=0x5ca75c554850, snapshot=0x5ca75c46dfe0, source_attnum=2, query=..., effective_top_k=30, seed_override=...) at src/am/ec_distann/generation_read.rs:4855
+        traversal_started = std::time::Instant (std::sys::pal::unix::time::Instant {t: std::sys::pal::unix::time::Timespec {tv_sec: 38754, tv_nsec: core::num::niche_types::Nanoseconds (462568973)}})
+        expander = ecaz::am::ec_distann::generation_read::PhysicalMultiOwnerExpander {local: core::option::Option<ecaz::am::ec_distann::generation_read::GenerationExpander>::Some(ecaz::am::ec_distann::generation_read::GenerationExpander {index_oid: pgrx_pg_sys::submodules::oids::Oid (359430), generation: 0x5ca75c5548b0, descriptor: 0x5ca75c5caca0, graph_relation: core::option::Option<ecaz::storage::relation_guard::HeapRelationGuard>::None, directory_relation: core::option::Option<ecaz::storage::relation_guard::IndexRelationGuard>::None, row_relation: 0x5ca75c554858, slot: 0x7ffc4f1a2de0, snapshot: 0x5ca75c46e100, source_attnum: 2, query: &[f32] {data_ptr: 0x5ca75c519370, length: 4}, prepared: 0x7ffc4f1a1328, code_len: 13}), local_ordinal: core::option::Option<usize>::Some(0), descriptor: 0x5ca75c5caca0, routes: &[ecaz::am::ec_distann::generation_read::PhysicalOwnerRoute] {data_ptr: 0x5ca75c63f590, length: 3}, fingerprint: 0x5ca75c554bec b"\002\000\227`\260>\177\305`G\312\250\323\205\220\231\310\204\360\026\270\305\330t\227B`[\201\366\345\261\367\023", query: &[f32] {data_ptr: 0x5ca75c519370, length: 4}, query_digest: 0x7ffc4f1a2d20 b"\351\256\265\274Qa\245\206\177*\215!\026W\344\v\301\334Vce\224xToo9\032\264\204\204%", prepared: 0x7ffc4f1a1328, code_len: 13, gateway: core::option::Option<&ecaz::am::ec_distann::gateway_copy::DistannGatewayCopySet>::None}
+        local_expander = core::option::Option<ecaz::am::ec_distann::generation_read::GenerationExpander>::Some(ecaz::am::ec_distann::generation_read::GenerationExpander {index_oid: pgrx_pg_sys::submodules::oids::Oid (359430), generation: 0x5ca75c5548b0, descriptor: 0x5ca75c5caca0, graph_relation: core::option::Option<ecaz::storage::relation_guard::HeapRelationGuard>::Some(ecaz::storage::relation_guard::HeapRelationGuard {relation: 0x7e1ab2159068, lockmode: 1}), directory_relation: core::option::Option<ecaz::storage::relation_guard::IndexRelationGuard>::Some(ecaz::storage::relation_guard::IndexRelationGuard {relation: 0x7e1ab21596a8, lockmode: 1}), row_relation: 0x5ca75c554858, slot: 0x7ffc4f1a2de0, snapshot: 0x5ca75c46dfe0, source_attnum: 2, query: &[f32] {data_ptr: 0x5ca75c519370, length: 4}, prepared: 0x7ffc4f1a1328, code_len: 13})
+        replica = core::result::Result<core::option::Option<ecaz::am::ec_distann::traversal_replica::ReadyTraversalReplica>, alloc::string::String>::Ok(core::option::Option<ecaz::am::ec_distann::traversal_replica::ReadyTraversalReplica>::None)
+        local_ordinal = core::option::Option<usize>::Some(0)
+        logical_index_uuid = pgrx::datum::uuid::Uuid ([243, 3, 115, 8, 240, 233, 70, 146, 176, 31, 208, 89, 212, 87, 24, 60])
+        replica_open_started = std::time::Instant (std::sys::pal::unix::time::Instant {t: std::sys::pal::unix::time::Timespec {tv_sec: 38754, tv_nsec: core::num::niche_types::Nanoseconds (462562006)}})
+        params = ecaz::am::ec_distann::scan::DistannOrchestrationParams {beam_width: 32, candidate_heap_limit: 256, hop_rounds: 100, top_k: 30, debug_fail_hop_round: core::option::Option<usize>::None}
+        all_seeds = alloc::vec::Vec<ecaz::am::ec_distann::scan::DistannSeedCandidate, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<ecaz::am::ec_distann::scan::DistannSeedCandidate, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c5b5e60}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (20), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<ecaz::am::ec_distann::scan::DistannSeedCandidate>}, len: 15}
+        slot = core::option::Option<ecaz::storage::slot_guard::TupleTableSlotGuard>::Some(ecaz::storage::slot_guard::TupleTableSlotGuard {slot: 0x5ca75c621fb8, _relation: core::marker::PhantomData<&pgrx_pg_sys::include::pg18::RelationData>})
+        query_digest = [233, 174, 181, 188, 81, 97, 165, 134, 127, 42, 141, 33, 22, 87, 228, 11, 193, 220, 86, 99, 101, 148, 120, 84, 111, 111, 57, 26, 180, 132, 132, 37]
+        prepared = ecaz::am::ec_distann::quantizer::DistannPreparedQuery::RaBitQ{prepared: ecaz::quant::rabitq::PreparedEstimator {query_rotated: alloc::vec::Vec<f32, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<f32, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c55bd90}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (4), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<f32>}, len: 4}, query_norm: 30.0832176, dimensions: 4, bits_per_dim: 1, dequant_lut: [-1, 1, 0 <repeats 254 times>], bits1_byte_lut: core::option::Option<alloc::boxed::Box<[[f32; 8]; 256], alloc::alloc::Global>>::Some(0x5ca75c547fe0), bits8_query_scale: alloc::vec::Vec<f32, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<f32, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x4}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (0), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<f32>}, len: 0}, bits8_query_offset: alloc::vec::Vec<f32, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<f32, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x4}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (0), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<f32>}, len: 0}, query_bf16: alloc::vec::Vec<u16, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<u16, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x2}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (0), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<u16>}, len: 0}, dequant_lut_bf16: [0 <repeats 256 times>]}}
+        code_len = 13
+        binding = ecaz::am::ec_distann::quantizer::DistannCodecBinding::RaBitQ{quantizer: alloc::sync::Arc<ecaz::quant::rabitq::RaBitQQuantizer, alloc::alloc::Global> {ptr: core::ptr::non_null::NonNull<alloc::sync::ArcInner<ecaz::quant::rabitq::RaBitQQuantizer>> {pointer: 0x5ca75c5a5b60}, phantom: core::marker::PhantomData<alloc::sync::ArcInner<ecaz::quant::rabitq::RaBitQQuantizer>>, alloc: alloc::alloc::Global}}
+        prep_started = std::time::Instant (std::sys::pal::unix::time::Instant {t: std::sys::pal::unix::time::Timespec {tv_sec: 38754, tv_nsec: core::num::niche_types::Nanoseconds (460372777)}})
+#26 0x00007e1aace71dce in ecaz::am::ec_distann::generation_read::PhysicalGenerationScan::search (self=0x5ca75c554850, snapshot=0x5ca75c46dfe0, source_attnum=2, query=..., effective_top_k=30) at src/am/ec_distann/generation_read.rs:4627
+No locals.
+#27 0x00007e1aaf6207e4 in ecaz::am::ec_distann::custom_scan::run_physical_generation_search::{closure#0} () at src/am/ec_distann/custom_scan.rs:1720
+        context = 0x5ca75c554850
+        state__index_oid = pgrx_pg_sys::submodules::oids::Oid (359430)
+        state__query = alloc::vec::Vec<f32, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<f32, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c519370}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (4), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<f32>}, len: 4}
+        state__frozen_row_slot = 0x5ca75c621e90
+        state__physical_generation = core::option::Option<ecaz::am::ec_distann::generation_read::PhysicalGenerationScan>::Some(ecaz::am::ec_distann::generation_read::PhysicalGenerationScan {index_oid: pgrx_pg_sys::submodules::oids::Oid (359430), descriptor: alloc::sync::Arc<ecaz::am::ec_distann::generation_descriptor::DistannGenerationDescriptor, alloc::alloc::Global> {ptr: core::ptr::non_null::NonNull<alloc::sync::ArcInner<ecaz::am::ec_distann::generation_descriptor::DistannGenerationDescriptor>> {pointer: 0x5ca75c5cac90}, phantom: core::marker::PhantomData<alloc::sync::ArcInner<ecaz::am::ec_distann::generation_descriptor::DistannGenerationDescriptor>>, alloc: alloc::alloc::Global}, generation: core::option::Option<ecaz::am::ec_distann::generation_catalog::GenerationCatalogRow>::Some(ecaz::am::ec_distann::generation_catalog::GenerationCatalogRow {epoch: 12, owner_ordinal: 0, node_id: 17, state: ecaz::am::ec_distann::lifecycle_state::GenerationState::Published, build_spec_digest: [141, 180, 115, 87, 212, 79, 145, 137, 128, 214, 142, 180, 209, 170, 130, 161, 151, 168, 144, 114, 245, 27, 216, 50, 129, 87, 63, 248, 222, 16, 191, 203], roster_digest: [58, 4, 93, 173, 184, 119, 99, 15, 20, 134, 197, 91, 187, 217, 200, 186, 164, 229, 218, 41, 246, 17, 129, 64, 44, 85, 31, 20, 198, 80, 134, 253], generation_descriptor: alloc::vec::Vec<u8, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<u8, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c52ad20}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (408), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<u8>}, len: 408}, generation_descriptor_digest: [7, 250, 133, 47, 179, 183, 233, 169, 88, 62, 247, 216, 83, 46, 171, 224, 142, 2, 61, 228, 65, 235, 5, 43, 73, 163, 230, 170, 129, 235, 101, 115], expected_owner_count: 14, expected_owner_digest: [147, 119, 206, 193, 114, 189, 127, 100, 251, 68, 110, 44, 103, 7, 158, 177, 173, 76, 117, 169, 118, 109, 61, 254, 73, 50, 1, 108, 68, 121, 46, 201], row_tier_relid: pgrx_pg_sys::submodules::oids::Oid (359488), graph_store_relid: pgrx_pg_sys::submodules::oids::Oid (359493), directory_relid: pgrx_pg_sys::submodules::oids::Oid (359505), next_batch_seq: 1, cumulative_record_count: 14, cumulative_owner_digest: [147, 119, 206, 193, 114, 189, 127, 100, 251, 68, 110, 44, 103, 7, 158, 177, 173, 76, 117, 169, 118, 109, 61, 254, 73, 50, 1, 108, 68, 121, 46, 201], last_vec_id_le: core::option::Option<[u8; 8]>::Some([32, 11, 148, 198, 197, 39, 89, 219]), owner_stream_sha256_state: [1, 0, 1, 223, 128, 20, 66, 188, 191, 84, 204, 105, 64, 135, 149, 23, 147, 138, 159, 51, 53, 226, 35, 170, 80, 177, 73, 147, 37, 23, 75, 25, 161, 53, 219, 29, 0, 0, 0, 0, 0, 0, 0, 47, 0, 0, 0, 2, 0, 0, 0, 16, 0, 0, 0, 196, 202, 66, 56, 160, 185, 67, 130, 141, 204, 80, 154, 111, 117, 132, 155, 16, 0, 0, 0, 0, 0, 128, 63, 0, 0, 128, 63, 0, 0, 128, 63, 0, 0, 128, 63, 0 <repeats 16 times>], ready_receipt: core::option::Option<[u8; 303]>::Some([1, 0, 17, 0, 0, 0, 12, 0, 0, 0, 0, 0, 0, 0, 74, 74, 74, 74, 74, 74, 74, 74, 138, 74, 74, 74, 74, 74, 74, 74, 141, 180, 115, 87, 212, 79, 145, 137, 128, 214, 142, 180, 209, 170, 130, 161, 151, 168, 144, 114, 245, 27, 216, 50, 129, 87, 63, 248, 222, 16, 191, 203, 7, 250, 133, 47, 179, 183, 233, 169, 88, 62, 247, 216, 83, 46, 171, 224, 142, 2, 61, 228, 65, 235, 5, 43, 73, 163, 230, 170, 129, 235, 101, 115, 0, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 0, 14, 0, 0, 0, 0, 0, 0, 0, 147, 119, 206, 193, 114, 189, 127, 100, 251, 68, 110, 44, 103, 7, 158, 177, 173, 76, 117, 169, 118, 109, 61, 254, 73, 50, 1, 108, 68, 121, 46, 201, 153, 10, 29, 55, 29, 88, 86, 151, 97, 198, 206, 186, 102, 235, 199, 28, 184, 120, 178, 32, 71, 247, 144, 90, 147, 114, 124, 179, 182, 84, 71, 63, 213, 26, 177, 186, 126, 14, 195, 147, 137, 19, 176, 36, 105, 78, 90, 171, 38, 203...])}), row_relation: core::option::Option<ecaz::storage::relation_guard::HeapRelationGuard>::Some(ecaz::storage::relation_guard::HeapRelationGuard {relation: 0x7e1ab2158c38, lockmode: 1}), graph_relation: core::option::Option<ecaz::storage::relation_guard::HeapRelationGuard>::None, directory_relation: core::option::Option<ecaz::storage::relation_guard::IndexRelationGuard>::None, build_id: pgrx::datum::uuid::Uuid ([74, 74, 74, 74, 74, 74, 74, 74, 138, 74, 74, 74, 74, 74, 74, 74]), fingerprint: [2, 0, 151, 96, 176, 62, 127, 197, 96, 71, 202, 168, 211, 133, 144, 153, 200, 132, 240, 22, 184, 197, 216, 116, 151, 66, 96, 91, 129, 246, 229, 177, 247, 19], descriptor_digest: [7, 250, 133, 47, 179, 183, 233, 169, 88, 62, 247, 216, 83, 46, 171, 224, 142, 2, 61, 228, 65, 235, 5, 43, 73, 163, 230, 170, 129, 235, 101, 115], routes: alloc::vec::Vec<ecaz::am::ec_distann::generation_read::PhysicalOwnerRoute, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<ecaz::am::ec_distann::generation_read::PhysicalOwnerRoute, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x5ca75c63f590}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (4), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<ecaz::am::ec_distann::generation_read::PhysicalOwnerRoute>}, len: 3}, head_index: core::option::Option<alloc::sync::Arc<ecaz::am::ec_distann::head_sample::DistannPhysicalHeadIndex, alloc::alloc::Global>>::Some(alloc::sync::Arc<ecaz::am::ec_distann::head_sample::DistannPhysicalHeadIndex, alloc::alloc::Global> {ptr: core::ptr::non_null::NonNull<alloc::sync::ArcInner<ecaz::am::ec_distann::head_sample::DistannPhysicalHeadIndex>> {pointer: 0x5ca75c63ee40}, phantom: core::marker::PhantomData<alloc::sync::ArcInner<ecaz::am::ec_distann::head_sample::DistannPhysicalHeadIndex>>, alloc: alloc::alloc::Global}), gateway_copies: core::option::Option<alloc::sync::Arc<ecaz::am::ec_distann::gateway_copy::DistannGatewayCopySet, alloc::alloc::Global>>::None, crown: core::option::Option<alloc::sync::Arc<ecaz::am::ec_distann::crown_cache::DistannCrownCache, alloc::alloc::Global>>::None, _scan_token: ecaz::am::ec_distann::scan_registry::ScanTokenGuard {tracking_id: 2, logical_index_uuid: pgrx::datum::uuid::Uuid ([243, 3, 115, 8, 240, 233, 70, 146, 176, 31, 208, 89, 212, 87, 24, 60]), epoch_fingerprint: [2, 0, 151, 96, 176, 62, 127, 197, 96, 71, 202, 168, 211, 133, 144, 153, 200, 132, 240, 22, 184, 197, 216, 116, 151, 66, 96, 91, 129, 246, 229, 177, 247, 19], scan_token: pgrx::datum::uuid::Uuid ([28, 15, 27, 104, 191, 26, 64, 201, 147, 252, 158, 236, 73, 144, 247, 12]), active: true}})
+        scan_state = 0x5ca75c554628
+        snapshot = 0x5ca75c46dfe0
+        source_attnum = 2
+        effective = 30
+#28 0x00007e1aaf6246c8 in ecaz::am::ec_distann::scan::run_scan_attempt_with_restart<ecaz::am::ec_distann::routine::DistannHitCollection, ecaz::am::ec_distann::custom_scan::run_physical_generation_search::{closure_env#0}> (attempt=<error reading variable: Cannot access memory at address 0x7f7f7f7f7f7f7f7f>) at src/am/ec_distann/scan.rs:667
+No locals.
+#29 0x00007e1aad2b45fb in ecaz::am::ec_distann::custom_scan::run_physical_generation_search (state=0x5ca75c554628, scan_state=0x5ca75c554628, snapshot=0x5ca75c46dfe0, source_attnum=2, effective=30) at src/am/ec_distann/custom_scan.rs:1690
+        total_started = std::time::Instant (std::sys::pal::unix::time::Instant {t: std::sys::pal::unix::time::Timespec {tv_sec: 38754, tv_nsec: core::num::niche_types::Nanoseconds (458143741)}})
+        previous_outputs = alloc::vec::Vec<core::option::Option<ecaz::am::ec_distann::custom_scan::CustomScanOutputRow>, alloc::alloc::Global> {buf: alloc::raw_vec::RawVec<core::option::Option<ecaz::am::ec_distann::custom_scan::CustomScanOutputRow>, alloc::alloc::Global> {inner: alloc::raw_vec::RawVecInner<alloc::alloc::Global> {ptr: core::ptr::unique::Unique<u8> {pointer: core::ptr::non_null::NonNull<u8> {pointer: 0x8}, _marker: core::marker::PhantomData<u8>}, cap: core::num::niche_types::UsizeNoHighBit (0), alloc: alloc::alloc::Global}, _marker: core::marker::PhantomData<core::option::Option<ecaz::am::ec_distann::custom_scan::CustomScanOutputRow>>}, len: 0}
+        previous_proven = 0
+#30 0x00007e1aad2b3907 in ecaz::am::ec_distann::custom_scan::run_search_and_build_outputs (state=0x5ca75c554628, scan_state=0x5ca75c554628, effective=30) at src/am/ec_distann/custom_scan.rs:1608
+        metadata = ecaz::am::ec_distann::page::DistannMetadataPage {format_version: 5, entry_point: ecaz::storage::page::ItemPointer {block_number: 4294967295, offset_number: 65535}, graph_degree_r: 4, build_list_size_l: 100, alpha: 1.20000005, dimensions: 0, seed: 42, neighbor_codec_kind: 2, flags: 1, head_index_cap: 4096, closure_epsilon: 0.300000012, node_count: 0, head_sample_head: ecaz::storage::page::ItemPointer {block_number: 4294967295, offset_number: 65535}, delta_buffer_head: ecaz::storage::page::ItemPointer {block_number: 4294967295, offset_number: 65535}, codec_subvector_count: 0, codec_subvector_dim: 0, grouped_codebook_head: ecaz::storage::page::ItemPointer {block_number: 4294967295, offset_number: 65535}, directory_head: ecaz::storage::page::ItemPointer {block_number: 4294967295, offset_number: 65535}, content_digest: 0, delta_count: 0, epoch_state: 0, active_epoch: 0, in_flight_count: 0, logical_index_uuid: [243, 3, 115, 8, 240, 233, 70, 146, 176, 31, 208, 89, 212, 87, 24, 60]}
+        source_attnum = 2
+        handle = core::ptr::non_null::NonNull<pgrx_pg_sys::include::pg18::RelationData> {pointer: 0x7e1ab2b67588}
+        index_relation = 0x7e1ab2b67588
+        index_guard = ecaz::storage::relation_guard::IndexRelationGuard {relation: 0x7e1ab2b67588, lockmode: 1}
+        snapshot = 0x5ca75c46dfe0
+        estate = 0x5ca75c554050
+        heap_relation = 0x7e1ab2bc1370
+#31 0x00007e1aad2a7a50 in ecaz::am::ec_distann::custom_scan::ensure_outputs (state=0x5ca75c554628, scan_state=0x5ca75c554628) at src/am/ec_distann/custom_scan.rs:1578
+        effective = 30
+        estate = 0x5ca75c554050
+        heap_relation = 0x7e1ab2bc1370
+#32 0x00007e1aad2ab2dc in ecaz::am::ec_distann::custom_scan::custom_scan_access::custom_scan_access_inner (scan_state=0x5ca75c554628) at src/am/ec_distann/custom_scan.rs:1218
+        state = 0x5ca75c554628
+#33 0x00007e1aaf61b3ca in ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure#0} () at src/am/ec_distann/custom_scan.rs:1212
+        scan_state = 0x5ca75c554628
+#34 0x00007e1aace5039e in core::panic::unwind_safe::{impl#23}::call_once<*mut pgrx_pg_sys::include::pg18::TupleTableSlot, ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}> (self=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panic/unwind_safe.rs:274
+        _args = ()
+#35 0x00007e1aae97dd30 in std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}>, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> (data=0x7ffc4f1a76e8) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:581
+        f = core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}> (ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0} {scan_state: 0x5ca75c554628})
+        data = 0x7ffc4f1a76e8
+        data = 0x7ffc4f1a76e8
+#36 0x00007e1aae06112b in __rust_try () from /home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+No symbol table info available.
+#37 0x00007e1aae0112fa in std::panicking::catch_unwind<*mut pgrx_pg_sys::include::pg18::TupleTableSlot, core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}>> (f=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:544
+        data_ptr = 0x7ffc4f1a76e8
+        data = std::panicking::catch_unwind::Data<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}>, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> {f: core::mem::manually_drop::ManuallyDrop<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}>> {value: core::mem::maybe_dangling::MaybeDangling<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}>> (core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}> (ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0} {scan_state: 0x5ca75c554628}))}, r: core::mem::manually_drop::ManuallyDrop<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> {value: core::mem::maybe_dangling::MaybeDangling<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> (0x5ca75c554628)}, p: core::mem::manually_drop::ManuallyDrop<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global>> {value: core::mem::maybe_dangling::MaybeDangling<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global>> (alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global> {pointer: 0x5ca75c554628, vtable: 0x7ffc4f1a7998})}}
+#38 std::panic::catch_unwind<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}>, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> (f=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panic.rs:359
+No locals.
+#39 0x00007e1aaf66ae04 in pgrx_pg_sys::submodules::panic::run_guarded<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}>, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/panic.rs:419
+No locals.
+#40 0x00007e1aaf727470 in pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard<ecaz::am::ec_distann::custom_scan::custom_scan_access::{closure_env#0}, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/panic.rs:394
+No locals.
+#41 0x00007e1aad2ab0ab in ecaz::am::ec_distann::custom_scan::custom_scan_access (scan_state=0x5ca75c554628) at src/am/ec_distann/custom_scan.rs:1213
+No locals.
+#42 0x00005ca73794a95c in ExecScanFetch (recheckMtd=0x7e1aad2accc0 <ecaz::am::ec_distann::custom_scan::custom_scan_recheck>, accessMtd=0x7e1aad2ab0a0 <ecaz::am::ec_distann::custom_scan::custom_scan_access>, epqstate=0x0, node=0x5ca75c554628) at ../../../src/include/executor/execScan.h:134
+No locals.
+#43 ExecScanExtended (projInfo=0x5ca75c5551c8, qual=0x0, epqstate=0x0, recheckMtd=0x7e1aad2accc0 <ecaz::am::ec_distann::custom_scan::custom_scan_recheck>, accessMtd=0x7e1aad2ab0a0 <ecaz::am::ec_distann::custom_scan::custom_scan_access>, node=<optimized out>) at ../../../src/include/executor/execScan.h:195
+        slot = <optimized out>
+        econtext = 0x5ca75c554e38
+        econtext = <optimized out>
+        slot = <optimized out>
+#44 ExecScan (node=0x5ca75c554628, accessMtd=0x7e1aad2ab0a0 <ecaz::am::ec_distann::custom_scan::custom_scan_access>, recheckMtd=0x7e1aad2accc0 <ecaz::am::ec_distann::custom_scan::custom_scan_recheck>) at execScan.c:59
+        epqstate = 0x0
+        qual = 0x0
+        projInfo = 0x5ca75c5551c8
+#45 0x00007e1aaec861d5 in pgrx_pg_sys::include::pg18::ExecScan::{closure#0} () at /home/peter/.cargo-target/debug/build/pgrx-pg-sys-421a1dea02204e12/out/pg18.rs:35379
+        arg_node = <error reading variable arg_node (Cannot access memory at address 0x7f7f7f7f7f7f7f7f)>
+        arg_accessMtd = <error reading variable arg_accessMtd (Cannot access memory at address 0x7f7f7f7f7f7f7f87)>
+        arg_recheckMtd = <error reading variable arg_recheckMtd (Cannot access memory at address 0x7f7f7f7f7f7f7f8f)>
+#46 0x00007e1aacc8a857 in pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::{closure#0}<*mut pgrx_pg_sys::include::pg18::TupleTableSlot, pgrx_pg_sys::include::pg18::ExecScan::{closure_env#0}> (jump_buffer=0x7ffc4f1a7dc8) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/ffi.rs:180
+        f = pgrx_pg_sys::include::pg18::ExecScan::{closure_env#0} {arg_node: 0x5ca75c554628, arg_accessMtd: core::option::Option<unsafe extern "C-unwind" fn(*mut pgrx_pg_sys::include::pg18::ScanState) -> *mut pgrx_pg_sys::include::pg18::TupleTableSlot>::Some(0x7e1aad2ab0a0 <ecaz::am::ec_distann::custom_scan::custom_scan_access>), arg_recheckMtd: core::option::Option<unsafe extern "C-unwind" fn(*mut pgrx_pg_sys::include::pg18::ScanState, *mut pgrx_pg_sys::include::pg18::TupleTableSlot) -> bool>::Some(0x7e1aad2accc0 <ecaz::am::ec_distann::custom_scan::custom_scan_recheck>)}
+        result = core::mem::maybe_uninit::MaybeUninit<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> {uninit: (), value: core::mem::manually_drop::ManuallyDrop<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> {value: core::mem::maybe_dangling::MaybeDangling<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> (0x5ca75c5b5d60)}}
+#47 0x00007e1aadf9846a in cee_scape::asm_based::call_with_sigsetjmp::call_from_c_to_rust<pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::{closure_env#0}<*mut pgrx_pg_sys::include::pg18::TupleTableSlot, pgrx_pg_sys::include::pg18::ExecScan::{closure_env#0}>> (jbuf=0x7ffc4f1a7dc8, closure_env_ptr=0x7ffc4f1a8110) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:186
+No locals.
+#48 0x00007e1aadf8b54d in cee_scape::asm_based::call_with_sigsetjmp<pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::{closure_env#0}<*mut pgrx_pg_sys::include::pg18::TupleTableSlot, pgrx_pg_sys::include::pg18::ExecScan::{closure_env#0}>> (savemask=false, callback=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:65
+        c2r = 0x5ca75c3ee85800
+        sigsetjmp = 0x5ca75c3ee8580000
+        closure_env_ptr = 0x7ffc4f1a8110
+        jbuf_ptr = 0x7ffc4f1a7dc8
+        ret = 32282
+        jbuf = cee_scape::glibc_compat::SigJmpBufFields {__jmp_buf: cee_scape::glibc_compat::JmpBufFields {_buf: [101873878385336, 2292148961329475752, 140721635622344, 140721635623184, 138653053060064, 101873878844784, 6447324840463626408, 6536053528019005608], _neither_send_nor_sync: core::marker::PhantomData<*const u8>}, __mask_was_saved: 0, __saved_mask: libc::unix::linux_like::linux::gnu::b64::sigset_t {__val: [0 <repeats 16 times>]}}
+        savemask = 0
+#49 0x00007e1aacd5c38b in pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl<*mut pgrx_pg_sys::include::pg18::TupleTableSlot, pgrx_pg_sys::include::pg18::ExecScan::{closure_env#0}> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/ffi.rs:174
+        result = core::mem::maybe_uninit::MaybeUninit<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> {uninit: (), value: core::mem::manually_drop::ManuallyDrop<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> {value: core::mem::maybe_dangling::MaybeDangling<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> (0x5ca75c5b5d60)}}
+        prev_error_context_stack = 0x7ffc4f1ab6f0
+        prev_exception_stack = 0x7ffc4f1a8e00
+        caller_memxct = 0x5ca75c553f50
+#50 pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary<*mut pgrx_pg_sys::include::pg18::TupleTableSlot, pgrx_pg_sys::include::pg18::ExecScan::{closure_env#0}> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/ffi.rs:154
+No locals.
+#51 pgrx_pg_sys::include::pg18::ExecScan (arg_node=0x5ca75c554628, arg_accessMtd=..., arg_recheckMtd=...) at /home/peter/.cargo-target/debug/build/pgrx-pg-sys-421a1dea02204e12/out/pg18.rs:35379
+No locals.
+#52 0x00007e1aad2a7fc4 in ecaz::am::ec_distann::custom_scan::exec_custom_scan::exec_custom_scan_inner (node=0x5ca75c554628) at src/am/ec_distann/custom_scan.rs:1203
+No locals.
+#53 0x00007e1aaf619b9a in ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure#0} () at src/am/ec_distann/custom_scan.rs:1199
+        node = 0x5ca75c554628
+#54 0x00007e1aace4f32e in core::panic::unwind_safe::{impl#23}::call_once<*mut pgrx_pg_sys::include::pg18::TupleTableSlot, ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}> (self=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panic/unwind_safe.rs:274
+        _args = ()
+#55 0x00007e1aae981590 in std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}>, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> (data=0x7ffc4f1a8738) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:581
+        f = core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}> (ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0} {node: 0x5ca75c554628})
+        data = 0x7ffc4f1a8738
+        data = 0x7ffc4f1a8738
+#56 0x00007e1aae06112b in __rust_try () from /home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+No symbol table info available.
+#57 0x00007e1aae02fb8a in std::panicking::catch_unwind<*mut pgrx_pg_sys::include::pg18::TupleTableSlot, core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}>> (f=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:544
+        data_ptr = 0x7ffc4f1a8738
+        data = std::panicking::catch_unwind::Data<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}>, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> {f: core::mem::manually_drop::ManuallyDrop<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}>> {value: core::mem::maybe_dangling::MaybeDangling<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}>> (core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}> (ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0} {node: 0x5ca75c554628}))}, r: core::mem::manually_drop::ManuallyDrop<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> {value: core::mem::maybe_dangling::MaybeDangling<*mut pgrx_pg_sys::include::pg18::TupleTableSlot> (0x5ca75c554628)}, p: core::mem::manually_drop::ManuallyDrop<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global>> {value: core::mem::maybe_dangling::MaybeDangling<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global>> (alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global> {pointer: 0x5ca75c554628, vtable: 0x7e1a00000000})}}
+#58 std::panic::catch_unwind<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}>, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> (f=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panic.rs:359
+No locals.
+#59 0x00007e1aaf6b9f14 in pgrx_pg_sys::submodules::panic::run_guarded<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}>, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/panic.rs:419
+No locals.
+#60 0x00007e1aaf6db030 in pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard<ecaz::am::ec_distann::custom_scan::exec_custom_scan::{closure_env#0}, *mut pgrx_pg_sys::include::pg18::TupleTableSlot> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/panic.rs:394
+No locals.
+#61 0x00007e1aad2a7f5b in ecaz::am::ec_distann::custom_scan::exec_custom_scan (node=0x5ca75c554628) at src/am/ec_distann/custom_scan.rs:1200
+No locals.
+#62 0x00005ca73796afb0 in ExecProcNode (node=0x5ca75c554628) at ../../../src/include/executor/executor.h:315
+No locals.
+#63 ExecLimit (pstate=0x5ca75c5542b8) at nodeLimit.c:95
+        node = 0x5ca75c5542b8
+        econtext = 0x5ca75c5544c8
+        direction = <optimized out>
+        slot = <optimized out>
+        outerPlan = 0x5ca75c554628
+        __func__ = "ExecLimit"
+#64 0x00005ca73793f983 in ExecProcNode (node=0x5ca75c5542b8) at ../../../src/include/executor/executor.h:315
+No locals.
+#65 ExecutePlan (dest=0x5ca75c5c4570, direction=<optimized out>, numberTuples=0, sendTuples=<optimized out>, operation=CMD_SELECT, queryDesc=0x5ca75c5b5d60) at execMain.c:1711
+        estate = 0x5ca75c554050
+        use_parallel_mode = <optimized out>
+        slot = <optimized out>
+        planstate = 0x5ca75c5542b8
+        current_tuple_count = 0
+        estate = <optimized out>
+        planstate = <optimized out>
+        use_parallel_mode = <optimized out>
+        slot = <optimized out>
+        current_tuple_count = <optimized out>
+#66 standard_ExecutorRun (queryDesc=0x5ca75c5b5d60, direction=<optimized out>, count=0) at execMain.c:366
+        estate = 0x5ca75c554050
+        operation = CMD_SELECT
+        dest = 0x5ca75c5c4570
+        sendTuples = <optimized out>
+        oldcontext = 0x5ca75c5b5a50
+#67 0x00005ca737b33fc8 in PortalRunSelect (portal=0x5ca75c459750, forward=<optimized out>, count=0, dest=<optimized out>) at pquery.c:921
+        queryDesc = 0x5ca75c5b5d60
+        direction = <optimized out>
+        nprocessed = <optimized out>
+        __func__ = "PortalRunSelect"
+#68 0x00005ca737b35676 in PortalRun (portal=portal@entry=0x5ca75c459750, count=count@entry=9223372036854775807, isTopLevel=isTopLevel@entry=false, dest=dest@entry=0x5ca75c5c4570, altdest=altdest@entry=0x5ca75c5c4570, qc=qc@entry=0x7ffc4f1ab350) at pquery.c:765
+        _save_exception_stack = 0x7ffc4f1a9108
+        _save_context_stack = 0x7ffc4f1ab6f0
+        _local_sigjmp_buf = {{__jmpbuf = {9223372036854775807, 2292148869162791080, 101873878844784, 101873878844928, 101873877800384, 101873877358416, 6447324845291270312, 2292207528033185960}, __mask_was_saved = 0, __saved_mask = {__val = {101873265084976, 0, 1, 0, 101873878844928, 0, 0, 101873879272768, 101873265089351, 101873878245464, 9743084595227918336, 344, 9223372036854775807, 101873878958944, 101873878844784, 101873878844928}}}}
+        _do_rethrow = <optimized out>
+        result = <optimized out>
+        nprocessed = <optimized out>
+        saveTopTransactionResourceOwner = 0x5ca75c412808
+        saveTopTransactionContext = 0x5ca75c46dee0
+        saveActivePortal = 0x5ca75c459640
+        saveResourceOwner = 0x5ca75c4162c0
+        savePortalContext = 0x5ca75c5c42a0
+        saveMemoryContext = 0x5ca75c5c42a0
+        __func__ = "PortalRun"
+#69 0x00005ca7378ec00a in ExecuteQuery (pstate=pstate@entry=0x5ca75c62c5b0, stmt=stmt@entry=0x5ca75c54c138, intoClause=intoClause@entry=0x0, params=params@entry=0x0, dest=dest@entry=0x5ca75c5c4570, qc=qc@entry=0x7ffc4f1ab350) at prepare.c:258
+        entry = 0x5ca75c4c55c0
+        cplan = <optimized out>
+        plan_list = 0x5ca75c54cf20
+        paramLI = 0x5ca75c5c4600
+        estate = 0x5ca75c5e0360
+        portal = 0x5ca75c459750
+        query_string = <optimized out>
+        eflags = 0
+        count = 9223372036854775807
+        __func__ = "ExecuteQuery"
+#70 0x00005ca737b36bc6 in standard_ProcessUtility (pstmt=0x5ca75c54c028, queryString=0x5ca75c5c43a0 "EXECUTE task222_cached_projection (ARRAY[30.0, 2.0, 0.0, 1.0]::real[])", readOnlyTree=<optimized out>, context=PROCESS_UTILITY_TOPLEVEL, params=0x0, queryEnv=0x0, dest=0x5ca75c5c4570, qc=0x7ffc4f1ab350) at utility.c:753
+        parsetree = 0x5ca75c54c138
+        isTopLevel = <optimized out>
+        isAtomicContext = false
+        pstate = 0x5ca75c62c5b0
+        readonly_flags = <optimized out>
+        __func__ = "standard_ProcessUtility"
+#71 0x00007e1aaec85419 in pgrx_pg_sys::include::pg18::standard_ProcessUtility::{closure#0} () at /home/peter/.cargo-target/debug/build/pgrx-pg-sys-421a1dea02204e12/out/pg18.rs:35379
+        arg_pstmt = <optimized out>
+        arg_queryString = <optimized out>
+        arg_readOnlyTree = <optimized out>
+        arg_context = <optimized out>
+        arg_params = <optimized out>
+        arg_queryEnv = <optimized out>
+        arg_dest = <optimized out>
+        arg_qc = <optimized out>
+#72 0x00007e1aacc86750 in pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::{closure#0}<(), pgrx_pg_sys::include::pg18::standard_ProcessUtility::{closure_env#0}> (jump_buffer=0x7ffc4f1a9108) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/ffi.rs:180
+        f = pgrx_pg_sys::include::pg18::standard_ProcessUtility::{closure_env#0} {arg_pstmt: 0x5ca75c5b8c40, arg_queryString: 0x5ca75c5c43a0, arg_readOnlyTree: true, arg_context: 0, arg_params: 0x0, arg_queryEnv: 0x0, arg_dest: 0x5ca75c5c4570, arg_qc: 0x7ffc4f1ab350}
+        result = core::mem::maybe_uninit::MaybeUninit<()> {uninit: (), value: core::mem::manually_drop::ManuallyDrop<()> {value: core::mem::maybe_dangling::MaybeDangling<()> (())}}
+#73 0x00007e1aadfa1306 in cee_scape::asm_based::call_with_sigsetjmp::call_from_c_to_rust<pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::{closure_env#0}<(), pgrx_pg_sys::include::pg18::standard_ProcessUtility::{closure_env#0}>> (jbuf=0x7ffc4f1a9108, closure_env_ptr=0x7ffc4f1a94b0) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:186
+No locals.
+#74 0x00007e1aadf9586b in cee_scape::asm_based::call_with_sigsetjmp<pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl::{closure_env#0}<(), pgrx_pg_sys::include::pg18::standard_ProcessUtility::{closure_env#0}>> (savemask=false, callback=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/cee-scape-0.2.0/src/asm_based.rs:65
+        c2r = 0x5ca75c3ee85800
+        sigsetjmp = 0x5ca75c3ee8580000
+        closure_env_ptr = 0x7ffc4f1a94b0
+        jbuf_ptr = 0x7ffc4f1a9108
+        ret = 0
+        jbuf = cee_scape::glibc_compat::SigJmpBufFields {__jmp_buf: cee_scape::glibc_compat::JmpBufFields {_buf: [138653084332880, 11998119357021614248, 140721635627272, 140721635628208, 138653053096592, 1, 6447324845672951976, 6536053529465778344], _neither_send_nor_sync: core::marker::PhantomData<*const u8>}, __mask_was_saved: 0, __saved_mask: libc::unix::linux_like::linux::gnu::b64::sigset_t {__val: [0 <repeats 16 times>]}}
+        savemask = 0
+#75 0x00007e1aacd30e15 in pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary_impl<(), pgrx_pg_sys::include::pg18::standard_ProcessUtility::{closure_env#0}> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/ffi.rs:174
+        result = core::mem::maybe_uninit::MaybeUninit<()> {uninit: (), value: core::mem::manually_drop::ManuallyDrop<()> {value: core::mem::maybe_dangling::MaybeDangling<()> (())}}
+        prev_error_context_stack = 0x7ffc4f1ab6f0
+        prev_exception_stack = 0x7ffc4f1ab410
+        caller_memxct = 0x5ca75c5c42a0
+#76 pgrx_pg_sys::submodules::ffi::pg_guard_ffi_boundary<(), pgrx_pg_sys::include::pg18::standard_ProcessUtility::{closure_env#0}> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/ffi.rs:154
+No locals.
+#77 pgrx_pg_sys::include::pg18::standard_ProcessUtility (arg_pstmt=0x5ca75c5b8c40, arg_queryString=0x5ca75c5c43a0, arg_readOnlyTree=true, arg_context=0, arg_params=0x0, arg_queryEnv=0x0, arg_dest=0x5ca75c5c4570, arg_qc=0x7ffc4f1ab350) at /home/peter/.cargo-target/debug/build/pgrx-pg-sys-421a1dea02204e12/out/pg18.rs:35379
+No locals.
+#78 0x00007e1aae4e2280 in ecaz::am::ec_distann::build_gate::call_next_process_utility (pstmt=0x5ca75c5b8c40, query_string=0x5ca75c5c43a0, read_only_tree=true, context=0, params=0x0, query_env=0x0, dest=0x5ca75c5c4570, qc=0x7ffc4f1ab350) at src/am/ec_distann/build_gate.rs:706
+No locals.
+#79 0x00007e1aad0ae8ff in ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure#0} () at src/am/ec_distann/build_gate.rs:739
+        pstmt = 0x5ca75c5b8c40
+        query_string = 0x5ca75c5c43a0
+        read_only_tree = true
+        context = 0
+        params = 0x0
+        query_env = 0x0
+        dest = 0x5ca75c5c4570
+        qc = 0x7ffc4f1ab350
+#80 0x00007e1aae75cc39 in core::ops::function::FnOnce::call_once<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}, ()> () at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/ops/function.rs:250
+No locals.
+#81 0x00007e1aace56571 in core::panic::unwind_safe::{impl#23}::call_once<(), ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}> (self=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panic/unwind_safe.rs:274
+        _args = ()
+#82 0x00007e1aae97dbb7 in std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}>, ()> (data=0x7ffc4f1a9c30) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:581
+        f = core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}> (ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0} {_ref__pstmt: 0x7ffc4f1aa958, _ref__query_string: 0x7ffc4f1aa960, _ref__read_only_tree: 0x7ffc4f1aa96b, _ref__context: 0x7ffc4f1aa96c, _ref__params: 0x7ffc4f1aa970, _ref__query_env: 0x7ffc4f1aa978, _ref__dest: 0x7ffc4f1aab20, _ref__qc: 0x7ffc4f1aab28})
+        data = 0x7ffc4f1a9c30
+        data = 0x7ffc4f1a9c30
+#83 0x00007e1aae06112b in __rust_try () from /home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+No symbol table info available.
+#84 0x00007e1aae0318ec in std::panicking::catch_unwind<(), core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}>> (f=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:544
+        data_ptr = 0x7ffc4f1a9c30
+        data = std::panicking::catch_unwind::Data<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}>, ()> {f: core::mem::manually_drop::ManuallyDrop<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}>> {value: core::mem::maybe_dangling::MaybeDangling<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}>> (core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}> (ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0} {_ref__pstmt: 0x7ffc4f1aa958, _ref__query_string: 0x7ffc4f1aa960, _ref__read_only_tree: 0x7ffc4f1aa96b, _ref__context: 0x7ffc4f1aa96c, _ref__params: 0x7ffc4f1aa970, _ref__query_env: 0x7ffc4f1aa978, _ref__dest: 0x7ffc4f1aab20, _ref__qc: 0x7ffc4f1aab28}))}, r: core::mem::manually_drop::ManuallyDrop<()> {value: core::mem::maybe_dangling::MaybeDangling<()> (())}, p: core::mem::manually_drop::ManuallyDrop<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global>> {value: core::mem::maybe_dangling::MaybeDangling<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global>> (alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global> {pointer: 0x7ffc4f1aa958, vtable: 0x7ffc4f1aa960})}}
+#85 std::panic::catch_unwind<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}>, ()> (f=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panic.rs:359
+No locals.
+#86 0x00007e1aaef848cb in pgrx_pg_sys::submodules::pg_try::PgTryBuilder<(), core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}>>::execute<(), core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner::{closure_env#0}>> (self=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/pg_try.rs:140
+No locals.
+#87 0x00007e1aae4e3c54 in ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::ec_distann_build_gate_process_utility_hook_inner (pstmt=0x5ca75c5b8c40, query_string=0x5ca75c5c43a0, read_only_tree=true, context=0, params=0x0, query_env=0x0, dest=0x5ca75c5c4570, qc=0x7ffc4f1ab350) at src/am/ec_distann/build_gate.rs:752
+        previous_lock_depth = 0
+#88 0x00007e1aad0ae858 in ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure#0} () at src/am/ec_distann/build_gate.rs:720
+        pstmt = <optimized out>
+        query_string = <optimized out>
+        read_only_tree = <optimized out>
+        context = <optimized out>
+        params = <optimized out>
+        query_env = <optimized out>
+        dest = <optimized out>
+        qc = <optimized out>
+#89 0x00007e1aace594d0 in core::panic::unwind_safe::{impl#23}::call_once<(), ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}> (self=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/core/src/panic/unwind_safe.rs:274
+        _args = ()
+#90 0x00007e1aae980d4b in std::panicking::catch_unwind::do_call<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}>, ()> (data=0x7ffc4f1aac28) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:581
+        f = core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}> (ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0} {pstmt: 0x5ca75c5b8c40, query_string: 0x5ca75c5c43a0, read_only_tree: true, context: 0, params: 0x0, query_env: 0x0, dest: 0x5ca75c5c4570, qc: 0x7ffc4f1ab350})
+        data = 0x7ffc4f1aac28
+        data = 0x7ffc4f1aac28
+#91 0x00007e1aae06112b in __rust_try () from /home/peter/.pgrx/18.3/pgrx-install/lib/postgresql/ecaz.so
+No symbol table info available.
+#92 0x00007e1aae04a8dc in std::panicking::catch_unwind<(), core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}>> (f=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panicking.rs:544
+        data_ptr = 0x7ffc4f1aac28
+        data = std::panicking::catch_unwind::Data<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}>, ()> {f: core::mem::manually_drop::ManuallyDrop<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}>> {value: core::mem::maybe_dangling::MaybeDangling<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}>> (core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}> (ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0} {pstmt: 0x5ca75c5b8c40, query_string: 0x5ca75c5c43a0, read_only_tree: true, context: 0, params: 0x0, query_env: 0x0, dest: 0x5ca75c5c4570, qc: 0x7ffc4f1ab350}))}, r: core::mem::manually_drop::ManuallyDrop<()> {value: core::mem::maybe_dangling::MaybeDangling<()> (())}, p: core::mem::manually_drop::ManuallyDrop<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global>> {value: core::mem::maybe_dangling::MaybeDangling<alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global>> (alloc::boxed::Box<(dyn core::any::Any + core::marker::Send), alloc::alloc::Global> {pointer: 0x5ca75c5b8c40, vtable: 0x5ca75c5c43a0})}}
+#93 std::panic::catch_unwind<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}>, ()> (f=...) at /rustc/e408947bfd200af42db322daf0fadfe7e26d3bd1/library/std/src/panic.rs:359
+No locals.
+#94 0x00007e1aaf64c471 in pgrx_pg_sys::submodules::panic::run_guarded<core::panic::unwind_safe::AssertUnwindSafe<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}>, ()> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/panic.rs:419
+No locals.
+#95 0x00007e1aaf6f35fb in pgrx_pg_sys::submodules::panic::pgrx_extern_c_guard<ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook::{closure_env#0}, ()> (f=...) at /home/peter/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/pgrx-pg-sys-0.17.0/src/submodules/panic.rs:394
+No locals.
+#96 0x00007e1aae4e3ab8 in ecaz::am::ec_distann::build_gate::ec_distann_build_gate_process_utility_hook (pstmt=0x5ca75c5b8c40, query_string=0x5ca75c5c43a0, read_only_tree=true, context=0, params=0x0, query_env=0x0, dest=0x5ca75c5c4570, qc=0x7ffc4f1ab350) at src/am/ec_distann/build_gate.rs:722
+No locals.
+#97 0x00005ca737b35001 in PortalRunUtility (portal=portal@entry=0x5ca75c459640, pstmt=0x5ca75c5b8c40, isTopLevel=<optimized out>, setHoldSnapshot=setHoldSnapshot@entry=true, dest=dest@entry=0x5ca75c5c4570, qc=qc@entry=0x7ffc4f1ab350) at pquery.c:1153
+No locals.
+#98 0x00005ca737b354bc in FillPortalStore (portal=0x5ca75c459640, isTopLevel=<optimized out>) at ../../../src/include/nodes/nodes.h:178
+        treceiver = 0x5ca75c5c4570
+        qc = {commandTag = CMDTAG_UNKNOWN, nprocessed = 0}
+        __func__ = "FillPortalStore"
+#99 0x00005ca737b357dd in PortalRun (portal=portal@entry=0x5ca75c459640, count=9223372036854775807, isTopLevel=isTopLevel@entry=true, dest=dest@entry=0x5ca75c3c4cb8, altdest=altdest@entry=0x5ca75c3c4cb8, qc=qc@entry=0x7ffc4f1ab630) at pquery.c:760
+        _save_exception_stack = 0x7ffc4f1ab710
+        _save_context_stack = 0x7ffc4f1ab6f0
+        _local_sigjmp_buf = {{__jmpbuf = {101873877358144, -6448624716687806296, 0, 101873876749496, 0, 101873876748288, 6447324846836871336, 2292207528033185960}, __mask_was_saved = 0, __saved_mask = {__val = {101873264863058, 1787540580, 56599, 101873876748288, 9743084595227918336, 101873877366352, 101873263867333, 101873877358144, 0, 101873877366352, 9743084595227918336, 3, 101873265322543, 112, 101873265361712, 0}}}}
+        _do_rethrow = <optimized out>
+        result = <optimized out>
+        nprocessed = <optimized out>
+        saveTopTransactionResourceOwner = 0x5ca75c412808
+        saveTopTransactionContext = 0x5ca75c46dee0
+        saveActivePortal = 0x0
+        saveResourceOwner = 0x5ca75c412808
+        savePortalContext = 0x0
+        saveMemoryContext = 0x5ca75c3c4700
+        __func__ = "PortalRun"
+#100 0x00005ca737b3336d in exec_execute_message (max_rows=<optimized out>, portal_name=0x5ca75c3c4800 "") at postgres.c:2272
+        portal = 0x5ca75c459640
+        sourceText = 0x5ca75c3c4c10 "EXECUTE task222_cached_projection (ARRAY[30.0, 2.0, 0.0, 1.0]::real[])"
+        prepStmtName = 0x5ca75c3c4ca0 "s16"
+        was_logged = false
+        cmdtaglen = 7
+        dest = DestRemoteExecute
+        completed = <optimized out>
+        qc = {commandTag = CMDTAG_UNKNOWN, nprocessed = 0}
+        portalParams = 0x0
+        save_log_statement_stats = false
+        is_xact_command = false
+        msec_str = "\220\331;\\\247\\\000\000\206\242\312\067\247\\\000\000\020\000\000\000\374\177\000\000\220\331;\\\247\\\000"
+        params_data = {portalName = 0x5ca75c45d048 "", params = 0x0}
+        params_errcxt = {previous = 0x0, callback = 0x5ca7379d8a80 <ParamsErrorCallback>, arg = 0x7ffc4f1ab640}
+        receiver = 0x5ca75c3c4cb8
+        execute_is_fetch = false
+        cmdtagname = <optimized out>
+        lc = <optimized out>
+        dest = <optimized out>
+        receiver = <optimized out>
+        portal = <optimized out>
+        completed = <optimized out>
+        qc = <optimized out>
+        sourceText = <optimized out>
+        prepStmtName = <optimized out>
+        portalParams = <optimized out>
+        save_log_statement_stats = <optimized out>
+        is_xact_command = <optimized out>
+        execute_is_fetch = <optimized out>
+        was_logged = <optimized out>
+        msec_str = <optimized out>
+        params_data = <optimized out>
+        params_errcxt = <optimized out>
+        cmdtagname = <optimized out>
+        cmdtaglen = <optimized out>
+        lc = <optimized out>
+        __func__ = "exec_execute_message"
+        __errno_location = <optimized out>
+        lc__state = <optimized out>
+        stmt = <optimized out>
+        lc__state = <optimized out>
+        stmt = <optimized out>
+        __errno_location = <optimized out>
+        __errno_location = <optimized out>
+        __errno_location = <optimized out>
+        __errno_location = <optimized out>
+#101 PostgresMain (dbname=<optimized out>, username=<optimized out>) at postgres.c:4833
+        portal_name = 0x5ca75c3c4800 ""
+        max_rows = 0
+        firstchar = <optimized out>
+        input_message = {data = 0x5ca75c3c4800 "", len = 5, maxlen = 1024, cursor = 5}
+        local_sigjmp_buf = {{__jmpbuf = {3748596992, 6447324846658613416, 101873877061536, 101873263767840, 24, 101873269129440, 6447324846612476072, 2292207530550423720}, __mask_was_saved = 1, __saved_mask = {__val = {4194304, 0, 138653123275393, 256, 1305670059009, 273, 1378684503109, 34, 4, 0, 511101108348, 536870912114, 138653124897920, 16384, 138653124897920, 17472}}}}
+        send_ready_for_query = false
+        idle_in_transaction_timeout_enabled = false
+        idle_session_timeout_enabled = false
+        __func__ = "PostgresMain"
+#102 0x00005ca737b2d0d3 in BackendMain (startup_data=<optimized out>, startup_data_len=<optimized out>) at backend_startup.c:124
+        bsdata = <optimized out>
+#103 0x00005ca737a7bbf2 in postmaster_child_launch (child_type=<optimized out>, child_slot=1, startup_data=startup_data@entry=0x7ffc4f1ab920, startup_data_len=startup_data_len@entry=24, client_sock=client_sock@entry=0x7ffc4f1ab940) at launch_backend.c:290
+        pid = <optimized out>
+#104 0x00005ca737a7fa02 in BackendStartup (client_sock=0x7ffc4f1ab940) at postmaster.c:3587
+        bn = 0x5ca75c4021a8
+        pid = <optimized out>
+        startup_data = {canAcceptConnections = CAC_OK, socket_created = 840855779276297, fork_started = 840855779276298}
+        cac = <optimized out>
+        bn = <optimized out>
+        pid = <optimized out>
+        startup_data = <optimized out>
+        cac = <optimized out>
+        __func__ = "BackendStartup"
+        __errno_location = <optimized out>
+        save_errno = <optimized out>
+        __errno_location = <optimized out>
+        __errno_location = <optimized out>
+#105 ServerLoop () at postmaster.c:1702
+        s = {sock = 9, raddr = {addr = {ss_family = 1, __ss_padding = "\260(\177\000\000\001\000\000\000\000\000\000\000\000\000\000${\321c6\207\000\000\000\000\000\000\000\000\223\254\312\067\247\\\000\000Ύ\352\067\247\\\000\000\066fb3\000\000\000\000\016", '\000' <repeats 23 times>, "`\207\310\067\247\\\000\000\026\000\000\000\000\000\000\000\300Vɲ\032~\000\000\000G<\\\247\\\000\000\000\000\000\000\000\000\000", __ss_align = 101873876728480}, salen = 2}}
+        i = 0
+        now = <optimized out>
+        last_lockfile_recheck_time = 1787540578
+        last_touch_time = 1787540578
+        events = {{pos = 2, events = 2, fd = 7, user_data = 0x0}, {pos = 0, events = 0, fd = 1327151616, user_data = 0x0}, {pos = 33584, events = 0, fd = 936029331, user_data = 0x0}, {pos = 1547434656, events = 23719, fd = 940134880, user_data = 0x7ffc4f1abaa8}, {pos = 327680, events = 0, fd = -1, user_data = 0x7}, {pos = -1, events = 0, fd = 1327151784, user_data = 0xffffffffffffff80}, {pos = 1327151799, events = 32764, fd = 0, user_data = 0x5ca75c40cd10}, {pos = -1305182953, events = 32282, fd = 1, user_data = 0x7ffc4f1abb0c}, {pos = 1327151888, events = 32764, fd = 1327151796, user_data = 0x0}, {pos = 1547750673, events = 23719, fd = 110, user_data = 0x873663d17b240000}, {pos = 0, events = 0, fd = 1327152244, user_data = 0x7ffc4f1ac290}, {pos = -1305179237, events = 32282, fd = 0, user_data = 0x100000000000000}, {pos = 1327153936, events = 32764, fd = 2065956864, user_data = 0x5ca75c3c64d8}, {pos = 1327152224, events = 32764, fd = 1547724216, user_data = 0x7ffc4f1ac290}, {pos = 1327152224, events = 32764, fd = -1305429532, user_data = 0x100000001}, {pos = 1, events = 0, fd = 1327153912, user_data = 0x0}, {pos = 0, events = 3, fd = 0, user_data = 0x3831323233}, {pos = 136, events = 544, fd = 1327152304, user_data = 0x7e1a00000000}, {pos = -1423447808, events = 32282, fd = 1327152464, user_data = 0x0}, {pos = 1547740392, events = 23719, fd = 1, user_data = 0x5ca75c40a4e8}, {pos = 938189977, events = 23719, fd = 936276503, user_data = 0x5ca75c4065f0}, {pos = 0, events = 0, fd = 0, user_data = 0x702d747365742f74}, {pos = 1952539751, events = 1932406625, fd = 1397182510, user_data = 0x7ffc4f1abc60}, {pos = 0, events = 0, fd = 0, user_data = 0x0}, {pos = 136, events = 0, fd = 544, user_data = 0x1000}, {pos = 65536, events = 0, fd = -1295427904, user_data = 0x2}, {pos = 131072, events = 0, fd = 120, user_data = 0x4b8}, {pos = 18616, events = 0, fd = 0, user_data = 0x0}, {pos = 10, events = 0, fd = 0, user_data = 0x1000000}, {pos = 0, events = 0, fd = 0, user_data = 0x0}, {pos = 0, events = 0, fd = 0, user_data = 0x600000001}, {pos = 0, events = 1, fd = 2, user_data = 0x100000000}, {pos = 3, events = 0, fd = 0, user_data = 0x0}, {pos = 0, events = 0, fd = 0, user_data = 0x0}, {pos = 0, events = 0, fd = 0, user_data = 0x0}, {pos = 0, events = 0, fd = 0, user_data = 0x0}, {pos = 0, events = 0, fd = 0, user_data = 0x7ffc4f1abd50}, {pos = 1024, events = 0, fd = 1547442704, user_data = 0x7e1ab227eb7d <_IO_file_doallocate+173>}, {pos = 2096, events = 0, fd = 2575263, user_data = 0x1}, {pos = 33152, events = 1000, fd = 1000, user_data = 0x0}, {pos = 0, events = 0, fd = 4096, user_data = 0x0}, {pos = 0, events = 0, fd = 74751947, user_data = 0x6a8bb462}, {pos = 533979686, events = 118, fd = 32816, user_data = 0x1fd3e226}, {pos = 0, events = 0, fd = 0, user_data = 0x0}, {pos = 513, events = 0, fd = 2052, user_data = 0x40}, {pos = 8, events = 0, fd = 1, user_data = 0x780000007c}, {pos = 118, events = 155, fd = 2065956864, user_data = 0x5ca75c3c1a10}, {pos = -1304318848, events = 32282, fd = 32816, user_data = 0x802}, {pos = 936446047, events = 23719, fd = 937855008, user_data = 0x5ca737e68000}, {pos = -1305849310, events = 32282, fd = 0, user_data = 0x7ffc4f1abfb0}, {pos = 32768, events = 0, fd = 8, user_data = 0x5ca75c3c1a10}, {pos = -1305582901, events = 32282, fd = 2096, user_data = 0x274721}, {pos = 2, events = 0, fd = 16832, user_data = 0x20330}, {pos = 1547734224, events = 23719, fd = -1304318848, user_data = 0x7e1ab22a2e89}, {pos = 8, events = 0, fd = 1787514498, user_data = 0x133ac5d2a}, {pos = 1785272430, events = 0, fd = 648894291, user_data = 0x873663d17b240000}, {pos = 648894291, events = 0, fd = -128, user_data = 0x0}, {pos = 1547734240, events = 23719, fd = 936445942, user_data = 0x5ca737e686d7}, {pos = 937854676, events = 23719, fd = -1305852437, user_data = 0x5ca75c40a4f0}, {pos = -1304318752, events = 32282, fd = 7, user_data = 0x5ca75c3c6710}, {pos = 8, events = 99, fd = 4096, user_data = 0x7ffc4f1abf00}, {pos = -641385727, events = 661275146, fd = 271, user_data = 0x1030}, {pos = 64, events = 0, fd = 257, user_data = 0x8}, {pos = 1, events = 0, fd = 0, user_data = 0x770000007c}}
+        nevents = <optimized out>
+        __func__ = "ServerLoop"
+#106 0x00005ca737a813e7 in PostmasterMain (argc=argc@entry=12, argv=argv@entry=0x5ca75c3bd760) at postmaster.c:1400
+        opt = <optimized out>
+        status = <optimized out>
+        userDoption = <optimized out>
+        listen_addr_saved = true
+        output_config_variable = <optimized out>
+        __func__ = "PostmasterMain"
+#107 0x00005ca737750cd0 in main (argc=12, argv=0x5ca75c3bd760) at main.c:227
+        do_check_root = <optimized out>
+        dispatch_option = <optimized out>
+[Inferior 1 (process 880607) detached]
