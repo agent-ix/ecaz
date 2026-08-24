@@ -1,8 +1,9 @@
 # Task 238: ec_distann Retry Snapshot Use-After-Free
 
-Status: **fix implemented on branch `plan/distann-materialization-followups`
-(`010a0accc`); regression test and main landing outstanding** (2026-08-24).
-Priority: **P0 correctness — a live crash on `origin/main`.**
+Status: **fix (`010a0accc`) and regression test landed on `task222-recovery`;
+before/after proof in `reviews/task-238/001-retry-snapshot-uaf/`; main landing
+outstanding** (2026-08-24). Priority: **P0 correctness — a live crash on
+`origin/main`.**
 
 Origin: found by the Task 222 coder while root-causing eight SIGSEGV runs in
 `reviews/task-222/002-contract-and-correctness/artifacts/gdb-backtrace.log`.
@@ -33,16 +34,23 @@ Introduced by `79afb0d82` "Reopen guards for every owner retry path"
 
 ## Blast radius
 
-The retry path is entered only when the initial graph lookup returns
+The retry path is entered when the initial graph lookup returns
 `OwnedRecordMissing` — a node the traversal expects is not visible under the
-current snapshot, i.e. **a read racing a concurrent owner write or build**.
+current snapshot.
 
-- Static benchmark shapes (build, then query) essentially never enter it,
-  which is why it survived to main; existing benchmark numbers are most
-  likely unaffected, but that must be stated, not assumed.
-- Under concurrent DML the failure is a backend crash, or — if the freed
-  snapshot still holds plausible bytes — **wrong visibility answers** rather
-  than a crash. The wrong-answer case must be assessed explicitly.
+**Corrected 2026-08-24 by the packet 001 runs.** The original wording here said
+this requires "a read racing a concurrent owner write or build." It does not.
+The three-owner PG18 fixture reaches the path and segfaults **without any
+external concurrency** (`artifacts/pg18-forced-retry-without-fix.log`, crash at
+the Task 222 cached-plan `EXECUTE`), so ordinary multi-owner reads can take it
+whenever an owned record is not yet visible to the scan's snapshot.
+
+- Benchmark exposure still needs an explicit statement rather than an
+  assumption. The published Task 222 matrices ran with the fix present
+  (`c9f79be4a` postdates `010a0accc`), so those numbers are not in question.
+- The failure is a backend crash, or — if the freed snapshot still holds
+  plausible bytes — **wrong visibility answers** rather than a crash. The
+  wrong-answer case must still be assessed explicitly.
 
 ## Goal
 
