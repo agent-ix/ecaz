@@ -909,15 +909,12 @@ unsafe fn eval_query_vector(
     if expr_state.is_null() {
         pgrx::error!("EcDistannDistributedScan missing initialized ORDER BY query expression");
     }
-    let eval = (*expr_state).evalfunc.unwrap_or_else(|| {
-        pgrx::error!("EcDistannDistributedScan ORDER BY query expression has no evaluator")
-    });
     let econtext = (*scan_state).ps.ps_ExprContext;
     if econtext.is_null() {
         pgrx::error!("EcDistannDistributedScan missing expression context for the ORDER BY query");
     }
     let mut is_null = false;
-    let datum = eval(expr_state, econtext, &mut is_null);
+    let datum = pg_sys::ExecEvalExprSwitchContext(expr_state, econtext, &mut is_null);
     if is_null {
         pgrx::error!("EcDistannDistributedScan ORDER BY query must not be NULL");
     }
