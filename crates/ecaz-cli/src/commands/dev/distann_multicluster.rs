@@ -8888,6 +8888,7 @@ async fn drive_physical_fixture(
         .await?;
     let publish_fault_lines = if !args.skip_fault_drills
         && !args.read_rpc_fault_matrix
+        && !args.tls_security_matrix
         && !args.physical_benchmark
         && !args.coordinator_outside_roster
         && owners.len() >= 3
