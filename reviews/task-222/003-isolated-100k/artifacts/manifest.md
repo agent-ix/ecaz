@@ -12,8 +12,9 @@
 - Runner: `/home/peter/.cargo-target/release/ecaz bench suite`
 - Command: `ecaz bench suite run --config reviews/task-222/003-isolated-100k/artifacts/task222-payload-projection-100k.json --log-file reviews/task-222/003-isolated-100k/artifacts/suite-final.log`
 - Run directory: `/home/peter/.ecaz/clusters/task222-payload-projection-100k`
-  (external to the repository; retained temporarily for packet 004's attested
-  100k reuse and removed after the matrix)
+  (external to the repository; retained temporarily for a proposed packet 004
+  reuse, rejected because the correctness drill mutates the fixture, and
+  removed after packet 004 rebuilt 100k fresh)
 - Suite result: one completed, zero failed/skipped/missing/stale; duration
   1,385,945 ms
 - Decision: ADVANCE; see `decision.md`

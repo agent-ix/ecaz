@@ -17,25 +17,27 @@ payload, attribution, storage, and topology matrix for implementation
 The candidate wins at every scale with unchanged recall and byte-identical
 ordered predictions:
 
-- 10k: 15.7 to 9.52 ms/scan (-39.36%);
+- 10k: 14.7 to 8.76 ms/scan (-40.41%);
 - 50k: 16.8 to 10.8 ms/scan (-35.71%);
 - 100k: 17.4 to 11.6 ms/scan (-33.33%).
 
 The standard query's exact mask is id-only at every scale. Payload bytes fall
-by at least 99.9459%, owner payload SQL work falls by 93.30%-94.21%, tails
+by at least 99.9459%, owner payload SQL work falls by 93.30%-94.09%, tails
 improve, and storage is arm-identical. Every topology has three owners, zero
 non-owned records, zero orphan vectors, no coordinator-resident unsharded
 payload, bounded graph amplification, and one immutable generation per A/B.
 The candidate is NFR-021 conforming and the comparisons satisfy NFR-022.
 
-The suite executed 10k and 50k in its first invocation. Its proposed 100k
-fixture reuse was rejected before measurement because the earlier correctness
-run had intentionally executed a routed-delete drill. The final 100k row was
-therefore rebuilt and measured on a fresh external fixture with `--only`; its
-manifest reports success with no missing/stale artifacts. No N-1 fixture was
-used as benchmark evidence.
+The packet now contains one successful fresh `--only` suite manifest and
+normalized results JSONL per scale. A completion audit reran 10k and 50k after
+the original combined invocation's later 100k reuse rejection prevented a
+single successful aggregate manifest. The published 10k/50k values come from
+those reruns; the 100k row was likewise rebuilt and measured fresh. Every
+manifest reports one success, two intentional skips, and no failed,
+missing, or stale artifacts. No N-1 fixture was used as benchmark evidence.
 
-`artifacts/decision.md` contains the decision table and
-`artifacts/manifest.md` routes every cited value to packet-local evidence.
+`artifacts/decision.md` contains the decision table,
+`artifacts/completion-audit.md` maps every acceptance criterion to evidence,
+and `artifacts/manifest.md` routes every cited value to packet-local evidence.
 Task 222 implementation and evidence are complete; packets 002-004 remain
 review-open for an outside verdict.
