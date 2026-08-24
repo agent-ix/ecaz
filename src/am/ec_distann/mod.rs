@@ -39,6 +39,8 @@ mod gateway_copy;
 mod generation_catalog;
 mod generation_descriptor;
 mod generation_read;
+#[cfg(feature = "pg_test")]
+pub(crate) use self::generation_read::read_rpc_probe_for_test;
 mod generation_store;
 mod handoff;
 #[cfg(any(test, feature = "pg_test"))]

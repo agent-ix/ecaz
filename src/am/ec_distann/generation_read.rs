@@ -2657,6 +2657,203 @@ fn expand_physical_nodes_impl(
         })
 }
 
+#[cfg(feature = "pg_test")]
+fn maybe_delay_read_rpc_for_test(rpc: &str) {
+    let Some(delay_ms) = super::options::debug_read_rpc_delay_ms(rpc) else {
+        return;
+    };
+    let delay_seconds = delay_ms as f64 / 1_000.0;
+    Spi::run(&format!("SELECT pg_sleep({delay_seconds})")).unwrap_or_else(|error| {
+        DistannExpandError::Internal(format!(
+            "Task 234 {rpc} delay fault failed: {error}"
+        ))
+        .raise()
+    });
+}
+
+#[cfg(not(feature = "pg_test"))]
+#[inline]
+fn maybe_delay_read_rpc_for_test(_rpc: &str) {}
+
+#[cfg(feature = "pg_test")]
+fn finish_read_rpc_probe_batch<T>(
+    rpc: &str,
+    results: Vec<Result<Vec<T>, DistannExpandError>>,
+) -> Result<i64, DistannExpandError> {
+    if results.len() < 2 {
+        return Err(DistannExpandError::Internal(format!(
+            "Task 234 {rpc} probe requires at least two remote owners"
+        )));
+    }
+    if let Some(first_error) = results.iter().find_map(|result| result.as_ref().err()) {
+        if results.iter().any(Result::is_ok) {
+            return Err(DistannExpandError::Internal(format!(
+                "Task 234 {rpc} probe observed a partial successful sibling response"
+            )));
+        }
+        return Err(first_error.clone());
+    }
+    results.into_iter().try_fold(0_i64, |count, result| {
+        let rows = result.expect("error results returned above");
+        i64::try_from(rows.len())
+            .ok()
+            .and_then(|rows| count.checked_add(rows))
+            .ok_or_else(|| {
+                DistannExpandError::Internal(format!("Task 234 {rpc} probe row-count overflow"))
+            })
+    })
+}
+
+/// Test-only entry point that exercises the five Task 234 transport callers
+/// against a real physical generation. The owning PG18 fault fixture selects
+/// and parks one endpoint with the pg_test-only delay GUC above; this function
+/// deliberately retains the production batching, pooling, and error paths.
+#[cfg(feature = "pg_test")]
+pub(crate) fn read_rpc_probe_for_test(
+    index_oid: pg_sys::Oid,
+    rpc: &str,
+    target_node_id: u32,
+) -> Result<i64, DistannExpandError> {
+    let scan = PhysicalGenerationScan::open(index_oid).map_err(DistannExpandError::Internal)?;
+    let head = scan.head_index.as_ref().ok_or_else(|| {
+        DistannExpandError::Internal("Task 234 probe found no persisted head".to_owned())
+    })?;
+    let members = head.members();
+    let owner_count = scan.routes.len();
+    let buckets = super::placement::group_by_owning_node(
+        members,
+        owner_count,
+        scan.descriptor.placement_hash_version,
+    );
+    let owned_by_route = buckets
+        .iter()
+        .map(|bucket| bucket.iter().map(|(_, vec_id)| *vec_id).collect::<Vec<_>>())
+        .collect::<Vec<_>>();
+
+    match rpc {
+        "physical_head_search" => {
+            let query = vec![0.0_f32; usize::from(scan.descriptor.dimensions)];
+            let requests = scan
+                .routes
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, route)| {
+                    let conninfo = route.conninfo.as_deref()?;
+                    (!owned_by_route[ordinal].is_empty()).then_some(
+                        super::remote_transport::DistannPhysicalHeadRequest {
+                            conninfo,
+                            index_regclass: &route.remote_index_regclass,
+                            epoch_fingerprint: &scan.fingerprint,
+                            query: &query,
+                            member_vec_ids: &owned_by_route[ordinal],
+                            search_width: 8,
+                            seed_count: 4,
+                            build_list_size: super::ECDISTANN_DEFAULT_BUILD_LIST_SIZE,
+                            alpha: super::ECDISTANN_DEFAULT_ALPHA,
+                            head_policy: head.policy() as i32,
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            finish_read_rpc_probe_batch(
+                rpc,
+                super::remote_transport::remote_physical_head_search_batch(&requests),
+            )
+        }
+        "crown_code_export" => {
+            let requests = scan
+                .routes
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, route)| {
+                    let conninfo = route.conninfo.as_deref()?;
+                    (!owned_by_route[ordinal].is_empty()).then_some(
+                        super::remote_transport::DistannCrownCodeRequest {
+                            conninfo,
+                            index_regclass: &route.remote_index_regclass,
+                            epoch_fingerprint: &scan.fingerprint,
+                            member_vec_ids: &owned_by_route[ordinal],
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            finish_read_rpc_probe_batch(
+                rpc,
+                super::remote_transport::remote_crown_code_batch(&requests),
+            )
+        }
+        "gateway_routing_export" => {
+            let requests = scan
+                .routes
+                .iter()
+                .enumerate()
+                .filter_map(|(ordinal, route)| {
+                    let conninfo = route.conninfo.as_deref()?;
+                    (!owned_by_route[ordinal].is_empty()).then_some(
+                        super::remote_transport::DistannGatewayRoutingRequest {
+                            conninfo,
+                            index_regclass: &route.remote_index_regclass,
+                            epoch_fingerprint: &scan.fingerprint,
+                            member_vec_ids: &owned_by_route[ordinal],
+                        },
+                    )
+                })
+                .collect::<Vec<_>>();
+            finish_read_rpc_probe_batch(
+                rpc,
+                super::remote_transport::remote_gateway_routing_batch(&requests),
+            )
+        }
+        "head_shard_export" | "head_shard_import" => {
+            let (ordinal, route) = scan
+                .routes
+                .iter()
+                .enumerate()
+                .find(|(_, route)| route.node_id == target_node_id)
+                .ok_or_else(|| {
+                    DistannExpandError::BadInput(format!(
+                        "Task 234 probe target node {target_node_id} is absent"
+                    ))
+                })?;
+            let conninfo = route.conninfo.as_deref().ok_or_else(|| {
+                DistannExpandError::BadInput(format!(
+                    "Task 234 probe target node {target_node_id} is local"
+                ))
+            })?;
+            let owned = &owned_by_route[ordinal];
+            if owned.is_empty() {
+                return Err(DistannExpandError::Internal(format!(
+                    "Task 234 probe target node {target_node_id} owns no head members"
+                )));
+            }
+            let shard = super::remote_transport::remote_head_shard_export(
+                conninfo,
+                &route.remote_index_regclass,
+                &scan.fingerprint,
+                owned,
+            )?;
+            if rpc == "head_shard_export" {
+                return i64::try_from(shard.len()).map_err(|_| {
+                    DistannExpandError::Internal(
+                        "Task 234 head-shard export row-count overflow".to_owned(),
+                    )
+                });
+            }
+            super::remote_transport::remote_head_shard_import(
+                conninfo,
+                &route.remote_index_regclass,
+                &scan.fingerprint,
+                i32::try_from(ordinal).unwrap_or(i32::MAX),
+                &shard,
+                i32::from(scan.descriptor.dimensions),
+            )
+        }
+        other => Err(DistannExpandError::BadInput(format!(
+            "Task 234 probe does not recognize RPC {other:?}"
+        ))),
+    }
+}
+
 /// Export this owner's head-shard landmarks so another node can serve the shard
 /// as a replica (Task 210 P2b, `DISTRIBUTEDANN` §4.1).
 ///
@@ -2669,6 +2866,7 @@ fn ec_distann_head_shard_export(
     epoch_fingerprint: Vec<u8>,
     member_vec_ids: Vec<i64>,
 ) -> TableIterator<'static, (name!(vec_id, i64), name!(vector, Vec<f32>))> {
+    maybe_delay_read_rpc_for_test("head_shard_export");
     let members = member_vec_ids
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
@@ -2706,6 +2904,7 @@ fn ec_distann_gateway_routing_export(
         name!(neighbor_codes, Vec<u8>),
     ),
 > {
+    maybe_delay_read_rpc_for_test("gateway_routing_export");
     let members = member_vec_ids
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
@@ -2743,6 +2942,7 @@ fn ec_distann_crown_code_export(
     epoch_fingerprint: Vec<u8>,
     member_vec_ids: Vec<i64>,
 ) -> TableIterator<'static, (name!(vec_id, i64), name!(search_code, Vec<u8>))> {
+    maybe_delay_read_rpc_for_test("crown_code_export");
     let members = member_vec_ids
         .iter()
         .map(|value| u64::from_le_bytes(value.to_le_bytes()))
@@ -2921,6 +3121,7 @@ fn ec_distann_head_shard_import(
     flat_vectors: Vec<f32>,
     dimensions: i32,
 ) -> i64 {
+    maybe_delay_read_rpc_for_test("head_shard_import");
     let dims = usize::try_from(dimensions).unwrap_or(0);
     if dims == 0 || flat_vectors.len() != vec_ids.len().saturating_mul(dims) {
         DistannExpandError::BadInput(
@@ -2957,6 +3158,7 @@ fn ec_distann_head_search_physical(
     alpha: f32,
     head_policy: i32,
 ) -> TableIterator<'static, (name!(vec_id, i64), name!(dist, f32))> {
+    maybe_delay_read_rpc_for_test("physical_head_search");
     let query_digest = physical_query_digest(&query)
         .map_err(DistannExpandError::BadInput)
         .unwrap_or_else(|error| error.raise());
