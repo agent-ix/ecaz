@@ -3,7 +3,7 @@
 Status: **implementation and required 10k/50k/100k evidence complete; packets
 002-004 review-open** (2026-08-23). Priority: P0 latency. Candidate retained:
 the exact id-only mask preserves recall, ordered-result identity, and storage
-while improving warm mean latency by 33.33%-39.36%. Plan revisions applied
+while improving warm mean latency by 33.33%-40.41%. Plan revisions applied
 against `reviews/task-222/001-plan/feedback/2026-08-23-01-reviewer.md`;
 closeout request: `reviews/task-222/004-full-scale-decision/request.md`.
 
@@ -173,8 +173,8 @@ confirms the candidate at every scale:
 
 | Scale | Recall control / candidate | Warm mean control -> candidate | Payload bytes/scan control -> candidate |
 | --- | --- | --- | --- |
-| 10k | 0.9990 / 0.9990 | 15.7 -> 9.52 ms (-39.36%) | 121,624.72 -> 65.80 |
-| 50k | 0.9540 / 0.9540 | 16.8 -> 10.8 ms (-35.71%) | 123,842.80 -> 67.00 |
+| 10k | 0.9990 / 0.9990 | 14.7 -> 8.76 ms (-40.41%) | 121,624.72 -> 65.80 |
+| 50k | 0.9545 / 0.9545 | 16.8 -> 10.8 ms (-35.71%) | 123,842.80 -> 67.00 |
 | 100k | 0.9290 / 0.9290 | 17.4 -> 11.6 ms (-33.33%) | 123,103.44 -> 66.60 |
 
 Each scale has byte-identical ordered predictions, arm-identical storage, three
