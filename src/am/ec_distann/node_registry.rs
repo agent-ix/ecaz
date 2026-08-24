@@ -6,6 +6,11 @@
 //! locator spellings, or connection material. A later begin-build transaction
 //! copies these rows into immutable build-specific private bindings.
 
+#[cfg(feature = "pg_test")]
+use std::cell::RefCell;
+#[cfg(feature = "pg_test")]
+use std::collections::HashMap;
+
 use pgrx::datum::Uuid;
 use pgrx::{pg_extern, pg_sys, PgRelation, Spi};
 use sha2::{Digest, Sha256};
@@ -28,6 +33,12 @@ struct ControlRegistrationIdentity {
     compatibility_digest: [u8; 32],
     endpoint_identity: String,
     canonical_index_regclass: String,
+}
+
+#[cfg(feature = "pg_test")]
+thread_local! {
+    static TEST_CONNINFO_SECRET_OVERRIDES: RefCell<HashMap<String, String>> =
+        RefCell::new(HashMap::new());
 }
 
 fn validate_secret_reference(value: &str) -> Result<(), String> {
@@ -135,6 +146,21 @@ pub(crate) fn resolve_conninfo_secret(
     conninfo_secret_name: &str,
 ) -> Result<ResolvedConninfoSecret, String> {
     validate_secret_reference(conninfo_secret_name)?;
+    #[cfg(feature = "pg_test")]
+    if let Some(raw_conninfo) = TEST_CONNINFO_SECRET_OVERRIDES
+        .with(|overrides| overrides.borrow().get(conninfo_secret_name).cloned())
+    {
+        if raw_conninfo.is_empty() {
+            return Err(
+                "EC_NODE_DESCRIPTOR secret_empty: conninfo secret resolved to an empty value"
+                    .to_owned(),
+            );
+        }
+        return Ok(resolved_conninfo_secret(
+            Some(conninfo_secret_name),
+            raw_conninfo,
+        ));
+    }
     let key = crate::am::spire_remote_conninfo_secret_provider_lookup_key(conninfo_secret_name)
         .map_err(|_| {
             "EC_NODE_DESCRIPTOR secret_invalid: conninfo secret reference is invalid".to_owned()
@@ -185,11 +211,9 @@ fn resolved_conninfo_secret(
 fn ec_distann_test_set_conninfo_secret(conninfo_secret_name: String, conninfo: String) {
     validate_secret_reference(&conninfo_secret_name)
         .unwrap_or_else(|error| pgrx::error!("{error}"));
-    let key = crate::am::spire_remote_conninfo_secret_provider_lookup_key(&conninfo_secret_name)
-        .unwrap_or_else(|_| pgrx::error!("EC_NODE_DESCRIPTOR: invalid test secret reference"));
-    // SAFETY: pg_test invokes this before the backend initializes any transport
-    // worker; the value is process-local to that isolated test backend.
-    unsafe { std::env::set_var(key, conninfo) };
+    TEST_CONNINFO_SECRET_OVERRIDES.with(|overrides| {
+        overrides.borrow_mut().insert(conninfo_secret_name, conninfo);
+    });
 }
 
 fn parse_uuid_text(value: &str) -> Result<Uuid, String> {
@@ -815,5 +839,32 @@ mod tests {
         for forbidden in ["DISTANN_NODE_TWO", "db.example", "alice", "first"] {
             assert!(!debug.contains(forbidden));
         }
+    }
+
+    #[cfg(feature = "pg_test")]
+    #[test]
+    fn pg_test_secret_override_is_backend_local_and_rotation_aware() {
+        TEST_CONNINFO_SECRET_OVERRIDES.with(|overrides| {
+            overrides.borrow_mut().insert(
+                "DISTANN_NODE_TWO".to_owned(),
+                "host=127.0.0.1 user=first sslmode=disable".to_owned(),
+            );
+        });
+        let first = resolve_conninfo_secret("DISTANN_NODE_TWO").unwrap();
+        TEST_CONNINFO_SECRET_OVERRIDES.with(|overrides| {
+            overrides.borrow_mut().insert(
+                "DISTANN_NODE_TWO".to_owned(),
+                "host=127.0.0.1 user=second sslmode=disable".to_owned(),
+            );
+        });
+        let rotated = resolve_conninfo_secret("DISTANN_NODE_TWO").unwrap();
+        TEST_CONNINFO_SECRET_OVERRIDES.with(|overrides| overrides.borrow_mut().clear());
+
+        assert_eq!(
+            first.secret_identity_fingerprint(),
+            rotated.secret_identity_fingerprint()
+        );
+        assert_ne!(first.security_fingerprint(), rotated.security_fingerprint());
+        assert_eq!(rotated.conninfo(), "host=127.0.0.1 user=second sslmode=disable");
     }
 }
