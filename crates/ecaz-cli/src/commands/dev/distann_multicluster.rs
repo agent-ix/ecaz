@@ -1798,6 +1798,14 @@ fn append_sharded_head_guc(
     }
 }
 
+fn diagnostic_sharded_head_search_setting(local_head: bool) -> &'static str {
+    if local_head {
+        "off"
+    } else {
+        "on"
+    }
+}
+
 /// Task 210 P3: the TRAV-30 gateway copy capacity is a coordinator session
 /// GUC on the physical arm; population happens once per cached epoch at scan
 /// open, bounded by this capacity.
@@ -6437,7 +6445,7 @@ async fn run_physical_benchmarks(
                         } else {
                             "off"
                         },
-                        if args.sharded_head { "on" } else { "off" },
+                        diagnostic_sharded_head_search_setting(args.local_head),
                     ))
                     .await
                     .wrap_err("configuring coordinator for Task 185 gateway trace")?;
@@ -6509,7 +6517,7 @@ async fn run_physical_benchmarks(
                         } else {
                             "off"
                         },
-                        if args.sharded_head { "on" } else { "off" },
+                        diagnostic_sharded_head_search_setting(args.local_head),
                     ))
                     .await
                     .wrap_err("configuring coordinator for Task 227 query trace")?;
@@ -6593,7 +6601,7 @@ async fn run_physical_benchmarks(
                         } else {
                             "off"
                         },
-                        if args.sharded_head { "on" } else { "off" },
+                        diagnostic_sharded_head_search_setting(args.local_head),
                     ))
                     .await
                     .wrap_err("configuring coordinator for Task 185 isolated gateway trace")?;
@@ -6682,7 +6690,7 @@ async fn run_physical_benchmarks(
                         } else {
                             "off"
                         },
-                        if args.sharded_head { "on" } else { "off" },
+                        diagnostic_sharded_head_search_setting(args.local_head),
                     ))
                     .await
                     .wrap_err("configuring coordinator for Task 185 arbitrary-head trace")?;
@@ -11996,6 +12004,12 @@ mod tests {
             "",
         );
         assert!(sql.contains("ORDER BY id OFFSET 200 LIMIT 200"));
+    }
+
+    #[test]
+    fn diagnostic_replays_match_the_shipped_sharded_head_default() {
+        assert_eq!(diagnostic_sharded_head_search_setting(false), "on");
+        assert_eq!(diagnostic_sharded_head_search_setting(true), "off");
     }
 
     fn provenance(
