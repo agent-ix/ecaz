@@ -78,15 +78,15 @@ cargo test --lib remote_transport::tests \
   `c55844a4728ce15048ad49fca91e239036c3d6ca2be5d950c3bd7e3abad3b5de`.
 - `secure-release-matrix-console.log` — full clean-SHA fixture transcript and
   preflight; SHA-256
-  `f4ed3968395a55b9263723ae9e34ab2467993994de178d5c3f8e3e0b5eb60521`.
+  `6f2201f6e5fc533c14697cceff18478dc63318a523a0b941ec713668490ff410`.
 - `cargo-pgrx-install-pg18-ssl-pg-test-release.log` — SSL PG18 release install;
   SHA-256
-  `a9e8a8782c2f08de2a7700f654322c5af37cefe7bb33e23c18d894dcd844867e`.
+  `a09e09da93cee97d2a791356fedb14268ec5916801ef265e56638abf11f2d414`.
 - `cargo-build-ecaz-cli.log` — clean-head CLI build; SHA-256
-  `d1a7616aba764213d0e121820e08f8171e0283c586421868d279fd487f677056`.
+  `a54a63f478122527149440790c25985407de76281f5e75d75bf9fdad497096b7`.
 - `cargo-test-remote-transport.log` — focused current-head unit results;
   SHA-256
-  `978e05a880be4defa0619d198bd4a0ab177398445cc1c722e3c29b1b97e326ca`.
+  `6511133ecfa57c3be930ea10cf1285d491f796798e0f8950745253cab0ff077c`.
 
 The final packet deliberately excludes accumulated PostgreSQL logs from failed
 fixture-development attempts. The compact matrix and final console above are
