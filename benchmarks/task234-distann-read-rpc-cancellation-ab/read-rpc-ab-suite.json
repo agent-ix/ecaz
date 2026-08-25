@@ -180,6 +180,7 @@
       "queries": 200,
       "top_k": 10,
       "graph_degree": 32,
+      "seed_strategy": "persisted_head",
       "head_index_cap": 4096,
       "beam_width": 4,
       "candidate_heap_limit": 32,
