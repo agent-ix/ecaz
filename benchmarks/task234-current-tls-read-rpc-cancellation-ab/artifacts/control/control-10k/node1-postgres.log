@@ -1,0 +1,15 @@
+2026-08-25 10:21:10.630 PDT [117129] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-25 10:21:10.644 PDT [117129] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-25 10:21:10.644 PDT [117129] LOG:  listening on IPv4 address "127.0.0.1", port 44410
+2026-08-25 10:21:10.648 PDT [117129] LOG:  listening on IPv4 address "127.0.0.2", port 44410
+2026-08-25 10:21:10.654 PDT [117135] LOG:  database system was shut down at 2026-08-25 10:21:08 PDT
+2026-08-25 10:21:10.665 PDT [117129] LOG:  database system is ready to accept connections
+2026-08-25 10:22:19.946 PDT [118387] ERROR:  ec_distann physical aminsert failed: EC_FAULT_INJECTED: physical insert failed after graph append before backlinks
+2026-08-25 10:22:19.946 PDT [118387] STATEMENT:  SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,'00000000-0000-4000-8000-000000000501',(SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), encode_to_ecvector((SELECT array_agg((component / norm)::real ORDER BY d) FROM (SELECT d, component, sqrt(sum(component * component) OVER ()) AS norm FROM (SELECT d, (sin((501) * 0.017 * (d + 1)) + cos((501) * 0.0031 * (d + 1)))::double precision AS component FROM generate_series(0, 16 - 1) AS d) raw) normalized), 4, 42));
+2026-08-25 10:22:45.053 PDT [117129] LOG:  received fast shutdown request
+2026-08-25 10:22:45.059 PDT [117129] LOG:  aborting any active transactions
+2026-08-25 10:22:45.061 PDT [117129] LOG:  background worker "logical replication launcher" (PID 117138) exited with exit code 1
+2026-08-25 10:22:45.072 PDT [117133] LOG:  shutting down
+2026-08-25 10:22:45.078 PDT [117133] LOG:  checkpoint starting: shutdown immediate
+2026-08-25 10:22:45.536 PDT [117133] LOG:  checkpoint complete: wrote 15574 buffers (95.1%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 13 recycled; write=0.106 s, sync=0.290 s, total=0.465 s; sync files=311, longest=0.093 s, average=0.001 s; distance=211697 kB, estimate=211697 kB; lsn=0/E610D30, redo lsn=0/E610D30
+2026-08-25 10:22:45.564 PDT [117129] LOG:  database system is shut down
