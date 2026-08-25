@@ -68,6 +68,7 @@ enum RemoteAwaitError<E> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RemoteWriteOutcome {
     DefinitelyNotApplied,
+    DefinitelyApplied,
     OutcomeUnknown,
 }
 
@@ -75,7 +76,42 @@ impl RemoteWriteOutcome {
     fn label(self) -> &'static str {
         match self {
             Self::DefinitelyNotApplied => "definitely_not_applied",
+            Self::DefinitelyApplied => "definitely_applied",
             Self::OutcomeUnknown => "outcome_unknown",
+        }
+    }
+}
+
+fn normalized_debug_write_phase(position: &str, phase: &str) -> String {
+    format!("{position}_{}_error", phase.replace(' ', "_"))
+}
+
+fn injected_write_failure(phase: &str, outcome: RemoteWriteOutcome) -> RemoteWriteFailure {
+    RemoteWriteFailure {
+        message: format!(
+            "EC_REMOTE_WRITE: phase={phase} outcome={} failure=injected_task235_fault; connection evicted",
+            outcome.label()
+        ),
+        outcome,
+    }
+}
+
+async fn maybe_pause_debug_write_phase(phase: &str) -> Result<(), RemoteWriteFailure> {
+    let Some(delay_ms) = super::options::debug_write_fault_delay_ms(phase) else {
+        return Ok(());
+    };
+    let delay = tokio::time::sleep(Duration::from_millis(delay_ms));
+    let interrupt = postgres_interrupt_signal();
+    match futures_util::future::select(Box::pin(delay), Box::pin(interrupt)).await {
+        futures_util::future::Either::Left(_) => Ok(()),
+        futures_util::future::Either::Right(_) => {
+            mark_transport_interrupt_observed();
+            Err(RemoteWriteFailure {
+                message: format!(
+                    "EC_REMOTE_WRITE: phase={phase} outcome=outcome_unknown failure=local_interrupt; connection evicted"
+                ),
+                outcome: RemoteWriteOutcome::OutcomeUnknown,
+            })
         }
     }
 }
@@ -96,7 +132,7 @@ impl RemoteWriteFailure {
         let (outcome, failure) = match error {
             RemoteAwaitError::Remote(error) if error.as_db_error().is_some() => (
                 classify_remote_write_outcome(true, ambiguous_outcome),
-                remote_db_error_category(&error),
+                remote_write_db_category(&error),
             ),
             RemoteAwaitError::Remote(error) => {
                 (ambiguous_outcome, remote_db_error_category(&error))
@@ -116,6 +152,13 @@ impl RemoteWriteFailure {
     fn context(mut self, detail: &str) -> Self {
         self.message.push_str("; ");
         self.message.push_str(detail);
+        self
+    }
+
+    fn confirmed_rollback(mut self) -> Self {
+        self.message
+            .push_str("; rollback confirmed; final_outcome=definitely_not_applied");
+        self.outcome = RemoteWriteOutcome::DefinitelyNotApplied;
         self
     }
 }
@@ -187,6 +230,21 @@ fn remote_db_error_category(error: &tokio_postgres::Error) -> String {
     error
         .as_db_error()
         .map(|db| format!("remote_sqlstate_{}", db.code().code()))
+        .unwrap_or_else(|| "connection_reset".to_owned())
+}
+
+fn remote_write_server_failure(sqlstate: &str, message: &str) -> String {
+    if sqlstate == "53200" && message.contains("maximum number of prepared transactions") {
+        "prepared_slots_exhausted_hint_increase_max_prepared_transactions".to_owned()
+    } else {
+        format!("remote_sqlstate_{sqlstate}")
+    }
+}
+
+fn remote_write_db_category(error: &tokio_postgres::Error) -> String {
+    error
+        .as_db_error()
+        .map(|db| remote_write_server_failure(db.code().code(), db.message()))
         .unwrap_or_else(|| "connection_reset".to_owned())
 }
 
@@ -297,9 +355,25 @@ async fn bounded_write_phase<T>(
     ambiguous_outcome: RemoteWriteOutcome,
     future: impl Future<Output = Result<T, tokio_postgres::Error>>,
 ) -> Result<T, RemoteWriteFailure> {
-    await_remote_write(client, tls_config, future)
+    let before_fault = normalized_debug_write_phase("before", phase);
+    if super::options::debug_write_fault_selected(&before_fault) {
+        return Err(injected_write_failure(
+            phase,
+            RemoteWriteOutcome::DefinitelyNotApplied,
+        ));
+    }
+    let value = await_remote_write(client, tls_config, future)
         .await
-        .map_err(|error| RemoteWriteFailure::from_await(prefix, phase, ambiguous_outcome, error))
+        .map_err(|error| RemoteWriteFailure::from_await(prefix, phase, ambiguous_outcome, error))?;
+    let after_fault = normalized_debug_write_phase("after", phase);
+    if super::options::debug_write_fault_selected(&after_fault) {
+        drop(value);
+        return Err(injected_write_failure(
+            phase,
+            RemoteWriteOutcome::DefinitelyApplied,
+        ));
+    }
+    Ok(value)
 }
 
 async fn bounded_rollback_after_failure(
@@ -318,7 +392,7 @@ async fn bounded_rollback_after_failure(
     )
     .await
     {
-        Ok(()) => primary,
+        Ok(()) => primary.confirmed_rollback(),
         Err(cleanup) => primary.context(&format!("rollback cleanup failed: {}", cleanup.message)),
     }
 }
@@ -1031,6 +1105,7 @@ static NEXT_PHYSICAL_INSERT_GID: AtomicU64 = AtomicU64::new(1);
 #[derive(Debug, Clone, Copy)]
 struct PhysicalPreparedGidParts {
     index_oid: u32,
+    coordinator_node_id: Option<u32>,
     node_id: u32,
     served_epoch: u64,
     xid: u64,
@@ -1044,10 +1119,12 @@ fn physical_insert_prepared_gid(index_oid: pg_sys::Oid, node_id: u32, served_epo
     // the coordinator, so a 32-bit xid that can be reused after wraparound is
     // not an adequate durable decision identity.
     let xid = unsafe { pg_sys::GetTopFullTransactionId().value };
+    let coordinator_node_id = super::roster::current_local_node_id();
     let serial = NEXT_PHYSICAL_INSERT_GID.fetch_add(1, Ordering::Relaxed);
     format!(
-        "ec_distann_insert_{}_{}_{}_{}_{}",
+        "ec_distann_insert_{}_{}_{}_{}_{}_{}",
         u32::from(index_oid),
+        coordinator_node_id,
         node_id,
         served_epoch,
         xid,
@@ -1057,20 +1134,36 @@ fn physical_insert_prepared_gid(index_oid: pg_sys::Oid, node_id: u32, served_epo
 
 fn parse_physical_prepared_gid(gid: &str) -> Option<PhysicalPreparedGidParts> {
     let suffix = gid.strip_prefix("ec_distann_insert_")?;
-    let mut parts = suffix.split('_');
-    let index_oid = parts.next()?.parse::<u32>().ok()?;
-    let node_id = parts.next()?.parse::<u32>().ok()?;
-    let served_epoch = parts.next()?.parse::<u64>().ok()?;
-    let xid = parts.next()?.parse::<u64>().ok()?;
-    let _serial = parts.next()?.parse::<u64>().ok()?;
-    if parts.next().is_some() {
-        return None;
-    }
-    if index_oid == 0 || node_id == 0 {
+    let parts = suffix.split('_').collect::<Vec<_>>();
+    let (index_oid, coordinator_node_id, node_id, served_epoch, xid, serial) =
+        match parts.as_slice() {
+            [index_oid, coordinator_node_id, node_id, served_epoch, xid, serial] => (
+                index_oid.parse::<u32>().ok()?,
+                Some(coordinator_node_id.parse::<u32>().ok()?),
+                node_id.parse::<u32>().ok()?,
+                served_epoch.parse::<u64>().ok()?,
+                xid.parse::<u64>().ok()?,
+                serial.parse::<u64>().ok()?,
+            ),
+            // Task 167 compatibility: old five-part GIDs predate the explicit
+            // coordinator-node component. They remain parseable for conservative
+            // operator recovery, but cannot be attributed across equal-OID nodes.
+            [index_oid, node_id, served_epoch, xid, serial] => (
+                index_oid.parse::<u32>().ok()?,
+                None,
+                node_id.parse::<u32>().ok()?,
+                served_epoch.parse::<u64>().ok()?,
+                xid.parse::<u64>().ok()?,
+                serial.parse::<u64>().ok()?,
+            ),
+            _ => return None,
+        };
+    if index_oid == 0 || coordinator_node_id == Some(0) || node_id == 0 || serial == 0 {
         return None;
     }
     Some(PhysicalPreparedGidParts {
         index_oid,
+        coordinator_node_id,
         node_id,
         served_epoch,
         xid,
@@ -1177,6 +1270,18 @@ fn resolve_physical_insert_prepared(conninfo: String, node_id: u32, gid: String,
     let Ok(mut client) = connect_distann_postgres(&conninfo, node_id, context) else {
         return;
     };
+    let before_resolution_fault = if commit {
+        "before_commit_prepared_skip"
+    } else {
+        "before_rollback_prepared_skip"
+    };
+    if super::options::debug_write_fault_selected(before_resolution_fault)
+        || (!commit && super::options::debug_write_fault_selected("after_precommit_intent_error"))
+    {
+        // pg_test-only lost-callback acknowledgement window. The prepared xact
+        // and nonterminal intent remain for explicit operator recovery.
+        return;
+    }
     let command = if commit {
         "COMMIT PREPARED"
     } else {
@@ -1186,6 +1291,17 @@ fn resolve_physical_insert_prepared(conninfo: String, node_id: u32, gid: String,
         .batch_execute(&format!("{command} {}", quote_sql_literal(&gid)))
         .is_ok()
     {
+        let after_resolution_fault = if commit {
+            "after_commit_prepared_ack_loss"
+        } else {
+            "after_rollback_prepared_ack_loss"
+        };
+        if super::options::debug_write_fault_selected(after_resolution_fault) {
+            // The decision applied, but the terminal intent update is
+            // deliberately omitted. Reaper union reconciliation must close
+            // the nonterminal audit row without reissuing a missing GID.
+            return;
+        }
         let state = if commit {
             "commit_local"
         } else {
@@ -1510,6 +1626,7 @@ pub(crate) fn remote_physical_insert(
                         )),
                     )
                     .await?;
+                    maybe_pause_debug_write_phase("after_prepare_before_ack_pause").await?;
                     mark_remote_physical_intent(client, tls_config, &prepared_gid, "prepare_acked")
                         .await?;
                     let intent_conninfo = request.conninfo.to_owned();
@@ -1766,6 +1883,7 @@ pub(crate) fn remote_physical_backlink(
                         )),
                     )
                     .await?;
+                    maybe_pause_debug_write_phase("after_prepare_before_ack_pause").await?;
                     mark_remote_physical_intent(client, tls_config, &prepared_gid, "prepare_acked")
                         .await?;
                     let intent_conninfo = request.conninfo.to_owned();
@@ -1826,6 +1944,24 @@ fn physical_intent_state_remote(
             })
         })
         .transpose()
+}
+
+fn mark_physical_intent_terminal_local(gid: &str, state: &str) -> Result<usize, String> {
+    Spi::connect_mut(|client| {
+        client
+            .update(
+                "UPDATE ec_distann_remote_prepared_xact_intent
+                    SET intent_state = $2, updated_at = clock_timestamp()
+                  WHERE gid = $1",
+                None,
+                &[gid.to_owned().into(), state.to_owned().into()],
+            )
+            .map(|rows| rows.len())
+            .map_err(|_| {
+                "EC_REMOTE_WRITE local_sql_failure: coordinator intent reconciliation failed"
+                    .to_owned()
+            })
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1924,6 +2060,7 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
     }
     gids.sort();
     let mut results = Vec::with_capacity(gids.len());
+    let local_node_id = super::roster::current_local_node_id();
     for gid in gids {
         maybe_check_for_interrupts();
         let prepared = prepared_gids.contains(&gid);
@@ -1931,6 +2068,15 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
             results.push(format!("{gid}:unparseable:skipped"));
             continue;
         };
+        if parts
+            .coordinator_node_id
+            .is_some_and(|coordinator_node_id| coordinator_node_id != local_node_id)
+        {
+            // A target owner may retain GIDs coordinated by several roster
+            // members. Only the named coordinator owns pg_xact_status for a
+            // new-format GID; foreign rows are not this invocation's work.
+            continue;
+        }
         if parts.index_oid != u32::from(index_oid) || parts.node_id != node_id {
             results.push(format!("{gid}:node_or_index_mismatch:skipped"));
             continue;
@@ -1992,6 +2138,11 @@ pub(crate) fn reap_orphaned_physical_prepared_xacts(
             .map_err(|_| {
                 "EC_REMOTE_WRITE remote_sql_failure: intent reconciliation failed".to_owned()
             })?;
+        // The pre-planning fence is independently stored on both the
+        // coordinator and owner. A backend that was itself PREPAREd loses its
+        // process-local callbacks, so recovery must terminalize the local copy
+        // explicitly after the owner decision converges.
+        mark_physical_intent_terminal_local(&gid, final_state)?;
         results.push(format!("{gid}:{intent}:{final_state}:prepared={prepared}"));
     }
     Ok(results)
@@ -2025,10 +2176,11 @@ fn finalize_write_call<T>(
         Ok(value) => Ok(value),
         Err(mut failure) => {
             // Any write failure may leave transaction or protocol state that
-            // cannot safely be pooled. OutcomeUnknown additionally requires
-            // the endpoint's idempotent replay/recovery contract.
+            // cannot safely be pooled. A known-applied or outcome-unknown
+            // phase additionally requires the endpoint's idempotent
+            // replay/recovery contract.
             connections.remove(key);
-            if failure.outcome == RemoteWriteOutcome::OutcomeUnknown {
+            if failure.outcome != RemoteWriteOutcome::DefinitelyNotApplied {
                 failure
                     .message
                     .push_str("; retry or operator recovery required");
@@ -4486,6 +4638,38 @@ mod tests {
             classify_remote_write_outcome(false, RemoteWriteOutcome::DefinitelyNotApplied),
             RemoteWriteOutcome::DefinitelyNotApplied
         );
+        assert_eq!(
+            classify_remote_write_outcome(false, RemoteWriteOutcome::DefinitelyApplied),
+            RemoteWriteOutcome::DefinitelyApplied
+        );
+        assert_eq!(
+            RemoteWriteOutcome::DefinitelyApplied.label(),
+            "definitely_applied"
+        );
+    }
+
+    #[test]
+    fn task235_debug_fault_names_are_stable_and_sql_safe() {
+        assert_eq!(
+            normalized_debug_write_phase("before", "endpoint_mutation"),
+            "before_endpoint_mutation_error"
+        );
+        assert_eq!(
+            normalized_debug_write_phase("after", "publish generation"),
+            "after_publish_generation_error"
+        );
+    }
+
+    #[test]
+    fn task235_prepared_slot_failure_has_operator_hint() {
+        assert_eq!(
+            remote_write_server_failure("53200", "maximum number of prepared transactions reached"),
+            "prepared_slots_exhausted_hint_increase_max_prepared_transactions"
+        );
+        assert_eq!(
+            remote_write_server_failure("23505", "duplicate key value violates constraint"),
+            "remote_sqlstate_23505"
+        );
     }
 
     #[test]
@@ -4646,15 +4830,19 @@ mod tests {
     }
 
     #[test]
-    fn physical_prepared_gid_is_fenced_to_index_and_owner() {
-        let gid = "ec_distann_insert_4242_7_19_83_2";
+    fn physical_prepared_gid_is_fenced_to_coordinator_index_and_owner() {
+        let gid = "ec_distann_insert_4242_3_7_19_83_2";
         let parts = parse_physical_prepared_gid(gid).expect("valid physical gid");
         assert_eq!(parts.index_oid, 4242);
+        assert_eq!(parts.coordinator_node_id, Some(3));
         assert_eq!(parts.node_id, 7);
         assert_eq!(parts.served_epoch, 19);
         assert_eq!(parts.xid, 83);
+        let legacy = parse_physical_prepared_gid("ec_distann_insert_4242_7_19_83_2")
+            .expect("legacy Task 167 gid remains parseable");
+        assert_eq!(legacy.coordinator_node_id, None);
         assert!(parse_physical_prepared_gid("ec_distann_insert_4242_7_19_83").is_none());
-        assert!(parse_physical_prepared_gid("ec_distann_insert_4242_8_19_83_2_extra").is_none());
+        assert!(parse_physical_prepared_gid("ec_distann_insert_4242_3_8_19_83_2_extra").is_none());
     }
 
     #[test]
@@ -4664,6 +4852,7 @@ mod tests {
             "ec_distann_insert_x_2_3_4_5",
             "ec_distann_insert_1_0_3_4_5",
             "ec_distann_insert_1_2_3_4_-1",
+            "ec_distann_insert_1_0_2_3_4_5",
         ] {
             assert!(parse_physical_prepared_gid(gid).is_none(), "accepted {gid}");
         }
