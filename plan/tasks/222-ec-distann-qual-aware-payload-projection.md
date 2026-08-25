@@ -1,8 +1,9 @@
 # Task 222: ec_distann Qual-Aware Payload Projection
 
-Status: **implementation and required 10k/50k/100k evidence complete; reviewer
-seq-03 findings addressed; clean current-main packet 005 final-review-open**
-(2026-08-24). Priority: P0 latency. Candidate retained:
+Status: **complete — review-closed ACCEPT; production default retained**
+(2026-08-25; final verdict:
+`reviews/task-222/005-main-integration/feedback/2026-08-25-01-reviewer.md`).
+Priority: P0 latency. Candidate retained:
 the exact id-only mask preserves recall, ordered-result identity, and storage
 while improving warm mean latency by 33.33%-40.41%. Plan revisions applied
 against `reviews/task-222/001-plan/feedback/2026-08-23-01-reviewer.md`;

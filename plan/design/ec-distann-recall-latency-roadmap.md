@@ -308,8 +308,8 @@ remain controls rather than new candidates.
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
 | MAT-26 | Batch detoast/binary-send work by physical block | conditional on varlena/heap share |
 | MAT-27 | Covering row-tier layout for common scalar projections | deferred; format/storage decision |
-| MAT-28 | Exclude large/toasted columns unless planner proof requires them | **implemented by Task 222; final re-review open** — typed target+qual mask with fail-closed all-column fallback |
-| MAT-29 | Strengthen minimal projection derivation | **implemented by Task 222; final re-review open** — proves and elides only the ordering-only vector expression; exact id-only mask measured at all three scales |
+| MAT-28 | Exclude large/toasted columns unless planner proof requires them | **review-closed ACCEPT in Task 222** — typed target+qual mask with fail-closed all-column fallback |
+| MAT-29 | Strengthen minimal projection derivation | **review-closed ACCEPT in Task 222** — proves and elides only the ordering-only vector expression; exact id-only mask measured at all three scales |
 | MAT-30 | Generation-scoped coordinator payload cache | conditional on cross-query hit-rate evidence; **NFR-021 screen required** — a generation-scoped cache is O(N) if unbounded and must carry an explicit fixed bound |
 | MAT-31 | Bounded hot cache keyed by generation, vec_id, and projection | conditional on MAT-30; **NFR-021 screen required** — the bound must be a constant, not a fraction of N |
 | MAT-32 | Bounded coordinator hot-payload replica | deferred; **NFR-021 screen required** — 'replica' here must remain bounded-in-N; the FR-084 precedent shows how a bounded-sounding entry becomes a full copy without the ledger changing |
