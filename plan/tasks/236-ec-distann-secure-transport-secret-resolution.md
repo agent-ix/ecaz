@@ -1,15 +1,15 @@
 # Task 236: ec_distann Secure Transport and Secret Resolution
 
-Status: **implementation and clean current-main integration complete; packet
-005 final review-open** (2026-08-24; integration SHA
-`48ea5d506c781ec92cfa91b0b756540f3b8cd8cd`; security matrix:
+Status: **complete — review-closed ACCEPT; libpq-compatible `sslmode=require`
+default and measured TLS latency tradeoff accepted** (2026-08-25; final
+verdict: `reviews/task-236/005-main-integration/feedback/2026-08-25-01-reviewer.md`;
+reviewed integration SHA `48ea5d506c781ec92cfa91b0b756540f3b8cd8cd`; security matrix:
 `reviews/task-236/003-pg18-tls-secret-matrix/`; authoritative clean-SHA A/B:
 `benchmarks/task236-distann-secure-transport-main-integration-ab-r2/`; final
 request: `reviews/task-236/005-main-integration/`). The required 10k/50k/100k
-plaintext-versus-TLS matrix is recall/storage neutral but observed TLS warm
-latency increases at 50k and 100k; outside security/code review must judge the
-mandatory secure-transport tradeoff before closeout. Priority: P0 transport
-security before Task 228.
+plaintext-versus-TLS matrix is recall/storage neutral and records the accepted
+TLS warm-latency increases at 50k and 100k. Priority: P0 transport security
+before Task 228.
 
 ## Why
 
