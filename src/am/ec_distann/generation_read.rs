@@ -4794,6 +4794,55 @@ pub(crate) fn active_generation_identity(
     })
 }
 
+fn latest_published_generation_identity(
+    index_oid: pg_sys::Oid,
+    logical_index_uuid: Uuid,
+) -> Result<Option<ActiveGenerationIdentity>, String> {
+    let generation = generation_catalog::extension_relation_name("ec_distann_generation")?;
+    Spi::connect(|client| {
+        client
+            .select(
+                &format!(
+                    "SELECT build_id, epoch_fingerprint FROM {generation}
+                      WHERE index_oid = $1::oid AND logical_index_uuid = $2::uuid
+                        AND state = 'Published'
+                      ORDER BY epoch DESC LIMIT 1"
+                ),
+                None,
+                &[index_oid.into(), logical_index_uuid.into()],
+            )
+            .map_err(|error| {
+                format!("EC_GENERATION_MISSING: published recovery lookup failed: {error}")
+            })?
+            .map(|row| {
+                let build_id = row["build_id"]
+                    .value::<Uuid>()
+                    .map_err(|_| {
+                        "EC_GENERATION_MISSING: recovery build id decode failed".to_owned()
+                    })?
+                    .ok_or_else(|| "EC_GENERATION_MISSING: recovery build id is NULL".to_owned())?;
+                let fingerprint = row["epoch_fingerprint"]
+                    .value::<Vec<u8>>()
+                    .map_err(|_| {
+                        "EC_GENERATION_MISSING: recovery fingerprint decode failed".to_owned()
+                    })?
+                    .ok_or_else(|| {
+                        "EC_GENERATION_MISSING: recovery fingerprint is NULL".to_owned()
+                    })?
+                    .try_into()
+                    .map_err(|_| {
+                        "EC_GENERATION_MISSING: recovery fingerprint is not 34 bytes".to_owned()
+                    })?;
+                Ok(ActiveGenerationIdentity {
+                    build_id,
+                    fingerprint,
+                })
+            })
+            .next()
+            .transpose()
+    })
+}
+
 fn published_generation_identity(
     index_oid: pg_sys::Oid,
     logical_index_uuid: Uuid,
@@ -4838,6 +4887,32 @@ impl PhysicalGenerationScan {
         match Self::open_once_with_fingerprint(index_oid, None, true) {
             Err(error) if error.starts_with("EC_EPOCH_MISMATCH:") => {
                 Self::open_once_with_fingerprint(index_oid, None, true)
+            }
+            result => result,
+        }
+    }
+
+    /// Operator recovery may run on a participant catalog. Participants keep
+    /// the immutable Published generation but intentionally do not install the
+    /// coordinator-owned active pointer, so fall back to the newest published
+    /// fingerprint and the owner-route path while retaining the same pin and
+    /// revalidation contract.
+    pub(crate) fn open_for_recovery(index_oid: pg_sys::Oid) -> Result<Self, String> {
+        match Self::open(index_oid) {
+            Err(error) if error == "EC_GENERATION_MISSING: logical index has no active epoch" => {
+                let (control, _handle, _metadata, logical_index_uuid) =
+                    super::generation_store::open_control_index(
+                        index_oid,
+                        pg_sys::AccessShareLock as pg_sys::LOCKMODE,
+                        "physical generation recovery scan",
+                    )?;
+                drop(control);
+                let identity = latest_published_generation_identity(index_oid, logical_index_uuid)?
+                    .ok_or_else(|| {
+                        "EC_GENERATION_MISSING: logical index has no published recovery epoch"
+                            .to_owned()
+                    })?;
+                Self::open_once_with_fingerprint(index_oid, Some(identity.fingerprint), false)
             }
             result => result,
         }
