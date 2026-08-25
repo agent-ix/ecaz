@@ -1604,18 +1604,17 @@ impl RetainedGenerationScan {
             }
             let stored_id =
                 unsafe { pg_sys::DatumGetInt64(graph_slot_attr(&graph_slot, 1, "vec_id")?) };
-            let record = unsafe {
-                crate::am::common::detoast::DetoastedVarlena::packed_from_datum(graph_slot_attr(
-                    &graph_slot,
-                    2,
-                    "record",
-                )?)
-            }
-            .ok_or_else(|| {
-                DistannExpandError::GenerationMissing(
-                    "graph diagnostic record could not be detoasted".to_owned(),
-                )
-            })?;
+            let record =
+                unsafe {
+                    crate::am::common::detoast::DetoastedVarlena::packed_from_datum(
+                        graph_slot_attr(&graph_slot, 2, "record")?,
+                    )
+                }
+                .ok_or_else(|| {
+                    DistannExpandError::GenerationMissing(
+                        "graph diagnostic record could not be detoasted".to_owned(),
+                    )
+                })?;
             let node = DistannNodeTuple::decode_physical_v1(
                 record.as_bytes(),
                 self.descriptor.graph_degree,
@@ -2738,7 +2737,7 @@ fn ec_distann_physical_graph_diagnostic_chunk_benchmark(
     let limit = graph_diagnostic_chunk_limit(chunk_limit);
     let rows = RetainedGenerationScan::open(index_regclass.oid(), &epoch_fingerprint)
         .and_then(|scan| scan.graph_diagnostic_chunk(after_vec_id, limit))
-    .unwrap_or_else(|error| error.raise());
+        .unwrap_or_else(|error| error.raise());
     TableIterator::new(rows.into_iter())
 }
 

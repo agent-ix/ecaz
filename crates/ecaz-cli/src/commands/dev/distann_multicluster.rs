@@ -6366,9 +6366,7 @@ async fn run_physical_benchmarks(
             && relations.get::<_, bool>(1)
             && relations.get::<_, bool>(2))
         {
-            bail!(
-                "--reuse-fixture is missing the attested monolithic control relations"
-            );
+            bail!("--reuse-fixture is missing the attested monolithic control relations");
         }
         let counts = coordinator
             .query_one(
@@ -6408,9 +6406,7 @@ async fn run_physical_benchmarks(
             || !reloptions.contains(&format!("head_index_cap={}", args.head_index_cap))
             || !reloptions.contains("neighbor_code_format=rabitq")
         {
-            bail!(
-                "--reuse-fixture monolithic control reloptions mismatch: {reloptions}"
-            );
+            bail!("--reuse-fixture monolithic control reloptions mismatch: {reloptions}");
         }
         0
     } else {

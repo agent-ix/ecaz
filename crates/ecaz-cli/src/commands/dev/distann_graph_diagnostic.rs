@@ -210,9 +210,7 @@ struct LiveGraph {
 fn live_graph(nodes: &[GraphNode], owner: Option<u32>) -> LiveGraph {
     let selected = nodes
         .iter()
-        .filter(|node| {
-            !node.tombstone && owner.map_or(true, |owner| node.owner_ordinal == owner)
-        })
+        .filter(|node| !node.tombstone && owner.map_or(true, |owner| node.owner_ordinal == owner))
         .collect::<Vec<_>>();
     let mut ids = selected.iter().map(|node| node.vec_id).collect::<Vec<_>>();
     ids.sort_unstable();

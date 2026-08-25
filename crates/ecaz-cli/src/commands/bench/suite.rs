@@ -4704,9 +4704,7 @@ impl SuiteStep {
                         step.name
                     )
                 }
-                if step.residual_attribution
-                    && (!step.query_trace || !step.graph_diagnostic)
-                {
+                if step.residual_attribution && (!step.query_trace || !step.graph_diagnostic) {
                     bail!(
                         "distann-local-multinode step {:?} residual_attribution requires query_trace and graph_diagnostic",
                         step.name
@@ -5177,7 +5175,8 @@ impl SuiteStep {
                             if step.residual_attribution {
                                 artifacts.push(dir.join("physical-residual-attribution.jsonl"));
                                 artifacts.push(dir.join("physical-residual-query-features.jsonl"));
-                                artifacts.push(dir.join("physical-residual-attribution-summary.json"));
+                                artifacts
+                                    .push(dir.join("physical-residual-attribution-summary.json"));
                             }
                             if step.gateway_isolated_trace {
                                 let variants = if step.benchmark_seed_variants.is_empty() {
@@ -8602,9 +8601,9 @@ psql header noise\n\
         assert!(artifacts
             .iter()
             .any(|artifact| artifact.ends_with("physical-residual-query-features.jsonl")));
-        assert!(artifacts.iter().any(|artifact| {
-            artifact.ends_with("physical-residual-attribution-summary.json")
-        }));
+        assert!(artifacts
+            .iter()
+            .any(|artifact| { artifact.ends_with("physical-residual-attribution-summary.json") }));
     }
 
     #[test]
