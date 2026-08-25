@@ -124,7 +124,8 @@ validity requirements.
 | 219 | Recall/latency Pareto default | **complete — review-closed ACCEPT** (2026-08-09) | retains BW4/H100/L32 and recall-equivalence; frontier verified against Task 215 run-r2; reopening trigger is a product ruling for a recall-sensitive regime, not new benchmarks |
 | 220 | Owner array materialization (MAT-16) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | packed SQL arm regressed payload SQL 9.36→32.06 ms/scan (~3.4×) and warm physical latency 23.00→36.00 ms; correction `c8b5fd9ee` restored featureless production and FR-079 to `build_payload_sql` (verified round 2, production SQL now test-pinned); MAT-16 rejected as implemented |
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
-| 226 | Current-head BW8 transfer | **evidence complete; final review open** (2026-08-24) | useful non-default configuration: recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
+| 222 | Qual-aware payload projection | **complete — review-closed ACCEPT** (2026-08-25) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
+| 226 | Current-head BW8 transfer | **complete — review-closed ACCEPT; useful non-default** (2026-08-25) | recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -308,8 +309,8 @@ remain controls rather than new candidates.
 | MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
 | MAT-26 | Batch detoast/binary-send work by physical block | conditional on varlena/heap share |
 | MAT-27 | Covering row-tier layout for common scalar projections | deferred; format/storage decision |
-| MAT-28 | Exclude large/toasted columns unless planner proof requires them | deferred; Task 184 preserved existing planner projection proof |
-| MAT-29 | Strengthen minimal projection derivation | deferred; current endpoint already accepts attnums |
+| MAT-28 | Exclude large/toasted columns unless planner proof requires them | **review-closed ACCEPT in Task 222** — typed target+qual mask with fail-closed all-column fallback |
+| MAT-29 | Strengthen minimal projection derivation | **review-closed ACCEPT in Task 222** — proves and elides only the ordering-only vector expression; exact id-only mask measured at all three scales |
 | MAT-30 | Generation-scoped coordinator payload cache | conditional on cross-query hit-rate evidence; **NFR-021 screen required** — a generation-scoped cache is O(N) if unbounded and must carry an explicit fixed bound |
 | MAT-31 | Bounded hot cache keyed by generation, vec_id, and projection | conditional on MAT-30; **NFR-021 screen required** — the bound must be a constant, not a fraction of N |
 | MAT-32 | Bounded coordinator hot-payload replica | deferred; **NFR-021 screen required** — 'replica' here must remain bounded-in-N; the FR-084 precedent shows how a bounded-sounding entry becomes a full copy without the ledger changing |

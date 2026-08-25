@@ -3337,6 +3337,15 @@ fn test_distann_multi_epoch_publish() {
 
 #[pg_test]
 fn test_distann_three_owner_physical_handoff() {
+    run_distann_three_owner_physical_handoff(false);
+}
+
+#[pg_test]
+fn test_distann_payload_projection_contract() {
+    run_distann_three_owner_physical_handoff(true);
+}
+
+fn run_distann_three_owner_physical_handoff(projection_contract_only: bool) {
     let conninfo = current_pg_test_loopback_conninfo();
     let mut client = postgres::Client::connect(&conninfo, postgres::NoTls)
         .expect("physical handoff loopback connection should open");
@@ -3353,6 +3362,23 @@ fn test_distann_three_owner_physical_handoff() {
     client
         .batch_execute(&format!("SET search_path = {extension_schema}, public"))
         .expect("search_path should set");
+    if projection_contract_only {
+        // This older task branch predates the production guard that makes the
+        // Task 167 retry-attribution relation optional. Supply that test-only
+        // diagnostic surface so this focused projection fixture reaches the
+        // payload path; the table is not part of the extension contract.
+        client
+            .batch_execute(
+                "CREATE UNLOGGED TABLE IF NOT EXISTS public.ec_distann_retry_attribution (
+                     backend_pid int NOT NULL,
+                     node_id int NOT NULL,
+                     served_epoch bigint NOT NULL,
+                     missing_vec_id bigint NOT NULL
+                 );
+                 TRUNCATE public.ec_distann_retry_attribution;",
+            )
+            .expect("payload projection fixture should install retry diagnostics");
+    }
     let seed_strategy = client
         .query_one("SELECT ec_distann_physical_seed_strategy()", &[])
         .expect("compiled physical seed strategy should be inspectable")
@@ -3643,7 +3669,7 @@ fn test_distann_three_owner_physical_handoff() {
         .expect("physical multi-owner read test should disable seqscan");
     let plan = client
         .query(
-            "EXPLAIN (FORMAT TEXT)
+            "EXPLAIN (VERBOSE, COSTS OFF, FORMAT TEXT)
              SELECT source_id
                FROM ec_distann_rh_source
               ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
@@ -3658,6 +3684,239 @@ fn test_distann_three_owner_physical_handoff() {
     assert!(
         plan.contains("EcDistannDistributedScan"),
         "published physical generation must use CustomScan: {plan}"
+    );
+    assert!(
+        plan.contains("Output: source_id, NULL::real"),
+        "VERBOSE must expose the executor-local typed-NULL ordering projection: {plan}"
+    );
+    assert!(
+        plan.contains("Payload Mask: exact")
+            && plan.contains("Payload Attnums: 1")
+            && plan.contains("Ordering Attnum: 2")
+            && plan.contains("Ordering Projection: elided"),
+        "id-only SQL must exclude the mechanically proved resjunk ordering vector: {plan}"
+    );
+    assert!(
+        !plan.contains("Sort"),
+        "the ordering-only exclusion proof requires no upper Sort consumer: {plan}"
+    );
+
+    let literal_short_ids = client
+        .query(
+            "SELECT /* task222_literal_short */ pg_catalog.uuid_send(source_id)
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 5",
+            &[],
+        )
+        .expect("literal short-limit projection should execute")
+        .into_iter()
+        .map(|row| row.get::<_, Vec<u8>>(0))
+        .collect::<Vec<_>>();
+    assert_eq!(literal_short_ids.len(), 5);
+
+    let external_query = vec![30.0_f32, 2.0, 0.0, 1.0];
+    let external_param_plan = client
+        .query(
+            "EXPLAIN (VERBOSE, COSTS OFF)
+             SELECT pg_catalog.uuid_send(source_id)
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> $1::real[]
+              LIMIT 5",
+            &[&external_query],
+        )
+        .expect("generic external-Param projection should plan")
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        external_param_plan.contains("EcDistannDistributedScan")
+            && external_param_plan.contains("Payload Mask: exact")
+            && external_param_plan.contains("Payload Attnums: 1")
+            && external_param_plan.contains("Ordering Projection: elided"),
+        "the benchmark-shaped external Param must receive the same proved ordering-only exemption: {external_param_plan}"
+    );
+    client
+        .batch_execute(
+            "SET plan_cache_mode = force_generic_plan;
+             PREPARE task222_cached_projection (real[]) AS
+             SELECT pg_catalog.uuid_send(source_id)
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> $1
+              LIMIT 5;",
+        )
+        .expect("generic cached payload projection should prepare");
+    let cached_plan = client
+        .query(
+            "EXPLAIN (VERBOSE, COSTS OFF)
+             EXECUTE task222_cached_projection (
+                 ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+             )",
+            &[],
+        )
+        .expect("generic cached payload projection should explain")
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        cached_plan.contains("EcDistannDistributedScan")
+            && cached_plan.contains("Payload Mask: exact")
+            && cached_plan.contains("Payload Attnums: 1")
+            && cached_plan.contains("Ordering Projection: elided"),
+        "the forced generic plan must preserve the exact payload contract: {cached_plan}"
+    );
+    let cached_query =
+        "EXECUTE task222_cached_projection (ARRAY[30.0, 2.0, 0.0, 1.0]::real[])";
+    let first_cached_ids = client
+        .query(cached_query, &[])
+        .expect("first generic cached execution should succeed")
+        .into_iter()
+        .map(|row| row.get::<_, Vec<u8>>(0))
+        .collect::<Vec<_>>();
+    let second_cached_ids = client
+        .query(cached_query, &[])
+        .expect("second generic cached execution should succeed")
+        .into_iter()
+        .map(|row| row.get::<_, Vec<u8>>(0))
+        .collect::<Vec<_>>();
+    assert_eq!(first_cached_ids.len(), 5);
+    assert_eq!(second_cached_ids, first_cached_ids);
+    let lateral_plan = client
+        .query(
+            "EXPLAIN (VERBOSE, COSTS OFF, FORMAT TEXT)
+             SELECT q.ordinal, hit.source_id
+               FROM (VALUES
+                         (1, ARRAY[30.0, 2.0, 0.0, 1.0]::real[]),
+                         (2, ARRAY[1.0, 1.0, 1.0, 1.0]::real[])
+                    ) AS q(ordinal, query)
+               CROSS JOIN LATERAL (
+                   SELECT source_id
+                     FROM ec_distann_rh_source
+                    ORDER BY embedding <#> q.query
+                    LIMIT 5
+               ) AS hit
+              ORDER BY q.ordinal",
+            &[],
+        )
+        .expect("correlated payload projection query should plan")
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        lateral_plan.contains("EcDistannDistributedScan"),
+        "correlated PARAM_EXEC rescans must retain the distributed path: {lateral_plan}"
+    );
+    let lateral_rows = client
+        .query(
+            "SELECT q.ordinal, pg_catalog.uuid_send(hit.source_id)
+               FROM (VALUES
+                         (1, ARRAY[30.0, 2.0, 0.0, 1.0]::real[]),
+                         (2, ARRAY[1.0, 1.0, 1.0, 1.0]::real[])
+                    ) AS q(ordinal, query)
+               CROSS JOIN LATERAL (
+                   SELECT source_id
+                     FROM ec_distann_rh_source
+                    ORDER BY embedding <#> q.query
+                    LIMIT 5
+               ) AS hit
+              ORDER BY q.ordinal",
+            &[],
+        )
+        .expect("correlated PARAM_EXEC must execute through the distributed path");
+    assert_eq!(lateral_rows.len(), 10);
+    assert_eq!(
+        lateral_rows
+            .iter()
+            .map(|row| row.get::<_, i32>(0))
+            .collect::<Vec<_>>(),
+        vec![1, 1, 1, 1, 1, 2, 2, 2, 2, 2],
+        "each correlated rescan must bind its current query vector"
+    );
+
+    let row_lock_error = client
+        .query(
+            "EXPLAIN (VERBOSE, COSTS OFF, FORMAT TEXT)
+             SELECT source_id
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 5
+              FOR UPDATE",
+            &[],
+        )
+        .expect_err("row-locking projection must retain the system-column hard error");
+    assert!(
+        row_lock_error
+            .as_db_error()
+            .map(|error| error.message().contains("EC_UNSUPPORTED_PROJECTION"))
+            .unwrap_or(false),
+        "row-locking/EPQ must not silently fall back: {row_lock_error}"
+    );
+
+    for (shape, statement, expected) in [
+        (
+            "visible distance",
+            "EXPLAIN (VERBOSE, COSTS OFF)
+             SELECT source_id,
+                    embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[] AS distance
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+            "Payload Attnums: 1,2",
+        ),
+        (
+            "ordering operand in qual",
+            "EXPLAIN (VERBOSE, COSTS OFF)
+             SELECT source_id
+               FROM ec_distann_rh_source
+              WHERE (embedding <#> ARRAY[0.0, 1.0, 0.0, 1.0]::real[]) < 100000.0
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+            "Payload Attnums: 1,2",
+        ),
+        (
+            "all visible columns",
+            "EXPLAIN (VERBOSE, COSTS OFF)
+             SELECT *
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+            "Payload Attnums: 1,2",
+        ),
+    ] {
+        let shape_plan = client
+            .query(statement, &[])
+            .unwrap_or_else(|error| panic!("{shape} EXPLAIN should succeed: {error}"))
+            .into_iter()
+            .map(|row| row.get::<_, String>(0))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(
+            shape_plan.contains("Payload Mask: exact") && shape_plan.contains(expected),
+            "{shape} must retain every executor-visible attribute: {shape_plan}"
+        );
+    }
+
+    let whole_row_plan = client
+        .query(
+            "EXPLAIN (VERBOSE, COSTS OFF)
+             SELECT ec_distann_rh_source
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+            &[],
+        )
+        .expect("whole-row EXPLAIN should succeed")
+        .into_iter()
+        .map(|row| row.get::<_, String>(0))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert!(
+        whole_row_plan.contains("Payload Mask: all_columns")
+            && whole_row_plan.contains("Payload Fallback: whole_row"),
+        "whole-row Vars must retain a typed all-column fallback: {whole_row_plan}"
     );
     let served = client
         .query(
@@ -3761,6 +4020,58 @@ fn test_distann_three_owner_physical_handoff() {
         )
         .expect("crown fallback referent settings should apply");
     let crown_off_results = physical_query_ids(&mut client);
+    let qual_ids = client
+        .query(
+            "SELECT pg_catalog.uuid_send(source_id)
+               FROM ec_distann_rh_source
+              WHERE (embedding <#> ARRAY[0.0, 1.0, 0.0, 1.0]::real[]) < 100000.0
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+            &[],
+        )
+        .expect("qual-aware exact payload query should execute")
+        .into_iter()
+        .map(|row| row.get::<_, Vec<u8>>(0))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        qual_ids, crown_off_results,
+        "an ORDER BY operand that is also a qual input must ship and preserve results"
+    );
+    let visible_distance_rows = client
+        .query(
+            "SELECT pg_catalog.uuid_send(source_id),
+                    embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[] AS distance
+               FROM ec_distann_rh_source
+              ORDER BY embedding <#> ARRAY[30.0, 2.0, 0.0, 1.0]::real[]
+              LIMIT 30",
+            &[],
+        )
+        .expect("visible-distance exact payload query should execute");
+    assert_eq!(
+        visible_distance_rows
+            .iter()
+            .map(|row| row.get::<_, Vec<u8>>(0))
+            .collect::<Vec<_>>(),
+        crown_off_results,
+        "a visible distance expression must ship the vector without changing order"
+    );
+    assert!(
+        visible_distance_rows
+            .iter()
+            .all(|row| row.get::<_, f32>(1).is_finite()),
+        "every visible distance must evaluate from a shipped vector"
+    );
+    if projection_contract_only {
+        client
+            .batch_execute(
+                "DROP TABLE ec_distann_rh_source CASCADE;
+                 DROP TABLE ec_distann_rh_owner2 CASCADE;
+                 DROP TABLE ec_distann_rh_owner3 CASCADE;
+                 DROP TABLE public.ec_distann_retry_attribution;",
+            )
+            .expect("payload projection fixture should clean up");
+        return;
+    }
     client
         .batch_execute(
             "SET ec_distann.crown_capacity = 1;

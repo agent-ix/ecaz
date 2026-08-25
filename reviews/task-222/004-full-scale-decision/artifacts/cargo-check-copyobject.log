@@ -1,0 +1,9 @@
+Script started on 2026-08-24 17:12:37-07:00 [TERM="dumb" TTY="/dev/pts/16" COLUMNS="80" LINES="24"]
+   Compiling ring v0.17.14
+   Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task222-recovery)
+   Compiling rustls v0.23.43
+    Checking rustls-webpki v0.103.15
+    Checking tokio-rustls v0.26.4
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 35.86s
+
+Script done on 2026-08-24 17:13:13-07:00 [COMMAND_EXIT_CODE="0"]
