@@ -1,0 +1,27 @@
+2026-08-24 16:16:40.745 PDT [2248469] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 16:16:40.760 PDT [2248469] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 16:16:40.760 PDT [2248469] LOG:  listening on IPv4 address "127.0.0.1", port 44021
+2026-08-24 16:16:40.765 PDT [2248469] LOG:  listening on IPv4 address "127.0.0.2", port 44021
+2026-08-24 16:16:40.771 PDT [2248475] LOG:  database system was shut down at 2026-08-24 16:16:39 PDT
+2026-08-24 16:16:40.784 PDT [2248469] LOG:  database system is ready to accept connections
+2026-08-24 16:17:42.521 PDT [2250615] LOG:  SSL error: unexpected eof while reading
+2026-08-24 16:17:42.521 PDT [2250615] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 16:17:48.521 PDT [2251544] LOG:  SSL error: unexpected eof while reading
+2026-08-24 16:17:48.521 PDT [2251544] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 16:18:07.557 PDT [2254243] LOG:  SSL error: unexpected eof while reading
+2026-08-24 16:18:07.557 PDT [2254243] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 16:18:10.885 PDT [2254479] LOG:  SSL error: unexpected eof while reading
+2026-08-24 16:18:10.885 PDT [2254479] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 16:18:13.708 PDT [2254518] LOG:  SSL error: unexpected eof while reading
+2026-08-24 16:18:13.708 PDT [2254518] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 16:18:14.231 PDT [2254529] LOG:  SSL error: unexpected eof while reading
+2026-08-24 16:18:14.231 PDT [2254529] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 16:18:14.250 PDT [2249162] LOG:  SSL error: unexpected eof while reading
+2026-08-24 16:18:14.250 PDT [2249162] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 16:18:15.153 PDT [2248469] LOG:  received fast shutdown request
+2026-08-24 16:18:15.170 PDT [2248469] LOG:  aborting any active transactions
+2026-08-24 16:18:15.173 PDT [2248469] LOG:  background worker "logical replication launcher" (PID 2248491) exited with exit code 1
+2026-08-24 16:18:15.173 PDT [2248473] LOG:  shutting down
+2026-08-24 16:18:15.177 PDT [2248473] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 16:18:15.662 PDT [2248473] LOG:  checkpoint complete: wrote 10526 buffers (64.2%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 4 recycled; write=0.048 s, sync=0.401 s, total=0.490 s; sync files=283, longest=0.036 s, average=0.002 s; distance=72709 kB, estimate=72709 kB; lsn=0/5E55B10, redo lsn=0/5E55B10
+2026-08-24 16:18:15.687 PDT [2248469] LOG:  database system is shut down

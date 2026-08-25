@@ -1,0 +1,14 @@
+2026-08-24 16:19:02.852 PDT [2255051] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 16:19:02.864 PDT [2255051] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 16:19:02.864 PDT [2255051] LOG:  listening on IPv4 address "127.0.0.1", port 44032
+2026-08-24 16:19:02.873 PDT [2255057] LOG:  database system was shut down at 2026-08-24 16:19:02 PDT
+2026-08-24 16:19:02.886 PDT [2255051] LOG:  database system is ready to accept connections
+2026-08-24 16:24:02.771 PDT [2255055] LOG:  checkpoint starting: time
+2026-08-24 16:26:53.395 PDT [2255051] LOG:  received fast shutdown request
+2026-08-24 16:26:53.432 PDT [2255051] LOG:  aborting any active transactions
+2026-08-24 16:26:53.434 PDT [2255051] LOG:  background worker "logical replication launcher" (PID 2255060) exited with exit code 1
+2026-08-24 16:26:53.551 PDT [2255055] LOG:  checkpoint complete: wrote 497 buffers (3.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 6 removed, 0 recycled; write=170.653 s, sync=0.078 s, total=170.780 s; sync files=289, longest=0.004 s, average=0.001 s; distance=93512 kB, estimate=93512 kB; lsn=0/1C13AEB8, redo lsn=0/72A6758
+2026-08-24 16:26:53.551 PDT [2255055] LOG:  shutting down
+2026-08-24 16:26:53.555 PDT [2255055] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 16:26:53.667 PDT [2255055] LOG:  checkpoint complete: wrote 19 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 21 recycled; write=0.005 s, sync=0.012 s, total=0.117 s; sync files=11, longest=0.008 s, average=0.002 s; distance=342609 kB, estimate=342609 kB; lsn=0/1C13AF30, redo lsn=0/1C13AF30
+2026-08-24 16:26:53.692 PDT [2255051] LOG:  database system is shut down

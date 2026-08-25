@@ -1,8 +1,10 @@
 # Task 236: ec_distann Secure Transport and Secret Resolution
 
-Status: **PG18 TLS/mTLS/rotation matrix complete; packet 003 review-open;
-10k/50k/100k performance evidence and security closeout pending** (2026-08-24;
-packet: `reviews/task-236/003-pg18-tls-secret-matrix/`). Priority: P0 transport
+Status: **implementation, PG18 TLS/mTLS/rotation matrix, and required
+10k/50k/100k performance evidence complete; packets 002/003 review-open**
+(2026-08-24; security packet:
+`reviews/task-236/003-pg18-tls-secret-matrix/`; benchmark packet:
+`benchmarks/task236-distann-secure-transport-ab/`). Priority: P0 transport
 security before Task 228.
 
 ## Why

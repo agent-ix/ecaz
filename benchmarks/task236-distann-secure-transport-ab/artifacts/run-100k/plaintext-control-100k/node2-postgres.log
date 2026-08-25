@@ -1,0 +1,19 @@
+2026-08-24 16:35:14.540 PDT [2298448] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 16:35:14.556 PDT [2298448] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 16:35:14.556 PDT [2298448] LOG:  listening on IPv4 address "127.0.0.1", port 44051
+2026-08-24 16:35:14.568 PDT [2298454] LOG:  database system was shut down at 2026-08-24 16:35:13 PDT
+2026-08-24 16:35:14.582 PDT [2298448] LOG:  database system is ready to accept connections
+2026-08-24 16:40:14.050 PDT [2298452] LOG:  checkpoint starting: time
+2026-08-24 16:41:03.077 PDT [2298452] LOG:  checkpoint complete: wrote 489 buffers (3.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=48.918 s, sync=0.082 s, total=49.028 s; sync files=272, longest=0.013 s, average=0.001 s; distance=4084 kB, estimate=4084 kB; lsn=0/1B518B8, redo lsn=0/1B51828
+2026-08-24 16:46:46.757 PDT [2317461] ERROR:  canceling autovacuum task
+2026-08-24 16:46:46.757 PDT [2317461] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17791_71717171717141718171717171717171"
+2026-08-24 16:46:46.759 PDT [2317461] LOG:  skipping vacuum of "_ecdz_graph_17791_71717171717141718171717171717171" --- lock not available
+2026-08-24 16:47:04.156 PDT [2298452] LOG:  checkpoint starting: wal
+2026-08-24 16:51:34.220 PDT [2298452] LOG:  checkpoint complete: wrote 3713 buffers (22.7%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=269.796 s, sync=0.018 s, total=270.064 s; sync files=64, longest=0.001 s, average=0.001 s; distance=531340 kB, estimate=531340 kB; lsn=0/377DB0B8, redo lsn=0/22234A68
+2026-08-24 16:51:44.117 PDT [2298448] LOG:  received fast shutdown request
+2026-08-24 16:51:44.177 PDT [2298448] LOG:  aborting any active transactions
+2026-08-24 16:51:44.179 PDT [2298448] LOG:  background worker "logical replication launcher" (PID 2298457) exited with exit code 1
+2026-08-24 16:51:44.184 PDT [2298452] LOG:  shutting down
+2026-08-24 16:51:44.189 PDT [2298452] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 16:51:44.330 PDT [2298452] LOG:  checkpoint complete: wrote 22 buffers (0.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 21 recycled; write=0.005 s, sync=0.016 s, total=0.146 s; sync files=13, longest=0.006 s, average=0.002 s; distance=349901 kB, estimate=513196 kB; lsn=0/377E7FA8, redo lsn=0/377E7FA8
+2026-08-24 16:51:44.363 PDT [2298448] LOG:  database system is shut down

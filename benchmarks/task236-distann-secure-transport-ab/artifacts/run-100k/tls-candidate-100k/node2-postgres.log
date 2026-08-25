@@ -1,0 +1,39 @@
+2026-08-24 16:51:48.750 PDT [2321436] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 16:51:48.765 PDT [2321436] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 16:51:48.765 PDT [2321436] LOG:  listening on IPv4 address "127.0.0.1", port 44061
+2026-08-24 16:51:48.783 PDT [2321436] LOG:  listening on IPv4 address "127.0.0.2", port 44061
+2026-08-24 16:51:48.789 PDT [2321442] LOG:  database system was shut down at 2026-08-24 16:51:47 PDT
+2026-08-24 16:51:48.804 PDT [2321436] LOG:  database system is ready to accept connections
+2026-08-24 16:56:48.326 PDT [2321440] LOG:  checkpoint starting: time
+2026-08-24 16:57:37.726 PDT [2321440] LOG:  checkpoint complete: wrote 493 buffers (3.0%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 0 recycled; write=49.300 s, sync=0.072 s, total=49.401 s; sync files=276, longest=0.007 s, average=0.001 s; distance=4088 kB, estimate=4088 kB; lsn=0/1B52630, redo lsn=0/1B525A0
+2026-08-24 17:02:20.467 PDT [2324860] ERROR:  canceling autovacuum task
+2026-08-24 17:02:20.467 PDT [2324860] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17792_71717171717141718171717171717171"
+2026-08-24 17:02:20.468 PDT [2324860] LOG:  skipping vacuum of "_ecdz_graph_17792_71717171717141718171717171717171" --- lock not available
+2026-08-24 17:03:07.515 PDT [2321440] LOG:  checkpoint starting: wal
+2026-08-24 17:03:21.946 PDT [2325037] ERROR:  canceling autovacuum task
+2026-08-24 17:03:21.946 PDT [2325037] CONTEXT:  automatic vacuum of table "postgres.public._ecdz_row_17792_71717171717141718171717171717171"
+2026-08-24 17:03:21.948 PDT [2325037] LOG:  skipping vacuum of "_ecdz_graph_17792_71717171717141718171717171717171" --- lock not available
+2026-08-24 17:03:47.186 PDT [2321440] LOG:  checkpoint complete: wrote 320 buffers (2.0%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=38.317 s, sync=0.879 s, total=39.672 s; sync files=61, longest=0.612 s, average=0.015 s; distance=529356 kB, estimate=529356 kB; lsn=0/40030770, redo lsn=0/22045978
+2026-08-24 17:03:50.142 PDT [2321440] LOG:  checkpoint starting: wal
+2026-08-24 17:04:11.568 PDT [2321440] LOG:  checkpoint complete: wrote 39 buffers (0.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=21.057 s, sync=0.132 s, total=21.427 s; sync files=9, longest=0.054 s, average=0.015 s; distance=541186 kB, estimate=541186 kB; lsn=0/47006E70, redo lsn=0/430C6478
+2026-08-24 17:04:47.980 PDT [2325168] LOG:  SSL error: unexpected eof while reading
+2026-08-24 17:04:47.981 PDT [2325168] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 17:05:03.666 PDT [2325187] LOG:  SSL error: unexpected eof while reading
+2026-08-24 17:05:03.666 PDT [2325187] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 17:07:08.660 PDT [2326020] LOG:  SSL error: unexpected eof while reading
+2026-08-24 17:07:08.660 PDT [2326020] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 17:07:16.318 PDT [2326092] LOG:  SSL error: unexpected eof while reading
+2026-08-24 17:07:16.318 PDT [2326092] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 17:07:23.324 PDT [2326118] LOG:  SSL error: unexpected eof while reading
+2026-08-24 17:07:23.324 PDT [2326118] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 17:07:31.728 PDT [2326135] LOG:  SSL error: unexpected eof while reading
+2026-08-24 17:07:31.728 PDT [2326135] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 17:07:31.748 PDT [2324788] LOG:  SSL error: unexpected eof while reading
+2026-08-24 17:07:31.748 PDT [2324788] LOG:  could not receive data from client: Connection reset by peer
+2026-08-24 17:07:32.551 PDT [2321436] LOG:  received fast shutdown request
+2026-08-24 17:07:32.586 PDT [2321436] LOG:  aborting any active transactions
+2026-08-24 17:07:32.589 PDT [2321436] LOG:  background worker "logical replication launcher" (PID 2321445) exited with exit code 1
+2026-08-24 17:07:32.595 PDT [2321440] LOG:  shutting down
+2026-08-24 17:07:32.600 PDT [2321440] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 17:07:32.666 PDT [2321440] LOG:  checkpoint complete: wrote 27 buffers (0.2%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 4 recycled; write=0.005 s, sync=0.020 s, total=0.071 s; sync files=30, longest=0.006 s, average=0.001 s; distance=67786 kB, estimate=493846 kB; lsn=0/472F9050, redo lsn=0/472F9050
+2026-08-24 17:07:32.703 PDT [2321436] LOG:  database system is shut down

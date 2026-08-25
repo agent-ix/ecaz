@@ -1,0 +1,22 @@
+2026-08-24 16:26:57.890 PDT [2288974] LOG:  registered custom cumulative statistics "ecaz" with ID 25
+2026-08-24 16:26:57.908 PDT [2288974] LOG:  starting PostgreSQL 18.3 on x86_64-pc-linux-gnu, compiled by gcc (Ubuntu 11.4.0-1ubuntu1~22.04.3) 11.4.0, 64-bit
+2026-08-24 16:26:57.908 PDT [2288974] LOG:  listening on IPv4 address "127.0.0.1", port 44040
+2026-08-24 16:26:57.912 PDT [2288974] LOG:  listening on IPv4 address "127.0.0.2", port 44040
+2026-08-24 16:26:57.919 PDT [2288980] LOG:  database system was shut down at 2026-08-24 16:26:55 PDT
+2026-08-24 16:26:57.933 PDT [2288974] LOG:  database system is ready to accept connections
+2026-08-24 16:28:48.678 PDT [2288978] LOG:  checkpoint starting: wal
+2026-08-24 16:33:00.180 PDT [2288978] LOG:  checkpoint complete: wrote 93 buffers (0.6%), wrote 3 SLRU buffers; 0 WAL file(s) added, 0 removed, 33 recycled; write=251.072 s, sync=0.267 s, total=251.502 s; sync files=301, longest=0.083 s, average=0.001 s; distance=535325 kB, estimate=535325 kB; lsn=0/3F77A590, redo lsn=0/2221B9C0
+2026-08-24 16:33:24.274 PDT [2295737] WARNING:  ec_distann ambuild expects unit-normalized source vectors for the exact 1-ip build distance; sampled ||v|| = 4.5828 at position 0
+2026-08-24 16:33:24.746 PDT [2295745] ERROR:  ec_distann physical aminsert failed: EC_FAULT_INJECTED: physical insert failed after graph append before backlinks
+2026-08-24 16:33:24.746 PDT [2295745] STATEMENT:  SET ec_distann.debug_fail_insert=true; INSERT INTO mi VALUES (501,'00000000-0000-4000-8000-000000000501',(SELECT array_agg((sin(501 * 0.017 * (d + 1)) + cos(501 * 0.0031 * (d + 1)))::real)FROM generate_series(0, 16 - 1) d), encode_to_ecvector((SELECT array_agg((sin(501 * 0.017 * (d + 1)) + cos(501 * 0.0031 * (d + 1)))::real) FROM generate_series(0, 16 - 1) AS d), 4, 42));
+2026-08-24 16:33:48.205 PDT [2288978] LOG:  checkpoint starting: time
+2026-08-24 16:34:38.153 PDT [2288978] LOG:  checkpoint complete: wrote 9184 buffers (56.1%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 30 recycled; write=48.754 s, sync=0.775 s, total=49.948 s; sync files=129, longest=0.623 s, average=0.007 s; distance=503853 kB, estimate=532177 kB; lsn=0/611E7938, redo lsn=0/40E270F8
+2026-08-24 16:34:38.154 PDT [2288978] LOG:  checkpoint starting: wal
+2026-08-24 16:34:38.436 PDT [2288974] LOG:  received fast shutdown request
+2026-08-24 16:34:38.700 PDT [2288974] LOG:  aborting any active transactions
+2026-08-24 16:34:38.702 PDT [2288974] LOG:  background worker "logical replication launcher" (PID 2288983) exited with exit code 1
+2026-08-24 16:34:39.026 PDT [2288978] LOG:  checkpoint complete: wrote 588 buffers (3.6%), wrote 1 SLRU buffers; 0 WAL file(s) added, 0 removed, 37 recycled; write=0.533 s, sync=0.143 s, total=0.873 s; sync files=15, longest=0.128 s, average=0.010 s; distance=595054 kB, estimate=595054 kB; lsn=0/68457100, redo lsn=0/65342C00
+2026-08-24 16:34:39.026 PDT [2288978] LOG:  shutting down
+2026-08-24 16:34:39.031 PDT [2288978] LOG:  checkpoint starting: shutdown immediate
+2026-08-24 16:34:39.075 PDT [2288978] LOG:  checkpoint complete: wrote 7 buffers (0.0%), wrote 0 SLRU buffers; 0 WAL file(s) added, 0 removed, 3 recycled; write=0.001 s, sync=0.006 s, total=0.049 s; sync files=4, longest=0.005 s, average=0.002 s; distance=50257 kB, estimate=540575 kB; lsn=0/68457178, redo lsn=0/68457178
+2026-08-24 16:34:39.111 PDT [2288974] LOG:  database system is shut down
