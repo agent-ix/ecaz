@@ -1,6 +1,6 @@
 # Task 235 packet 002 artifact manifest
 
-- head SHA: `ed32ae6df83ea94b6f1e8436dbaa6db6d376ce8e`
+- head SHA: `7584c1bf3fc14569b9bfc7928d6a18e2a15728d5`
 - task bucket: `reviews/task-235`
 - packet: `002-bounded-write-transport`
 - timestamp: `2026-08-25T11:54:17-07:00`
@@ -46,4 +46,3 @@ whitespace error was reported.
 
 No benchmark result is claimed. This slice changes write/lifecycle error and
 recovery behavior, not quantizer, scan, rerank, posting, or storage behavior.
-

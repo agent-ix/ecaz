@@ -1,23 +1,23 @@
-Script started on 2026-08-25 11:55:52-07:00 [<not executed on terminal>]
+Script started on 2026-08-25 12:03:38-07:00 [<not executed on terminal>]
    Compiling ecaz v0.1.1 (/home/peter/dev/ecaz/.worktrees/task235-write-lifecycle-cancellation)
-    Finished `test` profile [unoptimized + debuginfo] target(s) in 38.86s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 42.94s
      Running unittests src/lib.rs (/home/peter/.cargo-target/debug/deps/ecaz-36c5b2b4a890b0c2)
 
 running 17 tests
 test am::ec_distann::remote_transport::tests::interrupt_poll_accepts_cancel_and_backend_termination ... ok
-test am::ec_distann::remote_transport::tests::owned_record_wire_detail_extracts_only_bounded_vec_id ... ok
 test am::ec_distann::remote_transport::tests::missing_coverage_is_an_error ... ok
+test am::ec_distann::remote_transport::tests::owned_record_wire_detail_extracts_only_bounded_vec_id ... ok
 test am::ec_distann::remote_transport::tests::conninfo_parse_error_is_redacted ... ok
+test am::ec_distann::remote_transport::tests::physical_prepared_gid_rejects_untrusted_names ... ok
 test am::ec_distann::remote_transport::tests::parsed_remote_config_has_nonzero_connect_timeout ... ok
 test am::ec_distann::remote_transport::tests::physical_prepared_gid_is_fenced_to_index_and_owner ... ok
-test am::ec_distann::remote_transport::tests::physical_prepared_gid_rejects_untrusted_names ... ok
-test am::ec_distann::remote_transport::tests::prepared_resolution_follows_coordinator_commit_status_only ... ok
 test am::ec_distann::remote_transport::tests::pool_key_changes_on_rotation_without_exposing_conninfo ... ok
+test am::ec_distann::remote_transport::tests::prepared_resolution_follows_coordinator_commit_status_only ... ok
 test am::ec_distann::remote_transport::tests::read_batch_failure_is_uniform_and_deterministic ... ok
 test am::ec_distann::remote_transport::tests::reassembles_interleaved_request_across_owners ... ok
 test am::ec_distann::remote_transport::tests::remote_await_preserves_remote_error ... ok
-test am::ec_distann::remote_transport::tests::successful_read_batch_preserves_request_order ... ok
 test am::ec_distann::remote_transport::tests::write_outcome_requires_an_explicit_server_error_for_not_applied ... ok
+test am::ec_distann::remote_transport::tests::successful_read_batch_preserves_request_order ... ok
 test am::ec_distann::remote_transport::tests::wrong_response_count_is_an_error ... ok
 test am::ec_distann::remote_transport::tests::remote_await_enforces_client_deadline ... ok
 test am::ec_distann::remote_transport::tests::owner_futures_are_driven_concurrently ... ok
@@ -25,4 +25,4 @@ test am::ec_distann::remote_transport::tests::owner_futures_are_driven_concurren
 test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 2588 filtered out; finished in 0.10s
 
 
-Script done on 2026-08-25 11:56:33-07:00 [COMMAND_EXIT_CODE="0"]
+Script done on 2026-08-25 12:04:25-07:00 [COMMAND_EXIT_CODE="0"]

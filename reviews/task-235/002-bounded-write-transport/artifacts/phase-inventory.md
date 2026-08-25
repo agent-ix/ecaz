@@ -1,6 +1,6 @@
 # Task 235 remote phase inventory
 
-Source checkpoint: `ed32ae6df83ea94b6f1e8436dbaa6db6d376ce8e`.
+Source checkpoint: `7584c1bf3fc14569b9bfc7928d6a18e2a15728d5`.
 
 ## Outcome vocabulary
 
@@ -33,7 +33,7 @@ interrupt observed while the runtime was parked.
 | Coordinator commit/abort callback | `resolve_physical_insert_prepared` | fresh blocking TLS client with connect timeout, server statement timeout, and TCP user timeout | `COMMIT/ROLLBACK PREPARED` acknowledgement may be lost | intent remains operator-visible; repeated reaper action uses coordinator xid and prepared-xact presence |
 | Terminal intent update | `commit_local` / `rollback_local` | same bounded blocking callback client | terminal audit update may be lost | terminal state is audit only, not recovery decision authority |
 | Tombstone `COMMIT` | routed VACUUM tombstone | `bounded_write_phase` | flag may be committed before response loss | source-map row is retained by caller on error; endpoint retry is idempotent; session evicted |
-| Reaper scan/action | `ec_distann_reap_orphaned_remote_prepared_xacts` | fresh blocking TLS client with connect, statement, and TCP user timeouts | action acknowledgement may be lost | actual coordinator `pg_xact_status` is authoritative; repeated invocation converges while status is retained |
+| Reaper scan/action | `ec_distann_reap_orphaned_remote_prepared_xacts` | fresh blocking TLS client with connect, statement, and TCP user timeouts | action acknowledgement may be lost | union of prepared GIDs and nonterminal intent GIDs is reconciled; actual coordinator `pg_xact_status` is authoritative; repeated invocation converges while status is retained |
 
 ## Recovery decision table
 
@@ -46,6 +46,11 @@ interrupt observed while the runtime was parked.
 
 `commit_intended`, `prepare_acked`, and `prepare_requested` remain useful audit
 states but cannot override the coordinator's actual transaction outcome.
+Scanning nonterminal intents as well as prepared xacts means recovery can
+finalize audit state after an earlier `COMMIT PREPARED`/`ROLLBACK PREPARED`
+succeeded but its response or terminal update was lost. Conversely, a prepared
+GID with a missing intent is explicit in the result and still resolves only
+from the coordinator status.
 
 ## Build and generation lifecycle phases
 
@@ -76,4 +81,3 @@ completion and restart.
 Packet 004 must prove duplicate operator recovery, status-unavailable STOP,
 prepared-slot saturation/readiness, and bounded callback/reaper behavior. This
 inventory does not claim those runtime gates yet.
-
