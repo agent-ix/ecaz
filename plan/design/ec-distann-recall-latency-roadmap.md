@@ -125,7 +125,7 @@ validity requirements.
 | 220 | Owner array materialization (MAT-16) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | packed SQL arm regressed payload SQL 9.36→32.06 ms/scan (~3.4×) and warm physical latency 23.00→36.00 ms; correction `c8b5fd9ee` restored featureless production and FR-079 to `build_payload_sql` (verified round 2, production SQL now test-pinned); MAT-16 rejected as implemented |
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
 | 222 | Qual-aware payload projection | **complete — review-closed ACCEPT** (2026-08-25) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
-| 223 | Direct owner tuple materialization | proposed — attribution unblocked by 222 | direct implementation requires a refreshed residual of at least 1 ms/scan or 5% warm mean; Task 222's 100k whole-bucket result is 0.515 ms payload SQL / 0.818 ms endpoint work |
+| 223 | Direct owner tuple materialization | **100k ceiling gate evaluated; packet 002 review-open; coder STOP** | the entire addressable payload-SQL bucket is 0.514999 ms against an 11.60 ms warm mean; even a zero-cost replacement is 4.439647%, below both registered gates, so substage instrumentation and a direct candidate are not authorized pending outside review |
 | 224 | Owner payload heap locality | proposed — conditional on 223 attribution | measure block dispersion and detoast/send share; at most one TID reorder or block-batched detoast candidate |
 | 225 | Finalist materialization overlap | proposed — conditional | measure finalist stability and hidden round-trip ceiling; at most one bounded overlap/piggyback candidate |
 | 226 | Current-head BW8 transfer | **complete — review-closed ACCEPT; useful non-default** (2026-08-25) | recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
@@ -146,10 +146,14 @@ validity requirements.
 
 Task 222 removed the dominant payload-projection waste: at 100k owner payload
 SQL fell from 7.683 ms/scan to 0.515 ms/scan and owner endpoint work fell from
-7.978 to 0.818 ms/scan, with byte-identical predictions and storage. Tasks 223
-and 224 therefore begin as reviewed ceiling/attribution closeouts, not assumed
-implementations. Task 225 remains conditional on a separately measured
-finalist-stability and hideable-RTT premise.
+7.978 to 0.818 ms/scan, with byte-identical predictions and storage. Task 223
+packet 002 applies its registered entry gate to that accepted result: the whole
+addressable payload-SQL bucket is only 4.439647% of the matched 11.60 ms warm
+mean, so the coder recommends STOP before instrumentation or a candidate;
+outside review remains open. Task 224 stays blocked on that disposition and
+begins as a ceiling/attribution closeout, not an assumed implementation. Task
+225 remains conditional on a separately measured finalist-stability and
+hideable-RTT premise.
 
 The operator-selected storage sequence remains mandatory and unstacked:
 

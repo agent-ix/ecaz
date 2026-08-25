@@ -1,11 +1,14 @@
 # Task 223: ec_distann Direct Owner Tuple Materialization
 
-Status: **proposed; attribution gate unblocked by Task 222's accepted production
-disposition** (updated 2026-08-25). Priority: P1 latency. Task 222's 100k
-whole-bucket result (0.515 ms owner payload SQL, 0.818 ms owner endpoint work)
-is already below the 1 ms direct-implementation threshold and puts the 5%
-threshold near the boundary; this task must record the reviewed GO/STOP rather
-than assume either outcome.
+Status: **100k ceiling gate evaluated; packet 002 review-open; coder recommends
+STOP before substage instrumentation or a direct-tuple candidate** (updated
+2026-08-25). Priority: P1 latency. Task 222's accepted production result
+measures the entire addressable owner payload-SQL bucket at 0.514999 ms against
+an 11.60 ms warm mean. Even an impossible zero-cost replacement is only a
+4.439647% end-to-end ceiling, below both the 1 ms and 5% implementation gates.
+Evidence: `reviews/task-223/002-owner-substage-attribution/`. Outside review
+must accept or reject the dominance argument before this task closes; Task 224
+remains blocked on that verdict.
 
 Program ledger: `plan/design/ec-distann-recall-latency-roadmap.md`, candidate
 MAT-41. This is a new physical tuple-access candidate, not a reopening of Task
@@ -38,6 +41,18 @@ PostgreSQL snapshot, type, null, TOAST, ordering, and failure semantics.
    and response assembly.
 3. Direct access proceeds only if the measured addressable residual is at least
    1 ms/scan or 5% of warm end-to-end mean at 100k.
+
+The accepted Task 222 matrix resolves gate 3 before new instrumentation is
+needed. Its `materialize_owner_payload_sql_work` timer begins before relation
+name/SQL construction and TID argument preparation and ends after SPI execution,
+PostgreSQL array result decoding, byte flattening, and ordered response assembly.
+That whole bucket is the strict upper bound on work a direct tuple path could
+remove. At 0.514999 ms it is below 1 ms and below 5% of the matched 11.60 ms
+warm mean (the 5% threshold is 0.580000 ms). Splitting that bucket into
+substages cannot make any removable subset larger than the whole. Packet 002
+therefore requests STOP before adding benchmark-only counters or implementing
+P2, rather than collecting measurements that cannot change the registered
+decision.
 
 ## Scope
 
@@ -90,4 +105,3 @@ Run one same-generation 100k A/B. Advance only a useful result to the standard
 - Task 220's rejected MAT-16 SQL form
 - `src/am/ec_distann/generation_read.rs` physical payload endpoint
 - `src/am/ec_distann/remote_endpoint.rs` payload SQL builders
-
