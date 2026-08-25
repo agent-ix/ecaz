@@ -10841,6 +10841,184 @@ async fn task235_prepared_slot_saturation_cell(
     Ok(lines)
 }
 
+async fn task235_routed_tombstone_owner_death_cell(
+    args: &LocalMultinodePg18Args,
+    socket_dir: &Path,
+    nodes: &[Node],
+) -> Result<Vec<String>> {
+    let (probe, probe_connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, nodes[0].port), tokio_postgres::NoTls)
+            .await?;
+    let probe_task = tokio::spawn(async move { probe_connection.await });
+    let row = probe
+        .query_one(
+            "SELECT d.id, d.source_id::text, m.vec_id
+               FROM dm d
+               JOIN ec_distann_physical_source_map m ON m.source_tid = d.ctid
+              WHERE m.index_oid = 'dm_idx'::regclass::oid
+                AND ec_distann_owning_node(m.vec_id, $1::integer, 1) = 1
+              ORDER BY d.id LIMIT 1",
+            &[&i32::try_from(nodes.len())?],
+        )
+        .await?;
+    let id = row.get::<_, i64>(0);
+    let source_id = row.get::<_, String>(1);
+    let vec_id = row.get::<_, i64>(2);
+    probe_task.abort();
+    let owner_node = &nodes[1];
+    let (client, connection_task) = task235_fault_client(
+        socket_dir,
+        &nodes[0],
+        Some("endpoint_mutation_after_apply_delay"),
+        5_000,
+    )
+    .await?;
+    client
+        .execute("DELETE FROM dm WHERE id = $1", &[&id])
+        .await?;
+    let client = Arc::new(client);
+    let vacuum_client = Arc::clone(&client);
+    let vacuum = tokio::spawn(async move { vacuum_client.batch_execute("VACUUM dm").await });
+    let (killer, killer_connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, owner_node.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let killer_task = tokio::spawn(async move { killer_connection.await });
+    let started = Instant::now();
+    let owner_pid = loop {
+        let row = killer
+            .query_opt(
+                "SELECT pid FROM pg_stat_activity
+                  WHERE datname = current_database() AND state = 'active'
+                    AND query LIKE '%ec_distann_apply_physical_tombstone%'
+                    AND pid <> pg_backend_pid()
+                  ORDER BY query_start LIMIT 1",
+                &[],
+            )
+            .await?;
+        if let Some(row) = row {
+            break row.get::<_, i32>(0);
+        }
+        if started.elapsed() >= Duration::from_secs(3) {
+            vacuum.abort();
+            killer_task.abort();
+            connection_task.abort();
+            bail!("Task 235 tombstone cell did not observe the delayed owner endpoint");
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    let terminated = killer
+        .query_one("SELECT pg_terminate_backend($1)", &[&owner_pid])
+        .await?
+        .get::<_, bool>(0);
+    killer_task.abort();
+    if !terminated {
+        vacuum.abort();
+        connection_task.abort();
+        bail!("Task 235 tombstone owner backend rejected termination");
+    }
+    let first = tokio::time::timeout(Duration::from_secs(5), vacuum)
+        .await
+        .wrap_err("waiting for Task 235 failed tombstone VACUUM")?
+        .wrap_err("joining Task 235 failed tombstone VACUUM")?;
+    if first.is_ok() {
+        connection_task.abort();
+        bail!("Task 235 owner-death tombstone VACUUM unexpectedly succeeded");
+    }
+    client
+        .batch_execute(
+            "SELECT 1;
+             RESET ec_distann.debug_write_fault_phase;
+             SET ec_distann.debug_write_fault_delay_ms = 0;",
+        )
+        .await
+        .wrap_err("resetting Task 235 routed tombstone fault")?;
+    client
+        .batch_execute("VACUUM dm")
+        .await
+        .wrap_err("retrying Task 235 routed tombstone VACUUM")?;
+    drop(client);
+    tokio::time::timeout(Duration::from_secs(2), connection_task)
+        .await
+        .wrap_err("closing Task 235 tombstone coordinator client")?
+        .wrap_err("joining Task 235 tombstone coordinator client")?
+        .wrap_err("Task 235 tombstone coordinator connection failed while closing")?;
+
+    let (owner, owner_connection) = tokio_postgres::connect(
+        &conninfo(socket_dir, owner_node.port),
+        tokio_postgres::NoTls,
+    )
+    .await?;
+    let owner_task = tokio::spawn(async move { owner_connection.await });
+    let fingerprint = owner
+        .query_one(
+            "SELECT epoch_fingerprint
+               FROM ec_distann_generation
+              WHERE index_oid = 'dm_idx'::regclass::oid AND state = 'Published'
+              ORDER BY epoch DESC LIMIT 1",
+            &[],
+        )
+        .await?
+        .get::<_, Vec<u8>>(0);
+    let roster = nodes
+        .iter()
+        .map(|node| format!("{}@{}", node.node_id, conninfo(socket_dir, node.port)))
+        .collect::<Vec<_>>()
+        .join(";")
+        .replace('\'', "''");
+    owner
+        .batch_execute(&format!(
+            "SET ec_distann.roster = '{roster}'; SET ec_distann.local_node_id = {}",
+            owner_node.node_id,
+        ))
+        .await?;
+    let zero_query = vec![0.0_f32; usize::try_from(args.dim)?];
+    let tombstoned = owner
+        .query_one(
+            "SELECT is_tombstone
+               FROM ec_distann_expand_physical_nodes(
+                    'public.dm_idx'::regclass, $1::bytea,
+                    ARRAY[$2::real[]], ARRAY[$3::bigint], NULL, NULL)",
+            &[&fingerprint, &zero_query, &vec_id],
+        )
+        .await?
+        .get::<_, bool>(0);
+    owner_task.abort();
+    let (coordinator, coordinator_connection) =
+        tokio_postgres::connect(&conninfo(socket_dir, nodes[0].port), tokio_postgres::NoTls)
+            .await?;
+    let coordinator_task = tokio::spawn(async move { coordinator_connection.await });
+    let state = coordinator
+        .query_one(
+            "SELECT
+                 (SELECT count(*)::bigint FROM dm WHERE id = $1),
+                 (SELECT count(*)::bigint FROM ec_distann_physical_source_map
+                   WHERE index_oid = 'dm_idx'::regclass::oid AND vec_id = $2),
+                 (SELECT count(*)::bigint FROM pg_prepared_xacts
+                   WHERE gid LIKE 'ec_distann_insert_%'),
+                 (SELECT count(*)::bigint FROM ec_distann_remote_prepared_xact_intent
+                   WHERE intent_state IN ('prepare_requested', 'prepare_acked', 'commit_intended'))",
+            &[&id, &vec_id],
+        )
+        .await?;
+    coordinator_task.abort();
+    let source_rows = state.get::<_, i64>(0);
+    let source_map_rows = state.get::<_, i64>(1);
+    let prepared = state.get::<_, i64>(2);
+    let nonterminal = state.get::<_, i64>(3);
+    if source_rows != 0 || source_map_rows != 0 || !tombstoned || prepared != 0 || nonterminal != 0
+    {
+        bail!(
+            "Task 235 tombstone retry did not converge: source_rows={source_rows} source_map_rows={source_map_rows} tombstoned={tombstoned} prepared={prepared} nonterminal={nonterminal}"
+        );
+    }
+    Ok(vec![format!(
+        "task235_write_fault cell=routed_tombstone_owner_backend_death pass=true owner_node={} owner_pid={} source_id={} vec_id={} first_vacuum_error=true retry_vacuum=true source_rows=0 source_map_rows=0 owner_tombstone=1 prepared=0 nonterminal=0",
+        owner_node.node_id, owner_pid, source_id, vec_id,
+    )])
+}
+
 fn task235_safe_relation_name(value: &str) -> bool {
     !value.is_empty()
         && value
@@ -11319,6 +11497,7 @@ async fn run_task235_write_fault_matrix(
         }
     }
     lines.extend(task235_prepared_slot_saturation_cell(args, socket_dir, nodes, 100).await?);
+    lines.extend(task235_routed_tombstone_owner_death_cell(args, socket_dir, nodes).await?);
     Ok(lines)
 }
 
