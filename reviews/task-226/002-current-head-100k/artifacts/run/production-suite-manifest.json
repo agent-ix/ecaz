@@ -1,0 +1,164 @@
+{
+  "suite": "task226-current-head-bw8-100k",
+  "schema_version": 1,
+  "config": "reviews/task-226/002-current-head-100k/artifacts/task226-current-head-bw8-100k.json",
+  "config_sha256": "faec8932e937ea12c85e201fa6a3601dc561572cbc687887b72ec0194a5f11f3",
+  "dry_run": false,
+  "generated_at_unix_ms": 1787559874848,
+  "runner_git_commit": "a1f1584966011ca7c16175fe91f8efc302c8cf25",
+  "connection": {
+    "database": "tqvector_bench",
+    "host": null,
+    "port": null,
+    "user": null,
+    "password_configured": false
+  },
+  "steps": [
+    {
+      "name": "current-head-bw8-production-100k",
+      "kind": "distann-local-multinode",
+      "command": [
+        "--database",
+        "tqvector_bench",
+        "dev",
+        "distann-multicluster",
+        "local-multinode-pg18",
+        "--pg",
+        "18",
+        "--artifact-dir",
+        "reviews/task-226/002-current-head-100k/artifacts/run/production-100k",
+        "--run-dir",
+        "/home/peter/.ecaz/clusters/task226-bw8-production-100k",
+        "--log-file",
+        "reviews/task-226/002-current-head-100k/artifacts/run/production-100k/distann-local-multinode.log",
+        "--nodes",
+        "3",
+        "--physical-benchmark",
+        "--skip-single-control",
+        "--skip-concurrency-drill",
+        "--benchmark-iterations",
+        "50",
+        "--benchmark-warmup-iterations",
+        "10",
+        "--base-port",
+        "43100",
+        "--graph-degree",
+        "32",
+        "--build-shards",
+        "1",
+        "--head-index-cap",
+        "4096",
+        "--beam-width",
+        "4",
+        "--candidate-heap-limit",
+        "32",
+        "--hop-rounds",
+        "100",
+        "--benchmark-seed-variant",
+        "aa-control:persisted_head:32:32:rabitq:10:off:4:100:off:off",
+        "--benchmark-seed-variant",
+        "aa-candidate:persisted_head:32:32:rabitq:10:off:4:100:off:off",
+        "--benchmark-seed-variant",
+        "bw4-control:persisted_head:32:32:rabitq:10:off:4:100:off:off",
+        "--benchmark-seed-variant",
+        "bw8-candidate:persisted_head:32:32:rabitq:10:off:8:100:off:off",
+        "--same-generation-recall-pair",
+        "aa-control,aa-candidate",
+        "--queries",
+        "200",
+        "--top-k",
+        "10",
+        "--skip-fault-drills",
+        "--corpus-prefix",
+        "ec_real_100k",
+        "--staged-dir",
+        "/home/peter/dev/ecaz/data/staged-current"
+      ],
+      "selected": true,
+      "tags": [
+        "task226",
+        "bw8",
+        "production",
+        "100k",
+        "same-generation",
+        "nfr022",
+        "metrics_mode=benchmark"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "aa-control",
+          "id": "task226-aa-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Current three-owner sharded BW4/H100 production control with fixed-4096 persisted head and lazy-10 materialization."
+        },
+        {
+          "variant": "aa-candidate",
+          "id": "task226-aa-candidate",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Byte-identity A/A replay of the production control on the same immutable generation."
+        },
+        {
+          "variant": "bw4-control",
+          "id": "task226-bw4-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Registered BW4/H100 release control immediately preceding the paired BW8 candidate."
+        },
+        {
+          "variant": "bw8-candidate",
+          "id": "task226-bw8-candidate",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Only beam width changes from the adjacent BW4/H100 control; generation, head, L32, H100, scoring, and lazy-10 remain fixed."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-226/002-current-head-100k/artifacts/run/production-100k/distann-multinode-summary.log",
+        "reviews/task-226/002-current-head-100k/artifacts/run/production-100k/physical-head-membership.json"
+      ],
+      "status": "succeeded",
+      "started_at_unix_ms": 1787559874869,
+      "finished_at_unix_ms": 1787561424634,
+      "duration_ms": 1396259,
+      "exit_code": 0
+    },
+    {
+      "name": "current-head-bw8-attribution-100k",
+      "kind": "distann-local-multinode",
+      "command": [],
+      "selected": false,
+      "tags": [
+        "task226",
+        "bw8",
+        "attribution",
+        "100k",
+        "same-generation",
+        "nfr022",
+        "metrics_mode=full_metrics"
+      ],
+      "nfr_021_registrations": [
+        {
+          "variant": "bw4-control",
+          "id": "task226-attribution-bw4-control",
+          "role": "control",
+          "admissibility": "conforming",
+          "rationale": "Fresh full-metrics BW4/H100 attribution control; instrumented latency is diagnostic only."
+        },
+        {
+          "variant": "bw8-candidate",
+          "id": "task226-attribution-bw8-candidate",
+          "role": "candidate",
+          "admissibility": "conforming",
+          "rationale": "Fresh full-metrics BW8/H100 attribution arm; only beam width differs from its control."
+        }
+      ],
+      "expected_artifacts": [
+        "reviews/task-226/002-current-head-100k/artifacts/run/attribution-100k/distann-multinode-summary.log",
+        "reviews/task-226/002-current-head-100k/artifacts/run/attribution-100k/physical-head-membership.json"
+      ],
+      "status": "skipped"
+    }
+  ]
+}
