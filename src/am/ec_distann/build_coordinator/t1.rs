@@ -187,7 +187,7 @@ pub(super) fn abort_epoch_build(index_regclass: PgRelation, build_id: Uuid) {
             } else {
                 let conninfo = super::super::node_registry::resolve_conninfo_secret(&secret_name)?;
                 super::super::remote_transport::remote_abort_epoch_handoff(
-                    &conninfo,
+                    conninfo.conninfo(),
                     &remote_index_regclass,
                     &build_id_text,
                 )?;

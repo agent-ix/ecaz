@@ -1,6 +1,95 @@
     use super::*;
     use std::sync::{Mutex, OnceLock};
 
+    #[cfg(feature = "pg_test")]
+    #[pg_extern]
+    fn ec_distann_test_read_rpc_probe(
+        index_oid: pg_sys::Oid,
+        rpc: String,
+        target_node_id: i32,
+    ) -> i64 {
+        let target_node_id = u32::try_from(target_node_id).unwrap_or_else(|_| {
+            pgrx::error!("Task 234 read RPC probe target node id must be non-negative")
+        });
+        crate::am::ec_distann::read_rpc_probe_for_test(index_oid, &rpc, target_node_id)
+            .unwrap_or_else(|error| error.raise())
+    }
+
+    #[cfg(feature = "pg_test")]
+    #[pg_extern]
+    fn ec_distann_test_read_rpc_snapshot() -> TableIterator<
+        'static,
+        (
+            name!(batch_total, i64),
+            name!(batch_successes, i64),
+            name!(batch_failures, i64),
+            name!(pooled_connections, i64),
+            name!(prepared_statements, i64),
+        ),
+    > {
+        let snapshot = crate::am::ec_distann::read_transport_snapshot_for_test();
+        TableIterator::once((
+            snapshot.batch_total,
+            snapshot.batch_successes,
+            snapshot.batch_failures,
+            snapshot.pooled_connections,
+            snapshot.prepared_statements,
+        ))
+    }
+
+    #[cfg(feature = "pg_test")]
+    #[pg_extern]
+    fn ec_distann_test_remote_tls_probe(
+        conninfo: String,
+    ) -> TableIterator<
+        'static,
+        (
+            name!(connection_status, String),
+            name!(ssl, bool),
+            name!(tls_version, String),
+            name!(category, String),
+        ),
+    > {
+        let mut client = match crate::am::common::remote_postgres_tls::connect_remote_postgres(
+            &conninfo,
+            crate::am::common::remote_postgres_tls::RemoteTlsPolicy::DistannSecure,
+            std::time::Duration::from_secs(2),
+            2_000,
+        ) {
+            Ok(client) => client,
+            Err(error) => {
+                return TableIterator::once((
+                    "connect_failed".to_owned(),
+                    false,
+                    String::new(),
+                    error.category().to_owned(),
+                ));
+            }
+        };
+        let row = match client.query_one(
+            "SELECT ssl, coalesce(version, '') \
+               FROM pg_stat_ssl \
+              WHERE pid = pg_backend_pid()",
+            &[],
+        ) {
+            Ok(row) => row,
+            Err(_) => {
+                return TableIterator::once((
+                    "probe_failed".to_owned(),
+                    false,
+                    String::new(),
+                    "secure_session_setup_failed".to_owned(),
+                ));
+            }
+        };
+        TableIterator::once((
+            "connected".to_owned(),
+            row.try_get::<_, bool>(0).unwrap_or(false),
+            row.try_get::<_, String>(1).unwrap_or_default(),
+            String::new(),
+        ))
+    }
+
     struct ScopedEnvVar {
         key: &'static str,
         previous: Option<std::ffi::OsString>,

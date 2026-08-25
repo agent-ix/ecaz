@@ -14,6 +14,7 @@ pub(crate) mod parallel_slot;
 pub(crate) mod pg_ptr;
 pub(crate) mod quant_codec;
 pub(crate) mod reloptions;
+pub(crate) mod remote_postgres_tls;
 pub(crate) mod routine;
 pub(crate) mod scan_output;
 pub(crate) mod stats;

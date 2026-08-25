@@ -540,7 +540,10 @@ pub(super) fn build_epoch(
             } else {
                 super::super::remote_transport::remote_begin_epoch_handoff(
                     super::super::remote_transport::RemoteHandoffBegin {
-                        conninfo: conninfos[owner].as_deref().expect("remote conninfo resolved"),
+                        conninfo: conninfos[owner]
+                            .as_ref()
+                            .expect("remote conninfo resolved")
+                            .conninfo(),
                         index_regclass: &participant.remote_index_regclass,
                         epoch,
                         build_id: &build_id_text,
@@ -571,7 +574,10 @@ pub(super) fn build_epoch(
             let participant = &participants[owner];
             if !participant.is_local {
                 return super::super::remote_transport::remote_stage_epoch_batch(
-                    conninfos[owner].as_deref().expect("remote conninfo resolved"),
+                    conninfos[owner]
+                        .as_ref()
+                        .expect("remote conninfo resolved")
+                        .conninfo(),
                     &participant.remote_index_regclass,
                     &build_id_text,
                     sequence,
@@ -663,7 +669,10 @@ pub(super) fn build_epoch(
                 })?
             } else {
                 super::super::remote_transport::remote_seal_epoch_handoff(
-                    conninfos[owner].as_deref().expect("remote conninfo resolved"),
+                    conninfos[owner]
+                        .as_ref()
+                        .expect("remote conninfo resolved")
+                        .conninfo(),
                     &participant.remote_index_regclass,
                     &build_id_text,
                     owner_count,
