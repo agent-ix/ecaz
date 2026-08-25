@@ -8107,15 +8107,27 @@ async fn validate_reused_physical_fixture(
     let expected_seed = args
         .seed_strategy
         .clone()
-        .or_else(|| reuse_variant.as_ref().map(|variant| variant.strategy.clone()))
+        .or_else(|| {
+            reuse_variant
+                .as_ref()
+                .map(|variant| variant.strategy.clone())
+        })
         .unwrap_or_else(|| "head_sample_exact".to_owned());
     let expected_head_width = args
         .head_search_width
-        .or_else(|| reuse_variant.as_ref().map(|variant| variant.head_search_width))
+        .or_else(|| {
+            reuse_variant
+                .as_ref()
+                .map(|variant| variant.head_search_width)
+        })
         .unwrap_or((beam_width * 2).max(32));
     let expected_head_count = args
         .head_seed_count
-        .or_else(|| reuse_variant.as_ref().map(|variant| variant.head_seed_count))
+        .or_else(|| {
+            reuse_variant
+                .as_ref()
+                .map(|variant| variant.head_seed_count)
+        })
         .unwrap_or(expected_head_width);
     let expected_neighbor = args
         .neighbor_score_mode
