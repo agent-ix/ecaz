@@ -1,6 +1,6 @@
 # ec_distann Recall and Latency Optimization Roadmap
 
-Status: active planning ledger (2026-07-29). This document records the option
+Status: active planning ledger (updated 2026-08-25). This document records the option
 space after Tasks 180--183. It is not an ADR and does not authorize a production
 default, format, protocol, or placement change. Canonical execution scope lives
 in `plan/tasks/`; accepted architectural decisions live in an ADR.
@@ -125,8 +125,51 @@ validity requirements.
 | 220 | Owner array materialization (MAT-16) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | packed SQL arm regressed payload SQL 9.36→32.06 ms/scan (~3.4×) and warm physical latency 23.00→36.00 ms; correction `c8b5fd9ee` restored featureless production and FR-079 to `build_payload_sql` (verified round 2, production SQL now test-pinned); MAT-16 rejected as implemented |
 | 221 | Owner expanded locator (MAT-22) | **complete — review-closed ACCEPT, STOP** (2026-08-10) | lookup work removed (0.311→0 ms/scan) but end-to-end +1.2–1.6% at 100k; recall/prediction identity byte-identical; MAT-22 rejected — the MAT-16/21/22 owner-side family is now exhausted with owner payload SQL (~9.2 ms/scan) still dominant and uncandidated |
 | 222 | Qual-aware payload projection | **complete — review-closed ACCEPT** (2026-08-25) | exact mask preserves byte-identical results, recall, and storage while reducing warm mean latency 33.33%–40.41% at 10k/50k/100k; reviewer seq-03 cleanup and production-default disposition are addressed |
+| 223 | Direct owner tuple materialization | proposed — attribution unblocked by 222 | direct implementation requires a refreshed residual of at least 1 ms/scan or 5% warm mean; Task 222's 100k whole-bucket result is 0.515 ms payload SQL / 0.818 ms endpoint work |
+| 224 | Owner payload heap locality | proposed — conditional on 223 attribution | measure block dispersion and detoast/send share; at most one TID reorder or block-batched detoast candidate |
+| 225 | Finalist materialization overlap | proposed — conditional | measure finalist stability and hidden round-trip ceiling; at most one bounded overlap/piggyback candidate |
 | 226 | Current-head BW8 transfer | **complete — review-closed ACCEPT; useful non-default** (2026-08-25) | recall-neutral/faster at 10k, higher recall inside mean/p95 gate at 50k/100k, but p99 regresses; Task 219 retains BW4 default pending an explicit product ruling |
+| 227 | Recall residual + adaptive search | **complete — review-closed ACCEPT; STOP** (2026-08-25) | all 141 frozen-slice misses are traversal `budget_frontier`; no structural deficit, codec trigger, or eligible truth-free runtime policy |
+| 228 | RTT/BatANN trigger | proposed — measurement-only after 222–237 | post-layout/post-hardening production-TLS RTT, concurrency, framing, pool, and backpressure curve; reauthor BatANN planning only if ADR-085 D4's >=50% transport-share trigger is met |
+| 229 | Covering scalar payload sidecar | proposed — mandatory prototype | owner-local generation sidecar for declared common scalar projections; exact fallback, Task 167 lifecycle, and full 10k/50k/100k evidence required |
+| 230 | Hot/cold vertical row tier | proposed — mandatory after 229 | exact vector + bounded scalar hot tier and arbitrary-payload cold tier; exact reconstruction and full retrieval/storage/DML matrix |
+| 231 | Fixed-stride graph/vector blocks | proposed — mandatory after 230 | relation-backed dense-ordinal whole-node extents, direct block arithmetic, aligned multi-block records, warm and controlled-residency evidence |
+| 232 | Packed columnar immutable row tier | proposed — mandatory last isolated layout | per-attnum fixed/variable segments plus transactional row-heap DML overlay; narrow through whole-row workload comparison |
+| 233 | Hybrid node/columnar generation | proposed — mandatory after 232 | one ordinal and one authoritative field copy; fixed graph/vector extents plus non-vector payload columns; four-arm factorial at every scale |
+| 234 | Read RPC deadline/cancel parity | **implementation/fault matrix complete; closeout NOT DONE** | original mean +12.8%/+17.5% at 50k/100k; best screened fast path remains +7.1% at 50k; outside disposition required before merge |
+| 235 | Write/lifecycle RPC cancellation | proposed — Task 167 prerequisite complete | phase-aware deadlines and outcome-unknown recovery for DML, intent, 2PC callbacks/reaper, and lifecycle operations |
+| 236 | Secure transport/secret resolution | **complete — review-closed ACCEPT** (2026-08-25) | secret-backed production TLS, loopback-only plaintext, sanitized failures; measured TLS tradeoff accepted |
+| 237 | Protocol errors and EXPLAIN | proposed — blocked on 234; 236 complete | fail-closed missing-data taxonomy plus bounded normal-release traversal/materialization/pool/failure counters |
+| 238 | Retry snapshot use-after-free | fix on main; closeout review pending | equivalent lifetime fix landed in Task 167 PR #77 before the task was filed; restore deterministic regression coverage, evidence, and canonical bookkeeping |
 | 239 | Bounded-read overfetch | complete — review-closed ACCEPT; HARNESS REGRESSION CORRECTED, exact-main lazy-10 restored to 10/10; no rerun; packet 004 10k/50k/100k not triggered; Task 229/230--233 semantic-surface blocker lifted | exact-main runner/extension plus only the Task 239 harness fix restores production lazy-10 to 6 remote + 4 local = 10 reads/10 rows against an unchanged bound of 10, identical 0.9990 predictions over 200 queries / 2,000 trials, zero duplicates, nine scenarios exactly once in both logs, mixed/outage/routed-drill pass; packet 001's 12/10 was a shared-session batch-size GUC leak in the harness, not production overfetch; `git diff 41392c011 def565270 -- src` empty so no runtime change and no full-scale matrix; closeout `reviews/task-239/003-main-baseline-semantic-proof/feedback/2026-08-26-02-reviewer.md`, decision `reviews/task-239/003-main-baseline-semantic-proof/artifacts/live-run-decision.md` |
+
+## Post-222 execution program (2026-08-25)
+
+Task 222 removed the dominant payload-projection waste: at 100k owner payload
+SQL fell from 7.683 ms/scan to 0.515 ms/scan and owner endpoint work fell from
+7.978 to 0.818 ms/scan, with byte-identical predictions and storage. Tasks 223
+and 224 therefore begin as reviewed ceiling/attribution closeouts, not assumed
+implementations. Task 225 remains conditional on a separately measured
+finalist-stability and hideable-RTT premise.
+
+The operator-selected storage sequence remains mandatory and unstacked:
+
+1. Task 229 — covering scalar payload sidecar;
+2. Task 230 — hot exact-vector/scalar plus cold arbitrary-payload row tiers;
+3. Task 231 — fixed-stride dense-ordinal graph/vector node extents;
+4. Task 232 — packed per-attnum columnar immutable row tier; and
+5. Task 233 — fixed-stride graph/vector plus non-vector packed payload hybrid.
+
+Every layout gets its own 10k/50k/100k recall, latency, storage, construction,
+and DML evidence even if an earlier prototype STOPs or wins. The hybrid reruns
+the graph-layout × payload-layout factorial rather than inferring interaction
+from the isolated results.
+
+The production-transport sequence is Task 238 closeout, Task 234 outside
+disposition, Task 235 write/lifecycle hardening, and Task 237 error/EXPLAIN
+hardening. Task 236 already supplies the accepted TLS substrate. Task 228 runs
+only after Tasks 222–237 have reported, so its transport-share denominator
+reflects the selected layout and production security/cancellation semantics.
 
 Tasks 184, 191, 187, and 192--196 are complete. Task 195's implementation and
 release matrix received an outside-reviewed ACCEPT/PROMOTE: exact recall held
@@ -307,9 +350,9 @@ remain controls rather than new candidates.
 | MAT-22 | Return row-tier locator with expanded candidates | **rejected — Task 221 review-closed STOP (2026-08-10)**: the lookup saving (0.311 ms/scan) was smaller than the added expand/wire work; end-to-end +1.2–1.6% at 100k with byte-identical predictions; a revisit must carry tombstone state in the locator payload (reviewer P3) |
 | MAT-23 | Direct batched `vec_id -> row-tier TID` lookup | production mechanism confirmed by Task 193 packet-001 audit |
 | MAT-24 | `unnest(vec_ids) WITH ORDINALITY` join to directory/row tier | production mechanism confirmed by Task 193 packet-001 audit |
-| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional on heap locality counters |
-| MAT-26 | Batch detoast/binary-send work by physical block | conditional on varlena/heap share |
-| MAT-27 | Covering row-tier layout for common scalar projections | deferred; format/storage decision |
+| MAT-25 | Heap-block/TID-sorted fetch followed by rank restoration | conditional Task 224 after refreshed heap-locality counters |
+| MAT-26 | Batch detoast/binary-send work by physical block | conditional Task 224 after refreshed varlena/detoast attribution |
+| MAT-27 | Covering row-tier layout for common scalar projections | active Task 229 mandatory prototype |
 | MAT-28 | Exclude large/toasted columns unless planner proof requires them | **review-closed ACCEPT in Task 222** — typed target+qual mask with fail-closed all-column fallback |
 | MAT-29 | Strengthen minimal projection derivation | **review-closed ACCEPT in Task 222** — proves and elides only the ordering-only vector expression; exact id-only mask measured at all three scales |
 | MAT-30 | Generation-scoped coordinator payload cache | conditional on cross-query hit-rate evidence; **NFR-021 screen required** — a generation-scoped cache is O(N) if unbounded and must carry an explicit fixed bound |
@@ -323,6 +366,7 @@ remain controls rather than new candidates.
 | MAT-38 | Avoid repeated attested-generation validation on a hot connection | **production behavior via accepted Task 195**; epoch/reclaim fencing and release A/B passed |
 | MAT-39 | Owner-side parallel heap fetch | conditional on owner CPU/IO dominance |
 | MAT-40 | Projection-shape payload cache/prepared portal | conditional on repeated projection shapes |
+| MAT-41 | Direct row-tier tuple fetch + cached binary send calls | conditional Task 223; distinct from Task 220's rejected SQL concatenation and gated by the post-222 residual ceiling |
 
 ## Candidate ledger: bounded entry coverage
 
@@ -461,8 +505,8 @@ Task 190 may compare architectures but may not implement several together.
 | ARCH-02 | Replicated global routing layer over sharded lower graph | **measured useful by Task 198; promoted to Task 199 productionization**: exact recall, 14–17% warm-mean win, about 65–66% extra generation storage; production unchanged pending normal-build/operator gate |
 | ARCH-03 | Graph/community-aware placement instead of hash placement | deferred; FR-078/ADR-085 replacement |
 | ARCH-04 | Hash ownership plus replicated boundary nodes | deferred Task 190 |
-| ARCH-05 | Columnar/packed immutable row tier | deferred; storage format decision |
-| ARCH-06 | Covering payload sidecars for common projections | deferred; workload/storage decision |
+| ARCH-05 | Columnar/packed immutable row tier | active Task 232 — mandatory prototype |
+| ARCH-06 | Covering payload sidecars for common projections | active Task 229 — mandatory prototype; owner-local only |
 | ARCH-07 | Dedicated binary RPC instead of SQL-function transport | rejected for this escalation: measured encode/decode/connection work is only 0.071 ms/scan and the ten sequential remote/backend boundaries remain; reopen only with an independently measured transport-service premise |
 | ARCH-08 | Shared-memory or Unix-domain same-host transport | rejected for this escalation: it optimizes the same-host benchmark topology but neither serves genuinely remote owners nor removes sequential owner boundaries; reopen only for an explicitly same-host deployment product |
 | ARCH-09 | GPU/SIMD exhaustive compact-head scoring | deferred accelerator path |
@@ -472,6 +516,9 @@ Task 190 may compare architectures but may not implement several together.
 | ARCH-13 | Query-routed coordinator colocated with likely result owner | deferred topology decision |
 | ARCH-14 | Per-query coordinator selection under one logical index | deferred lifecycle/routing decision |
 | ARCH-15 | Workload-aware payload replication | deferred storage/lifecycle decision |
+| ARCH-16 | Vertically split hot exact-vector/scalar tier and cold arbitrary-payload tier | active Task 230 — mandatory prototype; one authoritative tier per attribute |
+| ARCH-17 | Dense-ordinal fixed-stride graph/vector node extents | active Task 231 — mandatory prototype; PostgreSQL relation/WAL backed |
+| ARCH-18 | Fixed-stride graph/vector plus packed non-vector payload hybrid | active Task 233 — mandatory integration prototype after 232; one shared ordinal and no duplicate exact vector |
 
 ## Measured and contractual negative-result ledger
 
@@ -508,7 +555,11 @@ premise and does not repeat the same experiment unchanged.
    families in one attribution cell.
 3. Initial screens use a fresh 100k physical generation and Task 182's retained
    policy unless the task explains a different control.
-4. Only a useful isolated candidate proceeds to 10k/50k/100k confirmation.
+4. Only a useful isolated candidate proceeds to 10k/50k/100k confirmation,
+   except Tasks 229--233: the operator explicitly selected all four isolated
+   layouts plus the hybrid integration for complete cross-scale comparison, so
+   each runs the full matrix even when its 100k screen or a constituent result
+   is negative.
 5. All matrices and sweeps use checked-in `ecaz bench suite` configs.
 6. Recall, mean/p50/p95/p99/max latency, storage, construction, work/bytes,
    topology, remote engagement, query separation, and release provenance are
