@@ -1,6 +1,7 @@
     use super::*;
     use std::sync::{Mutex, OnceLock};
 
+    #[cfg(feature = "pg_test")]
     #[pg_extern]
     fn ec_distann_test_read_rpc_probe(
         index_oid: pg_sys::Oid,
@@ -14,6 +15,7 @@
             .unwrap_or_else(|error| error.raise())
     }
 
+    #[cfg(feature = "pg_test")]
     #[pg_extern]
     fn ec_distann_test_read_rpc_snapshot() -> TableIterator<
         'static,
