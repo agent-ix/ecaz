@@ -2,7 +2,7 @@
 
 Status: **bounded transport implemented; packet 002 review-open; PG18 2PC and
 lifecycle fault/recovery matrices pending** (updated 2026-08-25). Checkpoint
-`ed32ae6df` bounds async DML/intent/transaction-control and lifecycle phases,
+`7584c1bf3` bounds async DML/intent/transaction-control and lifecycle phases,
 evicts every failed write session, uses epoch-qualified coordinator XIDs, and
 makes coordinator-local `pg_xact_status` authoritative for prepared recovery;
 `reviews/task-235/002-bounded-write-transport/` contains the phase inventory
@@ -124,6 +124,9 @@ statement, and TCP user timeouts. Recovery no longer treats an ambiguously
 acknowledged `commit_intended` row as the commit decision: the coordinator's
 epoch-qualified full xid and `pg_xact_status` determine commit versus rollback,
 and unavailable status stops for operator action.
+The reaper reconciles both prepared GIDs and nonterminal intent GIDs, so a lost
+prepared-decision acknowledgement or terminal audit update converges on a
+later invocation while missing intent rows remain explicit.
 
 This is not a completion disposition. The phase-by-phase PG18 multicluster
 fault matrix, duplicate/partial recovery, restart, prepared-slot saturation,
