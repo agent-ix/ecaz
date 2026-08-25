@@ -1,8 +1,8 @@
 # Task 227: ec_distann Recall Residual and Adaptive Search
 
-Status: **implementation/evidence complete; clean integration packet 006
-final-review-open; NO RELIABLE SIGNAL — STOP before blind evaluation and
-runtime candidate** (2026-08-24).
+Status: **complete — review-closed ACCEPT; NO RELIABLE SIGNAL — STOP before
+blind evaluation and runtime candidate** (2026-08-25; final verdict:
+`reviews/task-227/006-main-integration/feedback/2026-08-25-01-reviewer.md`).
 All 141 diagnostic-slice misses reconcile as `budget_frontier`, Task 189's
 same-seed codec trigger is false, and none of the seven preregistered rules
 passes eligibility. Evidence: `reviews/task-227/005-query-level-attribution/`;
